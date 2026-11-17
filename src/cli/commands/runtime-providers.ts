@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { ContractError, CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
@@ -135,36 +136,48 @@ function failProvider(op: string, err: unknown, asJson?: boolean): never {
   if (err instanceof ContractError) throw err;
   if (err instanceof ProviderDeviceLoginError) {
     contractFail(op, err.code, err.message, {
-      asJson,
-      details: {
-        retryable: err.retryable,
-        suggestedAction:
-          err.code === "LOGIN_NOT_READY"
-            ? "Complete the device code in the browser, then retry status or complete"
-            : err.code === "LOGIN_NOT_FOUND"
-              ? "Run login start and use the returned login id"
-              : "Start a new device login",
+      ...{
+        asJson,
+        details: {
+          retryable: err.retryable,
+          suggestedAction:
+            err.code === "LOGIN_NOT_READY"
+              ? "Complete the device code in the browser, then retry status or complete"
+              : err.code === "LOGIN_NOT_FOUND"
+                ? "Run login start and use the returned login id"
+                : "Start a new device login",
+        },
       },
+      diagnostic: errorDiagnostic(err, { operation: op }),
     });
   }
   if (err instanceof RaviEnvFileError) {
     contractFail(op, err.code, err.message, {
-      asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
-      details: { suggestedAction: "Inspect the env allowlist and retry" },
+      ...{
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: { suggestedAction: "Inspect the env allowlist and retry" },
+      },
+      diagnostic: errorDiagnostic(err, { operation: op }),
     });
   }
   const message = err instanceof Error ? err.message : String(err);
   if (/agent not found/i.test(message)) {
     contractFail(op, "AGENT_NOT_FOUND", message, {
-      asJson,
-      details: { suggestedAction: "Create the agent first, or pass --agents with an existing id" },
+      ...{
+        asJson,
+        details: { suggestedAction: "Create the agent first, or pass --agents with an existing id" },
+      },
+      diagnostic: errorDiagnostic(err, { operation: op }),
     });
   }
   contractFail(op, "USAGE_ERROR", message, {
-    asJson,
-    exitCode: CONTRACT_EXIT_USAGE,
-    details: { suggestedAction: "Inspect the command input and retry" },
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: { suggestedAction: "Inspect the command input and retry" },
+    },
+    diagnostic: errorDiagnostic(err, { operation: op }),
   });
 }
 
@@ -199,16 +212,26 @@ function runLoginStatus(
   try {
     if (!id?.trim()) {
       contractFail(`runtime providers ${provider} login status`, "USAGE_ERROR", "Login id is required.", {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: { suggestedAction: "Pass the id returned by login start" },
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: { suggestedAction: "Pass the id returned by login start" },
+        },
+        diagnostic: errorDiagnostic("Login id is required.", {
+          operation: `runtime providers ${provider} login status`,
+        }),
       });
     }
     const session = requireDeviceLogin(id, deps.env ?? process.env);
     if (session.provider !== provider) {
       contractFail(`runtime providers ${provider} login status`, "LOGIN_NOT_FOUND", `Provider login not found: ${id}`, {
-        asJson,
-        details: { suggestedAction: `Use ravi runtime providers ${session.provider} login status ${id}` },
+        ...{
+          asJson,
+          details: { suggestedAction: `Use ravi runtime providers ${session.provider} login status ${id}` },
+        },
+        diagnostic: errorDiagnostic(`Provider login not found: ${id}`, {
+          operation: `runtime providers ${provider} login status`,
+        }),
       });
     }
     const login = publicDeviceLogin(refreshDeviceLogin(id, deps));
@@ -232,9 +255,14 @@ function runLoginComplete(
   try {
     if (!id?.trim()) {
       contractFail(`runtime providers ${provider} login complete`, "USAGE_ERROR", "Login id is required.", {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: { suggestedAction: "Pass the id returned by login start" },
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: { suggestedAction: "Pass the id returned by login start" },
+        },
+        diagnostic: errorDiagnostic("Login id is required.", {
+          operation: `runtime providers ${provider} login complete`,
+        }),
       });
     }
     const payload = completeProviderLogin(provider, id, { agents: splitAgents(agents), setProvider, label }, deps);
@@ -257,15 +285,25 @@ function runLoginCancel(
   try {
     if (!id?.trim()) {
       contractFail(`runtime providers ${provider} login cancel`, "USAGE_ERROR", "Login id is required.", {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: { suggestedAction: "Pass the id returned by login start" },
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: { suggestedAction: "Pass the id returned by login start" },
+        },
+        diagnostic: errorDiagnostic("Login id is required.", {
+          operation: `runtime providers ${provider} login cancel`,
+        }),
       });
     }
     const session = requireDeviceLogin(id, deps.env ?? process.env);
     if (session.provider !== provider) {
       contractFail(`runtime providers ${provider} login cancel`, "LOGIN_NOT_FOUND", `Provider login not found: ${id}`, {
-        asJson,
+        ...{
+          asJson,
+        },
+        diagnostic: errorDiagnostic(`Provider login not found: ${id}`, {
+          operation: `runtime providers ${provider} login cancel`,
+        }),
       });
     }
     const login = publicDeviceLogin(cancelDeviceLogin(id, deps));

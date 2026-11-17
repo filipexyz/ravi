@@ -232,6 +232,15 @@ describe("ensureLinkedDmRoute", () => {
     expect(dbGetRoute("5511999999999", "wa-main")).toBeNull();
   });
 
+  it("keeps DMs closed on an instance with no default agent", () => {
+    const closedNoAgent = {
+      ...noDefaultAgent,
+      instances: { "wa-main": { dmPolicy: "closed" } },
+    } as unknown as RouterConfig;
+    expect(ensureLinkedDmRoute(state, { ...quiet, getConfig: () => closedNoAgent })).toBe("dm_closed");
+    expect(dbGetRoute("5511999999999", "wa-main")).toBeNull();
+  });
+
   it("leaves a chat the instance's default agent already answers", () => {
     const open = {
       ...noDefaultAgent,

@@ -148,7 +148,9 @@ export class TaskProfileCommands {
     console.log(`Session:     ${profile.sessionNameTemplate}`);
     console.log(`Description: ${profile.description}`);
     console.log(`Tags:        ${profile.defaultTags.join(", ") || "-"}`);
-    console.log(`Inputs:      ${profile.inputs.map((item) => item.key).join(", ") || "-"}`);
+    console.log(
+      `Inputs:      ${profile.inputs.map((item) => (item.required ? `${item.key} (required)` : item.key)).join(", ") || "-"}`,
+    );
     console.log(`State:       ${profile.state.map((item) => item.path).join(", ") || "-"}`);
     console.log(`Artifacts:   ${profile.artifacts.map((item) => item.kind).join(", ") || "-"}`);
     console.log(`Primary:     ${summarizePrimaryArtifacts(profile)}`);

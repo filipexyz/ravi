@@ -1,4 +1,9 @@
+import { configureStateJournalMode, initializeStateSchema } from "../db/schema-owner.js";
+import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "../db/state-boundary.js";
+import { migrateDecisions } from "../decisions/schema.js";
+import { assertThreadFenceReady } from "../threads/schema-fence.js";
 import { ensureSessionGoalStatusSchema } from "../runtime/session-goal-schema.js";
+import { isOrdinaryTurnCompletionRevocation } from "../runtime/context-revocation.js";
 /**
  * Router Database - SQLite-backed configuration storage
  *
@@ -15,11 +20,17 @@ import { mkdirSync, existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import { logger } from "../utils/logger.js";
+import { getCredentialConnection } from "../credentials/store.js";
+import { createReadWatchdog } from "../db/read-watchdog.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { normalizePhone, normalizeRoutePattern } from "../utils/phone.js";
 import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
 import { timestampLikeToMs } from "../utils/provider-timestamp.js";
 import { executeWrite } from "../db/write-retry.js";
+import {
+  persistPreparedSlackAutomaticTerminalManifest,
+  type SlackAutomaticTerminalManifest,
+} from "../channels/slack/automatic-terminal-manifest.js";
 import {
   CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS,
   migrateAgentDefaultsRecord,
@@ -365,6 +376,7 @@ interface ChannelBackendIngressReceiptRow {
 }
 
 interface ChannelBackendRuntimeStateRow {
+  trace_turn_id: string | null;
   turn_id: string;
   state: ChannelBackendRuntimeState;
   last_sequence: number;
@@ -828,6 +840,7 @@ export type ChannelBackendRuntimeState =
   | "interrupted";
 
 export interface ChannelBackendRuntimeStateRecord {
+  traceTurnId?: string;
   turnId: string;
   state: ChannelBackendRuntimeState;
   lastSequence: number;
@@ -838,11 +851,24 @@ export interface ChannelBackendRuntimeStateRecord {
   updatedAt: number;
 }
 
+export class ChannelBackendRuntimeOwnershipLostError extends Error {
+  /** Identifies a rejected projection owner fence so callers can stop without emitting a terminal. */
+  constructor() {
+    super("Channel runtime projection no longer owns the request");
+    this.name = "ChannelBackendRuntimeOwnershipLostError";
+  }
+}
+
 export interface RecordChannelBackendRuntimeEventInput {
+  traceTurnId?: string;
   turnId: string;
   state?: ChannelBackendRuntimeState;
   assistantDelta?: boolean;
   assistantText?: string;
+  /** Internal pure predicate, rechecked inside each synchronous transaction attempt. */
+  mayWrite?: () => boolean;
+  /** Trusted host preparation; no hashing, delivery, or local cleanup inside this transaction. */
+  slackTerminalManifest?: SlackAutomaticTerminalManifest;
   runtimeGenerationId: string;
   terminalError?: Record<string, unknown>;
   occurredAt?: number;
@@ -851,6 +877,8 @@ export interface RecordChannelBackendRuntimeEventInput {
 export interface RecordChannelBackendRuntimeEventResult {
   receipt: ChannelBackendIngressReceiptRecord;
   runtime: ChannelBackendRuntimeStateRecord;
+  /** Committed with the terminal; permits local readiness updates but does not prove sink delivery. */
+  slackTerminalManifest?: SlackAutomaticTerminalManifest;
 }
 
 export interface ChannelBackendRuntimeInterruptRecord {
@@ -1131,6 +1159,14 @@ export interface ListContextsOptions {
 const SLOW_QUERY_WARN_MS = Number(process.env.RAVI_DB_SLOW_QUERY_WARN_MS ?? 250);
 const SLOW_QUERY_ERROR_MS = Number(process.env.RAVI_DB_SLOW_QUERY_ERROR_MS ?? 5000);
 const SLOW_QUERY_DISABLED = process.env.RAVI_DB_SLOW_QUERY_DISABLE === "1";
+/**
+ * A read that stays open (an iterator that is never finalized) pins the WAL
+ * snapshot even though no query is slow. Watchdogs report it with the call
+ * site so the holder can be named instead of guessed from shm marks.
+ */
+const READ_WATCHDOG_WARN_MS = Number(process.env.RAVI_DB_READ_WATCHDOG_MS ?? 5_000);
+const READ_WATCHDOG_INTERVAL_MS = Number(process.env.RAVI_DB_READ_WATCHDOG_INTERVAL_MS ?? 5_000);
+const READ_WATCHDOG_DISABLED = process.env.RAVI_DB_READ_WATCHDOG_DISABLE === "1";
 
 function shortSql(sql: string): string {
   const collapsed = sql.replace(/\s+/g, " ").trim();
@@ -1149,8 +1185,121 @@ function reportSlowQuery(elapsed: number, method: string, sql: string): void {
   }
 }
 
-function instrumentSlowQueries(db: Database): void {
+export interface LongReadReport {
+  ms: number;
+  state: "open" | "closed";
+  sql: string;
+  caller: string;
+}
+
+function readWatchdogCaller(): string {
+  return (new Error().stack ?? "")
+    .split("\n")
+    .slice(3, 6)
+    .map((line) => line.trim().replace(/^at\s+/, ""))
+    .join(" <- ");
+}
+
+/**
+ * Wrap a statement iterator so a read snapshot that stays open past the
+ * threshold is logged with its duration and call site (and again, once, when it
+ * closes). The proxy preserves the iterator protocol.
+ */
+export function trackReadIterator<T extends object>(
+  iterator: T,
+  options: {
+    sql: string;
+    caller: string;
+    warnMs?: number;
+    intervalMs?: number;
+    onLongRead?: (report: LongReadReport) => void;
+  },
+): T {
+  const warnMs = options.warnMs ?? READ_WATCHDOG_WARN_MS;
+  const intervalMs = options.intervalMs ?? READ_WATCHDOG_INTERVAL_MS;
+  const startedAt = Date.now();
+  let reported = false;
+  const report = (state: "open" | "closed") => {
+    if (reported) return;
+    reported = true;
+    const payload: LongReadReport = {
+      ms: Date.now() - startedAt,
+      state,
+      sql: shortSql(options.sql),
+      caller: options.caller,
+    };
+    if (options.onLongRead) {
+      options.onLongRead(payload);
+    } else if (state === "open") {
+      log.warn("long db read iterator (still open)", payload);
+    } else {
+      log.warn("long db read iterator", payload);
+    }
+  };
+  const timer = setInterval(() => {
+    if (Date.now() - startedAt >= warnMs) report("open");
+  }, intervalMs);
+  timer.unref?.();
+  const finish = () => {
+    clearInterval(timer);
+    if (Date.now() - startedAt >= warnMs) report("closed");
+  };
+
+  const proxy: T = new Proxy(iterator, {
+    get(target, property, receiver) {
+      if (property === Symbol.iterator) {
+        return () => proxy;
+      }
+      const value = Reflect.get(target, property, receiver);
+      if (typeof value !== "function") return value;
+      if (property === "next") {
+        return (...args: unknown[]) => {
+          const result = value.apply(target, args) as IteratorResult<unknown>;
+          if (result.done) finish();
+          return result;
+        };
+      }
+      if (property === "return" || property === "throw") {
+        return (...args: unknown[]) => {
+          try {
+            return value.apply(target, args);
+          } finally {
+            finish();
+          }
+        };
+      }
+      return value.bind(target);
+    },
+  });
+  return proxy;
+}
+
+function instrumentSlowQueries(db: Database, dbPath?: string): void {
   if (SLOW_QUERY_DISABLED) return;
+
+  // In-flight registry + WAL pin dump: a reader that never returns pins the
+  // snapshot without ever reaching the slow-query logger.
+  const watchdog = createReadWatchdog({
+    dbPath,
+    checkpointProbe: () => {
+      try {
+        const row = db.query("PRAGMA wal_checkpoint(PASSIVE)").get() as {
+          busy?: number;
+          log?: number;
+          checkpointed?: number;
+        } | null;
+        if (!row) return null;
+        return {
+          busy: Number(row.busy ?? 0),
+          log: Number(row.log ?? 0),
+          checkpointed: Number(row.checkpointed ?? 0),
+        };
+      } catch {
+        return null;
+      }
+    },
+  });
+  let openTransaction: number | undefined;
 
   const originalPrepare = db.prepare.bind(db);
   // @ts-expect-error: replacing method with a wrapper of identical signature
@@ -1159,15 +1308,23 @@ function instrumentSlowQueries(db: Database): void {
     const proxy = new Proxy(stmt, {
       get(target, prop, receiver) {
         const value = Reflect.get(target, prop, receiver);
-        if (
-          typeof value === "function" &&
-          (prop === "run" || prop === "get" || prop === "all" || prop === "iterate" || prop === "values")
-        ) {
+        if (typeof value === "function" && prop === "iterate") {
           return (...args: unknown[]) => {
             const start = Date.now();
+            const caller = readWatchdogCaller();
+            const iterator = (value as (...a: unknown[]) => object).apply(target, args);
+            reportSlowQuery(Date.now() - start, "iterate", sql);
+            return READ_WATCHDOG_DISABLED ? iterator : trackReadIterator(iterator, { sql, caller });
+          };
+        }
+        if (typeof value === "function" && (prop === "run" || prop === "get" || prop === "all" || prop === "values")) {
+          return (...args: unknown[]) => {
+            const start = Date.now();
+            const operation = watchdog.begin("statement", shortSql(sql));
             try {
               return (value as (...a: unknown[]) => unknown).apply(target, args);
             } finally {
+              watchdog.finish(operation);
               reportSlowQuery(Date.now() - start, String(prop), sql);
             }
           };
@@ -1181,9 +1338,19 @@ function instrumentSlowQueries(db: Database): void {
   const originalExec = db.exec.bind(db);
   db.exec = (sql: string, ...rest: unknown[]) => {
     const start = Date.now();
+    const head = sql.trim().slice(0, 20).toUpperCase();
+    const isBegin = head.startsWith("BEGIN");
+    const isEnd = head.startsWith("COMMIT") || head.startsWith("ROLLBACK") || head.startsWith("END");
+    if (isBegin && openTransaction === undefined) {
+      openTransaction = watchdog.begin("transaction", shortSql(sql));
+    }
     try {
       return originalExec(sql, ...(rest as []));
     } finally {
+      if (isEnd && openTransaction !== undefined) {
+        watchdog.finish(openTransaction);
+        openTransaction = undefined;
+      }
       reportSlowQuery(Date.now() - start, "exec", sql);
     }
   };
@@ -1234,7 +1401,9 @@ function dropPreviewLibraryRequestsTable(db: Database): void {
 
 function getDb(): Database {
   const nextDbPath = resolveDbPath();
+  assertDatabaseTargetAllowed(nextDbPath);
   if (routerDbState.db !== null && routerDbState.dbPath === nextDbPath) {
+    assertThreadFenceReady(routerDbState.db);
     return routerDbState.db;
   }
   if (routerDbState.db !== null && routerDbState.dbPath !== nextDbPath) {
@@ -1247,7 +1416,14 @@ function getDb(): Database {
   mkdirSync(stateDir, { recursive: true });
 
   // Auto-migrate from legacy path (~/ravi/ravi.db → ~/.ravi/ravi.db)
-  if (nextDbPath === DEFAULT_DB_PATH && !existsSync(nextDbPath) && existsSync(LEGACY_DB_PATH)) {
+  if (!isSchemaConsumer() && nextDbPath === DEFAULT_DB_PATH && !existsSync(nextDbPath) && existsSync(LEGACY_DB_PATH)) {
+    // Validate every source before the first move, so a refused DB or sidecar
+    // leaves the entire legacy set in place for recovery.
+    assertDatabaseTargetAllowed(LEGACY_DB_PATH);
+    for (const suffix of ["-wal", "-shm"]) {
+      const legacy = LEGACY_DB_PATH + suffix;
+      if (existsSync(legacy)) assertDatabaseTargetAllowed(legacy);
+    }
     log.info("Migrating database from ~/ravi/ravi.db to ~/.ravi/ravi.db");
     renameSync(LEGACY_DB_PATH, nextDbPath);
     // Also move WAL/SHM files if they exist
@@ -1257,31 +1433,49 @@ function getDb(): Database {
     }
   }
 
-  const db = new Database(nextDbPath);
-  instrumentSlowQueries(db);
+  const db = openStateDatabase(nextDbPath);
+  instrumentSlowQueries(db, nextDbPath);
   routerDbState.db = db;
   routerDbState.dbPath = nextDbPath;
 
-  // WAL mode for concurrent read/write access (CLI + daemon).
-  db.exec("PRAGMA journal_mode = WAL");
-  // Wait up to 5s for locks to clear instead of failing immediately.
-  db.exec("PRAGMA busy_timeout = 5000");
-  // synchronous=NORMAL halves fsync count vs FULL while remaining crash-safe in
-  // WAL mode (only the WAL is fsynced per commit; the DB file is fsynced at
-  // checkpoint). This is the single biggest knob to mitigate disk-pressure
-  // induced lock spirals.
-  db.exec("PRAGMA synchronous = NORMAL");
-  // 64MB page cache (default ~2MB). Most reads hit cache; reduces disk pressure.
-  db.exec("PRAGMA cache_size = -64000");
-  // Temp tables & sort scratch stay off the process heap. MEMORY + a multi-GB
-  // DB can OOM SQLite/process memory even when the host disk still has free
-  // space (SQLITE_NOMEM / "out of memory").
-  db.exec("PRAGMA temp_store = DEFAULT");
-  // 256MB memory-mapped read window. Hot queries become page-cache hits.
-  db.exec("PRAGMA mmap_size = 268435456");
+  try {
+    if (isSchemaConsumer()) assertThreadFenceReady(db);
+    // WAL mode for concurrent read/write access (CLI + daemon).
+    configureStateJournalMode(db);
+    // Wait up to 5s for locks to clear instead of failing immediately.
+    db.exec("PRAGMA busy_timeout = 5000");
+    // synchronous=NORMAL halves fsync count vs FULL while remaining crash-safe in
+    // WAL mode (only the WAL is fsynced per commit; the DB file is fsynced at
+    // checkpoint). This is the single biggest knob to mitigate disk-pressure
+    // induced lock spirals.
+    db.exec("PRAGMA synchronous = NORMAL");
+    // 64MB page cache (default ~2MB). Most reads hit cache; reduces disk pressure.
+    db.exec("PRAGMA cache_size = -64000");
+    // Temp tables & sort scratch stay off the process heap. MEMORY + a multi-GB
+    // DB can OOM SQLite/process memory even when the host disk still has free
+    // space (SQLITE_NOMEM / "out of memory").
+    db.exec("PRAGMA temp_store = DEFAULT");
+    // 256MB memory-mapped read window. Hot queries become page-cache hits.
+    db.exec("PRAGMA mmap_size = 268435456");
 
-  // Enable foreign keys before schema creation
-  db.exec("PRAGMA foreign_keys = ON");
+    // Enable foreign keys before schema creation
+    db.exec("PRAGMA foreign_keys = ON");
+    initializeStateSchema(db, "router", () => initializeRouterSchema(db, nextDbPath));
+  } catch (error) {
+    routerDbState.db = null;
+    routerDbState.stmts = null;
+    routerDbState.dbPath = null;
+    try {
+      db.close();
+    } catch {
+      // no-cause: Cleanup must not replace the setup error rethrown below; the cache was already cleared.
+    }
+    throw error;
+  }
+  return db;
+}
+
+function initializeRouterSchema(db: Database, nextDbPath: string): void {
   dropPreviewLibraryRequestsTable(db);
 
   // Initialize schema
@@ -1435,7 +1629,10 @@ function getDb(): Database {
       sdk_session_id TEXT,
       runtime_provider TEXT,
       runtime_provider_override TEXT,
+      runtime_provider_config_revision INTEGER NOT NULL DEFAULT 0,
       runtime_session_json TEXT,
+      history_reset_after_id INTEGER,
+      trigger_owner_lent_at INTEGER,
       runtime_session_display_id TEXT,
       agent_id TEXT NOT NULL,
       agent_cwd TEXT NOT NULL,
@@ -1619,6 +1816,7 @@ function getDb(): Database {
       ON channel_backend_ingress_receipts(session_name, accepted_at);
 
     CREATE TABLE IF NOT EXISTS channel_backend_runtime_state (
+      trace_turn_id TEXT,
       turn_id TEXT PRIMARY KEY
         REFERENCES channel_backend_ingress_receipts(turn_id) ON DELETE CASCADE,
       state TEXT NOT NULL DEFAULT 'accepted'
@@ -1639,6 +1837,12 @@ function getDb(): Database {
       runtime_generation_id TEXT,
       terminal_error_json TEXT,
       updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS slack_automatic_terminal_manifests (
+      response_id TEXT PRIMARY KEY,
+      request_fingerprint TEXT NOT NULL,
+      manifest_json TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS channel_backend_runtime_interrupts (
@@ -1774,6 +1978,9 @@ function getDb(): Database {
       initial_prompt TEXT,
       requested_by TEXT,
       model_override TEXT,
+      provider_override TEXT,
+      effort_override TEXT,
+      thinking_level TEXT,
       creation_claim_id TEXT,
       creation_claim_expires_at INTEGER,
       prompt_published_at INTEGER,
@@ -1798,6 +2005,45 @@ function getDb(): Database {
       ON slack_thread_lifecycle(status, creation_claim_expires_at, updated_at);
     CREATE INDEX IF NOT EXISTS idx_slack_thread_lifecycle_parent_return
       ON slack_thread_lifecycle(parent_return_requested, parent_notified_at, parent_notification_claim_expires_at);
+
+    CREATE TABLE IF NOT EXISTS slack_thread_turn_health (
+      request_id TEXT PRIMARY KEY REFERENCES slack_thread_lifecycle(request_id) ON DELETE CASCADE,
+      turn_id TEXT,
+      state TEXT NOT NULL CHECK(state IN ('idle','running','interrupted','attention','closed')),
+      reason TEXT CHECK(reason IN ('no_signal','no_reply','owner_lost','failed')),
+      since_at INTEGER NOT NULL,
+      last_signal_at INTEGER,
+      checked_at INTEGER NOT NULL,
+      notified_turn_id TEXT,
+      notified_at INTEGER,
+      claim_id TEXT,
+      claim_expires_at INTEGER,
+      notice_retry_after INTEGER
+    );
+
+    -- Occurrence receipts outlive the mutable current-health row and transport dedup window.
+    CREATE TABLE IF NOT EXISTS slack_thread_attention_notices (
+      event_id TEXT PRIMARY KEY,
+      request_id TEXT NOT NULL,
+      turn_id TEXT NOT NULL,
+      parent_session_key TEXT NOT NULL,
+      child_session_key TEXT NOT NULL,
+      target_session_name TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      admission_status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(admission_status IN ('pending','accepting','admitted','refused','uncertain')),
+      created_at INTEGER NOT NULL,
+      admitted_at INTEGER,
+      UNIQUE(request_id, turn_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS runtime_turn_progress (
+      attempt_id TEXT PRIMARY KEY,
+      turn_id TEXT NOT NULL,
+      session_key TEXT NOT NULL,
+      boot_epoch TEXT NOT NULL,
+      last_signal_at INTEGER NOT NULL
+    );
 
     CREATE TABLE IF NOT EXISTS session_participants (
       id TEXT PRIMARY KEY,
@@ -2079,8 +2325,6 @@ function getDb(): Database {
       created_at INTEGER NOT NULL
     );
 
-    CREATE INDEX IF NOT EXISTS idx_session_events_key_time
-      ON session_events(session_key, timestamp);
     CREATE INDEX IF NOT EXISTS idx_session_events_key_time_seq_id
       ON session_events(session_key, timestamp, seq, id);
     CREATE INDEX IF NOT EXISTS idx_session_events_visible_key_time_seq_id
@@ -2092,8 +2336,24 @@ function getDb(): Database {
           OR event_type LIKE '%.delta'
           OR event_type LIKE '%provider_event%'
         );
-    CREATE INDEX IF NOT EXISTS idx_session_events_name_time
-      ON session_events(session_name, timestamp);
+    -- Legacy trace fallback: session-trace/query.ts builds
+    -- (session_key IN (?) OR session_name IN (?)) with ORDER BY timestamp DESC
+    -- when the caller passes a name that has no sessions row. The OR cannot use
+    -- any of the key-leading indexes, so SQLite walked idx_session_events_timestamp
+    -- and fetched the whole row for every candidate: a client polling a stale
+    -- session name produced 8-25s reads and ~1GB RSS (2026-10-25). A covering
+    -- partial index ordered by timestamp lets that scan read session_key and
+    -- session_name from the index instead of the table (8.6s -> 0.25s measured
+    -- on the same 1.5M-row database).
+    CREATE INDEX IF NOT EXISTS idx_session_events_visible_order_cover
+      ON session_events(timestamp DESC, session_key, session_name)
+      WHERE event_group != 'stream'
+        AND NOT (
+          event_type = 'adapter.raw'
+          OR event_type LIKE '%.stream%'
+          OR event_type LIKE '%.delta'
+          OR event_type LIKE '%provider_event%'
+        );
     CREATE INDEX IF NOT EXISTS idx_session_events_run_seq
       ON session_events(run_id, seq);
     -- Hot path: SELECT COALESCE(MAX(seq), 0) + 1 FROM session_events WHERE session_key = ?
@@ -2108,19 +2368,12 @@ function getDb(): Database {
       ON session_events(timestamp);
     CREATE INDEX IF NOT EXISTS idx_session_events_turn_seq
       ON session_events(turn_id, seq);
-    CREATE INDEX IF NOT EXISTS idx_session_events_type_time
-      ON session_events(event_type, timestamp);
-    CREATE INDEX IF NOT EXISTS idx_session_events_rollup_turns
-      ON session_events(timestamp, agent_id, model, event_type)
-      WHERE event_type IN ('turn.complete', 'turn.failed', 'turn.interrupted');
     CREATE INDEX IF NOT EXISTS idx_session_events_rollup_turns_cover
       ON session_events(timestamp, agent_id, model, event_type, duration_ms)
       WHERE event_type IN ('turn.complete', 'turn.failed', 'turn.interrupted');
     CREATE INDEX IF NOT EXISTS idx_session_events_rollup_tools
       ON session_events(timestamp, agent_id, event_type, status)
       WHERE event_type IN ('tool.start', 'tool.end');
-    CREATE INDEX IF NOT EXISTS idx_session_events_chat_time
-      ON session_events(source_chat_id, timestamp);
     CREATE INDEX IF NOT EXISTS idx_session_events_contact_time
       ON session_events(contact_id, timestamp);
 
@@ -2174,6 +2427,7 @@ function getDb(): Database {
       cost_usd REAL DEFAULT 0,
       error TEXT,
       abort_reason TEXT,
+      output_state TEXT,
       started_at INTEGER NOT NULL,
       completed_at INTEGER,
       updated_at INTEGER NOT NULL
@@ -2858,6 +3112,27 @@ function getDb(): Database {
   }
   db.exec("CREATE INDEX IF NOT EXISTS idx_agents_model_preset ON agents(model_preset_id)");
 
+  const threadHealthColumns = db.prepare("PRAGMA table_info(slack_thread_turn_health)").all() as Array<{
+    name: string;
+  }>;
+  if (!threadHealthColumns.some((c) => c.name === "notice_retry_after")) {
+    try {
+      db.exec("ALTER TABLE slack_thread_turn_health ADD COLUMN notice_retry_after INTEGER");
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) throw error;
+    }
+  }
+
+  // Migration: turn-output marker (`final` | `incomplete`) on session_turns.
+  const sessionTurnColumns = db.prepare("PRAGMA table_info(session_turns)").all() as Array<{ name: string }>;
+  if (!sessionTurnColumns.some((c) => c.name === "output_state")) {
+    try {
+      db.exec("ALTER TABLE session_turns ADD COLUMN output_state TEXT");
+    } catch (error) {
+      if (!isDuplicateColumnError(error)) throw error;
+    }
+  }
+
   // Migration: add heartbeat columns to sessions if not exists
   const sessionColumns = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
   if (!sessionColumns.some((c) => c.name === "effort_override")) {
@@ -2907,9 +3182,23 @@ function getDb(): Database {
     db.exec("ALTER TABLE sessions ADD COLUMN runtime_provider_override TEXT");
     log.info("Added runtime_provider_override column to sessions table");
   }
+  if (
+    addSessionColumnIfMissing(
+      "runtime_provider_config_revision",
+      "ALTER TABLE sessions ADD COLUMN runtime_provider_config_revision INTEGER NOT NULL DEFAULT 0",
+    )
+  ) {
+    log.info("Added runtime_provider_config_revision column to sessions table");
+  }
   if (!sessionColumns.some((c) => c.name === "runtime_session_json")) {
     db.exec("ALTER TABLE sessions ADD COLUMN runtime_session_json TEXT");
     log.info("Added runtime_session_json column to sessions table");
+  }
+  if (!sessionColumns.some((c) => c.name === "history_reset_after_id")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN history_reset_after_id INTEGER");
+  }
+  if (!sessionColumns.some((c) => c.name === "trigger_owner_lent_at")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN trigger_owner_lent_at INTEGER");
   }
   if (!sessionColumns.some((c) => c.name === "runtime_session_display_id")) {
     db.exec("ALTER TABLE sessions ADD COLUMN runtime_session_display_id TEXT");
@@ -3083,6 +3372,20 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_cron_jobs_enabled ON cron_jobs(enabled);
     CREATE INDEX IF NOT EXISTS idx_cron_jobs_next_run ON cron_jobs(next_run_at);
 
+    -- Run identity and admitted notification owner survive job edits/deletion.
+    CREATE TABLE IF NOT EXISTS cron_runs (
+      id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL,
+      session_name TEXT NOT NULL,
+      admitted_at INTEGER NOT NULL,
+      notification_json TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('pending', 'ok', 'error')),
+      finished_at INTEGER,
+      error TEXT,
+      reported INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_cron_runs_job ON cron_runs(job_id);
+
     -- Durable idempotency ledger for reactions whose target may later be deleted.
     CREATE TABLE IF NOT EXISTS reaction_actions (
       idempotency_key_hash TEXT PRIMARY KEY,
@@ -3104,8 +3407,8 @@ function getDb(): Database {
   // Migration: add reply_session to cron_jobs
   try {
     db.exec("ALTER TABLE cron_jobs ADD COLUMN reply_session TEXT");
-  } catch {
-    /* column already exists */
+  } catch (error) {
+    if (!isDuplicateColumnError(error)) throw error;
   }
 
   db.exec(`
@@ -3175,10 +3478,18 @@ function getDb(): Database {
     db.exec("ALTER TABLE triggers ADD COLUMN on_error TEXT");
     log.info("Added on_error column to triggers table");
   }
+  migrateDecisions(db);
   ensureColumn(db, "slack_thread_lifecycle", "requested_by", "TEXT");
+  ensureColumn(db, "slack_thread_lifecycle", "provider_override", "TEXT");
+  ensureColumn(db, "slack_thread_lifecycle", "effort_override", "TEXT");
+  ensureColumn(db, "slack_thread_lifecycle", "thinking_level", "TEXT");
+  ensureColumn(db, "slack_thread_lifecycle", "initiator_context_id", "TEXT");
+  ensureColumn(db, "slack_thread_lifecycle", "close_context_id", "TEXT");
   ensureColumn(db, "triggers", "filter_reject_count", "INTEGER DEFAULT 0");
+  migrateTriggerDebounce(db);
   ensureColumn(db, "triggers", "last_filter_reject_at", "INTEGER");
   migrateTriggerSessionCheck(db);
+  migrateTriggerOwner(db);
 
   // Migration: add account_id column to cron_jobs
   const cronColumns = db.prepare("PRAGMA table_info(cron_jobs)").all() as Array<{ name: string }>;
@@ -3217,6 +3528,7 @@ function getDb(): Database {
     db.exec("ALTER TABLE cron_jobs ADD COLUMN owner_principal TEXT");
     log.info("Added owner_principal column to cron_jobs table");
   }
+  ensureColumn(db, "cron_jobs", "creator_chat", "TEXT");
 
   // Migration: add heartbeat_account_id column to agents
   if (addAgentColumnIfMissing("heartbeat_account_id", "ALTER TABLE agents ADD COLUMN heartbeat_account_id TEXT")) {
@@ -3407,11 +3719,13 @@ function getDb(): Database {
     "INTEGER NOT NULL DEFAULT 0 CHECK(last_delta_sequence >= 0)",
   );
   ensureColumn(db, "channel_backend_runtime_state", "runtime_generation_id", "TEXT");
+  ensureColumn(db, "channel_backend_runtime_state", "trace_turn_id", "TEXT");
   ensureColumn(db, "channel_backend_runtime_state", "terminal_error_json", "TEXT");
   ensureColumn(db, "channel_backend_ingress_receipts", "prompt_json", "TEXT");
   ensureColumn(db, "daemon_restart_resume_deliveries", "delivery_kind", "TEXT NOT NULL DEFAULT 'resume'");
   ensureColumn(db, "daemon_restart_resume_deliveries", "decision_reason", "TEXT");
   ensureIdentityChatMigrations(db);
+  dropRedundantSessionEventIndexes(db);
   ensureAgentVisibilityMigration(db);
   ensureLibraryAgentListedMigration(db);
   ensureCliCommandAccessKindGrantMigration(db);
@@ -3449,7 +3763,6 @@ function getDb(): Database {
   }
 
   log.debug("Database initialized", { path: nextDbPath });
-  return db;
 }
 
 /**
@@ -3502,6 +3815,9 @@ const CHANNEL_OUTBOUND_RECEIPT_COLUMNS = [
   "persisted_at",
   "trace_recorded_at",
   "completed_at",
+  "suppression_reason",
+  "resend_prohibited",
+  "retain_identity",
   "last_error_phase",
   "last_error_message",
   "last_error_at",
@@ -3511,6 +3827,10 @@ const CHANNEL_OUTBOUND_RECEIPT_COLUMNS = [
 
 type ChannelOutboundReceiptTable = "channel_outbound_receipts" | "channel_outbound_receipts_next";
 
+/**
+ * Creates the receipt table within the caller's schema transaction. Suppression
+ * and identity-retention fields describe local resend policy, not remote delivery.
+ */
 function createChannelOutboundReceiptTable(database: Database, table: ChannelOutboundReceiptTable): void {
   database.exec(`
     CREATE TABLE IF NOT EXISTS ${table} (
@@ -3519,7 +3839,7 @@ function createChannelOutboundReceiptTable(database: Database, table: ChannelOut
       job_id                TEXT NOT NULL,
       request_id            TEXT NOT NULL,
       session_name          TEXT NOT NULL,
-      state                 TEXT NOT NULL CHECK(state IN ('claimed','sent','persisted','complete')),
+      state                 TEXT NOT NULL CHECK(state IN ('claimed','sent','persisted','complete','suppressed')),
       provider              TEXT NOT NULL,
       delivery_message_id   TEXT,
       platform_message_id   TEXT,
@@ -3531,6 +3851,9 @@ function createChannelOutboundReceiptTable(database: Database, table: ChannelOut
       persisted_at          INTEGER,
       trace_recorded_at     INTEGER,
       completed_at          INTEGER,
+      suppression_reason    TEXT,
+      resend_prohibited     INTEGER NOT NULL DEFAULT 0 CHECK(resend_prohibited IN (0,1)),
+      retain_identity       INTEGER NOT NULL DEFAULT 0 CHECK(retain_identity IN (0,1)),
       last_error_phase      TEXT,
       last_error_message    TEXT,
       last_error_at         INTEGER,
@@ -3540,6 +3863,11 @@ function createChannelOutboundReceiptTable(database: Database, table: ChannelOut
   `);
 }
 
+/**
+ * Locks before inspecting the receipt schema so concurrent initializers cannot
+ * migrate from stale metadata. Table reconciliation and indexes commit together;
+ * any failure rolls back rather than publishing a partially migrated schema.
+ */
 function ensureChannelOutboundReceiptSchema(database: Database): void {
   // Acquire the write lock before inspecting the schema. A daemon and CLI can
   // initialize the same database concurrently; reading metadata before this
@@ -3562,8 +3890,9 @@ function ensureChannelOutboundReceiptSchema(database: Database): void {
       const missingColumns = CHANNEL_OUTBOUND_RECEIPT_COLUMNS.filter((column) => !columns.has(column));
       const legacyColumns = ["provider_raw_json", "telemetry_emitted_at"].filter((column) => columns.has(column));
       const acceptsClaimedState = tableRow.sql?.includes("'claimed'") === true;
+      const acceptsSuppressedState = tableRow.sql?.includes("'suppressed'") === true;
 
-      if (missingColumns.length > 0 || legacyColumns.length > 0 || !acceptsClaimedState) {
+      if (missingColumns.length > 0 || legacyColumns.length > 0 || !acceptsClaimedState || !acceptsSuppressedState) {
         migrateChannelOutboundReceiptSchema(database, columns, missingColumns, legacyColumns);
       }
     }
@@ -3592,6 +3921,11 @@ function ensureChannelOutboundReceiptSchema(database: Database): void {
   }
 }
 
+/**
+ * Rebuilds receipts inside the caller's transaction, preserving available keys,
+ * recognized states and retention flags, with defaults for legacy columns.
+ * A missing idempotency_key column is rejected; this helper owns no transaction.
+ */
 function migrateChannelOutboundReceiptSchema(
   database: Database,
   columns: ReadonlySet<string>,
@@ -3613,7 +3947,7 @@ function migrateChannelOutboundReceiptSchema(
   const idempotencyKey = "CAST(idempotency_key AS TEXT)";
   const legacyFingerprint = `'legacy:' || ${idempotencyKey}`;
   const state = columns.has("state")
-    ? "CASE WHEN state IN ('claimed','sent','persisted','complete') THEN state ELSE 'sent' END"
+    ? "CASE WHEN state IN ('claimed','sent','persisted','complete','suppressed') THEN state ELSE 'sent' END"
     : "'sent'";
   const createdAt = coalesce(["created_at", "sent_at", "updated_at"], String(now));
   const updatedAt = coalesce(["updated_at", "created_at", "sent_at"], String(now));
@@ -3626,7 +3960,7 @@ function migrateChannelOutboundReceiptSchema(
            idempotency_key, request_fingerprint, job_id, request_id, session_name,
            state, provider, delivery_message_id, platform_message_id, provider_timestamp,
            canonical_message_id, claim_owner, claim_expires_at, sent_at, persisted_at,
-           trace_recorded_at, completed_at, last_error_phase, last_error_message,
+           trace_recorded_at, completed_at, suppression_reason, resend_prohibited, retain_identity, last_error_phase, last_error_message,
            last_error_at, created_at, updated_at
          )
          SELECT
@@ -3647,6 +3981,9 @@ function migrateChannelOutboundReceiptSchema(
            ${nullable("persisted_at")},
            ${nullable("trace_recorded_at")},
            ${nullable("completed_at")},
+           ${nullable("suppression_reason")},
+           ${coalesce(["resend_prohibited"], "0")},
+           ${coalesce(["retain_identity"], "0")},
            ${nullable("last_error_phase")},
            ${nullable("last_error_message")},
            ${nullable("last_error_at")},
@@ -3729,22 +4066,56 @@ function backfillLegacySlackInstancesToChannels(database: Database): void {
      VALUES (?, 'slack', ?, ?, NULL, ?, ?, NULL)`,
   );
 
-  let migrated = 0;
+  const inserted: Array<{ name: string; credentialConnection: string; enabled: boolean }> = [];
   database.transaction(() => {
     for (const instance of legacyInstances) {
-      migrated += insertChannel.run(
+      const credentialConnection = legacySlackCredentialConnection(instance.name, instance.defaults);
+      const enabled = instance.enabled !== 0;
+      const changes = insertChannel.run(
         instance.name,
-        instance.enabled === 0 ? 0 : 1,
-        legacySlackCredentialConnection(instance.name, instance.defaults),
+        enabled ? 1 : 0,
+        credentialConnection,
         instance.created_at,
         instance.updated_at,
       ).changes;
+      if (changes > 0) inserted.push({ name: instance.name, credentialConnection, enabled });
     }
   })();
 
-  if (migrated > 0) {
-    log.info("Backfilled Slack channel configs from legacy instances", { count: migrated });
+  if (inserted.length > 0) {
+    log.info("Backfilled Slack channel configs from legacy instances", { count: inserted.length });
+    warnBackfilledSlackChannelsWithoutConnection(inserted);
   }
+}
+
+/**
+ * The backfill names a broker connection after the instance without checking
+ * it exists. Say so when it does not: `ravi-channels` cannot start that Slack
+ * adapter, so its replies stay queued until `ravi credentials add` adds one.
+ */
+export function warnBackfilledSlackChannelsWithoutConnection(
+  channels: ReadonlyArray<{ name: string; credentialConnection: string; enabled: boolean }>,
+  lookup: (provider: string, connection: string) => { status: string } | null = getCredentialConnection,
+): string[] {
+  const missing: string[] = [];
+  for (const channel of channels) {
+    if (!channel.enabled) continue;
+    let found: { status: string } | null;
+    try {
+      found = lookup("slack", channel.credentialConnection);
+    } catch {
+      found = null;
+    }
+    if (found?.status === "active") continue;
+    missing.push(channel.name);
+    log.warn("Backfilled Slack channel has no active broker connection; its replies cannot be delivered", {
+      channel: channel.name,
+      credentialConnection: channel.credentialConnection,
+      connectionStatus: found?.status ?? "not_found",
+      hint: "add it with `ravi credentials add`, then restart `ravi-channels`; `ravi doctor --domain channels` lists it",
+    });
+  }
+  return missing;
 }
 
 function legacySlackCredentialConnection(instanceName: string, defaultsJson: string | null): string {
@@ -3963,6 +4334,42 @@ function normalizeAgentDefaultsCapability(value: unknown): {
   };
 }
 
+/**
+ * Drop session_events indexes that stopped paying for themselves.
+ *
+ * Every index on this table is maintained on each event INSERT, and this is the
+ * hottest write path in the daemon, so a redundant index costs twice: disk and
+ * a B-tree write per event. These six were an exact prefix of a wider index, a
+ * subset of a wider partial index, or only served a one-time backfill:
+ *
+ * - idx_session_events_key_time: exact prefix of idx_session_events_key_time_seq_id.
+ * - idx_session_events_name_time: nothing filters session_name on this table
+ *   except the legacy OR fallback in session-trace/query.ts.
+ * - idx_session_events_type_time: every event_type query also carries
+ *   session_key, which idx_session_events_key_type_id already covers.
+ * - idx_session_events_chat_time: only served backfillChatModel, which is
+ *   guarded by a router_meta marker and never re-runs.
+ * - idx_session_events_rollup_turns: same WHERE as ..._cover, which also carries
+ *   duration_ms; the rollup queries use ..._cover by name.
+ * - idx_session_events_canonical_chat: only served the rare chat-merge UPDATE.
+ *
+ * Together they were ~360MB of the 1.3GB index footprint (audit 2026-10-20).
+ * Dropping is idempotent and safe to repeat on every boot.
+ */
+export function dropRedundantSessionEventIndexes(database: Database): void {
+  const redundant = [
+    "idx_session_events_key_time",
+    "idx_session_events_name_time",
+    "idx_session_events_type_time",
+    "idx_session_events_chat_time",
+    "idx_session_events_rollup_turns",
+    "idx_session_events_canonical_chat",
+  ];
+  for (const name of redundant) {
+    database.exec(`DROP INDEX IF EXISTS ${name}`);
+  }
+}
+
 function ensureIdentityChatMigrations(database: Database): void {
   ensureColumn(database, "message_metadata", "canonical_chat_id", "TEXT");
   ensureColumn(database, "message_metadata", "actor_type", "TEXT");
@@ -3996,7 +4403,6 @@ function ensureIdentityChatMigrations(database: Database): void {
   database.exec(
     "CREATE INDEX IF NOT EXISTS idx_message_metadata_canonical_chat ON message_metadata(canonical_chat_id)",
   );
-  database.exec("CREATE INDEX IF NOT EXISTS idx_session_events_canonical_chat ON session_events(canonical_chat_id)");
   database.exec(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_chats_actor_agent ON chats(actor_id, agent_id) WHERE actor_id IS NOT NULL AND agent_id IS NOT NULL",
   );
@@ -4407,6 +4813,7 @@ function rowToChannelBackendIngressReceipt(row: ChannelBackendIngressReceiptRow)
 function rowToChannelBackendRuntimeState(row: ChannelBackendRuntimeStateRow): ChannelBackendRuntimeStateRecord {
   const terminalError = parseJsonRecord(row.terminal_error_json);
   return {
+    ...(row.trace_turn_id ? { traceTurnId: row.trace_turn_id } : {}),
     turnId: row.turn_id,
     state: row.state,
     lastSequence: row.last_sequence,
@@ -6079,11 +6486,10 @@ interface PreparedStatements {
  * Get prepared statements, creating them on first access.
  */
 function getStatements(): PreparedStatements {
+  const database = getDb();
   if (routerDbState.stmts !== null) {
     return routerDbState.stmts;
   }
-
-  const database = getDb();
 
   routerDbState.stmts = {
     // Agents
@@ -7107,6 +7513,15 @@ export function dbListChatIdsByContactIds(input: {
   return result;
 }
 
+/** Drop a removed platform identity from chat participant rows (they keep the raw sender ids). */
+export function dbDetachChatParticipantIdentity(platformIdentityId: string): number {
+  return getDb()
+    .prepare(
+      "UPDATE chat_participants SET contact_id = NULL, platform_identity_id = NULL, updated_at = ? WHERE platform_identity_id = ?",
+    )
+    .run(Date.now(), platformIdentityId).changes;
+}
+
 export function dbUpsertChatParticipant(input: UpsertChatParticipantInput): ChatParticipantRecord {
   return upsertChatParticipant(getDb(), input);
 }
@@ -7190,12 +7605,26 @@ export function dbGetChannelBackendRuntimeState(turnId: string): ChannelBackendR
   return row ? rowToChannelBackendRuntimeState(row) : null;
 }
 
+/**
+ * Commits sequence/state, optional canonical assistant text and a prepared Slack
+ * manifest on one connection in executeWrite's synchronous retryable transaction.
+ * The manifest must match the accepted ingress and requested terminal kind.
+ * The pure owner fence is rechecked on each attempt and before mutations; a
+ * rejected owner, transition or manifest rolls back every new write in that
+ * attempt. Callers prepare hashes beforehand and defer cleanup, readiness and
+ * external output until this function returns a committed result.
+ */
 export function dbRecordChannelBackendRuntimeEvent(
   input: RecordChannelBackendRuntimeEventInput,
 ): RecordChannelBackendRuntimeEventResult {
   return executeWrite(
     getDb(),
     (database) => {
+      /** Rejects a lost owner inside the current transaction, allowing its writes to roll back. */
+      const assertOwner = () => {
+        if (input.mayWrite && input.mayWrite() !== true) throw new ChannelBackendRuntimeOwnershipLostError();
+      };
+      assertOwner();
       const turnId = normalizeOpaqueCanonicalId(input.turnId, "turnId");
       const runtimeGenerationId = normalizeOpaqueCanonicalId(input.runtimeGenerationId, "runtimeGenerationId");
       const occurredAt = input.occurredAt ?? Date.now();
@@ -7224,6 +7653,26 @@ export function dbRecordChannelBackendRuntimeEvent(
       const nextState = input.state ?? current.state;
       assertChannelBackendRuntimeTransition(current.state, nextState);
 
+      const preparedManifest = input.slackTerminalManifest;
+      if (preparedManifest) {
+        const expectedKind =
+          input.state === "completed"
+            ? "final_answer"
+            : input.state === "failed"
+              ? "safe_error"
+              : input.state === "interrupted"
+                ? "cancelled"
+                : undefined;
+        if (
+          expectedKind === undefined ||
+          preparedManifest.kind !== expectedKind ||
+          preparedManifest.turnId !== turnId ||
+          preparedManifest.sourceId !== receipt.messageId ||
+          preparedManifest.sourceReceivedAt !== receipt.acceptedAt
+        )
+          throw new Error("Slack terminal manifest does not match the channel runtime transition");
+      }
+
       let assistantMessageId = current.assistantMessageId;
       if (input.assistantText !== undefined) {
         if (nextState !== "completed") {
@@ -7233,6 +7682,7 @@ export function dbRecordChannelBackendRuntimeEvent(
         if (!assistantText) {
           throw new Error("assistantText must not be empty");
         }
+        assertOwner();
         const messageResult = upsertChatMessage(database, {
           chatId: receipt.chatId,
           channel: receipt.external.channelKind,
@@ -7261,10 +7711,12 @@ export function dbRecordChannelBackendRuntimeEvent(
       const nextSequence = current.lastSequence + 1;
       const nextDeltaSequence = current.lastDeltaSequence + (input.assistantDelta ? 1 : 0);
       const terminalErrorJson = input.terminalError === undefined ? undefined : JSON.stringify(input.terminalError);
+      assertOwner();
       database
         .prepare(
           `
           INSERT INTO channel_backend_runtime_state (
+            trace_turn_id,
             turn_id,
             state,
             last_sequence,
@@ -7274,8 +7726,9 @@ export function dbRecordChannelBackendRuntimeEvent(
             terminal_error_json,
             updated_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(turn_id) DO UPDATE SET
+            trace_turn_id = COALESCE(excluded.trace_turn_id, channel_backend_runtime_state.trace_turn_id),
             state = excluded.state,
             last_sequence = excluded.last_sequence,
             last_delta_sequence = excluded.last_delta_sequence,
@@ -7292,6 +7745,7 @@ export function dbRecordChannelBackendRuntimeEvent(
         `,
         )
         .run(
+          input.traceTurnId ?? null,
           turnId,
           nextState,
           nextSequence,
@@ -7307,7 +7761,12 @@ export function dbRecordChannelBackendRuntimeEvent(
       if (!runtimeRow) {
         throw new Error(`Channel backend runtime state not found after update for turn ${turnId}`);
       }
+      assertOwner();
+      const slackTerminalManifest = preparedManifest
+        ? persistPreparedSlackAutomaticTerminalManifest(database, preparedManifest)
+        : undefined;
       return {
+        ...(slackTerminalManifest ? { slackTerminalManifest } : {}),
         receipt,
         runtime: rowToChannelBackendRuntimeState(runtimeRow),
       };
@@ -9322,6 +9781,8 @@ export function dbDeleteAgent(id: string): boolean {
   for (const { key } of modeKeys) {
     if (key.startsWith(modePrefix) && !key.slice(modePrefix.length).includes(".")) s.deleteSetting.run(key);
   }
+  // And its Library listing: a same-id recreation starts unlisted and closed to requests.
+  getDb().prepare("DELETE FROM library_agents WHERE agent_id = ?").run(id);
   s.deleteAgent.run(id);
   if (getDbChanges() > 0) {
     log.info("Deleted agent", { id });
@@ -10106,7 +10567,12 @@ export function dbListContexts(options: ListContextsOptions = {}): ContextRecord
   if (!options.includeInactive) {
     where.push("(revoked_at IS NULL OR revoked_at = 0 OR revoked_at > ?)");
     params.push(now);
-    where.push("(expires_at IS NULL OR expires_at = 0 OR expires_at > ?)");
+    // Select expiry candidates first so creation-order sorting cannot scan all historical payloads.
+    where.push(`context_id IN (
+      SELECT context_id FROM contexts WHERE expires_at IS NULL
+      UNION ALL SELECT context_id FROM contexts WHERE expires_at = 0
+      UNION ALL SELECT context_id FROM contexts WHERE expires_at > ?
+    )`);
     params.push(now);
   }
 
@@ -10120,6 +10586,27 @@ export function dbListContexts(options: ListContextsOptions = {}): ContextRecord
 export function dbTouchContext(contextId: string, lastUsedAt = Date.now()): void {
   const s = getStatements();
   s.touchContext.run(lastUsedAt, contextId);
+}
+
+/** Renew only a still-live host-owned turn lease; never revive a stale credential. */
+export function dbRenewActiveContext(
+  contextId: string,
+  expectedExpiresAt: number | null | undefined,
+  ttlMs: number,
+  now = Date.now(),
+): ContextRecord | null {
+  if (!expectedExpiresAt || expectedExpiresAt <= now) return null;
+  const result = getDb()
+    .prepare(`
+    UPDATE contexts SET expires_at = ?
+    WHERE context_id = ? AND kind = 'turn-runtime' AND expires_at = ? AND expires_at > ?
+      AND (revoked_at IS NULL OR revoked_at = 0 OR revoked_at > ?)
+        AND json_extract(metadata_json, '$.authorityMode') = 'agent-identity'
+        AND json_extract(metadata_json, '$.parentContextId') IS NULL
+        AND json_extract(metadata_json, '$.bridgeTurnId') IS NULL
+  `)
+    .run(now + ttlMs, contextId, expectedExpiresAt, now, now);
+  return result.changes > 0 ? dbGetContext(contextId) : null;
 }
 
 export function dbUpdateContextRuntimeState(
@@ -10145,6 +10632,15 @@ export function dbUpdateContextRuntimeState(
     contextId,
   );
   return dbGetContext(contextId)!;
+}
+
+/** Update authority metadata without changing provenance or last-use timestamps. */
+export function dbUpdateContextMetadata(contextId: string, metadata: Record<string, unknown>): void {
+  const parsed = z.record(z.string(), z.unknown()).parse(metadata);
+  const result = getDb()
+    .prepare("UPDATE contexts SET metadata_json = ? WHERE context_id = ?")
+    .run(JSON.stringify(parsed), contextId);
+  if (result.changes === 0) throw new Error(`Context not found: ${contextId}`);
 }
 
 export interface RevokeContextOptions {
@@ -10205,43 +10701,48 @@ export function dbRevokeContextCascade(contextId: string, options: RevokeContext
   }
 
   const db = getDb();
-  const reasonNote = options.reason?.trim();
+  const reasonNote = options.reason?.trim() || "context_revoked";
   const reasonKey = "revocationReason";
   const cascadeKey = "cascadedFrom";
   const cascadeFlagKey = "revokedViaCascade";
   const cascadeRootKey = "cascadeRootContextId";
 
-  executeWrite(
-    db,
-    (database) => {
-      for (const target of targets) {
-        // Skip if already revoked at the same or earlier timestamp (idempotency).
-        if (target.revokedAt && target.revokedAt <= revokedAt) {
-          // Still update metadata if a reason or cascade flag should be set.
-        }
-        const metadata: Record<string, unknown> = {
-          ...(target.metadata ?? {}),
-        };
-        if (reasonNote) {
-          metadata[reasonKey] = reasonNote;
-        }
-        if (target.contextId !== root.contextId) {
-          metadata[cascadeFlagKey] = true;
-          metadata[cascadeRootKey] = root.contextId;
-          const chain = Array.isArray(metadata[cascadeKey]) ? (metadata[cascadeKey] as unknown[]) : [];
-          if (!chain.includes(root.contextId)) {
-            chain.push(root.contextId);
-          }
-          metadata[cascadeKey] = chain;
-        }
-
-        database
-          .prepare(`UPDATE contexts SET revoked_at = ?, metadata_json = ? WHERE context_id = ?`)
-          .run(revokedAt, JSON.stringify(metadata), target.contextId);
+  const applyRevocation = (database: Database) => {
+    for (const target of targets) {
+      // Skip if already revoked at the same or earlier timestamp (idempotency).
+      if (target.revokedAt && target.revokedAt <= revokedAt) {
+        // Still update metadata if a reason or cascade flag should be set.
       }
-    },
-    { label: "router:revokeContextCascade" },
-  );
+      const metadata: Record<string, unknown> = {
+        ...(target.metadata ?? {}),
+      };
+      // Terminal cleanup must never turn an explicit withdrawal back into a
+      // benign completion and thereby revive already queued human work.
+      if (
+        !target.revokedAt ||
+        isOrdinaryTurnCompletionRevocation(metadata[reasonKey]) ||
+        !isOrdinaryTurnCompletionRevocation(reasonNote)
+      ) {
+        metadata[reasonKey] = reasonNote;
+      }
+      if (target.contextId !== root.contextId) {
+        metadata[cascadeFlagKey] = true;
+        metadata[cascadeRootKey] = root.contextId;
+        const chain = Array.isArray(metadata[cascadeKey]) ? (metadata[cascadeKey] as unknown[]) : [];
+        if (!chain.includes(root.contextId)) {
+          chain.push(root.contextId);
+        }
+        metadata[cascadeKey] = chain;
+      }
+
+      database
+        .prepare(`UPDATE contexts SET revoked_at = ?, metadata_json = ? WHERE context_id = ?`)
+        .run(revokedAt, JSON.stringify(metadata), target.contextId);
+    }
+  };
+  // Permission-profile updates compose this cascade with the definition write.
+  if (db.inTransaction) applyRevocation(db);
+  else executeWrite(db, applyRevocation, { label: "router:revokeContextCascade" });
 
   const finalRoot = dbGetContext(contextId)!;
   const cascaded: ContextRecord[] = [];
@@ -10291,10 +10792,13 @@ export function dbPruneContexts(options: { apply?: boolean; olderThanMs?: number
   const db = getDb();
   const now = Date.now();
   const cutoff = options.olderThanMs != null ? now - Math.max(0, options.olderThanMs) : now;
+  // A revoked row stays until it also expires: a running turn may still hold a
+  // cached copy without revokedAt, and the stored row is what tells it apart
+  // (see isRuntimeContextLive).
   const where = `
     created_at <= ?
     AND (
-      (revoked_at IS NOT NULL AND revoked_at != 0 AND revoked_at <= ?)
+      (revoked_at IS NOT NULL AND revoked_at != 0 AND revoked_at <= ? AND (expires_at IS NULL OR expires_at = 0))
       OR (expires_at IS NOT NULL AND expires_at != 0 AND expires_at <= ?)
     )
   `;
@@ -11296,7 +11800,24 @@ export function dbListAuditLog(entity?: string, limit = 100): AuditEntry[] {
   }));
 }
 
+/**
+ * Debounce window per trigger (ms; 0 = fire per event). Existing triggers get 0,
+ * so they keep firing exactly as before.
+ */
+export function migrateTriggerDebounce(database: Database): void {
+  ensureColumn(database, "triggers", "debounce_ms", "INTEGER DEFAULT 0");
+}
+
 const LEGACY_TRIGGER_SESSION_CHECK = /\s*CHECK\s*\(\s*session\s+IN\s*\(\s*'main'\s*,\s*'isolated'\s*\)\s*\)/;
+
+/**
+ * `triggers.owner_principal`: who a trigger's agent turns act as in Bases.
+ * No backfill: a trigger written before owners were recorded stays without
+ * one and keeps acting as nobody.
+ */
+export function migrateTriggerOwner(database: Database): void {
+  ensureColumn(database, "triggers", "owner_principal", "TEXT");
+}
 
 /**
  * Older databases constrain `triggers.session` to main|isolated, but a trigger

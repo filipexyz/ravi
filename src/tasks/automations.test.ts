@@ -28,7 +28,8 @@ mock.module("../nats.js", () => ({
 }));
 
 const { createTaskAutomation, listTaskAutomationRuns } = await import("./automations.js");
-const { completeTask, createTask, dispatchTask, emitTaskEvent, listTasks } = await import("./service.js");
+const { completeTask, createTask, decideTask, answerTaskDecision, dispatchTask, emitTaskEvent, listTasks } =
+  await import("./service.js");
 const { setTaskSessionPromptPublisherForTests } = await import("./session-publisher.js");
 const { dbCreateAgent, dbDeleteAgent } = await import("../router/router-db.js");
 
@@ -240,6 +241,49 @@ describe("task automations", () => {
     expect(followUp?.instructions).toContain(`QC ${join(projectDir, "qc.json")}`);
     expect(followUp?.instructions).toContain(`Primary ${join(projectDir, "render/video.mp4")}`);
     expect(followUp?.instructions).toContain(`ravi sessions read ${created.task.id}-work`);
+  });
+
+  it("accepts decision events as automation triggers", async () => {
+    const openedAutomation = createTaskAutomation({
+      name: "Decision opened",
+      eventTypes: ["task.decision.open"],
+      titleTemplate: "Decision follow-up :: {{data.task.title}}",
+      instructionsTemplate: "Collect the answer for {{data.task.id}}",
+      agentId: "qa-auto",
+    });
+    const answeredAutomation = createTaskAutomation({
+      name: "Decision answered",
+      eventTypes: ["task.decision.answered"],
+      titleTemplate: "Decision recorded :: {{data.task.title}}",
+      instructionsTemplate: "Record the outcome for {{data.task.id}}",
+      agentId: "qa-auto",
+    });
+
+    const created = createTask({
+      title: "Ship decision primitive",
+      instructions: "Wait for the deploy window decision.",
+      priority: "high",
+    });
+
+    const decided = decideTask(created.task.id, {
+      key: "deploy-window",
+      ask: "Which window?",
+      ownerType: "human",
+      ownerId: "contact-1",
+      blocks: true,
+      actor: "dev-session",
+    });
+    await emitTaskEvent(decided.task, decided.event);
+
+    const answered = answerTaskDecision(created.task.id, {
+      key: "deploy-window",
+      answer: "After 18h",
+      actor: "human-1",
+    });
+    await emitTaskEvent(answered.task, answered.event);
+
+    expect(listTaskAutomationRuns(openedAutomation.id, 10)[0]?.status).toBe("spawned");
+    expect(listTaskAutomationRuns(answeredAutomation.id, 10)[0]?.status).toBe("spawned");
   });
 
   it("skips instead of spawning when the automation filter is invalid (fail-closed)", async () => {

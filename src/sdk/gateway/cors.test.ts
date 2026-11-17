@@ -1,12 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import {
-  CORS_REQUIRED_HEADERS,
-  corsHeaders,
-  isAllowedOrigin,
-  isDevLocalhostOrigin,
-  withCorsHeaders,
-} from "./cors.js";
+import { CORS_REQUIRED_HEADERS, corsHeaders, isAllowedOrigin, isDevLocalhostOrigin, withCorsHeaders } from "./cors.js";
 
 const CHROME_EXTENSION = "chrome-extension://abcdefghijklmnopqrstuvwxyzabcdef";
 const LISTED_ORIGIN = "http://127.0.0.1:8088";

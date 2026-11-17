@@ -428,8 +428,9 @@ describe("whatsapp group write brake", () => {
     const error = caught as ContractErrorInstance;
     expect(error.code).toBe("CONTACT_NOT_FOUND");
     expect(error.exitCode).toBe(1);
-    expect(errorLines).toHaveLength(1);
+    expect(errorLines).toHaveLength(2);
     expect(errorLines[0]).toContain("Unknown participant(s): 5511000000000");
+    expect(errorLines[1]).toBe("operation: whatsapp group add");
 
     expect(error.details.suggestedAction).toContain("ravi contacts list");
     expect(addParticipantCalls).toHaveLength(0);

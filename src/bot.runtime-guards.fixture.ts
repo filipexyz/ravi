@@ -1,3 +1,4 @@
+import type { RuntimePromptMessage } from "./runtime/types.js";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, setDefaultTimeout } from "bun:test";
 import type { ApprovalServiceDependencies } from "./approval/service.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
@@ -437,13 +438,13 @@ mock.module("./config-store.js", () => ({
           id: "main",
           cwd: "/tmp/ravi-test-bot/main",
           provider: activeProvider,
-          model: "test-model",
+          model: "sonnet-test-model",
         },
         secondary: {
           id: "secondary",
           cwd: "/tmp/ravi-test-bot/secondary",
           provider: activeProvider,
-          model: "test-model",
+          model: "sonnet-test-model",
         },
       },
       routes: [],
@@ -500,6 +501,7 @@ mock.module("./heartbeat/index.js", () => ({
 }));
 
 mock.module("./bash/index.js", () => ({
+  canExecuteArbitraryShell: () => false,
   checkDangerousPatterns: () => ({ safe: true }),
   createBashPermissionHook: () => ({
     matcher: "Bash",
@@ -731,7 +733,7 @@ afterAll(async () => {
 function createBot(options: { startCrashRecovery?: boolean } = {}) {
   const bot = new RaviBot({
     config: {
-      model: "test-model",
+      model: "sonnet-test-model",
       logLevel: "error",
       apiKey: "fake",
     } as any,
@@ -934,7 +936,7 @@ describe("RaviBot runtime guards", () => {
     delete process.env.RAVI_BIN;
     activeProvider = "claude";
     resetRuntimeDoubles();
-    saveMessageImpl = () => {};
+    saveMessageImpl = () => true;
     agentCanImpl = () => true;
     dbInsertCostEventMock.mockClear();
     calculateCostImpl = () => null;
@@ -1420,12 +1422,12 @@ describe("RaviBot runtime guards", () => {
       name: sessionKey,
       agentId: "main",
       agentCwd: "/tmp/ravi-test-bot/main",
-      modelOverride: "session-model",
+      modelOverride: "sonnet-session-model",
     });
     const dispatched = createDispatchedTaskForSession(sessionKey, {
       profileId: "task-doc-none",
       taskRuntimeOverride: {
-        model: "task-model",
+        model: "sonnet-task-model",
         effort: "xhigh",
       },
     });
@@ -1438,60 +1440,68 @@ describe("RaviBot runtime guards", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(runtimeStartCalls).toHaveLength(1);
-    expect(runtimeStartCalls[0]?.model).toBe("task-model");
+    expect(runtimeStartCalls[0]?.model).toBe("sonnet-task-model");
     expect(runtimeStartCalls[0]?.effort).toBe("xhigh");
-    expect(sessions.get(sessionKey)?.modelOverride).toBe("session-model");
+    expect(sessions.get(sessionKey)?.modelOverride).toBe("sonnet-session-model");
 
     completeTaskForSession(dispatched.task.id, sessionKey);
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("normal turn"));
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(runtimeStartCalls).toHaveLength(2);
-    expect(runtimeStartCalls[1]?.model).toBe("session-model");
+    expect(runtimeStartCalls[1]?.model).toBe("sonnet-session-model");
     expect(runtimeStartCalls[1]?.effort).toBe("xhigh");
     expect(runtimeStartCalls[1]?.env?.RAVI_TASK_ID).toBeUndefined();
   });
 
-  it("restarts when leaving a task context even if the live runtime can update models in place", async () => {
+  it("enters and leaves a task context on the live runtime, with per-turn task env, model and effort", async () => {
     const sessionKey = "agent:main:task-runtime-context-exit";
     sessions.set(sessionKey, {
       sessionKey,
       name: sessionKey,
       agentId: "main",
       agentCwd: "/tmp/ravi-test-bot/main",
-      modelOverride: "test-model",
+      modelOverride: "sonnet-test-model",
     });
     const dispatched = createDispatchedTaskForSession(sessionKey, {
       profileId: "task-doc-none",
       taskRuntimeOverride: {
-        model: "test-model",
+        model: "sonnet-task-model",
+        effort: "low",
       },
     });
     const setModelCalls: string[] = [];
-    const releaseRuntimes: Array<() => void> = [];
-    runtimeStartImpl = (providerId, request) => {
-      const lifetime = new Promise<void>((resolve) => {
-        releaseRuntimes.push(resolve);
-      });
-      return {
-        provider: providerId,
-        events: (async function* () {
-          await request.prompt.next();
+    const turns: Array<{ taskId?: string; model?: string; effort?: string }> = [];
+    let releaseRuntime: () => void = () => {};
+    const lifetime = new Promise<void>((resolve) => {
+      releaseRuntime = resolve;
+    });
+    runtimeStartImpl = (providerId, request) => ({
+      provider: providerId,
+      events: (async function* () {
+        while (turns.length < 2) {
+          const next = await request.prompt.next();
+          if (next.done) return;
+          turns.push({
+            taskId: request.env?.RAVI_TASK_ID,
+            model: (next.value as RuntimePromptMessage).runtimeOptions?.model,
+            effort: (next.value as RuntimePromptMessage).runtimeOptions?.effort,
+          });
           yield {
             type: "turn.complete",
             providerSessionId: `${providerId}-session`,
             usage: { inputTokens: 1, outputTokens: 1 },
           };
-          await lifetime;
-        })(),
-        interrupt: async () => {
-          releaseRuntimes.shift()?.();
-        },
-        setModel: async (model: string) => {
-          setModelCalls.push(model);
-        },
-      };
-    };
+        }
+        await lifetime;
+      })(),
+      interrupt: async () => {
+        releaseRuntime();
+      },
+      setModel: async (model: string) => {
+        setModelCalls.push(model);
+      },
+    });
 
     const bot = createBot();
     await (bot as any).handlePromptImmediate(sessionKey, {
@@ -1504,14 +1514,15 @@ describe("RaviBot runtime guards", () => {
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("normal turn"));
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(runtimeStartCalls).toHaveLength(2);
+    expect(runtimeStartCalls).toHaveLength(1);
     expect(setModelCalls).toEqual([]);
-    expect(runtimeStartCalls[0]?.env?.RAVI_TASK_ID).toBe(dispatched.task.id);
-    expect(runtimeStartCalls[1]?.env?.RAVI_TASK_ID).toBeUndefined();
+    expect(turns).toEqual([
+      { taskId: dispatched.task.id, model: "sonnet-task-model", effort: "low" },
+      // Leaving the task drops its model and effort overrides back to the session's.
+      { taskId: undefined, model: "sonnet-test-model", effort: "xhigh" },
+    ]);
 
-    for (const release of releaseRuntimes.splice(0)) {
-      release();
-    }
+    releaseRuntime();
     await bot.stop();
   });
 
@@ -1520,10 +1531,10 @@ describe("RaviBot runtime guards", () => {
     const dispatched = createDispatchedTaskForSession(sessionKey, {
       profileId: "task-doc-none",
       taskRuntimeOverride: {
-        model: "task-model",
+        model: "sonnet-task-model",
       },
       dispatchRuntimeOverride: {
-        model: "dispatch-model",
+        model: "sonnet-dispatch-model",
         thinking: "verbose",
       },
     });
@@ -1535,7 +1546,7 @@ describe("RaviBot runtime guards", () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(runtimeStartCalls[0]?.model).toBe("dispatch-model");
+    expect(runtimeStartCalls[0]?.model).toBe("sonnet-dispatch-model");
     expect(runtimeStartCalls[0]?.thinking).toBe("verbose");
   });
 
@@ -1639,7 +1650,7 @@ describe("RaviBot runtime guards", () => {
     await new Promise((resolve) => setTimeout(resolve, 40));
 
     expect(runtimeStartCalls).toHaveLength(1);
-    expect(runtimeStartCalls[0]?.model).toBe("test-model");
+    expect(runtimeStartCalls[0]?.model).toBe("sonnet-test-model");
     expect(interrupt).not.toHaveBeenCalled();
     expect(seenPrompts).toEqual([
       { provider: "codex", prompt: withWhatsAppSurfaceHint("first via codex") },
@@ -1673,12 +1684,12 @@ describe("RaviBot runtime guards", () => {
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("hello"));
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    const status = await (bot as any).applySessionModelChange(sessionKey, "test-model-2");
+    const status = await (bot as any).applySessionModelChange(sessionKey, "sonnet-test-model-2");
     const streaming = (bot as any).streamingSessions.get(sessionKey);
 
     expect(status).toBe("applied");
-    expect(setModelCalls).toEqual(["test-model-2"]);
-    expect(streaming?.currentModel).toBe("test-model-2");
+    expect(setModelCalls).toEqual(["sonnet-test-model-2"]);
+    expect(streaming?.currentModel).toBe("sonnet-test-model-2");
 
     releaseRuntime?.();
     await bot.stop();
@@ -2206,7 +2217,7 @@ describe("RaviBot streaming session lifecycle", () => {
     clearProviderSession.mockClear();
     activeProvider = "claude";
     resetRuntimeDoubles();
-    saveMessageImpl = () => {};
+    saveMessageImpl = () => true;
     agentCanImpl = () => true;
     canWithCapabilitiesImpl = (
       capabilities: Array<{ permission: string; objectType: string; objectId: string }>,
@@ -2269,7 +2280,7 @@ describe("RaviBot streaming session lifecycle", () => {
       sessionName,
       agentId: "main",
       provider: "claude",
-      model: "test-model",
+      model: "sonnet-test-model",
       requestBlobSha256: "sha-expired-boot-stop",
       originKind: "human",
       deliveryBarrier: "after_response",
@@ -2701,6 +2712,7 @@ describe("RaviBot streaming session lifecycle", () => {
 
   it("emits generated media on a native Slack backend turn without duplicating the backend-owned text", async () => {
     const sessionKey = "agent:main:generated-media-slack-backend";
+    const sessionName = "generated-media-slack-backend";
     const whatsappDefault = makeRuntimeGuardChat({
       suffix: "generated-media-backend-whatsapp-default",
       channel: "whatsapp",
@@ -2715,10 +2727,48 @@ describe("RaviBot streaming session lifecycle", () => {
       chatType: "thread",
     });
     attachMultiSurfaceOutputForSession({ sessionKey, defaultChat: whatsappDefault, sourceChat: slackSource });
+    actualRouterIndexModule.updateSessionName(sessionKey, sessionName);
+    getOrCreateSessionState(sessionKey, "main", "/tmp/ravi-test-bot/main", { name: sessionName });
     streamGeneratedImageTurn("texto do backend");
 
+    const target = {
+      channelKind: "slack",
+      connectionId: "slack-main",
+      conversationId: "CBACKEND~1781576000.010449",
+    };
+    const providerMessageId = "1781576000.010450";
+    const message = actualRouterDbModule.dbUpsertChatMessage({
+      chatId: slackSource.id,
+      channel: "slack",
+      instanceId: "slack-main",
+      providerMessageId,
+      rawChatId: "CBACKEND",
+      actorType: "unknown",
+      rawProvenance: { source: "slack.socket_mode", senderKind: "user" },
+    });
+    // Native backend metadata must refer to an accepted canonical human input.
+    const ingress = actualRouterDbModule.dbAcceptChannelBackendIngress({
+      channelInstanceId: "slack-main",
+      idempotencyKey: "generated-media-slack-backend",
+      requestFingerprint: "generated-media-slack-backend-fingerprint",
+      requestId: "request-generated-media-slack-backend",
+      localActorId: "slack-human",
+      agentId: "main",
+      clientMessageId: providerMessageId,
+      sessionKey,
+      sessionName,
+      turnId: "turn-generated-media-slack-backend",
+      external: { ...target, senderId: "UHUMAN", messageId: providerMessageId },
+      canonical: { chatId: slackSource.id, messageId: message.canonicalMessageId },
+      content: { text: "gera imagem no backend slack" },
+      receivedAt: Date.now(),
+    });
+    expect(ingress.status).toBe("accepted");
+    if (ingress.status === "conflict") throw new Error("Fixture ingress conflicted");
+    const receipt = ingress.receipt;
+
     const bot = createBot();
-    await (bot as any).handlePromptImmediate(sessionKey, {
+    await (bot as any).handlePromptImmediate(sessionName, {
       ...promptForChat("gera imagem no backend slack", slackSource),
       _channelBackend: {
         protocol: "ravi.channel.backend",
@@ -2726,23 +2776,19 @@ describe("RaviBot streaming session lifecycle", () => {
         ingressRequestId: "request-generated-media-slack-backend",
         correlationId: "correlation-generated-media-slack-backend",
         binding: {
-          channelInstanceId: "slack-main",
-          agentId: "main",
-          chatId: slackSource.id,
-          messageId: "message-generated-media-slack-backend",
-          sessionId: sessionKey,
-          turnId: "turn-generated-media-slack-backend",
+          channelInstanceId: receipt.channelInstanceId,
+          agentId: receipt.agentId,
+          chatId: receipt.chatId,
+          messageId: receipt.messageId,
+          sessionId: receipt.sessionName,
+          turnId: receipt.turnId,
         },
-        target: {
-          channelKind: "slack",
-          connectionId: "slack-main",
-          conversationId: "CBACKEND",
-        },
+        target,
       },
     });
-    await waitFor(() => emittedEvents.some((entry) => entry.topic === `ravi.session.${sessionKey}.response`));
+    await waitFor(() => emittedEvents.some((entry) => entry.topic === `ravi.session.${sessionName}.response`));
 
-    const responses = emittedEvents.filter((entry) => entry.topic === `ravi.session.${sessionKey}.response`);
+    const responses = emittedEvents.filter((entry) => entry.topic === `ravi.session.${sessionName}.response`);
     expect(responses).toHaveLength(1);
     expect(responses[0]?.data).toMatchObject({
       response: "",

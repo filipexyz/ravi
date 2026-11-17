@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * prox calls — CLI commands for prox.city voice follow-up capability.
  *
@@ -227,11 +228,14 @@ function failCallProfileNotFound(
 ): never {
   const candidates = readOnlyCandidates ?? listCallProfiles().flatMap((profile) => [profile.id, profile.name]);
   contractFail(op, "CALL_PROFILE_NOT_FOUND", `Call profile not found: ${profileId}`, {
-    asJson,
-    details: {
-      suggestedAction: "List call profiles with `ravi prox calls profiles list --json`",
-      suggestions: suggestSimilar(profileId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "List call profiles with `ravi prox calls profiles list --json`",
+        suggestions: suggestSimilar(profileId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Call profile not found: ${profileId}`, { operation: op }),
   });
 }
 
@@ -241,53 +245,68 @@ function failCallProfileNotFound(
  */
 function failCallRequestNotFound(op: string, callRequestId: string, asJson?: boolean): never {
   contractFail(op, "CALL_REQUEST_NOT_FOUND", `Call request not found: ${callRequestId}`, {
-    asJson,
-    details: {
-      suggestedAction:
-        "Use the cr_* id returned by `ravi prox calls request` (or found in `ravi prox calls events <id> --json`)",
+    ...{
+      asJson,
+      details: {
+        suggestedAction:
+          "Use the cr_* id returned by `ravi prox calls request` (or found in `ravi prox calls events <id> --json`)",
+      },
     },
+    diagnostic: errorDiagnostic(`Call request not found: ${callRequestId}`, { operation: op }),
   });
 }
 
 function failCallTranscriptNotFound(op: string, callRequestId: string, asJson?: boolean): never {
   contractFail(op, "TRANSCRIPT_NOT_FOUND", `No transcript found for call request: ${callRequestId}`, {
-    asJson,
-    details: {
-      retryable: true,
-      suggestedAction:
-        "For ElevenLabs profiles retry with --sync; Agora transcripts arrive through the provider webhook (event 103)",
+    ...{
+      asJson,
+      details: {
+        retryable: true,
+        suggestedAction:
+          "For ElevenLabs profiles retry with --sync; Agora transcripts arrive through the provider webhook (event 103)",
+      },
     },
+    diagnostic: errorDiagnostic(`No transcript found for call request: ${callRequestId}`, { operation: op }),
   });
 }
 
 function failVoiceAgentNotFound(op: string, voiceAgentId: string, asJson?: boolean): never {
   const candidates = listCallVoiceAgents().flatMap((agent) => [agent.id, agent.name]);
   contractFail(op, "VOICE_AGENT_NOT_FOUND", `Voice agent not found: ${voiceAgentId}`, {
-    asJson,
-    details: {
-      suggestedAction: "List voice agents with `ravi prox calls voice-agents list --json`",
-      suggestions: suggestSimilar(voiceAgentId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "List voice agents with `ravi prox calls voice-agents list --json`",
+        suggestions: suggestSimilar(voiceAgentId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Voice agent not found: ${voiceAgentId}`, { operation: op }),
   });
 }
 
 function failCallToolNotFound(op: string, toolId: string, asJson?: boolean): never {
   const candidates = listCallTools().flatMap((tool) => [tool.id, tool.name]);
   contractFail(op, "CALL_TOOL_NOT_FOUND", `Tool not found: ${toolId}`, {
-    asJson,
-    details: {
-      suggestedAction: "List call tools with `ravi prox calls tools list --json`",
-      suggestions: suggestSimilar(toolId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "List call tools with `ravi prox calls tools list --json`",
+        suggestions: suggestSimilar(toolId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Tool not found: ${toolId}`, { operation: op }),
   });
 }
 
 function failToolBindingNotFound(op: string, toolId: string, scope: string, scopeId: string, asJson?: boolean): never {
   contractFail(op, "TOOL_BINDING_NOT_FOUND", `No binding found for tool ${toolId} on ${scope} ${scopeId}`, {
-    asJson,
-    details: {
-      suggestedAction: `Inspect current bindings with \`ravi prox calls ${scope === "voice_agent" ? "voice-agents show" : "profiles show"} ${scopeId} --json\``,
+    ...{
+      asJson,
+      details: {
+        suggestedAction: `Inspect current bindings with \`ravi prox calls ${scope === "voice_agent" ? "voice-agents show" : "profiles show"} ${scopeId} --json\``,
+      },
     },
+    diagnostic: errorDiagnostic(`No binding found for tool ${toolId} on ${scope} ${scopeId}`, { operation: op }),
   });
 }
 
@@ -693,10 +712,13 @@ export class ProxCallsCommands {
     }
     if (inspection.profile && !inspection.profile.enabled) {
       contractFail("prox calls request", "CALL_PROFILE_DISABLED", `Call profile is disabled: ${profileId}`, {
-        asJson,
-        details: {
-          suggestedAction: `Enable '${profileId}' before requesting a call.`,
+        ...{
+          asJson,
+          details: {
+            suggestedAction: `Enable '${profileId}' before requesting a call.`,
+          },
         },
+        diagnostic: errorDiagnostic(reason, { operation: "prox calls request" }),
       });
     }
     const dynamicVariables = parseDynamicVariableOptions(dynamicVars);

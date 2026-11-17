@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Knowledge Commands - search what the org said and published, with sources.
  *
@@ -657,7 +658,12 @@ function rendered<T>(fn: () => T): T {
 }
 
 function usage(op: string, message: string, asJson: boolean): never {
-  return rendered(() => contractFail(op, "USAGE_ERROR", message, { asJson, exitCode: CONTRACT_EXIT_USAGE }));
+  return rendered(() =>
+    contractFail(op, "USAGE_ERROR", message, {
+      ...{ asJson, exitCode: CONTRACT_EXIT_USAGE },
+      diagnostic: errorDiagnostic(message, { operation: op }),
+    }),
+  );
 }
 
 function dryRun(op: string, plan: Record<string, unknown>, asJson: boolean): never {

@@ -18,6 +18,7 @@ import {
   CHANNEL_BACKEND_SCHEMA_VERSION,
   ChannelOutputSinkRegistry,
   resumePendingChannelIngressPublications,
+  startChannelBackendPublicationReconciler,
   setChannelBackendPromptPublisherForTests,
   type ChannelBackendPromptPublisher,
   type ChannelIngressRequest,
@@ -32,6 +33,12 @@ import {
   readChannelRuntime,
   type KnownChannelRuntimeEvent,
 } from "./runtime-events.js";
+import {
+  CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+  ChannelOutputHandoffError,
+  createChannelOutputHandoffIdentity,
+  type ChannelOutputEmissionContext,
+} from "./output-handoff.js";
 
 let stateDir: string | null = null;
 
@@ -351,6 +358,32 @@ describe("channel backend ingress", () => {
     });
   });
 
+  it("rejects a resolved session owned by another agent before saving a receipt", async () => {
+    dbCreateAgent({ id: "agent-b", name: "Agent B", cwd: "/tmp/ravi-channel-agent-b" });
+    const resolved = resolvedRequest();
+    const publishPrompt = mock(
+      async (_sessionName: string, _payload: Record<string, unknown>, _options?: { messageId?: string }) => {},
+    );
+
+    const rejected = await acceptResolvedChannelIngress(
+      { ...resolved, request: { ...resolved.request, agentId: "agent-b" } },
+      { publishPrompt },
+    );
+
+    expect(rejected).toMatchObject({
+      disposition: "rejected",
+      error: { code: "INVALID_REQUEST", retryable: false },
+    });
+    expect(dbGetChannelBackendIngressReceipt("channel-instance-a", "resolved-idempotency-a")).toBeNull();
+    expect(publishPrompt).not.toHaveBeenCalled();
+
+    // Once routing is corrected, the same message is accepted, not an
+    // IDEMPOTENCY_CONFLICT left behind by the rejected attempt.
+    const accepted = await acceptResolvedChannelIngress(resolved, { publishPrompt });
+    expect(accepted).toMatchObject({ disposition: "accepted" });
+    expect(publishPrompt).toHaveBeenCalledTimes(1);
+  });
+
   it("resumes a durable resolved prompt after publication failure and process restart", async () => {
     const rejected = await acceptResolvedChannelIngress(resolvedRequest(), {
       publishPrompt: async () => {
@@ -414,6 +447,118 @@ describe("channel backend output sinks", () => {
 
     unregister();
     expect(await registry.tryEmit(envelope)).toBe(false);
+  });
+
+  it("forwards the restriction through both entry points and rejects unknown capability before invocation", async () => {
+    const registry = new ChannelOutputSinkRegistry();
+    const envelope = outputEnvelope();
+    const context = {
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      expectedRequestFingerprint: "a".repeat(64),
+    };
+    const generic = mock(async () => {});
+    const unregister = registry.register(envelope.target, { emit: generic });
+    await expect(registry.emit(envelope, context)).rejects.toMatchObject({
+      evidence: {
+        disposition: "not_started",
+        code: "UNSUPPORTED_CAPABILITY",
+      },
+    });
+    await expect(registry.tryEmit(envelope, context)).rejects.toMatchObject({
+      evidence: {
+        disposition: "not_started",
+        code: "UNSUPPORTED_CAPABILITY",
+      },
+    });
+    expect(generic).not.toHaveBeenCalled();
+    unregister();
+    const restrictions: Array<ChannelOutputEmissionContext | undefined> = [];
+    registry.register(envelope.target, {
+      handoffCapability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      async emit(_output, restriction) {
+        restrictions.push(restriction);
+      },
+    });
+    await expect(registry.emit(envelope, context)).resolves.toBeUndefined();
+    await expect(registry.tryEmit(envelope, context)).resolves.toBe(true);
+    expect(restrictions).toEqual([context, context]);
+  });
+
+  it.each([
+    ["without a restriction", "a".repeat(64), undefined],
+    ["with a matching fingerprint", "a".repeat(64), "a".repeat(64)],
+    ["with a mismatching fingerprint", "b".repeat(64), "a".repeat(64)],
+  ] as const)(
+    "preserves unfinished unknown evidence %s",
+    async (_name, requestFingerprint, expectedRequestFingerprint) => {
+      const registry = new ChannelOutputSinkRegistry();
+      const envelope = outputEnvelope();
+      const evidence = {
+        capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+        schemaVersion: 1 as const,
+        identity: createChannelOutputHandoffIdentity(envelope),
+        idempotencyKey: envelope.outputId,
+        requestFingerprint,
+        disposition: "unknown" as const,
+        operationFinished: false,
+        code: "OUTCOME_UNKNOWN" as const,
+      };
+      const context =
+        expectedRequestFingerprint === undefined
+          ? undefined
+          : {
+              capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+              expectedRequestFingerprint,
+            };
+      const restrictions: Array<ChannelOutputEmissionContext | undefined> = [];
+      registry.register(envelope.target, {
+        handoffCapability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+        async emit(_output, restriction) {
+          restrictions.push(restriction);
+          throw new ChannelOutputHandoffError(evidence);
+        },
+      });
+
+      for (const method of ["emit", "tryEmit"] as const) {
+        await expect(registry[method](envelope, context)).rejects.toHaveProperty("evidence", evidence);
+      }
+      expect(restrictions).toEqual([context, context]);
+      expect(context?.expectedRequestFingerprint).toBe(expectedRequestFingerprint);
+    },
+  );
+
+  it("normalizes a finished pre-save fingerprint mismatch to conflict", async () => {
+    const registry = new ChannelOutputSinkRegistry();
+    const envelope = outputEnvelope();
+    const evidence = {
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      schemaVersion: 1 as const,
+      identity: createChannelOutputHandoffIdentity(envelope),
+      idempotencyKey: envelope.outputId,
+      requestFingerprint: "b".repeat(64),
+      disposition: "finished_pre_save_missing" as const,
+      operationFinished: true as const,
+      code: "SQLITE_BUSY" as const,
+    };
+    const context = {
+      capability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      expectedRequestFingerprint: "a".repeat(64),
+    };
+    registry.register(envelope.target, {
+      handoffCapability: CHANNEL_OUTPUT_HANDOFF_CAPABILITY,
+      async emit() {
+        throw new ChannelOutputHandoffError(evidence);
+      },
+    });
+
+    for (const method of ["emit", "tryEmit"] as const) {
+      await expect(registry[method](envelope, context)).rejects.toHaveProperty("evidence", {
+        ...evidence,
+        disposition: "conflict",
+        code: "REQUEST_FINGERPRINT_CONFLICT",
+      });
+    }
+    expect(context.expectedRequestFingerprint).toBe("a".repeat(64));
   });
 });
 
@@ -551,3 +696,47 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
   }
   throw new Error("condition was not reached");
 }
+
+describe("channel backend publication drain", () => {
+  it("stops the timer and awaits already admitted publication without re-running queued work", async () => {
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let tick!: () => void;
+    const reconcile = mock(async () => {
+      await pending;
+      return { scanned: 1, published: 1, busy: 0, failed: 0 };
+    });
+    const cancel = mock(() => {});
+    const stop = startChannelBackendPublicationReconciler({
+      reconcile,
+      clearInterval: cancel,
+      setInterval: (callback) => {
+        tick = callback;
+        return {} as ReturnType<typeof setInterval>;
+      },
+    });
+    let drained = false;
+    const stopping = stop().then(() => {
+      drained = true;
+    });
+    tick();
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(reconcile).toHaveBeenCalledTimes(1);
+    await Promise.resolve();
+    expect(drained).toBe(false);
+    finish();
+    await stopping;
+    expect(drained).toBe(true);
+  });
+
+  it("blocks proof when reconciliation catches a failed record", async () => {
+    const stop = startChannelBackendPublicationReconciler({
+      reconcile: async () => ({ scanned: 1, published: 0, busy: 0, failed: 1 }),
+      setInterval: () => ({}) as ReturnType<typeof setInterval>,
+      clearInterval: () => {},
+    });
+    await expect(stop()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
+  });
+});

@@ -34,6 +34,7 @@ class RaviClient {
   CrmNamespace get crm => CrmNamespace(_transport);
   CronNamespace get cron => CronNamespace(_transport);
   DaemonNamespace get daemon => DaemonNamespace(_transport);
+  DecisionsNamespace get decisions => DecisionsNamespace(_transport);
   DevinNamespace get devin => DevinNamespace(_transport);
   EvalNamespace get eval => EvalNamespace(_transport);
   FeedbackNamespace get feedback => FeedbackNamespace(_transport);
@@ -55,6 +56,7 @@ class RaviClient {
   ObserversNamespace get observers => ObserversNamespace(_transport);
   PagesNamespace get pages => PagesNamespace(_transport);
   PermissionsNamespace get permissions => PermissionsNamespace(_transport);
+  PrNamespace get pr => PrNamespace(_transport);
   ProjectsNamespace get projects => ProjectsNamespace(_transport);
   ProxNamespace get prox => ProxNamespace(_transport);
   ReactNamespace get react => ReactNamespace(_transport);
@@ -65,6 +67,7 @@ class RaviClient {
   SelfNamespace get self => SelfNamespace(_transport);
   SessionsNamespace get sessions => SessionsNamespace(_transport);
   SettingsNamespace get settings => SettingsNamespace(_transport);
+  SignalsNamespace get signals => SignalsNamespace(_transport);
   SkillGatesNamespace get skillGates => SkillGatesNamespace(_transport);
   SkillsNamespace get skills => SkillsNamespace(_transport);
   SlackNamespace get slack => SlackNamespace(_transport);
@@ -1230,6 +1233,20 @@ class BasesRowsNamespace {
     );
   }
 
+  Future<BasesRowsApproveReturn> approve(String base, String row, String prop, [BasesRowsApproveOptions options = const BasesRowsApproveOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["row"] = RaviJson.from(row);
+    requestBody["prop"] = RaviJson.from(prop);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "rows"],
+      command: "approve",
+      body: requestBody,
+      decode: basesRowsApproveReturnFromJson,
+    );
+  }
+
   Future<BasesRowsArchiveReturn> archive(String base, String row, [BasesRowsArchiveOptions options = const BasesRowsArchiveOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["base"] = RaviJson.from(base);
@@ -1252,6 +1269,20 @@ class BasesRowsNamespace {
       command: "export",
       body: requestBody,
       decode: basesRowsExportReturnFromJson,
+    );
+  }
+
+  Future<BasesRowsFillReturn> fill(String base, String row, String prop, [BasesRowsFillOptions options = const BasesRowsFillOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["row"] = RaviJson.from(row);
+    requestBody["prop"] = RaviJson.from(prop);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "rows"],
+      command: "fill",
+      body: requestBody,
+      decode: basesRowsFillReturnFromJson,
     );
   }
 
@@ -1316,6 +1347,48 @@ class BasesRowsNamespace {
       command: "query",
       body: requestBody,
       decode: basesRowsQueryReturnFromJson,
+    );
+  }
+
+  Future<BasesRowsRejectReturn> reject(String base, String row, String prop, [BasesRowsRejectOptions options = const BasesRowsRejectOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["row"] = RaviJson.from(row);
+    requestBody["prop"] = RaviJson.from(prop);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "rows"],
+      command: "reject",
+      body: requestBody,
+      decode: basesRowsRejectReturnFromJson,
+    );
+  }
+
+  Future<BasesRowsRequestApprovalReturn> requestApproval(String base, String row, String prop, [BasesRowsRequestApprovalOptions options = const BasesRowsRequestApprovalOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["row"] = RaviJson.from(row);
+    requestBody["prop"] = RaviJson.from(prop);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "rows"],
+      command: "request-approval",
+      body: requestBody,
+      decode: basesRowsRequestApprovalReturnFromJson,
+    );
+  }
+
+  Future<BasesRowsRerunReturn> rerun(String base, String row, String prop, [BasesRowsRerunOptions options = const BasesRowsRerunOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["row"] = RaviJson.from(row);
+    requestBody["prop"] = RaviJson.from(prop);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "rows"],
+      command: "rerun",
+      body: requestBody,
+      decode: basesRowsRerunReturnFromJson,
     );
   }
 
@@ -1412,6 +1485,19 @@ class BasesViewsNamespace {
       command: "query",
       body: requestBody,
       decode: basesViewsQueryReturnFromJson,
+    );
+  }
+
+  Future<BasesViewsShareReturn> share(String base, String view, [BasesViewsShareOptions options = const BasesViewsShareOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["base"] = RaviJson.from(base);
+    requestBody["view"] = RaviJson.from(view);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["bases", "views"],
+      command: "share",
+      body: requestBody,
+      decode: basesViewsShareReturnFromJson,
     );
   }
 
@@ -2053,9 +2139,224 @@ class CloudNamespace {
 
   final RaviTransport _transport;
 
+  CloudAgentsNamespace get agents => CloudAgentsNamespace(_transport);
+
+  CloudCatalogNamespace get catalog => CloudCatalogNamespace(_transport);
+
+  CloudCreditsNamespace get credits => CloudCreditsNamespace(_transport);
+
+  CloudKeyNamespace get key => CloudKeyNamespace(_transport);
+
   CloudProjectsNamespace get projects => CloudProjectsNamespace(_transport);
 
+  CloudRunsNamespace get runs => CloudRunsNamespace(_transport);
+
+  CloudSchedulesNamespace get schedules => CloudSchedulesNamespace(_transport);
+
   CloudScopeNamespace get scope => CloudScopeNamespace(_transport);
+
+  CloudSecretsNamespace get secrets => CloudSecretsNamespace(_transport);
+
+  CloudSettingsNamespace get settings => CloudSettingsNamespace(_transport);
+
+  CloudTriggersNamespace get triggers => CloudTriggersNamespace(_transport);
+
+  CloudWebhookNamespace get webhook => CloudWebhookNamespace(_transport);
+
+  CloudWorkerNamespace get worker => CloudWorkerNamespace(_transport);
+}
+
+class CloudAgentsNamespace {
+  const CloudAgentsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<CloudAgentsApproveReturn> approve(String agent, [CloudAgentsApproveOptions options = const CloudAgentsApproveOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["agent"] = RaviJson.from(agent);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "agents"],
+      command: "approve",
+      body: requestBody,
+      decode: cloudAgentsApproveReturnFromJson,
+    );
+  }
+
+  Future<CloudAgentsArchiveReturn> archive(String agent, [CloudAgentsArchiveOptions options = const CloudAgentsArchiveOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["agent"] = RaviJson.from(agent);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "agents"],
+      command: "archive",
+      body: requestBody,
+      decode: cloudAgentsArchiveReturnFromJson,
+    );
+  }
+
+  Future<CloudAgentsCapReturn> cap(String agent, String usd, [CloudAgentsCapOptions options = const CloudAgentsCapOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["agent"] = RaviJson.from(agent);
+    requestBody["usd"] = RaviJson.from(usd);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "agents"],
+      command: "cap",
+      body: requestBody,
+      decode: cloudAgentsCapReturnFromJson,
+    );
+  }
+
+  Future<CloudAgentsDeployReturn> deploy(String agent, [CloudAgentsDeployOptions options = const CloudAgentsDeployOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["agent"] = RaviJson.from(agent);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "agents"],
+      command: "deploy",
+      body: requestBody,
+      decode: cloudAgentsDeployReturnFromJson,
+    );
+  }
+
+  Future<CloudAgentsListReturn> list([CloudAgentsListOptions options = const CloudAgentsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "agents"],
+      command: "list",
+      body: requestBody,
+      decode: cloudAgentsListReturnFromJson,
+    );
+  }
+
+  Future<CloudAgentsMemoryResetReturn> memoryReset(String agent, [CloudAgentsMemoryResetOptions options = const CloudAgentsMemoryResetOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["agent"] = RaviJson.from(agent);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "agents"],
+      command: "memory-reset",
+      body: requestBody,
+      decode: cloudAgentsMemoryResetReturnFromJson,
+    );
+  }
+
+  Future<CloudAgentsShowReturn> show(String agent, [CloudAgentsShowOptions options = const CloudAgentsShowOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["agent"] = RaviJson.from(agent);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "agents"],
+      command: "show",
+      body: requestBody,
+      decode: cloudAgentsShowReturnFromJson,
+    );
+  }
+}
+
+class CloudCatalogNamespace {
+  const CloudCatalogNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  CloudCatalogPacksNamespace get packs => CloudCatalogPacksNamespace(_transport);
+
+  Future<CloudCatalogInstallReturn> install(String entry, [CloudCatalogInstallOptions options = const CloudCatalogInstallOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["entry"] = RaviJson.from(entry);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "catalog"],
+      command: "install",
+      body: requestBody,
+      decode: cloudCatalogInstallReturnFromJson,
+    );
+  }
+
+  Future<CloudCatalogListReturn> list([CloudCatalogListOptions options = const CloudCatalogListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "catalog"],
+      command: "list",
+      body: requestBody,
+      decode: cloudCatalogListReturnFromJson,
+    );
+  }
+}
+
+class CloudCatalogPacksNamespace {
+  const CloudCatalogPacksNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<CloudCatalogPacksInstallReturn> install(String pack, [CloudCatalogPacksInstallOptions options = const CloudCatalogPacksInstallOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["pack"] = RaviJson.from(pack);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "catalog", "packs"],
+      command: "install",
+      body: requestBody,
+      decode: cloudCatalogPacksInstallReturnFromJson,
+    );
+  }
+}
+
+class CloudCreditsNamespace {
+  const CloudCreditsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<CloudCreditsShowReturn> show() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["cloud", "credits"],
+      command: "show",
+      body: requestBody,
+      decode: cloudCreditsShowReturnFromJson,
+    );
+  }
+
+  Future<CloudCreditsTopupReturn> topup(String amount, [CloudCreditsTopupOptions options = const CloudCreditsTopupOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["amount"] = RaviJson.from(amount);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "credits"],
+      command: "topup",
+      body: requestBody,
+      decode: cloudCreditsTopupReturnFromJson,
+    );
+  }
+}
+
+class CloudKeyNamespace {
+  const CloudKeyNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<CloudKeyRemoveReturn> remove() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["cloud", "key"],
+      command: "remove",
+      body: requestBody,
+      decode: cloudKeyRemoveReturnFromJson,
+    );
+  }
+
+  Future<CloudKeyStatusReturn> status() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["cloud", "key"],
+      command: "status",
+      body: requestBody,
+      decode: cloudKeyStatusReturnFromJson,
+    );
+  }
 }
 
 class CloudProjectsNamespace {
@@ -2083,6 +2384,175 @@ class CloudProjectsNamespace {
       command: "list",
       body: requestBody,
       decode: cloudProjectsListReturnFromJson,
+    );
+  }
+}
+
+class CloudRunsNamespace {
+  const CloudRunsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<CloudRunsAnswerReturn> answer(String run, String question, String text, [CloudRunsAnswerOptions options = const CloudRunsAnswerOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["run"] = RaviJson.from(run);
+    requestBody["question"] = RaviJson.from(question);
+    requestBody["text"] = RaviJson.from(text);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "runs"],
+      command: "answer",
+      body: requestBody,
+      decode: cloudRunsAnswerReturnFromJson,
+    );
+  }
+
+  Future<CloudRunsApproveReturn> approve(String run, String approval, [CloudRunsApproveOptions options = const CloudRunsApproveOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["run"] = RaviJson.from(run);
+    requestBody["approval"] = RaviJson.from(approval);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "runs"],
+      command: "approve",
+      body: requestBody,
+      decode: cloudRunsApproveReturnFromJson,
+    );
+  }
+
+  Future<CloudRunsDenyReturn> deny(String run, String approval, [CloudRunsDenyOptions options = const CloudRunsDenyOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["run"] = RaviJson.from(run);
+    requestBody["approval"] = RaviJson.from(approval);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "runs"],
+      command: "deny",
+      body: requestBody,
+      decode: cloudRunsDenyReturnFromJson,
+    );
+  }
+
+  Future<CloudRunsListReturn> list([CloudRunsListOptions options = const CloudRunsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "runs"],
+      command: "list",
+      body: requestBody,
+      decode: cloudRunsListReturnFromJson,
+    );
+  }
+
+  Future<CloudRunsOutputsReturn> outputs(String run, [CloudRunsOutputsOptions options = const CloudRunsOutputsOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["run"] = RaviJson.from(run);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "runs"],
+      command: "outputs",
+      body: requestBody,
+      decode: cloudRunsOutputsReturnFromJson,
+    );
+  }
+
+  Future<CloudRunsReplyReturn> reply(String run, String text, [CloudRunsReplyOptions options = const CloudRunsReplyOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["run"] = RaviJson.from(run);
+    requestBody["text"] = RaviJson.from(text);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "runs"],
+      command: "reply",
+      body: requestBody,
+      decode: cloudRunsReplyReturnFromJson,
+    );
+  }
+
+  Future<CloudRunsShowReturn> show(String run) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["run"] = RaviJson.from(run);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "runs"],
+      command: "show",
+      body: requestBody,
+      decode: cloudRunsShowReturnFromJson,
+    );
+  }
+
+  Future<CloudRunsStartReturn> start(String agent, String prompt, [CloudRunsStartOptions options = const CloudRunsStartOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["agent"] = RaviJson.from(agent);
+    requestBody["prompt"] = RaviJson.from(prompt);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "runs"],
+      command: "start",
+      body: requestBody,
+      decode: cloudRunsStartReturnFromJson,
+    );
+  }
+
+  Future<CloudRunsStopReturn> stop(String run) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["run"] = RaviJson.from(run);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "runs"],
+      command: "stop",
+      body: requestBody,
+      decode: cloudRunsStopReturnFromJson,
+    );
+  }
+}
+
+class CloudSchedulesNamespace {
+  const CloudSchedulesNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<CloudSchedulesAddReturn> add(String agent, [CloudSchedulesAddOptions options = const CloudSchedulesAddOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["agent"] = RaviJson.from(agent);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "schedules"],
+      command: "add",
+      body: requestBody,
+      decode: cloudSchedulesAddReturnFromJson,
+    );
+  }
+
+  Future<CloudSchedulesListReturn> list([CloudSchedulesListOptions options = const CloudSchedulesListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "schedules"],
+      command: "list",
+      body: requestBody,
+      decode: cloudSchedulesListReturnFromJson,
+    );
+  }
+
+  Future<CloudSchedulesRemoveReturn> remove(String id) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "schedules"],
+      command: "remove",
+      body: requestBody,
+      decode: cloudSchedulesRemoveReturnFromJson,
+    );
+  }
+
+  Future<CloudSchedulesUpdateReturn> update(String id, [CloudSchedulesUpdateOptions options = const CloudSchedulesUpdateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "schedules"],
+      command: "update",
+      body: requestBody,
+      decode: cloudSchedulesUpdateReturnFromJson,
     );
   }
 }
@@ -2133,6 +2603,197 @@ class CloudScopeNamespace {
       command: "show",
       body: requestBody,
       decode: cloudScopeShowReturnFromJson,
+    );
+  }
+}
+
+class CloudSecretsNamespace {
+  const CloudSecretsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<CloudSecretsListReturn> list([CloudSecretsListOptions options = const CloudSecretsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "secrets"],
+      command: "list",
+      body: requestBody,
+      decode: cloudSecretsListReturnFromJson,
+    );
+  }
+
+  Future<CloudSecretsRemoveReturn> remove(String secret, [CloudSecretsRemoveOptions options = const CloudSecretsRemoveOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["secret"] = RaviJson.from(secret);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "secrets"],
+      command: "remove",
+      body: requestBody,
+      decode: cloudSecretsRemoveReturnFromJson,
+    );
+  }
+}
+
+class CloudSettingsNamespace {
+  const CloudSettingsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<CloudSettingsSetReturn> set_([CloudSettingsSetOptions options = const CloudSettingsSetOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "settings"],
+      command: "set",
+      body: requestBody,
+      decode: cloudSettingsSetReturnFromJson,
+    );
+  }
+
+  Future<CloudSettingsShowReturn> show() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["cloud", "settings"],
+      command: "show",
+      body: requestBody,
+      decode: cloudSettingsShowReturnFromJson,
+    );
+  }
+}
+
+class CloudTriggersNamespace {
+  const CloudTriggersNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<CloudTriggersCreateReturn> create(String agent, [CloudTriggersCreateOptions options = const CloudTriggersCreateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["agent"] = RaviJson.from(agent);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "triggers"],
+      command: "create",
+      body: requestBody,
+      decode: cloudTriggersCreateReturnFromJson,
+    );
+  }
+
+  Future<CloudTriggersListReturn> list([CloudTriggersListOptions options = const CloudTriggersListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "triggers"],
+      command: "list",
+      body: requestBody,
+      decode: cloudTriggersListReturnFromJson,
+    );
+  }
+
+  Future<CloudTriggersRemoveReturn> remove(String id) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "triggers"],
+      command: "remove",
+      body: requestBody,
+      decode: cloudTriggersRemoveReturnFromJson,
+    );
+  }
+
+  Future<CloudTriggersTestReturn> test(String id) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "triggers"],
+      command: "test",
+      body: requestBody,
+      decode: cloudTriggersTestReturnFromJson,
+    );
+  }
+
+  Future<CloudTriggersUpdateReturn> update(String id, [CloudTriggersUpdateOptions options = const CloudTriggersUpdateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "triggers"],
+      command: "update",
+      body: requestBody,
+      decode: cloudTriggersUpdateReturnFromJson,
+    );
+  }
+}
+
+class CloudWebhookNamespace {
+  const CloudWebhookNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<CloudWebhookRemoveReturn> remove() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["cloud", "webhook"],
+      command: "remove",
+      body: requestBody,
+      decode: cloudWebhookRemoveReturnFromJson,
+    );
+  }
+
+  Future<CloudWebhookShowReturn> show() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["cloud", "webhook"],
+      command: "show",
+      body: requestBody,
+      decode: cloudWebhookShowReturnFromJson,
+    );
+  }
+}
+
+class CloudWorkerNamespace {
+  const CloudWorkerNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  CloudWorkerKeyNamespace get key => CloudWorkerKeyNamespace(_transport);
+
+  Future<CloudWorkerDisableReturn> disable() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["cloud", "worker"],
+      command: "disable",
+      body: requestBody,
+      decode: cloudWorkerDisableReturnFromJson,
+    );
+  }
+
+  Future<CloudWorkerListReturn> list([CloudWorkerListOptions options = const CloudWorkerListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "worker"],
+      command: "list",
+      body: requestBody,
+      decode: cloudWorkerListReturnFromJson,
+    );
+  }
+}
+
+class CloudWorkerKeyNamespace {
+  const CloudWorkerKeyNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<CloudWorkerKeyRemoveReturn> remove(String workerId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["workerId"] = RaviJson.from(workerId);
+    return _transport.callJson(
+      groupSegments: const ["cloud", "worker", "key"],
+      command: "remove",
+      body: requestBody,
+      decode: cloudWorkerKeyRemoveReturnFromJson,
     );
   }
 }
@@ -2397,6 +3058,18 @@ class ContactsNamespace {
     );
   }
 
+  Future<ContactsLinkAgentReturn> linkAgent(String agent, [ContactsLinkAgentOptions options = const ContactsLinkAgentOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["agent"] = RaviJson.from(agent);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["contacts"],
+      command: "link-agent",
+      body: requestBody,
+      decode: contactsLinkAgentReturnFromJson,
+    );
+  }
+
   Future<ContactsListReturn> list([ContactsListOptions options = const ContactsListOptions()]) async {
     final requestBody = <String, RaviJson>{};
     options.encodeBody(requestBody);
@@ -2617,6 +3290,17 @@ class ContextNamespace {
       command: "authorize",
       body: requestBody,
       decode: contextAuthorizeReturnFromJson,
+    );
+  }
+
+  Future<ContextBridgeToolHookReturn> bridgeToolHook([ContextBridgeToolHookOptions options = const ContextBridgeToolHookOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["context"],
+      command: "bridge-tool-hook",
+      body: requestBody,
+      decode: contextBridgeToolHookReturnFromJson,
     );
   }
 
@@ -2887,6 +3571,30 @@ class CredentialsNamespace {
   CredentialsConnectionsNamespace get connections => CredentialsConnectionsNamespace(_transport);
 
   CredentialsPoliciesNamespace get policies => CredentialsPoliciesNamespace(_transport);
+
+  Future<CredentialsRequestReturn> request(String target, [CredentialsRequestOptions options = const CredentialsRequestOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["target"] = RaviJson.from(target);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["credentials"],
+      command: "request",
+      body: requestBody,
+      decode: credentialsRequestReturnFromJson,
+    );
+  }
+
+  Future<CredentialsRequestStatusReturn> requestStatus(String target, String requestId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["target"] = RaviJson.from(target);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    return _transport.callJson(
+      groupSegments: const ["credentials"],
+      command: "request-status",
+      body: requestBody,
+      decode: credentialsRequestStatusReturnFromJson,
+    );
+  }
 }
 
 class CredentialsConnectionsNamespace {
@@ -3748,6 +4456,81 @@ class DaemonNamespace {
       command: "uninstall",
       body: requestBody,
       decode: daemonUninstallReturnFromJson,
+    );
+  }
+}
+
+class DecisionsNamespace {
+  const DecisionsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<DecisionsAnswerReturn> answer(String id, [DecisionsAnswerOptions options = const DecisionsAnswerOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["decisions"],
+      command: "answer",
+      body: requestBody,
+      decode: decisionsAnswerReturnFromJson,
+    );
+  }
+
+  Future<DecisionsAskReturn> ask([DecisionsAskOptions options = const DecisionsAskOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["decisions"],
+      command: "ask",
+      body: requestBody,
+      decode: decisionsAskReturnFromJson,
+    );
+  }
+
+  Future<DecisionsListReturn> list([DecisionsListOptions options = const DecisionsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["decisions"],
+      command: "list",
+      body: requestBody,
+      decode: decisionsListReturnFromJson,
+    );
+  }
+
+  Future<DecisionsResolveDeliveryReturn> resolveDelivery(String id, [DecisionsResolveDeliveryOptions options = const DecisionsResolveDeliveryOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["decisions"],
+      command: "resolve-delivery",
+      body: requestBody,
+      decode: decisionsResolveDeliveryReturnFromJson,
+    );
+  }
+
+  Future<DecisionsRetryReturn> retry(String id, [DecisionsRetryOptions options = const DecisionsRetryOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["decisions"],
+      command: "retry",
+      body: requestBody,
+      decode: decisionsRetryReturnFromJson,
+    );
+  }
+
+  Future<DecisionsShowReturn> show(String id) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["id"] = RaviJson.from(id);
+    return _transport.callJson(
+      groupSegments: const ["decisions"],
+      command: "show",
+      body: requestBody,
+      decode: decisionsShowReturnFromJson,
     );
   }
 }
@@ -6107,6 +6890,23 @@ class PermissionsNamespace {
   }
 }
 
+class PrNamespace {
+  const PrNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<PrPublishReturn> publish([PrPublishOptions options = const PrPublishOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["pr"],
+      command: "publish",
+      body: requestBody,
+      decode: prPublishReturnFromJson,
+    );
+  }
+}
+
 class ProjectsNamespace {
   const ProjectsNamespace(this._transport);
 
@@ -7204,6 +8004,8 @@ class SessionsNamespace {
 
   final RaviTransport _transport;
 
+  SessionsConversationsNamespace get conversations => SessionsConversationsNamespace(_transport);
+
   SessionsFollowupsNamespace get followups => SessionsFollowupsNamespace(_transport);
 
   SessionsRuntimeNamespace get runtime => SessionsRuntimeNamespace(_transport);
@@ -7610,6 +8412,18 @@ class SessionsNamespace {
     );
   }
 
+  Future<SessionsThreadConfigureReturn> threadConfigure(String thread, SessionsThreadConfigureOptions options) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["thread"] = RaviJson.from(thread);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["sessions"],
+      command: "thread-configure",
+      body: requestBody,
+      decode: sessionsThreadConfigureReturnFromJson,
+    );
+  }
+
   Future<SessionsThreadSendReturn> threadSend(String thread, String message, [SessionsThreadSendOptions options = const SessionsThreadSendOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["thread"] = RaviJson.from(thread);
@@ -7646,6 +8460,18 @@ class SessionsNamespace {
     );
   }
 
+  Future<SessionsUpdateReturn> update(String nameOrKey, [SessionsUpdateOptions options = const SessionsUpdateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["nameOrKey"] = RaviJson.from(nameOrKey);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["sessions"],
+      command: "update",
+      body: requestBody,
+      decode: sessionsUpdateReturnFromJson,
+    );
+  }
+
   Future<SessionsVisibilityReturn> visibility(String nameOrKey) async {
     final requestBody = <String, RaviJson>{};
     requestBody["nameOrKey"] = RaviJson.from(nameOrKey);
@@ -7654,6 +8480,174 @@ class SessionsNamespace {
       command: "visibility",
       body: requestBody,
       decode: sessionsVisibilityReturnFromJson,
+    );
+  }
+}
+
+class SessionsConversationsNamespace {
+  const SessionsConversationsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<SessionsConversationsAgentsReturn> agents(String projectId, String requestId, int createdAt) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "agents",
+      body: requestBody,
+      decode: sessionsConversationsAgentsReturnFromJson,
+    );
+  }
+
+  Future<SessionsConversationsCancelReturn> cancel(String projectId, String requestId, int createdAt, String conversationId, String turnId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    requestBody["conversationId"] = RaviJson.from(conversationId);
+    requestBody["turnId"] = RaviJson.from(turnId);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "cancel",
+      body: requestBody,
+      decode: sessionsConversationsCancelReturnFromJson,
+    );
+  }
+
+  Future<SessionsConversationsCreateReturn> create(String projectId, String requestId, int createdAt, String agentId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    requestBody["agentId"] = RaviJson.from(agentId);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "create",
+      body: requestBody,
+      decode: sessionsConversationsCreateReturnFromJson,
+    );
+  }
+
+  Future<SessionsConversationsDecideReturn> decide(String projectId, String requestId, int createdAt, String conversationId, String approvalId, String decision, int expectedVersion, String actionDigest) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    requestBody["conversationId"] = RaviJson.from(conversationId);
+    requestBody["approvalId"] = RaviJson.from(approvalId);
+    requestBody["decision"] = RaviJson.from(decision);
+    requestBody["expectedVersion"] = RaviJson.from(expectedVersion);
+    requestBody["actionDigest"] = RaviJson.from(actionDigest);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "decide",
+      body: requestBody,
+      decode: sessionsConversationsDecideReturnFromJson,
+    );
+  }
+
+  Future<SessionsConversationsEventsReturn> events(String projectId, String requestId, int createdAt, String conversationId, RaviJson cursor) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    requestBody["conversationId"] = RaviJson.from(conversationId);
+    requestBody["cursor"] = RaviJson.from(cursor);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "events",
+      body: requestBody,
+      decode: sessionsConversationsEventsReturnFromJson,
+    );
+  }
+
+  Future<SessionsConversationsHistoryReturn> history(String projectId, String requestId, int createdAt, String conversationId, RaviJson before) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    requestBody["conversationId"] = RaviJson.from(conversationId);
+    requestBody["before"] = RaviJson.from(before);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "history",
+      body: requestBody,
+      decode: sessionsConversationsHistoryReturnFromJson,
+    );
+  }
+
+  Future<SessionsConversationsListReturn> list(String projectId, String requestId, int createdAt, [SessionsConversationsListOptions options = const SessionsConversationsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "list",
+      body: requestBody,
+      decode: sessionsConversationsListReturnFromJson,
+    );
+  }
+
+  Future<SessionsConversationsOpenReturn> open(String projectId, String requestId, int createdAt, String conversationId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    requestBody["conversationId"] = RaviJson.from(conversationId);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "open",
+      body: requestBody,
+      decode: sessionsConversationsOpenReturnFromJson,
+    );
+  }
+
+  Future<SessionsConversationsReceiptReturn> receipt(String projectId, String requestId, int createdAt, String targetRequestId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    requestBody["targetRequestId"] = RaviJson.from(targetRequestId);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "receipt",
+      body: requestBody,
+      decode: sessionsConversationsReceiptReturnFromJson,
+    );
+  }
+
+  Future<SessionsConversationsRenewReturn> renew(String projectId, String requestId, int createdAt, String conversationId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    requestBody["conversationId"] = RaviJson.from(conversationId);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "renew",
+      body: requestBody,
+      decode: sessionsConversationsRenewReturnFromJson,
+    );
+  }
+
+  Future<SessionsConversationsSendReturn> send(String projectId, String requestId, int createdAt, String conversationId, String text, int expectedVersion) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["projectId"] = RaviJson.from(projectId);
+    requestBody["requestId"] = RaviJson.from(requestId);
+    requestBody["createdAt"] = RaviJson.from(createdAt);
+    requestBody["conversationId"] = RaviJson.from(conversationId);
+    requestBody["text"] = RaviJson.from(text);
+    requestBody["expectedVersion"] = RaviJson.from(expectedVersion);
+    return _transport.callJson(
+      groupSegments: const ["sessions", "conversations"],
+      command: "send",
+      body: requestBody,
+      decode: sessionsConversationsSendReturnFromJson,
     );
   }
 }
@@ -7930,6 +8924,160 @@ class SettingsNamespace {
       command: "set",
       body: requestBody,
       decode: settingsSetReturnFromJson,
+    );
+  }
+}
+
+class SignalsNamespace {
+  const SignalsNamespace(this._transport);
+
+  final RaviTransport _transport;
+
+  Future<SignalsAckReturn> ack(String idOrKey, [SignalsAckOptions options = const SignalsAckOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["idOrKey"] = RaviJson.from(idOrKey);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "ack",
+      body: requestBody,
+      decode: signalsAckReturnFromJson,
+    );
+  }
+
+  Future<SignalsBudgetReturn> budget() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "budget",
+      body: requestBody,
+      decode: signalsBudgetReturnFromJson,
+    );
+  }
+
+  Future<SignalsExplainReturn> explain(String idOrKey) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["idOrKey"] = RaviJson.from(idOrKey);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "explain",
+      body: requestBody,
+      decode: signalsExplainReturnFromJson,
+    );
+  }
+
+  Future<SignalsListReturn> list([SignalsListOptions options = const SignalsListOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "list",
+      body: requestBody,
+      decode: signalsListReturnFromJson,
+    );
+  }
+
+  Future<SignalsMuteReturn> mute(String idOrKey, [SignalsMuteOptions options = const SignalsMuteOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["idOrKey"] = RaviJson.from(idOrKey);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "mute",
+      body: requestBody,
+      decode: signalsMuteReturnFromJson,
+    );
+  }
+
+  Future<SignalsMuteKeyReturn> muteKey(String key, [SignalsMuteKeyOptions options = const SignalsMuteKeyOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["key"] = RaviJson.from(key);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "mute-key",
+      body: requestBody,
+      decode: signalsMuteKeyReturnFromJson,
+    );
+  }
+
+  Future<SignalsRaiseReturn> raise(String key, [SignalsRaiseOptions options = const SignalsRaiseOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["key"] = RaviJson.from(key);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "raise",
+      body: requestBody,
+      decode: signalsRaiseReturnFromJson,
+    );
+  }
+
+  Future<SignalsResolveReturn> resolve(String idOrKey, [SignalsResolveOptions options = const SignalsResolveOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["idOrKey"] = RaviJson.from(idOrKey);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "resolve",
+      body: requestBody,
+      decode: signalsResolveReturnFromJson,
+    );
+  }
+
+  Future<SignalsShowReturn> show(String idOrKey) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["idOrKey"] = RaviJson.from(idOrKey);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "show",
+      body: requestBody,
+      decode: signalsShowReturnFromJson,
+    );
+  }
+
+  Future<SignalsTickReturn> tick([SignalsTickOptions options = const SignalsTickOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "tick",
+      body: requestBody,
+      decode: signalsTickReturnFromJson,
+    );
+  }
+
+  Future<SignalsUnmuteReturn> unmute(String idOrKey) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["idOrKey"] = RaviJson.from(idOrKey);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "unmute",
+      body: requestBody,
+      decode: signalsUnmuteReturnFromJson,
+    );
+  }
+
+  Future<SignalsUnmuteKeyReturn> unmuteKey(String key) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["key"] = RaviJson.from(key);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "unmute-key",
+      body: requestBody,
+      decode: signalsUnmuteKeyReturnFromJson,
+    );
+  }
+
+  Future<SignalsUpdateReturn> update(String idOrKey, [SignalsUpdateOptions options = const SignalsUpdateOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["idOrKey"] = RaviJson.from(idOrKey);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["signals"],
+      command: "update",
+      body: requestBody,
+      decode: signalsUpdateReturnFromJson,
     );
   }
 }
@@ -9054,6 +10202,17 @@ class TasksNamespace {
     );
   }
 
+  Future<TasksAttentionReturn> attention([TasksAttentionOptions options = const TasksAttentionOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["tasks"],
+      command: "attention",
+      body: requestBody,
+      decode: tasksAttentionReturnFromJson,
+    );
+  }
+
   Future<TasksBlockReturn> block(String taskId, [TasksBlockOptions options = const TasksBlockOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["taskId"] = RaviJson.from(taskId);
@@ -9066,10 +10225,11 @@ class TasksNamespace {
     );
   }
 
-  Future<TasksCommentReturn> comment(String taskId, String body) async {
+  Future<TasksCommentReturn> comment(String taskId, String body, [TasksCommentOptions options = const TasksCommentOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["taskId"] = RaviJson.from(taskId);
     requestBody["body"] = RaviJson.from(body);
+    options.encodeBody(requestBody);
     return _transport.callJson(
       groupSegments: const ["tasks"],
       command: "comment",

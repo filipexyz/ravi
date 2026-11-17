@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { dbCreateRoute, dbListRoutesBySessionName } from "./router-db.js";
-import { getOrCreateSession, getSession, renameSessionName, updateSessionDisplayName } from "./sessions.js";
+import {
+  getOrCreateSession,
+  getSession,
+  renameSessionName,
+  resolveSession,
+  updateSessionDisplayName,
+} from "./sessions.js";
 
 let stateDir: string | null = null;
 
@@ -33,6 +39,16 @@ describe("Session canonical rename", () => {
     expect(after?.displayName).toBe("Luis DM");
     expect(dbListRoutesBySessionName("main-dm-615153")).toHaveLength(1);
     expect(dbListRoutesBySessionName("Luis DM")).toHaveLength(0);
+  });
+
+  it("refuses a name that equals another session's key or is key-shaped", () => {
+    const owner = getOrCreateSession("agent:main:dm:5511900000001", "main", "/tmp/main", { name: "owner-dm" });
+    const renamer = getOrCreateSession("agent:crm:main", "crm", "/tmp/crm", { name: "crm" });
+
+    expect(() => renameSessionName(renamer.sessionKey, owner.sessionKey)).toThrow("collides with a session key");
+    expect(() => renameSessionName(renamer.sessionKey, "agent:main:cron:job-1")).toThrow("reserved for session keys");
+    expect(resolveSession(owner.sessionKey)?.sessionKey).toBe(owner.sessionKey);
+    expect(getSession(renamer.sessionKey)?.name).toBe("crm");
   });
 
   it("renames sessions.name and cascades active route session references", () => {

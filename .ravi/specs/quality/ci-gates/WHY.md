@@ -36,3 +36,14 @@ No Notion, Devin, or external API calls. No author/source-based decisions.
 - Adding a CI step increases PR check time slightly. Acceptable because spec validation is fast and prevents manual rework.
 - Requiring focused tests for runtime paths may block PRs that intentionally skip tests. Mitigated by allowing the test file to exist in the diff or in the test suite already.
 - The path mapping is static and must be maintained. Acceptable because the mapped paths change infrequently.
+
+## Release isolation incident, 2026-11-11
+
+Run 42913015466 created the version commit but failed in the pre-push hook
+while pushing its tag: seven tests reached the runner's default state and were
+correctly refused by `REAL_STATE_ACCESS_REFUSED`. Normal CI supplied an outer
+sandbox; the release job did not. This exposed missing fixtures in the bootstrap
+provider and follow-maintenance tests. Both fixture ownership and the release
+launcher need repair; weakening the storage guard or skipping the hook would
+hide the defect. Workflow regressions execute the real hook with cheap checkers
+so they can validate inheritance without running full builds on the live host.

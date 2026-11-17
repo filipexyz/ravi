@@ -11,6 +11,7 @@ Observer mode: {{binding.observerMode}}
 Rule: {{binding.ruleId}}
 Profile: {{profile.id}}@{{profile.version}}
 Delivery: end_of_turn
+Delivery id: {{delivery.id}}
 Events: {{delivery.eventCount}}
 Run: {{delivery.runId}}
 

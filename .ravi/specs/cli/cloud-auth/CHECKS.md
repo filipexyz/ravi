@@ -5,6 +5,14 @@
 - CLI code contains no WorkOS client secret.
 - CLI code contains no Ravi Cloud server secret.
 - JSON output does not print access tokens or refresh tokens.
+- CloudAuthError projection uses normalized catalog/local reasons in both
+  message and cause, marking opaque provider text as [redacted:provider.body].
+  Run bun test src/cloud-auth/errors.test.ts for all catalog codes, local
+  validation path redaction, typed nested causes, depth/cycle bounds, and
+  gateway/SDK propagation without provider bodies or PII.
+- A real local TurnRefusalError keeps its refusal reason and job identity;
+  a remote ACTOR_UNKNOWN with forged local-looking details exposes neither
+  those controls nor its source text in cause.
 - File credential fallback is written with current-user-only permissions
   (`0600` file, `0700` directories) under
   `~/.ravi/cloud-auth/users/<consoleUserId>/`.
@@ -67,3 +75,5 @@ Expected:
 - manifest is sent with relative asset paths;
 - response includes cloud artifact id and version id;
 - safe server errors retain stable codes.
+
+- `src/runtime/runtime-request-context.test.ts` verifies human work handoffs use the original contact for Bases/access and do not become personal connector consent; notifications remain agent turns.

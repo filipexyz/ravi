@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 
@@ -228,6 +229,10 @@ describe("knowledge gate", () => {
         "KNOWLEDGE_TURN_NOT_OPERATOR",
         "Knowledge answers only the operator's own turns.",
         CONTRACT_EXIT_POLICY,
+        {
+          ...errorDiagnostic("Knowledge answers only the operator's own turns.", { operation: `knowledge ${name}` }),
+          ...{},
+        },
       );
       const deps = recordingDeps(calls, () => {
         throw refusal;
@@ -243,7 +248,10 @@ describe("knowledge gate", () => {
     const calls: Calls = [];
     const deps = recordingDeps(calls, (op) => {
       throw new ContractError(op, "KNOWLEDGE_EXPOSURE_UNSAFE", "unsafe", CONTRACT_EXIT_POLICY, {
-        issues: ["agent main: instance wa-main admits open DMs"],
+        ...errorDiagnostic("unsafe", { operation: op }),
+        ...{
+          issues: ["agent main: instance wa-main admits open DMs"],
+        },
       });
     });
     const { error } = await quiet(() =>

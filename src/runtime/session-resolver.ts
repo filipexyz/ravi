@@ -1,4 +1,5 @@
 import { configStore } from "../config-store.js";
+import { DecisionError, DecisionDispatchRejectedError } from "../decisions/model.js";
 import {
   clearProviderSession,
   expandHome,
@@ -13,7 +14,7 @@ import type { RuntimeProviderId } from "./types.js";
 import { resolveRuntimeDefaults } from "./runtime-defaults.js";
 import { isExplicitRuntimeProviderSource, resolveRequestedRuntimeProvider } from "./runtime-selection.js";
 import { resolveStoredRuntimeProvider } from "./host-session.js";
-import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { isThreadAttentionPrompt, assertThreadAttentionSession, type RuntimeLaunchPrompt } from "./message-types.js";
 import type { RuntimeCapabilities, SessionRuntimeProvider } from "./types.js";
 import { validateRuntimeSessionState, type RuntimeSessionStateInvalidReason } from "./session-state.js";
 
@@ -192,10 +193,33 @@ export function resolveRuntimeSessionIdentity(options: {
 }): RuntimeSessionIdentity | null {
   const routerConfig = configStore.getConfig();
   const sessionEntry = getSessionByName(options.sessionName);
+  assertThreadAttentionSession(options.prompt, sessionEntry);
+  // Dispatch preflight can await I/O. A renamed/replaced session must not inherit its queued answer.
+  if (
+    options.prompt._decisionDeliveryId &&
+    (!sessionEntry || sessionEntry.sessionKey !== options.prompt._decisionSessionKey)
+  ) {
+    throw new DecisionError("DECISION_ORIGIN_MISMATCH", "The waiting session changed before runtime launch.");
+  }
+  if (
+    options.prompt._taskAssignmentId &&
+    (!sessionEntry ||
+      sessionEntry.sessionKey !== options.prompt._taskSessionKey ||
+      sessionEntry.agentId !== options.prompt._agentId)
+  ) {
+    throw new Error("Task assignment session changed before runtime launch");
+  }
   const agentId = options.prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
-  const agent = routerConfig.agents[agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
+  const agent =
+    routerConfig.agents[agentId] ??
+    (options.prompt._decisionDeliveryId || options.prompt._taskAssignmentId || isThreadAttentionPrompt(options.prompt)
+      ? undefined
+      : routerConfig.agents[routerConfig.defaultAgent]);
 
   if (!agent) {
+    if (options.prompt._decisionDeliveryId) throw new DecisionDispatchRejectedError();
+    if (options.prompt._taskAssignmentId) throw new Error("Task assignment agent is unavailable");
+    if (isThreadAttentionPrompt(options.prompt)) throw new Error("Thread attention agent is unavailable");
     log.error("No agent found", { sessionName: options.sessionName, agentId });
     return null;
   }

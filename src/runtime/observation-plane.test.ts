@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
@@ -15,6 +15,7 @@ import {
   explainObserverRulesForSession,
   getObservationDebounceMs,
   migrateObservationCommandAccessGrants,
+  resolveObservationAllowedTools,
   reconcileObserverBindingsForSession,
   setObservationPromptPublisherForTests,
   validateObserverRules,
@@ -909,5 +910,47 @@ rendererHints:
       turn: classifyTurnProvenance({ source: { actorType: "contact" } }),
     });
     expect(isObserverOriginated(humano.turn)).toBe(false);
+  });
+
+  it("has no task-observer coupling in the runtime plane", () => {
+    const runtimeDir = join(import.meta.dir);
+    const sources = readdirSync(runtimeDir)
+      .filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"))
+      .map((name) => ({ name, source: readFileSync(join(runtimeDir, name), "utf8") }));
+
+    const forbidden = [
+      "tasks/observer-contract",
+      "tasks/observer-apply",
+      "observerTurnText",
+      "applyTaskObserverTurn",
+      "TASK_OBSERVER_RULE_ID",
+    ];
+    for (const { name, source } of sources) {
+      for (const marker of forbidden) {
+        expect({ file: name, marker, found: source.includes(marker) }).toEqual({ file: name, marker, found: false });
+      }
+    }
+
+    expect(existsSync(join(import.meta.dir, "..", "tasks", "observer-apply.ts"))).toBe(false);
+  });
+});
+
+describe("resolveObservationAllowedTools", () => {
+  it("keeps only the granted tool names, sorted and deduped", () => {
+    expect(
+      resolveObservationAllowedTools([
+        "use:tool:tasks_show",
+        "read:tasks:show",
+        "mutate:tasks:report",
+        "use:tool:tasks_report",
+        "use:tool:tasks_show",
+      ]),
+    ).toEqual(["tasks_report", "tasks_show"]);
+  });
+
+  it("returns undefined when the grants carry no tool allowlist", () => {
+    expect(resolveObservationAllowedTools(undefined)).toBeUndefined();
+    expect(resolveObservationAllowedTools([])).toBeUndefined();
+    expect(resolveObservationAllowedTools(["read:tasks:show", "mutate:tasks:done"])).toBeUndefined();
   });
 });

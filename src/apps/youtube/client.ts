@@ -1,4 +1,4 @@
-import { resolveCredentialSecret } from "../../credentials/broker.js";
+import { resolveCredentialSecret, type CredentialBrokerAuthority } from "../../credentials/broker.js";
 import { getCredentialConnection } from "../../credentials/store.js";
 
 export interface YouTubeCredential {
@@ -7,6 +7,8 @@ export interface YouTubeCredential {
 
 export interface YouTubeClientOptions {
   connection?: string;
+  /** Explicit host intent; the broker still enforces any active runtime caller. */
+  authority?: CredentialBrokerAuthority;
   fetch?: typeof globalThis.fetch;
   /** In-process credential injection for unit tests and the later read-only proof phase. */
   credential?: YouTubeCredential;
@@ -100,6 +102,7 @@ export class YouTubeClient {
               provider: "youtube",
               connection,
               action,
+              authority: options.authority,
             })
           ).secret,
         ));

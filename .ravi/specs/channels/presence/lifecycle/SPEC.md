@@ -28,7 +28,9 @@ Presence should show that Ravi is actively working, and it should disappear quic
 - Silent responses MUST stop presence immediately.
 - Terminal runtime events MUST stop presence. Runtime `status=idle` is terminal for presence cleanup even when a provider omits or delays `turn.complete`/`turn.completed`.
 - Late stream/runtime activity MUST NOT reactivate an ended turn.
-- A new turn start MAY reactivate presence.
+- `prompt.received` at intake MUST start/reactivate presence before pool admission and before waiting on the session dispatch tail; source and automation suppression MUST travel with the receipt.
+- `dispatch.start_rejected` MUST clear presence, including immediate pool refusal. A normal turn start MAY reactivate it.
+- Native presence API delivery MUST preserve start/stop order per session while allowing unrelated sessions to progress independently. It MUST NOT share a response-delivery tail.
 - Low-level provider passthrough events such as `provider.raw` MUST NOT start or renew presence unless they are normalized into a semantic runtime event.
 - Background automation sources, including cron prompts that route replies through a chat/session, MUST suppress `typing=true` presence while the automation is working. The target MAY still receive a final response if the automation produces one.
 - Non-final WhatsApp sends MAY renew presence after a short delay.

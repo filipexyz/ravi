@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
@@ -6,11 +6,16 @@ import { createRuntimeContext } from "./context-registry.js";
 import {
   dbUpsertSkillGateRule,
   dbUpsertSkillGrant,
+  clearProviderSession,
+  deleteSession,
   getOrCreateSession,
   getSession,
   updateProviderSession,
+  updateRuntimeProviderState,
+  updateSessionRuntimeProviderOverride,
 } from "../router/index.js";
 import { dbUpdateAgent } from "../router/router-db.js";
+import { nats } from "../nats.js";
 import {
   flushPermissionAuditEvents,
   listPermissionDenials,
@@ -18,6 +23,7 @@ import {
 } from "../permissions/denials.js";
 import {
   evaluateSkillGate,
+  evaluateRuntimeToolSkillGate,
   loadedSkillMatchesGate,
   runtimeSkillGateForCommand,
   runtimeSkillGateForTool,
@@ -27,36 +33,40 @@ import * as skillAuthorization from "./skill-authorization.js";
 import { SKILLS_SHOW_CAPABILITY_CANDIDATES } from "./skill-capability-implication.js";
 import { listCliCommandAccessCandidates } from "../cli/command-access.js";
 import { listCatalogSkills, listSkillFilePaths } from "../skills/manager.js";
+import * as skillManager from "../skills/manager.js";
 import { createRuntimeHostServices } from "./host-services.js";
 import {
   buildSkillVisibilitySnapshot,
+  markLoadedFromSkillGate,
   markLoadedFromRaviSkillToolCall,
   readSkillVisibilityFromParams,
 } from "./skill-visibility.js";
 import type { RuntimeSkillVisibilitySnapshot } from "./types.js";
 
 let stateDir: string | null = null;
-let previousCodexHome: string | undefined;
+let restoreInstalledSkillLookup: (() => void) | undefined;
 
 beforeEach(async () => {
-  previousCodexHome = process.env.CODEX_HOME;
   stateDir = await createIsolatedRaviState("ravi-skill-gate-");
-  process.env.CODEX_HOME = join(stateDir, "codex");
+  const lookup = spyOn(skillManager, "findInstalledSkill").mockImplementation((name) =>
+    skillManager.findSkillByName(skillManager.listInstalledSkills({ homeDir: stateDir!, includeCodex: false }), name),
+  );
+  restoreInstalledSkillLookup = () => lookup.mockRestore();
 });
 
 afterEach(async () => {
   setPermissionAuditPublisherForTest();
-  if (previousCodexHome === undefined) {
-    delete process.env.CODEX_HOME;
-  } else {
-    process.env.CODEX_HOME = previousCodexHome;
-  }
+  restoreInstalledSkillLookup?.();
+  restoreInstalledSkillLookup = undefined;
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
 });
 
-function writeCodexSkill(name: string): void {
-  const dir = join(process.env.CODEX_HOME!, "skills", name);
+function writeInstalledSkill(name: string): void {
+  const pluginDir = skillManager.userSkillsPluginDir(stateDir!);
+  mkdirSync(join(pluginDir, ".claude-plugin"), { recursive: true });
+  writeFileSync(join(pluginDir, ".claude-plugin", "plugin.json"), JSON.stringify({ name: "ravi-user-skills" }));
+  const dir = join(pluginDir, "skills", name);
   mkdirSync(dir, { recursive: true });
   writeFileSync(
     join(dir, "SKILL.md"),
@@ -66,7 +76,7 @@ function writeCodexSkill(name: string): void {
 
 describe("evaluateSkillGate", () => {
   it("soft-gates a missing skill, delivers it, and marks it loaded for the session", () => {
-    writeCodexSkill("demo-skill");
+    writeInstalledSkill("demo-skill");
     // Custom skills must be granted to the agent (Invariant G,
     // spec skills/scoping/per-agent-visibility) before the gate delivers them.
     dbUpsertSkillGrant({ agentId: "main", skillName: "demo-skill" });
@@ -104,6 +114,130 @@ describe("evaluateSkillGate", () => {
     });
 
     expect(second.allowed).toBe(true);
+  });
+
+  it.each([
+    "provider-change",
+    "clear-null",
+    "provider-aba",
+    "native-provider-change",
+    "agent-reassignment",
+    "session-recreation",
+  ])("delivers the skill without restoring stale state after %s during loading", (interleaving) => {
+    writeInstalledSkill("demo-skill");
+    dbUpsertSkillGrant({ agentId: "main", skillName: "demo-skill" });
+    dbUpsertSkillGateRule({ id: "demo-gate", tool: "demo_run", skill: "demo-skill" });
+    const session = getOrCreateSession("agent:main:skill-race", "main", stateDir!, {
+      name: "skill-gate-race",
+      runtimeProvider: "codex",
+      providerSessionId: "old-native",
+      runtimeSessionParams: { oldParameter: true },
+    });
+    const context = createRuntimeContext({ kind: "agent-runtime", agentId: "main", sessionKey: session.sessionKey });
+    const authorizeActual = skillAuthorization.isSkillAuthorizedForAgent;
+    let changedSession: ReturnType<typeof getSession> = null;
+    const authorize = spyOn(skillAuthorization, "isSkillAuthorizedForAgent").mockImplementation((...args) => {
+      const allowed = authorizeActual(...args);
+      if (interleaving === "provider-change") {
+        updateSessionRuntimeProviderOverride(session.sessionKey, "claude");
+        clearProviderSession(session.sessionKey);
+        updateRuntimeProviderState(session.sessionKey, "claude");
+      } else if (interleaving === "clear-null") {
+        updateSessionRuntimeProviderOverride(session.sessionKey, null);
+      } else if (interleaving === "provider-aba") {
+        updateSessionRuntimeProviderOverride(session.sessionKey, "claude");
+        updateSessionRuntimeProviderOverride(session.sessionKey, null);
+      } else if (interleaving === "agent-reassignment") {
+        getOrCreateSession(session.sessionKey, "other-agent", stateDir!);
+        updateProviderSession(session.sessionKey, "codex", "reassigned-native");
+      } else if (interleaving === "session-recreation") {
+        deleteSession(session.sessionKey);
+        const now = spyOn(Date, "now").mockReturnValue(session.createdAt + 1);
+        try {
+          getOrCreateSession(session.sessionKey, "main", stateDir!, {
+            name: session.name,
+            runtimeProvider: "codex",
+            providerSessionId: "recreated-native",
+          });
+        } finally {
+          now.mockRestore();
+        }
+      } else {
+        updateProviderSession(session.sessionKey, "claude", "new-native");
+      }
+      changedSession = getSession(session.sessionKey);
+      return allowed;
+    });
+    const emit = spyOn(nats, "emit").mockResolvedValue(undefined);
+    const onSkillGatePersisted = mock(() => {});
+    try {
+      const decision = evaluateRuntimeToolSkillGate({ toolName: "demo_run", context, onSkillGatePersisted });
+      expect(decision.code).toBe("RAVI_SKILL_REQUIRED");
+      expect(decision.reason).toContain("# demo-skill");
+      expect(getSession(session.sessionKey)).toEqual(changedSession);
+      expect(decision.skillVisibility).toBeUndefined();
+      expect(decision.reason).not.toContain("marked as loaded");
+      expect(onSkillGatePersisted).not.toHaveBeenCalled();
+      expect(emit.mock.calls.some(([, event]) => (event as { type?: string }).type === "skill.gate.loaded")).toBe(
+        false,
+      );
+    } finally {
+      authorize.mockRestore();
+      emit.mockRestore();
+    }
+  });
+
+  it("persists the skill into fresh native state when provider configuration did not change", () => {
+    writeInstalledSkill("demo-skill");
+    dbUpsertSkillGrant({ agentId: "main", skillName: "demo-skill" });
+    dbUpsertSkillGateRule({ id: "demo-gate", tool: "demo_run", skill: "demo-skill" });
+    const session = getOrCreateSession("agent:main:skill-fresh", "main", stateDir!, {
+      name: "skill-gate-fresh",
+      runtimeProvider: "codex",
+      providerSessionId: "old-native",
+      runtimeSessionParams: { oldParameter: true },
+    });
+    const context = createRuntimeContext({ kind: "agent-runtime", agentId: "main", sessionKey: session.sessionKey });
+    const authorizeActual = skillAuthorization.isSkillAuthorizedForAgent;
+    const freshVisibility = markLoadedFromSkillGate(buildSkillVisibilitySnapshot([]), {
+      provider: "codex",
+      skill: "other-loaded-skill",
+    });
+    const authorize = spyOn(skillAuthorization, "isSkillAuthorizedForAgent").mockImplementation((...args) => {
+      const allowed = authorizeActual(...args);
+      updateProviderSession(session.sessionKey, "codex", "new-native", {
+        runtimeSessionDisplayId: "new-display",
+        runtimeSessionParams: { freshParameter: true, skillVisibility: freshVisibility },
+      });
+      return allowed;
+    });
+    const emit = spyOn(nats, "emit").mockResolvedValue(undefined);
+    const onSkillGatePersisted = mock(() => {});
+    try {
+      const decision = evaluateRuntimeToolSkillGate({ toolName: "demo_run", context, onSkillGatePersisted });
+      const persisted = getSession(session.sessionKey)!;
+      expect(persisted).toMatchObject({
+        runtimeProvider: "codex",
+        runtimeProviderConfigRevision: 0,
+        sdkSessionId: "new-native",
+        runtimeSessionDisplayId: "new-display",
+        runtimeSessionParams: { freshParameter: true },
+      });
+      expect(persisted.runtimeSessionParams).not.toHaveProperty("oldParameter");
+      expect(readSkillVisibilityFromParams(persisted.runtimeSessionParams).loadedSkills.sort()).toEqual([
+        "demo-skill",
+        "other-loaded-skill",
+      ]);
+      expect(persisted.runtimeSessionParams!.skillVisibility).toEqual(decision.skillVisibility);
+      expect(onSkillGatePersisted).toHaveBeenCalledWith(decision.skillVisibility, {
+        skill: "demo-skill",
+        toolName: "demo_run",
+      });
+      expect(emit.mock.calls.some(([, event]) => (event as { type?: string }).type === "skill.gate.loaded")).toBe(true);
+    } finally {
+      authorize.mockRestore();
+      emit.mockRestore();
+    }
   });
 
   it("reports configuration errors distinctly when the declared skill does not exist", () => {
@@ -165,6 +299,40 @@ describe("evaluateSkillGate", () => {
       skill: "linear-skill",
       source: "config",
     });
+  });
+
+  it("keeps configured executable gates for inline code and rejects matches in literal arguments", () => {
+    dbUpsertSkillGateRule({ id: "python-analysis", commandPrefix: "python3", skill: "python-analysis" });
+
+    expect(runtimeSkillGateForCommand("python3 -c 'print(1)' ")).toMatchObject({
+      skill: "python-analysis",
+      source: "config",
+      ruleId: "python-analysis",
+    });
+    expect(runtimeSkillGateForCommand("printf '%s' 'python3 -c print(1)' ")).toBeUndefined();
+  });
+
+  it("keeps text gates when shell discovery cannot parse the command", () => {
+    dbUpsertSkillGateRule({ id: "python-analysis", commandPrefix: "python3", skill: "python-analysis" });
+
+    expect(runtimeSkillGateForCommand("python3 -c 'unterminated")).toMatchObject({
+      skill: "python-analysis",
+      source: "config",
+      ruleId: "python-analysis",
+    });
+  });
+
+  it.each([
+    "printf '%s' $( ravi bases list )",
+    "printf '%s' $(ravi bases list)",
+    "printf '%s' `ravi bases list`",
+    "cat <(ravi bases list)",
+  ])("keeps Ravi group gates when shell discovery is partial: %s", (command) => {
+    const expectedGate = { skill: "ravi-system-bases", ruleId: "bases" };
+
+    expect(runtimeSkillGateForCommand(command)).toMatchObject(expectedGate);
+    expect(runtimeSkillGateForCommand(command, { executables: ["printf"] })).toMatchObject(expectedGate);
+    expect(runtimeSkillGateForCommand("printf '%s' 'ravi bases list'")).toBeUndefined();
   });
 
   it("infers Ravi CLI gates from parsed commands without matching quoted text", () => {
@@ -444,6 +612,54 @@ describe("ravi skills show resource authorization", () => {
 });
 
 describe("runtime host skill-gate enforcement", () => {
+  it.each([
+    "python3 -c 'print(1)'",
+    "python3 -c 'unterminated",
+    "printf '%s' $( ravi bases list )",
+    "printf '%s' $(ravi bases list)",
+    "printf '%s' `ravi bases list`",
+    "cat <(ravi bases list)",
+  ])("delivers the required skill before arbitrary shell execution: %s", async (command) => {
+    writeInstalledSkill("demo-skill");
+    dbUpsertSkillGrant({ agentId: "main", skillName: "demo-skill" });
+    dbUpsertSkillGateRule({ id: "python-analysis", commandPrefix: "python3", skill: "demo-skill" });
+    dbUpsertSkillGateRule({ id: "bases-analysis", groupRegex: "^bases(?:[._]|$)", skill: "demo-skill" });
+    const session = getOrCreateSession("agent:main:main", "main", stateDir!, {
+      name: "arbitrary-shell-skill-gate",
+      runtimeProvider: "codex",
+      providerSessionId: "thread-1",
+    });
+    const context = createRuntimeContext({
+      kind: "cli-runtime",
+      agentId: "main",
+      sessionKey: session.sessionKey,
+      sessionName: "arbitrary-shell-skill-gate",
+      capabilities: [
+        { permission: "use", objectType: "tool", objectId: "Bash" },
+        { permission: "execute", objectType: "executable", objectId: "*" },
+      ],
+    });
+    const onSkillGatePersisted = mock(() => {});
+    const services = createRuntimeHostServices({
+      context,
+      agentId: "main",
+      sessionName: "arbitrary-shell-skill-gate",
+      toolContext: {},
+      onSkillGatePersisted,
+    });
+
+    const first = await services.authorizeCommandExecution({ command });
+
+    expect(first.approved).toBe(false);
+    expect(first.reason).toContain("RAVI_SKILL_REQUIRED");
+    expect(first.reason).toContain("# demo-skill");
+    expect(onSkillGatePersisted).toHaveBeenCalledTimes(1);
+    expect(readSkillVisibilityFromParams(getSession(session.sessionKey)?.runtimeSessionParams).loadedSkills).toEqual([
+      "demo-skill",
+    ]);
+    expect((await services.authorizeCommandExecution({ command })).approved).toBe(true);
+  });
+
   it("never persists or publishes the full command denied by native runtime policy", async () => {
     delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
     const auditEvents: Array<Record<string, unknown>> = [];
@@ -474,10 +690,14 @@ describe("runtime host skill-gate enforcement", () => {
       await flushPermissionAuditEvents();
 
       expect(decision.approved).toBe(false);
-      expect(listPermissionDenials({ subjectType: "agent", subjectId: "main" })[0]?.command).toBe(
-        `[REDACTED:content length=${command.length}]`,
-      );
-      expect(auditEvents[0]?.command).toBe(`[REDACTED:content length=${command.length}]`);
+      expect(listPermissionDenials({ subjectType: "agent", subjectId: "main" })).toEqual([]);
+      expect(auditEvents).toHaveLength(1);
+      expect(auditEvents[0]).toMatchObject({
+        type: "shell_syntax",
+        denied: "indirect_execution",
+        blockType: "indirect_execution",
+        detail: { commandChars: command.length },
+      });
       expect(JSON.stringify(auditEvents)).not.toContain("SENTINEL_SECRET_7M4Q");
     } finally {
       setPermissionAuditPublisherForTest();
@@ -486,7 +706,7 @@ describe("runtime host skill-gate enforcement", () => {
 
   // Dynamic tool dispatch lazily initializes the complete command registry.
   it("delivers and marks a required skill loaded when a dynamic tool is attempted", async () => {
-    writeCodexSkill("ravi-system-image");
+    writeInstalledSkill("ravi-system-image");
     // System skills are visible through provider-owned group capabilities. The
     // tool-local context permission below authorizes execution but must not
     // accidentally become the agent's persisted skill allowlist.
@@ -546,7 +766,7 @@ describe("runtime host skill-gate enforcement", () => {
   }, 20_000);
 
   it("checks Bash permission before delivering a required skill", async () => {
-    writeCodexSkill("ravi-system-daemon-manager");
+    writeInstalledSkill("ravi-system-daemon-manager");
     getOrCreateSession("agent:main:main", "main", stateDir!, {
       name: "skill-gate-test",
       runtimeProvider: "codex",
@@ -578,7 +798,7 @@ describe("runtime host skill-gate enforcement", () => {
   });
 
   it("does not infer a Ravi skill gate from quoted Bash text", async () => {
-    writeCodexSkill("ravi-system-tasks");
+    writeInstalledSkill("ravi-system-tasks");
     getOrCreateSession("agent:main:main", "main", stateDir!, {
       name: "skill-gate-test",
       runtimeProvider: "codex",
@@ -788,5 +1008,271 @@ describe("soft gate solucoes footer", () => {
     dbUpdateAgent("main", { mode: "sentinel" });
     const reason = deliver("ravi-system-bases", gateContext("footer-sentinel"));
     expect(reason).not.toContain(SOLUTIONS_LINE);
+  });
+});
+
+describe("CI840 quote-aware command discovery", () => {
+  it.each([
+    `printf '%s' '$(ravi bases list)' "$(date)"`,
+    `printf '%s' "ravi bases list $(date)"`,
+    `printf '%s' '<(ravi bases list)' "$(date)"`,
+    `printf '%s' "$(printf '%s' '$(ravi bases list)')"`,
+    'printf \'%s\' "\\$(ravi bases list)" "$(date)"',
+    "printf '%s' \\`ravi bases list\\` \"$(date)\"",
+    "printf '%s' $(date) # ravi bases list\ndate",
+    `printf ravi bases list "$(date)"`,
+    `printf '%s' > ravi bases list "$(date)"`,
+  ])("ignores literal Ravi text beside active syntax: %s", (command) => {
+    expect(runtimeSkillGateForCommand(command)).toBeUndefined();
+    expect(runtimeSkillGateForCommand(command, { executables: ["printf"] })).toBeUndefined();
+  });
+
+  it.each([
+    `printf '%s' "$(ravi bases list)"`,
+    `printf '%s' "$(printf '%s' "$(ravi bases list)")"`,
+    "printf '%s' \"`ravi bases list`\"",
+    "cat <(ravi bases list)",
+    "cat >(ravi bases list)",
+    "printf data | ravi bases list",
+    `printf '%s' "$('ravi' 'bases' list)"`,
+    `printf '%s' "$("/usr/local/bin/ravi" bases list)"`,
+    "printf '%s' $(ravi bases list)",
+    "ravi context codex-bash-hook; ravi bases list",
+    "> ravi ravi bases list",
+    "sudo -n ravi bases list",
+    "env X=a#b ravi bases list",
+    "if true; then ravi bases list; fi",
+    "printf '%s' foo\\ # \"$(ravi bases list)\"",
+    "printf '%s' \"$\\\n(ravi bases list)\"",
+    `printf '%s' "$(command env ravi bases list)"`,
+    `printf '%s' "$(/usr/bin/env ravi bases list)"`,
+  ])("retains an actually invoked Ravi gate: %s", (command) => {
+    expect(runtimeSkillGateForCommand(command)).toMatchObject({ skill: "ravi-system-bases", ruleId: "bases" });
+    expect(runtimeSkillGateForCommand(command, { executables: ["printf"] })).toMatchObject({
+      skill: "ravi-system-bases",
+      ruleId: "bases",
+    });
+  });
+
+  it("heredoc with a quoted delimiter does not require the skill for a Ravi line in its body", () => {
+    const command = "cat <<'EOF'\nravi bases list\nEOF";
+    expect(runtimeSkillGateForCommand(command)).toBeUndefined();
+    expect(runtimeSkillGateForCommand(command, { executables: ["cat"] })).toBeUndefined();
+  });
+
+  it("heredoc with an unquoted delimiter requires the skill for an active substitution in its body", () => {
+    const command = "cat <<EOF\n$(ravi bases list)\nEOF";
+    expect(runtimeSkillGateForCommand(command)).toMatchObject({ skill: "ravi-system-bases", ruleId: "bases" });
+    expect(runtimeSkillGateForCommand(command, { executables: ["cat"] })).toMatchObject({
+      skill: "ravi-system-bases",
+      ruleId: "bases",
+    });
+  });
+
+  it("still ignores the quoted literal beside an active substitution outside any heredoc", () => {
+    expect(runtimeSkillGateForCommand(`printf '%s' '$(ravi bases list)' "$(date)"`)).toBeUndefined();
+  });
+
+  it.each([
+    'cat <<"EOF"\nravi bases list\nEOF',
+    "cat <<\\EOF\nravi bases list\nEOF",
+    "cat <<-'EOF'\n\travi bases list\n\tEOF",
+    "cat 3<<'EOF'\nravi bases list\nEOF",
+    "cat <<'EOF'\n$(ravi bases list) `ravi bases list`\nEOF",
+    "cat <<EOF\nravi bases list\nEOF",
+    "cat <<EOF\n\\$(ravi bases list) \\`ravi bases list\\`\nEOF",
+    "cat <<'A' <<'B'\nravi bases list\nA\nravi bases list\nB",
+    "(cat <<'EOF') | wc -l\nravi bases list\nEOF",
+    `git commit -m "$(cat <<'EOF'\nravi bases list\nEOF\n)"`,
+    "cat <<EOF\n$(cat <<'INNER'\nravi bases list\nINNER\n)\nEOF",
+    "cat <<< 'ravi bases list'",
+  ])("reads a heredoc body as stdin, not as command lines: %s", (command) => {
+    expect(runtimeSkillGateForCommand(command)).toBeUndefined();
+  });
+
+  it.each([
+    "cat <<EOF\ntotal: `ravi bases list`\nEOF",
+    "cat <<-EOF\n\t'$(ravi bases list)'\n\tEOF",
+    "cat <<'EOF'\nplain text\nEOF\nravi bases list",
+    "cat <<'EOF' | ravi bases list\nplain text\nEOF",
+    "<<EOF ravi bases list\nplain text\nEOF",
+    "cat <<EOF\nfoo \\\nEOF\nEOF\nravi bases list",
+    "cat <<< text\nravi bases list",
+  ])("retains a Ravi gate invoked around or inside a heredoc: %s", (command) => {
+    expect(runtimeSkillGateForCommand(command)).toMatchObject({ skill: "ravi-system-bases", ruleId: "bases" });
+  });
+
+  it("keeps reading lines as commands when no heredoc terminator follows", () => {
+    for (const command of [
+      "cat <<'EOF'\nravi bases list",
+      "echo $((1 << 2))\nravi bases list",
+      "(( x = 1 << 2 ))\nravi bases list",
+    ]) {
+      expect(runtimeSkillGateForCommand(command)).toMatchObject({ skill: "ravi-system-bases", ruleId: "bases" });
+    }
+  });
+
+  it.each([
+    "(( x = 1 << EOF ))\nravi bases list\nEOF",
+    "echo $(( 1 << EOF ))\nravi bases list\nEOF",
+    "echo $((\n1 << EOF\n))\nravi bases list\nEOF",
+    'echo "$((\n1 << EOF\n))"\nravi bases list\nEOF',
+    "cat <<$X <<'EOF'\n$(ravi bases list)\n$X\ntext\nEOF",
+    "cat <<`x` <<'EOF'\n$(ravi bases list)\n`x`\ntext\nEOF",
+    "a[1<<n]=5\nravi bases list\nn]=5",
+    "echo $[1 << n]\nravi bases list\nn]",
+    "echo $" + "{v:1<<n}\nravi bases list\nn}",
+  ])("does not take an arithmetic shift or an unreadable word for a heredoc redirect: %s", (command) => {
+    expect(runtimeSkillGateForCommand(command)).toMatchObject({ skill: "ravi-system-bases", ruleId: "bases" });
+  });
+
+  it("reads a real heredoc beside or inside an arithmetic command as stdin", () => {
+    expect(runtimeSkillGateForCommand("(( x = 1 << 2 )); cat <<'EOF'\nravi bases list\nEOF")).toBeUndefined();
+    expect(runtimeSkillGateForCommand("(( x = $(cat <<'EOF'\nravi bases list\nEOF\n) ))")).toBeUndefined();
+  });
+
+  it("does not let a literal heredoc body satisfy a configured command prefix", () => {
+    dbUpsertSkillGateRule({ id: "python-analysis", commandPrefix: "python3", skill: "python-analysis" });
+    expect(runtimeSkillGateForCommand("cat <<'EOF'\npython3 -c pass\nEOF")).toBeUndefined();
+    expect(runtimeSkillGateForCommand("cat <<EOF\n$( python3 -c pass )\nEOF")).toMatchObject({
+      skill: "python-analysis",
+      source: "config",
+    });
+  });
+
+  it("does not let a literal Bases decoy hide a real Pages invocation", () => {
+    expect(runtimeSkillGateForCommand(`printf '%s' '$(ravi bases list)' "$(ravi pages list)"`)).toMatchObject({
+      skill: "ravi-system-pages",
+      ruleId: "pages",
+    });
+  });
+
+  it("retains explicit raw commandRegex rules", () => {
+    dbUpsertSkillGateRule({ id: "literal-contract", commandRegex: "ravi bases list", skill: "text-contract" });
+    expect(runtimeSkillGateForCommand(`printf '%s' '$(ravi bases list)' "$(date)"`)).toMatchObject({
+      skill: "text-contract",
+      source: "config",
+    });
+  });
+
+  it("keeps configured executable gates inside real substitutions without gating literal arguments", () => {
+    dbUpsertSkillGateRule({ id: "python-analysis", commandPrefix: "python3", skill: "python-analysis" });
+    expect(runtimeSkillGateForCommand(`printf '%s' "$( python3 -c 'print(1)' )"`)).toMatchObject({
+      skill: "python-analysis",
+      source: "config",
+    });
+    expect(runtimeSkillGateForCommand(`printf '%s' 'python3 -c print(1)' "$(date)"`)).toBeUndefined();
+    expect(runtimeSkillGateForCommand("python3 -c 'unterminated")).toMatchObject({ skill: "python-analysis" });
+    expect(runtimeSkillGateForCommand("# python3 -c print(1)")).toBeUndefined();
+    dbUpsertSkillGateRule({ id: "sudo-analysis", commandPrefix: "sudo", skill: "sudo-analysis" });
+    expect(runtimeSkillGateForCommand("sudo -n ravi bases list")).toMatchObject({ skill: "sudo-analysis" });
+  });
+
+  it("does not load a literal skill, but gates a real substitution and then permits retry", async () => {
+    writeInstalledSkill("demo-skill");
+    dbUpsertSkillGrant({ agentId: "main", skillName: "demo-skill" });
+    dbUpsertSkillGateRule({ id: "bases-analysis", groupRegex: "^bases(?:[._]|$)", skill: "demo-skill" });
+    const session = getOrCreateSession("agent:main:ci840-quotes", "main", stateDir!, {
+      name: "ci840-quotes",
+      runtimeProvider: "codex",
+    });
+    const context = createRuntimeContext({
+      kind: "cli-runtime",
+      agentId: "main",
+      sessionKey: session.sessionKey,
+      capabilities: [
+        { permission: "use", objectType: "tool", objectId: "Bash" },
+        { permission: "execute", objectType: "executable", objectId: "*" },
+      ],
+    });
+    const onSkillGatePersisted = mock(() => {});
+    const services = createRuntimeHostServices({
+      context,
+      agentId: "main",
+      sessionName: "ci840-quotes",
+      toolContext: {},
+      onSkillGatePersisted,
+    });
+    const literal = await services.authorizeCommandExecution({
+      command: `printf '%s' '$(ravi bases list)' "$(date)"`,
+    });
+    expect(literal.approved).toBe(true);
+    expect(onSkillGatePersisted).not.toHaveBeenCalled();
+    expect(readSkillVisibilityFromParams(getSession(session.sessionKey)?.runtimeSessionParams).loadedSkills).toEqual(
+      [],
+    );
+    const active = { command: `printf '%s' "$(ravi bases list)"` };
+    const first = await services.authorizeCommandExecution(active);
+    expect(first.approved).toBe(false);
+    expect(first.reason).toContain("RAVI_SKILL_REQUIRED");
+    expect(onSkillGatePersisted).toHaveBeenCalledTimes(1);
+    expect((await services.authorizeCommandExecution(active)).approved).toBe(true);
+  });
+
+  it("approves a literal heredoc without loading a skill, and gates an active one until retry", async () => {
+    writeInstalledSkill("demo-skill");
+    dbUpsertSkillGrant({ agentId: "main", skillName: "demo-skill" });
+    dbUpsertSkillGateRule({ id: "bases-analysis", groupRegex: "^bases(?:[._]|$)", skill: "demo-skill" });
+    const session = getOrCreateSession("agent:main:ci840-heredoc", "main", stateDir!, {
+      name: "ci840-heredoc",
+      runtimeProvider: "codex",
+    });
+    const context = createRuntimeContext({
+      kind: "cli-runtime",
+      agentId: "main",
+      sessionKey: session.sessionKey,
+      capabilities: [
+        { permission: "use", objectType: "tool", objectId: "Bash" },
+        { permission: "execute", objectType: "executable", objectId: "*" },
+      ],
+    });
+    const onSkillGatePersisted = mock(() => {});
+    const services = createRuntimeHostServices({
+      context,
+      agentId: "main",
+      sessionName: "ci840-heredoc",
+      toolContext: {},
+      onSkillGatePersisted,
+    });
+    const literal = await services.authorizeCommandExecution({ command: "cat <<'EOF'\nravi bases list\nEOF" });
+    expect(literal.approved).toBe(true);
+    expect(onSkillGatePersisted).not.toHaveBeenCalled();
+    expect(readSkillVisibilityFromParams(getSession(session.sessionKey)?.runtimeSessionParams).loadedSkills).toEqual(
+      [],
+    );
+    const active = { command: "cat <<EOF\n$(ravi bases list)\nEOF" };
+    const first = await services.authorizeCommandExecution(active);
+    expect(first.approved).toBe(false);
+    expect(first.reason).toContain("RAVI_SKILL_REQUIRED");
+    expect(onSkillGatePersisted).toHaveBeenCalledTimes(1);
+    expect((await services.authorizeCommandExecution(active)).approved).toBe(true);
+  });
+
+  it("does not infer arbitrary execution from discovery in a narrowed context", async () => {
+    const session = getOrCreateSession("agent:main:ci840-narrow", "main", stateDir!, { name: "ci840-narrow" });
+    const context = createRuntimeContext({
+      kind: "cli-runtime",
+      agentId: "main",
+      sessionKey: session.sessionKey,
+      capabilities: [
+        { permission: "use", objectType: "tool", objectId: "Bash" },
+        { permission: "execute", objectType: "executable", objectId: "printf" },
+      ],
+    });
+    const onSkillGatePersisted = mock(() => {});
+    const services = createRuntimeHostServices({
+      context,
+      agentId: "main",
+      sessionName: "ci840-narrow",
+      toolContext: {},
+      onSkillGatePersisted,
+    });
+    // Substitutions are analyzed now; a shell inside one still needs arbitrary execution.
+    const decision = await services.authorizeCommandExecution({
+      command: `printf '%s' "$(sh -c 'ravi bases list')"`,
+    });
+    expect(decision.approved).toBe(false);
+    expect(decision.reason).toContain("indirect execution through: sh");
+    expect(onSkillGatePersisted).not.toHaveBeenCalled();
   });
 });

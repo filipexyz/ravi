@@ -1,3 +1,5 @@
+import { parse as parseShell } from "shell-quote";
+
 export interface SkillGateMetadata {
   skill: string;
   source: "inferred" | "config";
@@ -73,6 +75,7 @@ export const DEFAULT_RAVI_GROUP_SKILL_RULES: readonly RaviGroupSkillRule[] = [
   { id: "slack", pattern: /^slack(?:[._]|$)/, skill: "ravi-system-slack" },
   { id: "specs", pattern: /^specs(?:[._]|$)/, skill: "ravi-system-specs" },
   { id: "stickers", pattern: /^stickers(?:[._]|$)/, skill: "ravi-system-stickers" },
+  { id: "decisions", pattern: /^decisions(?:[._]|$)/, skill: "ravi-system-decisions" },
   { id: "tasks", pattern: /^tasks(?:[._]|$)/, skill: "ravi-system-tasks" },
   { id: "themes", pattern: /^themes(?:[._]|$)/, skill: "ravi-system-pages" },
   { id: "triggers", pattern: /^triggers(?:[._]|$)/, skill: "ravi-system-trigger-manager" },
@@ -164,39 +167,249 @@ export function inferRaviCommandSkillGate(
   commandLine: string,
   options?: { executables?: readonly string[]; rules?: readonly SkillGateRuleConfig[] },
 ): SkillGateMetadata | undefined {
-  const configured = resolveConfiguredCommandGate(commandLine, options);
+  const commands = discoverShellCommands(commandLine);
+  const executables = commands.map((words) => words[0]!.split("/").at(-1)!);
+  const configured = resolveConfiguredCommandGate(commandLine, {
+    ...options,
+    executables,
+  });
   if (configured !== undefined) {
     return configured === false ? undefined : configured;
   }
 
-  if (options?.executables && !options.executables.includes("ravi")) {
-    return undefined;
-  }
-
-  const match = /(?:^|[\s;&|])(?:[^\s;&|'"]+\/)?ravi\s+([a-z][a-z0-9-]*)(?:\s+([a-z][a-z0-9-]*))?/i.exec(commandLine);
-  if (!match) {
-    return undefined;
-  }
-
-  const first = normalizeCliSegment(match[1]);
-  const second = normalizeCliSegment(match[2]);
-  if (second && RAVI_GATE_EXEMPT_COMMANDS.has(`${first}.${second}`)) {
-    return undefined;
-  }
-  const candidates = second ? [`${first}.${second}`, first] : [first];
-  for (const groupPath of candidates) {
-    const configuredGroup = resolveConfiguredGroupTargetGate(groupPath, options?.rules ?? []);
-    if (configuredGroup !== undefined) {
-      return configuredGroup === false ? undefined : configuredGroup;
-    }
-
-    const inferred = inferRaviGroupSkillGate(groupPath, { rules: options?.rules });
-    if (inferred) {
-      return inferred;
+  // Executable hints may omit substitutions. Discover command positions rather
+  // than scanning literal arguments when a hint is incomplete.
+  for (const words of commands) {
+    if (words[0]?.split("/").at(-1) !== "ravi") continue;
+    const first = normalizeCliSegment(words[1]);
+    const second = normalizeCliSegment(words[2]);
+    if (second && RAVI_GATE_EXEMPT_COMMANDS.has(`${first}.${second}`)) continue;
+    const candidates = second ? [`${first}.${second}`, first] : [first];
+    for (const groupPath of candidates) {
+      const configuredGroup = resolveConfiguredGroupTargetGate(groupPath, options?.rules ?? []);
+      if (configuredGroup === false) break;
+      if (configuredGroup !== undefined) return configuredGroup;
+      const inferred = inferRaviGroupSkillGate(groupPath, { rules: options?.rules });
+      if (inferred) return inferred;
     }
   }
 
   return undefined;
+}
+
+/**
+ * Bounded discovery, never authorization or shell evaluation. Keep each active
+ * substitution in its own quote context, and decode static words only after
+ * separating command regions. A here-document body is stdin, never a command
+ * line: a quoted delimiter makes it literal and an unquoted one leaves only its
+ * substitutions active. When `<<` is an arithmetic shift or its delimiter cannot
+ * be followed, the lines stay commands. Scripts, eval strings and dynamic command names
+ * remain opaque; real Ravi calls still authorize at the gateway. Configured
+ * raw-text matchers deliberately keep their separate contract above.
+ */
+function discoverShellCommands(input: string): string[][] {
+  type Heredoc = { delimiter: string; literal: boolean; stripTabs: boolean };
+  // A subshell shares the pending here-documents of the region that contains it;
+  // a substitution owns its own, because its body is read inside it. An undefined
+  // entry marks a redirect whose delimiter this scanner could not follow.
+  type Frame = {
+    source: string;
+    wordStart: boolean;
+    heredocs: Array<Heredoc | undefined>;
+    quote?: "'" | '"' | "heredoc";
+    closing?: ")" | "`";
+    // `((` and `$((` open arithmetic, where `<<` is a shift and never a redirect.
+    open?: number;
+    arithmetic?: boolean;
+  };
+  const commands: string[][] = [];
+  const flush = (frame: Frame) => {
+    const source = frame.source;
+    frame.source = "";
+    frame.wordStart = true;
+    // Only unquoted reserved prefixes are syntax; quoted ones are executables.
+    const command = source.replace(/^(\s*(?:if|then|elif|else|do|while|until|!|time)\s+)+/, "");
+    try {
+      const tokens = parseShell(command, () => "__dynamic_shell_word__");
+      const words: string[] = [];
+      for (let i = 0; i < tokens.length; i++) {
+        const token = tokens[i]!;
+        const next = tokens[i + 1];
+        if (typeof token === "string") {
+          if (/^\d+$/.test(token) && typeof next === "object" && "op" in next && /[<>]/.test(next.op)) continue;
+          words.push(token);
+        } else if ("comment" in token) {
+          break;
+        } else if ([">", ">>", "<", ">&", "<&", "<>"].includes(token.op)) {
+          if (token.op === ">" && typeof next === "object" && "op" in next && next.op === "|") i++;
+          i++; // Redirect destinations are operands, including a file called ravi.
+        } else if (token.op === "glob") {
+          words.push("__dynamic_shell_word__");
+        }
+      }
+      while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0] ?? "")) words.shift();
+      while (["env", "sudo", "command", "builtin", "nohup"].includes(words[0]?.split("/").at(-1) ?? "")) {
+        commands.push([...words]); // A wrapper can have its own configured gate.
+        const wrapper = words.shift()!.split("/").at(-1);
+        while (words[0]?.startsWith("-") || /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0] ?? "")) {
+          const option = words.shift();
+          if (
+            (wrapper === "env" && ["-u", "--unset"].includes(option!)) ||
+            (wrapper === "sudo" && ["-u", "-g", "-h", "-p", "-C", "-T", "-R", "-D"].includes(option!))
+          )
+            words.shift();
+        }
+      }
+      if (words.length) commands.push(words);
+    } catch {
+      // no-cause: Incomplete shell text is expected during best-effort skill discovery; retain only its visible command prefix, never an authorization verdict.
+      // Retain a visible static command prefix even if a later word is malformed.
+      const prefix = /^\s*([a-z0-9_./-]+)(?:\s+([a-z0-9_-]+))?(?:\s+([a-z0-9_-]+))?/i.exec(command);
+      if (prefix) commands.push(prefix.slice(1).filter((word): word is string => Boolean(word)));
+    }
+  };
+  // `start` follows `<<`. A word this scanner cannot follow returns undefined; the
+  // caller then stops attributing bodies on that line and reads them line by line.
+  const readHeredocRedirect = (text: string, start: number): { end: number; heredoc?: Heredoc } | undefined => {
+    if (text[start] === "<") return { end: start + 1 }; // A here-string word stays an ordinary argument.
+    const stripTabs = text[start] === "-";
+    let cursor = stripTabs ? start + 1 : start;
+    while (text[cursor] === " " || text[cursor] === "\t") cursor++;
+    let delimiter = "";
+    let literal = false;
+    while (cursor < text.length && !/[\s;&|()<>]/.test(text[cursor]!)) {
+      const char = text[cursor]!;
+      if (char === "'" || char === '"') {
+        const close = text.indexOf(char, cursor + 1);
+        if (close < 0) return undefined;
+        delimiter += text.slice(cursor + 1, close);
+        cursor = close + 1;
+        literal = true;
+      } else if (char === "\\") {
+        delimiter += text[cursor + 1] ?? "";
+        cursor += 2;
+        literal = true;
+      } else {
+        delimiter += char;
+        cursor++;
+      }
+    }
+    // `]` and `}` close a subscript or an expansion, where `<<` was a shift.
+    if (/[$`\n\]}]/.test(delimiter) || (!delimiter && !literal)) return undefined;
+    return { end: cursor, heredoc: { delimiter, literal, stripTabs } };
+  };
+  const readHeredocBody = (
+    text: string,
+    start: number,
+    heredoc: Heredoc,
+  ): { body: string; end: number } | undefined => {
+    let body = "";
+    for (let cursor = start; cursor < text.length; ) {
+      let end = text.indexOf("\n", cursor);
+      if (end < 0) end = text.length;
+      let line = text.slice(cursor, end);
+      // With an unquoted delimiter Bash joins backslash-newline before comparing.
+      while (!heredoc.literal && end < text.length && (/\\+$/.exec(line)?.[0].length ?? 0) % 2 === 1) {
+        const from = end + 1;
+        end = text.indexOf("\n", from);
+        if (end < 0) end = text.length;
+        line = line.slice(0, -1) + text.slice(from, end);
+      }
+      if ((heredoc.stripTabs ? line.replace(/^\t+/, "") : line) === heredoc.delimiter) {
+        return { body, end: Math.min(end + 1, text.length) };
+      }
+      body += `${line}\n`;
+      cursor = end + 1;
+    }
+    return undefined;
+  };
+  const scan = (text: string, heredocBody: boolean) => {
+    // The body of an unquoted here-document is one quoted region: quotes are
+    // text there, and only its substitutions open command regions.
+    const frames: Frame[] = [
+      { source: "", wordStart: true, heredocs: [], ...(heredocBody ? { quote: "heredoc" as const } : {}) },
+    ];
+    for (let i = 0; i < text.length; i++) {
+      const frame = frames[frames.length - 1]!;
+      const char = text[i]!;
+      let nextIndex = i + 1;
+      if (frame.quote !== "'" && (char === "$" || (!frame.quote && /[<>]/.test(char)))) {
+        while (text[nextIndex] === "\\" && text[nextIndex + 1] === "\n") nextIndex += 2;
+      }
+      const next = text[nextIndex];
+      const heredocAt = !frame.quote && !frame.arithmetic && char === "<" && next === "<";
+      const redirect = heredocAt ? readHeredocRedirect(text, nextIndex + 1) : undefined;
+      if (heredocAt && !redirect) frame.heredocs.push(undefined);
+      if (char === "\\" && frame.quote !== "'" && (!frame.quote || (next && /[$`"\\\n]/.test(next)))) {
+        frame.source += char + (next ?? "");
+        if (next !== "\n") frame.wordStart = false;
+        i++;
+      } else if (char === frame.quote) {
+        frame.source += char;
+        frame.quote = undefined;
+      } else if (!frame.quote && (char === "'" || char === '"')) {
+        frame.source += char;
+        frame.quote = char;
+        frame.wordStart = false;
+      } else if (frame.quote === "'") {
+        frame.source += char;
+      } else if (!frame.quote && char === frame.closing) {
+        flush(frame);
+        frames.pop();
+      } else if (char === "`" || (next === "(" && (char === "$" || (!frame.quote && /[<>]/.test(char))))) {
+        frame.source += "__dynamic_shell_word__";
+        frame.wordStart = false;
+        frames.push({
+          source: "",
+          wordStart: true,
+          heredocs: [],
+          closing: char === "`" ? "`" : ")",
+          ...(char === "$" ? { open: nextIndex } : {}),
+        });
+        if (char !== "`") i = nextIndex;
+      } else if (redirect) {
+        // The delimiter is a redirect operand, never the executable.
+        frame.source += redirect.heredoc ? "<__dynamic_shell_word__" : "<<<";
+        frame.wordStart = !redirect.heredoc;
+        if (redirect.heredoc) frame.heredocs.push(redirect.heredoc);
+        i = redirect.end - 1;
+      } else if (!frame.quote && char === "(") {
+        flush(frame);
+        frames.push({
+          source: "",
+          wordStart: true,
+          heredocs: frame.heredocs,
+          closing: ")",
+          open: i,
+          arithmetic: frame.arithmetic || frame.open === i - 1,
+        });
+      } else if (!frame.quote && char === "#" && frame.wordStart) {
+        while (i + 1 < text.length && text[i + 1] !== "\n") i++;
+      } else if (
+        !frame.quote &&
+        /[;|&\n]/.test(char) &&
+        !(char === "&" && (/[<>]/.test(text[i - 1] ?? "") || next === ">")) &&
+        !(char === "|" && text[i - 1] === ">")
+      ) {
+        flush(frame);
+        // Bodies follow the newline that ends the announcing line, in order.
+        for (const heredoc of char === "\n" ? frame.heredocs.splice(0) : []) {
+          if (!heredoc) break; // Unreadable delimiter: keep reading the lines as commands.
+          const read = readHeredocBody(text, i + 1, heredoc);
+          if (!read) break; // No terminator: keep reading the lines as commands.
+          if (!heredoc.literal) scan(read.body, true);
+          i = read.end - 1;
+        }
+      } else {
+        // shell-quote treats mid-word # as comments; Bash only does at word start.
+        frame.source += (!frame.quote && char === "#" ? "\\" : "") + char;
+        frame.wordStart = !frame.quote && /[\s<>]/.test(char);
+      }
+    }
+    for (const frame of heredocBody ? frames.slice(1) : frames) flush(frame);
+  };
+  scan(input, false);
+  return commands;
 }
 
 export function inferRaviGroupSkillGate(

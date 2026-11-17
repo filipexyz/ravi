@@ -163,6 +163,7 @@ function ActivityPanel({ activity }: { activity?: CockpitActivitySnapshot }) {
     <box flexDirection="column" width="100%">
       {feed.map((line, index) => (
         <text
+          // biome-ignore lint/suspicious/noArrayIndexKey: activity feed lines may repeat; the pair keeps the key stable
           key={`${index}-${line}`}
           content={` ${index + 1}. ${line}`}
           fg={index === feed.length - 1 ? "cyan" : "white"}

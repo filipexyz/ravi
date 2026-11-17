@@ -168,6 +168,31 @@ describe("runtime credential store and pool", () => {
     });
   });
 
+  it("keeps weekly exhausted Claude credentials ineligible for later inputs", () => {
+    createRuntimeCredential({
+      ...credentialInput("rcred_weekly", "Claude weekly", 10),
+      runtimeProvider: "claude",
+      upstreamProvider: "anthropic",
+    });
+    const signal = classifyRuntimeCredentialFailure({
+      runtimeProvider: "claude",
+      providerCode: "rate_limit",
+      message: "You've hit your weekly limit · resets 10am (America/Sao_Paulo)",
+    });
+    const transition = recordRuntimeCredentialFailure("rcred_weekly", signal, 1_000);
+    expect(transition.credential.status).toBe("exhausted");
+    expect(getRuntimeCredentialHealth("rcred_weekly")?.cooldownUntil).toBe(1_000 + 24 * 60 * 60 * 1000);
+    for (const now of [2_000, 61_001, 3_601_000]) {
+      const selected = selectRuntimeCredential({ runtimeProvider: "claude", upstreamProvider: "anthropic", now });
+      expect(selected.credential).toBeNull();
+      expect(selected.rejected).toContainEqual({
+        credentialId: "rcred_weekly",
+        label: "Claude weekly",
+        reason: "status:exhausted",
+      });
+    }
+  });
+
   it("records failure against the exact attempted credential only", () => {
     createRuntimeCredential(credentialInput("rcred_failed", "Failed slot", 10));
     createRuntimeCredential(credentialInput("rcred_healthy", "Healthy slot", 10));

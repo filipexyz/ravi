@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -146,11 +147,14 @@ function errorMessage(error: unknown): string {
 function failMeetingProfileNotFound(op: string, profileId: string, asJson?: boolean): never {
   const candidates = listMeetingProfiles().flatMap((profile) => [profile.id, profile.label]);
   contractFail(op, "MEETING_PROFILE_NOT_FOUND", `Meeting profile not found: ${profileId}`, {
-    asJson,
-    details: {
-      suggestedAction: "List meeting profiles with `ravi meetings profiles list --json`",
-      suggestions: suggestSimilar(profileId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "List meeting profiles with `ravi meetings profiles list --json`",
+        suggestions: suggestSimilar(profileId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Meeting profile not found: ${profileId}`, { operation: op }),
   });
 }
 
@@ -610,8 +614,13 @@ function cloudMaxMinutes(maxDuration: string | undefined, asJson: boolean | unde
   const seconds = Number(maxDuration);
   if (!Number.isFinite(seconds) || seconds <= 0) {
     contractFail("meetings join", "INVALID_ARGUMENT", "--max-duration must be a positive number of seconds.", {
-      asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
+      ...{
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+      },
+      diagnostic: errorDiagnostic("--max-duration must be a positive number of seconds.", {
+        operation: "meetings join",
+      }),
     });
   }
   return Math.min(480, Math.max(5, Math.ceil(seconds / 60)));
@@ -666,9 +675,15 @@ async function joinWithCloudBot(input: {
       "INVALID_ARGUMENT",
       "The cloud bot joins Google Meet links only (https://meet.google.com/abc-defg-hij).",
       {
-        asJson: input.asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: { suggestedAction: "Pass a Google Meet link, or use --local" },
+        ...{
+          asJson: input.asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: { suggestedAction: "Pass a Google Meet link, or use --local" },
+        },
+        diagnostic: errorDiagnostic(
+          "The cloud bot joins Google Meet links only (https://meet.google.com/abc-defg-hij).",
+          { operation: op },
+        ),
       },
     );
   }
@@ -972,9 +987,18 @@ export class MeetingsCommands {
           "LOCAL_RECORDER_OPTION",
           `${localOnly.join(", ")} only appl${localOnly.length === 1 ? "ies" : "y"} to the local recorder.`,
           {
-            asJson,
-            exitCode: CONTRACT_EXIT_USAGE,
-            details: { options: localOnly, suggestedAction: "Add --local, or drop these options to use the cloud bot" },
+            ...{
+              asJson,
+              exitCode: CONTRACT_EXIT_USAGE,
+              details: {
+                options: localOnly,
+                suggestedAction: "Add --local, or drop these options to use the cloud bot",
+              },
+            },
+            diagnostic: errorDiagnostic(
+              `${localOnly.join(", ")} only appl${localOnly.length === 1 ? "ies" : "y"} to the local recorder.`,
+              { operation: "meetings join" },
+            ),
           },
         );
       }
@@ -1594,7 +1618,10 @@ export class MeetingsCommands {
         target = parseMeetingReadTarget(meeting);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        contractFail(op, "INVALID_ARGUMENT", message, { asJson, exitCode: CONTRACT_EXIT_USAGE });
+        contractFail(op, "INVALID_ARGUMENT", message, {
+          ...{ asJson, exitCode: CONTRACT_EXIT_USAGE },
+          diagnostic: errorDiagnostic(error, { operation: op }),
+        });
       }
       const block = meetingReadTurnBlock(readDeps);
       if (block) {
@@ -1603,14 +1630,20 @@ export class MeetingsCommands {
           "MEETING_ACCESS_DENIED",
           `Meeting transcripts are read only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: ${block.why}.`,
           {
-            asJson,
-            exitCode: CONTRACT_EXIT_POLICY,
-            details: {
-              refusal: "operator_only",
-              turn: block.turn,
-              suggestedAction:
-                "Tell the person you cannot read meeting transcripts for other people; the operator can ask for it in their own chat.",
+            ...{
+              asJson,
+              exitCode: CONTRACT_EXIT_POLICY,
+              details: {
+                refusal: "operator_only",
+                turn: block.turn,
+                suggestedAction:
+                  "Tell the person you cannot read meeting transcripts for other people; the operator can ask for it in their own chat.",
+              },
             },
+            diagnostic: errorDiagnostic(
+              `Meeting transcripts are read only on the operator's own turns (terminal, their direct chat, their routines). This turn is not the operator's own: ${block.why}.`,
+              { operation: op },
+            ),
           },
         );
       }
@@ -1621,9 +1654,12 @@ export class MeetingsCommands {
         const failure = describeMeetingReadFailure(error);
         if (failure) {
           contractFail(op, failure.code, failure.message, {
-            asJson,
-            exitCode: failure.exitCode,
-            details: failure.details,
+            ...{
+              asJson,
+              exitCode: failure.exitCode,
+              details: failure.details,
+            },
+            diagnostic: errorDiagnostic(error, { operation: op }),
           });
         }
         throw error;

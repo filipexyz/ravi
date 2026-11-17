@@ -1,5 +1,7 @@
 import { z } from "zod";
+import { isCredentialBrokerError } from "../../credentials/errors.js";
 import type { ChannelConfig } from "../../router/router-db.js";
+import { logger } from "../../utils/logger.js";
 import {
   ChannelBackendOpaqueIdSchema,
   ChannelSafeErrorSchema,
@@ -19,6 +21,8 @@ import type {
 } from "../runtime-events.js";
 import type { NativeChatActionDelivery, NativePresenceDelivery, NativeTextDelivery } from "./types.js";
 import { createNativeChannelDriverHostLease, type NativeChannelDriverHostLease } from "./host.js";
+
+const log = logger.child("channels:native-driver");
 
 export const NATIVE_CHANNEL_DRIVER_PROTOCOL = "ravi.channel.native-driver" as const;
 export const NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION = 1 as const;
@@ -395,40 +399,90 @@ export class NativeChannelDriverManager {
   private readonly statuses = new Map<string, ChannelAdapterHealth>();
   private readonly active: ActiveNativeChannelRuntime[] = [];
   private started = false;
+  private stopping = false;
+  private startupTask: Promise<void> | null = null;
+  private stopTask: Promise<void> | null = null;
+  private requireDrain = false;
+  private readonly startupCleanupFailures: unknown[] = [];
 
   constructor(private readonly options: NativeChannelDriverManagerOptions) {}
 
   async start(): Promise<void> {
-    if (this.started) return;
+    if (this.stopping) throw new Error("WORK_DRAIN_ADMISSION_CLOSED: native-channel-startup");
+    if (this.started) return this.startupTask ?? undefined;
     this.started = true;
+    this.startupTask = this.startChannels();
+    return this.startupTask;
+  }
+
+  private async startChannels(): Promise<void> {
     this.statuses.clear();
     const channels = Object.values(this.options.channels)
       .filter((channel) => channel.enabled !== false)
       .sort((a, b) => a.name.localeCompare(b.name));
 
     for (const [index, channel] of channels.entries()) {
+      if (this.stopping) break;
       await this.startChannel(channel, index);
     }
   }
 
-  async stop(): Promise<void> {
-    for (const active of [...this.active].reverse()) {
-      let reason: NativeChannelDriverFailureReason | undefined;
-      try {
-        await active.runtime.stop();
-      } catch {
-        reason = "stop_failed";
-      } finally {
-        active.lease.dispose();
-      }
-      this.statuses.set(active.healthId, {
-        id: active.healthId,
-        channelId: active.descriptor.provider,
-        status: reason ? "failed" : "disconnected",
-        ...(reason ? { reason } : {}),
-      });
+  async stop(options: { requireDrain?: boolean } = {}): Promise<void> {
+    this.stopping = true;
+    this.requireDrain ||= options.requireDrain === true;
+    if (this.stopTask) return this.stopTask;
+    this.stopTask = this.stopChannels();
+    try {
+      await this.stopTask;
+    } finally {
+      this.stopTask = null;
     }
-    this.active.length = 0;
+  }
+
+  private async stopChannels(): Promise<void> {
+    const failures: unknown[] = [];
+    const attempted = new Set<ActiveNativeChannelRuntime>();
+    // Fence every adapter before awaiting any one adapter's accepted work.
+    const stopActive = () =>
+      Promise.all(
+        [...this.active].reverse().map(async (active) => {
+          if (attempted.has(active)) return;
+          attempted.add(active);
+          let reason: NativeChannelDriverFailureReason | undefined;
+          try {
+            await active.runtime.stop();
+          } catch (error) {
+            reason = "stop_failed";
+            failures.push(error);
+          }
+          if (!reason || !this.requireDrain) {
+            try {
+              active.lease.dispose();
+              this.active.splice(this.active.indexOf(active), 1);
+            } catch (error) {
+              reason = "stop_failed";
+              failures.push(error);
+            }
+          }
+          this.statuses.set(active.healthId, {
+            id: active.healthId,
+            channelId: active.descriptor.provider,
+            status: reason ? "failed" : "disconnected",
+            ...(reason ? { reason } : {}),
+          });
+        }),
+      );
+    const settled = await Promise.allSettled([stopActive(), this.startupTask]);
+    for (const result of settled) {
+      if (result.status === "rejected") failures.push(result.reason);
+    }
+    // A runtime created before stop may finish startup afterward. It must be
+    // retired too; failed earlier stops are retained without retrying them here.
+    await stopActive();
+    failures.push(...this.startupCleanupFailures);
+    if (this.requireDrain && failures.length) {
+      throw new AggregateError(failures, "NATIVE_CHANNEL_DRAIN_UNPROVEN", { cause: failures[0] });
+    }
     this.started = false;
   }
 
@@ -451,6 +505,7 @@ export class NativeChannelDriverManager {
   health(): ChannelAdapterHealth[] {
     const statuses = new Map(this.statuses);
     for (const active of this.active) {
+      if (statuses.get(active.healthId)?.reason === "stop_failed") continue;
       let health: NativeChannelRuntimeHealth;
       try {
         health = NativeChannelRuntimeHealthSchema.parse(active.runtime.health());
@@ -524,23 +579,43 @@ export class NativeChannelDriverManager {
       if (this.active.some((active) => active.healthId === healthId)) {
         throw new NativeChannelDriverContractError("runtime_descriptor_invalid");
       }
-      await runtime.start();
+      if (!this.stopping) await runtime.start();
       this.statuses.delete(pendingId);
       this.active.push({ runtime, descriptor, healthId, lease });
     } catch (error) {
+      let cleanupFailed = false;
       if (runtime) {
         try {
           await runtime.stop();
-        } catch {
-          // Startup remains the primary stable failure reason.
+        } catch (cleanupError) {
+          cleanupFailed = true;
+          this.startupCleanupFailures.push(cleanupError);
         }
       }
-      lease?.dispose();
+      if (!cleanupFailed) {
+        try {
+          lease?.dispose();
+        } catch (cleanupError) {
+          this.startupCleanupFailures.push(cleanupError);
+        }
+      }
+      const reason = driverFailureReason(error, "startup_failed");
+      const detail = driverFailureDetail(error);
       this.statuses.set(pendingId, {
         id: pendingId,
         channelId: provider,
         status: "failed",
-        reason: driverFailureReason(error, "startup_failed"),
+        reason,
+        ...(detail ? { detail } : {}),
+      });
+      // Only stable codes go to the log: a raw message can echo part of a
+      // malformed secret (for example a JSON.parse error on the payload).
+      log.warn("Native channel adapter failed to start; it is not retried until the runner restarts", {
+        channel: channel.name,
+        provider,
+        reason,
+        ...(detail ? { detail } : {}),
+        ...(channel.credentialConnection ? { credentialConnection: channel.credentialConnection } : {}),
       });
     }
   }
@@ -662,7 +737,21 @@ function driverFailureReason(
   error: unknown,
   fallback: NativeChannelDriverFailureReason,
 ): NativeChannelDriverFailureReason {
-  return error instanceof NativeChannelDriverContractError ? error.reason : fallback;
+  if (error instanceof NativeChannelDriverContractError) return error.reason;
+  if (isCredentialBrokerError(error)) {
+    // Only an absent or disabled connection is a credentials problem; an
+    // unreachable backend or a failed read stays a startup failure, with its
+    // code as the detail.
+    return error.code === "connection_not_found" || error.code === "connection_disabled"
+      ? "missing_credentials"
+      : fallback;
+  }
+  return fallback;
+}
+
+/** Non-secret code narrowing a failure reason, when the error carries one. */
+function driverFailureDetail(error: unknown): string | undefined {
+  return isCredentialBrokerError(error) ? error.code : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

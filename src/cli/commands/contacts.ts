@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Contacts Commands - Contact management CLI (v2 with identities)
  */
@@ -7,8 +8,13 @@ import { Group, Command, CommandAccess, Scope, Arg, Option } from "../decorators
 import { fail } from "../context.js";
 import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems, parseCliListLimit, parseCliListOffset } from "../pagination.js";
-import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
+import {
+  commandEnvelopeReturnSchema,
+  declareCommandReturns,
+  platformIdentityLinkReturnSchema,
+} from "./operational-return-schemas.js";
 import { nats } from "../../nats.js";
+import { resolvePendingContact } from "../pending-contact.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
@@ -36,6 +42,7 @@ import {
   setOptOut,
   linkContactIdentity,
   unlinkContactIdentity,
+  upsertAgentPlatformIdentity,
   mergeContacts,
   getContactDetails,
   listContactEvents,
@@ -60,8 +67,10 @@ import {
   listAccountPendingChats,
 } from "../../contacts.js";
 import {
+  dbGetAgent,
   dbGetInstance,
   dbGetInstanceByInstanceId,
+  dbListAgents,
   dbListMessageMetaByContactId,
   dbListRoutes,
   type MessageMetadata,
@@ -73,7 +82,19 @@ import {
   type ContactSessionSummary,
 } from "../../session-trace/session-trace-db.js";
 import type { SessionEventRecord } from "../../session-trace/types.js";
-import { getScopeContext, isScopeEnforced, canAccessContact, canWriteContacts } from "../../permissions/scope.js";
+import {
+  getScopeContext,
+  isScopeEnforced,
+  canAccessContact,
+  canViewAgent,
+  canWriteContacts,
+  filterVisibleAgents,
+} from "../../permissions/scope.js";
+import {
+  assertPermissionTagWriteAuthority,
+  assertPrivilegedContactWriteAuthority,
+  isPermissionPolicyTag,
+} from "../../permissions/privileged-contact-writes.js";
 import { printInspectionBlock, printInspectionField } from "../inspection-output.js";
 
 const CONTACT_DB_META = { source: "contact-db", freshness: "persisted" } as const;
@@ -383,11 +404,11 @@ function assertCanReadContactTimeline(op: string, contactRef: string, asJson?: b
   assertCanReadContact(op, contactRef, asJson);
 }
 
-function canViewPendingAccountEntry(entry: { phone: string; pendingKind?: string }): boolean {
+function canViewPendingAccountEntry(entry: { accountId: string; phone: string; pendingKind?: string }): boolean {
   const scopeCtx = getScopeContext();
   if (!isScopeEnforced(scopeCtx)) return true;
   if (entry.pendingKind === "chat") return canWriteContacts(scopeCtx);
-  const contact = getContact(entry.phone);
+  const { contact } = resolvePendingContact(entry);
   return contact ? canReadContactRecord(scopeCtx, contact) : canWriteContacts(scopeCtx);
 }
 
@@ -406,11 +427,14 @@ function canViewPendingAccountEntry(entry: { phone: string; pendingKind?: string
 function failContactNotFound(op: string, contactRef: string, asJson?: boolean): never {
   const candidates = filterVisibleContacts(getAllContacts()).flatMap((contact) => [contact.id, contact.name ?? ""]);
   contractFail(op, "CONTACT_NOT_FOUND", `Contact not found: ${contactRef}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the contact id/identity (see suggestions for similar visible contacts)",
-      suggestions: suggestSimilar(contactRef, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the contact id/identity (see suggestions for similar visible contacts)",
+        suggestions: suggestSimilar(contactRef, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Contact not found: ${contactRef}`, { operation: op }),
   });
 }
 
@@ -420,6 +444,13 @@ function failContactNotFound(op: string, contactRef: string, asJson?: boolean): 
  * envelope, let ContractError pass through untouched, and keep every other
  * error on the legacy fail() path.
  */
+/** Permission tags added or removed when a contact's tag list is replaced. */
+function changedPermissionTags(current: readonly string[], next: readonly string[]): string[] {
+  const before = new Set(current.filter(isPermissionPolicyTag));
+  const after = new Set(next.filter(isPermissionPolicyTag));
+  return [...[...after].filter((tag) => !before.has(tag)), ...[...before].filter((tag) => !after.has(tag))];
+}
+
 function rethrowContactCommandError(op: string, contactRef: string, err: unknown, asJson?: boolean): never {
   if (err instanceof ContractError) throw err;
   const message = err instanceof Error ? err.message : String(err);
@@ -531,7 +562,7 @@ export class ContactsCommands {
       accountPendingContacts: accountPendingContacts.map((entry) => ({
         ...entry,
         type: entry.chatType,
-        contact: serializeContactMaybe(getContact(entry.phone)),
+        contact: serializeContactMaybe(resolvePendingContact(entry).contact),
       })),
       pendingChats: pendingChats.map((entry) => ({
         ...entry,
@@ -541,7 +572,7 @@ export class ContactsCommands {
       accountPending: accountPending.map((entry) => ({
         ...entry,
         type: entry.chatType,
-        contact: entry.pendingKind === "contact" ? serializeContactMaybe(getContact(entry.phone)) : null,
+        contact: entry.pendingKind === "contact" ? serializeContactMaybe(resolvePendingContact(entry).contact) : null,
       })),
     };
     if (asJson) {
@@ -571,15 +602,15 @@ export class ContactsCommands {
       console.log("  ------------  --------------------  ---------------------------------   ----------");
       for (const entry of accountPendingContacts) {
         const acct = entry.accountId.padEnd(12);
-        const contact = getContact(entry.phone);
+        const { contact, channel } = resolvePendingContact(entry);
         const name = (contact?.name || entry.name || "-").slice(0, 20).padEnd(20);
         const identities = contact
           ? formatIdentitiesShort(contact, 35).padEnd(35)
-          : `phone ${entry.phone}`.slice(0, 35).padEnd(35);
+          : `${channel} ${entry.phone}`.slice(0, 35).padEnd(35);
         const since = new Date(entry.updatedAt).toISOString().split("T")[0];
         console.log(`  ${acct}  ${name}  ${identities}   ${since}`);
       }
-      console.log("\nApprove: ravi instances pending approve <instance> <phone>");
+      console.log("\nApprove: ravi instances pending approve <instance> <identity>");
       console.log("Add route: ravi instances routes add <instance> <pattern> <agent>");
     }
 
@@ -997,6 +1028,11 @@ export class ContactsCommands {
       if (!asJson) console.log(`✓ Mode set: ${contact.id} → ${value}`);
     } else if (key === "email") {
       jsonValue = value === "-" ? null : value;
+      // primary_email resolves inbound senders, so it is an identity key.
+      if (jsonValue !== null && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(jsonValue))) {
+        fail(`Invalid email: ${value}`);
+      }
+      assertPrivilegedContactWriteAuthority("contacts set email", [contact.id]);
       updateContact(contact.id, { email: jsonValue as string | null });
       if (!asJson) console.log(`✓ Email set: ${contact.id} → ${value}`);
     } else if (key === "name") {
@@ -1004,15 +1040,17 @@ export class ContactsCommands {
       updateContact(contact.id, { name: jsonValue as string | null });
       if (!asJson) console.log(`✓ Name set: ${contact.id} → ${value}`);
     } else if (key === "tags") {
+      let tags: unknown;
       try {
-        const tags = JSON.parse(value);
-        if (!Array.isArray(tags)) fail("Tags must be a JSON array");
-        jsonValue = tags;
-        updateContact(contact.id, { tags });
-        if (!asJson) console.log(`✓ Tags set: ${contact.id} → ${value}`);
+        tags = JSON.parse(value);
       } catch {
         fail('Tags must be a valid JSON array, e.g. \'["lead","vip"]\'');
       }
+      if (!Array.isArray(tags) || !tags.every((tag) => typeof tag === "string")) fail("Tags must be a JSON array");
+      assertPermissionTagWriteAuthority("contacts set tags", changedPermissionTags(contact.tags, tags));
+      jsonValue = tags;
+      updateContact(contact.id, { tags });
+      if (!asJson) console.log(`✓ Tags set: ${contact.id} → ${value}`);
     } else if (key === "notes") {
       try {
         const notes = JSON.parse(value);
@@ -1650,6 +1688,7 @@ export class ContactsCommands {
       failContactNotFound("contacts tag", contactRef, asJson);
     }
 
+    assertPermissionTagWriteAuthority("contacts tag", [tag]);
     addContactTag(contact.phone, tag);
     const payload = {
       status: "tag_added" as const,
@@ -1679,6 +1718,7 @@ export class ContactsCommands {
       failContactNotFound("contacts untag", contactRef, asJson);
     }
 
+    assertPermissionTagWriteAuthority("contacts untag", [tag]);
     removeContactTag(contact.phone, tag);
     const payload = {
       status: "tag_removed" as const,
@@ -1709,6 +1749,8 @@ export class ContactsCommands {
   ) {
     if (!channel) fail("--channel is required");
     if (!platformUserId) fail("--id is required");
+    const linkTarget = getContact(contactRef);
+    if (linkTarget) assertPrivilegedContactWriteAuthority("contacts link", [linkTarget.id]);
 
     try {
       const details = linkContactIdentity(contactRef, {
@@ -1735,6 +1777,86 @@ export class ContactsCommands {
       return payload;
     } catch (err: any) {
       rethrowContactCommandError("contacts link", contactRef, err, asJson);
+    }
+  }
+
+  @Scope("writeContacts")
+  @Command({
+    name: "link-agent",
+    description: "Link a platform identity to an agent (bot senders resolve to an agent actor)",
+  })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "link-agent", risk: "medium" })
+  linkAgent(
+    @Arg("agent", { description: "Agent ID that owns the platform identity" }) agentId: string,
+    @Option({ flags: "--channel <channel>", description: "Channel, e.g. slack, telegram, discord" })
+    channel?: string,
+    @Option({ flags: "--id <platformUserId>", description: "Platform user ID" })
+    platformUserId?: string,
+    @Option({ flags: "--instance <id>", description: "Channel instance ID" }) instanceId?: string,
+    @Option({ flags: "--name <text>", description: "Platform display name" }) platformDisplayName?: string,
+    @Option({ flags: "--reason <text>", description: "Reason for the link audit event" }) reason?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!channel) {
+      contractFail("contacts link-agent", "USAGE_ERROR", "--channel is required", {
+        ...{ asJson, exitCode: 2 },
+        diagnostic: errorDiagnostic(reason, { operation: "contacts link-agent" }),
+      });
+    }
+    if (!platformUserId) {
+      contractFail("contacts link-agent", "USAGE_ERROR", "--id is required", {
+        ...{ asJson, exitCode: 2 },
+        diagnostic: errorDiagnostic(reason, { operation: "contacts link-agent" }),
+      });
+    }
+    const scopeCtx = getScopeContext();
+    const targetAgent = dbGetAgent(agentId);
+    // A caller scoped to one agent must not link an identity to an agent it
+    // cannot see, nor learn about agents outside its scope through suggestions.
+    const targetVisible = Boolean(targetAgent) && (!isScopeEnforced(scopeCtx) || canViewAgent(scopeCtx, agentId));
+    if (!targetVisible) {
+      const candidates = filterVisibleAgents(scopeCtx, dbListAgents()).flatMap((agent) => [agent.id, agent.name]);
+      contractFail("contacts link-agent", "AGENT_NOT_FOUND", `Agent not found: ${agentId}`, {
+        ...{
+          asJson,
+          details: { suggestions: suggestSimilar(agentId, candidates, 3) },
+        },
+        diagnostic: errorDiagnostic(reason, { operation: "contacts link-agent" }),
+      });
+    }
+
+    try {
+      const identity = upsertAgentPlatformIdentity({
+        agentId,
+        channel,
+        instanceId: instanceId ?? null,
+        platformUserId,
+        platformDisplayName: platformDisplayName ?? null,
+        linkedBy: "cli",
+        linkReason: reason ?? "cli_link_agent",
+      });
+      const payload = {
+        status: "linked" as const,
+        agent: agentId,
+        identity: {
+          id: identity.id,
+          channel: identity.channel,
+          instanceId: identity.instanceId,
+          platformUserId: identity.platformUserId,
+          ownerType: identity.ownerType,
+          ownerId: identity.ownerId,
+        },
+      };
+      if (asJson) {
+        printJson(payload);
+      } else {
+        console.log(
+          `✓ Identity linked to agent ${agentId}: ${platformIcon(channel)} ${platformUserId} (${identity.id})`,
+        );
+      }
+      return payload;
+    } catch (err: any) {
+      fail(err instanceof Error ? err.message : String(err));
     }
   }
 
@@ -1827,6 +1949,7 @@ export class ContactsCommands {
     const source = getContact(sourceRef);
     if (!target) failContactNotFound("contacts merge", targetRef, asJson);
     if (!source) failContactNotFound("contacts merge", sourceRef, asJson);
+    assertPrivilegedContactWriteAuthority("contacts merge", [source.id, target.id]);
 
     if (execute !== true) {
       // Write brake (Manual v2 7.8): the merge deletes the source contact and
@@ -2018,6 +2141,7 @@ declareCommandReturns(ContactsCommands, {
   get: commandEnvelopeReturnSchema,
   info: commandEnvelopeReturnSchema,
   link: commandEnvelopeReturnSchema,
+  linkAgent: platformIdentityLinkReturnSchema,
   list: commandEnvelopeReturnSchema,
   merge: commandEnvelopeReturnSchema,
   messages: commandEnvelopeReturnSchema,

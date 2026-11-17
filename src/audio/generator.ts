@@ -9,7 +9,7 @@ import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 import { writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("audio");
@@ -299,9 +299,14 @@ export async function generateAudio(text: string, opts: GenerateAudioOptions = {
   if (opts.ptt) {
     const oggPath = filePath.replace(/\.[^.]+$/, ".ogg");
     try {
-      execSync(`ffmpeg -y -i "${filePath}" -c:a libopus -b:a 64k -ar 48000 -ac 1 "${oggPath}"`, {
-        stdio: "pipe",
-      });
+      // argv, never a shell string: --output is caller text.
+      execFileSync(
+        "ffmpeg",
+        ["-y", "-i", filePath, "-c:a", "libopus", "-b:a", "64k", "-ar", "48000", "-ac", "1", oggPath],
+        {
+          stdio: "pipe",
+        },
+      );
       unlinkSync(filePath);
       log.info("Converted to OGG/Opus for PTT", { oggPath });
       return {

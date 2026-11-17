@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { z } from "zod";
 import { CloudAuthError, cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
@@ -979,11 +980,14 @@ function failCalendarNotFound(op: string, calendarRef: string, asJson?: boolean)
   const candidates = visibleCalendars().flatMap((calendar) => [calendar.id, calendar.name]);
   const suggestions = suggestSimilar(calendarRef, candidates);
   contractFail(op, "CALENDAR_NOT_FOUND", `Calendar not found: ${calendarRef}`, {
-    asJson,
-    details: {
-      ...(suggestions.length > 0 ? { suggestions } : {}),
-      suggestedAction: "List visible calendars with: ravi calendars list --json",
+    ...{
+      asJson,
+      details: {
+        ...(suggestions.length > 0 ? { suggestions } : {}),
+        suggestedAction: "List visible calendars with: ravi calendars list --json",
+      },
     },
+    diagnostic: errorDiagnostic(`Calendar not found: ${calendarRef}`, { operation: op }),
   });
 }
 
@@ -991,25 +995,34 @@ function failSourceNotFound(op: string, sourceRef: string, asJson?: boolean): ne
   const candidates = listCalendarAccounts({ limit: 500 }).flatMap((account) => [account.id, account.displayName]);
   const suggestions = suggestSimilar(sourceRef, candidates);
   contractFail(op, "SOURCE_NOT_FOUND", `Calendar source not found: ${sourceRef}`, {
-    asJson,
-    details: {
-      ...(suggestions.length > 0 ? { suggestions } : {}),
-      suggestedAction: "List local sources with: ravi calendars sources list --json",
+    ...{
+      asJson,
+      details: {
+        ...(suggestions.length > 0 ? { suggestions } : {}),
+        suggestedAction: "List local sources with: ravi calendars sources list --json",
+      },
     },
+    diagnostic: errorDiagnostic(`Calendar source not found: ${sourceRef}`, { operation: op }),
   });
 }
 
 function failEventNotFound(op: string, eventId: string, asJson?: boolean): never {
   contractFail(op, "EVENT_NOT_FOUND", `Calendar event not found: ${eventId}`, {
-    asJson,
-    details: { suggestedAction: "List events with: ravi calendars events list --from now --to +30d --json" },
+    ...{
+      asJson,
+      details: { suggestedAction: "List events with: ravi calendars events list --from now --to +30d --json" },
+    },
+    diagnostic: errorDiagnostic(`Calendar event not found: ${eventId}`, { operation: op }),
   });
 }
 
 function failOutboxNotFound(op: string, outboxId: string, asJson?: boolean): never {
   contractFail(op, "OUTBOX_NOT_FOUND", `Calendar outbox row not found: ${outboxId}`, {
-    asJson,
-    details: { suggestedAction: "List outbox rows with: ravi calendars outbox list --json" },
+    ...{
+      asJson,
+      details: { suggestedAction: "List outbox rows with: ravi calendars outbox list --json" },
+    },
+    diagnostic: errorDiagnostic(`Calendar outbox row not found: ${outboxId}`, { operation: op }),
   });
 }
 

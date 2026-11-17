@@ -7,8 +7,12 @@
  *   to the agent in private (the agent never starts the conversation); the
  *   daemon answers that message with the approval link.
  * - Slack, or a WhatsApp private chat: the approval link goes out now.
+ * - A cron run acting for the contact who created the job, or a turn a
+ *   trigger of theirs fired (Bases): nothing is sent, since nobody is asking
+ *   (`routine`).
  */
 
+import type { AccessActorDeps } from "../access/actor.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import { currentConnectorRuntimeContext } from "../link/connector-turn.js";
 import type { ContextRecord } from "../router/router-db.js";
@@ -24,11 +28,25 @@ export interface TurnLinkDeps {
   context?: ContextRecord | null;
   requestLink?: typeof requestIdentityLink;
   now?: () => number;
+  /** Whether this turn is a routine run acting for its creator (default: the turn classification). */
+  isRoutineRun?: () => boolean | Promise<boolean>;
+  /** How the refused call reads the turn (Bases honors trigger owners). */
+  actor?: Pick<AccessActorDeps, "triggerRoutines">;
+}
+
+async function defaultIsRoutineRun(actor: TurnLinkDeps["actor"]): Promise<boolean> {
+  // Loaded lazily to keep the access classifier out of import cycles.
+  const { resolveAccessActor } = await import("../access/actor.js");
+  const decision = resolveAccessActor(actor ?? {});
+  return decision.kind === "contact" && decision.routine !== undefined;
 }
 
 export async function startTurnLink(contactId: string, deps: TurnLinkDeps = {}): Promise<TurnLinkFlow> {
   const now = (deps.now ?? Date.now)();
   try {
+    // A scheduled run acting for the job's creator: nobody is asking, so
+    // nobody is messaged.
+    if (await (deps.isRoutineRun ? deps.isRoutineRun() : defaultIsRoutineRun(deps.actor))) return "routine";
     const recent = listPendingLocalLinkRequestsForContact(contactId).some(
       (request) => request.createdAt > now - RECENT_LINK_MS && request.expiresAt > now,
     );

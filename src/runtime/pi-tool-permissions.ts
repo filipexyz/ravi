@@ -1,6 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ContextCapability } from "../router/router-db.js";
+import { buildWrappedBashCommand, shouldWrapBashCommand } from "../jobs/detach.js";
+import { ensureDetachScript, resolveDetachScriptPath } from "../jobs/detach-script.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { formatSkillNotAuthorizedReason, isSkillAuthorizedForAgent } from "./skill-authorization.js";
 import {
@@ -13,6 +15,7 @@ import type {
   RuntimeApprovalQuestion,
   RuntimeApprovalRequest,
   RuntimeApprovalResult,
+  RuntimeDynamicToolCallResult,
   RuntimeHostServices,
   RuntimeToolPermissionHandler,
 } from "./types.js";
@@ -40,6 +43,8 @@ export class PiPermissionBridgeError extends Error {
   }
 }
 
+export const PI_DYNAMIC_TOOL_UI_TITLE = "ravi_dynamic_tool";
+
 export const PI_RAVI_PERMISSION_EXTENSION_SOURCE = `/**
  * Ravi-owned Pi permission bridge.
  *
@@ -59,6 +64,59 @@ const ALLOW = ${JSON.stringify(PI_PERMISSION_ALLOW_TOKEN)};
 const MISSING = ${JSON.stringify(PI_PERMISSION_MISSING_DECISION_REASON)};
 const UNREADABLE = ${JSON.stringify(PI_PERMISSION_UNREADABLE_DECISION_REASON)};
 const FAILED = ${JSON.stringify(PI_PERMISSION_UI_FAILED_REASON)};
+const DYNAMIC_TITLE = ${JSON.stringify(PI_DYNAMIC_TOOL_UI_TITLE)};
+const DYNAMIC_TOOLS = readDynamicTools();
+
+function readDynamicTools() {
+  try {
+    const file = process.env.RAVI_PI_DYNAMIC_TOOLS_FILE;
+    let raw = process.env.RAVI_PI_DYNAMIC_TOOLS;
+    if (file) {
+      const fs = typeof process.getBuiltinModule === "function" ? process.getBuiltinModule("node:fs") : null;
+      if (fs) raw = fs.readFileSync(file, "utf8");
+    }
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((tool) => tool && typeof tool.name === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseDynamicToolResult(value) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function runDynamicTool(ctx, toolName, toolCallId, params) {
+  const payload = JSON.stringify({
+    version: 1,
+    toolName: toolName,
+    toolCallId: toolCallId,
+    arguments: params || {},
+  });
+  // Serialize against the permission dialogs: Pi keeps one outstanding dialog
+  // per session, and a late permission answer would otherwise cancel the tool
+  // call (the host reply then never reaches this promise).
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let raw = null;
+    try {
+      raw = await withPermissionGate(() => ctx.ui.input(DYNAMIC_TITLE, payload));
+    } catch {
+      raw = null;
+    }
+    const parsed = parseDynamicToolResult(raw);
+    if (parsed) {
+      return parsed;
+    }
+  }
+  return null;
+}
 
 function parseDecision(value) {
   if (value === true || value === ALLOW) return { allowed: true };
@@ -73,7 +131,12 @@ function parseDecision(value) {
   try {
     const parsed = JSON.parse(trimmed);
     if (parsed && typeof parsed === "object" && typeof parsed.allowed === "boolean") {
-      if (parsed.allowed) return { allowed: true };
+      if (parsed.allowed) {
+        // O host pode devolver uma reescrita do comando (detach de comando longo).
+        // Ela vale só para uma decisão já autorizada: a permissão viu o comando real.
+        const command = typeof parsed.command === "string" && parsed.command.trim() ? parsed.command : undefined;
+        return { allowed: true, command };
+      }
       const reason = typeof parsed.reason === "string" && parsed.reason.trim() ? parsed.reason.trim() : OPAQUE;
       return { allowed: false, reason };
     }
@@ -128,12 +191,57 @@ export default function (pi) {
       if (!decision.allowed) {
         return { block: true, reason: decision.reason || OPAQUE };
       }
+      if (decision.command && event.input && typeof event.input === "object") {
+        // Pi garante que mutação de event.input afeta a execução. Aplicada depois
+        // da autorização, de propósito: o gate nunca autoriza o wrapper.
+        event.input.command = decision.command;
+      }
       return undefined;
     });
   });
 
   // Observational afterToolCall equivalent. Authorization happens in tool_call.
   pi.on("tool_result", async () => {});
+
+  for (const dynamicTool of DYNAMIC_TOOLS) {
+    pi.registerTool({
+      name: dynamicTool.name,
+      label: dynamicTool.label || dynamicTool.name,
+      description: dynamicTool.description || dynamicTool.name,
+      parameters: dynamicTool.parameters || { type: "object", properties: {}, additionalProperties: true },
+      async execute(toolCallId, params, _signal, _onUpdate, ctx) {
+        if (!ctx.ui || !ctx.ui.input) {
+          throw new Error("Ravi dynamic tool bridge UI input is unavailable");
+        }
+        const parsed = await runDynamicTool(ctx, dynamicTool.name, toolCallId, params);
+        if (!parsed) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Ravi dynamic tool bridge did not answer; retry this tool call once.",
+              },
+            ],
+            details: {},
+            isError: true,
+          };
+        }
+        if (!parsed.success) {
+          throw new Error(
+            typeof parsed.reason === "string" && parsed.reason ? parsed.reason : "Ravi host tool failed",
+          );
+        }
+        const items = Array.isArray(parsed.contentItems) ? parsed.contentItems : [];
+        const content = items
+          .filter((item) => item && typeof item.text === "string")
+          .map((item) => ({ type: "text", text: item.text }));
+        return {
+          content: content.length > 0 ? content : [{ type: "text", text: "ok" }],
+          details: {},
+        };
+      },
+    });
+  }
 }
 `;
 
@@ -154,11 +262,20 @@ export interface PiToolPermissionHandlers {
 export interface PiToolPermissionDecision {
   allowed: boolean;
   reason?: string;
+  /**
+   * Reescrita do comando aprovado (detach de comando longo). Nunca é um comando
+   * novo: é o mesmo comando, rodando através do wrapper.
+   */
+  command?: string;
 }
 
 export function formatPiPermissionUiDecisionValue(decision: PiToolPermissionDecision): string {
   if (decision.allowed) {
-    return JSON.stringify({ v: PI_PERMISSION_DECISION_VERSION, allowed: true });
+    return JSON.stringify({
+      v: PI_PERMISSION_DECISION_VERSION,
+      allowed: true,
+      ...(decision.command ? { command: decision.command } : {}),
+    });
   }
   return JSON.stringify({
     v: PI_PERMISSION_DECISION_VERSION,
@@ -184,7 +301,11 @@ export function parsePiPermissionUiDecisionValue(value: unknown): PiToolPermissi
   const parsed = parseJsonRecord(trimmed);
   if (parsed && typeof parsed.allowed === "boolean") {
     if (parsed.allowed) {
-      return { allowed: true };
+      // O host pode ter reescrito o comando (detach). Quem lê a decisão precisa
+      // receber a reescrita: o espelho da extensão já a aplica, e descartar aqui
+      // faria o mesmo valor significar coisas diferentes nos dois lados.
+      const command = firstString(parsed.command);
+      return command ? { allowed: true, command } : { allowed: true };
     }
     return {
       allowed: false,
@@ -384,7 +505,29 @@ export async function authorizePiToolCall(
     };
   }
 
-  return { allowed: true };
+  // Autorizado. Só agora o comando pode ganhar o wrapper de detach: o gate de
+  // permissão decide sobre o comando que o agente pediu, nunca sobre o wrapper.
+  const detachCommand = buildPiDetachCommand(mapped, command);
+  return detachCommand ? { allowed: true, command: detachCommand } : { allowed: true };
+}
+
+/**
+ * Pi não suporta `updatedInput` como o caminho Claude; o que ele suporta é mutação
+ * de `event.input` dentro de `tool_call`. A política mora aqui (testável) e a
+ * extensão só aplica a string devolvida.
+ *
+ * Falha do detach nunca derruba a tool call: sem wrapper o comando roda igual.
+ */
+function buildPiDetachCommand(toolName: string, command: string | undefined): string | null {
+  if (toolName !== "Bash" || !command) return null;
+  try {
+    const scriptPath = resolveDetachScriptPath();
+    if (!shouldWrapBashCommand(command, { scriptPath })) return null;
+    const resolvedPath = ensureDetachScript();
+    return buildWrappedBashCommand({ scriptPath: resolvedPath, command });
+  } catch {
+    return null;
+  }
 }
 
 function isPiSkillAuthorized(skillName: string, handlers: PiToolPermissionHandlers): boolean {
@@ -438,6 +581,63 @@ export function buildPiPermissionUiResponse(
     return { type: "extension_ui_response", id, confirmed: normalized.allowed === true, value };
   }
   return { type: "extension_ui_response", id, value };
+}
+
+export interface PiDynamicToolUiRequest {
+  id: string;
+  toolName: string;
+  toolCallId?: string;
+  arguments: Record<string, unknown>;
+}
+
+/** True when the extension-UI request carries the Pi bridge's host-tool title. */
+export function isPiDynamicToolUiTitle(event: Record<string, unknown>): boolean {
+  return event.title === PI_DYNAMIC_TOOL_UI_TITLE;
+}
+
+/**
+ * Detect the extension-UI call the Pi bridge makes to execute a host tool.
+ *
+ * Pi RPC sends `ctx.ui.input(title, placeholder)` as `{ method: "input", title,
+ * placeholder }`, so the payload is read from the same fields as a permission
+ * request (message, placeholder, prefill), not from `message` alone.
+ */
+export function parsePiDynamicToolUiRequest(event: Record<string, unknown>): PiDynamicToolUiRequest | null {
+  if (!isPiDynamicToolUiTitle(event)) {
+    return null;
+  }
+  const id = typeof event.id === "string" ? event.id : undefined;
+  if (!id) {
+    return null;
+  }
+  const payload = parseJsonRecord(firstString(event.message, event.placeholder, event.prefill));
+  const toolName = firstString(payload?.toolName);
+  if (!toolName) {
+    return null;
+  }
+  const toolCallId = firstString(payload?.toolCallId);
+  return {
+    id,
+    toolName,
+    ...(toolCallId ? { toolCallId } : {}),
+    arguments: asRecord(payload?.arguments) ?? {},
+  };
+}
+
+/** Encode a host tool result as the extension-UI value the Pi bridge parses. */
+export function formatPiDynamicToolUiResponse(
+  request: PiDynamicToolUiRequest,
+  result: RuntimeDynamicToolCallResult,
+): Record<string, unknown> {
+  return {
+    type: "extension_ui_response",
+    id: request.id,
+    value: JSON.stringify({
+      success: result.success,
+      contentItems: result.contentItems,
+      ...(result.reason ? { reason: result.reason } : {}),
+    }),
+  };
 }
 
 export function createPiApprovalHandler(hostServices: RuntimeHostServices): RuntimeApprovalHandler {

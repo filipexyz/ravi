@@ -12,6 +12,7 @@ import { dbUpsertChat } from "../router/router-db.js";
 import { attachChatToSession, getOrCreateSession, type AgentConfig, type SessionEntry } from "../router/index.js";
 import type { RuntimeCrashRecoveryCoordinator } from "../runtime/crash-recovery.js";
 import { createQueuedRuntimeUserMessage } from "../runtime/delivery-queue.js";
+import { resolveRuntimeContext } from "../runtime/context-registry.js";
 import type { RuntimeHostStreamingSession } from "../runtime/host-session.js";
 import type { RuntimeLaunchPrompt } from "../runtime/message-types.js";
 import { buildRuntimeStartRequest } from "../runtime/runtime-request-builder.js";
@@ -52,14 +53,20 @@ const capabilities: RuntimeCapabilities = {
 };
 
 let stateDir: string | null = null;
+let finishTurn: (() => Promise<void>) | undefined;
 
 beforeEach(async () => {
   stateDir = await createIsolatedRaviState("ravi-connector-turn-relay-");
 });
 
 afterEach(async () => {
-  await cleanupIsolatedRaviState(stateDir);
-  stateDir = null;
+  try {
+    await finishTurn?.();
+  } finally {
+    finishTurn = undefined;
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  }
 });
 
 function emptyRuntimeSession(): RuntimeSessionHandle {
@@ -68,6 +75,7 @@ function emptyRuntimeSession(): RuntimeSessionHandle {
 
 function streamingSession(prompt: RuntimeLaunchPrompt): RuntimeHostStreamingSession {
   return {
+    sessionKey: SESSION_KEY,
     agentId: AGENT_ID,
     queryHandle: emptyRuntimeSession(),
     starting: false,
@@ -136,12 +144,24 @@ async function startTurn(prompt: RuntimeLaunchPrompt) {
       markTurnAttemptSafety: () => undefined,
     } as unknown as RuntimeCrashRecoveryCoordinator,
   });
+  let finished = false;
+  const finish = async () => {
+    if (finished) return;
+    finished = true;
+    streaming.done = true;
+    streaming.onTurnComplete?.();
+    await runtimeRequest.prompt.return(undefined);
+  };
+  // Connector calls happen inside the active turn. Terminal cleanup revokes
+  // its credential, so keep the generator open until the assertions finish.
+  finishTurn = finish;
   await expect(runtimeRequest.prompt.next()).resolves.toMatchObject({ done: false });
   const env = { RAVI_CONTEXT_KEY: runtimeRequest.env?.RAVI_CONTEXT_KEY ?? "" };
-  streaming.done = true;
-  streaming.onTurnComplete?.();
-  await runtimeRequest.prompt.return(undefined);
-  return { env, streaming };
+  expect(streaming.turnActive).toBe(true);
+  expect(resolveRuntimeContext(env.RAVI_CONTEXT_KEY, { touch: false })?.metadata?.actorPrincipal).toBe(
+    "automation:operator:local",
+  );
+  return { env, streaming, finish };
 }
 
 /** What `ravi sessions send <session> "..."` publishes from the terminal. */
@@ -183,6 +203,8 @@ describe("operator relay into a session that answers into a group", () => {
     if (result.ok) return;
     expect((result.error as CloudAuthError).code).toBe("CONNECTOR_GROUP_BLOCKED");
     expect(result.error.exitCode).toBe(3);
+    expect(result.speakerIsOwner).toBe(true);
+    expect(result.actorPrincipal).toBe("automation:operator:local");
   });
 
   it("keeps a relay whose answer comes back to the waiting terminal on the operator's accounts", async () => {
@@ -197,5 +219,19 @@ describe("operator relay into a session that answers into a group", () => {
       speaker: { kind: "owner" },
       conversation: "terminal",
     });
+  });
+
+  it("stops an operator relay from using personal connectors after its turn completes", async () => {
+    const { env, finish } = await startTurn(relayPrompt({ _cliDestination: true }));
+    expect(resolveConnectorTurn({ ...OWNER, env }).ok).toBe(true);
+
+    await finish();
+
+    expect(resolveRuntimeContext(env.RAVI_CONTEXT_KEY, { touch: false })).toBeNull();
+    const result = resolveConnectorTurn({ ...OWNER, env });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect((result.error as CloudAuthError).code).toBe("CONNECTOR_SPEAKER_NOT_OWNER");
+    expect(result.error.exitCode).toBe(3);
   });
 });

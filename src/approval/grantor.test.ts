@@ -1,12 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { dbCreateTagDefinition } from "../tags/tag-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { actorCanGrantRequestedPermission, setApprovalGrantorRouterConfigForTest } from "./grantor.js";
+import {
+  actorCanGrantRequestedPermission,
+  listSlackApprovalGrantorUserIds,
+  setApprovalGrantorRouterConfigForTest,
+} from "./grantor.js";
 import {
   APPROVAL_TEST_FAMILY_PHONE,
   APPROVAL_TEST_LEAD_PHONE,
   APPROVAL_TEST_SLACK_OWNER_PHONE,
   APPROVAL_TEST_SLACK_OWNER_USER,
+  APPROVAL_TEST_SLACK_STRANGER_USER,
+  APPROVAL_TEST_STRANGER_PHONE,
   APPROVAL_TEST_SUPERADMIN_PHONE,
   APPROVAL_TEST_WA_OWNER_PHONE,
   seedApprovalContact,
@@ -223,5 +229,33 @@ describe("approval grantor", () => {
         senderId: APPROVAL_TEST_SUPERADMIN_PHONE,
       }).allowed,
     ).toBe(true);
+  });
+
+  it("lists only the Slack people of the instance who can grant the request", () => {
+    seedApprovalContact({
+      phone: APPROVAL_TEST_SLACK_OWNER_PHONE,
+      name: "Slack Owner",
+      tags: ["permission.admin"],
+      slack: { userId: APPROVAL_TEST_SLACK_OWNER_USER, instanceId: "main" },
+    });
+    seedApprovalContact({
+      phone: APPROVAL_TEST_STRANGER_PHONE,
+      name: "Stranger",
+      tags: ["lead"],
+      slack: { userId: APPROVAL_TEST_SLACK_STRANGER_USER, instanceId: "main" },
+    });
+    seedApprovalContact({
+      phone: APPROVAL_TEST_SUPERADMIN_PHONE,
+      name: "Other workspace admin",
+      tags: ["permission.admin"],
+      slack: { userId: "UOTHERWS1", instanceId: "other" },
+    });
+
+    const request = { permission: "execute", objectType: "executable", objectId: "curl" };
+    expect(listSlackApprovalGrantorUserIds({ instanceId: "main", ...request })).toEqual([
+      APPROVAL_TEST_SLACK_OWNER_USER,
+    ]);
+    expect(listSlackApprovalGrantorUserIds({ instanceId: "other", ...request })).toEqual(["UOTHERWS1"]);
+    expect(listSlackApprovalGrantorUserIds({ instanceId: "nobody", ...request })).toEqual([]);
   });
 });

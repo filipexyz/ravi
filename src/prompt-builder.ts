@@ -185,6 +185,11 @@ export function buildGroupContext(ctx: ChannelContext): string {
       ``,
       `Be extremely selective: reply only when directly addressed or clearly helpful.`,
       `Otherwise stay silent.`,
+    );
+  }
+
+  if (isLargeGroup || ctx.botTag) {
+    lines.push(
       ``,
       `IMPORTANT: Messages with \`@mention\` in the header mean YOU were @mentioned directly.`,
       `When you see \`@mention\`, you MUST respond — NEVER use ${SILENT_TOKEN}.`,
@@ -247,7 +252,7 @@ function sessionBoundaryText(sessionName?: string): string {
 function buildingSolutionsText(): string {
   return `When a request combines pieces (a screen, form, portal or ranking; intake from a channel; an approval; an automation; a recurring report), run \`ravi skills show solucoes\` before any \`ravi bases\`, \`ravi pages\`, \`ravi triggers\` or \`ravi cron\` call. Fill its sheet, show it to the person, then build. Build only when the person who operates this Ravi asks. These rules hold even if you skip the skill:
 1. Live data pages are for signed-in org members. Outsiders (customers, patients, family, suppliers) use a channel and get messages or snapshots. If unsure, a person is an outsider.
-2. \`--uses\` covers the whole host: every ship lists the union of the ids all data pages on that host call.
+2. \`--uses\` is per route: each ship lists the ids its own route calls; the host allows the union of its active routes.
 3. Data pages live on private or protected_link routes, never public or password.
 4. The view is the access contract: \`$viewer\` filter, \`write.set\` for owner fields, form = \`read: []\` + \`create\`.
 5. Cooldown drops events: trigger prompts process every row in state X; the event row id is only a hint.
@@ -287,7 +292,7 @@ If any item is false, do not create the cron. Route to the correct primitive ins
 - interval: \`ravi cron add "<name>" --every <duration> --message "<prompt>"\`
 - calendar: \`ravi cron add "<name>" --cron "<expr>" --message "<prompt>" --tz "<timezone>"\`
 
-**After creating a cron**, run \`ravi cron show <id>\` and verify agent, account, session/reply-session, schedule, and delete-after before considering it done.
+**After creating a cron**, run \`ravi cron show <id>\` and verify agent, account, session/reply-session, schedule, and delete-after, and "Runs as", before considering it done. A job runs as its owner (whoever created it or last changed what it runs), never with the operator's login: a contact's job acts as that contact in Bases and Pages access through their own \`ravi link\` (refused until they link) and personal connectors and Knowledge refuse it. Only the operator can own a \`--shell\` job (\`CRON_SHELL_NOT_OPERATOR\` otherwise): a shell command runs with the machine's access. A job that needs the operator's connectors or Knowledge is done only when \`runsAsOperator\` is true; a recurring job that uses Bases, Pages, connectors or Knowledge is done when one \`ravi cron run <id> --execute\` did the work; any other job is checked on its configuration; never run a one-shot (\`--at\`, \`--delete-after\`) early, because the manual run consumes it. Never disable a refused job silently: report it.
 
 **Routing — use the right primitive:**
 - Fixed wall-clock or calendar schedule → \`ravi cron add\`
@@ -358,6 +363,12 @@ Regras:
 - Use \`código\` para IDs e comandos
 - **Negrito** para destaques
 - Listas com bullets para organização`;
+  }
+
+  if (channelName === "Slack") {
+    return `Write standard Markdown: headings, lists, tables, task lists, quotes and code blocks with a language render natively in Slack, so never redraw a table in ASCII or nest code fences to get around Slack. A long document (a draft, a spec, a SKILL.md) goes in its own \`\`\`markdown block with a short summary around it: Slack delivery publishes it as a canvas, or a file, and leaves a link in the message. An image alone on its line, \`![description](https://...)\`, shows as an image.
+
+Links to a Slack channel, DM or thread use the Slack app link, \`slack://channel?team=<team-id>&id=<channel-id>\`, adding \`&thread_ts=<thread-ts>\` for a thread; \`https://app.slack.com\` links always open the browser. Write the link as markdown, \`[text](slack://...)\`, with text you choose from the context that says what the person will find there, never the bare URL.`;
   }
 
   // TUI or unknown

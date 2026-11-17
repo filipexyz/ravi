@@ -10,7 +10,10 @@ import { createHash } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { nats } from "../nats.js";
+import { nats, getNats } from "../nats.js";
+import type { Subscription } from "nats";
+import { followFingerprint, followHealthTopic } from "../pr/follow-health.js";
+import { getLocalWatchRunner } from "../watch/local-runner.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import { getDefaultAgentId } from "../router/router-db.js";
@@ -18,7 +21,9 @@ import { deriveSourceFromSessionKey } from "../router/session-key.js";
 import {
   getMainSession,
   getOrCreateSession,
+  getSession,
   resolveSession,
+  resetSession,
   generateSessionName,
   ensureUniqueName,
   updateSessionName,
@@ -27,11 +32,21 @@ import {
 import { getAgent } from "../router/config.js";
 import { spawnedAutomationEnv } from "../runtime/turn-origin.js";
 import { dbListTriggers, dbGetTrigger, dbRecordTriggerFilterRejects, dbUpdateTriggerState } from "./triggers-db.js";
+import {
+  captureTriggerRunAuthority,
+  sameTriggerDefinition,
+  sessionAdmitsTriggerFire,
+  triggerFireSession,
+  triggerRunsAs,
+} from "./ownership.js";
+import { isTriggerOwnSessionKey, triggerOwnSessionName } from "./authority.js";
 import type { CompiledFilter } from "./filter.js";
 import { isLegacySessionTarget, isSessionNameTemplate, type Trigger } from "./types.js";
 import { resolveTemplate, resolveTemplateStrict } from "./template.js";
 import { resolveTriggerActivation } from "./activation.js";
+import { isInternalEventTopic } from "./topic-policy.js";
 import { buildTriggerPrompt } from "./prompt.js";
+import { TriggerDebouncer, type TriggerBatch } from "./debounce.js";
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS, runShellCronCommand, type ShellCronRunResult } from "../cron/shell-executor.js";
 
 const log = logger.child("triggers:runner");
@@ -50,6 +65,9 @@ interface PreparedTrigger {
 interface TopicSubscription {
   stream: TopicSub;
   triggers: PreparedTrigger[];
+  controller: AbortController;
+  loop?: Promise<void>;
+  failures: Error[];
 }
 
 interface PendingFilterRejects {
@@ -103,7 +121,13 @@ export function isTriggerOriginatedEvent(topic: string, data: unknown): boolean 
   if (!data || typeof data !== "object") return false;
   const record = data as Record<string, unknown>;
   const origin = (record._turnProvenance as { origin?: unknown } | undefined)?.origin;
-  return origin === "trigger" || record._trigger === true;
+  if (origin === "trigger" || record._trigger === true) return true;
+  // A command run by a turn in a trigger's own session: its audit event is
+  // published under `ravi._cli.*` and names the session in the invocation
+  // record. What such a turn does is not another trigger's to act on.
+  const invocation = record.cliInvocation as { raviContext?: { sessionKey?: unknown } } | undefined;
+  const invocationSession = invocation?.raviContext?.sessionKey;
+  return typeof invocationSession === "string" && isTriggerOwnSessionKey(invocationSession);
 }
 
 export function shouldRetryTriggerTopic(
@@ -119,6 +143,44 @@ export function shouldRetryTriggerTopic(
  * TriggerRunner - manages event-driven trigger subscriptions
  */
 export class TriggerRunner {
+  private publicationHealth: Subscription | null = null;
+
+  /** Read the loaded subscription, not just a row that has not reached this runner. */
+  publicationFollowHealth(triggerId?: string) {
+    const loaded = [...this.topicSubs.values()]
+      .flatMap((sub) => sub.triggers)
+      .find(({ trigger }) => trigger.id === triggerId);
+    return {
+      running: this.running,
+      producerRunning: getLocalWatchRunner().isRunning(),
+      fingerprint: this.running && loaded ? followFingerprint(loaded.trigger) : null,
+    };
+  }
+
+  private subscribePublicationHealth(): void {
+    try {
+      this.publicationHealth = getNats().subscribe(followHealthTopic(), {
+        callback: (error, message) => {
+          if (error || !message.reply || message.data.length > 512) return;
+          try {
+            const input = JSON.parse(new TextDecoder().decode(message.data)) as { triggerId?: unknown };
+            if (
+              input.triggerId !== undefined &&
+              (typeof input.triggerId !== "string" || !/^[\w-]{1,100}$/.test(input.triggerId))
+            )
+              return;
+            message.respond(
+              Buffer.from(JSON.stringify(this.publicationFollowHealth(input.triggerId as string | undefined))),
+            );
+          } catch {
+            /* Ignore malformed probes; no state is changed by this endpoint. */
+          }
+        },
+      });
+    } catch {
+      log.warn("PR publication health endpoint is unavailable");
+    }
+  }
   /** Topic streams (NOT including refresh/test — those are long-lived) */
   private topicSubs = new Map<string, TopicSubscription>();
   /** Last desired topic set, used to prevent delayed retries from reviving removed subscriptions. */
@@ -132,6 +194,8 @@ export class TriggerRunner {
   private filterRejectFlushTimer: ReturnType<typeof setTimeout> | null = null;
   /** Last topic+filter logged at info per trigger, so each filter logs its first reject once. */
   private loggedFilterRejects = new Map<string, string>();
+  /** Pending bursts of debounced triggers, keyed like the cooldown (trigger or trigger+session). */
+  private debouncer = new TriggerDebouncer((batch) => this.flushDebounced(batch));
 
   /**
    * Start the trigger runner.
@@ -143,6 +207,7 @@ export class TriggerRunner {
     log.info("Starting trigger runner");
 
     await this.setupSubscriptions();
+    this.subscribePublicationHealth();
     this.subscribeToConfigRefresh();
     this.subscribeToTestEvents();
 
@@ -153,30 +218,50 @@ export class TriggerRunner {
    * Stop the trigger runner.
    */
   async stop(): Promise<void> {
-    if (!this.running) return;
+    if (!this.running && !this.publicationHealth && !this.topicSubs.size && !this.pendingFilterRejects.size) return;
     this.running = false;
+    const failures: Error[] = [];
 
     log.info("Stopping trigger runner");
+    try {
+      this.publicationHealth?.unsubscribe();
+      this.publicationHealth = null;
+    } catch (cause) {
+      failures.push(new Error("Trigger publication health unsubscribe failed", { cause }));
+    }
 
-    this.teardownSubscriptions();
-    this.flushFilterRejects();
-
+    failures.push(...(await this.teardownSubscriptions()));
+    failures.push(...this.flushFilterRejects());
+    try {
+      const pendingDebounced = this.debouncer.clear();
+      if (pendingDebounced > 0) {
+        log.warn("Dropped debounced trigger events pending at stop", { events: pendingDebounced });
+      }
+    } catch (cause) {
+      failures.push(new Error("Trigger debounce cleanup failed", { cause }));
+    }
+    if (failures.length) throw new AggregateError(failures, "Trigger runner shutdown failed", { cause: failures[0] });
     log.info("Trigger runner stopped");
   }
 
-  /**
-   * Tear down all topic subscriptions.
-   */
-  private teardownSubscriptions(): void {
-    for (const subscription of this.topicSubs.values()) {
-      try {
-        subscription.stream.return?.(undefined);
-      } catch {
-        // ignore close errors
-      }
-    }
-    this.topicSubs.clear();
+  /** Stop every topic before waiting; an idle next() must be woken before return(). */
+  private async teardownSubscriptions(): Promise<Error[]> {
     this.desiredTopics.clear();
+    const subscriptions = [...this.topicSubs.entries()];
+    for (const [, subscription] of subscriptions) subscription.controller.abort();
+    const results = await Promise.all(
+      subscriptions.map(async ([topic, subscription]) => {
+        try {
+          await subscription.stream.return?.(undefined);
+        } catch (cause) {
+          subscription.failures.push(new Error(`Trigger topic ${topic} close failed`, { cause }));
+        }
+        await subscription.loop;
+        if (subscription.failures.length === 0) this.topicSubs.delete(topic);
+        return subscription.failures;
+      }),
+    );
+    return results.flat();
   }
 
   // Mutex to prevent concurrent setupSubscriptions calls
@@ -294,12 +379,13 @@ export class TriggerRunner {
    * Subscribe to a NATS topic and fire matching triggers.
    */
   private subscribeToTopic(topic: string, triggers: PreparedTrigger[]): void {
-    const stream = nats.subscribe(topic);
-    const subscription: TopicSubscription = { stream, triggers };
+    const controller = new AbortController();
+    const stream = nats.subscribe(topic, { signal: controller.signal });
+    const subscription: TopicSubscription = { stream, triggers, controller, failures: [] };
     this.topicSubs.set(topic, subscription);
 
-    // Run subscription loop in background
-    (async () => {
+    // Retain the loop so shutdown observes a rejection delivered to pending next().
+    subscription.loop = (async () => {
       try {
         for await (const event of stream) {
           if (!this.running) break;
@@ -314,6 +400,9 @@ export class TriggerRunner {
           // for producers that have not adopted it yet.
           const eventData = event.data as Record<string, unknown> | undefined;
           if (isTriggerOriginatedEvent(event.topic, eventData)) continue;
+          // A wildcard pattern also delivers the bus's own transport (what a
+          // session streams, a request's reply, a remote worker's pipe).
+          if (isInternalEventTopic(event.topic)) continue;
 
           for (const prepared of subscription.triggers) {
             const trigger = prepared.trigger;
@@ -335,11 +424,14 @@ export class TriggerRunner {
               }
               keyedCooldownKey = keyedCooldownId(trigger, targetName);
             }
+            const debounceMs = trigger.debounceMs ?? 0;
+            const debounced = debounceMs > 0;
             const lastFiredAt = keyedCooldownKey
               ? this.keyedLastFiredAt.get(keyedCooldownKey)?.at
               : trigger.lastFiredAt;
-            // Cooldown check
-            if (lastFiredAt && Date.now() - lastFiredAt < trigger.cooldownMs) {
+            // Cooldown check. A debounced trigger checks it when the burst
+            // fires instead, and waits it out rather than dropping events.
+            if (!debounced && lastFiredAt && Date.now() - lastFiredAt < trigger.cooldownMs) {
               log.debug("Trigger cooldown active, skipping", {
                 triggerId: trigger.id,
                 triggerName: trigger.name,
@@ -363,6 +455,11 @@ export class TriggerRunner {
               continue;
             }
 
+            if (debounced) {
+              this.debouncer.add(keyedCooldownKey ?? trigger.id, trigger.id, debounceMs, event);
+              continue;
+            }
+
             // Set cooldown immediately to prevent race condition:
             // Without this, multiple events arriving in rapid succession
             // all pass the cooldown check before the first fireTrigger
@@ -380,7 +477,10 @@ export class TriggerRunner {
         }
       } catch (err) {
         // Stream closed is expected during teardown
-        if (!this.running || this.topicSubs.get(topic) !== subscription) return;
+        if (!this.running || this.topicSubs.get(topic) !== subscription) {
+          subscription.failures.push(new Error(`Trigger topic ${topic} failed during shutdown`, { cause: err }));
+          return;
+        }
 
         log.error("Topic subscription error", { topic, error: err });
         this.topicSubs.delete(topic);
@@ -413,6 +513,52 @@ export class TriggerRunner {
     return false;
   }
 
+  /**
+   * A debounced burst is due. It fires with its last event and the whole batch,
+   * using the trigger as currently configured; a cooldown still running delays
+   * the burst instead of dropping it.
+   */
+  private flushDebounced(batch: TriggerBatch): void {
+    const trigger = this.findLiveTrigger(batch.triggerId);
+    if (!trigger || !this.running) {
+      log.info("Dropping debounced burst; trigger is gone or disabled", {
+        triggerId: batch.triggerId,
+        events: batch.events.length,
+      });
+      return;
+    }
+    const keyed = batch.key !== trigger.id;
+    const lastFiredAt = keyed ? this.keyedLastFiredAt.get(batch.key)?.at : trigger.lastFiredAt;
+    const remaining = lastFiredAt ? trigger.cooldownMs - (Date.now() - lastFiredAt) : 0;
+    if (remaining > 0) {
+      log.debug("Debounced burst waiting for cooldown", { triggerId: trigger.id, remainingMs: remaining });
+      this.debouncer.requeue(batch, remaining);
+      return;
+    }
+    if (keyed) this.markKeyedFire(batch.key, trigger.cooldownMs);
+    else trigger.lastFiredAt = Date.now();
+
+    const last = batch.events[batch.events.length - 1];
+    if (!last) return;
+    log.info("Firing debounced trigger", {
+      triggerId: trigger.id,
+      triggerName: trigger.name,
+      events: batch.events.length,
+      omitted: batch.omitted,
+    });
+    this.fireTrigger(trigger, last, { batch }).catch((err) => {
+      log.error("Error firing trigger", { triggerId: trigger.id, error: err });
+    });
+  }
+
+  private findLiveTrigger(id: string): Trigger | null {
+    for (const subscription of this.topicSubs.values()) {
+      const prepared = subscription.triggers.find((item) => item.trigger.id === id);
+      if (prepared) return prepared.trigger.enabled ? prepared.trigger : null;
+    }
+    return null;
+  }
+
   private markKeyedFire(key: string, cooldownMs: number): void {
     const now = Date.now();
     this.keyedLastFiredAt.set(key, { at: now, cooldownMs });
@@ -431,7 +577,7 @@ export class TriggerRunner {
   private async fireTrigger(
     trigger: Trigger,
     event: { topic: string; data: unknown },
-    opts: { test?: boolean } = {},
+    opts: { test?: boolean; batch?: TriggerBatch; testInitiator?: string } = {},
   ): Promise<void> {
     const agentId = trigger.agentId ?? getDefaultAgentId();
     const agent = getAgent(agentId);
@@ -449,12 +595,21 @@ export class TriggerRunner {
 
     let sessionName: string;
     let source: { channel: string; accountId: string; chatId: string } | undefined;
+    // The trigger as stored now: who owns it decides which session is its own.
+    const stored = dbGetTrigger(trigger.id);
+    // Whether this fire is its owner's: decided before the session is chosen,
+    // because only such a fire enters the trigger's own session.
+    const ownerFire = this.fireIsOwners(trigger, stored, opts);
+    // The key of the trigger's own session, when this fire runs there. Only an
+    // `isolated` trigger a person owns has one; nothing else enters it.
+    let ownSessionKey: string | null = null;
 
     if (trigger.session === "main") {
       // If replySession is set, resolve it for session name + source routing
       if (trigger.replySession) {
         const resolved = resolveSession(trigger.replySession);
-        if (resolved?.name) {
+        // Another trigger's own session never stands in for the main session.
+        if (resolved?.name && sessionAdmitsTriggerFire(resolved)) {
           sessionName = resolved.name;
           source = sourceFromSessionEntry(resolved, trigger.accountId);
         } else {
@@ -475,14 +630,34 @@ export class TriggerRunner {
         }
       }
     } else if (trigger.session === "isolated") {
-      const dbKey = `agent:${agentId}:trigger:${trigger.id}`;
-      const existing = resolveSession(dbKey);
-      if (existing?.name) {
+      // A trigger a person owns runs in its own session; one nobody owns keeps
+      // the plain one-per-trigger session, as before owners existed. A fire
+      // that is not its owner's (someone else's test, a stale definition)
+      // runs in the plain session too: it never touches the owner's history.
+      const target = triggerFireSession(agentId, stored ?? trigger, { asOwner: ownerFire });
+      const dbKey = target.sessionKey;
+      // The own session is found by its key alone: a session that merely goes
+      // by that string as its name is not it.
+      const existing = target.own ? getSession(dbKey) : resolveSession(dbKey);
+      if (target.own) ownSessionKey = dbKey;
+      if (target.own) {
+        // The own session goes by one name, its key: a name the session store
+        // gives to no other session, before this one exists or after it is
+        // deleted. So nothing keyed to its name (history, a context, a signal)
+        // was ever another session's, and nobody inherits what this one stored.
+        sessionName = triggerOwnSessionName(dbKey);
+        if (!existing) getOrCreateSession(dbKey, agentId, agentCwd, { name: sessionName }, { triggerRunner: true });
+        // Start after whatever the journal already holds under that name (an
+        // earlier own session of this trigger, since deleted). Checked on
+        // every fire, so a session left without the mark gets it before its
+        // first turn.
+        if (existing?.historyResetAfterId === undefined) resetSession(dbKey);
+      } else if (existing?.name) {
         sessionName = existing.name;
       } else {
         const baseName = generateSessionName(agentId, { suffix: `trigger-${trigger.name}` });
         sessionName = ensureUniqueName(baseName);
-        const session = getOrCreateSession(dbKey, agentId, agentCwd, { name: sessionName });
+        const session = getOrCreateSession(dbKey, agentId, agentCwd, { name: sessionName }, { triggerRunner: true });
         if (!session.name) updateSessionName(session.sessionKey, sessionName);
       }
 
@@ -526,6 +701,18 @@ export class TriggerRunner {
         });
         return;
       }
+      if (isTriggerOwnSessionKey(rawTarget) || (existing && !sessionAdmitsTriggerFire(existing))) {
+        // A trigger's own session is entered only by that trigger's isolated
+        // fires: a name, a key or event data never points another fire there,
+        // nor at a stand-in for one that does not exist yet.
+        log.warn("Skipping trigger fire; resolved session is another trigger's own", {
+          triggerId: trigger.id,
+          triggerName: trigger.name,
+          topic: event.topic,
+          session: existing?.name ?? existing?.sessionKey ?? rawTarget,
+        });
+        return;
+      }
       if (existing) {
         // An unnamed session (e.g. the creator's, inherited by key) is reused
         // and given a name, never replaced by a new one.
@@ -533,7 +720,7 @@ export class TriggerRunner {
         if (!existing.name) updateSessionName(existing.sessionKey, sessionName);
       } else {
         sessionName = ensureUniqueName(targetName);
-        const session = getOrCreateSession(dbKey, agentId, agentCwd, { name: sessionName });
+        const session = getOrCreateSession(dbKey, agentId, agentCwd, { name: sessionName }, { triggerRunner: true });
         if (!session.name) updateSessionName(session.sessionKey, sessionName);
       }
 
@@ -565,11 +752,11 @@ export class TriggerRunner {
     }
 
     if ((trigger.executionType ?? "agent") === "shell") {
-      await this.fireShellTrigger(trigger, event, source);
+      await this.fireShellTrigger(trigger, event, source, opts.batch);
       return;
     }
 
-    const prompt = buildTriggerPrompt(trigger, event);
+    const prompt = buildTriggerPrompt(trigger, event, opts.batch);
 
     log.info("Firing trigger", {
       triggerId: trigger.id,
@@ -584,6 +771,9 @@ export class TriggerRunner {
       source,
       _trigger: true,
       _triggerId: trigger.id,
+      _triggerAuthority: captureTriggerRunAuthority(ownerFire && stored ? stored : { id: trigger.id }, {
+        ownSessionKey,
+      }),
     });
 
     dbUpdateTriggerState(trigger.id, {
@@ -593,6 +783,28 @@ export class TriggerRunner {
 
     // Update in-memory trigger too (for cooldown tracking)
     trigger.lastFiredAt = Date.now();
+  }
+
+  /**
+   * Whether this fire is its owner's, fixed now: it decides both who the fire
+   * acts as (the snapshot carried with the prompt) and which session it runs
+   * in. The owner is read from the stored row, never from the subscription's
+   * copy, and is admitted only when that row is still the trigger being
+   * fired: after an edit the runner has not reloaded, the old message must
+   * not run under the row's owner, and a row that is gone has no owner. A
+   * test fire is admitted only for the owner's own test. A fire that is not
+   * admitted acts as nobody and stays out of the trigger's own session.
+   */
+  private fireIsOwners(
+    trigger: Trigger,
+    stored: Trigger | null,
+    opts: { test?: boolean; testInitiator?: string },
+  ): boolean {
+    return (
+      stored !== null &&
+      sameTriggerDefinition(stored, trigger) &&
+      (!opts.test || (opts.testInitiator !== undefined && opts.testInitiator === triggerRunsAs(stored)))
+    );
   }
 
   /**
@@ -646,7 +858,8 @@ export class TriggerRunner {
     this.filterRejectFlushTimer.unref?.();
   }
 
-  private flushFilterRejects(): void {
+  private flushFilterRejects(): Error[] {
+    const failures: Error[] = [];
     if (this.filterRejectFlushTimer) {
       clearTimeout(this.filterRejectFlushTimer);
       this.filterRejectFlushTimer = null;
@@ -659,8 +872,10 @@ export class TriggerRunner {
       } catch (error) {
         log.warn("Failed to record trigger filter rejects; retrying on the next flush", { triggerId, error });
         this.restoreFilterRejects(triggerId, rejects);
+        failures.push(new Error(`Trigger ${triggerId} filter reject flush failed`, { cause: error }));
       }
     }
+    return failures;
   }
 
   /** Put a failed batch back. A newer batch for another topic/filter wins; the stale one is dropped. */
@@ -748,6 +963,15 @@ export class TriggerRunner {
     }
 
     const resolved = resolveSession(sessionRef);
+    // A trigger's own session runs that trigger's fires only: a failed
+    // command's output is not one, so it is reported nowhere rather than there.
+    if (!sessionAdmitsTriggerFire(resolved) || isTriggerOwnSessionKey(sessionRef)) {
+      log.warn("Skipping trigger on-error notice; the session is a trigger's own", {
+        triggerId: trigger.id,
+        session: sessionRef,
+      });
+      return;
+    }
     const sessionName = resolved?.name ?? sessionRef;
     const stdout = result.stdout.trim();
     const stderr = result.stderr.trim();
@@ -781,6 +1005,7 @@ export class TriggerRunner {
     trigger: Trigger,
     event: { topic: string; data: unknown },
     source: { channel: string; accountId: string; chatId: string } | undefined,
+    batch?: TriggerBatch,
   ): Promise<void> {
     if (!trigger.shellCommand?.trim()) {
       throw new Error("Shell trigger is missing shellCommand");
@@ -790,6 +1015,9 @@ export class TriggerRunner {
     const tempDir = await mkdtemp(join(tmpdir(), "ravi-trigger-shell-"));
     const eventFile = join(tempDir, "event.json");
     const dataFile = join(tempDir, "data.json");
+    // Every event this fire carries: one, or the whole debounced burst (oldest first).
+    const eventsFile = join(tempDir, "events.json");
+    const events = batch?.events ?? [event];
 
     try {
       await writeFile(
@@ -810,6 +1038,7 @@ export class TriggerRunner {
         "utf8",
       );
       await writeFile(dataFile, JSON.stringify(event.data ?? null, null, 2), "utf8");
+      await writeFile(eventsFile, JSON.stringify(events, null, 2), "utf8");
 
       log.info("Firing shell trigger", {
         triggerId: trigger.id,
@@ -821,7 +1050,11 @@ export class TriggerRunner {
       const result = await runShellCronCommand(trigger.shellCommand, {
         timeoutMs: trigger.shellTimeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS,
         envFile: trigger.shellEnvFile,
-        env: this.buildShellEnv(trigger, event, source, eventFile, dataFile),
+        env: {
+          ...this.buildShellEnv(trigger, event, source, eventFile, dataFile),
+          RAVI_TRIGGER_EVENTS_FILE: eventsFile,
+          RAVI_TRIGGER_EVENT_COUNT: String(events.length + (batch?.omitted ?? 0)),
+        },
       });
 
       if (result.stdout.trim()) {
@@ -915,7 +1148,7 @@ export class TriggerRunner {
       for await (const event of nats.subscribe(topic)) {
         if (!this.running) break;
 
-        const data = event.data as { triggerId?: string };
+        const data = event.data as { triggerId?: string; initiator?: unknown };
         if (!data.triggerId) continue;
 
         log.info("Received test trigger", { triggerId: data.triggerId });
@@ -936,7 +1169,8 @@ export class TriggerRunner {
               timestamp: new Date().toISOString(),
             },
           },
-          { test: true },
+          // Who asked for the test: the fire acts as the trigger's owner only when they are that owner.
+          { test: true, ...(typeof data.initiator === "string" ? { testInitiator: data.initiator } : {}) },
         );
       }
     } catch (err) {

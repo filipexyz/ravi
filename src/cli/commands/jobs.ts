@@ -1,21 +1,28 @@
 import "reflect-metadata";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { z } from "zod";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
 import { nats } from "../../nats.js";
 import { getRaviStateDir } from "../../utils/paths.js";
 import { getContext } from "../context.js";
+import { canAccessResource, canModifySession, getScopeContext, isScopeEnforced } from "../../permissions/scope.js";
 import {
   dbCreateJob,
+  dbFinishJob,
   dbGetJob,
   dbListJobs,
+  dbRegisterJob,
   isJobTerminal,
+  JOB_FINISHED_TOPIC,
   JOB_KILL_TOPIC,
   JOB_START_TOPIC,
+  jobStatusFromExitCode,
+  readJobExitState,
   readJobTail,
+  signalFromExitCode,
   type JobRecord,
 } from "../../jobs/index.js";
 
@@ -83,6 +90,22 @@ const jobsKillReturnSchema = z.object({
   killed: z.boolean(),
 });
 
+const jobsRegisterReturnSchema = z.object({
+  id: z.string(),
+  status: z.string(),
+  pid: z.number().nullable(),
+  logPath: z.string(),
+  origin: z.string(),
+});
+
+const jobsFinishReturnSchema = z.object({
+  id: z.string(),
+  status: z.string(),
+  exitCode: z.number().nullable(),
+  signal: z.string().nullable(),
+  notified: z.boolean(),
+});
+
 function serializeJob(job: JobRecord) {
   return {
     id: job.id,
@@ -116,6 +139,33 @@ function resolveAgentId(explicit?: string): string | null {
     return getContext()?.agentId ?? null;
   } catch {
     return null;
+  }
+}
+
+/** Jobs belong to their agent: other agents' jobs read as missing. */
+function canUseJob(job: Pick<JobRecord, "agentId">, mode: "read" | "mutate"): boolean {
+  const scopeCtx = getScopeContext();
+  if (!isScopeEnforced(scopeCtx)) return true;
+  return canAccessResource(scopeCtx, job.agentId ?? undefined, mode);
+}
+
+function getUsableJob(id: string, mode: "read" | "mutate"): JobRecord | null {
+  const job = dbGetJob(id);
+  return job && canUseJob(job, mode) ? job : null;
+}
+
+/**
+ * A job runs for its agent and reports into its session, so picking another
+ * agent or session needs the authority to act there.
+ */
+function assertJobTargetAuthorized(agentId: string | null, sessionName: string | null): void {
+  const scopeCtx = getScopeContext();
+  if (!isScopeEnforced(scopeCtx)) return;
+  if (!canAccessResource(scopeCtx, agentId ?? undefined, "mutate")) {
+    fail(`Agent not found: ${agentId ?? "(none)"}`);
+  }
+  if (sessionName && !canModifySession(scopeCtx, sessionName)) {
+    fail(`Session not found: ${sessionName}`);
   }
 }
 
@@ -163,11 +213,15 @@ O desfecho volta para a sessão automaticamente quando o job termina.`,
 
     // Um log por job. Um arquivo compartilhado misturaria saídas de comandos
     // diferentes e o tail perderia sentido.
+    const jobSessionName = resolveSessionName(sessionName);
+    const jobAgentId = resolveAgentId(agentId);
+    assertJobTargetAuthorized(jobAgentId, jobSessionName);
+
     const jobId = `job_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
     const job = dbCreateJob({
       id: jobId,
-      sessionName: resolveSessionName(sessionName),
-      agentId: resolveAgentId(agentId),
+      sessionName: jobSessionName,
+      agentId: jobAgentId,
       command: commandLine,
       cwd: cwd ?? null,
       logPath: join(getRaviStateDir(), "jobs", `${jobId}.log`),
@@ -242,7 +296,7 @@ O desfecho volta para a sessão automaticamente quando o job termina.`,
     const pageSize = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 500) : 50;
     const skip = Number.isFinite(parsedOffset) && parsedOffset > 0 ? parsedOffset : 0;
 
-    const allJobs = dbListJobs({ sessionName: session, limit: 500 });
+    const allJobs = dbListJobs({ sessionName: session, limit: 500 }).filter((job) => canUseJob(job, "read"));
     const items = allJobs.slice(skip, skip + pageSize);
     const payload = {
       total: allJobs.length,
@@ -277,7 +331,7 @@ O desfecho volta para a sessão automaticamente quando o job termina.`,
     @Arg("id", { description: "Job id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) _asJson?: boolean,
   ) {
-    const job = dbGetJob(id);
+    const job = getUsableJob(id, "read");
     if (!job) {
       fail(`Job não encontrado: ${id}`);
       return;
@@ -295,7 +349,7 @@ O desfecho volta para a sessão automaticamente quando o job termina.`,
     @Option({ flags: "-n, --lines <n>", description: "How many characters to keep (default 4000)" }) lines?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const job = dbGetJob(id);
+    const job = getUsableJob(id, "read");
     if (!job) {
       fail(`Job não encontrado: ${id}`);
       return;
@@ -323,6 +377,10 @@ O desfecho volta para a sessão automaticamente quando o job termina.`,
   ) {
     const parsed = timeoutMs ? Number.parseInt(timeoutMs, 10) : 0;
     const timeout = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    if (!getUsableJob(id, "read")) {
+      fail(`Job não encontrado: ${id}`);
+      return;
+    }
     const job = await waitForJob(id, timeout);
     if (!job) {
       fail(`Job ${id} não terminou no tempo esperado`);
@@ -350,7 +408,7 @@ O desfecho volta para a sessão automaticamente quando o job termina.`,
     @Arg("id", { description: "Job id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const job = dbGetJob(id);
+    const job = getUsableJob(id, "mutate");
     if (!job) {
       fail(`Job não encontrado: ${id}`);
       return;
@@ -366,6 +424,144 @@ O desfecho volta para a sessão automaticamente quando o job termina.`,
     const payload = { id, status: job.status, killed: true };
     if (asJson) console.log(JSON.stringify(payload, null, 2));
     else console.log(`Pedido de kill enviado para ${id}.`);
+    return payload;
+  }
+
+  /**
+   * Contrato interno do wrapper de detach (`ravi-jobs-exec.sh`).
+   *
+   * O wrapper é quem rodou o comando e sabe o pid; o daemon não viu esse
+   * processo nascer. Este comando existe para o handle que o agente recebe
+   * apontar para uma linha que já existe — nunca para uma promessa.
+   */
+  @Command({
+    name: "register",
+    description: "Register a job that is already running (internal: detach wrapper)",
+    helpAfter: `Chamado pelo wrapper de detach, não por pessoas.
+
+  ravi jobs register --id job_abc --pid 4242 --log <path> --command "bun test" --session dev
+
+Se o comando já terminou antes do registro, --exit fecha o job na mesma chamada:
+a linha nasce terminal e nenhum desfecho é entregue (a saída já voltou no turno).`,
+  })
+  @CliOnly()
+  @CommandAccess({ kind: "mutate", resource: "jobs", action: "register", risk: "low" })
+  @Returns(jobsRegisterReturnSchema)
+  register(
+    @Option({ flags: "--id <id>", description: "Job id chosen by the wrapper" }) id?: string,
+    @Option({ flags: "--pid <pid>", description: "PID of the process that owns the command" }) pid?: string,
+    @Option({ flags: "--log <path>", description: "Log file the command writes to" }) logPath?: string,
+    @Option({ flags: "--command <command>", description: "Original command line" }) command?: string,
+    @Option({ flags: "--cwd <dir>", description: "Working directory" }) cwd?: string,
+    @Option({ flags: "--session <name>", description: "Session to notify when the job finishes" })
+    sessionName?: string,
+    @Option({ flags: "--agent <id>", description: "Agent that owns the job" }) agentId?: string,
+    @Option({ flags: "--exit <code>", description: "The command already finished with this exit code" })
+    exitCode?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!id) fail("jobs register precisa de --id");
+    if (!logPath) fail("jobs register precisa de --log");
+
+    const parsedPid = pid ? Number.parseInt(pid, 10) : Number.NaN;
+    const parsedExit = exitCode === undefined ? null : Number.parseInt(exitCode, 10);
+    if (parsedExit !== null && !Number.isFinite(parsedExit)) fail(`--exit inválido: ${exitCode}`);
+
+    const job = dbRegisterJob({
+      id: id!,
+      sessionName: resolveSessionName(sessionName),
+      agentId: resolveAgentId(agentId),
+      command: command ?? "",
+      cwd: cwd ?? null,
+      logPath: logPath!,
+      pid: Number.isFinite(parsedPid) ? parsedPid : null,
+      exit:
+        parsedExit === null
+          ? null
+          : {
+              status: jobStatusFromExitCode(parsedExit),
+              exitCode: parsedExit,
+              signal: signalFromExitCode(parsedExit),
+            },
+    });
+
+    const payload = {
+      id: job.id,
+      status: job.status,
+      pid: job.pid,
+      logPath: job.logPath,
+      origin: job.origin,
+    };
+    if (asJson) console.log(JSON.stringify(payload, null, 2));
+    else console.log(`${job.id}  ${job.status}  pid ${job.pid ?? "-"}`);
+    return payload;
+  }
+
+  /**
+   * Fecha um job de detach com o exit code real e avisa o daemon para entregar o
+   * desfecho na sessão. Sem `--silent`, o runner manda o resultado para a sessão.
+   */
+  @Command({
+    name: "finish",
+    description: "Finish a detached job and deliver its outcome (internal: detach wrapper)",
+    helpAfter: `Chamado pelo processo que rodou o comando, quando ele termina.
+
+  ravi jobs finish --id job_abc
+  ravi jobs finish --id job_abc --exit 0 --silent   # a saída já voltou no turno`,
+  })
+  @CliOnly()
+  @CommandAccess({ kind: "mutate", resource: "jobs", action: "finish", risk: "low" })
+  @Returns(jobsFinishReturnSchema)
+  async finish(
+    @Option({ flags: "--id <id>", description: "Job id" }) id?: string,
+    @Option({ flags: "--exit <code>", description: "Exit code (default: read from the log state file)" })
+    exitCode?: string,
+    @Option({ flags: "--silent", description: "Do not deliver the outcome to the session" }) silent?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!id) fail("jobs finish precisa de --id");
+    const job = dbGetJob(id!);
+    // Terminou antes de a linha existir: nada a fechar e nada a entregar. O
+    // wrapper trata esse caso lendo o estado por conta própria.
+    if (!job) {
+      const missing = { id: id!, status: "missing", exitCode: null, signal: null, notified: false };
+      if (asJson) console.log(JSON.stringify(missing, null, 2));
+      return missing;
+    }
+
+    if (!isJobTerminal(job.status)) {
+      const parsedFromArg = exitCode === undefined ? null : Number.parseInt(exitCode, 10);
+      const state = readJobExitState(job.logPath);
+      const code = Number.isFinite(parsedFromArg as number) ? (parsedFromArg as number) : (state?.exitCode ?? null);
+      if (code === null) fail(`Job ${job.id} não tem exit code: passe --exit ou verifique ${job.logPath}.exit`);
+      dbFinishJob(job.id, {
+        status: jobStatusFromExitCode(code as number),
+        exitCode: code as number,
+        signal: signalFromExitCode(code as number),
+      });
+    }
+
+    const finished = dbGetJob(job.id) ?? job;
+    let notified = false;
+    if (!silent && !finished.notifiedAt && isJobTerminal(finished.status)) {
+      try {
+        await nats.emit(JOB_FINISHED_TOPIC, { jobId: finished.id });
+        notified = true;
+      } catch {
+        // Sem daemon escutando, o reconcile entrega depois. Não é falha do job.
+        notified = false;
+      }
+    }
+
+    const payload = {
+      id: finished.id,
+      status: finished.status,
+      exitCode: finished.exitCode,
+      signal: finished.signal,
+      notified,
+    };
+    if (asJson) console.log(JSON.stringify(payload, null, 2));
+    else console.log(`${finished.id}  ${finished.status}  exit ${finished.exitCode ?? "-"}`);
     return payload;
   }
 }

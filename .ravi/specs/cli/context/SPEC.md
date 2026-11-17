@@ -74,6 +74,24 @@ invariant stronger than most: context keys (`rctx_*`) ARE credentials.
 12. Missing/malformed hook input, denied or invalid credentials, unavailable
     gateways, and invalid gateway replies MUST produce a PreToolUse `deny`.
     Valid inputs still pass through Bash permission checks and skill gates.
+13. Hook denials MUST retain the source reason, operation, HTTP status and
+    capability when available. Transport exceptions MUST preserve their cause.
+    Redact only secret values with `[redacted]`; do not replace a known denial
+    with a list of hypothetical causes. The hook remains fail closed.
+14. For a verified installed operator using canonical state, `context
+    credentials list/add/set-default/remove` MUST keep persistence in the
+    client's selected credentials file. `list`, `set-default`, and `remove`
+    MUST work without a reachable gateway or a default credential and MUST
+    NOT resolve that default through local SQLite. A missing store lists empty.
+    `add` MUST validate the candidate key before it writes the client file:
+    through authenticated gateway `context whoami`, using that candidate as
+    the bearer, when the gateway is reachable; against the state on this
+    machine, read-only, when it is not (a stopped daemon must not keep the
+    operator from storing a credential). A reachable gateway's
+    validation/auth/transport/response failure MUST NOT fall back to local
+    state, and no failure may write either credentials file. Existing
+    runtime and explicit remote invocations MUST NOT gain a local operator
+    fallback. No arbitrary environment or client file path is forwarded.
 
 ## Write classification (brake decision per op)
 

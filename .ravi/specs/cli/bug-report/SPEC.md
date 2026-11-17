@@ -165,6 +165,12 @@ A create dossier (`ravi.bug_report/v1`) MUST be rejected.
 13. `bug comment` MUST NOT change title, severity, priority, or status.
     It is append-only. The HITL / `--execute` barrier MUST stay as
     strong as `bug report`.
+14. `bug comment`, `bug status` and the follow subscription MUST accept
+    only a full bug UUID (case-insensitive, sent lowercase) and MUST
+    reject anything else locally with `PAYLOAD_INVALID` naming the id and
+    pointing at `ravi bug list`, before credentials or any network call
+    (the dry-run included). Console rejects a non-UUID id before reading
+    the body, so without this check a short id reads as a bad payload.
 
 ## Write classification (brake decision per op)
 

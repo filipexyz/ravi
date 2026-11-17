@@ -3,10 +3,11 @@
  */
 
 import * as readline from "node:readline";
-import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { execSync } from "node:child_process";
+import { tightenStateDirPermissions } from "../../security/state-dir-permissions.js";
 
 const RAVI_DOT_DIR = join(homedir(), ".ravi");
 const ENV_FILE = join(RAVI_DOT_DIR, ".env");
@@ -142,8 +143,18 @@ function parseEnvFile(path: string): Map<string, string> {
   return env;
 }
 
+/** .env holds credentials: owner-only, even when it already existed with a looser mode. */
+function restrictEnvFile(): void {
+  try {
+    chmodSync(ENV_FILE, 0o600);
+  } catch {
+    // best-effort (e.g. file owned by another user)
+  }
+}
+
 function appendEnvKey(key: string, value: string): void {
-  appendFileSync(ENV_FILE, `${key}=${value}\n`);
+  appendFileSync(ENV_FILE, `${key}=${value}\n`, { mode: 0o600 });
+  restrictEnvFile();
 }
 
 // ============================================================================
@@ -248,11 +259,13 @@ async function stepOmni(): Promise<void> {
 async function stepEnvironment(): Promise<void> {
   heading(2, 5, "Ambiente", "~/.ravi/.env");
 
-  mkdirSync(RAVI_DOT_DIR, { recursive: true });
+  mkdirSync(RAVI_DOT_DIR, { recursive: true, mode: 0o700 });
+  tightenStateDirPermissions(RAVI_DOT_DIR);
 
   if (!existsSync(ENV_FILE)) {
-    writeFileSync(ENV_FILE, "# Ravi Daemon - Variáveis de ambiente\n\n");
+    writeFileSync(ENV_FILE, "# Ravi Daemon - Variáveis de ambiente\n\n", { mode: 0o600 });
   }
+  restrictEnvFile();
 
   const env = parseEnvFile(ENV_FILE);
 

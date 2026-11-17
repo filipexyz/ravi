@@ -15,13 +15,13 @@
 
 import { createHash } from "node:crypto";
 import { z, type ZodTypeAny } from "zod";
+import { withRequiredAnyOfOptions } from "../input-constraints.js";
 import type {
   ArgRegistryEntry,
   CommandRegistryEntry,
   OptionRegistryEntry,
   RegistrySnapshot,
 } from "../../cli/registry-snapshot.js";
-import type { ScopeType } from "../../cli/decorators.js";
 import { sortKeysDeep, stableStringify } from "./stable-stringify.js";
 import type {
   JsonSchema,
@@ -145,14 +145,16 @@ function buildRequestBody(cmd: CommandRegistryEntry, components: SchemaComponent
   const flat = buildFlatSchema(cmd.args, cmd.options, components);
   if (!flat.hasContent) return undefined;
   return {
-    required: flat.hasRequired,
-    content: { "application/json": { schema: flat.schema } },
+    required: flat.hasRequired || Boolean(cmd.requiredAnyOfOptions?.length),
+    content: { "application/json": { schema: withRequiredAnyOfOptions(flat.schema, cmd.requiredAnyOfOptions) } },
   };
 }
 
-/** Map registry scope to an OpenAPI security requirement list. */
-function buildSecurity(scope: ScopeType): SecurityRequirement[] | undefined {
-  if (scope === "open") return [];
+/** Map the command's authority boundary to its supported listener credentials. */
+function buildSecurity(cmd: CommandRegistryEntry): SecurityRequirement[] {
+  if (cmd.access?.consoleOnly) return [{ consoleDelegation: [] }];
+  if (cmd.access?.consoleScope) return [{ bearerAuth: [] }, { consoleDelegation: [] }];
+  if (cmd.scope === "open") return [];
   return [{ bearerAuth: [] }];
 }
 
@@ -207,7 +209,12 @@ function buildOperation(cmd: CommandRegistryEntry, components: SchemaComponents)
     tags: [tag],
     responses: buildResponses(cmd, components),
   };
-  const security = buildSecurity(cmd.scope);
+  if (cmd.access?.consoleScope) {
+    operation.description = cmd.access.consoleOnly
+      ? "Requires a signed Console delegation on the dedicated Console listener. Ordinary runtime context keys cannot invoke this operation."
+      : "Accepts a runtime context key on the ordinary gateway, or a signed Console delegation on the dedicated Console listener within the declared resource scope.";
+  }
+  const security = buildSecurity(cmd);
   if (security !== undefined) operation.security = security;
   const requestBody = buildRequestBody(cmd, components);
   if (requestBody) operation.requestBody = requestBody;
@@ -281,9 +288,18 @@ export function emit(registry: RegistrySnapshot, options: EmitOptions = {}): Ope
           bearerFormat: "rctx",
           description:
             "Runtime context-key (`rctx_*`) issued by the Ravi gateway. " +
-            "Required for every non-`open` scope. Bootstrap the first key with " +
+            "Used by ordinary gateway operations; not accepted by Console-only operations. Bootstrap the first key with " +
             "`ravi daemon init-admin-key`; rotate, derive, and revoke via the " +
             "`ravi context` family. Specs: `runtime/context-keys`, `sdk/auth`.",
+        },
+        consoleDelegation: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+          description:
+            "Signed Console delegation, valid for at most 30 seconds and bound to the exact HTTP request, " +
+            "resource scope and pinned connection. Accepted only on the dedicated Console listener over private SSH, " +
+            "never on the ordinary gateway. Spec: `sdk/console-authority`.",
         },
       },
     },

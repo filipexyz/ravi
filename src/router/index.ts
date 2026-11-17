@@ -31,6 +31,7 @@ export {
   matchRoute,
   resolveRoute,
   commitMatchedRoute,
+  RouteSessionAgentConflictError,
   generateThreadForkSessionName,
   expandHome,
   getAgentCwd,
@@ -139,6 +140,9 @@ export {
 // Sessions
 export {
   getOrCreateSession,
+  isReservedSessionKey,
+  isSessionNameReserved,
+  ReservedSessionKeyError,
   getSession,
   getSessionByName,
   getSessionBySdkId,
@@ -159,6 +163,8 @@ export {
   updateSessionThreadId,
   updateSessionContext,
   updateSessionModelOverride,
+  updateSessionEffortOverride,
+  updateSessionThinkingLevel,
   updateSessionDisplayName,
   updateSessionHeartbeat,
   isNameTaken,

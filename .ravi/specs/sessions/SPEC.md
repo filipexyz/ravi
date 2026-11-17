@@ -78,6 +78,10 @@ Sessions do NOT own:
 
 - A session MUST always belong to exactly one agent.
 - A session MUST have a stable `session_key`. Renaming the canonical `session_name` MUST NOT rewrite `session_key`.
+- A session key under a trigger is reserved for the trigger runner: `agent:<agent>:trigger:<triggerId>`, `agent:<agent>:trigger:<triggerId>:own` and `agent:<agent>:trigger:<triggerId>:key:<24 hex>`. Creating a session with such a key from anywhere else MUST be refused (`SESSION_KEY_RESERVED`), and `ravi sessions send <name> -a <agent>` MUST say the name is reserved instead of creating it; an existing session is returned to whoever asks for it. The key is what tells a session a trigger created from one someone named after it, and the `:own` form is the one session a trigger's owner lends authority in (`routines/triggers`, `cli/bases` 6b). Keys derived from a trigger's (a thread opened from its session) are not reserved and are not a trigger's session.
+- A session name spelled like a trigger's session key (any of the three forms above, in any letter case) MUST be only that session's own key, when the session is created, when its name is set and on rename: names and keys share one namespace, so no session goes by the key a trigger's session has or will have. Rename also refuses every other name starting with `agent:` that is not the session's own key, as before. A route that forces a reserved name on another session MUST NOT fail the inbound message: the session keeps the name it would have without it, and the route is logged.
+- A session under a trigger's `:own` key MUST go by its key as its only name: the store names it so whatever the caller passes, and MUST refuse to give it another name. A character a name cannot hold (a dot, whitespace, `*`, `>`, from an unusual agent id) is written as `~<code>~`, and so is `~` itself, so the name is still one subject token, different keys keep different names, and the name is still spelled like a trigger's session key. A chat id MUST NOT resolve to such a session (`findSessionByChatId`). The name is therefore never free for another session, while the own session exists or after it is deleted, and what was stored under it (the journal, anything else keyed by name) is never inherited by another session.
+- A session under a trigger's `:own` key runs that trigger's fires only: the dispatcher's intake MUST drop every other prompt published to it as a terminal intake failure (`trigger_own_session`), and `ravi sessions send` and the commands that publish like it MUST refuse it as a target (`cli/bases` 6b).
 - A session MAY have one or more attached chats (see `sessions/attach`). Active attachments and the default output live only on `session_chat_subscriptions`.
 - A physical provider turn MUST keep one immutable reply surface. Different chats and threads MUST be serialized into separate turns.
 - An inbound turn MUST reply to its attached source chat or thread. The default output attachment is used only when a turn has no inbound source.
@@ -103,9 +107,15 @@ Sessions do NOT own:
   current own session.
 - `modify session:<id>` authorizes session mutation beyond the current own
   session.
+- Slack parent/child lifecycle authority MAY authorize the narrow
+  `sessions thread-configure` operation defined in `channels/slack/threads`.
+  It MUST NOT become a generic `modify` or `access` grant; existing setters,
+  reset/delete/rename, and transcript/recap/trace authorization remain unchanged.
 - A chat attached to a session is not by itself permission to read or mutate
   that session.
 - Hidden sessions SHOULD appear missing on direct lookup.
+
+- `sessions read` and `sessions recap` for a thread MUST return only that child's durable session history. An empty thread MUST remain empty; shared platform chat ids, message metadata and parent provider transcripts MUST NOT be used as silent fallback.
 
 ## Session Actions
 

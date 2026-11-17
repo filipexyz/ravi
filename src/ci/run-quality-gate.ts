@@ -40,6 +40,19 @@ function getChangedFiles(): string[] {
   }
 }
 
+/**
+ * Explicit revert signal for the coverage gate.
+ *
+ * Only an explicit `QUALITY_GATE_REVERT=1` (or `true`) exempts the focused
+ * coverage requirement. There is no implicit revert detection here: a revert
+ * removes source and its tests, so the focused test can never appear in the
+ * `--diff-filter=ACMR` diff.
+ */
+function isRevertRequested(): boolean {
+  const raw = (process.env.QUALITY_GATE_REVERT ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true";
+}
+
 const changedFiles = getChangedFiles();
 
 if (changedFiles.length === 0) {
@@ -53,7 +66,7 @@ for (const f of changedFiles) {
 }
 console.log();
 
-const result = runQualityGate(changedFiles);
+const result = runQualityGate(changedFiles, undefined, { revert: isRevertRequested() });
 
 // Report spec gate
 console.log("=== Spec Gate ===");
@@ -81,7 +94,10 @@ if (result.coverage.triggeredPrefixes.length === 0) {
   console.log("No runtime/consumer paths changed. Skipped.");
 } else {
   console.log(`Triggered prefixes: ${result.coverage.triggeredPrefixes.join(", ")}`);
-  if (result.coverage.ok) {
+  if (result.coverage.exempted) {
+    console.log(`Coverage gate: EXEMPTED (${result.coverage.exempted.kind})`);
+    console.log(`  reason: ${result.coverage.exempted.reason}`);
+  } else if (result.coverage.ok) {
     console.log("Coverage gate: PASSED");
   } else {
     console.log("Coverage gate: FAILED");

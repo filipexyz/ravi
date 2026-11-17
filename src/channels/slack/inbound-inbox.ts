@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { getDb } from "../../router/router-db.js";
+import { executeWrite } from "../../db/write-retry.js";
 import type { SlackSocketEnvelope } from "./types.js";
 
 export const SLACK_INBOUND_ENVELOPE_CLAIM_LEASE_MS = 5 * 60_000;
@@ -59,27 +60,33 @@ export function acceptSlackInboundEnvelope(input: {
   }
   const requestFingerprint = createHash("sha256").update(envelopeJson, "utf8").digest("hex");
   const database = getDb();
-  return database.transaction((): AcceptSlackInboundEnvelopeResult => {
-    const inserted = database
-      .prepare(
-        `
+  // A brief write-lock contention (TTL prune, checkpoint, another writer) must
+  // not drop a Slack delivery: retry instead of throwing "database is locked".
+  return executeWrite(
+    database,
+    (): AcceptSlackInboundEnvelopeResult => {
+      const inserted = database
+        .prepare(
+          `
         INSERT OR IGNORE INTO slack_inbound_envelopes (
           scope_id, envelope_id, request_fingerprint, envelope_json,
           state, claim_id, claim_expires_at, accepted_at, processed_at, updated_at
         )
         VALUES (?, ?, ?, ?, 'accepted', NULL, NULL, ?, NULL, ?)
       `,
-      )
-      .run(scopeId, envelopeId, requestFingerprint, envelopeJson, acceptedAt, acceptedAt);
-    const record = requireSlackInboundEnvelope(scopeId, envelopeId);
-    if (record.requestFingerprint !== requestFingerprint) {
-      return { status: "conflict", record };
-    }
-    return {
-      status: inserted.changes > 0 ? "accepted" : "duplicate",
-      record,
-    };
-  })();
+        )
+        .run(scopeId, envelopeId, requestFingerprint, envelopeJson, acceptedAt, acceptedAt);
+      const record = requireSlackInboundEnvelope(scopeId, envelopeId);
+      if (record.requestFingerprint !== requestFingerprint) {
+        return { status: "conflict", record };
+      }
+      return {
+        status: inserted.changes > 0 ? "accepted" : "duplicate",
+        record,
+      };
+    },
+    { label: "slack-inbound-accept" },
+  );
 }
 
 export function claimSlackInboundEnvelope(input: {
@@ -99,16 +106,18 @@ export function claimSlackInboundEnvelope(input: {
     throw new Error("leaseMs must be an integer between 1000 and 1800000");
   }
   const database = getDb();
-  return database.transaction((): ClaimSlackInboundEnvelopeResult => {
-    const current = requireSlackInboundEnvelope(scopeId, envelopeId);
-    if (current.state === "processed") return { status: "processed", record: current };
-    if (current.state === "processing" && current.claimId !== claimId && (current.claimExpiresAt ?? 0) > claimedAt) {
-      return { status: "busy", record: current };
-    }
-    const claimExpiresAt = claimedAt + leaseMs;
-    const result = database
-      .prepare(
-        `
+  return executeWrite(
+    database,
+    (): ClaimSlackInboundEnvelopeResult => {
+      const current = requireSlackInboundEnvelope(scopeId, envelopeId);
+      if (current.state === "processed") return { status: "processed", record: current };
+      if (current.state === "processing" && current.claimId !== claimId && (current.claimExpiresAt ?? 0) > claimedAt) {
+        return { status: "busy", record: current };
+      }
+      const claimExpiresAt = claimedAt + leaseMs;
+      const result = database
+        .prepare(
+          `
         UPDATE slack_inbound_envelopes
         SET state = 'processing',
             claim_id = ?,
@@ -124,15 +133,17 @@ export function claimSlackInboundEnvelope(input: {
             OR claim_expires_at <= ?
           )
       `,
-      )
-      .run(claimId, claimExpiresAt, claimedAt, scopeId, envelopeId, claimId, claimedAt);
-    const record = requireSlackInboundEnvelope(scopeId, envelopeId);
-    return result.changes > 0 && record.claimId === claimId
-      ? { status: "acquired", record }
-      : record.state === "processed"
-        ? { status: "processed", record }
-        : { status: "busy", record };
-  })();
+        )
+        .run(claimId, claimExpiresAt, claimedAt, scopeId, envelopeId, claimId, claimedAt);
+      const record = requireSlackInboundEnvelope(scopeId, envelopeId);
+      return result.changes > 0 && record.claimId === claimId
+        ? { status: "acquired", record }
+        : record.state === "processed"
+          ? { status: "processed", record }
+          : { status: "busy", record };
+    },
+    { label: "slack-inbound-claim" },
+  );
 }
 
 export function markSlackInboundEnvelopeProcessed(input: {
@@ -146,9 +157,12 @@ export function markSlackInboundEnvelopeProcessed(input: {
   const envelopeId = requireText(input.envelopeId, "envelopeId");
   const claimId = requireText(input.claimId, "claimId");
   const processedAt = validTimestamp(input.processedAt ?? Date.now(), "processedAt");
-  const result = getDb()
-    .prepare(
-      `
+  const result = executeWrite(
+    getDb(),
+    (db) =>
+      db
+        .prepare(
+          `
       UPDATE slack_inbound_envelopes
       SET state = 'processed',
           claim_id = NULL,
@@ -160,8 +174,10 @@ export function markSlackInboundEnvelopeProcessed(input: {
         AND state = 'processing'
         AND claim_id = ?
     `,
-    )
-    .run(processedAt, processedAt, scopeId, envelopeId, claimId);
+        )
+        .run(processedAt, processedAt, scopeId, envelopeId, claimId),
+    { label: "slack-inbound-processed" },
+  );
   if (result.changes === 0) {
     throw new Error(`Slack inbound envelope claim is no longer owned: ${envelopeId}`);
   }
@@ -179,9 +195,12 @@ export function releaseSlackInboundEnvelopeClaim(input: {
   const envelopeId = requireText(input.envelopeId, "envelopeId");
   const claimId = requireText(input.claimId, "claimId");
   const releasedAt = validTimestamp(input.releasedAt ?? Date.now(), "releasedAt");
-  getDb()
-    .prepare(
-      `
+  executeWrite(
+    getDb(),
+    (db) =>
+      db
+        .prepare(
+          `
       UPDATE slack_inbound_envelopes
       SET state = CASE WHEN state = 'processing' THEN 'accepted' ELSE state END,
           claim_id = NULL,
@@ -192,8 +211,10 @@ export function releaseSlackInboundEnvelopeClaim(input: {
         AND state = 'processing'
         AND claim_id = ?
     `,
-    )
-    .run(releasedAt, scopeId, envelopeId, claimId);
+        )
+        .run(releasedAt, scopeId, envelopeId, claimId),
+    { label: "slack-inbound-release" },
+  );
   return requireSlackInboundEnvelope(scopeId, envelopeId);
 }
 
@@ -234,17 +255,22 @@ export function pruneProcessedSlackInboundEnvelopes(input: { scopeId: string; ol
   ensureSlackInboundInboxSchema();
   const scopeId = requireText(input.scopeId, "scopeId");
   const olderThan = validTimestamp(input.olderThan, "olderThan");
-  return getDb()
-    .prepare(
-      `
+  return executeWrite(
+    getDb(),
+    (db) =>
+      db
+        .prepare(
+          `
       DELETE FROM slack_inbound_envelopes
       WHERE scope_id = ?
         AND state = 'processed'
         AND processed_at IS NOT NULL
         AND processed_at < ?
     `,
-    )
-    .run(scopeId, olderThan).changes;
+        )
+        .run(scopeId, olderThan).changes,
+    { label: "slack-inbound-prune" },
+  );
 }
 
 export function getSlackInboundEnvelope(scopeId: string, envelopeId: string): SlackInboundEnvelopeRecord | null {

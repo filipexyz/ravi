@@ -5,6 +5,15 @@ const actualRouterDbModule = await import("../../router/router-db.js");
 
 const createdTriggers: Array<Record<string, unknown>> = [];
 const updatedTriggers: Array<{ id: string; patch: Record<string, unknown> }> = [];
+/** Who each update said was making it (`keepOwnerFor`), or null when it named nobody. */
+const updateOwners: Array<string | null> = [];
+/** The principal of the turn running the command, as the classifier would give it. */
+let currentTurnOwner = "operator";
+const { isOwnerNeutralTriggerUpdate } = await import("../../triggers/triggers-db.js");
+const actualTriggerOwnership = await import("../../triggers/ownership.js");
+// Taken before the module is mocked: the namespace itself follows the mock afterwards.
+const realOwnerKeptOnEnable = actualTriggerOwnership.ownerKeptOnEnable;
+const realTriggerOwnership = { ...actualTriggerOwnership };
 const deletedTriggerIds: string[] = [];
 const emitMock = mock(async () => {});
 
@@ -51,8 +60,9 @@ mock.module("../decorators.js", () => ({
   Option: () => () => {},
 }));
 
+let mockToolContext: unknown;
 mock.module("../context.js", () => ({
-  getContext: () => undefined,
+  getContext: () => mockToolContext,
   // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
   // ContractError instead of process.exit, which is what tests need.
   hasContext: () => true,
@@ -159,6 +169,7 @@ mock.module("../../triggers/index.js", () => ({
       cooldownMs: input.cooldownMs,
       session: input.session,
       filter: input.filter,
+      ownerPrincipal: input.ownerPrincipal,
       enabled: true,
       fireCount: 0,
       createdAt: 1,
@@ -167,9 +178,10 @@ mock.module("../../triggers/index.js", () => ({
   },
   dbGetTrigger: () => triggerRecord,
   dbListTriggers: () => (triggerList.length > 0 ? triggerList : triggerRecord ? [triggerRecord] : []),
-  dbUpdateTrigger: (id: string, patch: Record<string, unknown>) => {
+  dbUpdateTrigger: (id: string, patch: Record<string, unknown>, options: { keepOwnerFor?: string } = {}) => {
     updatedTriggers.push({ id, patch });
-    return {
+    updateOwners.push(options.keepOwnerFor ?? null);
+    const before: Record<string, unknown> = {
       name: "trigger",
       topic: "ravi.external.topic",
       message: "hello",
@@ -181,14 +193,60 @@ mock.module("../../triggers/index.js", () => ({
       createdAt: 1,
       ...triggerRecord,
       id,
-      updatedAt: 2,
-      ...patch,
     };
+    const next: Record<string, unknown> = { ...before, updatedAt: 2, ...patch };
+    // The store's rule: only the owner's own change, or one that only paces the trigger, keeps the owner.
+    const keepsOwner =
+      isOwnerNeutralTriggerUpdate(patch) ||
+      (options.keepOwnerFor !== undefined && options.keepOwnerFor === before.ownerPrincipal);
+    if (!keepsOwner) delete next.ownerPrincipal;
+    return next;
   },
   dbDeleteTrigger: (id: string) => {
     deletedTriggerIds.push(id);
     triggerRecord = null;
   },
+}));
+
+/**
+ * The operator of these tests, with no contact linked to them: neither this
+ * machine's `ravi login` nor its link cache is read to tell who is the operator.
+ */
+const TEST_OPERATOR = {
+  activeUserId: "user_test_operator",
+  activeOrgId: "org_test",
+  ownerName: "Operator",
+  getContactBinding: () => null,
+};
+/** Sessions that already exist, by name and by key: the sessions table of this machine is not read either. */
+let existingSessions: Record<string, string> = {};
+
+// The turn's principal comes from the daemon's record of the turn; here each test says who is asking.
+mock.module("../../triggers/ownership.js", () => ({
+  ...realTriggerOwnership,
+  resolveTriggerOwnerForCurrentTurn: () => currentTurnOwner,
+  ownerKeptOnEnable: (trigger: { ownerPrincipal?: string }) => realOwnerKeptOnEnable(trigger, currentTurnOwner),
+  triggerOwnerActsAsOperator: (ownerPrincipal: string | null | undefined) =>
+    realTriggerOwnership.triggerOwnerActsAsOperator(ownerPrincipal, TEST_OPERATOR),
+  triggerRunsAsWarning: (trigger: Parameters<typeof realTriggerOwnership.triggerRunsAsWarning>[0]) =>
+    realTriggerOwnership.triggerRunsAsWarning(trigger, TEST_OPERATOR),
+  triggerSessionTargetError: (ref: string) =>
+    realTriggerOwnership.triggerSessionTargetError(ref, {
+      resolveSession: (name) => (name in existingSessions ? { sessionKey: existingSessions[name]! } : null),
+    }),
+  triggerIsolatedSessionName: (
+    agentId: string,
+    trigger: Parameters<typeof realTriggerOwnership.triggerIsolatedSessionName>[1],
+  ) =>
+    realTriggerOwnership.triggerIsolatedSessionName(agentId, trigger, {
+      // Here a session's name is looked up by its key: the name it is listed under, else the key itself.
+      getSession: (sessionKey) => {
+        const name =
+          Object.keys(existingSessions).find((ref) => existingSessions[ref] === sessionKey && ref !== sessionKey) ??
+          (sessionKey in existingSessions ? sessionKey : undefined);
+        return name ? { name } : null;
+      },
+    }),
 }));
 
 const { TriggersCommands } = await import("./triggers.js");
@@ -199,6 +257,10 @@ beforeEach(() => {
   mockScopeEnforced = false;
   mockGrants = [];
   recordedResourceDenials.length = 0;
+  updateOwners.length = 0;
+  currentTurnOwner = "operator";
+  existingSessions = {};
+  mockToolContext = undefined;
 });
 
 async function captureJson(run: () => Promise<unknown>): Promise<Record<string, unknown>> {
@@ -475,8 +537,13 @@ describe("TriggersCommands topic guidance", () => {
         name: "json trigger",
         effectiveAgentId: "main",
         cooldownDescription: "5s",
+        // Created from the terminal: the operator owns it, with no runs-as warning.
+        ownerPrincipal: "operator",
+        runsAsOperator: true,
       },
     });
+    expect(payload.warnings).toHaveLength(1);
+    expect(createdTriggers.at(-1)).toMatchObject({ ownerPrincipal: "operator" });
   });
 
   it("prints trigger topic catalog in --json mode", async () => {
@@ -722,7 +789,12 @@ describe("triggers agent-first contract", () => {
       target: { type: "trigger", id: "trg_1" },
       changedCount: 0,
     });
-    expect(emitMock).toHaveBeenCalledWith("ravi.triggers.test", { triggerId: "trg_1" });
+    // The test names who asked, so the fire acts as the owner only for the owner's own test.
+    expect(emitMock).toHaveBeenCalledWith("ravi.triggers.test", { triggerId: "trg_1", initiator: "operator" });
+
+    currentTurnOwner = "contact:c_ana";
+    await captureJson(() => new TriggersCommands().test("trg_1", true, true));
+    expect(emitMock).toHaveBeenLastCalledWith("ravi.triggers.test", { triggerId: "trg_1", initiator: "contact:c_ana" });
   });
 
   it("emits TRIGGER_NOT_FOUND envelope with suggestions on --json (exit 1)", () => {
@@ -846,6 +918,39 @@ describe("triggers cross-agent access", () => {
     expect(recordedResourceDenials).toEqual([
       expect.objectContaining({ resourceAgentId: "owner", mode: "mutate", command: `triggers ${op}` }),
     ]);
+  });
+
+  it("triggers add cannot aim a trigger at another agent without modify agent:<target>", async () => {
+    const error = await captureContractError(() =>
+      new TriggersCommands().add("aimed", "ravi.external.topic", "hello", "owner"),
+    );
+    expect(error.envelope().error.code).toBe("PERMISSION_DENIED");
+    expect(recordedResourceDenials[0]).toMatchObject({ resourceAgentId: "owner", command: "triggers add" });
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it("triggers set cannot retarget an own trigger to another agent", async () => {
+    triggerRecord = { ...buildTriggerRecord(), id: "trg_viewer", name: "viewer trigger", agentId: "viewer" };
+    const error = await captureContractError(() => new TriggersCommands().set("trg_viewer", "agent", "owner", true));
+    expect(error.envelope().error.code).toBe("PERMISSION_DENIED");
+    expect(recordedResourceDenials[0]).toMatchObject({ resourceAgentId: "owner", command: "triggers set" });
+    expect(updatedTriggers).toEqual([]);
+  });
+
+  it.each([
+    ["set", (c: InstanceType<typeof TriggersCommands>) => c.set("trg_viewer", "message", "new prompt", true)],
+    ["enable", (c: InstanceType<typeof TriggersCommands>) => c.enable("trg_viewer", true)],
+    ["test", (c: InstanceType<typeof TriggersCommands>) => c.test("trg_viewer", true, true)],
+  ])("triggers %s on an own trigger is refused in a contact-narrowed turn", async (_op, invoke) => {
+    triggerRecord = { ...buildTriggerRecord(), id: "trg_viewer", name: "viewer trigger", agentId: "viewer" };
+    mockToolContext = { agentId: "viewer", context: { metadata: { actorAuthorizationMode: "user-overlay" } } };
+    try {
+      await expect(invoke(new TriggersCommands())).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    } finally {
+      mockToolContext = undefined;
+    }
+    expect(updatedTriggers).toEqual([]);
+    expect(emitMock).not.toHaveBeenCalled();
   });
 
   it("disable succeeds across agents with modify agent:<owner>", async () => {
@@ -1013,5 +1118,407 @@ describe("triggers invalid filter visibility", () => {
     expect(payload).toMatchObject({ value: null });
     expect(payload.trigger).toMatchObject({ filterStatus: "none", runtimeState: "active" });
     expect(emitMock).toHaveBeenCalledWith("ravi.triggers.refresh", {});
+  });
+});
+
+// parseDurationMs is mocked to 5000 in this file; real parsing (and rejection of
+// bad values) is covered by src/triggers/__tests__/debounce.test.ts.
+describe("triggers cooldown and debounce flags", () => {
+  beforeEach(() => {
+    createdTriggers.length = 0;
+    updatedTriggers.length = 0;
+    triggerRecord = buildTriggerRecord();
+  });
+
+  // add(name, topic, message, agent, account, cooldown, session, filter, replySession, json,
+  //     shell, exec, timeout, envFile, onError, debounce)
+  const addWith = (cooldown?: string, debounce?: string) =>
+    new TriggersCommands().add(
+      "bus",
+      "ravi.inbound.reaction",
+      "hello",
+      undefined,
+      undefined,
+      cooldown,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      debounce,
+    );
+
+  it("keeps the 5s cooldown default and no debounce", async () => {
+    await addWith();
+    expect(createdTriggers).toContainEqual(expect.objectContaining({ cooldownMs: 5000, debounceMs: 0 }));
+  });
+
+  it("accepts off to disable cooldown and a debounce window", async () => {
+    await addWith("off", "2s");
+    expect(createdTriggers).toContainEqual(expect.objectContaining({ cooldownMs: 0, debounceMs: 5000 }));
+  });
+
+  it("sets debounce and turns cooldown off on an existing trigger", async () => {
+    const commands = new TriggersCommands();
+    await commands.set("trg_1", "debounce", "1m");
+    await commands.set("trg_1", "cooldown", "off");
+    expect(updatedTriggers).toContainEqual({ id: "trg_1", patch: { debounceMs: 5000 } });
+    expect(updatedTriggers).toContainEqual({ id: "trg_1", patch: { cooldownMs: 0 } });
+  });
+});
+
+describe("TriggersCommands owner", () => {
+  beforeEach(() => {
+    createdTriggers.length = 0;
+    updatedTriggers.length = 0;
+    deletedTriggerIds.length = 0;
+    emitMock.mockClear();
+    triggerRecord = { ...buildTriggerRecord(), ownerPrincipal: "operator" };
+    triggerList = [];
+  });
+
+  async function captureText(run: () => Promise<unknown> | unknown): Promise<string> {
+    const lines: string[] = [];
+    const originalLog = console.log;
+    const originalWarn = console.warn;
+    console.log = (...args: unknown[]) => void lines.push(args.map((arg) => String(arg)).join(" "));
+    console.warn = (...args: unknown[]) => void lines.push(args.map((arg) => String(arg)).join(" "));
+    try {
+      await run();
+    } finally {
+      console.log = originalLog;
+      console.warn = originalWarn;
+    }
+    return lines.join("\n");
+  }
+
+  const addArgs = (asJson?: boolean) =>
+    [
+      "owned",
+      "ravi.console.inbox.item",
+      "hello",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      asJson,
+    ] as const;
+
+  describe("add", () => {
+    it("records the turn that creates the trigger as its owner", async () => {
+      const payload = await captureJson(() => new TriggersCommands().add(...addArgs(true)));
+
+      expect(createdTriggers.at(-1)).toMatchObject({ ownerPrincipal: "operator" });
+      expect(payload).toMatchObject({ trigger: { ownerPrincipal: "operator", runsAsOperator: true } });
+      expect(payload).not.toHaveProperty("warnings");
+    });
+
+    it("warns, once and in both outputs, when the trigger will not act as the operator", async () => {
+      currentTurnOwner = "contact:c_ana";
+      const payload = await captureJson(() => new TriggersCommands().add(...addArgs(true)));
+      expect(createdTriggers.at(-1)).toMatchObject({ ownerPrincipal: "contact:c_ana" });
+      expect(payload).toMatchObject({ trigger: { ownerPrincipal: "contact:c_ana", runsAsOperator: false } });
+      expect(payload.warnings).toEqual([
+        expect.stringContaining("Trigger trg_1 runs as contact:c_ana, not the operator"),
+      ]);
+
+      const text = await captureText(() => new TriggersCommands().add(...addArgs()));
+      expect(text.match(/runs as contact:c_ana, not the operator/g)).toHaveLength(1);
+      expect(text).toContain("Runs as:    contact:c_ana (not the operator)");
+    });
+
+    it("says a trigger created from a turn Ravi cannot attribute has no owner", async () => {
+      currentTurnOwner = "unknown";
+      const payload = await captureJson(() => new TriggersCommands().add(...addArgs(true)));
+      expect(payload).toMatchObject({ trigger: { runsAsOperator: false } });
+      expect(payload.warnings).toEqual([expect.stringContaining("Bases refuses its turns (ACTOR_UNKNOWN)")]);
+    });
+  });
+
+  describe("set", () => {
+    it("keeps the owner when the owner makes the change, with no warning", async () => {
+      const payload = await captureJson(() => new TriggersCommands().set("trg_1", "message", "new prompt", true));
+
+      expect(updatedTriggers[0]?.patch).not.toHaveProperty("ownerPrincipal");
+      expect(updateOwners).toEqual(["operator"]);
+      expect(payload).toMatchObject({ trigger: { ownerPrincipal: "operator", runsAsOperator: true } });
+      expect(payload).not.toHaveProperty("warnings");
+    });
+
+    it("takes the owner away when anyone else changes the trigger, and says so once", async () => {
+      currentTurnOwner = "contact:c_ana";
+      for (const [key, value] of [
+        ["message", "their prompt"],
+        ["filter", 'data.kind == "x"'],
+        ["name", "renamed"],
+        ["topic", "ravi.other.topic"],
+        ["session", "elsewhere"],
+        ["replySession", "their-chat"],
+        ["debounce", "2s"],
+      ] as const) {
+        updateOwners.length = 0;
+        const payload = await captureJson(() => new TriggersCommands().set("trg_1", key, value, true));
+        expect(updateOwners).toEqual(["contact:c_ana"]);
+        expect(payload).toMatchObject({ trigger: { ownerPrincipal: "unknown", runsAsOperator: false } });
+        expect(payload.warnings).toContainEqual(expect.stringContaining("Trigger trg_1 no longer runs as operator"));
+      }
+
+      const text = await captureText(() => new TriggersCommands().set("trg_1", "name", "renamed again"));
+      expect(text.match(/no longer runs as operator/g)).toHaveLength(1);
+    });
+
+    it("never gives a trigger an owner: the operator editing someone else's does not take it over", async () => {
+      triggerRecord = { ...buildTriggerRecord(), ownerPrincipal: "contact:c_ana" };
+      const payload = await captureJson(() => new TriggersCommands().set("trg_1", "message", "operator prompt", true));
+
+      expect(updatedTriggers[0]?.patch).not.toHaveProperty("ownerPrincipal");
+      expect(payload).toMatchObject({ trigger: { ownerPrincipal: "unknown", runsAsOperator: false } });
+      expect(payload.warnings).toContainEqual(expect.stringContaining("no longer runs as contact:c_ana"));
+
+      // A trigger with no owner stays without one, and there is nothing to warn about.
+      triggerRecord = buildTriggerRecord();
+      const ownerless = await captureJson(() => new TriggersCommands().set("trg_1", "message", "again", true));
+      expect(ownerless).toMatchObject({ trigger: { ownerPrincipal: "unknown", runsAsOperator: false } });
+      expect(ownerless).not.toHaveProperty("warnings");
+    });
+
+    it("leaves the owner alone, without asking who is setting, for the keys that only pace the trigger", async () => {
+      currentTurnOwner = "contact:c_ana";
+      const cooldown = await captureJson(() => new TriggersCommands().set("trg_1", "cooldown", "30s", true));
+      expect(updateOwners).toEqual([null]);
+      expect(cooldown).toMatchObject({ trigger: { ownerPrincipal: "operator", runsAsOperator: true } });
+      expect(cooldown).not.toHaveProperty("warnings");
+
+      triggerRecord = { ...buildTriggerRecord(), ownerPrincipal: "operator", executionType: "shell" };
+      updateOwners.length = 0;
+      const timeout = await captureJson(() => new TriggersCommands().set("trg_1", "timeout", "60", true));
+      expect(updateOwners).toEqual([null]);
+      expect(timeout).toMatchObject({ trigger: { ownerPrincipal: "operator" } });
+    });
+  });
+
+  describe("enable and disable", () => {
+    it("keeps the owner when the owner turns the trigger on", async () => {
+      const payload = await captureJson(() => new TriggersCommands().enable("trg_1", true));
+      expect(updateOwners).toEqual(["operator"]);
+      expect(payload).toMatchObject({
+        status: "enabled",
+        trigger: { ownerPrincipal: "operator", runsAsOperator: true },
+      });
+      expect(payload).not.toHaveProperty("warnings");
+    });
+
+    it("keeps someone else's owner when the operator turns their draft on", async () => {
+      // A contact drafted it from their chat; the operator arms it. It still acts as the contact.
+      triggerRecord = { ...buildTriggerRecord(), ownerPrincipal: "contact:c_ana", enabled: false };
+      const payload = await captureJson(() => new TriggersCommands().enable("trg_1", true));
+
+      expect(updateOwners).toEqual(["contact:c_ana"]);
+      expect(payload).toMatchObject({
+        status: "enabled",
+        trigger: { ownerPrincipal: "contact:c_ana", runsAsOperator: false, enabled: true },
+      });
+      expect(payload).not.toHaveProperty("warnings");
+
+      // The operator turning on a trigger nobody owns gives it no owner.
+      triggerRecord = { ...buildTriggerRecord(), enabled: false };
+      updateOwners.length = 0;
+      const ownerless = await captureJson(() => new TriggersCommands().enable("trg_1", true));
+      expect(updateOwners).toEqual([null]);
+      expect(ownerless).toMatchObject({ trigger: { ownerPrincipal: "unknown", runsAsOperator: false } });
+    });
+
+    it("takes the owner away when someone else turns it on", async () => {
+      currentTurnOwner = "agent:helper";
+      const payload = await captureJson(() => new TriggersCommands().enable("trg_1", true));
+      expect(payload).toMatchObject({
+        status: "enabled",
+        trigger: { ownerPrincipal: "unknown", runsAsOperator: false },
+      });
+      expect(payload.warnings).toEqual([expect.stringContaining("Trigger trg_1 no longer runs as operator")]);
+
+      const text = await captureText(() => new TriggersCommands().enable("trg_1"));
+      expect(text.match(/no longer runs as operator/g)).toHaveLength(1);
+    });
+
+    it("lets anyone turn a trigger off without touching its owner", async () => {
+      currentTurnOwner = "contact:c_ana";
+      const payload = await captureJson(() => new TriggersCommands().disable("trg_1", true));
+      expect(updateOwners).toEqual([null]);
+      expect(payload).toMatchObject({ status: "disabled", trigger: { ownerPrincipal: "operator", enabled: false } });
+    });
+  });
+
+  describe("a session that is another trigger's own", () => {
+    // A trigger's own session goes by its key: one string is both its name and its key.
+    const OWN_KEY = "agent:agent-1:trigger:aaaa1111:own";
+    const OWN = { name: OWN_KEY, key: OWN_KEY };
+    const addInto = (session?: string) =>
+      new TriggersCommands().add("guest", "ravi.console.inbox.item", "hello", undefined, undefined, undefined, session);
+
+    beforeEach(() => {
+      existingSessions = { [OWN.key]: OWN.key, "requests-queue": "agent:agent-1:whatsapp:dm:1" };
+    });
+
+    it("cannot be given to a new trigger", async () => {
+      await expect(captureJson(async () => addInto(OWN.name))).rejects.toThrow(
+        `Session ${OWN.name} is the own session of trigger aaaa1111: only that trigger's fires run there`,
+      );
+      expect(createdTriggers).toHaveLength(0);
+      // Any other session is a target as before.
+      await captureText(() => addInto("requests-queue"));
+      expect(createdTriggers.at(-1)).toMatchObject({ session: "requests-queue" });
+    });
+
+    it("cannot be given before it exists either: the name alone says whose session it will be", async () => {
+      const unfired = "agent:agent-1:trigger:bbbb2222:own";
+      await expect(captureJson(async () => addInto(unfired))).rejects.toThrow(
+        `Session ${unfired} is the own session of trigger bbbb2222`,
+      );
+      await expect(captureText(() => new TriggersCommands().set("trg_1", "session", unfired))).rejects.toThrow(
+        "is the own session of trigger bbbb2222",
+      );
+      expect(createdTriggers).toHaveLength(0);
+      expect(updatedTriggers).toHaveLength(0);
+    });
+
+    it("cannot be given to an existing trigger either", async () => {
+      await expect(captureText(() => new TriggersCommands().set("trg_1", "session", OWN.name))).rejects.toThrow(
+        "is the own session of trigger aaaa1111",
+      );
+      expect(updatedTriggers).toHaveLength(0);
+    });
+
+    it("cannot be where a shell trigger reports its failures", async () => {
+      const addShell = (onError: string) =>
+        new TriggersCommands().add(
+          "ticket shell",
+          "ravi.inbound.interaction",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          "printf ok",
+          undefined,
+          undefined,
+          undefined,
+          onError,
+        );
+      await expect(captureText(() => addShell(`notify-session:${OWN.name}`))).rejects.toThrow(
+        "is the own session of trigger aaaa1111",
+      );
+      expect(createdTriggers).toHaveLength(0);
+      // Any other session takes the notice as before.
+      await captureText(() => addShell("notify-session:requests-queue"));
+      expect(createdTriggers.at(-1)).toMatchObject({ onError: "notify-session:requests-queue" });
+    });
+
+    it("is not what a trigger created during one of its turns defaults to", async () => {
+      // The agent creates a trigger while running a turn in a trigger's own session.
+      mockToolContext = { agentId: "agent-1", sessionName: OWN.name, sessionKey: OWN.key };
+      await captureText(() => addInto());
+      expect(createdTriggers.at(-1)).toMatchObject({ session: "main" });
+
+      // In any other session the current session is still the default.
+      mockToolContext = { agentId: "agent-1", sessionName: "luis-dm", sessionKey: "agent:agent-1:whatsapp:dm:2" };
+      await captureText(() => addInto());
+      expect(createdTriggers.at(-1)).toMatchObject({ session: "luis-dm" });
+    });
+  });
+
+  describe("show", () => {
+    it("says who the trigger runs as, and when that is not the operator", async () => {
+      const commands = new TriggersCommands();
+      expect(await captureJson(async () => commands.show("trg_1", true))).toMatchObject({
+        trigger: { ownerPrincipal: "operator", runsAsOperator: true },
+      });
+      expect(await captureText(() => commands.show("trg_1"))).toMatch(/Runs as: +operator\n/);
+
+      triggerRecord = { ...buildTriggerRecord(), ownerPrincipal: "contact:c_ana" };
+      expect(await captureJson(async () => commands.show("trg_1", true))).toMatchObject({
+        trigger: { ownerPrincipal: "contact:c_ana", runsAsOperator: false },
+      });
+      expect(await captureText(() => commands.show("trg_1"))).toContain("contact:c_ana (not the operator)");
+
+      triggerRecord = buildTriggerRecord();
+      expect(await captureJson(async () => commands.show("trg_1", true))).toMatchObject({
+        trigger: { ownerPrincipal: "unknown", runsAsOperator: false },
+      });
+      expect(await captureText(() => commands.show("trg_1"))).toContain("unknown (not the operator)");
+    });
+
+    it("says whether the trigger runs in its own session, which Bases requires", async () => {
+      const commands = new TriggersCommands();
+      const show = async (record: Record<string, unknown>) => {
+        triggerRecord = { ...buildTriggerRecord(), ...record };
+        const payload = await captureJson(async () => commands.show("trg_1", true));
+        return { payload, text: await captureText(() => commands.show("trg_1")) };
+      };
+
+      // `isolated` is the trigger's own session: nothing is flagged.
+      const isolated = await show({ ownerPrincipal: "operator", session: "isolated" });
+      expect(isolated.payload).toMatchObject({ trigger: { ownsSession: true, isolatedSessionName: null } });
+      expect(isolated.text).toMatch(/Session: +isolated\n/);
+
+      // Once it has fired, its session exists and `show` says which: the own session, which
+      // goes by its key, for an owned trigger, and the plain one for a trigger nobody owns.
+      existingSessions = {
+        "agent:agent-1:trigger:trg_1:own": "agent:agent-1:trigger:trg_1:own",
+        "agent-1-trigger-rows": "agent:agent-1:trigger:trg_1",
+      };
+      const fired = await show({ ownerPrincipal: "operator", session: "isolated" });
+      expect(fired.payload).toMatchObject({ trigger: { isolatedSessionName: "agent:agent-1:trigger:trg_1:own" } });
+      expect(fired.text).toMatch(/Session: +isolated \(agent:agent-1:trigger:trg_1:own\)\n/);
+      const legacy = await show({ session: "isolated" });
+      expect(legacy.payload).toMatchObject({ trigger: { isolatedSessionName: "agent-1-trigger-rows" } });
+      existingSessions = {};
+
+      // A session anyone can name: the agent's main one, a named one, a templated one.
+      for (const session of ["main", "requests-queue", "bases-{{data.payload.rowId}}"]) {
+        const shared = await show({ ownerPrincipal: "operator", session });
+        expect(shared.payload).toMatchObject({ trigger: { ownsSession: false } });
+        expect(shared.text).toContain(
+          `${session} (not the trigger's own session: its turns cannot use Bases; isolated can)`,
+        );
+      }
+      expect((await show({ ownerPrincipal: "contact:c_ana", session: "main" })).text).toContain(
+        "not the trigger's own session",
+      );
+
+      // A trigger nobody owns is refused everywhere, which `Runs as` already says,
+      // and a shell trigger's turns are not held to an owner: neither is flagged.
+      const ownerless = await show({ session: "main" });
+      expect(ownerless.payload).toMatchObject({ trigger: { ownsSession: false } });
+      expect(ownerless.text).toMatch(/Session: +main\n/);
+      const shell = await show({
+        ownerPrincipal: "operator",
+        session: "main",
+        executionType: "shell",
+        shellCommand: "true",
+      });
+      expect(shell.text).toMatch(/Session: +main\n/);
+    });
+
+    it("says a shell trigger is not held to its owner", async () => {
+      triggerRecord = {
+        ...buildTriggerRecord(),
+        ownerPrincipal: "contact:c_ana",
+        executionType: "shell",
+        shellCommand: "true",
+      };
+      expect(await captureText(() => new TriggersCommands().show("trg_1"))).toContain(
+        "contact:c_ana (not enforced on a shell trigger)",
+      );
+    });
   });
 });

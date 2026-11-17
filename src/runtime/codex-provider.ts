@@ -1,4 +1,5 @@
 import type { RuntimeGoal, RuntimeGoalStatus } from "./types.js";
+import { RUNTIME_OPERATION_UNSUPPORTED } from "./runtime-control-errors.js";
 import { spawn } from "node:child_process";
 import { basename, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -9,7 +10,14 @@ import {
 } from "../permissions/agent-default-capabilities-provider.js";
 import { dbGetAgent } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
+import { errorDiagnostic, redactDiagnosticText } from "../utils/error-diagnostic.js";
 import { ensureCodexBashHookConfig } from "./codex-hooks.js";
+import {
+  CodexAppServerRequestError,
+  isCodexCapacityError,
+  normalizeCodexProviderError,
+} from "./codex-provider-error.js";
+import { prepareBridgeCodexProfile } from "../bridge/codex-profile.js";
 import {
   createCodexTransport,
   resolveCodexTransportKind,
@@ -20,6 +28,7 @@ import {
 
 const log = logger.child("codex");
 import { ensureAgentInstructionFiles, loadAgentWorkspaceInstructions } from "./agent-instructions.js";
+import { stripControlCharacters } from "./public-failure.js";
 import { buildRaviRulesPromptSection } from "./ravi-rules.js";
 import {
   buildCodexSkillVisibilitySnapshot,
@@ -64,7 +73,7 @@ import type {
   SessionRuntimeProvider,
 } from "./types.js";
 import { toCodexRuntimeEffort } from "./effort.js";
-import { createRuntimeTerminalEventTracker } from "./terminality.js";
+import { createRuntimeTerminalEventTracker, type RuntimeFailedTerminalInput } from "./terminality.js";
 import { materializeRuntimeModelBroker } from "./model-broker-materializer.js";
 
 const DEFAULT_CODEX_MODEL = "gpt-5";
@@ -72,7 +81,7 @@ const INTERRUPT_GRACE_MS = 1_500;
 const CODEX_APP_SERVER_SANDBOX = "danger-full-access";
 const CODEX_SUB_AGENT_DIRECT_INPUT_ERROR = "direct app-server input is not allowed for multi-agent v2 sub-agents";
 const CODEX_APP_SERVER_ENV_KEY_PREFIXES = ["RAVI_"];
-const CODEX_APP_SERVER_ENV_KEYS = new Set(["CODEX_HOME", "PATH"]);
+const CODEX_APP_SERVER_ENV_KEYS = new Set(["CODEX_HOME", "PATH", "BRIDGE_MODEL_API_KEY"]);
 const CODEX_SHELL_ENV_INCLUDE_ONLY = [
   "RAVI_*",
   "CODEX_HOME",
@@ -285,6 +294,7 @@ interface ToolCompletedEvent {
 }
 
 type PendingRequest = {
+  method: string;
   resolve(value: Record<string, unknown>): void;
   reject(error: unknown): void;
   timeout?: ReturnType<typeof setTimeout>;
@@ -374,8 +384,12 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
     },
     prepareSession(input: RuntimePrepareSessionRequest): RuntimePrepareSessionResult {
       ensureAgentInstructionFiles(input.cwd);
-      const materialized = input.modelBroker ? materializeRuntimeModelBroker(input.modelBroker) : undefined;
-      ensureCodexBashHookConfig(materialized?.configDir);
+      const materialized = input.modelBroker
+        ? materializeRuntimeModelBroker(input.modelBroker)
+        : input.humanBridge
+          ? prepareBridgeCodexProfile(input.cwd)
+          : undefined;
+      ensureCodexBashHookConfig(materialized?.configDir, input.humanBridge);
       const syncedSkills = materialized
         ? syncCodexSkills(input.plugins ?? [], {
             codexSkillsDir: join(materialized.configDir, "skills"),
@@ -385,7 +399,9 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
       const syncedSkillNames = Array.isArray(syncedSkills) ? syncedSkills : [];
       skillVisibilityByCwd.set(input.cwd, { syncedSkillNames });
       return {
-        ...(materialized ? { env: materialized.env } : {}),
+        ...(materialized
+          ? { env: { ...materialized.env, ...(input.humanBridge ? { RAVI_BRIDGE_TURN: "1" } : {}) } }
+          : {}),
         ...(input.hostServices ? { startRequest: createCodexRuntimeStartRequest(input.hostServices) } : {}),
       };
     },
@@ -760,10 +776,16 @@ async function* normalizeCodexEvents(
 
       const turn = transport.startTurn({
         cwd: input.cwd,
-        security: resolveCodexThreadSecurity(input.agentId),
+        security:
+          input.env?.RAVI_BRIDGE_TURN === "1"
+            ? RESTRICTED_CODEX_THREAD_SECURITY
+            : resolveCodexThreadSecurity(input.agentId),
         env: input.env ?? process.env,
-        model: resolveCodexModelArg(input.model, defaultModel),
-        effort,
+        model: resolveCodexModelArg(
+          promptMessage.runtimeOptions?.model && !input.modelBroker ? promptMessage.runtimeOptions.model : input.model,
+          defaultModel,
+        ),
+        effort: promptMessage.runtimeOptions ? toCodexRuntimeEffort(promptMessage.runtimeOptions.effort) : effort,
         prompt: promptText,
         clientMessageId: promptMessage.clientMessageId,
         replay: promptMessage.replay,
@@ -790,6 +812,7 @@ async function* normalizeCodexEvents(
       let turnSessionId = previousSessionId;
       let activeTurnId: string | undefined;
       let lastErrorMessage: string | undefined;
+      let lastErrorEvent: Record<string, unknown> | undefined;
       const startedToolUseIds = new Set<string>();
       const completedToolUseIds = new Set<string>();
 
@@ -971,11 +994,17 @@ async function* normalizeCodexEvents(
 
           if (event.type === "error") {
             lastErrorMessage = extractCliErrorMessage(event) ?? lastErrorMessage;
+            lastErrorEvent = rawEvent;
             continue;
           }
 
           if (event.type === "turn.interrupted") {
-            const terminal: RuntimeEvent = { type: "turn.interrupted", rawEvent, metadata };
+            const terminal: RuntimeEvent = {
+              type: "turn.interrupted",
+              usage: event.usage ? mapCliUsage(event.usage) : undefined,
+              rawEvent,
+              metadata,
+            };
             if (terminalTracker.accept(terminal)) {
               yield terminal;
             }
@@ -983,9 +1012,19 @@ async function* normalizeCodexEvents(
           }
 
           if (event.type === "turn.failed") {
+            previousSessionId = metadata.thread?.id ?? turnSessionId;
             const terminal: RuntimeEvent = {
               type: "turn.failed",
+              providerSessionId: previousSessionId,
+              session: buildCodexSessionState(
+                previousSessionId,
+                input.cwd,
+                buildCodexSkillVisibilitySnapshot(syncedSkillNames),
+                input.env?.CODEX_HOME,
+              ),
+              ...(event.preExecutionRejected === true ? { preExecutionRejected: true } : {}),
               error: extractCliFailureMessage(event) ?? lastErrorMessage ?? "Codex turn failed",
+              usage: event.usage ? mapCliUsage(event.usage) : undefined,
               recoverable: true,
               rawEvent,
               metadata,
@@ -1047,18 +1086,28 @@ async function* normalizeCodexEvents(
           continue;
         }
 
-        const stderrMessage = result.stderr.trim();
-        const missingTerminalEvent = !lastErrorMessage && !stderrMessage;
+        // The native process ended without a terminal event. Its stderr is
+        // tracing output (ANSI colors, Rust module paths, thread ids): it stays
+        // in logs and the trace, never in the turn error a channel may show.
+        const stderrTail = codexStderrTail(result.stderr);
+        const exitDetail = describeCodexExit(result.exitCode, result.signal);
+        log.warn("Codex app-server exited without a terminal event", {
+          threadId: turnSessionId,
+          turnId: activeTurnId,
+          exitCode: result.exitCode,
+          signal: result.signal,
+          ...(lastErrorMessage ? { lastError: lastErrorMessage } : {}),
+          ...(stderrTail ? { stderr: stderrTail } : {}),
+        });
         const metadata = buildCodexEventMetadata(
           { type: "turn.failed", thread_id: turnSessionId, turn_id: activeTurnId },
           { threadId: turnSessionId, turnId: activeTurnId },
         );
         const terminal = terminalTracker.fail({
-          error:
-            lastErrorMessage ??
-            (stderrMessage || `Codex CLI exited without a terminal event (code ${result.exitCode ?? "unknown"})`),
+          error: lastErrorMessage ?? `Codex CLI exited without a terminal event (${exitDetail})`,
           recoverable: true,
-          failureKind: missingTerminalEvent ? "transport" : undefined,
+          failureKind: lastErrorMessage ? undefined : "transport",
+          rawEvent: { ...buildCodexExitRawEvent(result, stderrTail), ...lastErrorEvent },
           metadata,
         });
         if (terminal) {
@@ -1067,6 +1116,30 @@ async function* normalizeCodexEvents(
       } catch (error) {
         if (outerAbortSignal.aborted && !state.interrupted) {
           break;
+        }
+
+        if (error instanceof CodexAppServerTransportError && !state.interrupted) {
+          // The websocket (or JSON-RPC stream) can drop before the child's exit
+          // is observed. Same outcome as an exit without a terminal event.
+          const result = await turn.result;
+          const stderrTail = codexStderrTail(result.stderr);
+          log.warn("Codex app-server transport failed without a terminal event", {
+            threadId: turnSessionId,
+            turnId: activeTurnId,
+            error: error.message,
+            ...(stderrTail ? { stderr: stderrTail } : {}),
+          });
+          const metadata = buildCodexEventMetadata(
+            { type: "turn.failed", thread_id: turnSessionId, turn_id: activeTurnId },
+            { threadId: turnSessionId, turnId: activeTurnId },
+          );
+          const terminal = terminalTracker.fail(
+            buildCodexTransportFailure(error, { result, stderrTail, lastErrorMessage, lastErrorEvent, metadata }),
+          );
+          if (terminal) {
+            yield terminal;
+          }
+          continue;
         }
 
         if (state.interrupted || isAbortLikeError(error)) {
@@ -1096,10 +1169,68 @@ async function* normalizeCodexEvents(
   }
 }
 
+const CODEX_STDERR_TAIL_MAX = 2_000;
+
+/** A failure of the app-server connection itself, not of the native turn. */
+export class CodexAppServerTransportError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = "CodexAppServerTransportError";
+  }
+}
+
+/** The last part of native stderr, without terminal escapes, for logs and traces only. */
+export function codexStderrTail(stderr: string): string | undefined {
+  const clean = stripControlCharacters(stderr).trim();
+  if (!clean) return undefined;
+  return clean.length > CODEX_STDERR_TAIL_MAX ? `...${clean.slice(-CODEX_STDERR_TAIL_MAX)}` : clean;
+}
+
+function describeCodexExit(exitCode: number | null, signal: NodeJS.Signals | null): string {
+  return signal ? `signal ${signal}` : `code ${exitCode ?? "unknown"}`;
+}
+
+function buildCodexExitRawEvent(result: CodexCliTurnResult, stderrTail: string | undefined): Record<string, unknown> {
+  return {
+    type: "process.exit",
+    exitCode: result.exitCode,
+    signal: result.signal,
+    ...(stderrTail ? { message: stderrTail } : {}),
+  };
+}
+
+function buildCodexTransportFailure(
+  cause: CodexAppServerTransportError,
+  input: {
+    result: CodexCliTurnResult;
+    stderrTail?: string;
+    lastErrorMessage?: string;
+    lastErrorEvent?: Record<string, unknown>;
+    metadata: RuntimeEventMetadata;
+  },
+): RuntimeFailedTerminalInput {
+  const diagnostic = errorDiagnostic(cause, { provider: "codex", operation: "app-server transport" });
+  return {
+    error: input.lastErrorMessage ?? "Codex app-server connection closed without a terminal event",
+    recoverable: true,
+    // A provider error already explains the failure; replaying it would fail again.
+    failureKind: input.lastErrorMessage ? undefined : "transport",
+    rawEvent: {
+      ...buildCodexExitRawEvent(input.result, input.stderrTail),
+      error: redactDiagnosticText(cause.message),
+      ...input.lastErrorEvent,
+      ...diagnostic,
+    },
+    metadata: input.metadata,
+  };
+}
+
 function createCodexAppServerTransport(options: { command?: string } = {}): CodexCliTransport {
   const command = options.command ?? "codex";
 
   type AppServerTurnState = {
+    originalPrompt: string;
+    clientMessageId?: string;
     queue: AsyncQueue<CodexCliEvent>;
     result: Promise<CodexCliTurnResult>;
     resolveResult: (result: CodexCliTurnResult) => void;
@@ -1121,6 +1252,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     goalContinuation?: CodexCliEvent;
     completedNativeTurnIds: Set<string>;
     chainUsage?: CodexCliUsage;
+    lastFailure?: Record<string, unknown>;
+    failurePending?: boolean;
   };
 
   let child: ReturnType<typeof spawn> | null = null;
@@ -1135,6 +1268,12 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   let currentInstructionSources: string[] = [];
   let currentGoalStatus: string | undefined;
   let resolvedModel: string | null = null;
+  // The model the thread runs with: set at thread start/resume, switched per turn by turn/start.
+  let appliedTurnModel: string | null = null;
+  // The model the thread first started with, restored by a turn that names none.
+  // A resume after an app-server restart can report a task turn's model, so it
+  // does not overwrite this.
+  let threadBaseModel: string | null = null;
   let resolvedModelProvider = "openai";
   let pendingRequests = new Map<string, PendingRequest>();
   const pendingDynamicToolResults = new Map<string, PendingDynamicToolResult>();
@@ -1194,6 +1333,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     turn.settled = true;
     if (activeTurn === turn) {
       activeTurn = null;
+      // An interrupt escalation armed for this turn must not outlive it.
+      if (!closePromise) clearForcedKillTimer();
     }
 
     if (options?.failQueue !== undefined) {
@@ -1267,7 +1408,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
 
   const spawnChild = async (input: CodexCliTurnRequest): Promise<void> => {
     const hookResult = shouldMaterializeCodexHookForCommand(command)
-      ? ensureCodexBashHookConfig(input.env?.CODEX_HOME)
+      ? ensureCodexBashHookConfig(input.env?.CODEX_HOME, input.env?.RAVI_BRIDGE_TURN === "1")
       : null;
     // RUST_LOG defaults to `warn` so only warnings/errors from codex reach our stderr forwarder.
     // Override via `RAVI_CODEX_RUST_LOG` (e.g. "codex_app_server=debug,codex=info,warn") when
@@ -1278,9 +1419,14 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     };
 
     const transportKind: CodexTransportKind = resolveCodexTransportKind(input.env);
+    // Failures before the channel is ready (spawn errors such as a missing
+    // executable, a listener that never appears) are setup problems and keep
+    // failing the turn as thrown errors; only a ready connection that drops is
+    // a recoverable transport failure.
+    let channelReady = false;
     const newTransport = createCodexTransport(transportKind, {
       command,
-      baseArgs: buildCodexAppServerBaseArgs(),
+      baseArgs: buildCodexAppServerBaseArgs(input.env?.RAVI_BRIDGE_TURN === "1"),
       cwd: input.cwd,
       env: spawnEnv,
       onMessage: (line: string) => {
@@ -1292,7 +1438,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           routeAppServerMessage(parsed);
         } catch (error) {
           if (activeTurn) {
-            settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
+            settleTurn(
+              activeTurn,
+              { exitCode: 1, stderr: getStderr().slice(activeTurn.stderrOffset) },
+              { failQueue: new CodexAppServerTransportError(error) },
+            );
           }
           signalCodexTransportProcess(newTransport.child, "SIGKILL");
         }
@@ -1302,7 +1452,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           return;
         }
         if (activeTurn) {
-          settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
+          settleTurn(
+            activeTurn,
+            { exitCode: 1, stderr: getStderr().slice(activeTurn.stderrOffset) },
+            { failQueue: channelReady ? new CodexAppServerTransportError(error) : error },
+          );
         }
         signalCodexTransportProcess(newTransport.child, "SIGKILL");
       },
@@ -1332,6 +1486,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     // before any caller attempts writeJsonRpc. Stdio resolves immediately.
     try {
       await newTransport.ready;
+      channelReady = true;
     } catch (error) {
       handleChildTermination(newTransport, 1, null, error instanceof Error ? error : new Error(String(error)));
       throw error;
@@ -1352,7 +1507,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   ): Promise<Record<string, unknown>> {
     const id = String(nextRequestId++);
     return new Promise<Record<string, unknown>>((resolve, reject) => {
-      const pending: PendingRequest = { resolve, reject, onResponse: options.onResponse };
+      const pending: PendingRequest = { method, resolve, reject, onResponse: options.onResponse };
       if (options.timeoutMs !== undefined) {
         pending.timeout = setTimeout(() => {
           if (pendingRequests.get(id) !== pending) {
@@ -1375,6 +1530,57 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         reject(error);
       });
     });
+  }
+
+  async function finishCapacityFailure(
+    turn: AppServerTurnState,
+    terminal: CodexCliEvent,
+    nativeTurn: Record<string, unknown> | null,
+    threadId: string,
+    turnId: string,
+  ): Promise<void> {
+    // A notification may intentionally omit all items. Only a full snapshot
+    // (or an explicit full-history read) proves that no execution occurred.
+    const hasOnlyOriginalInput = (items: unknown): boolean => {
+      if (!Array.isArray(items)) return false;
+      if (items.length === 0) return true;
+      if (items.length !== 1) return false;
+      const item = asRecord(items[0]);
+      const content = Array.isArray(item?.content) ? item.content : [];
+      const text = content.length === 1 ? asRecord(content[0]) : null;
+      return (
+        item?.type === "userMessage" &&
+        text?.type === "text" &&
+        text.text === turn.originalPrompt &&
+        (item.clientId === undefined || item.clientId === null || item.clientId === turn.clientMessageId)
+      );
+    };
+    let rejectedBeforeExecution = nativeTurn?.itemsView === "full" && hasOnlyOriginalInput(nativeTurn.items);
+    if (!rejectedBeforeExecution) {
+      try {
+        const response = await sendRequest("thread/read", { threadId, includeTurns: true }, { timeoutMs: 2_000 });
+        const thread = asRecord(response.thread);
+        const turns = Array.isArray(thread?.turns) ? thread.turns : [];
+        const persisted = turns.map(asRecord).find((candidate) => candidate?.id === turnId);
+        rejectedBeforeExecution =
+          thread?.id === threadId &&
+          persisted?.status === "failed" &&
+          (persisted.itemsView === undefined || persisted.itemsView === "full") &&
+          hasOnlyOriginalInput(persisted.items);
+      } catch (error) {
+        // Readback is optional evidence. Failure must never authorize replay.
+        log.debug("Codex capacity readback unavailable; replay remains unproven", {
+          ...errorDiagnostic(error, { provider: "codex", operation: "thread/read" }),
+        });
+      }
+    }
+    if (turn.settled || activeTurn !== turn) return;
+    turn.queue.push({
+      ...terminal,
+      ...(rejectedBeforeExecution && !turn.interruptRequested ? { preExecutionRejected: true } : {}),
+    });
+    pendingDynamicToolResults.clear();
+    settleTurn(turn);
   }
 
   async function handleServerRequest(
@@ -1488,14 +1694,26 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           },
           { timeoutMs: INTERRUPT_GRACE_MS },
         );
-      } catch {
-        if (!child || closed) {
+      } catch (error) {
+        // Only escalate against the process that ran this turn, and only while
+        // the turn is still the active one: a late timeout from an earlier
+        // attempt must never signal the process now running the next turn.
+        const targetChild = child;
+        if (!targetChild || closed || turn.settled || activeTurn !== turn) {
           return;
         }
-        signalCodexTransportProcess(child, "SIGINT");
+        log.warn("Codex turn/interrupt did not answer; signalling app-server", {
+          pid: targetChild.pid,
+          threadId,
+          turnId: turn.turnId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        signalCodexTransportProcess(targetChild, "SIGINT");
+        clearForcedKillTimer();
         forcedKillTimer = setTimeout(() => {
-          if (!closed && child) {
-            signalCodexTransportProcess(child, "SIGKILL");
+          forcedKillTimer = null;
+          if (!closed && child === targetChild && !turn.settled && activeTurn === turn) {
+            signalCodexTransportProcess(targetChild, "SIGKILL");
           }
         }, INTERRUPT_GRACE_MS);
         forcedKillTimer.unref?.();
@@ -1724,7 +1942,10 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         }
 
         default:
-          return buildRuntimeControlError(request, `Unsupported Codex runtime control operation: ${request.operation}`);
+          return {
+            ...buildRuntimeControlError(request, `Unsupported Codex runtime control operation: ${request.operation}`),
+            code: RUNTIME_OPERATION_UNSUPPORTED,
+          };
       }
     } catch (error) {
       return buildRuntimeControlError(request, error);
@@ -1773,7 +1994,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           clearTimeout(pending.timeout);
         }
         if (message.error) {
-          pending.reject(new Error(extractJsonRpcError(message.error) ?? "Codex app-server request failed"));
+          pending.reject(new CodexAppServerRequestError(message.error, pending.method));
         } else {
           const result = asRecord(message.result) ?? {};
           try {
@@ -1822,8 +2043,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       }
       case "error": {
         if (turn && notificationMatchesActiveTurn(turn, params)) {
+          turn.lastFailure = normalizeCodexProviderError(params.error ?? params);
           turn.queue.push({
             type: "error",
+            source: "codex.app-server",
+            ...turn.lastFailure,
             message: extractAppServerErrorMessage(params) ?? "Codex app-server error",
           });
         }
@@ -2017,16 +2241,44 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             thread_id: threadId,
             turn_id: turnId,
             turn: normalizeAppServerTurn(completedTurn),
+            usage:
+              turn.turnUsage || turn.chainUsage
+                ? {
+                    input_tokens: toNumber(turn.chainUsage?.input_tokens) + toNumber(turn.turnUsage?.input_tokens),
+                    output_tokens: toNumber(turn.chainUsage?.output_tokens) + toNumber(turn.turnUsage?.output_tokens),
+                    cached_input_tokens:
+                      toNumber(turn.chainUsage?.cached_input_tokens) + toNumber(turn.turnUsage?.cached_input_tokens),
+                  }
+                : undefined,
           });
         } else {
-          turn.queue.push({
+          const failure = completedTurn?.error
+            ? normalizeCodexProviderError(completedTurn.error)
+            : (turn.lastFailure ?? normalizeCodexProviderError({ message: `Codex turn ${status}` }));
+          const terminal: CodexCliEvent = {
             type: "turn.failed",
             source: "codex.app-server",
             thread_id: threadId,
             turn_id: turnId,
             turn: normalizeAppServerTurn(completedTurn),
-            error: extractAppServerTurnError(completedTurn) ?? `Codex turn ${status}`,
-          });
+            ...failure,
+            usage:
+              turn.turnUsage || turn.chainUsage
+                ? {
+                    input_tokens: toNumber(turn.chainUsage?.input_tokens) + toNumber(turn.turnUsage?.input_tokens),
+                    output_tokens: toNumber(turn.chainUsage?.output_tokens) + toNumber(turn.turnUsage?.output_tokens),
+                    cached_input_tokens:
+                      toNumber(turn.chainUsage?.cached_input_tokens) + toNumber(turn.turnUsage?.cached_input_tokens),
+                  }
+                : undefined,
+          };
+          if (isCodexCapacityError(failure) && turnId && threadId && !turn.failurePending) {
+            turn.failurePending = true;
+            void finishCapacityFailure(turn, terminal, completedTurn, threadId, turnId);
+            break;
+          }
+          if (turn.failurePending) break;
+          turn.queue.push(terminal);
         }
         pendingDynamicToolResults.clear();
         settleTurn(turn);
@@ -2050,6 +2302,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     forkThreadId: string | null = null,
     forkBeforeTurnId: string | null = null,
   ): Promise<void> {
+    if (input.env?.RAVI_BRIDGE_TURN === "1") {
+      const { ensureBridgeCodexGuard } = await import("../bridge/codex-trust.js");
+      if (!input.env.CODEX_HOME) throw new Error("Missing private bridge profile");
+      await ensureBridgeCodexGuard(sendRequest, input.cwd, input.env.CODEX_HOME);
+    }
     const effort = toCodexRuntimeEffort(input.effort);
     const security = input.security ?? UNRESTRICTED_CODEX_THREAD_SECURITY;
     currentSecurity = security;
@@ -2147,13 +2404,17 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
     currentInstructionSources = stringArray(threadResponse.instructionSources);
     resolvedModel = firstString(threadResponse.model, input.model) ?? null;
+    threadBaseModel ??= resolvedModel;
+    // thread/fork does not take a model, so a fork runs on the inherited one
+    // until a turn/start switches it.
+    appliedTurnModel = forkThreadId ? resolvedModel : (input.model ?? resolvedModel);
     resolvedModelProvider = firstString(threadResponse.modelProvider, resolvedModelProvider) ?? "openai";
   }
 
   async function ensureClient(input: CodexCliTurnRequest, controlOnly = false): Promise<void> {
     metadataControlOnly = controlOnly;
     const hookResult = shouldMaterializeCodexHookForCommand(command)
-      ? ensureCodexBashHookConfig(input.env?.CODEX_HOME)
+      ? ensureCodexBashHookConfig(input.env?.CODEX_HOME, input.env?.RAVI_BRIDGE_TURN === "1")
       : null;
     const nextEnvSignature = buildCodexAppServerEnvSignature(input.env);
     const hookChanged =
@@ -2227,6 +2488,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     closePromise = (async () => {
       transport?.closeChannel();
       signalCodexTransportProcess(targetChild, "SIGTERM");
+      clearForcedKillTimer();
       forcedKillTimer = setTimeout(() => {
         if (child === targetChild && !closed) {
           signalCodexTransportProcess(targetChild, "SIGKILL");
@@ -2254,10 +2516,14 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       if (activeTurn && !activeTurn.settled) {
         throw new Error("Codex app-server transport does not support overlapping turns");
       }
+      // A kill escalation left from an earlier turn's interrupt must not reach this one.
+      if (!closePromise) clearForcedKillTimer();
 
       let resolveResult!: (result: CodexCliTurnResult) => void;
       const queue = createAsyncQueue<CodexCliEvent>();
       const turn: AppServerTurnState = {
+        originalPrompt: input.prompt,
+        clientMessageId: input.clientMessageId,
         queue,
         result: new Promise<CodexCliTurnResult>((resolve) => {
           resolveResult = resolve;
@@ -2371,6 +2637,10 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             if (!turn.threadId) {
               throw new Error("Codex app-server did not initialize a thread");
             }
+            // A turn whose model differs from the thread's (entering or leaving a
+            // task with a model override) switches it here, without a relaunch.
+            const turnModel = input.model ?? threadBaseModel;
+            const switchesModel = turnModel !== appliedTurnModel;
             await sendRequest(
               "turn/start",
               {
@@ -2386,7 +2656,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
                 cwd: null,
                 approvalPolicy: null,
                 sandboxPolicy: null,
-                model: null,
+                model: switchesModel ? turnModel : null,
                 effort: input.effort ?? null,
                 summary: null,
                 personality: null,
@@ -2402,6 +2672,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
                 },
               },
             );
+            appliedTurnModel = turnModel;
+            if (switchesModel && turnModel) {
+              // Usage and cost are reported against the model the turn ran on.
+              resolvedModel = turnModel;
+            }
           };
 
           try {
@@ -2432,6 +2707,35 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         } catch (error) {
           bufferingThreadNotifications = false;
           bufferedThreadNotifications.splice(0);
+          if (error instanceof CodexAppServerRequestError) {
+            const failedResult = { exitCode: 1, stderr: getStderr().slice(turn.stderrOffset) };
+            turn.queue.push({
+              type: "turn.failed",
+              source: "codex.app-server",
+              thread_id: turn.threadId ?? currentThreadId,
+              turn_id: turn.turnId,
+              ...error.failure,
+              ...(error.method === "turn/start" && !turn.turnId && isCodexCapacityError(error.failure)
+                ? { preExecutionRejected: true }
+                : {}),
+            });
+            // A live process is not necessarily initialized: an RPC rejection
+            // during initialize/thread bootstrap leaves ensureClient incomplete.
+            // Do not release the next prompt until that transport is closed.
+            const canReuseTransport = error.method === "turn/start" && Boolean(currentThreadId) && !bootstrapPromise;
+            if (!canReuseTransport) {
+              intentionalChildRestart = true;
+              try {
+                await close();
+              } finally {
+                intentionalChildRestart = false;
+                settleTurn(turn, failedResult);
+              }
+            } else {
+              settleTurn(turn, failedResult);
+            }
+            return;
+          }
           settleTurn(turn, { exitCode: 1, stderr: getStderr().slice(turn.stderrOffset) }, { failQueue: error });
           if (child && !closed) {
             signalCodexTransportProcess(child, "SIGKILL");
@@ -2458,10 +2762,10 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   };
 }
 
-function buildCodexAppServerBaseArgs(): string[] {
+function buildCodexAppServerBaseArgs(humanBridge = false): string[] {
   return [
     "-c",
-    "features.codex_hooks=true",
+    humanBridge ? "features.hooks=true" : "features.codex_hooks=true",
     "-c",
     "shell_environment_policy.inherit=all",
     "-c",
@@ -3835,14 +4139,6 @@ function accumulateAppServerUsage(
     cached_input_tokens: toNumber(turn.turnUsage?.cached_input_tokens) + toNumber(last.cached_input_tokens),
     output_tokens: toNumber(turn.turnUsage?.output_tokens) + toNumber(last.output_tokens),
   };
-}
-
-function extractAppServerTurnError(turn: Record<string, unknown> | null): string | undefined {
-  const error = asRecord(turn?.error);
-  if (error && typeof error.message === "string" && error.message.trim().length > 0) {
-    return error.message;
-  }
-  return undefined;
 }
 
 function extractJsonRpcError(error: unknown): string | undefined {

@@ -43,6 +43,9 @@ export const CLOUD_AUTH_ERROR_CODES = [
   "CONNECTOR_POLICY_ABOVE_CEILING",
   "CONNECTOR_FORBIDDEN",
   "ACTOR_NOT_LINKED",
+  // A runtime turn Ravi cannot attribute (another agent's turn, an unresolved
+  // speaker): refused locally, never sent as the operator.
+  "ACTOR_UNKNOWN",
   // Knowledge (`/api/cli/knowledge/*`): the Console refused the turn, the
   // organization has Knowledge off, or the Console has no Knowledge routes.
   "KNOWLEDGE_TURN_NOT_OPERATOR",
@@ -80,6 +83,7 @@ export const CONNECTOR_POLICY_CODES: ReadonlySet<CloudAuthErrorCode> = new Set([
   // Console access calls (`ravi pages share`, `ravi invites`, `ravi access`)
   // that name a chat author with no `ravi link` binding.
   "ACTOR_NOT_LINKED",
+  "ACTOR_UNKNOWN",
 ]);
 
 export function isConnectorPolicyCode(code: CloudAuthErrorCode): boolean {

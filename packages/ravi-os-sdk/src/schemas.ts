@@ -6113,6 +6113,140 @@ export const AgentsPublishReturnSchema = {
     "agent": {
       "type": "string"
     },
+    "cloud": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "budgetUsd": {
+              "type": "number"
+            },
+            "effort": {
+              "type": "string"
+            },
+            "environment": {
+              "additionalProperties": false,
+              "properties": {
+                "allowedHosts": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "networking": {
+                  "type": "string"
+                },
+                "packages": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "apt": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "npm": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "pip": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "mcp": {
+              "additionalProperties": false,
+              "properties": {
+                "ravi": {
+                  "type": "boolean"
+                },
+                "servers": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "url": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "url"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "model": {
+              "type": "string"
+            },
+            "repositories": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "branch": {
+                    "type": "string"
+                  },
+                  "repo": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "repo"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "schedule": {
+              "additionalProperties": false,
+              "properties": {
+                "cron": {
+                  "type": "string"
+                },
+                "timezone": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "cron"
+              ],
+              "type": "object"
+            },
+            "tools": {
+              "additionalProperties": false,
+              "properties": {
+                "webSearch": {
+                  "type": "boolean"
+                },
+                "writes": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "contentHash": {
       "type": "string"
     },
@@ -6621,6 +6755,7 @@ export const AgentsPublishReturnSchema = {
     "item",
     "proposal",
     "manifest",
+    "cloud",
     "leftOut",
     "next"
   ],
@@ -14927,6 +15062,10 @@ export const BasesChartsCreateInputSchema = {
       "description": "Console base URL",
       "type": "string"
     },
+    "idempotencyKey": {
+      "description": "Idempotency key: a retry with the same key and request returns the created object (default: generated)",
+      "type": "string"
+    },
     "name": {
       "description": "Chart name (overrides spec.name)",
       "type": "string"
@@ -15058,6 +15197,9 @@ export const BasesChartsCreateReturnSchema = {
     "consoleUrl": {
       "type": "string"
     },
+    "idempotencyKey": {
+      "type": "string"
+    },
     "projectRef": {
       "type": "string"
     },
@@ -15071,7 +15213,8 @@ export const BasesChartsCreateReturnSchema = {
     "consoleUrl",
     "projectRef",
     "baseRef",
-    "chart"
+    "chart",
+    "idempotencyKey"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -15244,6 +15387,37 @@ export const BasesChartsDataReturnSchema = {
           "config": {
             "additionalProperties": false,
             "properties": {
+              "agent": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "approvers": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "type": "string"
+                    },
+                    "minRole": {
+                      "type": "string"
+                    },
+                    "userId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "currency": {
                 "type": "string"
               },
@@ -15252,6 +15426,15 @@ export const BasesChartsDataReturnSchema = {
               },
               "includeTime": {
                 "type": "boolean"
+              },
+              "inputs": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "instructions": {
+                "type": "string"
               },
               "options": {
                 "items": {
@@ -15282,8 +15465,17 @@ export const BasesChartsDataReturnSchema = {
                 },
                 "type": "array"
               },
+              "output": {
+                "type": "string"
+              },
               "precision": {
                 "type": "number"
+              },
+              "resetOn": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               }
             },
             "type": "object"
@@ -15979,6 +16171,10 @@ export const BasesCreateInputSchema = {
       "description": "Base icon (emoji or short name)",
       "type": "string"
     },
+    "idempotencyKey": {
+      "description": "Idempotency key: a retry with the same key and request returns the created object (default: generated)",
+      "type": "string"
+    },
     "name": {
       "description": "Base display name",
       "type": "string"
@@ -16213,6 +16409,37 @@ export const BasesCreateReturnSchema = {
               "config": {
                 "additionalProperties": false,
                 "properties": {
+                  "agent": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "approvers": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "minRole": {
+                          "type": "string"
+                        },
+                        "userId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
                   "currency": {
                     "type": "string"
                   },
@@ -16221,6 +16448,15 @@ export const BasesCreateReturnSchema = {
                   },
                   "includeTime": {
                     "type": "boolean"
+                  },
+                  "inputs": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "instructions": {
+                    "type": "string"
                   },
                   "options": {
                     "items": {
@@ -16251,8 +16487,17 @@ export const BasesCreateReturnSchema = {
                     },
                     "type": "array"
                   },
+                  "output": {
+                    "type": "string"
+                  },
                   "precision": {
                     "type": "number"
+                  },
+                  "resetOn": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
                   }
                 },
                 "type": "object"
@@ -16362,6 +16607,12 @@ export const BasesCreateReturnSchema = {
                     "properties": {
                       "aggregateOnly": {
                         "type": "boolean"
+                      },
+                      "approve": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
                       },
                       "archive": {
                         "type": "boolean"
@@ -16523,6 +16774,12 @@ export const BasesCreateReturnSchema = {
                       "aggregateOnly": {
                         "type": "boolean"
                       },
+                      "approve": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
                       "archive": {
                         "type": "boolean"
                       },
@@ -16559,6 +16816,37 @@ export const BasesCreateReturnSchema = {
                         "config": {
                           "additionalProperties": false,
                           "properties": {
+                            "agent": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "approvers": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "kind": {
+                                    "type": "string"
+                                  },
+                                  "minRole": {
+                                    "type": "string"
+                                  },
+                                  "userId": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
                             "currency": {
                               "type": "string"
                             },
@@ -16567,6 +16855,15 @@ export const BasesCreateReturnSchema = {
                             },
                             "includeTime": {
                               "type": "boolean"
+                            },
+                            "inputs": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "instructions": {
+                              "type": "string"
                             },
                             "options": {
                               "items": {
@@ -16597,8 +16894,17 @@ export const BasesCreateReturnSchema = {
                               },
                               "type": "array"
                             },
+                            "output": {
+                              "type": "string"
+                            },
                             "precision": {
                               "type": "number"
+                            },
+                            "resetOn": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
                             }
                           },
                           "type": "object"
@@ -16703,6 +17009,9 @@ export const BasesCreateReturnSchema = {
     "consoleUrl": {
       "type": "string"
     },
+    "idempotencyKey": {
+      "type": "string"
+    },
     "projectRef": {
       "type": "string"
     },
@@ -16715,7 +17024,8 @@ export const BasesCreateReturnSchema = {
     "success",
     "consoleUrl",
     "projectRef",
-    "base"
+    "base",
+    "idempotencyKey"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -17017,6 +17327,14 @@ export const BasesListReturnSchema = {
 export const BasesPropsAddInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "agent": {
+      "description": "Agent column: the agent that fills it (a label, max 64)",
+      "type": "string"
+    },
+    "approvers": {
+      "description": "Approval: who decides, comma-separated role:<viewer|developer|project_admin> or user:<userId> (1-20)",
+      "type": "string"
+    },
     "base": {
       "description": "Base id or slug",
       "type": "string"
@@ -17037,6 +17355,18 @@ export const BasesPropsAddInputSchema = {
       "description": "Schema version you read (default: read the current one first)",
       "type": "string"
     },
+    "idempotencyKey": {
+      "description": "Idempotency key: a retry with the same key and request returns the created object (default: generated)",
+      "type": "string"
+    },
+    "inputs": {
+      "description": "Agent column: property keys the agent reads (1-20)",
+      "type": "string"
+    },
+    "instructions": {
+      "description": "Agent column: what the agent fills (1-4000 chars)",
+      "type": "string"
+    },
     "key": {
       "description": "API key, ^[a-z][a-z0-9_]{0,62}$ (default: derived from the name)",
       "type": "string"
@@ -17046,7 +17376,11 @@ export const BasesPropsAddInputSchema = {
       "type": "string"
     },
     "options": {
-      "description": "Select/status options, comma-separated; status groups as Name:todo|in_progress|done",
+      "description": "Select/status options (or an agent column's select output), comma-separated; status groups as Name:todo|in_progress|done",
+      "type": "string"
+    },
+    "output": {
+      "description": "Agent column: value type text|number|checkbox|select|multi_select|url|date",
       "type": "string"
     },
     "position": {
@@ -17061,8 +17395,12 @@ export const BasesPropsAddInputSchema = {
       "description": "Require a value on create and on updates that touch it",
       "type": "boolean"
     },
+    "resetOn": {
+      "description": "Approval: property keys whose change sends a decided approval back to pending",
+      "type": "string"
+    },
     "type": {
-      "description": "text|number|checkbox|date|select|multi_select|status|url|email|phone|person|ref (default: text)",
+      "description": "text|number|checkbox|date|select|multi_select|status|url|email|phone|person|ref|approval|agent (default: text)",
       "type": "string"
     }
   },
@@ -17186,6 +17524,9 @@ export const BasesPropsAddReturnSchema = {
     "consoleUrl": {
       "type": "string"
     },
+    "idempotencyKey": {
+      "type": "string"
+    },
     "projectRef": {
       "type": "string"
     },
@@ -17195,6 +17536,37 @@ export const BasesPropsAddReturnSchema = {
         "config": {
           "additionalProperties": false,
           "properties": {
+            "agent": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "approvers": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "type": "string"
+                  },
+                  "minRole": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
             "currency": {
               "type": "string"
             },
@@ -17203,6 +17575,15 @@ export const BasesPropsAddReturnSchema = {
             },
             "includeTime": {
               "type": "boolean"
+            },
+            "inputs": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "instructions": {
+              "type": "string"
             },
             "options": {
               "items": {
@@ -17233,8 +17614,17 @@ export const BasesPropsAddReturnSchema = {
               },
               "type": "array"
             },
+            "output": {
+              "type": "string"
+            },
             "precision": {
               "type": "number"
+            },
+            "resetOn": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "type": "object"
@@ -17386,7 +17776,8 @@ export const BasesPropsAddReturnSchema = {
     "projectRef",
     "base",
     "property",
-    "report"
+    "report",
+    "idempotencyKey"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -17549,6 +17940,37 @@ export const BasesPropsDeleteReturnSchema = {
         "config": {
           "additionalProperties": false,
           "properties": {
+            "agent": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "approvers": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "type": "string"
+                  },
+                  "minRole": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
             "currency": {
               "type": "string"
             },
@@ -17557,6 +17979,15 @@ export const BasesPropsDeleteReturnSchema = {
             },
             "includeTime": {
               "type": "boolean"
+            },
+            "inputs": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "instructions": {
+              "type": "string"
             },
             "options": {
               "items": {
@@ -17587,8 +18018,17 @@ export const BasesPropsDeleteReturnSchema = {
               },
               "type": "array"
             },
+            "output": {
+              "type": "string"
+            },
             "precision": {
               "type": "number"
+            },
+            "resetOn": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "type": "object"
@@ -17801,6 +18241,37 @@ export const BasesPropsListReturnSchema = {
           "config": {
             "additionalProperties": false,
             "properties": {
+              "agent": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "approvers": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "type": "string"
+                    },
+                    "minRole": {
+                      "type": "string"
+                    },
+                    "userId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "currency": {
                 "type": "string"
               },
@@ -17809,6 +18280,15 @@ export const BasesPropsListReturnSchema = {
               },
               "includeTime": {
                 "type": "boolean"
+              },
+              "inputs": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "instructions": {
+                "type": "string"
               },
               "options": {
                 "items": {
@@ -17839,8 +18319,17 @@ export const BasesPropsListReturnSchema = {
                 },
                 "type": "array"
               },
+              "output": {
+                "type": "string"
+              },
               "precision": {
                 "type": "number"
+              },
+              "resetOn": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               }
             },
             "type": "object"
@@ -17945,6 +18434,37 @@ export const BasesPropsListReturnSchema = {
           "config": {
             "additionalProperties": false,
             "properties": {
+              "agent": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "approvers": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "type": "string"
+                    },
+                    "minRole": {
+                      "type": "string"
+                    },
+                    "userId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "currency": {
                 "type": "string"
               },
@@ -17953,6 +18473,15 @@ export const BasesPropsListReturnSchema = {
               },
               "includeTime": {
                 "type": "boolean"
+              },
+              "inputs": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "instructions": {
+                "type": "string"
               },
               "options": {
                 "items": {
@@ -17983,8 +18512,17 @@ export const BasesPropsListReturnSchema = {
                 },
                 "type": "array"
               },
+              "output": {
+                "type": "string"
+              },
               "precision": {
                 "type": "number"
+              },
+              "resetOn": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               }
             },
             "type": "object"
@@ -18211,6 +18749,37 @@ export const BasesPropsRestoreReturnSchema = {
         "config": {
           "additionalProperties": false,
           "properties": {
+            "agent": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "approvers": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "type": "string"
+                  },
+                  "minRole": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
             "currency": {
               "type": "string"
             },
@@ -18219,6 +18788,15 @@ export const BasesPropsRestoreReturnSchema = {
             },
             "includeTime": {
               "type": "boolean"
+            },
+            "inputs": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "instructions": {
+              "type": "string"
             },
             "options": {
               "items": {
@@ -18249,8 +18827,17 @@ export const BasesPropsRestoreReturnSchema = {
               },
               "type": "array"
             },
+            "output": {
+              "type": "string"
+            },
             "precision": {
               "type": "number"
+            },
+            "resetOn": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "type": "object"
@@ -18597,6 +19184,37 @@ export const BasesPropsUpdateReturnSchema = {
         "config": {
           "additionalProperties": false,
           "properties": {
+            "agent": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "approvers": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "type": "string"
+                  },
+                  "minRole": {
+                    "type": "string"
+                  },
+                  "userId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
             "currency": {
               "type": "string"
             },
@@ -18605,6 +19223,15 @@ export const BasesPropsUpdateReturnSchema = {
             },
             "includeTime": {
               "type": "boolean"
+            },
+            "inputs": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "instructions": {
+              "type": "string"
             },
             "options": {
               "items": {
@@ -18635,8 +19262,17 @@ export const BasesPropsUpdateReturnSchema = {
               },
               "type": "array"
             },
+            "output": {
+              "type": "string"
+            },
             "precision": {
               "type": "number"
+            },
+            "resetOn": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "type": "object"
@@ -19181,6 +19817,243 @@ export const BasesRowsAddReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `bases.rows.approve`. */
+export const BasesRowsApproveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Actually record the approval; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
+    "expectedVersion": {
+      "description": "Row version you read (default: none, the write applies to the current row)",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Idempotency key for safe retries (default: generated per call)",
+      "type": "string"
+    },
+    "note": {
+      "description": "Note recorded with the decision (max 1000 chars)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "prop": {
+      "description": "Property key or id",
+      "type": "string"
+    },
+    "row": {
+      "description": "Row id",
+      "type": "string"
+    },
+    "view": {
+      "description": "Read or write through this view (its columns, filter, and access apply)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "prop",
+    "row"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `bases.rows.approve`. */
+export const BasesRowsApproveReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "type": "string"
+    },
+    "idempotentReplay": {
+      "type": "boolean"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "property": {
+      "type": "string"
+    },
+    "row": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rowId": {
+          "type": "string"
+        },
+        "values": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "rowId",
+        "version",
+        "values"
+      ],
+      "type": "object"
+    },
+    "state": {
+      "enum": [
+        "pending",
+        "approved",
+        "rejected"
+      ],
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "users": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "avatarUrl"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "viewId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "viewId",
+    "row",
+    "users",
+    "idempotentReplay",
+    "property",
+    "state",
+    "idempotencyKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `bases.rows.archive`. */
 export const BasesRowsArchiveInputSchema = {
   "additionalProperties": false,
@@ -19518,6 +20391,236 @@ export const BasesRowsExportReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `bases.rows.fill`. */
+export const BasesRowsFillInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "error": {
+      "description": "Why the agent could not fill it (max 1000 chars)",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Idempotency key for safe retries (default: generated per call)",
+      "type": "string"
+    },
+    "inputsHash": {
+      "description": "inputsHash of the cell you read; a changed one fails with CONFLICT (agent_stale)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "prop": {
+      "description": "Property key or id",
+      "type": "string"
+    },
+    "row": {
+      "description": "Row id",
+      "type": "string"
+    },
+    "value": {
+      "description": "The value: JSON when it parses (12, true, [\"a\",\"b\"], \"texto\"), otherwise the text as is",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "prop",
+    "row"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `bases.rows.fill`. */
+export const BasesRowsFillReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "type": "string"
+    },
+    "idempotentReplay": {
+      "type": "boolean"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "property": {
+      "type": "string"
+    },
+    "row": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rowId": {
+          "type": "string"
+        },
+        "values": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "rowId",
+        "version",
+        "values"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "users": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "avatarUrl"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "viewId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "viewId",
+    "row",
+    "users",
+    "idempotentReplay",
+    "idempotencyKey",
+    "property"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `bases.rows.get`. */
 export const BasesRowsGetInputSchema = {
   "additionalProperties": false,
@@ -19839,6 +20942,36 @@ export const BasesRowsHistoryReturnSchema = {
               "type": "string"
             },
             "type": "object"
+          },
+          "agent": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "installationId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "installationId"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "before": {
             "additionalProperties": {
@@ -20595,6 +21728,680 @@ export const BasesRowsQueryReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `bases.rows.reject`. */
+export const BasesRowsRejectInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Actually record the rejection; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
+    "expectedVersion": {
+      "description": "Row version you read (default: none, the write applies to the current row)",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Idempotency key for safe retries (default: generated per call)",
+      "type": "string"
+    },
+    "note": {
+      "description": "Note recorded with the decision (max 1000 chars)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "prop": {
+      "description": "Property key or id",
+      "type": "string"
+    },
+    "row": {
+      "description": "Row id",
+      "type": "string"
+    },
+    "view": {
+      "description": "Read or write through this view (its columns, filter, and access apply)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "prop",
+    "row"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `bases.rows.reject`. */
+export const BasesRowsRejectReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "type": "string"
+    },
+    "idempotentReplay": {
+      "type": "boolean"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "property": {
+      "type": "string"
+    },
+    "row": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rowId": {
+          "type": "string"
+        },
+        "values": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "rowId",
+        "version",
+        "values"
+      ],
+      "type": "object"
+    },
+    "state": {
+      "enum": [
+        "pending",
+        "approved",
+        "rejected"
+      ],
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "users": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "avatarUrl"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "viewId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "viewId",
+    "row",
+    "users",
+    "idempotentReplay",
+    "property",
+    "state",
+    "idempotencyKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `bases.rows.request-approval`. */
+export const BasesRowsRequestApprovalInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "expectedVersion": {
+      "description": "Row version you read (default: none, the write applies to the current row)",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Idempotency key for safe retries (default: generated per call)",
+      "type": "string"
+    },
+    "note": {
+      "description": "Note for the approvers (max 1000 chars)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "prop": {
+      "description": "Property key or id",
+      "type": "string"
+    },
+    "row": {
+      "description": "Row id",
+      "type": "string"
+    },
+    "view": {
+      "description": "Read or write through this view (its columns, filter, and access apply)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "prop",
+    "row"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `bases.rows.request-approval`. */
+export const BasesRowsRequestApprovalReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "type": "string"
+    },
+    "idempotentReplay": {
+      "type": "boolean"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "property": {
+      "type": "string"
+    },
+    "row": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rowId": {
+          "type": "string"
+        },
+        "values": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "rowId",
+        "version",
+        "values"
+      ],
+      "type": "object"
+    },
+    "state": {
+      "enum": [
+        "pending",
+        "approved",
+        "rejected"
+      ],
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "users": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "avatarUrl"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "viewId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "viewId",
+    "row",
+    "users",
+    "idempotentReplay",
+    "property",
+    "state",
+    "idempotencyKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `bases.rows.rerun`. */
+export const BasesRowsRerunInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "prop": {
+      "description": "Property key or id",
+      "type": "string"
+    },
+    "row": {
+      "description": "Row id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "base",
+    "prop",
+    "row"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `bases.rows.rerun`. */
+export const BasesRowsRerunReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "idempotentReplay": {
+      "type": "boolean"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "property": {
+      "type": "string"
+    },
+    "row": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "body": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rowId": {
+          "type": "string"
+        },
+        "values": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "rowId",
+        "version",
+        "values"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "users": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "avatarUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "displayName",
+          "avatarUrl"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "viewId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "viewId",
+    "row",
+    "users",
+    "idempotentReplay",
+    "property"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `bases.rows.restore`. */
 export const BasesRowsRestoreInputSchema = {
   "additionalProperties": false,
@@ -21268,6 +23075,37 @@ export const BasesShowReturnSchema = {
               "config": {
                 "additionalProperties": false,
                 "properties": {
+                  "agent": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "approvers": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "minRole": {
+                          "type": "string"
+                        },
+                        "userId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
                   "currency": {
                     "type": "string"
                   },
@@ -21276,6 +23114,15 @@ export const BasesShowReturnSchema = {
                   },
                   "includeTime": {
                     "type": "boolean"
+                  },
+                  "inputs": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "instructions": {
+                    "type": "string"
                   },
                   "options": {
                     "items": {
@@ -21306,8 +23153,17 @@ export const BasesShowReturnSchema = {
                     },
                     "type": "array"
                   },
+                  "output": {
+                    "type": "string"
+                  },
                   "precision": {
                     "type": "number"
+                  },
+                  "resetOn": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
                   }
                 },
                 "type": "object"
@@ -21417,6 +23273,12 @@ export const BasesShowReturnSchema = {
                     "properties": {
                       "aggregateOnly": {
                         "type": "boolean"
+                      },
+                      "approve": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
                       },
                       "archive": {
                         "type": "boolean"
@@ -21578,6 +23440,12 @@ export const BasesShowReturnSchema = {
                       "aggregateOnly": {
                         "type": "boolean"
                       },
+                      "approve": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
                       "archive": {
                         "type": "boolean"
                       },
@@ -21614,6 +23482,37 @@ export const BasesShowReturnSchema = {
                         "config": {
                           "additionalProperties": false,
                           "properties": {
+                            "agent": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "approvers": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "kind": {
+                                    "type": "string"
+                                  },
+                                  "minRole": {
+                                    "type": "string"
+                                  },
+                                  "userId": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "kind"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
                             "currency": {
                               "type": "string"
                             },
@@ -21622,6 +23521,15 @@ export const BasesShowReturnSchema = {
                             },
                             "includeTime": {
                               "type": "boolean"
+                            },
+                            "inputs": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "instructions": {
+                              "type": "string"
                             },
                             "options": {
                               "items": {
@@ -21652,8 +23560,17 @@ export const BasesShowReturnSchema = {
                               },
                               "type": "array"
                             },
+                            "output": {
+                              "type": "string"
+                            },
                             "precision": {
                               "type": "number"
+                            },
+                            "resetOn": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
                             }
                           },
                           "type": "object"
@@ -21779,6 +23696,10 @@ export const BasesShowReturnSchema = {
 export const BasesSubscribeInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "agent": {
+      "description": "With --trigger: the agent the trigger wakes (required)",
+      "type": "string"
+    },
     "base": {
       "description": "Base id or slug",
       "type": "string"
@@ -21787,8 +23708,32 @@ export const BasesSubscribeInputSchema = {
       "description": "Console base URL",
       "type": "string"
     },
+    "events": {
+      "description": "Only these events, comma-separated: row.created, row.updated, row.archived, row.restored, approval.requested, approval.decided, agent.requested, agent.backfill",
+      "type": "string"
+    },
+    "message": {
+      "description": "With --trigger: prompt template ({{data.<path>}}); default: a short Bases event prompt",
+      "type": "string"
+    },
     "project": {
       "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "props": {
+      "description": "Only changes to these properties, comma-separated keys or ids (1-20)",
+      "type": "string"
+    },
+    "session": {
+      "description": "With --trigger: session to run in: isolated (the trigger's own, required to read or write the base), a name or a template (e.g. bases-{{data.payload.rowId}}); default: the current session, or the agent main session",
+      "type": "string"
+    },
+    "trigger": {
+      "description": "Also create a local trigger on ravi.console.inbox.item for these events; from an agent session it is a disabled draft",
+      "type": "boolean"
+    },
+    "view": {
+      "description": "Only rows that pass this view's filter, evaluated for you (after the write; before an archive)",
       "type": "string"
     }
   },
@@ -21821,6 +23766,39 @@ export const BasesSubscribeReturnSchema = {
       ],
       "type": "object"
     },
+    "filter": {
+      "additionalProperties": false,
+      "properties": {
+        "events": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "properties": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "viewId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "viewId",
+        "properties",
+        "events"
+      ],
+      "type": "object"
+    },
     "projectRef": {
       "type": "string"
     },
@@ -21832,6 +23810,12 @@ export const BasesSubscribeReturnSchema = {
         },
         "createdAt": {
           "type": "string"
+        },
+        "events": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "id": {
           "type": "string"
@@ -21849,6 +23833,12 @@ export const BasesSubscribeReturnSchema = {
         "localInstallationId": {
           "type": "string"
         },
+        "properties": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "revokedAt": {
           "anyOf": [
             {
@@ -21864,6 +23854,16 @@ export const BasesSubscribeReturnSchema = {
         },
         "userId": {
           "type": "string"
+        },
+        "viewId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -21881,6 +23881,73 @@ export const BasesSubscribeReturnSchema = {
     "success": {
       "const": true,
       "type": "boolean"
+    },
+    "trigger": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "created": {
+          "type": "boolean"
+        },
+        "draft": {
+          "type": "boolean"
+        },
+        "enableCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "filter": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "ownerPrincipal": {
+          "type": "string"
+        },
+        "ownsSession": {
+          "type": "boolean"
+        },
+        "runsAsOperator": {
+          "type": "boolean"
+        },
+        "session": {
+          "type": "string"
+        },
+        "topic": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "enabled",
+        "created",
+        "draft",
+        "agentId",
+        "session",
+        "topic",
+        "filter",
+        "enableCommand",
+        "ownerPrincipal",
+        "runsAsOperator",
+        "ownsSession"
+      ],
+      "type": "object"
     }
   },
   "required": [
@@ -21888,6 +23955,7 @@ export const BasesSubscribeReturnSchema = {
     "consoleUrl",
     "projectRef",
     "subscription",
+    "filter",
     "delivery"
   ],
   "type": "object"
@@ -21939,6 +24007,12 @@ export const BasesSubscriptionsReturnSchema = {
           "createdAt": {
             "type": "string"
           },
+          "events": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "id": {
             "type": "string"
           },
@@ -21955,6 +24029,12 @@ export const BasesSubscriptionsReturnSchema = {
           "localInstallationId": {
             "type": "string"
           },
+          "properties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "revokedAt": {
             "anyOf": [
               {
@@ -21970,6 +24050,16 @@ export const BasesSubscriptionsReturnSchema = {
           },
           "userId": {
             "type": "string"
+          },
+          "viewId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -22048,6 +24138,12 @@ export const BasesUnsubscribeReturnSchema = {
         "createdAt": {
           "type": "string"
         },
+        "events": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "id": {
           "type": "string"
         },
@@ -22064,6 +24160,12 @@ export const BasesUnsubscribeReturnSchema = {
         "localInstallationId": {
           "type": "string"
         },
+        "properties": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "revokedAt": {
           "anyOf": [
             {
@@ -22079,6 +24181,16 @@ export const BasesUnsubscribeReturnSchema = {
         },
         "userId": {
           "type": "string"
+        },
+        "viewId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -22395,6 +24507,12 @@ export const BasesViewsArchiveReturnSchema = {
             "aggregateOnly": {
               "type": "boolean"
             },
+            "approve": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "archive": {
               "type": "boolean"
             },
@@ -22673,6 +24791,12 @@ export const BasesViewsBindReturnSchema = {
             "aggregateOnly": {
               "type": "boolean"
             },
+            "approve": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "archive": {
               "type": "boolean"
             },
@@ -22861,6 +24985,10 @@ export const BasesViewsCreateInputSchema = {
       "description": "Console base URL",
       "type": "string"
     },
+    "idempotencyKey": {
+      "description": "Idempotency key: a retry with the same key and request returns the created object (default: generated)",
+      "type": "string"
+    },
     "name": {
       "description": "View name (overrides spec.name)",
       "type": "string"
@@ -22927,6 +25055,9 @@ export const BasesViewsCreateReturnSchema = {
     "consoleUrl": {
       "type": "string"
     },
+    "idempotencyKey": {
+      "type": "string"
+    },
     "projectRef": {
       "type": "string"
     },
@@ -22954,6 +25085,12 @@ export const BasesViewsCreateReturnSchema = {
           "properties": {
             "aggregateOnly": {
               "type": "boolean"
+            },
+            "approve": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             },
             "archive": {
               "type": "boolean"
@@ -23109,7 +25246,8 @@ export const BasesViewsCreateReturnSchema = {
     "consoleUrl",
     "projectRef",
     "baseRef",
-    "view"
+    "view",
+    "idempotencyKey"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -23219,6 +25357,12 @@ export const BasesViewsListReturnSchema = {
                 "properties": {
                   "aggregateOnly": {
                     "type": "boolean"
+                  },
+                  "approve": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
                   },
                   "archive": {
                     "type": "boolean"
@@ -23362,6 +25506,12 @@ export const BasesViewsListReturnSchema = {
                   "aggregateOnly": {
                     "type": "boolean"
                   },
+                  "approve": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
                   "archive": {
                     "type": "boolean"
                   },
@@ -23398,6 +25548,37 @@ export const BasesViewsListReturnSchema = {
                     "config": {
                       "additionalProperties": false,
                       "properties": {
+                        "agent": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "approvers": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "kind": {
+                                "type": "string"
+                              },
+                              "minRole": {
+                                "type": "string"
+                              },
+                              "userId": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
                         "currency": {
                           "type": "string"
                         },
@@ -23406,6 +25587,15 @@ export const BasesViewsListReturnSchema = {
                         },
                         "includeTime": {
                           "type": "boolean"
+                        },
+                        "inputs": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "instructions": {
+                          "type": "string"
                         },
                         "options": {
                           "items": {
@@ -23436,8 +25626,17 @@ export const BasesViewsListReturnSchema = {
                           },
                           "type": "array"
                         },
+                        "output": {
+                          "type": "string"
+                        },
                         "precision": {
                           "type": "number"
+                        },
+                        "resetOn": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
                         }
                       },
                       "type": "object"
@@ -23585,6 +25784,12 @@ export const BasesViewsListReturnSchema = {
                   "aggregateOnly": {
                     "type": "boolean"
                   },
+                  "approve": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
                   "archive": {
                     "type": "boolean"
                   },
@@ -23727,6 +25932,12 @@ export const BasesViewsListReturnSchema = {
                   "aggregateOnly": {
                     "type": "boolean"
                   },
+                  "approve": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
                   "archive": {
                     "type": "boolean"
                   },
@@ -23763,6 +25974,37 @@ export const BasesViewsListReturnSchema = {
                     "config": {
                       "additionalProperties": false,
                       "properties": {
+                        "agent": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "approvers": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "kind": {
+                                "type": "string"
+                              },
+                              "minRole": {
+                                "type": "string"
+                              },
+                              "userId": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "kind"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
                         "currency": {
                           "type": "string"
                         },
@@ -23771,6 +26013,15 @@ export const BasesViewsListReturnSchema = {
                         },
                         "includeTime": {
                           "type": "boolean"
+                        },
+                        "inputs": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "instructions": {
+                          "type": "string"
                         },
                         "options": {
                           "items": {
@@ -23801,8 +26052,17 @@ export const BasesViewsListReturnSchema = {
                           },
                           "type": "array"
                         },
+                        "output": {
+                          "type": "string"
+                        },
                         "precision": {
                           "type": "number"
+                        },
+                        "resetOn": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
                         }
                       },
                       "type": "object"
@@ -24174,6 +26434,376 @@ export const BasesViewsQueryReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `bases.views.share`. */
+export const BasesViewsShareInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "archive": {
+      "description": "Also let the site archive rows through the view",
+      "type": "boolean"
+    },
+    "base": {
+      "description": "Base id or slug",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "create": {
+      "description": "Also let the site create rows through the view",
+      "type": "boolean"
+    },
+    "execute": {
+      "description": "Actually widen the view's access; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides the saved Console scope",
+      "type": "string"
+    },
+    "site": {
+      "description": "Pages site (host) of this project: slug, id or hostname",
+      "type": "string"
+    },
+    "view": {
+      "description": "View id",
+      "type": "string"
+    },
+    "write": {
+      "description": "Also let the site write these columns (comma-separated; shared by every write principal)",
+      "type": "string"
+    },
+    "writeOnly": {
+      "description": "Grant only the write side, without reading rows (a form view with access.read: [])",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "base",
+    "view"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `bases.views.share`. */
+export const BasesViewsShareReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "baseRef": {
+      "type": "string"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "disclosure": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "grants": {
+      "additionalProperties": false,
+      "properties": {
+        "archive": {
+          "type": "boolean"
+        },
+        "create": {
+          "type": "boolean"
+        },
+        "read": {
+          "type": "boolean"
+        },
+        "writeColumns": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "read",
+        "writeColumns",
+        "create",
+        "archive"
+      ],
+      "type": "object"
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "site": {
+      "additionalProperties": false,
+      "properties": {
+        "hostname": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "isDefault": {
+          "type": "boolean"
+        },
+        "slug": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "slug",
+        "hostname",
+        "isDefault"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "view": {
+      "additionalProperties": false,
+      "properties": {
+        "access": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "baseId": {
+          "type": "string"
+        },
+        "capabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "aggregateOnly": {
+              "type": "boolean"
+            },
+            "approve": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "archive": {
+              "type": "boolean"
+            },
+            "create": {
+              "type": "boolean"
+            },
+            "manage": {
+              "type": "boolean"
+            },
+            "read": {
+              "type": "boolean"
+            },
+            "writeColumns": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "read",
+            "aggregateOnly",
+            "writeColumns",
+            "create",
+            "archive",
+            "manage"
+          ],
+          "type": "object"
+        },
+        "columns": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "invalidReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "layout": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "number"
+        },
+        "query": {
+          "additionalProperties": false,
+          "properties": {
+            "filter": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/__schema0"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sort": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "dir": {
+                    "type": "string"
+                  },
+                  "prop": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "prop",
+                  "dir"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "filter",
+            "sort"
+          ],
+          "type": "object"
+        },
+        "status": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "baseId",
+        "name",
+        "description",
+        "columns",
+        "query",
+        "layout",
+        "access",
+        "position",
+        "version",
+        "status",
+        "valid",
+        "invalidReason",
+        "createdAt",
+        "updatedAt",
+        "capabilities"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "consoleUrl",
+    "projectRef",
+    "baseRef",
+    "view",
+    "site",
+    "changed",
+    "grants",
+    "disclosure"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `bases.views.show`. */
 export const BasesViewsShowInputSchema = {
   "additionalProperties": false,
@@ -24268,6 +26898,12 @@ export const BasesViewsShowReturnSchema = {
             "aggregateOnly": {
               "type": "boolean"
             },
+            "approve": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "archive": {
               "type": "boolean"
             },
@@ -24304,6 +26940,37 @@ export const BasesViewsShowReturnSchema = {
               "config": {
                 "additionalProperties": false,
                 "properties": {
+                  "agent": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "approvers": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "minRole": {
+                          "type": "string"
+                        },
+                        "userId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
                   "currency": {
                     "type": "string"
                   },
@@ -24312,6 +26979,15 @@ export const BasesViewsShowReturnSchema = {
                   },
                   "includeTime": {
                     "type": "boolean"
+                  },
+                  "inputs": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "instructions": {
+                    "type": "string"
                   },
                   "options": {
                     "items": {
@@ -24342,8 +27018,17 @@ export const BasesViewsShowReturnSchema = {
                     },
                     "type": "array"
                   },
+                  "output": {
+                    "type": "string"
+                  },
                   "precision": {
                     "type": "number"
+                  },
+                  "resetOn": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
                   }
                 },
                 "type": "object"
@@ -24423,6 +27108,12 @@ export const BasesViewsShowReturnSchema = {
               "properties": {
                 "aggregateOnly": {
                   "type": "boolean"
+                },
+                "approve": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 "archive": {
                   "type": "boolean"
@@ -24711,6 +27402,12 @@ export const BasesViewsUpdateReturnSchema = {
           "properties": {
             "aggregateOnly": {
               "type": "boolean"
+            },
+            "approve": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             },
             "archive": {
               "type": "boolean"
@@ -31853,6 +34550,10 @@ export const ChannelsBackendRuntimeReadbackReturnSchema = {
             "ingressRequestId": {
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
               "type": "string"
+            },
+            "traceTurnId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
             }
           },
           "required": [
@@ -32534,6 +35235,19 @@ export const ChannelsRestartReturnSchema = {
         "channels": {
           "additionalProperties": false,
           "properties": {
+            "bundlePath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "codeStale": {
+              "type": "boolean"
+            },
             "cpu": {
               "anyOf": [
                 {
@@ -32544,8 +35258,44 @@ export const ChannelsRestartReturnSchema = {
                 }
               ]
             },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "diskVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envStale": {
+              "type": "boolean"
+            },
+            "identityVerified": {
+              "type": "boolean"
+            },
             "managed": {
               "type": "boolean"
+            },
+            "matchesCli": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "memoryBytes": {
               "anyOf": [
@@ -32570,6 +35320,9 @@ export const ChannelsRestartReturnSchema = {
             "name": {
               "type": "string"
             },
+            "online": {
+              "type": "boolean"
+            },
             "pid": {
               "anyOf": [
                 {
@@ -32593,8 +35346,37 @@ export const ChannelsRestartReturnSchema = {
             "running": {
               "type": "boolean"
             },
+            "runningVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "status": {
               "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "required": [
@@ -32606,7 +35388,19 @@ export const ChannelsRestartReturnSchema = {
             "pmId",
             "cpu",
             "memoryBytes",
-            "memoryMb"
+            "memoryMb",
+            "online",
+            "bundlePath",
+            "cwd",
+            "runningVersion",
+            "diskVersion",
+            "startedAt",
+            "stale",
+            "codeStale",
+            "envStale",
+            "identityVerified",
+            "warnings",
+            "matchesCli"
           ],
           "type": "object"
         },
@@ -32742,6 +35536,9 @@ export const ChannelsRestartReturnSchema = {
                       },
                       "connectedAt": {
                         "type": "number"
+                      },
+                      "detail": {
+                        "type": "string"
                       },
                       "id": {
                         "type": "string"
@@ -32911,12 +35708,330 @@ export const ChannelsRestartReturnSchema = {
               "type": "null"
             }
           ]
+        },
+        "runtime": {
+          "additionalProperties": false,
+          "properties": {
+            "alignment": {
+              "enum": [
+                "aligned",
+                "drifted",
+                "unknown",
+                "not_running"
+              ],
+              "type": "string"
+            },
+            "channels": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "codeStale": {
+                  "type": "boolean"
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "diskVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "envStale": {
+                  "type": "boolean"
+                },
+                "identityVerified": {
+                  "type": "boolean"
+                },
+                "managed": {
+                  "type": "boolean"
+                },
+                "matchesCli": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runningVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stale": {
+                  "type": "boolean"
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "managed",
+                "online",
+                "status",
+                "pid",
+                "bundlePath",
+                "cwd",
+                "runningVersion",
+                "diskVersion",
+                "startedAt",
+                "stale",
+                "codeStale",
+                "envStale",
+                "identityVerified",
+                "warnings",
+                "matchesCli"
+              ],
+              "type": "object"
+            },
+            "cli": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "version": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "bundlePath",
+                "cwd",
+                "version"
+              ],
+              "type": "object"
+            },
+            "daemon": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "codeStale": {
+                  "type": "boolean"
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "diskVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "envStale": {
+                  "type": "boolean"
+                },
+                "identityVerified": {
+                  "type": "boolean"
+                },
+                "managed": {
+                  "type": "boolean"
+                },
+                "matchesCli": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runningVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stale": {
+                  "type": "boolean"
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "managed",
+                "online",
+                "status",
+                "pid",
+                "bundlePath",
+                "cwd",
+                "runningVersion",
+                "diskVersion",
+                "startedAt",
+                "stale",
+                "codeStale",
+                "envStale",
+                "identityVerified",
+                "warnings",
+                "matchesCli"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "alignment",
+            "cli",
+            "daemon",
+            "channels"
+          ],
+          "type": "object"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
         "pm2Available",
         "processName",
         "channels",
+        "runtime",
+        "warnings",
         "processes"
       ],
       "type": "object"
@@ -33229,6 +36344,19 @@ export const ChannelsStartReturnSchema = {
         "channels": {
           "additionalProperties": false,
           "properties": {
+            "bundlePath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "codeStale": {
+              "type": "boolean"
+            },
             "cpu": {
               "anyOf": [
                 {
@@ -33239,8 +36367,44 @@ export const ChannelsStartReturnSchema = {
                 }
               ]
             },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "diskVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envStale": {
+              "type": "boolean"
+            },
+            "identityVerified": {
+              "type": "boolean"
+            },
             "managed": {
               "type": "boolean"
+            },
+            "matchesCli": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "memoryBytes": {
               "anyOf": [
@@ -33265,6 +36429,9 @@ export const ChannelsStartReturnSchema = {
             "name": {
               "type": "string"
             },
+            "online": {
+              "type": "boolean"
+            },
             "pid": {
               "anyOf": [
                 {
@@ -33288,8 +36455,37 @@ export const ChannelsStartReturnSchema = {
             "running": {
               "type": "boolean"
             },
+            "runningVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "status": {
               "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "required": [
@@ -33301,7 +36497,19 @@ export const ChannelsStartReturnSchema = {
             "pmId",
             "cpu",
             "memoryBytes",
-            "memoryMb"
+            "memoryMb",
+            "online",
+            "bundlePath",
+            "cwd",
+            "runningVersion",
+            "diskVersion",
+            "startedAt",
+            "stale",
+            "codeStale",
+            "envStale",
+            "identityVerified",
+            "warnings",
+            "matchesCli"
           ],
           "type": "object"
         },
@@ -33437,6 +36645,9 @@ export const ChannelsStartReturnSchema = {
                       },
                       "connectedAt": {
                         "type": "number"
+                      },
+                      "detail": {
+                        "type": "string"
                       },
                       "id": {
                         "type": "string"
@@ -33606,12 +36817,330 @@ export const ChannelsStartReturnSchema = {
               "type": "null"
             }
           ]
+        },
+        "runtime": {
+          "additionalProperties": false,
+          "properties": {
+            "alignment": {
+              "enum": [
+                "aligned",
+                "drifted",
+                "unknown",
+                "not_running"
+              ],
+              "type": "string"
+            },
+            "channels": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "codeStale": {
+                  "type": "boolean"
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "diskVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "envStale": {
+                  "type": "boolean"
+                },
+                "identityVerified": {
+                  "type": "boolean"
+                },
+                "managed": {
+                  "type": "boolean"
+                },
+                "matchesCli": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runningVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stale": {
+                  "type": "boolean"
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "managed",
+                "online",
+                "status",
+                "pid",
+                "bundlePath",
+                "cwd",
+                "runningVersion",
+                "diskVersion",
+                "startedAt",
+                "stale",
+                "codeStale",
+                "envStale",
+                "identityVerified",
+                "warnings",
+                "matchesCli"
+              ],
+              "type": "object"
+            },
+            "cli": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "version": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "bundlePath",
+                "cwd",
+                "version"
+              ],
+              "type": "object"
+            },
+            "daemon": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "codeStale": {
+                  "type": "boolean"
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "diskVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "envStale": {
+                  "type": "boolean"
+                },
+                "identityVerified": {
+                  "type": "boolean"
+                },
+                "managed": {
+                  "type": "boolean"
+                },
+                "matchesCli": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runningVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stale": {
+                  "type": "boolean"
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "managed",
+                "online",
+                "status",
+                "pid",
+                "bundlePath",
+                "cwd",
+                "runningVersion",
+                "diskVersion",
+                "startedAt",
+                "stale",
+                "codeStale",
+                "envStale",
+                "identityVerified",
+                "warnings",
+                "matchesCli"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "alignment",
+            "cli",
+            "daemon",
+            "channels"
+          ],
+          "type": "object"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
         "pm2Available",
         "processName",
         "channels",
+        "runtime",
+        "warnings",
         "processes"
       ],
       "type": "object"
@@ -33657,6 +37186,19 @@ export const ChannelsStatusReturnSchema = {
     "channels": {
       "additionalProperties": false,
       "properties": {
+        "bundlePath": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "codeStale": {
+          "type": "boolean"
+        },
         "cpu": {
           "anyOf": [
             {
@@ -33667,8 +37209,44 @@ export const ChannelsStatusReturnSchema = {
             }
           ]
         },
+        "cwd": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "diskVersion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "envStale": {
+          "type": "boolean"
+        },
+        "identityVerified": {
+          "type": "boolean"
+        },
         "managed": {
           "type": "boolean"
+        },
+        "matchesCli": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "memoryBytes": {
           "anyOf": [
@@ -33693,6 +37271,9 @@ export const ChannelsStatusReturnSchema = {
         "name": {
           "type": "string"
         },
+        "online": {
+          "type": "boolean"
+        },
         "pid": {
           "anyOf": [
             {
@@ -33716,8 +37297,37 @@ export const ChannelsStatusReturnSchema = {
         "running": {
           "type": "boolean"
         },
+        "runningVersion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "status": {
           "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -33729,7 +37339,19 @@ export const ChannelsStatusReturnSchema = {
         "pmId",
         "cpu",
         "memoryBytes",
-        "memoryMb"
+        "memoryMb",
+        "online",
+        "bundlePath",
+        "cwd",
+        "runningVersion",
+        "diskVersion",
+        "startedAt",
+        "stale",
+        "codeStale",
+        "envStale",
+        "identityVerified",
+        "warnings",
+        "matchesCli"
       ],
       "type": "object"
     },
@@ -33865,6 +37487,9 @@ export const ChannelsStatusReturnSchema = {
                   },
                   "connectedAt": {
                     "type": "number"
+                  },
+                  "detail": {
+                    "type": "string"
                   },
                   "id": {
                     "type": "string"
@@ -34034,12 +37659,330 @@ export const ChannelsStatusReturnSchema = {
           "type": "null"
         }
       ]
+    },
+    "runtime": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment": {
+          "enum": [
+            "aligned",
+            "drifted",
+            "unknown",
+            "not_running"
+          ],
+          "type": "string"
+        },
+        "channels": {
+          "additionalProperties": false,
+          "properties": {
+            "bundlePath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "codeStale": {
+              "type": "boolean"
+            },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "diskVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envStale": {
+              "type": "boolean"
+            },
+            "identityVerified": {
+              "type": "boolean"
+            },
+            "managed": {
+              "type": "boolean"
+            },
+            "matchesCli": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "online": {
+              "type": "boolean"
+            },
+            "pid": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runningVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "name",
+            "managed",
+            "online",
+            "status",
+            "pid",
+            "bundlePath",
+            "cwd",
+            "runningVersion",
+            "diskVersion",
+            "startedAt",
+            "stale",
+            "codeStale",
+            "envStale",
+            "identityVerified",
+            "warnings",
+            "matchesCli"
+          ],
+          "type": "object"
+        },
+        "cli": {
+          "additionalProperties": false,
+          "properties": {
+            "bundlePath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "bundlePath",
+            "cwd",
+            "version"
+          ],
+          "type": "object"
+        },
+        "daemon": {
+          "additionalProperties": false,
+          "properties": {
+            "bundlePath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "codeStale": {
+              "type": "boolean"
+            },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "diskVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envStale": {
+              "type": "boolean"
+            },
+            "identityVerified": {
+              "type": "boolean"
+            },
+            "managed": {
+              "type": "boolean"
+            },
+            "matchesCli": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "online": {
+              "type": "boolean"
+            },
+            "pid": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runningVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "name",
+            "managed",
+            "online",
+            "status",
+            "pid",
+            "bundlePath",
+            "cwd",
+            "runningVersion",
+            "diskVersion",
+            "startedAt",
+            "stale",
+            "codeStale",
+            "envStale",
+            "identityVerified",
+            "warnings",
+            "matchesCli"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "alignment",
+        "cli",
+        "daemon",
+        "channels"
+      ],
+      "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
     "pm2Available",
     "processName",
     "channels",
+    "runtime",
+    "warnings",
     "processes"
   ],
   "type": "object"
@@ -34102,6 +38045,19 @@ export const ChannelsStopReturnSchema = {
         "channels": {
           "additionalProperties": false,
           "properties": {
+            "bundlePath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "codeStale": {
+              "type": "boolean"
+            },
             "cpu": {
               "anyOf": [
                 {
@@ -34112,8 +38068,44 @@ export const ChannelsStopReturnSchema = {
                 }
               ]
             },
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "diskVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envStale": {
+              "type": "boolean"
+            },
+            "identityVerified": {
+              "type": "boolean"
+            },
             "managed": {
               "type": "boolean"
+            },
+            "matchesCli": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "memoryBytes": {
               "anyOf": [
@@ -34138,6 +38130,9 @@ export const ChannelsStopReturnSchema = {
             "name": {
               "type": "string"
             },
+            "online": {
+              "type": "boolean"
+            },
             "pid": {
               "anyOf": [
                 {
@@ -34161,8 +38156,37 @@ export const ChannelsStopReturnSchema = {
             "running": {
               "type": "boolean"
             },
+            "runningVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "status": {
               "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "required": [
@@ -34174,7 +38198,19 @@ export const ChannelsStopReturnSchema = {
             "pmId",
             "cpu",
             "memoryBytes",
-            "memoryMb"
+            "memoryMb",
+            "online",
+            "bundlePath",
+            "cwd",
+            "runningVersion",
+            "diskVersion",
+            "startedAt",
+            "stale",
+            "codeStale",
+            "envStale",
+            "identityVerified",
+            "warnings",
+            "matchesCli"
           ],
           "type": "object"
         },
@@ -34310,6 +38346,9 @@ export const ChannelsStopReturnSchema = {
                       },
                       "connectedAt": {
                         "type": "number"
+                      },
+                      "detail": {
+                        "type": "string"
                       },
                       "id": {
                         "type": "string"
@@ -34479,12 +38518,330 @@ export const ChannelsStopReturnSchema = {
               "type": "null"
             }
           ]
+        },
+        "runtime": {
+          "additionalProperties": false,
+          "properties": {
+            "alignment": {
+              "enum": [
+                "aligned",
+                "drifted",
+                "unknown",
+                "not_running"
+              ],
+              "type": "string"
+            },
+            "channels": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "codeStale": {
+                  "type": "boolean"
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "diskVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "envStale": {
+                  "type": "boolean"
+                },
+                "identityVerified": {
+                  "type": "boolean"
+                },
+                "managed": {
+                  "type": "boolean"
+                },
+                "matchesCli": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runningVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stale": {
+                  "type": "boolean"
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "managed",
+                "online",
+                "status",
+                "pid",
+                "bundlePath",
+                "cwd",
+                "runningVersion",
+                "diskVersion",
+                "startedAt",
+                "stale",
+                "codeStale",
+                "envStale",
+                "identityVerified",
+                "warnings",
+                "matchesCli"
+              ],
+              "type": "object"
+            },
+            "cli": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "version": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "bundlePath",
+                "cwd",
+                "version"
+              ],
+              "type": "object"
+            },
+            "daemon": {
+              "additionalProperties": false,
+              "properties": {
+                "bundlePath": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "codeStale": {
+                  "type": "boolean"
+                },
+                "cwd": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "diskVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "envStale": {
+                  "type": "boolean"
+                },
+                "identityVerified": {
+                  "type": "boolean"
+                },
+                "managed": {
+                  "type": "boolean"
+                },
+                "matchesCli": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "pid": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runningVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "stale": {
+                  "type": "boolean"
+                },
+                "startedAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "warnings": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "managed",
+                "online",
+                "status",
+                "pid",
+                "bundlePath",
+                "cwd",
+                "runningVersion",
+                "diskVersion",
+                "startedAt",
+                "stale",
+                "codeStale",
+                "envStale",
+                "identityVerified",
+                "warnings",
+                "matchesCli"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "alignment",
+            "cli",
+            "daemon",
+            "channels"
+          ],
+          "type": "object"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
         "pm2Available",
         "processName",
         "channels",
+        "runtime",
+        "warnings",
         "processes"
       ],
       "type": "object"
@@ -36799,6 +41156,4434 @@ export const ChatsReadReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `cloud.agents.approve`. */
+export const CloudAgentsApproveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Cloud agent id, Library slug or name",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Approve (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.agents.approve`. */
+export const CloudAgentsApproveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "additionalProperties": false,
+      "properties": {
+        "cap": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "monthSpentUsd": {
+                  "type": "number"
+                },
+                "monthlyCapUsd": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pausedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pausedReason": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "monthlyCapUsd",
+                "monthSpentUsd",
+                "pausedAt",
+                "pausedReason"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "catalogEntryId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "config": {
+          "additionalProperties": false,
+          "properties": {
+            "askHuman": {
+              "type": "boolean"
+            },
+            "budgetUsd": {
+              "type": "number"
+            },
+            "mcpServers": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "memory": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "agent",
+                    "person"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "networking": {
+              "type": "string"
+            },
+            "office": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "outcome": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "maxIterations": {
+                      "type": "number"
+                    },
+                    "rubric": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "rubric",
+                    "maxIterations"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "placement": {
+              "enum": [
+                "cloud",
+                "installation"
+              ],
+              "type": "string"
+            },
+            "provider": {
+              "enum": [
+                "anthropic",
+                "ravi"
+              ],
+              "type": "string"
+            },
+            "raviMcp": {
+              "type": "boolean"
+            },
+            "repositories": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "schedule": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "cron": {
+                      "type": "string"
+                    },
+                    "timezone": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "cron",
+                    "timezone"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "secrets": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "webFetch": {
+              "type": "boolean"
+            },
+            "webSearch": {
+              "type": "boolean"
+            },
+            "workflows": {
+              "type": "boolean"
+            },
+            "writes": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "budgetUsd",
+            "networking",
+            "webSearch",
+            "writes",
+            "raviMcp",
+            "mcpServers",
+            "repositories",
+            "schedule"
+          ],
+          "type": "object"
+        },
+        "deployedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deployedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "library": {
+          "additionalProperties": false,
+          "properties": {
+            "itemId": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "itemId",
+            "slug",
+            "scope",
+            "version"
+          ],
+          "type": "object"
+        },
+        "manifest": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "approved": {
+                  "type": "boolean"
+                },
+                "approvedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hash": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "allowedHosts": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "askHuman": {
+                          "type": "boolean"
+                        },
+                        "mcpServers": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "memory": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "agent",
+                                "person"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "networking": {
+                          "enum": [
+                            "limited",
+                            "unrestricted"
+                          ],
+                          "type": "string"
+                        },
+                        "office": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "placement": {
+                          "enum": [
+                            "cloud",
+                            "installation"
+                          ],
+                          "type": "string"
+                        },
+                        "provider": {
+                          "enum": [
+                            "anthropic",
+                            "ravi"
+                          ],
+                          "type": "string"
+                        },
+                        "raviOps": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "repositories": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "secrets": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "web": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "allowedDomains": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "blockedDomains": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "fetch": {
+                              "type": "boolean"
+                            },
+                            "search": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "search",
+                            "fetch",
+                            "allowedDomains",
+                            "blockedDomains"
+                          ],
+                          "type": "object"
+                        },
+                        "workflows": {
+                          "type": "boolean"
+                        },
+                        "writes": {
+                          "enum": [
+                            "ask",
+                            "auto"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "model",
+                        "provider",
+                        "placement",
+                        "writes",
+                        "networking",
+                        "allowedHosts",
+                        "mcpServers",
+                        "raviOps",
+                        "secrets",
+                        "repositories",
+                        "memory",
+                        "office",
+                        "web",
+                        "askHuman",
+                        "workflows"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "hash",
+                "approved",
+                "approvedAt",
+                "value"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "placementInstallationId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "projectId",
+        "name",
+        "library",
+        "provider",
+        "model",
+        "status",
+        "deployedAt",
+        "deployedBy",
+        "lastError",
+        "config"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.agents.archive`. */
+export const CloudAgentsArchiveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Cloud agent id, Library slug or name",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.agents.archive`. */
+export const CloudAgentsArchiveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "config": {
+              "additionalProperties": false,
+              "properties": {
+                "budgetUsd": {
+                  "type": "number"
+                },
+                "mcpServers": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "networking": {
+                  "type": "string"
+                },
+                "raviMcp": {
+                  "type": "boolean"
+                },
+                "repositories": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "schedule": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "cron": {
+                          "type": "string"
+                        },
+                        "timezone": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "cron",
+                        "timezone"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "webSearch": {
+                  "type": "boolean"
+                },
+                "writes": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "budgetUsd",
+                "networking",
+                "webSearch",
+                "writes",
+                "raviMcp",
+                "mcpServers",
+                "repositories",
+                "schedule"
+              ],
+              "type": "object"
+            },
+            "deployedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "deployedBy": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "lastError": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "library": {
+              "additionalProperties": false,
+              "properties": {
+                "itemId": {
+                  "type": "string"
+                },
+                "scope": {
+                  "type": "string"
+                },
+                "slug": {
+                  "type": "string"
+                },
+                "version": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "itemId",
+                "slug",
+                "scope",
+                "version"
+              ],
+              "type": "object"
+            },
+            "model": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "projectId": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "projectId",
+            "name",
+            "library",
+            "provider",
+            "model",
+            "status",
+            "deployedAt",
+            "deployedBy",
+            "lastError",
+            "config"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "archived": {
+      "const": true,
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "id",
+    "archived",
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.agents.cap`. */
+export const CloudAgentsCapInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Cloud agent id, Library slug or name",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Raise or remove the cap (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    },
+    "usd": {
+      "description": "Monthly cap in US dollars, or none",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent",
+    "usd"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.agents.cap`. */
+export const CloudAgentsCapReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "additionalProperties": false,
+      "properties": {
+        "cap": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "monthSpentUsd": {
+                  "type": "number"
+                },
+                "monthlyCapUsd": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pausedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "pausedReason": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "monthlyCapUsd",
+                "monthSpentUsd",
+                "pausedAt",
+                "pausedReason"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "catalogEntryId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "config": {
+          "additionalProperties": false,
+          "properties": {
+            "askHuman": {
+              "type": "boolean"
+            },
+            "budgetUsd": {
+              "type": "number"
+            },
+            "mcpServers": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "memory": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "agent",
+                    "person"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "networking": {
+              "type": "string"
+            },
+            "office": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "outcome": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "maxIterations": {
+                      "type": "number"
+                    },
+                    "rubric": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "rubric",
+                    "maxIterations"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "placement": {
+              "enum": [
+                "cloud",
+                "installation"
+              ],
+              "type": "string"
+            },
+            "provider": {
+              "enum": [
+                "anthropic",
+                "ravi"
+              ],
+              "type": "string"
+            },
+            "raviMcp": {
+              "type": "boolean"
+            },
+            "repositories": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "schedule": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "cron": {
+                      "type": "string"
+                    },
+                    "timezone": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "cron",
+                    "timezone"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "secrets": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "webFetch": {
+              "type": "boolean"
+            },
+            "webSearch": {
+              "type": "boolean"
+            },
+            "workflows": {
+              "type": "boolean"
+            },
+            "writes": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "budgetUsd",
+            "networking",
+            "webSearch",
+            "writes",
+            "raviMcp",
+            "mcpServers",
+            "repositories",
+            "schedule"
+          ],
+          "type": "object"
+        },
+        "deployedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deployedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "library": {
+          "additionalProperties": false,
+          "properties": {
+            "itemId": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "itemId",
+            "slug",
+            "scope",
+            "version"
+          ],
+          "type": "object"
+        },
+        "manifest": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "approved": {
+                  "type": "boolean"
+                },
+                "approvedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hash": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "allowedHosts": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "askHuman": {
+                          "type": "boolean"
+                        },
+                        "mcpServers": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "memory": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "agent",
+                                "person"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "model": {
+                          "type": "string"
+                        },
+                        "networking": {
+                          "enum": [
+                            "limited",
+                            "unrestricted"
+                          ],
+                          "type": "string"
+                        },
+                        "office": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "placement": {
+                          "enum": [
+                            "cloud",
+                            "installation"
+                          ],
+                          "type": "string"
+                        },
+                        "provider": {
+                          "enum": [
+                            "anthropic",
+                            "ravi"
+                          ],
+                          "type": "string"
+                        },
+                        "raviOps": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "repositories": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "secrets": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "web": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "allowedDomains": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "blockedDomains": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "fetch": {
+                              "type": "boolean"
+                            },
+                            "search": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "search",
+                            "fetch",
+                            "allowedDomains",
+                            "blockedDomains"
+                          ],
+                          "type": "object"
+                        },
+                        "workflows": {
+                          "type": "boolean"
+                        },
+                        "writes": {
+                          "enum": [
+                            "ask",
+                            "auto"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "model",
+                        "provider",
+                        "placement",
+                        "writes",
+                        "networking",
+                        "allowedHosts",
+                        "mcpServers",
+                        "raviOps",
+                        "secrets",
+                        "repositories",
+                        "memory",
+                        "office",
+                        "web",
+                        "askHuman",
+                        "workflows"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "hash",
+                "approved",
+                "approvedAt",
+                "value"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "placementInstallationId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "projectId",
+        "name",
+        "library",
+        "provider",
+        "model",
+        "status",
+        "deployedAt",
+        "deployedBy",
+        "lastError",
+        "config"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.agents.deploy`. */
+export const CloudAgentsDeployInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Library agent slug or item id",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Deploy (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    },
+    "version": {
+      "description": "Library version (default: the latest published)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.agents.deploy`. */
+export const CloudAgentsDeployReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "additionalProperties": false,
+          "properties": {
+            "budgetUsd": {
+              "type": "number"
+            },
+            "mcpServers": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "networking": {
+              "type": "string"
+            },
+            "raviMcp": {
+              "type": "boolean"
+            },
+            "repositories": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "schedule": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "cron": {
+                      "type": "string"
+                    },
+                    "timezone": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "cron",
+                    "timezone"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "webSearch": {
+              "type": "boolean"
+            },
+            "writes": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "budgetUsd",
+            "networking",
+            "webSearch",
+            "writes",
+            "raviMcp",
+            "mcpServers",
+            "repositories",
+            "schedule"
+          ],
+          "type": "object"
+        },
+        "deployedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deployedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "library": {
+          "additionalProperties": false,
+          "properties": {
+            "itemId": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "itemId",
+            "slug",
+            "scope",
+            "version"
+          ],
+          "type": "object"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "projectId",
+        "name",
+        "library",
+        "provider",
+        "model",
+        "status",
+        "deployedAt",
+        "deployedBy",
+        "lastError",
+        "config"
+      ],
+      "type": "object"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "success",
+    "agent",
+    "changed",
+    "warnings"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.agents.list`. */
+export const CloudAgentsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (1-200, default 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Skip this many (default 0)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.agents.list`. */
+export const CloudAgentsListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "additionalProperties": false,
+            "properties": {
+              "budgetUsd": {
+                "type": "number"
+              },
+              "mcpServers": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "networking": {
+                "type": "string"
+              },
+              "raviMcp": {
+                "type": "boolean"
+              },
+              "repositories": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "schedule": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cron": {
+                        "type": "string"
+                      },
+                      "timezone": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "cron",
+                      "timezone"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "webSearch": {
+                "type": "boolean"
+              },
+              "writes": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "budgetUsd",
+              "networking",
+              "webSearch",
+              "writes",
+              "raviMcp",
+              "mcpServers",
+              "repositories",
+              "schedule"
+            ],
+            "type": "object"
+          },
+          "deployedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deployedBy": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "library": {
+            "additionalProperties": false,
+            "properties": {
+              "itemId": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "itemId",
+              "slug",
+              "scope",
+              "version"
+            ],
+            "type": "object"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "name",
+          "library",
+          "provider",
+          "model",
+          "status",
+          "deployedAt",
+          "deployedBy",
+          "lastError",
+          "config"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "project": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "project",
+    "agents",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.agents.memory-reset`. */
+export const CloudAgentsMemoryResetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Cloud agent id, Library slug or name",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Archive the stores (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.agents.memory-reset`. */
+export const CloudAgentsMemoryResetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "archivedStores": {
+      "type": "number"
+    },
+    "name": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "agentId",
+    "name",
+    "archivedStores"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.agents.show`. */
+export const CloudAgentsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Cloud agent id, Library slug or name",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.agents.show`. */
+export const CloudAgentsShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "additionalProperties": false,
+          "properties": {
+            "budgetUsd": {
+              "type": "number"
+            },
+            "mcpServers": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "networking": {
+              "type": "string"
+            },
+            "raviMcp": {
+              "type": "boolean"
+            },
+            "repositories": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "schedule": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "cron": {
+                      "type": "string"
+                    },
+                    "timezone": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "cron",
+                    "timezone"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "webSearch": {
+              "type": "boolean"
+            },
+            "writes": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "budgetUsd",
+            "networking",
+            "webSearch",
+            "writes",
+            "raviMcp",
+            "mcpServers",
+            "repositories",
+            "schedule"
+          ],
+          "type": "object"
+        },
+        "deployedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deployedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "library": {
+          "additionalProperties": false,
+          "properties": {
+            "itemId": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "itemId",
+            "slug",
+            "scope",
+            "version"
+          ],
+          "type": "object"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "projectId",
+        "name",
+        "library",
+        "provider",
+        "model",
+        "status",
+        "deployedAt",
+        "deployedBy",
+        "lastError",
+        "config"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.catalog.install`. */
+export const CloudCatalogInstallInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "entry": {
+      "description": "Catalog entry slug or id",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Install (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "entry"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.catalog.install`. */
+export const CloudCatalogInstallReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "cap": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "monthSpentUsd": {
+                    "type": "number"
+                  },
+                  "monthlyCapUsd": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "pausedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "pausedReason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "monthlyCapUsd",
+                  "monthSpentUsd",
+                  "pausedAt",
+                  "pausedReason"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "catalogEntryId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "config": {
+            "additionalProperties": false,
+            "properties": {
+              "askHuman": {
+                "type": "boolean"
+              },
+              "budgetUsd": {
+                "type": "number"
+              },
+              "mcpServers": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "memory": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "agent",
+                      "person"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "networking": {
+                "type": "string"
+              },
+              "office": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "outcome": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "maxIterations": {
+                        "type": "number"
+                      },
+                      "rubric": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "rubric",
+                      "maxIterations"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "placement": {
+                "enum": [
+                  "cloud",
+                  "installation"
+                ],
+                "type": "string"
+              },
+              "provider": {
+                "enum": [
+                  "anthropic",
+                  "ravi"
+                ],
+                "type": "string"
+              },
+              "raviMcp": {
+                "type": "boolean"
+              },
+              "repositories": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "schedule": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cron": {
+                        "type": "string"
+                      },
+                      "timezone": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "cron",
+                      "timezone"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "secrets": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "webFetch": {
+                "type": "boolean"
+              },
+              "webSearch": {
+                "type": "boolean"
+              },
+              "workflows": {
+                "type": "boolean"
+              },
+              "writes": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "budgetUsd",
+              "networking",
+              "webSearch",
+              "writes",
+              "raviMcp",
+              "mcpServers",
+              "repositories",
+              "schedule"
+            ],
+            "type": "object"
+          },
+          "deployedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deployedBy": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "library": {
+            "additionalProperties": false,
+            "properties": {
+              "itemId": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "itemId",
+              "slug",
+              "scope",
+              "version"
+            ],
+            "type": "object"
+          },
+          "manifest": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "approved": {
+                    "type": "boolean"
+                  },
+                  "approvedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "hash": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "allowedHosts": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "askHuman": {
+                            "type": "boolean"
+                          },
+                          "mcpServers": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "memory": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "agent",
+                                  "person"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "model": {
+                            "type": "string"
+                          },
+                          "networking": {
+                            "enum": [
+                              "limited",
+                              "unrestricted"
+                            ],
+                            "type": "string"
+                          },
+                          "office": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "placement": {
+                            "enum": [
+                              "cloud",
+                              "installation"
+                            ],
+                            "type": "string"
+                          },
+                          "provider": {
+                            "enum": [
+                              "anthropic",
+                              "ravi"
+                            ],
+                            "type": "string"
+                          },
+                          "raviOps": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "repositories": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "secrets": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "web": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "allowedDomains": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "blockedDomains": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "fetch": {
+                                "type": "boolean"
+                              },
+                              "search": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "search",
+                              "fetch",
+                              "allowedDomains",
+                              "blockedDomains"
+                            ],
+                            "type": "object"
+                          },
+                          "workflows": {
+                            "type": "boolean"
+                          },
+                          "writes": {
+                            "enum": [
+                              "ask",
+                              "auto"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "model",
+                          "provider",
+                          "placement",
+                          "writes",
+                          "networking",
+                          "allowedHosts",
+                          "mcpServers",
+                          "raviOps",
+                          "secrets",
+                          "repositories",
+                          "memory",
+                          "office",
+                          "web",
+                          "askHuman",
+                          "workflows"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "hash",
+                  "approved",
+                  "approvedAt",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "placementInstallationId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "name",
+          "library",
+          "provider",
+          "model",
+          "status",
+          "deployedAt",
+          "deployedBy",
+          "lastError",
+          "config"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "installed": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "entry",
+            "pack"
+          ],
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "project": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "project",
+    "installed",
+    "agents"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.catalog.list`. */
+export const CloudCatalogListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (1-200, default 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Skip this many (default 0)",
+      "type": "string"
+    },
+    "sector": {
+      "description": "Only this sector",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.catalog.list`. */
+export const CloudCatalogListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "entries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "installed": {
+            "type": "boolean"
+          },
+          "manifest": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "allowedHosts": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "askHuman": {
+                    "type": "boolean"
+                  },
+                  "mcpServers": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "memory": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "agent",
+                          "person"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "networking": {
+                    "enum": [
+                      "limited",
+                      "unrestricted"
+                    ],
+                    "type": "string"
+                  },
+                  "office": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "placement": {
+                    "enum": [
+                      "cloud",
+                      "installation"
+                    ],
+                    "type": "string"
+                  },
+                  "provider": {
+                    "enum": [
+                      "anthropic",
+                      "ravi"
+                    ],
+                    "type": "string"
+                  },
+                  "raviOps": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "repositories": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "secrets": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "web": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "allowedDomains": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "blockedDomains": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "fetch": {
+                        "type": "boolean"
+                      },
+                      "search": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "search",
+                      "fetch",
+                      "allowedDomains",
+                      "blockedDomains"
+                    ],
+                    "type": "object"
+                  },
+                  "workflows": {
+                    "type": "boolean"
+                  },
+                  "writes": {
+                    "enum": [
+                      "ask",
+                      "auto"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "model",
+                  "provider",
+                  "placement",
+                  "writes",
+                  "networking",
+                  "allowedHosts",
+                  "mcpServers",
+                  "raviOps",
+                  "secrets",
+                  "repositories",
+                  "memory",
+                  "office",
+                  "web",
+                  "askHuman",
+                  "workflows"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "manifestHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "publisher": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "listed",
+              "unlisted"
+            ],
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "summary",
+          "sector",
+          "publisher",
+          "manifest",
+          "manifestHash",
+          "status",
+          "installed"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "packs": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "slug": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "slug",
+                "name"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "publisher": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "revenueShareBps": {
+            "type": "number"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "slug": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "listed",
+              "unlisted"
+            ],
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "summary",
+          "sector",
+          "publisher",
+          "entries",
+          "revenueShareBps",
+          "status"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "entries",
+    "packs",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.catalog.packs.install`. */
+export const CloudCatalogPacksInstallInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "execute": {
+      "description": "Install (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "pack": {
+      "description": "Pack slug or id",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pack"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.catalog.packs.install`. */
+export const CloudCatalogPacksInstallReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agents": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "cap": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "monthSpentUsd": {
+                    "type": "number"
+                  },
+                  "monthlyCapUsd": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "pausedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "pausedReason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "monthlyCapUsd",
+                  "monthSpentUsd",
+                  "pausedAt",
+                  "pausedReason"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "catalogEntryId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "config": {
+            "additionalProperties": false,
+            "properties": {
+              "askHuman": {
+                "type": "boolean"
+              },
+              "budgetUsd": {
+                "type": "number"
+              },
+              "mcpServers": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "memory": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "agent",
+                      "person"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "networking": {
+                "type": "string"
+              },
+              "office": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "outcome": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "maxIterations": {
+                        "type": "number"
+                      },
+                      "rubric": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "rubric",
+                      "maxIterations"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "placement": {
+                "enum": [
+                  "cloud",
+                  "installation"
+                ],
+                "type": "string"
+              },
+              "provider": {
+                "enum": [
+                  "anthropic",
+                  "ravi"
+                ],
+                "type": "string"
+              },
+              "raviMcp": {
+                "type": "boolean"
+              },
+              "repositories": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "schedule": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cron": {
+                        "type": "string"
+                      },
+                      "timezone": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "cron",
+                      "timezone"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "secrets": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "webFetch": {
+                "type": "boolean"
+              },
+              "webSearch": {
+                "type": "boolean"
+              },
+              "workflows": {
+                "type": "boolean"
+              },
+              "writes": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "budgetUsd",
+              "networking",
+              "webSearch",
+              "writes",
+              "raviMcp",
+              "mcpServers",
+              "repositories",
+              "schedule"
+            ],
+            "type": "object"
+          },
+          "deployedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "deployedBy": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "library": {
+            "additionalProperties": false,
+            "properties": {
+              "itemId": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "itemId",
+              "slug",
+              "scope",
+              "version"
+            ],
+            "type": "object"
+          },
+          "manifest": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "approved": {
+                    "type": "boolean"
+                  },
+                  "approvedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "hash": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "allowedHosts": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "askHuman": {
+                            "type": "boolean"
+                          },
+                          "mcpServers": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "memory": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "agent",
+                                  "person"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "model": {
+                            "type": "string"
+                          },
+                          "networking": {
+                            "enum": [
+                              "limited",
+                              "unrestricted"
+                            ],
+                            "type": "string"
+                          },
+                          "office": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "placement": {
+                            "enum": [
+                              "cloud",
+                              "installation"
+                            ],
+                            "type": "string"
+                          },
+                          "provider": {
+                            "enum": [
+                              "anthropic",
+                              "ravi"
+                            ],
+                            "type": "string"
+                          },
+                          "raviOps": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "repositories": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "secrets": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "web": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "allowedDomains": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "blockedDomains": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "fetch": {
+                                "type": "boolean"
+                              },
+                              "search": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "search",
+                              "fetch",
+                              "allowedDomains",
+                              "blockedDomains"
+                            ],
+                            "type": "object"
+                          },
+                          "workflows": {
+                            "type": "boolean"
+                          },
+                          "writes": {
+                            "enum": [
+                              "ask",
+                              "auto"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "model",
+                          "provider",
+                          "placement",
+                          "writes",
+                          "networking",
+                          "allowedHosts",
+                          "mcpServers",
+                          "raviOps",
+                          "secrets",
+                          "repositories",
+                          "memory",
+                          "office",
+                          "web",
+                          "askHuman",
+                          "workflows"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "hash",
+                  "approved",
+                  "approvedAt",
+                  "value"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "placementInstallationId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "name",
+          "library",
+          "provider",
+          "model",
+          "status",
+          "deployedAt",
+          "deployedBy",
+          "lastError",
+          "config"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "installed": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "entry",
+            "pack"
+          ],
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "project": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "project",
+    "installed",
+    "agents"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.credits.show`. */
+export const CloudCreditsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.credits.show`. */
+export const CloudCreditsShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "credits": {
+      "additionalProperties": false,
+      "properties": {
+        "balanceBrl": {
+          "type": "number"
+        },
+        "entries": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "amountBrl": {
+                "type": "number"
+              },
+              "createdAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "fxRate": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "topup",
+                  "run",
+                  "adjustment",
+                  "refund"
+                ],
+                "type": "string"
+              },
+              "paymentUrl": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "pixCopyPaste": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "postedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "runId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "posted",
+                  "void"
+                ],
+                "type": "string"
+              },
+              "usd": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "amountBrl",
+              "usd",
+              "fxRate",
+              "runId",
+              "status",
+              "paymentUrl",
+              "pixCopyPaste",
+              "createdAt",
+              "postedAt"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "fxRate": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mode": {
+          "enum": [
+            "byok",
+            "credits"
+          ],
+          "type": "string"
+        },
+        "monthSpentBrl": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "mode",
+        "balanceBrl",
+        "fxRate",
+        "monthSpentBrl",
+        "entries"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "credits"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.credits.topup`. */
+export const CloudCreditsTopupInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "amount": {
+      "description": "Amount in reais (20 to 5000)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Create the Pix charge (without it, print the plan and exit 3)",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "amount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.credits.topup`. */
+export const CloudCreditsTopupReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "credits": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "balanceBrl": {
+              "type": "number"
+            },
+            "entries": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "amountBrl": {
+                    "type": "number"
+                  },
+                  "createdAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "fxRate": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "topup",
+                      "run",
+                      "adjustment",
+                      "refund"
+                    ],
+                    "type": "string"
+                  },
+                  "paymentUrl": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "pixCopyPaste": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "postedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "runId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "enum": [
+                      "pending",
+                      "posted",
+                      "void"
+                    ],
+                    "type": "string"
+                  },
+                  "usd": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "kind",
+                  "amountBrl",
+                  "usd",
+                  "fxRate",
+                  "runId",
+                  "status",
+                  "paymentUrl",
+                  "pixCopyPaste",
+                  "createdAt",
+                  "postedAt"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "fxRate": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "mode": {
+              "enum": [
+                "byok",
+                "credits"
+              ],
+              "type": "string"
+            },
+            "monthSpentBrl": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "mode",
+            "balanceBrl",
+            "fxRate",
+            "monthSpentBrl",
+            "entries"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "entry": {
+      "additionalProperties": false,
+      "properties": {
+        "amountBrl": {
+          "type": "number"
+        },
+        "createdAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fxRate": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "topup",
+            "run",
+            "adjustment",
+            "refund"
+          ],
+          "type": "string"
+        },
+        "paymentUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pixCopyPaste": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "postedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "posted",
+            "void"
+          ],
+          "type": "string"
+        },
+        "usd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "amountBrl",
+        "usd",
+        "fxRate",
+        "runId",
+        "status",
+        "paymentUrl",
+        "pixCopyPaste",
+        "createdAt",
+        "postedAt"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "entry",
+    "credits"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.key.remove`. */
+export const CloudKeyRemoveInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.key.remove`. */
+export const CloudKeyRemoveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "credential": {
+      "additionalProperties": false,
+      "properties": {
+        "configured": {
+          "type": "boolean"
+        },
+        "keyHint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "monthCostUsd": {
+          "type": "number"
+        },
+        "monthlyAlertUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "verifiedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "provider",
+        "configured",
+        "keyHint",
+        "status",
+        "verifiedAt",
+        "monthlyAlertUsd",
+        "monthCostUsd"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "credential"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.key.status`. */
+export const CloudKeyStatusInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.key.status`. */
+export const CloudKeyStatusReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "credential": {
+      "additionalProperties": false,
+      "properties": {
+        "configured": {
+          "type": "boolean"
+        },
+        "keyHint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "monthCostUsd": {
+          "type": "number"
+        },
+        "monthlyAlertUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "verifiedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "provider",
+        "configured",
+        "keyHint",
+        "status",
+        "verifiedAt",
+        "monthlyAlertUsd",
+        "monthCostUsd"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "credential"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `cloud.projects.create`. */
 export const CloudProjectsCreateInputSchema = {
   "additionalProperties": false,
@@ -37069,6 +45854,7062 @@ export const CloudProjectsListReturnSchema = {
     "pagination",
     "projects",
     "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.runs.answer`. */
+export const CloudRunsAnswerInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "execute": {
+      "description": "Send the answer (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "question": {
+      "description": "Question id (ravi cloud runs show <run>)",
+      "type": "string"
+    },
+    "run": {
+      "description": "Run id",
+      "type": "string"
+    },
+    "text": {
+      "description": "The answer, in the person's words",
+      "type": "string"
+    }
+  },
+  "required": [
+    "question",
+    "run",
+    "text"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.runs.answer`. */
+export const CloudRunsAnswerReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "question": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "askedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "question": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "answered",
+            "expired"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "question",
+        "options",
+        "status",
+        "answer",
+        "askedAt",
+        "answeredAt",
+        "answeredBy"
+      ],
+      "type": "object"
+    },
+    "run": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "agentName": {
+          "type": "string"
+        },
+        "approvals": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "decidedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "decidedBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "inputPreview": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "requestedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "server": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "tool": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "tool",
+              "server",
+              "inputPreview",
+              "status",
+              "requestedAt",
+              "decidedAt",
+              "decidedBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "billingMode": {
+          "enum": [
+            "byok",
+            "credits"
+          ],
+          "type": "string"
+        },
+        "budgetUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chargedBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costUsd": {
+          "type": "number"
+        },
+        "deliveredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "fileId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "fileId",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "deliveredAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "delivery": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "taskId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "installationId",
+                "sessionName",
+                "taskId",
+                "delivery",
+                "deliveredAt"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "feedback": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "iterations": {
+                  "type": "number"
+                },
+                "lastResult": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "maxIterations": {
+                  "type": "number"
+                },
+                "rubric": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "rubric",
+                "maxIterations",
+                "iterations",
+                "lastResult",
+                "feedback"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outputs": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "questions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "answer": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "askedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "options": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "question": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "answered",
+                  "expired"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "question",
+              "options",
+              "status",
+              "answer",
+              "askedAt",
+              "answeredAt",
+              "answeredBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runningSeconds": {
+          "type": "number"
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "threadKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tokens": {
+          "additionalProperties": false,
+          "properties": {
+            "cacheRead": {
+              "type": "number"
+            },
+            "cacheWrite": {
+              "type": "number"
+            },
+            "input": {
+              "type": "number"
+            },
+            "output": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "input",
+            "output",
+            "cacheRead",
+            "cacheWrite"
+          ],
+          "type": "object"
+        },
+        "trigger": {
+          "type": "string"
+        },
+        "triggerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "agentId",
+        "agentName",
+        "projectId",
+        "status",
+        "trigger",
+        "actor",
+        "prompt",
+        "result",
+        "budgetUsd",
+        "costUsd",
+        "runningSeconds",
+        "tokens",
+        "approvals",
+        "outputs",
+        "startedAt",
+        "endedAt",
+        "error",
+        "origin",
+        "url"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "run",
+    "question"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.runs.approve`. */
+export const CloudRunsApproveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "approval": {
+      "description": "Approval id (ravi cloud runs show <run>)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Approve (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "run": {
+      "description": "Run id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "approval",
+    "run"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.runs.approve`. */
+export const CloudRunsApproveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "approval": {
+      "additionalProperties": false,
+      "properties": {
+        "decidedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decidedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "inputPreview": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requestedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "server": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "tool",
+        "server",
+        "inputPreview",
+        "status",
+        "requestedAt",
+        "decidedAt",
+        "decidedBy"
+      ],
+      "type": "object"
+    },
+    "run": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "agentName": {
+          "type": "string"
+        },
+        "approvals": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "decidedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "decidedBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "inputPreview": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "requestedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "server": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "tool": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "tool",
+              "server",
+              "inputPreview",
+              "status",
+              "requestedAt",
+              "decidedAt",
+              "decidedBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "billingMode": {
+          "enum": [
+            "byok",
+            "credits"
+          ],
+          "type": "string"
+        },
+        "budgetUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chargedBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costUsd": {
+          "type": "number"
+        },
+        "deliveredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "fileId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "fileId",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "deliveredAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "delivery": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "taskId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "installationId",
+                "sessionName",
+                "taskId",
+                "delivery",
+                "deliveredAt"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "feedback": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "iterations": {
+                  "type": "number"
+                },
+                "lastResult": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "maxIterations": {
+                  "type": "number"
+                },
+                "rubric": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "rubric",
+                "maxIterations",
+                "iterations",
+                "lastResult",
+                "feedback"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outputs": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "questions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "answer": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "askedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "options": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "question": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "answered",
+                  "expired"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "question",
+              "options",
+              "status",
+              "answer",
+              "askedAt",
+              "answeredAt",
+              "answeredBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runningSeconds": {
+          "type": "number"
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "threadKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tokens": {
+          "additionalProperties": false,
+          "properties": {
+            "cacheRead": {
+              "type": "number"
+            },
+            "cacheWrite": {
+              "type": "number"
+            },
+            "input": {
+              "type": "number"
+            },
+            "output": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "input",
+            "output",
+            "cacheRead",
+            "cacheWrite"
+          ],
+          "type": "object"
+        },
+        "trigger": {
+          "type": "string"
+        },
+        "triggerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "agentId",
+        "agentName",
+        "projectId",
+        "status",
+        "trigger",
+        "actor",
+        "prompt",
+        "result",
+        "budgetUsd",
+        "costUsd",
+        "runningSeconds",
+        "tokens",
+        "approvals",
+        "outputs",
+        "startedAt",
+        "endedAt",
+        "error",
+        "origin",
+        "url"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "run",
+    "approval"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.runs.deny`. */
+export const CloudRunsDenyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "approval": {
+      "description": "Approval id (ravi cloud runs show <run>)",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Why (the agent reads it)",
+      "type": "string"
+    },
+    "run": {
+      "description": "Run id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "approval",
+    "run"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.runs.deny`. */
+export const CloudRunsDenyReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "approval": {
+      "additionalProperties": false,
+      "properties": {
+        "decidedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decidedBy": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "inputPreview": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requestedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "server": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "tool",
+        "server",
+        "inputPreview",
+        "status",
+        "requestedAt",
+        "decidedAt",
+        "decidedBy"
+      ],
+      "type": "object"
+    },
+    "run": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "agentName": {
+          "type": "string"
+        },
+        "approvals": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "decidedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "decidedBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "inputPreview": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "requestedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "server": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "tool": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "tool",
+              "server",
+              "inputPreview",
+              "status",
+              "requestedAt",
+              "decidedAt",
+              "decidedBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "billingMode": {
+          "enum": [
+            "byok",
+            "credits"
+          ],
+          "type": "string"
+        },
+        "budgetUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chargedBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costUsd": {
+          "type": "number"
+        },
+        "deliveredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "fileId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "fileId",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "deliveredAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "delivery": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "taskId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "installationId",
+                "sessionName",
+                "taskId",
+                "delivery",
+                "deliveredAt"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "feedback": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "iterations": {
+                  "type": "number"
+                },
+                "lastResult": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "maxIterations": {
+                  "type": "number"
+                },
+                "rubric": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "rubric",
+                "maxIterations",
+                "iterations",
+                "lastResult",
+                "feedback"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outputs": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "questions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "answer": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "askedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "options": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "question": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "answered",
+                  "expired"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "question",
+              "options",
+              "status",
+              "answer",
+              "askedAt",
+              "answeredAt",
+              "answeredBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runningSeconds": {
+          "type": "number"
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "threadKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tokens": {
+          "additionalProperties": false,
+          "properties": {
+            "cacheRead": {
+              "type": "number"
+            },
+            "cacheWrite": {
+              "type": "number"
+            },
+            "input": {
+              "type": "number"
+            },
+            "output": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "input",
+            "output",
+            "cacheRead",
+            "cacheWrite"
+          ],
+          "type": "object"
+        },
+        "trigger": {
+          "type": "string"
+        },
+        "triggerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "agentId",
+        "agentName",
+        "projectId",
+        "status",
+        "trigger",
+        "actor",
+        "prompt",
+        "result",
+        "budgetUsd",
+        "costUsd",
+        "runningSeconds",
+        "tokens",
+        "approvals",
+        "outputs",
+        "startedAt",
+        "endedAt",
+        "error",
+        "origin",
+        "url"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "run",
+    "approval"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.runs.list`. */
+export const CloudRunsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Only this cloud agent",
+      "type": "string"
+    },
+    "cursor": {
+      "description": "Next page (the cursor of the previous page)",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (1-100, default 25)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    },
+    "status": {
+      "description": "Only this status (running, waiting_approval, completed, ...)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.runs.list`. */
+export const CloudRunsListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "cursor": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "project": {
+      "type": "string"
+    },
+    "runs": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "approvals": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "decidedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "decidedBy": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "inputPreview": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requestedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "server": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "status": {
+                  "type": "string"
+                },
+                "tool": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "tool",
+                "server",
+                "inputPreview",
+                "status",
+                "requestedAt",
+                "decidedAt",
+                "decidedBy"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "billingMode": {
+            "enum": [
+              "byok",
+              "credits"
+            ],
+            "type": "string"
+          },
+          "budgetUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "chargedBrl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "costBrl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "costUsd": {
+            "type": "number"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "chat": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "channel": {
+                            "type": "string"
+                          },
+                          "chatId": {
+                            "type": "string"
+                          },
+                          "instanceId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "threadId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "channel",
+                          "chatId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "installationId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "session",
+                      "page_room",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "roomId": {
+                    "type": "string"
+                  },
+                  "sessionName": {
+                    "type": "string"
+                  },
+                  "siteId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "endedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "code",
+                  "message"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "files": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "fileId": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "fileId",
+                "name",
+                "size"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "deliveredAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "delivery": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "installationId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "sessionName": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "taskId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "installationId",
+                  "sessionName",
+                  "taskId",
+                  "delivery",
+                  "deliveredAt"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "feedback": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "iterations": {
+                    "type": "number"
+                  },
+                  "lastResult": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "maxIterations": {
+                    "type": "number"
+                  },
+                  "rubric": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "rubric",
+                  "maxIterations",
+                  "iterations",
+                  "lastResult",
+                  "feedback"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outputs": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "size"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "questions": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "answer": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answeredAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answeredBy": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "askedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "options": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "question": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "pending",
+                    "answered",
+                    "expired"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "question",
+                "options",
+                "status",
+                "answer",
+                "askedAt",
+                "answeredAt",
+                "answeredBy"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "runningSeconds": {
+            "type": "number"
+          },
+          "startedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "threadKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tokens": {
+            "additionalProperties": false,
+            "properties": {
+              "cacheRead": {
+                "type": "number"
+              },
+              "cacheWrite": {
+                "type": "number"
+              },
+              "input": {
+                "type": "number"
+              },
+              "output": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "input",
+              "output",
+              "cacheRead",
+              "cacheWrite"
+            ],
+            "type": "object"
+          },
+          "trigger": {
+            "type": "string"
+          },
+          "triggerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "agentName",
+          "projectId",
+          "status",
+          "trigger",
+          "actor",
+          "prompt",
+          "result",
+          "budgetUsd",
+          "costUsd",
+          "runningSeconds",
+          "tokens",
+          "approvals",
+          "outputs",
+          "startedAt",
+          "endedAt",
+          "error",
+          "origin",
+          "url"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "project",
+    "runs",
+    "cursor"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.runs.outputs`. */
+export const CloudRunsOutputsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "download": {
+      "description": "Write every output file into this folder",
+      "type": "string"
+    },
+    "run": {
+      "description": "Run id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.runs.outputs`. */
+export const CloudRunsOutputsReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "directory": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "downloaded": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "path",
+          "bytes"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "outputs": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "size"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "runId": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "runId",
+    "outputs",
+    "directory",
+    "downloaded"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.runs.reply`. */
+export const CloudRunsReplyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "execute": {
+      "description": "Send it (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "run": {
+      "description": "Run id",
+      "type": "string"
+    },
+    "text": {
+      "description": "The message",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run",
+    "text"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.runs.reply`. */
+export const CloudRunsReplyReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "run": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "agentName": {
+          "type": "string"
+        },
+        "approvals": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "decidedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "decidedBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "inputPreview": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "requestedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "server": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "tool": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "tool",
+              "server",
+              "inputPreview",
+              "status",
+              "requestedAt",
+              "decidedAt",
+              "decidedBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "billingMode": {
+          "enum": [
+            "byok",
+            "credits"
+          ],
+          "type": "string"
+        },
+        "budgetUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chargedBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costUsd": {
+          "type": "number"
+        },
+        "deliveredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "fileId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "fileId",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "deliveredAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "delivery": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "taskId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "installationId",
+                "sessionName",
+                "taskId",
+                "delivery",
+                "deliveredAt"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "feedback": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "iterations": {
+                  "type": "number"
+                },
+                "lastResult": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "maxIterations": {
+                  "type": "number"
+                },
+                "rubric": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "rubric",
+                "maxIterations",
+                "iterations",
+                "lastResult",
+                "feedback"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outputs": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "questions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "answer": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "askedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "options": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "question": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "answered",
+                  "expired"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "question",
+              "options",
+              "status",
+              "answer",
+              "askedAt",
+              "answeredAt",
+              "answeredBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runningSeconds": {
+          "type": "number"
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "threadKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tokens": {
+          "additionalProperties": false,
+          "properties": {
+            "cacheRead": {
+              "type": "number"
+            },
+            "cacheWrite": {
+              "type": "number"
+            },
+            "input": {
+              "type": "number"
+            },
+            "output": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "input",
+            "output",
+            "cacheRead",
+            "cacheWrite"
+          ],
+          "type": "object"
+        },
+        "trigger": {
+          "type": "string"
+        },
+        "triggerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "agentId",
+        "agentName",
+        "projectId",
+        "status",
+        "trigger",
+        "actor",
+        "prompt",
+        "result",
+        "budgetUsd",
+        "costUsd",
+        "runningSeconds",
+        "tokens",
+        "approvals",
+        "outputs",
+        "startedAt",
+        "endedAt",
+        "error",
+        "origin",
+        "url"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "run"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.runs.show`. */
+export const CloudRunsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "run": {
+      "description": "Run id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.runs.show`. */
+export const CloudRunsShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "run": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "agentName": {
+          "type": "string"
+        },
+        "approvals": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "decidedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "decidedBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "inputPreview": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "requestedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "server": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "tool": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "tool",
+              "server",
+              "inputPreview",
+              "status",
+              "requestedAt",
+              "decidedAt",
+              "decidedBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "billingMode": {
+          "enum": [
+            "byok",
+            "credits"
+          ],
+          "type": "string"
+        },
+        "budgetUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chargedBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costUsd": {
+          "type": "number"
+        },
+        "deliveredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "fileId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "fileId",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "deliveredAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "delivery": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "taskId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "installationId",
+                "sessionName",
+                "taskId",
+                "delivery",
+                "deliveredAt"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "feedback": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "iterations": {
+                  "type": "number"
+                },
+                "lastResult": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "maxIterations": {
+                  "type": "number"
+                },
+                "rubric": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "rubric",
+                "maxIterations",
+                "iterations",
+                "lastResult",
+                "feedback"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outputs": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "questions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "answer": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "askedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "options": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "question": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "answered",
+                  "expired"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "question",
+              "options",
+              "status",
+              "answer",
+              "askedAt",
+              "answeredAt",
+              "answeredBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runningSeconds": {
+          "type": "number"
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "threadKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tokens": {
+          "additionalProperties": false,
+          "properties": {
+            "cacheRead": {
+              "type": "number"
+            },
+            "cacheWrite": {
+              "type": "number"
+            },
+            "input": {
+              "type": "number"
+            },
+            "output": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "input",
+            "output",
+            "cacheRead",
+            "cacheWrite"
+          ],
+          "type": "object"
+        },
+        "trigger": {
+          "type": "string"
+        },
+        "triggerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "agentId",
+        "agentName",
+        "projectId",
+        "status",
+        "trigger",
+        "actor",
+        "prompt",
+        "result",
+        "budgetUsd",
+        "costUsd",
+        "runningSeconds",
+        "tokens",
+        "approvals",
+        "outputs",
+        "startedAt",
+        "endedAt",
+        "error",
+        "origin",
+        "url"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "run"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.runs.start`. */
+export const CloudRunsStartInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Library agent slug, or a cloud agent id or name",
+      "type": "string"
+    },
+    "bindThread": {
+      "description": "Make this Slack thread or WhatsApp group the run's conversation (run card, replies go to the run)",
+      "type": "boolean"
+    },
+    "budget": {
+      "description": "Budget for this run in US dollars (0.5-200)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Start the run (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "file": {
+      "description": "A file the run reads at /mnt/session/inputs/<name>, repeatable (10 files, 3 MB in all)",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "idempotencyKey": {
+      "description": "Same key, same run: a retry never starts a second run",
+      "type": "string"
+    },
+    "maxIterations": {
+      "description": "Revisions for --outcome (1-5, default 1)",
+      "type": "string"
+    },
+    "noDeliver": {
+      "default": false,
+      "description": "Do not bring the result back to this conversation",
+      "type": "boolean"
+    },
+    "outcome": {
+      "description": "What the result must satisfy; the run revises until it does",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    },
+    "prompt": {
+      "description": "What the agent should do",
+      "type": "string"
+    },
+    "repo": {
+      "description": "Mount a GitHub repository: owner/name[@branch], repeatable",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "rowsLimit": {
+      "description": "How many rows of --rows-view (1-500)",
+      "type": "string"
+    },
+    "rowsView": {
+      "description": "Work through the rows of this Base view (needs a budget)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent",
+    "prompt"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.runs.start`. */
+export const CloudRunsStartReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "run": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "agentName": {
+          "type": "string"
+        },
+        "approvals": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "decidedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "decidedBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "inputPreview": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "requestedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "server": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "tool": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "tool",
+              "server",
+              "inputPreview",
+              "status",
+              "requestedAt",
+              "decidedAt",
+              "decidedBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "billingMode": {
+          "enum": [
+            "byok",
+            "credits"
+          ],
+          "type": "string"
+        },
+        "budgetUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chargedBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costUsd": {
+          "type": "number"
+        },
+        "deliveredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "fileId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "fileId",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "deliveredAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "delivery": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "taskId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "installationId",
+                "sessionName",
+                "taskId",
+                "delivery",
+                "deliveredAt"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "feedback": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "iterations": {
+                  "type": "number"
+                },
+                "lastResult": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "maxIterations": {
+                  "type": "number"
+                },
+                "rubric": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "rubric",
+                "maxIterations",
+                "iterations",
+                "lastResult",
+                "feedback"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outputs": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "questions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "answer": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "askedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "options": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "question": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "answered",
+                  "expired"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "question",
+              "options",
+              "status",
+              "answer",
+              "askedAt",
+              "answeredAt",
+              "answeredBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runningSeconds": {
+          "type": "number"
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "threadKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tokens": {
+          "additionalProperties": false,
+          "properties": {
+            "cacheRead": {
+              "type": "number"
+            },
+            "cacheWrite": {
+              "type": "number"
+            },
+            "input": {
+              "type": "number"
+            },
+            "output": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "input",
+            "output",
+            "cacheRead",
+            "cacheWrite"
+          ],
+          "type": "object"
+        },
+        "trigger": {
+          "type": "string"
+        },
+        "triggerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "agentId",
+        "agentName",
+        "projectId",
+        "status",
+        "trigger",
+        "actor",
+        "prompt",
+        "result",
+        "budgetUsd",
+        "costUsd",
+        "runningSeconds",
+        "tokens",
+        "approvals",
+        "outputs",
+        "startedAt",
+        "endedAt",
+        "error",
+        "origin",
+        "url"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "thread": {
+      "additionalProperties": false,
+      "properties": {
+        "cardMessageId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "channel": {
+          "enum": [
+            "slack",
+            "whatsapp"
+          ],
+          "type": "string"
+        },
+        "threadKey": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadKey",
+        "channel",
+        "cardMessageId"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "run"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.runs.stop`. */
+export const CloudRunsStopInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "run": {
+      "description": "Run id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.runs.stop`. */
+export const CloudRunsStopReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "run": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "agentName": {
+          "type": "string"
+        },
+        "approvals": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "decidedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "decidedBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "inputPreview": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "requestedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "server": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "tool": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "tool",
+              "server",
+              "inputPreview",
+              "status",
+              "requestedAt",
+              "decidedAt",
+              "decidedBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "billingMode": {
+          "enum": [
+            "byok",
+            "credits"
+          ],
+          "type": "string"
+        },
+        "budgetUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chargedBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costBrl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "costUsd": {
+          "type": "number"
+        },
+        "deliveredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "fileId": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "fileId",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "deliveredAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "delivery": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "taskId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "installationId",
+                "sessionName",
+                "taskId",
+                "delivery",
+                "deliveredAt"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "feedback": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "iterations": {
+                  "type": "number"
+                },
+                "lastResult": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "maxIterations": {
+                  "type": "number"
+                },
+                "rubric": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "rubric",
+                "maxIterations",
+                "iterations",
+                "lastResult",
+                "feedback"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outputs": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "size"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "questions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "answer": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "answeredBy": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "askedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "options": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "question": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending",
+                  "answered",
+                  "expired"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "question",
+              "options",
+              "status",
+              "answer",
+              "askedAt",
+              "answeredAt",
+              "answeredBy"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runningSeconds": {
+          "type": "number"
+        },
+        "startedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "threadKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tokens": {
+          "additionalProperties": false,
+          "properties": {
+            "cacheRead": {
+              "type": "number"
+            },
+            "cacheWrite": {
+              "type": "number"
+            },
+            "input": {
+              "type": "number"
+            },
+            "output": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "input",
+            "output",
+            "cacheRead",
+            "cacheWrite"
+          ],
+          "type": "object"
+        },
+        "trigger": {
+          "type": "string"
+        },
+        "triggerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "agentId",
+        "agentName",
+        "projectId",
+        "status",
+        "trigger",
+        "actor",
+        "prompt",
+        "result",
+        "budgetUsd",
+        "costUsd",
+        "runningSeconds",
+        "tokens",
+        "approvals",
+        "outputs",
+        "startedAt",
+        "endedAt",
+        "error",
+        "origin",
+        "url"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "run"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.schedules.add`. */
+export const CloudSchedulesAddInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Library agent slug, or a cloud agent id or name",
+      "type": "string"
+    },
+    "budget": {
+      "description": "Budget per run in US dollars (default: the agent's)",
+      "type": "string"
+    },
+    "cron": {
+      "description": "Five cron fields, such as \"0 9 * * 1-5\"",
+      "type": "string"
+    },
+    "disabled": {
+      "description": "Create it disabled (applies at once)",
+      "type": "boolean"
+    },
+    "execute": {
+      "description": "Create an enabled schedule (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "noDeliver": {
+      "default": false,
+      "description": "Do not bring each run's result back to this conversation",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    },
+    "prompt": {
+      "description": "What each run does (default: the agent's HEARTBEAT.md)",
+      "type": "string"
+    },
+    "timezone": {
+      "description": "IANA time zone (default: this machine's)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.schedules.add`. */
+export const CloudSchedulesAddReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "schedule": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "agentName": {
+          "type": "string"
+        },
+        "budgetUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cron": {
+          "type": "string"
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastRunAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastRunId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextRunAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "timezone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "agentId",
+        "agentName",
+        "cron",
+        "timezone",
+        "prompt",
+        "budgetUsd",
+        "enabled",
+        "actor",
+        "nextRunAt",
+        "lastRunAt",
+        "lastRunId"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "schedule"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.schedules.list`. */
+export const CloudSchedulesListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (1-200, default 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Skip this many (default 0)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.schedules.list`. */
+export const CloudSchedulesListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "project": {
+      "type": "string"
+    },
+    "schedules": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "budgetUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cron": {
+            "type": "string"
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "chat": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "channel": {
+                            "type": "string"
+                          },
+                          "chatId": {
+                            "type": "string"
+                          },
+                          "instanceId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "threadId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "channel",
+                          "chatId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "installationId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "session",
+                      "page_room",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "roomId": {
+                    "type": "string"
+                  },
+                  "sessionName": {
+                    "type": "string"
+                  },
+                  "siteId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastRunAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastRunId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextRunAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timezone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "agentName",
+          "cron",
+          "timezone",
+          "prompt",
+          "budgetUsd",
+          "enabled",
+          "actor",
+          "nextRunAt",
+          "lastRunAt",
+          "lastRunId"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "project",
+    "schedules",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.schedules.remove`. */
+export const CloudSchedulesRemoveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Schedule id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.schedules.remove`. */
+export const CloudSchedulesRemoveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "removed": {
+      "const": true,
+      "type": "boolean"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "id",
+    "removed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.schedules.update`. */
+export const CloudSchedulesUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "budget": {
+      "description": "Budget per run in US dollars",
+      "type": "string"
+    },
+    "cron": {
+      "description": "Five cron fields",
+      "type": "string"
+    },
+    "disable": {
+      "description": "Disable it (applies at once)",
+      "type": "boolean"
+    },
+    "enable": {
+      "description": "Enable it",
+      "type": "boolean"
+    },
+    "execute": {
+      "description": "Apply a change that leaves the schedule enabled (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "heartbeat": {
+      "description": "Use the agent's HEARTBEAT.md as the prompt again",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Schedule id",
+      "type": "string"
+    },
+    "noDeliver": {
+      "default": false,
+      "description": "Stop bringing each run's result back to a conversation",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    },
+    "prompt": {
+      "description": "What each run does",
+      "type": "string"
+    },
+    "timezone": {
+      "description": "IANA time zone",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.schedules.update`. */
+export const CloudSchedulesUpdateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "schedule": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "agentName": {
+          "type": "string"
+        },
+        "budgetUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cron": {
+          "type": "string"
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastRunAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastRunId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextRunAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "timezone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "agentId",
+        "agentName",
+        "cron",
+        "timezone",
+        "prompt",
+        "budgetUsd",
+        "enabled",
+        "actor",
+        "nextRunAt",
+        "lastRunAt",
+        "lastRunId"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "schedule"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -37923,6 +53764,2021 @@ export const CloudScopeShowReturnSchema = {
   "required": [
     "success",
     "scope"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.secrets.list`. */
+export const CloudSecretsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (1-200, default 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Skip this many (default 0)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Only this Console project's secrets",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.secrets.list`. */
+export const CloudSecretsListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "project": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "secrets": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "allowedHosts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastUsedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedBy": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "valueHint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "name",
+          "valueHint",
+          "allowedHosts",
+          "updatedAt",
+          "updatedBy",
+          "lastUsedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "project",
+    "secrets",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.secrets.remove`. */
+export const CloudSecretsRemoveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "project": {
+      "description": "The project the secret is bound to (default: organization-wide)",
+      "type": "string"
+    },
+    "secret": {
+      "description": "Secret name or id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "secret"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.secrets.remove`. */
+export const CloudSecretsRemoveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "removed": {
+      "const": true,
+      "type": "boolean"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "id",
+    "name",
+    "removed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.settings.set`. */
+export const CloudSettingsSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "billingMode": {
+      "description": "byok (the organization's key) or credits (Ravi credits)",
+      "type": "string"
+    },
+    "dailyEventRuns": {
+      "description": "Runs event triggers may start per day (1-1000)",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Apply a change that can raise spending (without it, exit 3)",
+      "type": "boolean"
+    },
+    "monthlyCap": {
+      "description": "Monthly cap in US dollars for the organization, or none",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.settings.set`. */
+export const CloudSettingsSetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "changes": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "settings": {
+      "additionalProperties": false,
+      "properties": {
+        "billingMode": {
+          "enum": [
+            "byok",
+            "credits"
+          ],
+          "type": "string"
+        },
+        "dailyEventRunsCap": {
+          "type": "number"
+        },
+        "gatewayAvailable": {
+          "type": "boolean"
+        },
+        "monthSpentUsd": {
+          "type": "number"
+        },
+        "monthlyCapUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pausedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pausedReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "webhook": {
+          "additionalProperties": false,
+          "properties": {
+            "configured": {
+              "type": "boolean"
+            },
+            "lastEventAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "url",
+            "configured",
+            "lastEventAt"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "billingMode",
+        "monthlyCapUsd",
+        "monthSpentUsd",
+        "pausedAt",
+        "pausedReason",
+        "dailyEventRunsCap",
+        "webhook",
+        "gatewayAvailable"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "settings",
+    "changes"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.settings.show`. */
+export const CloudSettingsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.settings.show`. */
+export const CloudSettingsShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "settings": {
+      "additionalProperties": false,
+      "properties": {
+        "billingMode": {
+          "enum": [
+            "byok",
+            "credits"
+          ],
+          "type": "string"
+        },
+        "dailyEventRunsCap": {
+          "type": "number"
+        },
+        "gatewayAvailable": {
+          "type": "boolean"
+        },
+        "monthSpentUsd": {
+          "type": "number"
+        },
+        "monthlyCapUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pausedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pausedReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "webhook": {
+          "additionalProperties": false,
+          "properties": {
+            "configured": {
+              "type": "boolean"
+            },
+            "lastEventAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "url": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "url",
+            "configured",
+            "lastEventAt"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "billingMode",
+        "monthlyCapUsd",
+        "monthSpentUsd",
+        "pausedAt",
+        "pausedReason",
+        "dailyEventRunsCap",
+        "webhook",
+        "gatewayAvailable"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "settings"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.triggers.create`. */
+export const CloudTriggersCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Library agent slug, or a cloud agent id or name",
+      "type": "string"
+    },
+    "base": {
+      "description": "Bases: only this base",
+      "type": "string"
+    },
+    "batchWindow": {
+      "description": "Wait this long to batch events (0-3600, default 60)",
+      "type": "string"
+    },
+    "budget": {
+      "description": "Budget per run in US dollars (default: the agent's)",
+      "type": "string"
+    },
+    "dailyCap": {
+      "description": "Runs per day at most (1-200, default 20)",
+      "type": "string"
+    },
+    "dedupeWindow": {
+      "description": "Drop repeats of an event within (default 600)",
+      "type": "string"
+    },
+    "deliverTo": {
+      "description": "Session that gets each result, or none",
+      "type": "string"
+    },
+    "disabled": {
+      "description": "Create it disabled (applies at once)",
+      "type": "boolean"
+    },
+    "events": {
+      "description": "Only these event types (comma-separated or repeated)",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "execute": {
+      "description": "Create an enabled trigger (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "mailbox": {
+      "description": "Mail: only this mailbox",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    },
+    "prompt": {
+      "description": "What each run does; {{event}} is where the events go",
+      "type": "string"
+    },
+    "site": {
+      "description": "Page comments: only this site",
+      "type": "string"
+    },
+    "source": {
+      "description": "bases, mail, meetings or pages_comments",
+      "type": "string"
+    },
+    "view": {
+      "description": "Bases: only rows of this view",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.triggers.create`. */
+export const CloudTriggersCreateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "trigger": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "agentName": {
+          "type": "string"
+        },
+        "batchWindowSeconds": {
+          "type": "number"
+        },
+        "budgetUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dailyCap": {
+          "type": "number"
+        },
+        "dedupeWindowSeconds": {
+          "type": "number"
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "filter": {
+          "additionalProperties": false,
+          "properties": {
+            "baseId": {
+              "type": "string"
+            },
+            "events": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "mailboxId": {
+              "type": "string"
+            },
+            "siteId": {
+              "type": "string"
+            },
+            "viewId": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "firedToday": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastFiredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastRunId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pausedReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pendingEvents": {
+          "type": "number"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "bases",
+            "mail",
+            "meetings",
+            "pages_comments"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "projectId",
+        "agentId",
+        "agentName",
+        "actor",
+        "source",
+        "filter",
+        "prompt",
+        "delivery",
+        "enabled",
+        "dailyCap",
+        "batchWindowSeconds",
+        "dedupeWindowSeconds",
+        "budgetUsd",
+        "firedToday",
+        "lastFiredAt",
+        "lastRunId",
+        "pausedReason",
+        "pendingEvents"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "trigger"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.triggers.list`. */
+export const CloudTriggersListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (1-200, default 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Skip this many (default 0)",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.triggers.list`. */
+export const CloudTriggersListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "project": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "triggers": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "agentId": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "batchWindowSeconds": {
+            "type": "number"
+          },
+          "budgetUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dailyCap": {
+            "type": "number"
+          },
+          "dedupeWindowSeconds": {
+            "type": "number"
+          },
+          "delivery": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "chat": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "channel": {
+                            "type": "string"
+                          },
+                          "chatId": {
+                            "type": "string"
+                          },
+                          "instanceId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "threadId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "channel",
+                          "chatId"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "installationId": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "session",
+                      "page_room",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "roomId": {
+                    "type": "string"
+                  },
+                  "sessionName": {
+                    "type": "string"
+                  },
+                  "siteId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "filter": {
+            "additionalProperties": false,
+            "properties": {
+              "baseId": {
+                "type": "string"
+              },
+              "events": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "mailboxId": {
+                "type": "string"
+              },
+              "siteId": {
+                "type": "string"
+              },
+              "viewId": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "firedToday": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastFiredAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastRunId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pausedReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pendingEvents": {
+            "type": "number"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "bases",
+              "mail",
+              "meetings",
+              "pages_comments"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "agentId",
+          "agentName",
+          "actor",
+          "source",
+          "filter",
+          "prompt",
+          "delivery",
+          "enabled",
+          "dailyCap",
+          "batchWindowSeconds",
+          "dedupeWindowSeconds",
+          "budgetUsd",
+          "firedToday",
+          "lastFiredAt",
+          "lastRunId",
+          "pausedReason",
+          "pendingEvents"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "success",
+    "project",
+    "triggers",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.triggers.remove`. */
+export const CloudTriggersRemoveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Trigger id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.triggers.remove`. */
+export const CloudTriggersRemoveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "removed": {
+      "const": true,
+      "type": "boolean"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "id",
+    "removed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.triggers.test`. */
+export const CloudTriggersTestInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Trigger id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.triggers.test`. */
+export const CloudTriggersTestReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "test": {
+      "additionalProperties": false,
+      "properties": {
+        "blockedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "eventCount": {
+          "type": "number"
+        },
+        "prompt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sample": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "prompt",
+        "eventCount",
+        "sample",
+        "blockedBy"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "id",
+    "test"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.triggers.update`. */
+export const CloudTriggersUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "batchWindow": {
+      "description": "Wait this long to batch events (0-3600)",
+      "type": "string"
+    },
+    "budget": {
+      "description": "Budget per run in US dollars, or none for the agent's",
+      "type": "string"
+    },
+    "dailyCap": {
+      "description": "Runs per day at most (1-200)",
+      "type": "string"
+    },
+    "dedupeWindow": {
+      "description": "Drop repeats of an event within",
+      "type": "string"
+    },
+    "deliverTo": {
+      "description": "Session that gets each result, or none",
+      "type": "string"
+    },
+    "disable": {
+      "description": "Disable it (applies at once)",
+      "type": "boolean"
+    },
+    "enable": {
+      "description": "Enable it",
+      "type": "boolean"
+    },
+    "events": {
+      "description": "Only these event types",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "execute": {
+      "description": "Apply a change that leaves the trigger enabled (without it, print the plan and exit 3)",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Trigger id",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project slug (default: the cwd's project)",
+      "type": "string"
+    },
+    "prompt": {
+      "description": "What each run does; {{event}} is where the events go",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.triggers.update`. */
+export const CloudTriggersUpdateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "trigger": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "agentId": {
+          "type": "string"
+        },
+        "agentName": {
+          "type": "string"
+        },
+        "batchWindowSeconds": {
+          "type": "number"
+        },
+        "budgetUsd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dailyCap": {
+          "type": "number"
+        },
+        "dedupeWindowSeconds": {
+          "type": "number"
+        },
+        "delivery": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "chat": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "channel": {
+                          "type": "string"
+                        },
+                        "chatId": {
+                          "type": "string"
+                        },
+                        "instanceId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "threadId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "channel",
+                        "chatId"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "installationId": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "session",
+                    "page_room",
+                    "none"
+                  ],
+                  "type": "string"
+                },
+                "roomId": {
+                  "type": "string"
+                },
+                "sessionName": {
+                  "type": "string"
+                },
+                "siteId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "filter": {
+          "additionalProperties": false,
+          "properties": {
+            "baseId": {
+              "type": "string"
+            },
+            "events": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "mailboxId": {
+              "type": "string"
+            },
+            "siteId": {
+              "type": "string"
+            },
+            "viewId": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "firedToday": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastFiredAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastRunId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pausedReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pendingEvents": {
+          "type": "number"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "bases",
+            "mail",
+            "meetings",
+            "pages_comments"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "projectId",
+        "agentId",
+        "agentName",
+        "actor",
+        "source",
+        "filter",
+        "prompt",
+        "delivery",
+        "enabled",
+        "dailyCap",
+        "batchWindowSeconds",
+        "dedupeWindowSeconds",
+        "budgetUsd",
+        "firedToday",
+        "lastFiredAt",
+        "lastRunId",
+        "pausedReason",
+        "pendingEvents"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "trigger"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.webhook.remove`. */
+export const CloudWebhookRemoveInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.webhook.remove`. */
+export const CloudWebhookRemoveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "webhook": {
+      "additionalProperties": false,
+      "properties": {
+        "configured": {
+          "type": "boolean"
+        },
+        "lastEventAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "url",
+        "configured",
+        "lastEventAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "webhook"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.webhook.show`. */
+export const CloudWebhookShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.webhook.show`. */
+export const CloudWebhookShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "webhook": {
+      "additionalProperties": false,
+      "properties": {
+        "configured": {
+          "type": "boolean"
+        },
+        "lastEventAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "url",
+        "configured",
+        "lastEventAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "success",
+    "webhook"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.worker.disable`. */
+export const CloudWorkerDisableInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.worker.disable`. */
+export const CloudWorkerDisableReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "changed": {
+      "type": "boolean"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "enabledAt": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "enabled",
+    "enabledAt",
+    "changed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.worker.key.remove`. */
+export const CloudWorkerKeyRemoveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "workerId": {
+      "description": "Worker id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "workerId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.worker.key.remove`. */
+export const CloudWorkerKeyRemoveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "removed": {
+      "type": "boolean"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "workerId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
+    "workerId",
+    "removed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cloud.worker.list`. */
+export const CloudWorkerListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (1-200, default 50)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Skip this many (default 0)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cloud.worker.list`. */
+export const CloudWorkerListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "enabledAt": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "orphanKeys": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "workers": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "installationId": {
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastSeenAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "local": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "error": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "restartAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "state": {
+                    "enum": [
+                      "running",
+                      "waiting_key",
+                      "backoff"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "state",
+                  "error",
+                  "restartAt"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "localKey": {
+            "type": "boolean"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "providerEnvironmentId": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "waiting_key",
+              "online",
+              "offline",
+              "disabled"
+            ],
+            "type": "string"
+          },
+          "thisMachine": {
+            "type": "boolean"
+          },
+          "workdir": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "agentName",
+          "projectId",
+          "installationId",
+          "providerEnvironmentId",
+          "status",
+          "lastSeenAt",
+          "lastError",
+          "localKey",
+          "thisMachine",
+          "workdir",
+          "local"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "success",
+    "enabled",
+    "enabledAt",
+    "workers",
+    "orphanKeys",
+    "pagination"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -39540,6 +57396,107 @@ export const ContactsLinkReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `contacts.link-agent`. */
+export const ContactsLinkAgentInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Agent ID that owns the platform identity",
+      "type": "string"
+    },
+    "channel": {
+      "description": "Channel, e.g. slack, telegram, discord",
+      "type": "string"
+    },
+    "id": {
+      "description": "Platform user ID",
+      "type": "string"
+    },
+    "instance": {
+      "description": "Channel instance ID",
+      "type": "string"
+    },
+    "name": {
+      "description": "Platform display name",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Reason for the link audit event",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agent"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `contacts.link-agent`. */
+export const ContactsLinkAgentReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "type": "string"
+    },
+    "identity": {
+      "additionalProperties": false,
+      "properties": {
+        "channel": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "instanceId": {
+          "type": "string"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerType": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "platformUserId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "channel",
+        "instanceId",
+        "platformUserId",
+        "ownerType",
+        "ownerId"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "const": "linked",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "agent",
+    "identity"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.list`. */
 export const ContactsListInputSchema = {
   "additionalProperties": false,
@@ -40125,6 +58082,50 @@ export const ContextAuthorizeReturnSchema = {
     "inherited",
     "reason"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `context.bridge-tool-hook`. */
+export const ContextBridgeToolHookInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "payload": {
+      "description": "Hook input",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `context.bridge-tool-hook`. */
+export const ContextBridgeToolHookReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "hookSpecificOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "hookEventName": {
+          "const": "PreToolUse",
+          "type": "string"
+        },
+        "permissionDecision": {
+          "enum": [
+            "deny"
+          ],
+          "type": "string"
+        },
+        "permissionDecisionReason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "hookEventName",
+        "permissionDecision",
+        "permissionDecisionReason"
+      ],
+      "type": "object"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -44958,6 +62959,7 @@ export const CredentialsConnectionsDisableReturnSchema = {
           "properties": {
             "backend": {
               "enum": [
+                "file",
                 "keychain",
                 "vault"
               ],
@@ -45058,6 +63060,7 @@ export const CredentialsConnectionsEnableReturnSchema = {
           "properties": {
             "backend": {
               "enum": [
+                "file",
                 "keychain",
                 "vault"
               ],
@@ -45175,6 +63178,7 @@ export const CredentialsConnectionsListReturnSchema = {
         "properties": {
           "backend": {
             "enum": [
+              "file",
               "keychain",
               "vault"
             ],
@@ -45322,6 +63326,7 @@ export const CredentialsConnectionsShowReturnSchema = {
       "properties": {
         "backend": {
           "enum": [
+            "file",
             "keychain",
             "vault"
           ],
@@ -45452,6 +63457,123 @@ export const CredentialsPoliciesExplainReturnSchema = {
     "action",
     "requiredCapabilities",
     "approval"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `credentials.request`. */
+export const CredentialsRequestInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "backend": {
+      "default": "file",
+      "description": "Connection secret backend: file (default), keychain or vault",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Send the private invitation; otherwise dry-run (exit 3)",
+      "type": "boolean"
+    },
+    "label": {
+      "description": "Human-readable credential label",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Why the credential is needed (never include a secret)",
+      "type": "string"
+    },
+    "scopes": {
+      "description": "Provider scopes, informational; does not grant Ravi permissions",
+      "type": "string"
+    },
+    "target": {
+      "description": "env:<key>, connection:<provider>:<connection> or remote:<destination>:<KEY>",
+      "type": "string"
+    },
+    "user": {
+      "description": "Slack user who will provide the credential privately",
+      "type": "string"
+    }
+  },
+  "required": [
+    "target"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `credentials.request`. */
+export const CredentialsRequestReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "delivery": {
+      "const": "ephemeral",
+      "type": "string"
+    },
+    "expiresAt": {
+      "type": "number"
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "target": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestId",
+    "target",
+    "expiresAt",
+    "delivery"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `credentials.request-status`. */
+export const CredentialsRequestStatusInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "requestId": {
+      "description": "Opaque request ID returned by credentials request",
+      "type": "string"
+    },
+    "target": {
+      "description": "remote:<destination>:<KEY>",
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestId",
+    "target"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `credentials.request-status`. */
+export const CredentialsRequestStatusReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "activation": {
+      "const": "not_requested",
+      "type": "string"
+    },
+    "receipt": {
+      "type": "string"
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestId",
+    "target",
+    "status",
+    "activation"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -48411,6 +66533,12 @@ export const CronAddReturnSchema = {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -48470,6 +66598,12 @@ export const CronDisableReturnSchema = {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -48529,6 +66663,12 @@ export const CronEnableReturnSchema = {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -48707,6 +66847,12 @@ export const CronRmReturnSchema = {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -48770,6 +66916,12 @@ export const CronRunReturnSchema = {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -48839,6 +66991,12 @@ export const CronSetReturnSchema = {
         "type"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -49150,6 +67308,9 @@ export const DaemonStatusReturnSchema = {
                 }
               ]
             },
+            "codeStale": {
+              "type": "boolean"
+            },
             "cwd": {
               "anyOf": [
                 {
@@ -49159,6 +67320,22 @@ export const DaemonStatusReturnSchema = {
                   "type": "null"
                 }
               ]
+            },
+            "diskVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envStale": {
+              "type": "boolean"
+            },
+            "identityVerified": {
+              "type": "boolean"
             },
             "managed": {
               "type": "boolean"
@@ -49189,10 +67366,7 @@ export const DaemonStatusReturnSchema = {
                 }
               ]
             },
-            "status": {
-              "type": "string"
-            },
-            "version": {
+            "runningVersion": {
               "anyOf": [
                 {
                   "type": "string"
@@ -49201,6 +67375,28 @@ export const DaemonStatusReturnSchema = {
                   "type": "null"
                 }
               ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "required": [
@@ -49211,7 +67407,14 @@ export const DaemonStatusReturnSchema = {
             "pid",
             "bundlePath",
             "cwd",
-            "version",
+            "runningVersion",
+            "diskVersion",
+            "startedAt",
+            "stale",
+            "codeStale",
+            "envStale",
+            "identityVerified",
+            "warnings",
             "matchesCli"
           ],
           "type": "object"
@@ -49270,6 +67473,9 @@ export const DaemonStatusReturnSchema = {
                 }
               ]
             },
+            "codeStale": {
+              "type": "boolean"
+            },
             "cwd": {
               "anyOf": [
                 {
@@ -49279,6 +67485,22 @@ export const DaemonStatusReturnSchema = {
                   "type": "null"
                 }
               ]
+            },
+            "diskVersion": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "envStale": {
+              "type": "boolean"
+            },
+            "identityVerified": {
+              "type": "boolean"
             },
             "managed": {
               "type": "boolean"
@@ -49309,10 +67531,7 @@ export const DaemonStatusReturnSchema = {
                 }
               ]
             },
-            "status": {
-              "type": "string"
-            },
-            "version": {
+            "runningVersion": {
               "anyOf": [
                 {
                   "type": "string"
@@ -49321,6 +67540,28 @@ export const DaemonStatusReturnSchema = {
                   "type": "null"
                 }
               ]
+            },
+            "stale": {
+              "type": "boolean"
+            },
+            "startedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "type": "string"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           },
           "required": [
@@ -49331,7 +67572,14 @@ export const DaemonStatusReturnSchema = {
             "pid",
             "bundlePath",
             "cwd",
-            "version",
+            "runningVersion",
+            "diskVersion",
+            "startedAt",
+            "stale",
+            "codeStale",
+            "envStale",
+            "identityVerified",
+            "warnings",
             "matchesCli"
           ],
           "type": "object"
@@ -49344,6 +67592,12 @@ export const DaemonStatusReturnSchema = {
         "channels"
       ],
       "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -49352,6 +67606,7 @@ export const DaemonStatusReturnSchema = {
     "ravi",
     "infrastructure",
     "runtime",
+    "warnings",
     "processes"
   ],
   "type": "object"
@@ -49403,6 +67658,1645 @@ export const DaemonUninstallReturnSchema = {
   "required": [
     "action",
     "changed"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `decisions.answer`. */
+export const DecisionsAnswerInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "by": {
+      "description": "Additional provenance only; never authority",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Required for a thread: queues work in the waiting session",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Decision id from ask/list",
+      "type": "string"
+    },
+    "text": {
+      "description": "Explicit outcome",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `decisions.answer`. */
+export const DecisionsAnswerReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "decision": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ask": {
+          "type": "string"
+        },
+        "askedAt": {
+          "type": "number"
+        },
+        "askedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocks": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "origin": {
+          "additionalProperties": false,
+          "properties": {
+            "chatId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "sessionKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "task",
+                "thread"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "chatId",
+            "sessionKey"
+          ],
+          "type": "object"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerType": {
+          "enum": [
+            "human",
+            "agent",
+            "unassigned"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "type": "number"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "superseded"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "origin",
+        "key",
+        "status",
+        "ownerType",
+        "ownerId",
+        "ask",
+        "askedBy",
+        "askedAt",
+        "answer",
+        "answeredBy",
+        "answeredAt",
+        "blocks",
+        "revision",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "deliveries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "type": "number"
+          },
+          "decisionId": {
+            "type": "string"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "question",
+              "answer"
+            ],
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextAttemptAt": {
+            "type": "number"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "publishing",
+              "published",
+              "accepting",
+              "delivered",
+              "failed",
+              "uncertain",
+              "superseded"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "decisionId",
+          "kind",
+          "revision",
+          "status",
+          "attempts",
+          "nextAttemptAt",
+          "lastError",
+          "deliveredAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "decision",
+    "deliveries"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `decisions.ask`. */
+export const DecisionsAskInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "ask": {
+      "description": "Explicit question",
+      "type": "string"
+    },
+    "blocks": {
+      "description": "Blocks work; a human-owned task decision derives parked",
+      "type": "boolean"
+    },
+    "execute": {
+      "description": "Required for a thread: publishes the question",
+      "type": "boolean"
+    },
+    "key": {
+      "description": "Stable question key within the origin",
+      "type": "string"
+    },
+    "owner": {
+      "description": "human:<contact>|agent:<id>|unassigned; ownership is not approval authority",
+      "type": "string"
+    },
+    "task": {
+      "description": "Originating task",
+      "type": "string"
+    },
+    "thread": {
+      "description": "Managed thread child session or lifecycle id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `decisions.ask`. */
+export const DecisionsAskReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "decision": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ask": {
+          "type": "string"
+        },
+        "askedAt": {
+          "type": "number"
+        },
+        "askedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocks": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "origin": {
+          "additionalProperties": false,
+          "properties": {
+            "chatId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "sessionKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "task",
+                "thread"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "chatId",
+            "sessionKey"
+          ],
+          "type": "object"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerType": {
+          "enum": [
+            "human",
+            "agent",
+            "unassigned"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "type": "number"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "superseded"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "origin",
+        "key",
+        "status",
+        "ownerType",
+        "ownerId",
+        "ask",
+        "askedBy",
+        "askedAt",
+        "answer",
+        "answeredBy",
+        "answeredAt",
+        "blocks",
+        "revision",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "deliveries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "type": "number"
+          },
+          "decisionId": {
+            "type": "string"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "question",
+              "answer"
+            ],
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextAttemptAt": {
+            "type": "number"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "publishing",
+              "published",
+              "accepting",
+              "delivered",
+              "failed",
+              "uncertain",
+              "superseded"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "decisionId",
+          "kind",
+          "revision",
+          "status",
+          "attempts",
+          "nextAttemptAt",
+          "lastError",
+          "deliveredAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "decision",
+    "deliveries"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `decisions.list`. */
+export const DecisionsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "all": {
+      "description": "Include answered history",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default 50, maximum 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Page offset",
+      "type": "string"
+    },
+    "task": {
+      "description": "Filter to a task",
+      "type": "string"
+    },
+    "thread": {
+      "description": "Filter to a thread",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `decisions.list`. */
+export const DecisionsListReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "decisions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "answeredAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "answeredBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ask": {
+            "type": "string"
+          },
+          "askedAt": {
+            "type": "number"
+          },
+          "askedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "blocks": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "origin": {
+            "additionalProperties": false,
+            "properties": {
+              "chatId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "sessionKey": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": {
+                "enum": [
+                  "task",
+                  "thread"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "id",
+              "chatId",
+              "sessionKey"
+            ],
+            "type": "object"
+          },
+          "ownerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ownerType": {
+            "enum": [
+              "human",
+              "agent",
+              "unassigned"
+            ],
+            "type": "string"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "answered",
+              "superseded"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "origin",
+          "key",
+          "status",
+          "ownerType",
+          "ownerId",
+          "ask",
+          "askedBy",
+          "askedAt",
+          "answer",
+          "answeredBy",
+          "answeredAt",
+          "blocks",
+          "revision",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "decisions",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `decisions.resolve-delivery`. */
+export const DecisionsResolveDeliveryInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "evidence": {
+      "description": "Trace reference and finding; stored in audit history",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Record the resolution; not_received makes delivery retryable",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Decision id with uncertain answer delivery",
+      "type": "string"
+    },
+    "outcome": {
+      "description": "received or not_received, established by operator inspection",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `decisions.resolve-delivery`. */
+export const DecisionsResolveDeliveryReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "decision": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ask": {
+          "type": "string"
+        },
+        "askedAt": {
+          "type": "number"
+        },
+        "askedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocks": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "origin": {
+          "additionalProperties": false,
+          "properties": {
+            "chatId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "sessionKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "task",
+                "thread"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "chatId",
+            "sessionKey"
+          ],
+          "type": "object"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerType": {
+          "enum": [
+            "human",
+            "agent",
+            "unassigned"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "type": "number"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "superseded"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "origin",
+        "key",
+        "status",
+        "ownerType",
+        "ownerId",
+        "ask",
+        "askedBy",
+        "askedAt",
+        "answer",
+        "answeredBy",
+        "answeredAt",
+        "blocks",
+        "revision",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "deliveries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "type": "number"
+          },
+          "decisionId": {
+            "type": "string"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "question",
+              "answer"
+            ],
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextAttemptAt": {
+            "type": "number"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "publishing",
+              "published",
+              "accepting",
+              "delivered",
+              "failed",
+              "uncertain",
+              "superseded"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "decisionId",
+          "kind",
+          "revision",
+          "status",
+          "attempts",
+          "nextAttemptAt",
+          "lastError",
+          "deliveredAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "decision",
+    "deliveries"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `decisions.retry`. */
+export const DecisionsRetryInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "execute": {
+      "description": "Actually retry publication",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Decision id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `decisions.retry`. */
+export const DecisionsRetryReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "decision": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ask": {
+          "type": "string"
+        },
+        "askedAt": {
+          "type": "number"
+        },
+        "askedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocks": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "origin": {
+          "additionalProperties": false,
+          "properties": {
+            "chatId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "sessionKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "task",
+                "thread"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "chatId",
+            "sessionKey"
+          ],
+          "type": "object"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerType": {
+          "enum": [
+            "human",
+            "agent",
+            "unassigned"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "type": "number"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "superseded"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "origin",
+        "key",
+        "status",
+        "ownerType",
+        "ownerId",
+        "ask",
+        "askedBy",
+        "askedAt",
+        "answer",
+        "answeredBy",
+        "answeredAt",
+        "blocks",
+        "revision",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "deliveries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "type": "number"
+          },
+          "decisionId": {
+            "type": "string"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "question",
+              "answer"
+            ],
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextAttemptAt": {
+            "type": "number"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "publishing",
+              "published",
+              "accepting",
+              "delivered",
+              "failed",
+              "uncertain",
+              "superseded"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "decisionId",
+          "kind",
+          "revision",
+          "status",
+          "attempts",
+          "nextAttemptAt",
+          "lastError",
+          "deliveredAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "decision",
+    "deliveries"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `decisions.show`. */
+export const DecisionsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Decision id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `decisions.show`. */
+export const DecisionsShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "type": "boolean"
+    },
+    "decision": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answeredBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ask": {
+          "type": "string"
+        },
+        "askedAt": {
+          "type": "number"
+        },
+        "askedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocks": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "origin": {
+          "additionalProperties": false,
+          "properties": {
+            "chatId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "sessionKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "task",
+                "thread"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "chatId",
+            "sessionKey"
+          ],
+          "type": "object"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownerType": {
+          "enum": [
+            "human",
+            "agent",
+            "unassigned"
+          ],
+          "type": "string"
+        },
+        "revision": {
+          "type": "number"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "superseded"
+          ],
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "origin",
+        "key",
+        "status",
+        "ownerType",
+        "ownerId",
+        "ask",
+        "askedBy",
+        "askedAt",
+        "answer",
+        "answeredBy",
+        "answeredAt",
+        "blocks",
+        "revision",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "deliveries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "type": "number"
+          },
+          "decisionId": {
+            "type": "string"
+          },
+          "deliveredAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "question",
+              "answer"
+            ],
+            "type": "string"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextAttemptAt": {
+            "type": "number"
+          },
+          "revision": {
+            "type": "number"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "publishing",
+              "published",
+              "accepting",
+              "delivered",
+              "failed",
+              "uncertain",
+              "superseded"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "decisionId",
+          "kind",
+          "revision",
+          "status",
+          "attempts",
+          "nextAttemptAt",
+          "lastError",
+          "deliveredAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "history": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "id": {
+            "type": "number"
+          },
+          "snapshot": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "actor",
+          "snapshot",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "decision",
+    "deliveries",
+    "history"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -71949,6 +91843,114 @@ export const PagesPublishReturnSchema = {
       },
       "type": "array"
     },
+    "scope": {
+      "additionalProperties": false,
+      "properties": {
+        "consoleUrl": {
+          "type": "string"
+        },
+        "organization": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "slug": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "project": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ref": {
+                  "type": "string"
+                },
+                "slug": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "ref"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "consoleUrl",
+        "source"
+      ],
+      "type": "object"
+    },
     "site": {
       "$ref": "#/$defs/__schema0"
     },
@@ -72012,7 +92014,8 @@ export const PagesPublishReturnSchema = {
     "release",
     "routes",
     "url",
-    "localSync"
+    "localSync",
+    "scope"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -75333,6 +95336,181 @@ export const PermissionsStatusReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `pr.publish`. */
+export const PrPublishInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "base": {
+      "description": "Required existing target branch",
+      "type": "string"
+    },
+    "bodyFile": {
+      "description": "UTF-8 PR description, relative to caller cwd; required for a new PR",
+      "type": "string"
+    },
+    "dryRun": {
+      "description": "Preview only; also the default without --execute (exit 3)",
+      "type": "boolean"
+    },
+    "execute": {
+      "description": "Publish externally and reconcile CI follow",
+      "type": "boolean"
+    },
+    "expectSha": {
+      "description": "Require this full local commit SHA (default: capture HEAD)",
+      "type": "string"
+    },
+    "replySession": {
+      "description": "From a terminal: the session whose chat receives the CI follow. In a session it must be that session. Grants no authority",
+      "type": "string"
+    },
+    "repo": {
+      "description": "Required github.com destination; must match origin",
+      "type": "string"
+    },
+    "title": {
+      "description": "Required for a new PR; existing PR text is preserved",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `pr.publish`. */
+export const PrPublishReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "attemptId": {
+      "type": "string"
+    },
+    "base": {
+      "maxLength": 255,
+      "minLength": 1,
+      "pattern": "^[^\\s\\x00-\\x1f~^:?*[\\\\]+$",
+      "type": "string"
+    },
+    "checks": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "success",
+            "failure"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "count"
+      ],
+      "type": "object"
+    },
+    "follow": {
+      "additionalProperties": false,
+      "properties": {
+        "ciWatchId": {
+          "type": "string"
+        },
+        "replySession": {
+          "type": "string"
+        },
+        "triggerId": {
+          "type": "string"
+        },
+        "verifiedAt": {
+          "type": "string"
+        },
+        "watchId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "watchId",
+        "ciWatchId",
+        "triggerId",
+        "replySession",
+        "verifiedAt"
+      ],
+      "type": "object"
+    },
+    "head": {
+      "maxLength": 255,
+      "minLength": 1,
+      "pattern": "^[^\\s\\x00-\\x1f~^:?*[\\\\]+$",
+      "type": "string"
+    },
+    "localSha": {
+      "pattern": "^[a-f0-9]{40}$",
+      "type": "string"
+    },
+    "pr": {
+      "additionalProperties": false,
+      "properties": {
+        "number": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "ready": {
+          "const": true,
+          "type": "boolean"
+        },
+        "reused": {
+          "type": "boolean"
+        },
+        "url": {
+          "format": "uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "number",
+        "url",
+        "reused",
+        "ready"
+      ],
+      "type": "object"
+    },
+    "publicationId": {
+      "type": "string"
+    },
+    "remoteSha": {
+      "pattern": "^[a-f0-9]{40}$",
+      "type": "string"
+    },
+    "repo": {
+      "maxLength": 200,
+      "pattern": "^[A-Za-z0-9_.-]+\\/[A-Za-z0-9_.-]+$",
+      "type": "string"
+    },
+    "treeSha": {
+      "pattern": "^[a-f0-9]{40}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "publicationId",
+    "attemptId",
+    "repo",
+    "base",
+    "head",
+    "localSha",
+    "remoteSha",
+    "treeSha",
+    "pr",
+    "follow",
+    "checks"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `projects.create`. */
 export const ProjectsCreateInputSchema = {
   "additionalProperties": false,
@@ -77923,6 +98101,14 @@ export const RuntimeCredentialsStatusReturnSchema = {
       "properties": {},
       "type": "object"
     },
+    "credentials": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
     "health": {
       "anyOf": [
         {
@@ -77934,12 +98120,69 @@ export const RuntimeCredentialsStatusReturnSchema = {
           "type": "null"
         }
       ]
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "providerHealth": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
     }
   },
-  "required": [
-    "credential",
-    "health"
-  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -78086,6 +98329,12 @@ export const RuntimeEnvSetReturnSchema = {
           "type": "null"
         }
       ]
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -78168,6 +98417,12 @@ export const RuntimeEnvUnsetReturnSchema = {
           "type": "null"
         }
       ]
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [
@@ -79467,6 +99722,12 @@ export const RuntimeProvidersClaudeConfigureReturnSchema = {
               "type": "null"
             }
           ]
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -82312,10 +102573,1530 @@ export const SessionsCloseThreadReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `sessions.conversations.agents`. */
+export const SessionsConversationsAgentsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "createdAt": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "projectId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "requestId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "createdAt",
+    "projectId",
+    "requestId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.conversations.agents`. */
+export const SessionsConversationsAgentsReturnSchema = {
+  "items": {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "name"
+    ],
+    "type": "object"
+  },
+  "type": "array"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.conversations.cancel`. */
+export const SessionsConversationsCancelInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "conversationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "createdAt": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "projectId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "requestId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "turnId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "conversationId",
+    "createdAt",
+    "projectId",
+    "requestId",
+    "turnId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.conversations.cancel`. */
+export const SessionsConversationsCancelReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "cancelRequested": {
+      "type": "boolean"
+    },
+    "conversationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "queued",
+        "running",
+        "awaiting_approval",
+        "completed",
+        "failed",
+        "cancelled",
+        "authorization_expired",
+        "interrupted_unknown"
+      ],
+      "type": "string"
+    },
+    "turnId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "conversationId",
+    "turnId",
+    "cancelRequested",
+    "status"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.conversations.create`. */
+export const SessionsConversationsCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "pattern": "^[a-zA-Z0-9_-]{1,80}$",
+      "type": "string"
+    },
+    "createdAt": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "projectId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "requestId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agentId",
+    "createdAt",
+    "projectId",
+    "requestId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.conversations.create`. */
+export const SessionsConversationsCreateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "conversation": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "agentId",
+        "title",
+        "version",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "conversationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "conversationId",
+    "conversation"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.conversations.decide`. */
+export const SessionsConversationsDecideInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "actionDigest": {
+      "maxLength": 64,
+      "minLength": 64,
+      "type": "string"
+    },
+    "approvalId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "conversationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "createdAt": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "decision": {
+      "enum": [
+        "approve",
+        "reject"
+      ],
+      "type": "string"
+    },
+    "expectedVersion": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "projectId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "requestId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "actionDigest",
+    "approvalId",
+    "conversationId",
+    "createdAt",
+    "decision",
+    "expectedVersion",
+    "projectId",
+    "requestId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.conversations.decide`. */
+export const SessionsConversationsDecideReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "approvalId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "conversationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "approved",
+        "rejected"
+      ],
+      "type": "string"
+    },
+    "version": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "conversationId",
+    "approvalId",
+    "state",
+    "version"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.conversations.events`. */
+export const SessionsConversationsEventsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "conversationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "createdAt": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "cursor": {
+      "anyOf": [
+        {
+          "maxLength": 1500,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "projectId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "requestId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "conversationId",
+    "createdAt",
+    "cursor",
+    "projectId",
+    "requestId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.conversations.events`. */
+export const SessionsConversationsEventsReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "cursor": {
+      "type": "string"
+    },
+    "events": {
+      "items": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "type": "number"
+              },
+              "data": {
+                "additionalProperties": false,
+                "properties": {
+                  "createdAt": {
+                    "type": "number"
+                  },
+                  "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  "role": {
+                    "enum": [
+                      "user",
+                      "assistant"
+                    ],
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "turnId": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "role",
+                  "text",
+                  "turnId",
+                  "createdAt"
+                ],
+                "type": "object"
+              },
+              "sequence": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "type": {
+                "const": "message.accepted",
+                "type": "string"
+              }
+            },
+            "required": [
+              "sequence",
+              "createdAt",
+              "type",
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "type": "number"
+              },
+              "data": {
+                "additionalProperties": false,
+                "properties": {
+                  "createdAt": {
+                    "type": "number"
+                  },
+                  "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  "role": {
+                    "enum": [
+                      "user",
+                      "assistant"
+                    ],
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "turnId": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "role",
+                  "text",
+                  "turnId",
+                  "createdAt"
+                ],
+                "type": "object"
+              },
+              "sequence": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "type": {
+                "const": "message.finalized",
+                "type": "string"
+              }
+            },
+            "required": [
+              "sequence",
+              "createdAt",
+              "type",
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "type": "number"
+              },
+              "data": {
+                "additionalProperties": false,
+                "properties": {
+                  "cancelRequested": {
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "queued",
+                      "running",
+                      "awaiting_approval",
+                      "completed",
+                      "failed",
+                      "cancelled",
+                      "authorization_expired",
+                      "interrupted_unknown"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "status",
+                  "cancelRequested"
+                ],
+                "type": "object"
+              },
+              "sequence": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "type": {
+                "const": "turn.state",
+                "type": "string"
+              }
+            },
+            "required": [
+              "sequence",
+              "createdAt",
+              "type",
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "type": "number"
+              },
+              "data": {
+                "additionalProperties": false,
+                "properties": {
+                  "status": {
+                    "type": "string"
+                  },
+                  "turnId": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "turnId",
+                  "status"
+                ],
+                "type": "object"
+              },
+              "sequence": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "type": {
+                "const": "turn.activity",
+                "type": "string"
+              }
+            },
+            "required": [
+              "sequence",
+              "createdAt",
+              "type",
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "type": "number"
+              },
+              "data": {
+                "additionalProperties": false,
+                "properties": {
+                  "turnId": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "turnId"
+                ],
+                "type": "object"
+              },
+              "sequence": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "type": {
+                "const": "cancel.requested",
+                "type": "string"
+              }
+            },
+            "required": [
+              "sequence",
+              "createdAt",
+              "type",
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "type": "number"
+              },
+              "data": {
+                "additionalProperties": false,
+                "properties": {
+                  "actionDigest": {
+                    "type": "string"
+                  },
+                  "capability": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "objectId": {
+                        "type": "string"
+                      },
+                      "objectType": {
+                        "type": "string"
+                      },
+                      "permission": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "permission",
+                      "objectType",
+                      "objectId"
+                    ],
+                    "type": "object"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "expiresAt": {
+                    "type": "number"
+                  },
+                  "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  "state": {
+                    "enum": [
+                      "pending",
+                      "approved",
+                      "rejected",
+                      "expired",
+                      "invalidated"
+                    ],
+                    "type": "string"
+                  },
+                  "turnId": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "id",
+                  "turnId",
+                  "capability",
+                  "description",
+                  "actionDigest",
+                  "version",
+                  "expiresAt",
+                  "state"
+                ],
+                "type": "object"
+              },
+              "sequence": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "type": {
+                "const": "approval.opened",
+                "type": "string"
+              }
+            },
+            "required": [
+              "sequence",
+              "createdAt",
+              "type",
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "type": "number"
+              },
+              "data": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+                    "type": "string"
+                  },
+                  "state": {
+                    "enum": [
+                      "approved",
+                      "rejected",
+                      "expired",
+                      "invalidated"
+                    ],
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "id",
+                  "state"
+                ],
+                "type": "object"
+              },
+              "sequence": {
+                "maximum": 9007199254740991,
+                "minimum": -9007199254740991,
+                "type": "integer"
+              },
+              "type": {
+                "const": "approval.state",
+                "type": "string"
+              }
+            },
+            "required": [
+              "sequence",
+              "createdAt",
+              "type",
+              "data"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "events",
+    "cursor"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.conversations.history`. */
+export const SessionsConversationsHistoryInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "before": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "conversationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "createdAt": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "projectId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "requestId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "before",
+    "conversationId",
+    "createdAt",
+    "projectId",
+    "requestId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.conversations.history`. */
+export const SessionsConversationsHistoryReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "hasOlder": {
+      "type": "boolean"
+    },
+    "messages": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "turnId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "text",
+          "turnId",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "messages",
+    "hasOlder"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.conversations.list`. */
+export const SessionsConversationsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "createdAt": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "limit": {
+      "description": "Page size (default 100, max 100)",
+      "maximum": 100,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "offset": {
+      "description": "Skip authorized conversations",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "projectId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "requestId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "createdAt",
+    "projectId",
+    "requestId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.conversations.list`. */
+export const SessionsConversationsListReturnSchema = {
+  "items": {
+    "additionalProperties": false,
+    "properties": {
+      "agentId": {
+        "type": "string"
+      },
+      "id": {
+        "format": "uuid",
+        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+        "type": "string"
+      },
+      "title": {
+        "type": "string"
+      },
+      "updatedAt": {
+        "type": "number"
+      },
+      "version": {
+        "maximum": 9007199254740991,
+        "minimum": -9007199254740991,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "id",
+      "agentId",
+      "title",
+      "version",
+      "updatedAt"
+    ],
+    "type": "object"
+  },
+  "type": "array"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.conversations.open`. */
+export const SessionsConversationsOpenInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "conversationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "createdAt": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "projectId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "requestId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "conversationId",
+    "createdAt",
+    "projectId",
+    "requestId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.conversations.open`. */
+export const SessionsConversationsOpenReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "approvals": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "actionDigest": {
+            "type": "string"
+          },
+          "capability": {
+            "additionalProperties": false,
+            "properties": {
+              "objectId": {
+                "type": "string"
+              },
+              "objectType": {
+                "type": "string"
+              },
+              "permission": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "permission",
+              "objectType",
+              "objectId"
+            ],
+            "type": "object"
+          },
+          "description": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "number"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "expired",
+              "invalidated"
+            ],
+            "type": "string"
+          },
+          "turnId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "turnId",
+          "capability",
+          "description",
+          "actionDigest",
+          "version",
+          "expiresAt",
+          "state"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "conversation": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "agentId",
+        "title",
+        "version",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "cursor": {
+      "type": "string"
+    },
+    "hasOlder": {
+      "type": "boolean"
+    },
+    "messages": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "id": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "turnId": {
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "text",
+          "turnId",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "turn": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "cancelRequested": {
+              "type": "boolean"
+            },
+            "id": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "queued",
+                "running",
+                "awaiting_approval",
+                "completed",
+                "failed",
+                "cancelled",
+                "authorization_expired",
+                "interrupted_unknown"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "status",
+            "cancelRequested"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "conversation",
+    "messages",
+    "hasOlder",
+    "cursor",
+    "turn",
+    "approvals"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.conversations.receipt`. */
+export const SessionsConversationsReceiptInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "createdAt": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "projectId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "requestId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "targetRequestId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "createdAt",
+    "projectId",
+    "requestId",
+    "targetRequestId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.conversations.receipt`. */
+export const SessionsConversationsReceiptReturnSchema = {
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "conversation": {
+          "additionalProperties": false,
+          "properties": {
+            "agentId": {
+              "type": "string"
+            },
+            "id": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            },
+            "version": {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "id",
+            "agentId",
+            "title",
+            "version",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "conversationId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "conversationId",
+        "conversation"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "accepted": {
+          "const": true,
+          "type": "boolean"
+        },
+        "conversationId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "messageId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "turnId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "accepted",
+        "conversationId",
+        "messageId",
+        "turnId",
+        "version"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "cancelRequested": {
+          "type": "boolean"
+        },
+        "conversationId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "running",
+            "awaiting_approval",
+            "completed",
+            "failed",
+            "cancelled",
+            "authorization_expired",
+            "interrupted_unknown"
+          ],
+          "type": "string"
+        },
+        "turnId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "conversationId",
+        "turnId",
+        "cancelRequested",
+        "status"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "approvalId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "conversationId": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "approved",
+            "rejected"
+          ],
+          "type": "string"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "conversationId",
+        "approvalId",
+        "state",
+        "version"
+      ],
+      "type": "object"
+    }
+  ]
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.conversations.renew`. */
+export const SessionsConversationsRenewInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "conversationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "createdAt": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "projectId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "requestId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "conversationId",
+    "createdAt",
+    "projectId",
+    "requestId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.conversations.renew`. */
+export const SessionsConversationsRenewReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "conversationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "renewed": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "renewed",
+    "conversationId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.conversations.send`. */
+export const SessionsConversationsSendInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "conversationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "createdAt": {
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "expectedVersion": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "projectId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "requestId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "text": {
+      "maxLength": 16384,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "conversationId",
+    "createdAt",
+    "expectedVersion",
+    "projectId",
+    "requestId",
+    "text"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.conversations.send`. */
+export const SessionsConversationsSendReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "accepted": {
+      "const": true,
+      "type": "boolean"
+    },
+    "conversationId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "messageId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "turnId": {
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+      "type": "string"
+    },
+    "version": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "accepted",
+    "conversationId",
+    "messageId",
+    "turnId",
+    "version"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.create-thread`. */
 export const SessionsCreateThreadInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "effort": {
+      "description": "Reasoning effort for the child session: none|minimal|low|medium|high|xhigh|max|ultra",
+      "type": "string"
+    },
     "message": {
       "description": "Initial Slack message and first instruction for the child session",
       "type": "string"
@@ -82324,8 +104105,16 @@ export const SessionsCreateThreadInputSchema = {
       "description": "Optional model override for the child session",
       "type": "string"
     },
+    "provider": {
+      "description": "Runtime provider for the child (claude|codex|grok|pi); defaults to the parent's explicit provider override",
+      "type": "string"
+    },
     "session": {
       "description": "Explicit initiating session (defaults to current session)",
+      "type": "string"
+    },
+    "thinking": {
+      "description": "Thinking level for the child session: off|normal|verbose (claude and pi runtimes)",
       "type": "string"
     }
   },
@@ -82346,7 +104135,27 @@ export const SessionsCreateThreadReturnSchema = {
     "child": {
       "additionalProperties": false,
       "properties": {
+        "effortOverride": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "modelOverride": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "providerOverride": {
           "anyOf": [
             {
               "type": "string"
@@ -82359,11 +104168,24 @@ export const SessionsCreateThreadReturnSchema = {
         "status": {
           "const": "pending_root_delivery",
           "type": "string"
+        },
+        "thinkingLevel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "status",
-        "modelOverride"
+        "modelOverride",
+        "providerOverride",
+        "effortOverride",
+        "thinkingLevel"
       ],
       "type": "object"
     },
@@ -86987,6 +108809,654 @@ export const SessionsSubscriptionsReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `sessions.thread-configure`. */
+export const SessionsThreadConfigureInputSchema = {
+  "additionalProperties": false,
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "description": "Reasoning effort, or clear to remove the override",
+          "type": "string"
+        },
+        "model": {
+          "description": "Runtime model selector, or clear to remove the override",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Runtime provider id, or clear to use the agent default",
+          "type": "string"
+        },
+        "session": {
+          "description": "Explicit authorized parent (defaults to current session)",
+          "type": "string"
+        },
+        "thinking": {
+          "description": "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+          "pattern": "^\\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\\s*$",
+          "type": "string"
+        },
+        "thread": {
+          "description": "Owned thread session name, key, request id or Slack thread ts",
+          "type": "string"
+        }
+      },
+      "required": [
+        "effort",
+        "thread"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "description": "Reasoning effort, or clear to remove the override",
+          "type": "string"
+        },
+        "model": {
+          "description": "Runtime model selector, or clear to remove the override",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Runtime provider id, or clear to use the agent default",
+          "type": "string"
+        },
+        "session": {
+          "description": "Explicit authorized parent (defaults to current session)",
+          "type": "string"
+        },
+        "thinking": {
+          "description": "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+          "pattern": "^\\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\\s*$",
+          "type": "string"
+        },
+        "thread": {
+          "description": "Owned thread session name, key, request id or Slack thread ts",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "thread"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "description": "Reasoning effort, or clear to remove the override",
+          "type": "string"
+        },
+        "model": {
+          "description": "Runtime model selector, or clear to remove the override",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Runtime provider id, or clear to use the agent default",
+          "type": "string"
+        },
+        "session": {
+          "description": "Explicit authorized parent (defaults to current session)",
+          "type": "string"
+        },
+        "thinking": {
+          "description": "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+          "pattern": "^\\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\\s*$",
+          "type": "string"
+        },
+        "thread": {
+          "description": "Owned thread session name, key, request id or Slack thread ts",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "thread"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "description": "Reasoning effort, or clear to remove the override",
+          "type": "string"
+        },
+        "model": {
+          "description": "Runtime model selector, or clear to remove the override",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Runtime provider id, or clear to use the agent default",
+          "type": "string"
+        },
+        "session": {
+          "description": "Explicit authorized parent (defaults to current session)",
+          "type": "string"
+        },
+        "thinking": {
+          "description": "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+          "pattern": "^\\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\\s*$",
+          "type": "string"
+        },
+        "thread": {
+          "description": "Owned thread session name, key, request id or Slack thread ts",
+          "type": "string"
+        }
+      },
+      "required": [
+        "thinking",
+        "thread"
+      ],
+      "type": "object"
+    }
+  ],
+  "properties": {
+    "effort": {
+      "description": "Reasoning effort, or clear to remove the override",
+      "type": "string"
+    },
+    "model": {
+      "description": "Runtime model selector, or clear to remove the override",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Runtime provider id, or clear to use the agent default",
+      "type": "string"
+    },
+    "session": {
+      "description": "Explicit authorized parent (defaults to current session)",
+      "type": "string"
+    },
+    "thinking": {
+      "description": "Thinking level (off|normal|verbose|clear); case-insensitive with surrounding whitespace ignored",
+      "pattern": "^\\s*(?:[oO][fF][fF]|[nN][oO][rR][mM][aA][lL]|[vV][eE][rR][bB][oO][sS][eE]|[cC][lL][eE][aA][rR])\\s*$",
+      "type": "string"
+    },
+    "thread": {
+      "description": "Owned thread session name, key, request id or Slack thread ts",
+      "type": "string"
+    }
+  },
+  "required": [
+    "thread"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.thread-configure`. */
+export const SessionsThreadConfigureReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "actionId": {
+      "const": "thread.configure",
+      "type": "string"
+    },
+    "after": {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thinking": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "effort",
+        "thinking"
+      ],
+      "type": "object"
+    },
+    "appliesOn": {
+      "const": "next-turn",
+      "type": "string"
+    },
+    "before": {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thinking": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "effort",
+        "thinking"
+      ],
+      "type": "object"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "status": {
+      "const": "configured",
+      "type": "string"
+    },
+    "thread": {
+      "additionalProperties": false,
+      "properties": {
+        "childSessionKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "childSessionMissing": {
+          "type": "boolean"
+        },
+        "childSessionName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "link": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "openDecisionCount": {
+          "type": "number"
+        },
+        "parentReturn": {
+          "additionalProperties": false,
+          "properties": {
+            "pending": {
+              "type": "boolean"
+            },
+            "requested": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "requested",
+            "pending"
+          ],
+          "type": "object"
+        },
+        "pendingAnswerCount": {
+          "type": "number"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "runtime": {
+          "additionalProperties": false,
+          "properties": {
+            "effort": {
+              "type": "string"
+            },
+            "effortSource": {
+              "type": "string"
+            },
+            "model": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modelSource": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "provider": {
+              "type": "string"
+            },
+            "providerSource": {
+              "type": "string"
+            },
+            "requested": {
+              "additionalProperties": false,
+              "properties": {
+                "effort": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "model": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "provider": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "thinking": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "provider",
+                "model",
+                "effort",
+                "thinking"
+              ],
+              "type": "object"
+            },
+            "thinking": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "thinkingSource": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "provider",
+            "providerSource",
+            "model",
+            "modelSource",
+            "effort",
+            "effortSource",
+            "thinking",
+            "thinkingSource",
+            "requested"
+          ],
+          "type": "object"
+        },
+        "slackThreadTs": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "enum": [
+            "action",
+            "inbound"
+          ],
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "queued",
+            "root_delivered",
+            "starting",
+            "open",
+            "closed",
+            "failed"
+          ],
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "turnHealth": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "checkedAt": {
+                  "type": "number"
+                },
+                "lastSignalAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "reason": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "no_signal",
+                        "no_reply",
+                        "owner_lost",
+                        "failed"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "since": {
+                  "type": "number"
+                },
+                "state": {
+                  "enum": [
+                    "idle",
+                    "running",
+                    "interrupted",
+                    "attention",
+                    "closed"
+                  ],
+                  "type": "string"
+                },
+                "turnId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "turnId",
+                "state",
+                "reason",
+                "since",
+                "lastSignalAt",
+                "checkedAt"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "uncertainAnswerCount": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "requestId",
+        "title",
+        "status",
+        "source",
+        "childSessionKey",
+        "childSessionName",
+        "childSessionMissing",
+        "openDecisionCount",
+        "pendingAnswerCount",
+        "uncertainAnswerCount",
+        "slackThreadTs",
+        "link",
+        "runtime",
+        "createdAt",
+        "updatedAt",
+        "closedAt",
+        "parentReturn"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "actionId",
+    "changed",
+    "appliesOn",
+    "thread",
+    "before",
+    "after"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.thread-send`. */
 export const SessionsThreadSendInputSchema = {
   "additionalProperties": false,
@@ -87045,6 +109515,9 @@ export const SessionsThreadSendReturnSchema = {
             }
           ]
         },
+        "childSessionMissing": {
+          "type": "boolean"
+        },
         "childSessionName": {
           "anyOf": [
             {
@@ -87078,6 +109551,9 @@ export const SessionsThreadSendReturnSchema = {
             }
           ]
         },
+        "openDecisionCount": {
+          "type": "number"
+        },
         "parentReturn": {
           "additionalProperties": false,
           "properties": {
@@ -87094,8 +109570,132 @@ export const SessionsThreadSendReturnSchema = {
           ],
           "type": "object"
         },
+        "pendingAnswerCount": {
+          "type": "number"
+        },
         "requestId": {
           "type": "string"
+        },
+        "runtime": {
+          "additionalProperties": false,
+          "properties": {
+            "effort": {
+              "type": "string"
+            },
+            "effortSource": {
+              "type": "string"
+            },
+            "model": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "modelSource": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "provider": {
+              "type": "string"
+            },
+            "providerSource": {
+              "type": "string"
+            },
+            "requested": {
+              "additionalProperties": false,
+              "properties": {
+                "effort": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "model": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "provider": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "thinking": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "provider",
+                "model",
+                "effort",
+                "thinking"
+              ],
+              "type": "object"
+            },
+            "thinking": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "thinkingSource": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "provider",
+            "providerSource",
+            "model",
+            "modelSource",
+            "effort",
+            "effortSource",
+            "thinking",
+            "thinkingSource",
+            "requested"
+          ],
+          "type": "object"
         },
         "slackThreadTs": {
           "anyOf": [
@@ -87135,6 +109735,82 @@ export const SessionsThreadSendReturnSchema = {
             }
           ]
         },
+        "turnHealth": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "checkedAt": {
+                  "type": "number"
+                },
+                "lastSignalAt": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "reason": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "no_signal",
+                        "no_reply",
+                        "owner_lost",
+                        "failed"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "since": {
+                  "type": "number"
+                },
+                "state": {
+                  "enum": [
+                    "idle",
+                    "running",
+                    "interrupted",
+                    "attention",
+                    "closed"
+                  ],
+                  "type": "string"
+                },
+                "turnId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "turnId",
+                "state",
+                "reason",
+                "since",
+                "lastSignalAt",
+                "checkedAt"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "uncertainAnswerCount": {
+          "type": "number"
+        },
         "updatedAt": {
           "type": "number"
         }
@@ -87146,8 +109822,13 @@ export const SessionsThreadSendReturnSchema = {
         "source",
         "childSessionKey",
         "childSessionName",
+        "childSessionMissing",
+        "openDecisionCount",
+        "pendingAnswerCount",
+        "uncertainAnswerCount",
         "slackThreadTs",
         "link",
+        "runtime",
         "createdAt",
         "updatedAt",
         "closedAt",
@@ -87220,6 +109901,9 @@ export const SessionsThreadsReturnSchema = {
               }
             ]
           },
+          "childSessionMissing": {
+            "type": "boolean"
+          },
           "childSessionName": {
             "anyOf": [
               {
@@ -87253,6 +109937,9 @@ export const SessionsThreadsReturnSchema = {
               }
             ]
           },
+          "openDecisionCount": {
+            "type": "number"
+          },
           "parentReturn": {
             "additionalProperties": false,
             "properties": {
@@ -87269,8 +109956,132 @@ export const SessionsThreadsReturnSchema = {
             ],
             "type": "object"
           },
+          "pendingAnswerCount": {
+            "type": "number"
+          },
           "requestId": {
             "type": "string"
+          },
+          "runtime": {
+            "additionalProperties": false,
+            "properties": {
+              "effort": {
+                "type": "string"
+              },
+              "effortSource": {
+                "type": "string"
+              },
+              "model": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "modelSource": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "provider": {
+                "type": "string"
+              },
+              "providerSource": {
+                "type": "string"
+              },
+              "requested": {
+                "additionalProperties": false,
+                "properties": {
+                  "effort": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "model": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "provider": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "thinking": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model",
+                  "effort",
+                  "thinking"
+                ],
+                "type": "object"
+              },
+              "thinking": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "thinkingSource": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "provider",
+              "providerSource",
+              "model",
+              "modelSource",
+              "effort",
+              "effortSource",
+              "thinking",
+              "thinkingSource",
+              "requested"
+            ],
+            "type": "object"
           },
           "slackThreadTs": {
             "anyOf": [
@@ -87310,6 +110121,82 @@ export const SessionsThreadsReturnSchema = {
               }
             ]
           },
+          "turnHealth": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "checkedAt": {
+                    "type": "number"
+                  },
+                  "lastSignalAt": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "reason": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "no_signal",
+                          "no_reply",
+                          "owner_lost",
+                          "failed"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "since": {
+                    "type": "number"
+                  },
+                  "state": {
+                    "enum": [
+                      "idle",
+                      "running",
+                      "interrupted",
+                      "attention",
+                      "closed"
+                    ],
+                    "type": "string"
+                  },
+                  "turnId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "turnId",
+                  "state",
+                  "reason",
+                  "since",
+                  "lastSignalAt",
+                  "checkedAt"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "uncertainAnswerCount": {
+            "type": "number"
+          },
           "updatedAt": {
             "type": "number"
           }
@@ -87321,8 +110208,13 @@ export const SessionsThreadsReturnSchema = {
           "source",
           "childSessionKey",
           "childSessionName",
+          "childSessionMissing",
+          "openDecisionCount",
+          "pendingAnswerCount",
+          "uncertainAnswerCount",
           "slackThreadTs",
           "link",
+          "runtime",
           "createdAt",
           "updatedAt",
           "closedAt",
@@ -87412,6 +110304,359 @@ export const SessionsTraceInputSchema = {
 export const SessionsTraceReturnSchema = {
   "additionalProperties": {},
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.update`. */
+export const SessionsUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "effort": {
+      "description": "Reasoning effort (none|minimal|low|medium|high|xhigh|max|ultra) or 'clear'",
+      "type": "string"
+    },
+    "model": {
+      "description": "Model id for the effective provider, or 'clear' to remove the override",
+      "type": "string"
+    },
+    "nameOrKey": {
+      "description": "Session name or key",
+      "type": "string"
+    },
+    "probeTimeout": {
+      "description": "Liveness probe timeout in seconds (default 120)",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Runtime provider (claude|codex|grok|pi) or 'clear' to remove the override",
+      "type": "string"
+    },
+    "skipProbe": {
+      "description": "Apply without the liveness probe (no rollback protection)",
+      "type": "boolean"
+    },
+    "thinking": {
+      "description": "Thinking level (off|normal|verbose) or 'clear'",
+      "type": "string"
+    }
+  },
+  "required": [
+    "nameOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.update`. */
+export const SessionsUpdateReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "update",
+      "type": "string"
+    },
+    "after": {
+      "additionalProperties": false,
+      "properties": {
+        "effortOverride": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelOverride": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtimeProviderOverride": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thinkingLevel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "runtimeProviderOverride",
+        "modelOverride",
+        "effortOverride",
+        "thinkingLevel"
+      ],
+      "type": "object"
+    },
+    "appliesOn": {
+      "const": "next-turn-runtime-restart",
+      "type": "string"
+    },
+    "before": {
+      "additionalProperties": false,
+      "properties": {
+        "effortOverride": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelOverride": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtimeProviderOverride": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thinkingLevel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "runtimeProviderOverride",
+        "modelOverride",
+        "effortOverride",
+        "thinkingLevel"
+      ],
+      "type": "object"
+    },
+    "changed": {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "type": "boolean"
+        },
+        "model": {
+          "type": "boolean"
+        },
+        "provider": {
+          "type": "boolean"
+        },
+        "thinking": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "effort",
+        "thinking"
+      ],
+      "type": "object"
+    },
+    "clearedProviderSession": {
+      "type": "boolean"
+    },
+    "effective": {
+      "additionalProperties": false,
+      "properties": {
+        "effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider": {
+          "type": "string"
+        },
+        "thinking": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "effort",
+        "thinking"
+      ],
+      "type": "object"
+    },
+    "notification": {
+      "additionalProperties": false,
+      "properties": {
+        "delivered": {
+          "type": "boolean"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "topic": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "topic",
+        "delivered",
+        "error"
+      ],
+      "type": "object"
+    },
+    "probe": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "credentialId": {
+              "type": "string"
+            },
+            "credentialLabel": {
+              "type": "string"
+            },
+            "durationMs": {
+              "type": "number"
+            },
+            "effort": {
+              "type": "string"
+            },
+            "error": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "ok": {
+              "type": "boolean"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "thinking": {
+              "type": "string"
+            },
+            "timedOut": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "ok",
+            "provider",
+            "model",
+            "durationMs"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "rematerializedToAgentRuntime": {
+      "type": "boolean"
+    },
+    "rolledBack": {
+      "type": "boolean"
+    },
+    "session": {
+      "additionalProperties": false,
+      "properties": {
+        "sessionKey": {
+          "type": "string"
+        },
+        "sessionName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "sessionKey",
+        "sessionName"
+      ],
+      "type": "object"
+    },
+    "superseded": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "action",
+    "session",
+    "changed",
+    "before",
+    "after",
+    "effective",
+    "probe",
+    "rolledBack",
+    "superseded",
+    "clearedProviderSession",
+    "rematerializedToAgentRuntime",
+    "appliesOn"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -88165,6 +111410,4611 @@ export const SettingsSetReturnSchema = {
     "target",
     "changedCount",
     "setting"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.ack`. */
+export const SignalsAckInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "by": {
+      "description": "Operator label, e.g. operator:luis (agents ack as themselves)",
+      "type": "string"
+    },
+    "idOrKey": {
+      "description": "Signal id or key",
+      "type": "string"
+    },
+    "note": {
+      "description": "Ack note",
+      "type": "string"
+    }
+  },
+  "required": [
+    "idOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.ack`. */
+export const SignalsAckReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "changed": {
+      "type": "boolean"
+    },
+    "created": {
+      "type": "boolean"
+    },
+    "reopened": {
+      "type": "boolean"
+    },
+    "signal": {
+      "additionalProperties": false,
+      "properties": {
+        "acknowledgedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acknowledgedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearSince": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearWhen": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "expr": {
+                  "type": "string"
+                },
+                "grace_ms": {
+                  "type": "number"
+                },
+                "probe": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "probe",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "probe",
+                "expr",
+                "recheck_ms",
+                "grace_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "metric",
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "type",
+                "field",
+                "op",
+                "value",
+                "recheck_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "ttl_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "producer_resolve",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "ttl_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "after_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "decay",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "after_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "owner": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "manual",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "closeReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cooldownMs": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "dedupeKey": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "escalateAfterMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "escalationCount": {
+          "type": "number"
+        },
+        "evidence": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastEvalAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastEvalError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastSeenAt": {
+          "type": "number"
+        },
+        "maxSurfaces": {
+          "type": "number"
+        },
+        "muteReason": {
+          "type": "string"
+        },
+        "mutedUntil": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "openedAt": {
+          "type": "number"
+        },
+        "previousState": {
+          "type": "string"
+        },
+        "producerClass": {
+          "type": "string"
+        },
+        "producerId": {
+          "type": "string"
+        },
+        "producerType": {
+          "type": "string"
+        },
+        "renotifyAfterMs": {
+          "type": "number"
+        },
+        "reopenAfterMs": {
+          "type": "number"
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "scopeId": {
+          "type": "string"
+        },
+        "scopeType": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        },
+        "surfaceCount": {
+          "type": "number"
+        },
+        "surfacedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "targetSessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "schemaVersion",
+        "kind",
+        "producerType",
+        "producerClass",
+        "producerId",
+        "scopeType",
+        "scopeId",
+        "severity",
+        "title",
+        "clearWhen",
+        "state",
+        "cooldownMs",
+        "renotifyAfterMs",
+        "maxSurfaces",
+        "ttlMs",
+        "reopenAfterMs",
+        "surfaceCount",
+        "escalationCount",
+        "openedAt",
+        "lastSeenAt",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    },
+    "suppressed": {
+      "type": "string"
+    },
+    "updated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "status",
+    "signal"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.budget`. */
+export const SignalsBudgetInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.budget`. */
+export const SignalsBudgetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "budget": {
+      "additionalProperties": false,
+      "properties": {
+        "day": {
+          "type": "string"
+        },
+        "held": {
+          "type": "number"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "oobLimit": {
+          "type": "number"
+        },
+        "oobUsed": {
+          "type": "number"
+        },
+        "used": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "day",
+        "used",
+        "limit",
+        "held",
+        "oobUsed",
+        "oobLimit"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "budget"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.explain`. */
+export const SignalsExplainInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "idOrKey": {
+      "description": "Signal id or key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "idOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.explain`. */
+export const SignalsExplainReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "budget": {
+      "additionalProperties": false,
+      "properties": {
+        "day": {
+          "type": "string"
+        },
+        "held": {
+          "type": "number"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "oobLimit": {
+          "type": "number"
+        },
+        "oobUsed": {
+          "type": "number"
+        },
+        "used": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "day",
+        "used",
+        "limit",
+        "held",
+        "oobUsed",
+        "oobLimit"
+      ],
+      "type": "object"
+    },
+    "clearRule": {
+      "type": "string"
+    },
+    "effectiveSeverity": {
+      "type": "string"
+    },
+    "events": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "actorId": {
+            "type": "string"
+          },
+          "actorType": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "fromState": {
+            "type": "string"
+          },
+          "id": {
+            "type": "number"
+          },
+          "message": {
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "signalId": {
+            "type": "string"
+          },
+          "toState": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "signalId",
+          "type",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "keyMute": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "mutedUntil": {
+              "type": "number"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "mutedUntil"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lastEvaluation": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cleared": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fields": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "error",
+        "cleared",
+        "status"
+      ],
+      "type": "object"
+    },
+    "lastOobAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "lastSurfaceAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ledgerToday": {
+      "additionalProperties": false,
+      "properties": {
+        "failed": {
+          "type": "number"
+        },
+        "pending": {
+          "type": "number"
+        },
+        "sent": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "pending",
+        "sent",
+        "failed"
+      ],
+      "type": "object"
+    },
+    "nextSurfaceAt": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "signal": {
+      "additionalProperties": false,
+      "properties": {
+        "acknowledgedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acknowledgedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearSince": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearWhen": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "expr": {
+                  "type": "string"
+                },
+                "grace_ms": {
+                  "type": "number"
+                },
+                "probe": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "probe",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "probe",
+                "expr",
+                "recheck_ms",
+                "grace_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "metric",
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "type",
+                "field",
+                "op",
+                "value",
+                "recheck_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "ttl_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "producer_resolve",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "ttl_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "after_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "decay",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "after_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "owner": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "manual",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "closeReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cooldownMs": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "dedupeKey": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "escalateAfterMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "escalationCount": {
+          "type": "number"
+        },
+        "evidence": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastEvalAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastEvalError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastSeenAt": {
+          "type": "number"
+        },
+        "maxSurfaces": {
+          "type": "number"
+        },
+        "muteReason": {
+          "type": "string"
+        },
+        "mutedUntil": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "openedAt": {
+          "type": "number"
+        },
+        "previousState": {
+          "type": "string"
+        },
+        "producerClass": {
+          "type": "string"
+        },
+        "producerId": {
+          "type": "string"
+        },
+        "producerType": {
+          "type": "string"
+        },
+        "renotifyAfterMs": {
+          "type": "number"
+        },
+        "reopenAfterMs": {
+          "type": "number"
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "scopeId": {
+          "type": "string"
+        },
+        "scopeType": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        },
+        "surfaceCount": {
+          "type": "number"
+        },
+        "surfacedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "targetSessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "schemaVersion",
+        "kind",
+        "producerType",
+        "producerClass",
+        "producerId",
+        "scopeType",
+        "scopeId",
+        "severity",
+        "title",
+        "clearWhen",
+        "state",
+        "cooldownMs",
+        "renotifyAfterMs",
+        "maxSurfaces",
+        "ttlMs",
+        "reopenAfterMs",
+        "surfaceCount",
+        "escalationCount",
+        "openedAt",
+        "lastSeenAt",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "targetSessions": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "tick": {
+      "additionalProperties": false,
+      "properties": {
+        "lastSuccessfulTickAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "staleAfterMs": {
+          "type": "number"
+        },
+        "staleAfterSource": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "lastSuccessfulTickAt",
+        "staleAfterMs",
+        "staleAfterSource"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "signal",
+    "effectiveSeverity",
+    "targetSessions",
+    "clearRule",
+    "lastEvaluation",
+    "tick",
+    "budget",
+    "ledgerToday",
+    "lastSurfaceAt",
+    "lastOobAt",
+    "nextSurfaceAt",
+    "keyMute",
+    "events"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.list`. */
+export const SignalsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "description": "Exact key",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Max rows",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Rows to skip",
+      "type": "string"
+    },
+    "scope": {
+      "description": "install or type:id",
+      "type": "string"
+    },
+    "state": {
+      "description": "State filter or non_terminal",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.list`. */
+export const SignalsListReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "acknowledgedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "acknowledgedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clearSince": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "clearWhen": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "expr": {
+                    "type": "string"
+                  },
+                  "grace_ms": {
+                    "type": "number"
+                  },
+                  "probe": {
+                    "type": "string"
+                  },
+                  "recheck_ms": {
+                    "type": "number"
+                  },
+                  "type": {
+                    "const": "probe",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "probe",
+                  "expr",
+                  "recheck_ms",
+                  "grace_ms"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "field": {
+                    "type": "string"
+                  },
+                  "op": {
+                    "type": "string"
+                  },
+                  "recheck_ms": {
+                    "type": "number"
+                  },
+                  "type": {
+                    "const": "metric",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "type",
+                  "field",
+                  "op",
+                  "value",
+                  "recheck_ms"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "ttl_ms": {
+                    "type": "number"
+                  },
+                  "type": {
+                    "const": "producer_resolve",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "ttl_ms"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "after_ms": {
+                    "type": "number"
+                  },
+                  "type": {
+                    "const": "decay",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "after_ms"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "owner": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "manual",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "closeReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "closedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cooldownMs": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "dedupeKey": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "escalateAfterMs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "escalationCount": {
+            "type": "number"
+          },
+          "evidence": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lastEvalAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastEvalError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastSeenAt": {
+            "type": "number"
+          },
+          "maxSurfaces": {
+            "type": "number"
+          },
+          "muteReason": {
+            "type": "string"
+          },
+          "mutedUntil": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "openedAt": {
+            "type": "number"
+          },
+          "previousState": {
+            "type": "string"
+          },
+          "producerClass": {
+            "type": "string"
+          },
+          "producerId": {
+            "type": "string"
+          },
+          "producerType": {
+            "type": "string"
+          },
+          "renotifyAfterMs": {
+            "type": "number"
+          },
+          "reopenAfterMs": {
+            "type": "number"
+          },
+          "schemaVersion": {
+            "type": "number"
+          },
+          "scopeId": {
+            "type": "string"
+          },
+          "scopeType": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectType": {
+            "type": "string"
+          },
+          "surfaceCount": {
+            "type": "number"
+          },
+          "surfacedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "targetSessions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          },
+          "ttlMs": {
+            "type": "number"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "schemaVersion",
+          "kind",
+          "producerType",
+          "producerClass",
+          "producerId",
+          "scopeType",
+          "scopeId",
+          "severity",
+          "title",
+          "clearWhen",
+          "state",
+          "cooldownMs",
+          "renotifyAfterMs",
+          "maxSurfaces",
+          "ttlMs",
+          "reopenAfterMs",
+          "surfaceCount",
+          "escalationCount",
+          "openedAt",
+          "lastSeenAt",
+          "version",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.mute`. */
+export const SignalsMuteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "by": {
+      "description": "Actor",
+      "type": "string"
+    },
+    "for": {
+      "description": "Mute duration",
+      "type": "string"
+    },
+    "idOrKey": {
+      "description": "Signal id or key",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Mute reason",
+      "type": "string"
+    }
+  },
+  "required": [
+    "idOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.mute`. */
+export const SignalsMuteReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "changed": {
+      "type": "boolean"
+    },
+    "created": {
+      "type": "boolean"
+    },
+    "reopened": {
+      "type": "boolean"
+    },
+    "signal": {
+      "additionalProperties": false,
+      "properties": {
+        "acknowledgedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acknowledgedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearSince": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearWhen": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "expr": {
+                  "type": "string"
+                },
+                "grace_ms": {
+                  "type": "number"
+                },
+                "probe": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "probe",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "probe",
+                "expr",
+                "recheck_ms",
+                "grace_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "metric",
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "type",
+                "field",
+                "op",
+                "value",
+                "recheck_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "ttl_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "producer_resolve",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "ttl_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "after_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "decay",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "after_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "owner": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "manual",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "closeReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cooldownMs": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "dedupeKey": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "escalateAfterMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "escalationCount": {
+          "type": "number"
+        },
+        "evidence": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastEvalAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastEvalError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastSeenAt": {
+          "type": "number"
+        },
+        "maxSurfaces": {
+          "type": "number"
+        },
+        "muteReason": {
+          "type": "string"
+        },
+        "mutedUntil": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "openedAt": {
+          "type": "number"
+        },
+        "previousState": {
+          "type": "string"
+        },
+        "producerClass": {
+          "type": "string"
+        },
+        "producerId": {
+          "type": "string"
+        },
+        "producerType": {
+          "type": "string"
+        },
+        "renotifyAfterMs": {
+          "type": "number"
+        },
+        "reopenAfterMs": {
+          "type": "number"
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "scopeId": {
+          "type": "string"
+        },
+        "scopeType": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        },
+        "surfaceCount": {
+          "type": "number"
+        },
+        "surfacedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "targetSessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "schemaVersion",
+        "kind",
+        "producerType",
+        "producerClass",
+        "producerId",
+        "scopeType",
+        "scopeId",
+        "severity",
+        "title",
+        "clearWhen",
+        "state",
+        "cooldownMs",
+        "renotifyAfterMs",
+        "maxSurfaces",
+        "ttlMs",
+        "reopenAfterMs",
+        "surfaceCount",
+        "escalationCount",
+        "openedAt",
+        "lastSeenAt",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    },
+    "suppressed": {
+      "type": "string"
+    },
+    "updated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "status",
+    "signal"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.mute-key`. */
+export const SignalsMuteKeyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "for": {
+      "description": "Mute duration",
+      "type": "string"
+    },
+    "key": {
+      "description": "Signal key",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Mute reason",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.mute-key`. */
+export const SignalsMuteKeyReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "type": "string"
+    },
+    "mutedUntil": {
+      "type": "number"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "key",
+    "mutedUntil"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.raise`. */
+export const SignalsRaiseInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "clearDecay": {
+      "description": "Judgment decay window",
+      "type": "string"
+    },
+    "clearExpr": {
+      "description": "Probe clear expression",
+      "type": "string"
+    },
+    "clearManual": {
+      "description": "Manual resolution only",
+      "type": "boolean"
+    },
+    "clearMetric": {
+      "description": "Metric clear rule, e.g. free_pct>=20",
+      "type": "string"
+    },
+    "clearProbe": {
+      "description": "Registered probe id",
+      "type": "string"
+    },
+    "clearProducerResolve": {
+      "description": "Close when the producer resolves",
+      "type": "boolean"
+    },
+    "cooldown": {
+      "description": "Minimum gap between surfaces",
+      "type": "string"
+    },
+    "dedupeKey": {
+      "description": "Producer event idempotency key",
+      "type": "string"
+    },
+    "detail": {
+      "description": "Redacted context, max 500 chars",
+      "type": "string"
+    },
+    "escalateAfter": {
+      "description": "Age before out-of-band escalation",
+      "type": "string"
+    },
+    "evidence": {
+      "description": "Structured observation JSON",
+      "type": "string"
+    },
+    "grace": {
+      "description": "Clear grace window",
+      "type": "string"
+    },
+    "key": {
+      "description": "Stable condition key, e.g. host.disk.free",
+      "type": "string"
+    },
+    "kind": {
+      "description": "Producer species",
+      "type": "string"
+    },
+    "maxSurfaces": {
+      "description": "Lifetime surface cap",
+      "type": "string"
+    },
+    "recheck": {
+      "description": "Probe recheck interval",
+      "type": "string"
+    },
+    "renotifyAfter": {
+      "description": "Re-surface gap after ack",
+      "type": "string"
+    },
+    "reopenAfter": {
+      "description": "Cooldown before the key may reopen",
+      "type": "string"
+    },
+    "scope": {
+      "description": "install or person|chat|project|agent:<id> (an agent turn defaults to agent:<its id>)",
+      "type": "string"
+    },
+    "severity": {
+      "description": "ambient|piggyback|nudge|interrupt|page",
+      "type": "string"
+    },
+    "source": {
+      "description": "Producer provenance (operator only; agents raise as themselves)",
+      "type": "string"
+    },
+    "subject": {
+      "description": "Entity the signal is about",
+      "type": "string"
+    },
+    "targetSession": {
+      "description": "Comma-separated explicit target sessions",
+      "type": "string"
+    },
+    "title": {
+      "description": "One redacted line",
+      "type": "string"
+    },
+    "ttl": {
+      "description": "Hard lifetime",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.raise`. */
+export const SignalsRaiseReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "changed": {
+      "type": "boolean"
+    },
+    "created": {
+      "type": "boolean"
+    },
+    "reopened": {
+      "type": "boolean"
+    },
+    "signal": {
+      "additionalProperties": false,
+      "properties": {
+        "acknowledgedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acknowledgedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearSince": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearWhen": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "expr": {
+                  "type": "string"
+                },
+                "grace_ms": {
+                  "type": "number"
+                },
+                "probe": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "probe",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "probe",
+                "expr",
+                "recheck_ms",
+                "grace_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "metric",
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "type",
+                "field",
+                "op",
+                "value",
+                "recheck_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "ttl_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "producer_resolve",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "ttl_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "after_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "decay",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "after_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "owner": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "manual",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "closeReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cooldownMs": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "dedupeKey": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "escalateAfterMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "escalationCount": {
+          "type": "number"
+        },
+        "evidence": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastEvalAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastEvalError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastSeenAt": {
+          "type": "number"
+        },
+        "maxSurfaces": {
+          "type": "number"
+        },
+        "muteReason": {
+          "type": "string"
+        },
+        "mutedUntil": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "openedAt": {
+          "type": "number"
+        },
+        "previousState": {
+          "type": "string"
+        },
+        "producerClass": {
+          "type": "string"
+        },
+        "producerId": {
+          "type": "string"
+        },
+        "producerType": {
+          "type": "string"
+        },
+        "renotifyAfterMs": {
+          "type": "number"
+        },
+        "reopenAfterMs": {
+          "type": "number"
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "scopeId": {
+          "type": "string"
+        },
+        "scopeType": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        },
+        "surfaceCount": {
+          "type": "number"
+        },
+        "surfacedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "targetSessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "schemaVersion",
+        "kind",
+        "producerType",
+        "producerClass",
+        "producerId",
+        "scopeType",
+        "scopeId",
+        "severity",
+        "title",
+        "clearWhen",
+        "state",
+        "cooldownMs",
+        "renotifyAfterMs",
+        "maxSurfaces",
+        "ttlMs",
+        "reopenAfterMs",
+        "surfaceCount",
+        "escalationCount",
+        "openedAt",
+        "lastSeenAt",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    },
+    "suppressed": {
+      "type": "string"
+    },
+    "updated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "status",
+    "signal"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.resolve`. */
+export const SignalsResolveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "by": {
+      "description": "Actor",
+      "type": "string"
+    },
+    "idOrKey": {
+      "description": "Signal id or key",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Resolution reason",
+      "type": "string"
+    }
+  },
+  "required": [
+    "idOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.resolve`. */
+export const SignalsResolveReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "changed": {
+      "type": "boolean"
+    },
+    "created": {
+      "type": "boolean"
+    },
+    "reopened": {
+      "type": "boolean"
+    },
+    "signal": {
+      "additionalProperties": false,
+      "properties": {
+        "acknowledgedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acknowledgedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearSince": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearWhen": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "expr": {
+                  "type": "string"
+                },
+                "grace_ms": {
+                  "type": "number"
+                },
+                "probe": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "probe",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "probe",
+                "expr",
+                "recheck_ms",
+                "grace_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "metric",
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "type",
+                "field",
+                "op",
+                "value",
+                "recheck_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "ttl_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "producer_resolve",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "ttl_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "after_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "decay",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "after_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "owner": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "manual",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "closeReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cooldownMs": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "dedupeKey": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "escalateAfterMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "escalationCount": {
+          "type": "number"
+        },
+        "evidence": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastEvalAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastEvalError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastSeenAt": {
+          "type": "number"
+        },
+        "maxSurfaces": {
+          "type": "number"
+        },
+        "muteReason": {
+          "type": "string"
+        },
+        "mutedUntil": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "openedAt": {
+          "type": "number"
+        },
+        "previousState": {
+          "type": "string"
+        },
+        "producerClass": {
+          "type": "string"
+        },
+        "producerId": {
+          "type": "string"
+        },
+        "producerType": {
+          "type": "string"
+        },
+        "renotifyAfterMs": {
+          "type": "number"
+        },
+        "reopenAfterMs": {
+          "type": "number"
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "scopeId": {
+          "type": "string"
+        },
+        "scopeType": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        },
+        "surfaceCount": {
+          "type": "number"
+        },
+        "surfacedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "targetSessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "schemaVersion",
+        "kind",
+        "producerType",
+        "producerClass",
+        "producerId",
+        "scopeType",
+        "scopeId",
+        "severity",
+        "title",
+        "clearWhen",
+        "state",
+        "cooldownMs",
+        "renotifyAfterMs",
+        "maxSurfaces",
+        "ttlMs",
+        "reopenAfterMs",
+        "surfaceCount",
+        "escalationCount",
+        "openedAt",
+        "lastSeenAt",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    },
+    "suppressed": {
+      "type": "string"
+    },
+    "updated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "status",
+    "signal"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.show`. */
+export const SignalsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "idOrKey": {
+      "description": "Signal id or key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "idOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.show`. */
+export const SignalsShowReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "signal": {
+      "additionalProperties": false,
+      "properties": {
+        "acknowledgedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acknowledgedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearSince": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearWhen": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "expr": {
+                  "type": "string"
+                },
+                "grace_ms": {
+                  "type": "number"
+                },
+                "probe": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "probe",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "probe",
+                "expr",
+                "recheck_ms",
+                "grace_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "metric",
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "type",
+                "field",
+                "op",
+                "value",
+                "recheck_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "ttl_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "producer_resolve",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "ttl_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "after_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "decay",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "after_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "owner": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "manual",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "closeReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cooldownMs": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "dedupeKey": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "escalateAfterMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "escalationCount": {
+          "type": "number"
+        },
+        "evidence": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastEvalAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastEvalError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastSeenAt": {
+          "type": "number"
+        },
+        "maxSurfaces": {
+          "type": "number"
+        },
+        "muteReason": {
+          "type": "string"
+        },
+        "mutedUntil": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "openedAt": {
+          "type": "number"
+        },
+        "previousState": {
+          "type": "string"
+        },
+        "producerClass": {
+          "type": "string"
+        },
+        "producerId": {
+          "type": "string"
+        },
+        "producerType": {
+          "type": "string"
+        },
+        "renotifyAfterMs": {
+          "type": "number"
+        },
+        "reopenAfterMs": {
+          "type": "number"
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "scopeId": {
+          "type": "string"
+        },
+        "scopeType": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        },
+        "surfaceCount": {
+          "type": "number"
+        },
+        "surfacedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "targetSessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "schemaVersion",
+        "kind",
+        "producerType",
+        "producerClass",
+        "producerId",
+        "scopeType",
+        "scopeId",
+        "severity",
+        "title",
+        "clearWhen",
+        "state",
+        "cooldownMs",
+        "renotifyAfterMs",
+        "maxSurfaces",
+        "ttlMs",
+        "reopenAfterMs",
+        "surfaceCount",
+        "escalationCount",
+        "openedAt",
+        "lastSeenAt",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "signal"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.tick`. */
+export const SignalsTickInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "execute": {
+      "description": "Actually evaluate, expire and deliver out-of-band signals",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.tick`. */
+export const SignalsTickReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "candidates": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "route": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "route",
+          "severity",
+          "sessionName"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "errors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "error"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "escalated": {
+      "type": "number"
+    },
+    "evaluated": {
+      "type": "number"
+    },
+    "executed": {
+      "type": "boolean"
+    },
+    "expired": {
+      "type": "number"
+    },
+    "outbox": {
+      "additionalProperties": false,
+      "properties": {
+        "failed": {
+          "type": "number"
+        },
+        "retried": {
+          "type": "number"
+        },
+        "sent": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "sent",
+        "retried",
+        "failed"
+      ],
+      "type": "object"
+    },
+    "resolved": {
+      "type": "number"
+    },
+    "skipped": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sessionName",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "tickState": {
+      "additionalProperties": false,
+      "properties": {
+        "lastSuccessfulTickAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastTickAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastTickError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "staleAfterMs": {
+          "type": "number"
+        },
+        "staleAfterSource": {
+          "type": "string"
+        },
+        "tickIntervalMs": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "lastSuccessfulTickAt",
+        "lastTickAt",
+        "lastTickError",
+        "tickIntervalMs",
+        "staleAfterMs",
+        "staleAfterSource"
+      ],
+      "type": "object"
+    },
+    "watchers": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "raised": {
+            "type": "boolean"
+          },
+          "resolved": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "raised",
+          "resolved"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "executed",
+    "evaluated",
+    "resolved",
+    "expired",
+    "escalated",
+    "errors",
+    "candidates",
+    "skipped",
+    "outbox",
+    "tickState",
+    "watchers"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.unmute`. */
+export const SignalsUnmuteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "idOrKey": {
+      "description": "Signal id or key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "idOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.unmute`. */
+export const SignalsUnmuteReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "changed": {
+      "type": "boolean"
+    },
+    "created": {
+      "type": "boolean"
+    },
+    "reopened": {
+      "type": "boolean"
+    },
+    "signal": {
+      "additionalProperties": false,
+      "properties": {
+        "acknowledgedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acknowledgedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearSince": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearWhen": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "expr": {
+                  "type": "string"
+                },
+                "grace_ms": {
+                  "type": "number"
+                },
+                "probe": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "probe",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "probe",
+                "expr",
+                "recheck_ms",
+                "grace_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "metric",
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "type",
+                "field",
+                "op",
+                "value",
+                "recheck_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "ttl_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "producer_resolve",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "ttl_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "after_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "decay",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "after_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "owner": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "manual",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "closeReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cooldownMs": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "dedupeKey": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "escalateAfterMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "escalationCount": {
+          "type": "number"
+        },
+        "evidence": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastEvalAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastEvalError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastSeenAt": {
+          "type": "number"
+        },
+        "maxSurfaces": {
+          "type": "number"
+        },
+        "muteReason": {
+          "type": "string"
+        },
+        "mutedUntil": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "openedAt": {
+          "type": "number"
+        },
+        "previousState": {
+          "type": "string"
+        },
+        "producerClass": {
+          "type": "string"
+        },
+        "producerId": {
+          "type": "string"
+        },
+        "producerType": {
+          "type": "string"
+        },
+        "renotifyAfterMs": {
+          "type": "number"
+        },
+        "reopenAfterMs": {
+          "type": "number"
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "scopeId": {
+          "type": "string"
+        },
+        "scopeType": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        },
+        "surfaceCount": {
+          "type": "number"
+        },
+        "surfacedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "targetSessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "schemaVersion",
+        "kind",
+        "producerType",
+        "producerClass",
+        "producerId",
+        "scopeType",
+        "scopeId",
+        "severity",
+        "title",
+        "clearWhen",
+        "state",
+        "cooldownMs",
+        "renotifyAfterMs",
+        "maxSurfaces",
+        "ttlMs",
+        "reopenAfterMs",
+        "surfaceCount",
+        "escalationCount",
+        "openedAt",
+        "lastSeenAt",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    },
+    "suppressed": {
+      "type": "string"
+    },
+    "updated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "status",
+    "signal"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.unmute-key`. */
+export const SignalsUnmuteKeyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "description": "Signal key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.unmute-key`. */
+export const SignalsUnmuteKeyReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "key"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `signals.update`. */
+export const SignalsUpdateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "by": {
+      "description": "Actor",
+      "type": "string"
+    },
+    "detail": {
+      "description": "New detail",
+      "type": "string"
+    },
+    "evidence": {
+      "description": "New evidence JSON",
+      "type": "string"
+    },
+    "idOrKey": {
+      "description": "Signal id or key",
+      "type": "string"
+    },
+    "severity": {
+      "description": "New severity within producer ceiling",
+      "type": "string"
+    },
+    "title": {
+      "description": "New title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "idOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `signals.update`. */
+export const SignalsUpdateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "changed": {
+      "type": "boolean"
+    },
+    "created": {
+      "type": "boolean"
+    },
+    "reopened": {
+      "type": "boolean"
+    },
+    "signal": {
+      "additionalProperties": false,
+      "properties": {
+        "acknowledgedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acknowledgedBy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearSince": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clearWhen": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "expr": {
+                  "type": "string"
+                },
+                "grace_ms": {
+                  "type": "number"
+                },
+                "probe": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "probe",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "probe",
+                "expr",
+                "recheck_ms",
+                "grace_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string"
+                },
+                "recheck_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "metric",
+                  "type": "string"
+                },
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "type",
+                "field",
+                "op",
+                "value",
+                "recheck_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "ttl_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "producer_resolve",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "ttl_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "after_ms": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "decay",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "after_ms"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "owner": {
+                  "type": "string"
+                },
+                "type": {
+                  "const": "manual",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "closeReason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "closedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cooldownMs": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "dedupeKey": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "escalateAfterMs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "escalationCount": {
+          "type": "number"
+        },
+        "evidence": {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastEvalAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastEvalError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastSeenAt": {
+          "type": "number"
+        },
+        "maxSurfaces": {
+          "type": "number"
+        },
+        "muteReason": {
+          "type": "string"
+        },
+        "mutedUntil": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "openedAt": {
+          "type": "number"
+        },
+        "previousState": {
+          "type": "string"
+        },
+        "producerClass": {
+          "type": "string"
+        },
+        "producerId": {
+          "type": "string"
+        },
+        "producerType": {
+          "type": "string"
+        },
+        "renotifyAfterMs": {
+          "type": "number"
+        },
+        "reopenAfterMs": {
+          "type": "number"
+        },
+        "schemaVersion": {
+          "type": "number"
+        },
+        "scopeId": {
+          "type": "string"
+        },
+        "scopeType": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "subjectId": {
+          "type": "string"
+        },
+        "subjectType": {
+          "type": "string"
+        },
+        "surfaceCount": {
+          "type": "number"
+        },
+        "surfacedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "targetSessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "ttlMs": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "number"
+        },
+        "version": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "key",
+        "schemaVersion",
+        "kind",
+        "producerType",
+        "producerClass",
+        "producerId",
+        "scopeType",
+        "scopeId",
+        "severity",
+        "title",
+        "clearWhen",
+        "state",
+        "cooldownMs",
+        "renotifyAfterMs",
+        "maxSurfaces",
+        "ttlMs",
+        "reopenAfterMs",
+        "surfaceCount",
+        "escalationCount",
+        "openedAt",
+        "lastSeenAt",
+        "version",
+        "createdAt",
+        "updatedAt"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    },
+    "suppressed": {
+      "type": "string"
+    },
+    "updated": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "status",
+    "signal"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -100415,6 +128265,216 @@ export const TasksArchiveReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `tasks.attention`. */
+export const TasksAttentionInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Only tasks assigned to this agent",
+      "type": "string"
+    },
+    "owner": {
+      "description": "human|agent|unassigned",
+      "type": "string"
+    },
+    "task": {
+      "description": "Only decisions of this task",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `tasks.attention`. */
+export const TasksAttentionReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "decisionCount": {
+      "type": "number"
+    },
+    "entries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "ageSeconds": {
+            "type": "number"
+          },
+          "assigneeAgentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "assigneeSessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decisionCount": {
+            "type": "number"
+          },
+          "decisions": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "ageSeconds": {
+                  "type": "number"
+                },
+                "ask": {
+                  "type": "string"
+                },
+                "askedAt": {
+                  "type": "number"
+                },
+                "askedBy": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "blocks": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "key": {
+                  "type": "string"
+                },
+                "ownerId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ownerType": {
+                  "enum": [
+                    "human",
+                    "agent",
+                    "unassigned"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "key",
+                "ask",
+                "ownerType",
+                "ownerId",
+                "askedBy",
+                "askedAt",
+                "blocks",
+                "ageSeconds"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "parked": {
+            "type": "boolean"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "taskPriority": {
+            "type": "string"
+          },
+          "taskStatus": {
+            "type": "string"
+          },
+          "taskTitle": {
+            "type": "string"
+          },
+          "waitingFor": {
+            "enum": [
+              "human",
+              "agent",
+              "unassigned"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId",
+          "taskTitle",
+          "taskStatus",
+          "taskPriority",
+          "assigneeAgentId",
+          "assigneeSessionName",
+          "parked",
+          "waitingFor",
+          "ageSeconds",
+          "decisionCount",
+          "decisions"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "filters": {
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "type": "string"
+        },
+        "ownerType": {
+          "enum": [
+            "human",
+            "agent",
+            "unassigned"
+          ],
+          "type": "string"
+        },
+        "taskId": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "generatedAt": {
+      "type": "number"
+    },
+    "kind": {
+      "const": "task.decision.attention",
+      "type": "string"
+    },
+    "parkedCount": {
+      "type": "number"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "kind",
+    "generatedAt",
+    "total",
+    "parkedCount",
+    "decisionCount",
+    "filters",
+    "entries"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `tasks.automations.add`. */
 export const TasksAutomationsAddInputSchema = {
   "additionalProperties": false,
@@ -100471,7 +128531,7 @@ export const TasksAutomationsAddInputSchema = {
       "type": "string"
     },
     "on": {
-      "description": "Comma-separated events: task.blocked,task.done,task.failed,task.child.blocked,task.child.done,task.child.failed",
+      "description": "Comma-separated events: task.blocked,task.done,task.failed,task.decision.open,task.decision.answered,task.child.blocked,task.child.done,task.child.failed",
       "type": "string"
     },
     "priority": {
@@ -100871,6 +128931,10 @@ export const TasksAutomationsShowReturnSchema = {
 export const TasksBlockInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "idempotencyKey": {
+      "description": "Apply this mutation once per key; a replay returns the previous result",
+      "type": "string"
+    },
     "reason": {
       "description": "Concrete blocker reason",
       "type": "string"
@@ -100914,6 +128978,10 @@ export const TasksCommentInputSchema = {
   "properties": {
     "body": {
       "description": "Comment body",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Apply this mutation once per key; a replay returns the previous result",
       "type": "string"
     },
     "taskId": {
@@ -100981,6 +129049,10 @@ export const TasksCreateInputSchema = {
     },
     "effort": {
       "description": "Runtime effort: none|minimal|low|medium|high|xhigh|max|ultra",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Stable creation key; retries reuse the task and its Thread",
       "type": "string"
     },
     "input": {
@@ -101380,9 +129452,17 @@ export const TasksDispatchInputSchema = {
       "description": "Agent ID to receive the task",
       "type": "string"
     },
+    "budget": {
+      "description": "With --cloud: budget of the cloud run in US dollars (0.5-200)",
+      "type": "string"
+    },
     "checkpoint": {
       "description": "Override the assignment checkpoint interval",
       "type": "string"
+    },
+    "cloud": {
+      "description": "Run it as a paid cloud run of the agent's Library definition instead of a local session",
+      "type": "boolean"
     },
     "effort": {
       "description": "Runtime effort: none|minimal|low|medium|high|xhigh|max|ultra",
@@ -101394,6 +129474,10 @@ export const TasksDispatchInputSchema = {
     },
     "model": {
       "description": "Dispatch runtime model override",
+      "type": "string"
+    },
+    "project": {
+      "description": "With --cloud: Console project of the run",
       "type": "string"
     },
     "reportEvents": {
@@ -101458,6 +129542,10 @@ export const TasksDispatchReturnSchema = {
 export const TasksDoneInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "idempotencyKey": {
+      "description": "Apply this mutation once per key; a replay returns the previous result",
+      "type": "string"
+    },
     "summary": {
       "description": "Completion summary",
       "type": "string"
@@ -101499,6 +129587,10 @@ export const TasksDoneReturnSchema = {
 export const TasksFailInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "idempotencyKey": {
+      "description": "Apply this mutation once per key; a replay returns the previous result",
+      "type": "string"
+    },
     "reason": {
       "description": "Failure reason",
       "type": "string"
@@ -101965,6 +130057,14 @@ export const TasksProfilesValidateReturnSchema = {
 export const TasksReportInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "checklist": {
+      "description": "Observer checklist as a JSON array of {\"item\": string, \"done\": boolean}",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Apply this mutation once per key; a replay returns the previous result",
+      "type": "string"
+    },
     "message": {
       "description": "Progress update message",
       "type": "string"
@@ -106575,7 +134675,11 @@ export const TriggersAddInputSchema = {
       "type": "string"
     },
     "cooldown": {
-      "description": "Cooldown between fires (e.g., 5s, 30s, 1m)",
+      "description": "Minimum gap between fires; events inside it are dropped (e.g., 30s, 1m; off to disable). Default: 5s",
+      "type": "string"
+    },
+    "debounce": {
+      "description": "Batch a burst of events into one fire, this long after the last event, carrying every event (e.g., 2s, 1m). Default: off",
       "type": "string"
     },
     "envFile": {
@@ -106970,7 +135074,7 @@ export const TriggersSetInputSchema = {
       "type": "string"
     },
     "key": {
-      "description": "Property: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, filter, replySession",
+      "description": "Property: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, debounce, filter, replySession",
       "type": "string"
     },
     "value": {

@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 // `ravi knowledge propose` (contract §13.4): a note, gap, correction or local
 // meeting transcript sent to the Console for an org member to approve in the
 // browser. The plan is built locally (no Console call) so the dry-run can show
@@ -46,6 +47,11 @@ export interface ProposalPlanDeps {
   meetingsDir?: () => string;
 }
 
+/**
+ * Validates and normalizes a proposal without sending it to the Console.
+ * Local transcript/evidence reads supply the payload; hashing that complete
+ * payload gives stable retries while separating distinct approval requests.
+ */
 export function planKnowledgeProposal(
   input: {
     kind: KnowledgeProposalKind;
@@ -93,7 +99,7 @@ export function planKnowledgeProposal(
   const supersedes = input.supersedes?.trim() || null;
   if (supersedes && !isKnownRef(supersedes)) throw usage(op, "--supersedes takes a ref such as kc:<id>.");
 
-  const plan: ConsoleProposalCreate = {
+  const proposal: Omit<ConsoleProposalCreate, "idempotencyKey"> = {
     kind,
     project,
     title,
@@ -105,8 +111,10 @@ export function planKnowledgeProposal(
       kind === "gap" && requestedAudience.kind === "contacts"
         ? sha256(requestedAudience.instanceId + foldKnowledgeText(body))
         : null,
-    idempotencyKey: sha256(kind + body + project),
   };
+  // Hash the complete payload with field boundaries: audience, evidence,
+  // supersedes and transcript title must not collide with another plan.
+  const plan: ConsoleProposalCreate = { ...proposal, idempotencyKey: sha256(JSON.stringify(proposal)) };
   return {
     plan,
     summary: {
@@ -189,8 +197,11 @@ function buildEvidence(op: string, refs: readonly string[], deps: ProposalPlanDe
     const textHash = (deps.localTextHash ?? defaultLocalTextHash)(ref);
     if (!textHash) {
       throw new ContractError(op, "KNOWLEDGE_NOT_FOUND", `Knowledge ref was not found: ${ref}.`, CONTRACT_EXIT_ERROR, {
-        retryable: false,
-        issues: [KNOWLEDGE_ISSUE_TEXT.KNOWLEDGE_NOT_FOUND as string],
+        ...errorDiagnostic(`Knowledge ref was not found: ${ref}.`, { operation: op }),
+        ...{
+          retryable: false,
+          issues: [KNOWLEDGE_ISSUE_TEXT.KNOWLEDGE_NOT_FOUND as string],
+        },
       });
     }
     return { ref, textHash };
@@ -222,5 +233,8 @@ function sha256(text: string): string {
 }
 
 function usage(op: string, message: string): ContractError {
-  return new ContractError(op, "USAGE_ERROR", message, CONTRACT_EXIT_USAGE, { retryable: false, issues: [message] });
+  return new ContractError(op, "USAGE_ERROR", message, CONTRACT_EXIT_USAGE, {
+    ...errorDiagnostic(message, { operation: op }),
+    ...{ retryable: false, issues: [message] },
+  });
 }

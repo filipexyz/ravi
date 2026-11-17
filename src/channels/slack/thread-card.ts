@@ -19,8 +19,9 @@
 
 import type { SlackBlockKitBlock } from "./block-kit.js";
 import { markdownToSlackMrkdwn } from "./mrkdwn.js";
+import { decodeLiteralLineBreaks } from "./thread-text.js";
 
-export type SlackThreadCardStatus = "open" | "closed" | "reopened";
+export type SlackThreadCardStatus = "open" | "closed" | "reopened" | "waiting";
 
 export interface SlackThreadCardState {
   readonly status: SlackThreadCardStatus;
@@ -30,6 +31,8 @@ export interface SlackThreadCardState {
   readonly updatedAt?: number;
   /** The person who asked for the thread, by name. */
   readonly requestedBy?: string;
+  /** Requested runtime shape, e.g. `codex · gpt-5.4 · high`; shown only when the caller pinned one. */
+  readonly runtime?: string;
 }
 
 export interface SlackThreadCardMessage {
@@ -39,7 +42,7 @@ export interface SlackThreadCardMessage {
   readonly blocks: readonly SlackBlockKitBlock[];
   /** The same content as classic blocks, for a workspace or client that rejects `card`. */
   readonly fallbackBlocks: readonly SlackBlockKitBlock[];
-  /** The whole brief, to post inside the thread when the card summary leaves part of it out. */
+  /** The whole brief as Markdown, to post inside the thread when the card summary leaves part of it out. */
   readonly fullBrief?: string;
 }
 
@@ -50,27 +53,33 @@ const BODY_MAX_LENGTH = 200;
 const SUBTEXT_MAX_LENGTH = 200;
 
 const STATUS_LABELS: Record<SlackThreadCardStatus, string> = {
+  waiting: ":large_yellow_circle: *Aguardando decisão*",
   open: ":large_green_circle: *Em andamento*",
   closed: ":white_check_mark: *Concluída*",
   reopened: ":arrows_counterclockwise: *Reaberta*",
 };
 
 const NOTE_LABELS: Record<SlackThreadCardStatus, string> = {
+  waiting: "Decisão pendente",
   open: "Progresso",
   closed: "Resultado",
   reopened: "Progresso",
 };
 
-export function buildSlackThreadCard(brief: string, state: SlackThreadCardState): SlackThreadCardMessage {
+export function buildSlackThreadCard(rawBrief: string, state: SlackThreadCardState): SlackThreadCardMessage {
+  // Threads opened before the CLI decoded shell-typed `\n` still store them literally.
+  const brief = decodeLiteralLineBreaks(rawBrief);
   const { title, body } = splitSlackThreadBrief(brief);
   const summary = body ? fitMrkdwn(body, BODY_MAX_LENGTH) : undefined;
   const truncated = summary !== undefined && summary.cut;
-  const note = state.note?.trim();
+  const note = state.note === undefined ? undefined : decodeLiteralLineBreaks(state.note).trim();
   const noteLabel = `*${NOTE_LABELS[state.status]}:* `;
   const noteText = note ? fitMrkdwn(note, SUBTITLE_MAX_LENGTH - noteLabel.length) : undefined;
 
   const status = [STATUS_LABELS[state.status]];
   const requestedBy = state.requestedBy?.trim();
+  const runtime = state.runtime?.trim();
+  if (runtime) status.push(`runtime ${escapeSlackText(runtime)}`);
   if (requestedBy) status.push(`pedido por ${escapeSlackText(requestedBy)}`);
   if (state.updatedAt !== undefined) status.push(slackLocalTime(state.updatedAt));
   if (truncated) status.push("instruções completas na thread");
@@ -87,9 +96,6 @@ export function buildSlackThreadCard(brief: string, state: SlackThreadCardState)
 
   const fallbackBlocks: SlackBlockKitBlock[] = [
     { type: "header", block_id: "ravi_thread_title", text: { type: "plain_text", text: title, emoji: true } },
-    ...(summary
-      ? [{ type: "section", block_id: "ravi_thread_summary", text: { type: "mrkdwn", text: summary.text } }]
-      : []),
     ...(noteText
       ? [
           {
@@ -99,14 +105,20 @@ export function buildSlackThreadCard(brief: string, state: SlackThreadCardState)
           },
         ]
       : []),
+    ...(summary
+      ? [{ type: "section", block_id: "ravi_thread_summary", text: { type: "mrkdwn", text: summary.text } }]
+      : []),
     { type: "context", block_id: "ravi_thread_status", elements: [{ type: "mrkdwn", text: statusLine }] },
   ];
 
   return {
-    text: title,
+    text:
+      state.status === "waiting"
+        ? `${title} — Aguardando decisão: ${note ? escapedWithin(note, SUBTITLE_MAX_LENGTH) : ""}`.trimEnd()
+        : title,
     blocks: [card],
     fallbackBlocks,
-    ...(truncated ? { fullBrief: `*Instruções completas*\n${markdownToSlackMrkdwn(brief.trim())}` } : {}),
+    ...(truncated ? { fullBrief: `**Instruções completas**\n\n${brief.trim()}` } : {}),
   };
 }
 

@@ -6,8 +6,22 @@
  * stdout, audit, and error envelopes.
  */
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  fsyncSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+  type Stats,
+} from "node:fs";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { getRaviStateDir } from "../utils/paths.js";
 import { describeResolvedSecretShapeMismatch } from "./credential-secret-shape.js";
 import { clearRaviEnvFileSourced, isRaviEnvFileSourced, markRaviEnvFileSourced } from "./ravi-env-file-origin.js";
@@ -76,11 +90,10 @@ export type RaviEnvMutation = RaviEnvEntry & {
   daemonReloadRequired: boolean;
 };
 
-type EnvLine =
-  | { kind: "blank"; raw: string }
-  | { kind: "comment"; raw: string }
-  | { kind: "assignment"; key: string; value: string; raw: string }
-  | { kind: "other"; raw: string };
+type EnvLine = { raw: string; ending: string; key?: string; value?: string };
+type Snapshot = { bytes: Buffer; info?: Stats };
+type Directory = { path: string; info: Stats };
+const MAX_ENV_BYTES = 1024 * 1024;
 
 export function getRaviEnvFilePath(env: NodeJS.ProcessEnv = process.env): string {
   return join(getRaviStateDir(env), ".env");
@@ -139,6 +152,12 @@ export function assertRaviEnvValue(value: string): string {
   if (value.includes("\n") || value.includes("\r") || value.includes("\u0000")) {
     throw new RaviEnvFileError("ENV_VALUE_INVALID", "Env value must not contain newlines or NUL bytes.");
   }
+  if (/[\uFEFF\u2028\u2029]/.test(value) || Buffer.from(value, "utf8").toString("utf8") !== value) {
+    throw new RaviEnvFileError(
+      "ENV_VALUE_INVALID",
+      "Env value must be valid Unicode without BOM or Unicode line separators.",
+    );
+  }
   return value;
 }
 
@@ -167,14 +186,31 @@ export function getRaviEnvKey(key: string, env: NodeJS.ProcessEnv = process.env)
 }
 
 export function setRaviEnvKey(key: string, value: string, env: NodeJS.ProcessEnv = process.env): RaviEnvMutation {
+  return putRaviEnvKey(key, value, env, false);
+}
+
+/** Add-only is checked under the same file lock as every managed set/unset. */
+export function addRaviEnvKey(key: string, value: string, env: NodeJS.ProcessEnv = process.env): RaviEnvMutation {
+  return putRaviEnvKey(key, value, env, true);
+}
+
+function putRaviEnvKey(key: string, value: string, env: NodeJS.ProcessEnv, addOnly: boolean): RaviEnvMutation {
   const normalized = assertRaviEnvKey(key);
   const nextValue = assertRaviEnvValue(value);
   assertRaviEnvSecretShape(normalized, nextValue);
-  writeRaviEnvMap(upsertEnvMap(readRaviEnvMap(env), normalized, nextValue), env);
+  mutateEnvFile(normalized, nextValue, env, addOnly);
   env[normalized] = nextValue;
   markRaviEnvFileSourced(env, normalized, nextValue, getRaviEnvFilePath(env));
+  const secret = isRaviEnvSecretKey(normalized);
   return {
-    ...getRaviEnvKey(normalized, env),
+    key: normalized,
+    present: true,
+    processPresent: false,
+    origin: "file",
+    secret,
+    redacted: secret,
+    value: secret ? "[REDACTED]" : nextValue,
+    path: getRaviEnvFilePath(env),
     action: "set",
     daemonReloadRequired: true,
   };
@@ -182,108 +218,289 @@ export function setRaviEnvKey(key: string, value: string, env: NodeJS.ProcessEnv
 
 export function unsetRaviEnvKey(key: string, env: NodeJS.ProcessEnv = process.env): RaviEnvMutation {
   const normalized = assertRaviEnvKey(key);
-  const current = readRaviEnvMap(env);
-  const fileHadKey = current.has(normalized);
+  const fileHadKey = mutateEnvFile(normalized, undefined, env, false);
   if (fileHadKey) {
-    current.delete(normalized);
-    writeRaviEnvMap(current, env);
-    if (isRaviEnvFileSourced(env, normalized, getRaviEnvFilePath(env))) {
-      delete env[normalized];
-    }
+    if (isRaviEnvFileSourced(env, normalized, getRaviEnvFilePath(env))) delete env[normalized];
     clearRaviEnvFileSourced(env, normalized);
   }
-  return {
-    ...getRaviEnvKey(normalized, env),
-    action: "unset",
-    daemonReloadRequired: fileHadKey,
-  };
+  return { ...getRaviEnvKey(normalized, env), action: "unset", daemonReloadRequired: fileHadKey };
+}
+
+function fixedError(code: string): RaviEnvFileError {
+  return new RaviEnvFileError(code, code);
+}
+
+function sameFile(a: Stats, b: Stats): boolean {
+  return a.dev === b.dev && a.ino === b.ino;
+}
+
+function infoIfExists(path: string): Stats | undefined {
+  try {
+    return lstatSync(path);
+  } catch (error) {
+    // no-cause: Only absence is recoverable; filesystem diagnostics never leave the env boundary.
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw fixedError("ENV_FILE_UNAVAILABLE");
+  }
+}
+
+function assertFile(info: Stats): void {
+  if (!info.isFile() || info.nlink !== 1 || (info.mode & 0o7777) !== ENV_FILE_MODE || info.uid !== process.getuid?.()) {
+    throw fixedError("ENV_PATH_UNSAFE");
+  }
+}
+
+/** Only local POSIX state directories. No project paths, link resolution or permission repairs. */
+function directories(env: NodeJS.ProcessEnv, create: boolean): Directory[] {
+  const dir = getRaviStateDir(env);
+  if (!process.getuid || !["darwin", "linux"].includes(process.platform) || !isAbsolute(dir) || resolve(dir) !== dir) {
+    throw fixedError("ENV_PATH_UNSAFE");
+  }
+  const paths: string[] = [];
+  for (let current = dir; ; current = dirname(current)) {
+    paths.unshift(current);
+    if (current === dirname(current)) break;
+  }
+  const result: Directory[] = [];
+  for (const path of paths) {
+    let info = infoIfExists(path);
+    if (!info && create) {
+      mkdirSync(path, { mode: ENV_DIR_MODE });
+      info = lstatSync(path);
+    }
+    if (!info) return [];
+    // A root-owned sticky /tmp may contain the private state directory. Other
+    // group/world writable ancestors, symlinks and foreign owners are refused.
+    const stickyRoot = path !== dir && info.uid === 0 && (info.mode & 0o1000) !== 0;
+    if (
+      !info.isDirectory() ||
+      (info.uid !== 0 && info.uid !== process.getuid()) ||
+      ((info.mode & 0o022) !== 0 && !stickyRoot) ||
+      (path === dir && info.uid !== process.getuid())
+    ) {
+      throw fixedError("ENV_PATH_UNSAFE");
+    }
+    result.push({ path, info });
+  }
+  return result;
+}
+
+function assertDirectories(expected: Directory[]): void {
+  for (const entry of expected) {
+    const info = infoIfExists(entry.path);
+    if (!info || !sameFile(entry.info, info) || info.mode !== entry.info.mode || info.uid !== entry.info.uid) {
+      throw fixedError("ENV_FILE_CONFLICT");
+    }
+  }
+}
+
+function snapshot(path: string): Snapshot {
+  const before = infoIfExists(path);
+  if (!before) return { bytes: Buffer.alloc(0) };
+  assertFile(before);
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const info = fstatSync(fd);
+    assertFile(info);
+    if (!sameFile(before, info) || info.size > MAX_ENV_BYTES) throw fixedError("ENV_FILE_CONFLICT");
+    const bytes = readFileSync(fd);
+    const after = fstatSync(fd);
+    if (
+      bytes.length > MAX_ENV_BYTES ||
+      info.size !== after.size ||
+      info.mtimeMs !== after.mtimeMs ||
+      info.ctimeMs !== after.ctimeMs
+    ) {
+      throw fixedError("ENV_FILE_CONFLICT");
+    }
+    return { bytes, info: after };
+  } finally {
+    closeSync(fd);
+  }
 }
 
 export function readRaviEnvMap(env: NodeJS.ProcessEnv = process.env): Map<string, string> {
-  const path = getRaviEnvFilePath(env);
-  if (!existsSync(path)) return new Map();
-  return parseEnvAssignments(readFileSync(path, "utf8"));
+  try {
+    const dirs = directories(env, false);
+    if (!dirs.length) return new Map();
+    const current = snapshot(getRaviEnvFilePath(env));
+    assertDirectories(dirs);
+    return parseEnvAssignments(decode(current.bytes));
+  } catch (error) {
+    // no-cause: Env reads must not expose paths, raw file content or OS errors.
+    if (error instanceof RaviEnvFileError) throw error;
+    throw fixedError("ENV_FILE_UNAVAILABLE");
+  }
 }
 
-function writeRaviEnvMap(values: Map<string, string>, env: NodeJS.ProcessEnv = process.env): void {
-  const path = getRaviEnvFilePath(env);
-  const dir = getRaviStateDir(env);
-  mkdirSync(dir, { recursive: true, mode: ENV_DIR_MODE });
-  chmodSync(dir, ENV_DIR_MODE);
-
-  const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
-  const next = renderEnvFile(existing, values);
-  const tmpPath = `${path}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync(tmpPath, next, { mode: ENV_FILE_MODE });
-  chmodSync(tmpPath, ENV_FILE_MODE);
-  renameSync(tmpPath, path);
-  chmodSync(path, ENV_FILE_MODE);
+function decode(bytes: Buffer): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    // no-cause: Invalid file bytes are secret-bearing data, not diagnostics.
+    throw fixedError("ENV_FORMAT_UNSUPPORTED");
+  }
 }
 
-function upsertEnvMap(current: Map<string, string>, key: string, value: string): Map<string, string> {
-  const next = new Map(current);
-  next.set(key, value);
-  return next;
+/** Cleanup only the inode this call created; never remove a preexisting path. */
+function removeOwned(path: string, info: Stats | undefined): void {
+  if (!info) return;
+  try {
+    const current = infoIfExists(path);
+    if (current && sameFile(current, info)) unlinkSync(path);
+  } catch {
+    // no-cause: Best-effort cleanup leaves a fail-closed lock/temp on error; no raw filesystem details.
+  }
+}
+
+function mutateEnvFile(key: string, value: string | undefined, env: NodeJS.ProcessEnv, addOnly: boolean): boolean {
+  let lockFd: number | undefined;
+  let lockInfo: Stats | undefined;
+  let temporaryFd: number | undefined;
+  let temporaryInfo: Stats | undefined;
+  let directoryFd: number | undefined;
+  let temporary: string | undefined;
+  const path = getRaviEnvFilePath(env);
+  const lockPath = `${path}.lock`;
+  let committed = false;
+  try {
+    const dirs = directories(env, true);
+    const parent = dirs[dirs.length - 1]!;
+    directoryFd = openSync(parent.path, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+    if (!sameFile(parent.info, fstatSync(directoryFd))) throw fixedError("ENV_FILE_CONFLICT");
+    try {
+      lockFd = openSync(
+        lockPath,
+        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+        ENV_FILE_MODE,
+      );
+    } catch (error) {
+      // no-cause: A preexisting lock is busy/unsafe, never followed or stolen; OS diagnostics may include paths.
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") throw fixedError("ENV_FILE_BUSY");
+      throw fixedError("ENV_PATH_UNSAFE");
+    }
+    lockInfo = fstatSync(lockFd);
+    assertFile(lockInfo);
+    assertDirectories(dirs);
+    const current = snapshot(path);
+    const lines = parseEnvLines(decode(current.bytes));
+    const matches = lines.filter((line) => line.key === key);
+    if (addOnly && (matches.length > 0 || Object.hasOwn(env, key))) throw fixedError("ENV_KEY_EXISTS");
+    if (matches.length > 1) throw fixedError("ENV_FORMAT_UNSUPPORTED");
+    if (value === undefined && matches.length === 0) return false;
+    const next = patchEnvLines(lines, key, value);
+    if (value !== undefined && parseEnvAssignments(next).get(key) !== value) throw fixedError("ENV_VALUE_INVALID");
+    if (Buffer.byteLength(next) > MAX_ENV_BYTES) throw fixedError("ENV_FORMAT_UNSUPPORTED");
+    assertDirectories(dirs);
+    temporary = `${path}.${randomUUID()}.tmp`;
+    temporaryFd = openSync(
+      temporary,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+      ENV_FILE_MODE,
+    );
+    temporaryInfo = fstatSync(temporaryFd);
+    assertFile(temporaryInfo);
+    assertDirectories(dirs);
+    writeFileSync(temporaryFd, next, "utf8");
+    fsyncSync(temporaryFd);
+    // Detect non-cooperating edits observed before commit, including same-size
+    // edits, replacement and new files. This is not a lock on external editors.
+    const latest = snapshot(path);
+    if (
+      Boolean(current.info) !== Boolean(latest.info) ||
+      (current.info &&
+        latest.info &&
+        (!sameFile(current.info, latest.info) ||
+          current.info.mtimeMs !== latest.info.mtimeMs ||
+          current.info.ctimeMs !== latest.info.ctimeMs)) ||
+      !current.bytes.equals(latest.bytes)
+    )
+      throw fixedError("ENV_FILE_CONFLICT");
+    assertDirectories(dirs);
+    const namedTemp = infoIfExists(temporary);
+    const namedLock = infoIfExists(lockPath);
+    if (!namedTemp || !namedLock || !sameFile(namedTemp, temporaryInfo) || !sameFile(namedLock, lockInfo))
+      throw fixedError("ENV_FILE_CONFLICT");
+    assertFile(namedTemp);
+    assertFile(namedLock);
+    renameSync(temporary, path);
+    committed = true;
+    temporary = undefined;
+    fsyncSync(directoryFd);
+    return matches.length > 0;
+  } catch (error) {
+    // no-cause: No raw OS error/cause or env bytes cross the writer boundary. Post-rename failures are uncertain.
+    if (committed) throw fixedError("ENV_WRITE_UNCERTAIN");
+    if (error instanceof RaviEnvFileError) throw error;
+    throw fixedError("ENV_WRITE_FAILED");
+  } finally {
+    for (const fd of [temporaryFd, lockFd, directoryFd]) {
+      if (fd !== undefined) {
+        try {
+          closeSync(fd);
+        } catch {
+          // no-cause: Descriptor cleanup cannot change the known write result or leak secret-bearing OS diagnostics.
+        }
+      }
+    }
+    if (temporary) removeOwned(temporary, temporaryInfo);
+    removeOwned(lockPath, lockInfo);
+  }
 }
 
 export function parseEnvAssignments(content: string): Map<string, string> {
   const values = new Map<string, string>();
-  for (const line of parseEnvLines(content)) {
-    if (line.kind === "assignment") values.set(line.key, line.value);
-  }
+  for (const line of parseEnvLines(content)) if (line.key !== undefined) values.set(line.key, line.value!);
   return values;
 }
 
+/** The real daemon/CLI dialect: one physical line, literal values, outer quotes only. */
 function parseEnvLines(content: string): EnvLine[] {
-  if (content.length === 0) return [];
-  const rawLines = content.split(/\r?\n/);
-  if (rawLines.length > 0 && rawLines[rawLines.length - 1] === "") rawLines.pop();
-  return rawLines.map((raw) => parseEnvLine(raw));
-}
-
-function parseEnvLine(raw: string): EnvLine {
-  const trimmed = raw.trim();
-  if (!trimmed) return { kind: "blank", raw };
-  if (trimmed.startsWith("#")) return { kind: "comment", raw };
-  const assignment = trimmed.startsWith("export ") ? trimmed.slice(7).trim() : trimmed;
-  const eq = assignment.indexOf("=");
-  if (eq <= 0) return { kind: "other", raw };
-  const key = assignment.slice(0, eq).trim();
-  if (!ENV_KEY_RE.test(key)) return { kind: "other", raw };
-  return { kind: "assignment", key, value: unquoteEnvValue(assignment.slice(eq + 1).trim()), raw };
-}
-
-function renderEnvFile(existing: string, values: Map<string, string>): string {
-  const remaining = new Map(values);
-  const rendered: string[] = [];
-  for (const line of parseEnvLines(existing)) {
-    if (line.kind !== "assignment") {
-      rendered.push(line.raw);
+  if (content.includes("\0") || content.includes("\uFEFF")) throw fixedError("ENV_FORMAT_UNSUPPORTED");
+  const lines: EnvLine[] = [];
+  for (const part of content.matchAll(/([^\n]*)(\n|$)/g)) {
+    if (!part[0]) continue;
+    let raw = part[1]!;
+    let ending = part[2]!;
+    if (ending && raw.endsWith("\r")) {
+      raw = raw.slice(0, -1);
+      ending = "\r\n";
+    }
+    if (raw.includes("\r")) throw fixedError("ENV_FORMAT_UNSUPPORTED");
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      lines.push({ raw, ending });
       continue;
     }
-    const next = remaining.get(line.key);
-    if (next === undefined) continue;
-    rendered.push(`${line.key}=${serializeEnvValue(next)}`);
-    remaining.delete(line.key);
+    const match = /^([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$/.exec(trimmed);
+    if (!match) throw fixedError("ENV_FORMAT_UNSUPPORTED");
+    const key = match[1]!;
+    let value = match[2]!.trim();
+    if (value.startsWith('"') || value.startsWith("'")) {
+      if (value.length < 2 || !value.endsWith(value[0]!)) throw fixedError("ENV_FORMAT_UNSUPPORTED");
+      value = value.slice(1, -1);
+    }
+    lines.push({ raw, ending, key, value });
   }
-  for (const [key, value] of remaining) {
-    rendered.push(`${key}=${serializeEnvValue(value)}`);
-  }
-  return `${rendered.join("\n")}\n`;
+  return lines;
+}
+
+function patchEnvLines(lines: EnvLine[], key: string, value: string | undefined): string {
+  let found = false;
+  const rendered = lines
+    .map((line) => {
+      if (line.key !== key) return line.raw + line.ending;
+      found = true;
+      return value === undefined ? "" : `${key}=${serializeEnvValue(value)}${line.ending}`;
+    })
+    .join("");
+  if (found || value === undefined) return rendered;
+  const ending = lines.find((line) => line.ending)?.ending ?? "\n";
+  return `${rendered}${rendered && !rendered.endsWith("\n") ? ending : ""}${key}=${serializeEnvValue(value)}${ending}`;
 }
 
 function serializeEnvValue(value: string): string {
-  if (SAFE_UNQUOTED_VALUE_RE.test(value)) return value;
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-}
-
-function unquoteEnvValue(value: string): string {
-  if (
-    (value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
-    (value.startsWith("'") && value.endsWith("'") && value.length >= 2)
-  ) {
-    const inner = value.slice(1, -1);
-    return value.startsWith('"') ? inner.replace(/\\"/g, '"').replace(/\\\\/g, "\\") : inner;
-  }
-  return value;
+  // No escaping: both production consumers strip exactly one outer quote pair.
+  // Quotes/backslashes/$/# inside remain literal, including leading/trailing whitespace.
+  return SAFE_UNQUOTED_VALUE_RE.test(value) ? value : `"${value}"`;
 }

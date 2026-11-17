@@ -21,6 +21,8 @@ interface ChunkOptions {
   overlap?: number;
   /** Duration hint for containers such as live WebM that do not store format duration. */
   durationHintSec?: number;
+  /** Most chunks to cut (default: MAX_AUDIO_CHUNKS). */
+  maxChunks?: number;
 }
 
 export interface AudioChunk {
@@ -31,6 +33,14 @@ export interface AudioChunk {
 }
 
 const MIN_TRANSCRIBABLE_DURATION_SEC = 0.1;
+/**
+ * The declared duration comes from container metadata the sender controls (a
+ * sub-1 KB file can claim 1e9 s), so it never sizes the work on its own: it is
+ * capped here, the chunk count is capped, and the loop stops at the first chunk
+ * that decodes to nothing (the real end of the audio).
+ */
+export const MAX_TRANSCRIBE_SEC = 6 * 60 * 60;
+export const MAX_AUDIO_CHUNKS = 40;
 const CHUNK_OUTPUT_EXT = "mp3";
 const CHUNK_OUTPUT_MIMETYPE = "audio/mpeg";
 
@@ -81,7 +91,10 @@ export async function splitAudioChunks(buffer: Buffer, ext: string, opts: ChunkO
 
     // Get total duration. Browser-recorded live WebM files frequently omit
     // container duration, so meeting capture can provide a trusted track hint.
-    const duration = sanitizeDurationHint(opts.durationHintSec) ?? (await getAudioDuration(buffer, ext));
+    const declared = sanitizeDurationHint(opts.durationHintSec) ?? (await getAudioDuration(buffer, ext));
+    const duration = Math.min(declared, MAX_TRANSCRIBE_SEC);
+    if (declared > duration) log.warn("Declared audio duration exceeds max; clamping", { declared, max: duration });
+    const maxChunks = opts.maxChunks ?? MAX_AUDIO_CHUNKS;
     log.debug("Audio duration", { duration, chunkDuration, overlap });
 
     // If short enough, no need to split
@@ -134,30 +147,38 @@ export async function splitAudioChunks(buffer: Buffer, ext: string, opts: ChunkO
         try {
           chunkDurationSec = await getAudioDuration(chunkBuffer, CHUNK_OUTPUT_EXT);
         } catch (err) {
-          log.warn("Could not detect chunk duration, keeping chunk", { index, startSec, error: err });
+          log.warn("Could not detect chunk duration", { index, startSec, error: err });
         }
 
-        if (chunkDurationSec !== undefined && chunkDurationSec < MIN_TRANSCRIBABLE_DURATION_SEC) {
-          log.warn("Skipping too-short audio chunk", { index, startSec, duration: chunkDurationSec });
-        } else {
-          chunks.push({
-            buffer: chunkBuffer,
-            startSec,
-            duration: chunkDurationSec,
-            mimetype: CHUNK_OUTPUT_MIMETYPE,
-          });
-          log.debug("Chunk created", {
+        if (chunkDurationSec === undefined || chunkDurationSec < MIN_TRANSCRIBABLE_DURATION_SEC) {
+          log.warn("Chunk empty or undecodable (past the real end of the audio); stopping", {
             index,
             startSec,
-            duration: chunkDurationSec ?? segmentDuration,
-            size: chunkBuffer.length,
-            mimetype: CHUNK_OUTPUT_MIMETYPE,
+            duration: chunkDurationSec,
           });
+          break;
         }
+        chunks.push({
+          buffer: chunkBuffer,
+          startSec,
+          duration: chunkDurationSec,
+          mimetype: CHUNK_OUTPUT_MIMETYPE,
+        });
+        log.debug("Chunk created", {
+          index,
+          startSec,
+          duration: chunkDurationSec,
+          size: chunkBuffer.length,
+          mimetype: CHUNK_OUTPUT_MIMETYPE,
+        });
       } finally {
         await unlink(chunkFile).catch(() => {});
       }
 
+      if (chunks.length >= maxChunks) {
+        log.warn("Chunk cap reached; truncating", { duration, chunks: chunks.length });
+        break;
+      }
       start = Number((start + step).toFixed(6));
       index++;
     }

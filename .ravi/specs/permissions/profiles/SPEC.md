@@ -238,6 +238,50 @@ Semantics:
 
 - `allow` and `resolve` MUST dry-run by default.
 - `--apply` MUST be explicit for every provider-owned mutation.
+- `allow` and `deny` MUST share profile resolution. Built-in `bootstrap`,
+  `chat-only`, `explicit-only`, and `full-access` MUST resolve before a
+  `permission-*` tag definition exists, with or without that prefix.
+- Built-in expansion MUST reuse the executor runtime materializers, never a
+  second hand-maintained capability list. `bootstrap` includes the runtime
+  birth floor; `full-access` includes the explicit admin/execute/use ceiling.
+  `chat-only` expands to zero even when explicit leftovers exist;
+  `explicit-only` has no floor and keeps only explicit capabilities.
+- Reducing a shared profile definition MUST revoke all live authority snapshots
+  derived from that profile, across contacts and chat, chat-tag and global scopes,
+  together with their descendants and borrowed actor projections. Profile writes
+  and revocation MUST commit atomically; failure rolls back both. Dry-run,
+  label-only changes and additive capability updates MUST NOT revoke snapshots.
+  The shared provider-owned upsert is this boundary; narrowing only the command's
+  selected contact/scope leaves other holders' old authority live.
+  Historical roots and projections MUST remain usable for tracing authority to
+  still-live children after a non-cascading turn rotation. Profile identifiers
+  containing colons MUST be compared in full, never by an ambiguous source suffix.
+  Relays narrowed by those snapshots are dependents too, including chained relays.
+  Historical callers MUST record profile authority withdrawal separately from
+  ordinary turn rotation, so queued relays cannot revive withdrawn authority.
+- A known zero-capability profile MUST remain grantable. A scoped empty grant
+  governs the chat and grants no authority; it MUST NOT be mistaken for an
+  unknown profile. Other covering grants remain additive.
+- Dry-run MUST show the expanded capabilities without creating a profile or
+  grant. For profiles eligible for apply, it persists a provider-owned profile
+  definition and the scoped grant so `permissions list --chat` and contact
+  materialization agree.
+- `allow`/`resolve` for unknown/empty custom profiles without bootstrap capabilities MUST fail with
+  actual built-in/stored profile choices and runnable inspection commands
+  (`ravi skills show permissions`, `ravi tags list --kind system --source permissions --json`).
+  Structured `acceptedValues` MUST include all stored permission profiles,
+  including those beyond the first database page; inline copy remains bounded.
+- `deny` MUST still revoke a stored grant when its definition is missing or
+  empty; it MUST NOT require granting authority in order to remove authority.
+- `full-access` remains break-glass: explicit operator approval is required
+  before `--apply`; profile resolution MUST NOT waive command authorization
+  or change the default profile.
+- `allow`/`resolve --profile full-access` MUST reject `--apply` with
+  `FULL_ACCESS_APPROVAL_REQUIRED` (exit 3) until this path consumes verified
+  operator approval. Command authority, a caller-supplied flag and a hint are
+  not proof of approval. Rejection MUST precede profile, contact grant and
+  executor-ceiling writes. Dry-run expansion and revocation remain available;
+  preview MUST NOT advertise an apply command that will always be rejected.
 - Applying a profile to `agent:<id>` MUST ensure the executor-agent runtime
   config contains the concrete capabilities, without replacing existing
   explicit capabilities.

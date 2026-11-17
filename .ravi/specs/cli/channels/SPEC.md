@@ -43,9 +43,10 @@ it is human/ops process management dispensada pelo ledger (MIGRACAO-LEDGER.md,
 3. `channels show` and `channels set` on an unknown config name MUST exit 1
    with `CHANNEL_NOT_FOUND` and up to 3 `suggestions` from the local channel
    config names. In THIS domain the code refers to a Ravi native channel
-   CONFIG record in the router DB — not to a Slack workspace channel; the
-   `slack` domain reuses the same code for that distinct remote resource, and
-   the `suggestedAction` (`ravi channels list`) disambiguates.
+   CONFIG record in the router DB. The diagnostic MUST identify the local
+   config store and carry `context.code: LOCAL_CHANNEL_CONFIG_NOT_FOUND`.
+   The Slack CLI's local config resolution uses this same provenance; remote
+   Slack failures preserve the provider's original reason and code instead.
 4. `channels create` and `channels set` referencing an unknown
    `--credential-connection` MUST exit 1 with
    `CREDENTIAL_CONNECTION_NOT_FOUND` (cross-domain envelope shared with
@@ -90,8 +91,9 @@ runner itself reads configs through `router-db`, not through the CLI.
 - Parser usage errors use the global exit-2 `USAGE_ERROR` envelope because the
   `channels` root is registered in `AGENT_CONTRACT_DOMAINS`.
 - `CHANNEL_NOT_FOUND` is overloaded across domains: here it means a local
-  channel CONFIG name; in the `slack` domain it means a Slack workspace
-  channel. Consumers MUST disambiguate by `op`, never by code alone.
+  channel CONFIG name; Slack commands can fail while resolving that local
+  config or a remote Slack resource. Consumers MUST inspect `op` and the
+  typed diagnostic cause/context, never infer provenance from code alone.
 - `channels-json.test.ts` (baseline-failing since the whatsapp migration: its
   `../context.js` mock lacks `hasContext`) tests `group.ts`/`whatsapp-dm.ts`,
   not this file — do not "fix" this contract by editing that suite.

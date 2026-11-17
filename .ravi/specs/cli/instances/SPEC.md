@@ -17,6 +17,7 @@ tags:
 applies_to:
   - src/cli/commands/instances.ts
   - src/cli/commands/routes.test.ts
+  - src/cli/commands/instances-pending.test.ts
   - src/cli/agent-contract.ts
   - src/cli/registry.ts
   - src/plugins/internal/ravi-system/skills/instances/SKILL.md
@@ -74,6 +75,17 @@ bundle/database.
    `ContractError` MUST preserve its exit code through the registry dispatcher.
 9. Without `--json`, error output keeps the legacy text path (exit 1), except
    usage errors which exit 2 and teach the correct syntax inline.
+10. Pending review lookup, listed chat patterns and approval MUST use the same
+    channel-safe identity normalization as route persistence. Opaque ids MUST
+    retain their letters and punctuation (lowercased for route keys); only
+    phone-shaped values and recognized WhatsApp JIDs receive phone/JID
+    normalization. Group entries MUST produce a `group:` pattern, including
+    Slack channels. A listed pattern MUST select the same pending entry on
+    approval; ids with equal digit subsequences MUST NOT alias each other.
+11. Re-approving a full explicit `group:<id>` MUST work after a previous approval
+    consumed the pending entry. Approval MUST NOT infer the original chat from
+    a truncated numeric route, rename it or delete it automatically. Existing
+    ambiguous routes require an explicit, evidence-backed repair and removal.
 
 ## Write classification (brake decision per op)
 

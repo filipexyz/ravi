@@ -4,7 +4,7 @@
   Pasta com index.html (este arquivo) e client.js (cópia de _client.js.txt). Ship:
     ravi pages ship --project <p> --title "<título>" --route /<rota> --dir <pasta> \
       --uses ravi.bases.views.describe,ravi.bases.views.rows.create --json
-  Outras páginas de dados no host? O --uses leva a união dos ids de todas.
+  O --uses leva só os ids desta rota; as outras páginas do host ficam com os delas.
   Rota private; quem preenche é membro; gente de fora usa a conversa.
   Dono e status inicial vêm do write.set da view: o formulário não desenha nem envia.
   Antes: <ravi-form view="<uuid>"></ravi-form> já faz este formulário com o tema e o --uses derivado

@@ -50,6 +50,7 @@ interface CronJobRow {
   shell_env_file: string | null;
   on_error: string | null;
   owner_principal: string | null;
+  creator_chat?: string | null;
 
   next_run_at: number | null;
   last_run_at: number | null;
@@ -98,6 +99,7 @@ function rowToJob(row: CronJobRow): CronJob {
   if (row.shell_env_file !== null) job.shellEnvFile = row.shell_env_file;
   if (row.on_error !== null) job.onError = row.on_error;
   if (row.owner_principal !== null && row.owner_principal !== undefined) job.ownerPrincipal = row.owner_principal;
+  if (row.creator_chat) job.creatorChat = row.creator_chat;
   if (row.next_run_at !== null) job.nextRunAt = row.next_run_at;
   if (row.last_run_at !== null) job.lastRunAt = row.last_run_at;
   if (row.last_status !== null) job.lastStatus = row.last_status as JobStatus;
@@ -128,10 +130,10 @@ export function dbCreateCronJob(input: CronJobInput): CronJob {
       id, agent_id, account_id, name, description, enabled, delete_after_run,
       schedule_type, schedule_at, schedule_every, schedule_cron, schedule_timezone,
       session_target, reply_session, execution_type, payload_text,
-      shell_command, shell_timeout_ms, shell_env_file, on_error, owner_principal,
+      shell_command, shell_timeout_ms, shell_env_file, on_error, owner_principal, creator_chat,
       next_run_at,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -156,6 +158,7 @@ export function dbCreateCronJob(input: CronJobInput): CronJob {
     input.shellEnvFile ?? null,
     input.onError ?? null,
     input.ownerPrincipal ?? null,
+    input.creatorChat ?? null,
     nextRunAt ?? null,
     now,
     now,
@@ -183,6 +186,15 @@ export function dbListCronJobs(): CronJob[] {
   const stmt = db.prepare("SELECT * FROM cron_jobs ORDER BY created_at DESC");
   const rows = stmt.all() as CronJobRow[];
   return rows.map(rowToJob);
+}
+
+/** Claim the enabled -> disabled transition once, without recording a run. */
+export function dbDisableShellJobForOwner(job: CronJob): boolean {
+  const result = getDb()
+    .prepare(`UPDATE cron_jobs SET enabled = 0, next_run_at = NULL, updated_at = ?
+      WHERE id = ? AND enabled = 1 AND execution_type = 'shell' AND owner_principal IS ?`)
+    .run(Date.now(), job.id, job.ownerPrincipal ?? null);
+  return result.changes > 0;
 }
 
 /**
@@ -283,6 +295,10 @@ export function dbUpdateCronJob(id: string, updates: Partial<CronJob>): CronJob 
   if (hasOwn("ownerPrincipal")) {
     fields.push("owner_principal = ?");
     values.push(updates.ownerPrincipal ?? null);
+  }
+  if (hasOwn("creatorChat")) {
+    fields.push("creator_chat = ?");
+    values.push(updates.creatorChat ?? null);
   }
 
   if (fields.length === 0) {

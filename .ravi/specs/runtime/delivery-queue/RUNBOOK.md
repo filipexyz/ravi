@@ -81,6 +81,14 @@ Audit every `publishSessionPrompt` caller before changing delivery behavior:
 
 ## Regression Scenarios
 
+### Backlog with human questions
+
+1. Inventory original pending/source ids and their adapter handoffs before recovery; a terminal event alone is not proof of a human answer.
+2. Preserve original envelopes and pending ids. Do not reset the session, clear the queue or replay already answered requests.
+3. After a normal terminal or safe same-surface interrupt, verify the human atom is the next provider input. Compatible reports drain afterward in batches; different authority remains separate.
+4. Inspect the queued ids in `adapter.request` and terminal accounting. Reports arriving during a batch must remain pending.
+5. A rollout restart requires a durable pending snapshot and post-restart id reconciliation. If any original question is missing or already handed off ambiguously, inspect its trace before choosing replay.
+
 ### Cross-Session Followup
 
 1. Start a session turn that produces a long text response.

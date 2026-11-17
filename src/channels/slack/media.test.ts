@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -44,6 +44,27 @@ describe("resolveSlackMediaChannel", () => {
 });
 
 describe("sendSlackMedia", () => {
+  it("forwards explicit delivery authority and stops before file/transport access on denial", async () => {
+    const fetchImpl = mock(async () => Response.json({ ok: true })) as unknown as typeof fetch;
+    const resolveSecret = mock(async () => {
+      throw new Error("Credential authorization denied");
+    });
+    const authority = { kind: "internal-service", service: "slack-delivery" } as const;
+    await expect(
+      sendSlackMedia(
+        { accountId: "hana-slack", chatId: "C123", filePath: "/missing/no-file.png", filename: "no-file.png" },
+        { channels: { hana: slackChannel() }, resolveSecret, fetchImpl, authority },
+      ),
+    ).rejects.toThrow("Credential authorization denied");
+    expect(resolveSecret).toHaveBeenCalledWith({
+      provider: "slack",
+      connection: "hana-slack-credentials",
+      action: "files.getUploadURLExternal",
+      authority,
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("uploads bytes and completes a channel-thread share with a caption", async () => {
     const dir = mkdtempSync(join(tmpdir(), "ravi-slack-media-"));
     const filePath = join(dir, "sample.png");

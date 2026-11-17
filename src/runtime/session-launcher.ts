@@ -23,6 +23,10 @@ import {
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
+import {
+  createCapacityRetryCancellationHandler,
+  createCapacityRetryExhaustionHandler,
+} from "./capacity-retry-exhaustion.js";
 import { resolvePersistedUserText } from "./session-surface-hint.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import { runRuntimeEventLoop, type RuntimeSafeEmit } from "./host-event-loop.js";
@@ -33,17 +37,19 @@ import {
   type RuntimeHostStreamingSession,
   type RuntimeUserMessage,
 } from "./host-session.js";
-import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { isThreadAttentionPrompt, type RuntimeLaunchPrompt } from "./message-types.js";
 import type { RuntimeSessionStartLane } from "./session-pool.js";
 import { shouldUseTurnScopedAuthorityForPrompt } from "./runtime-request-context.js";
 import { buildRuntimeStartRequest, resolveRuntimePromptSource } from "./runtime-request-builder.js";
 import { resolveRuntimeSession, resolveRuntimeSessionIdentity } from "./session-resolver.js";
 import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import { updateRuntimeLiveState } from "./live-state.js";
-import { isClaudeModelAlias, resolvePreferredRuntimeModel } from "./model-catalog.js";
+import { applyProviderModelRule } from "./model-catalog.js";
 import { ensureObserverBindingsForSession } from "./observation-plane.js";
 import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
 import { reportRuntimePromptIntakeFailure } from "./intake-failure.js";
+import { isSessionRelayTurn } from "./turn-origin.js";
+import { classifyTurnProvenance } from "./turn-provenance.js";
 
 const log = logger.child("runtime:session-launcher");
 
@@ -51,6 +57,7 @@ export interface PendingRuntimeSessionStart {
   sessionName: string;
   prompt: RuntimeLaunchPrompt;
   resolve: () => void;
+  reject: (error: Error) => void;
   cancelled?: boolean;
   queuedAt?: number;
   lane?: RuntimeSessionStartLane;
@@ -72,7 +79,10 @@ export interface StartRuntimeSessionOptions {
 }
 
 export function updateRuntimeSessionMetadata(sessionKey: string, prompt: RuntimeLaunchPrompt): void {
-  if (prompt.source) {
+  // A relay's source is where that one relay delivers, not a chat the session
+  // talks to: saving it as last_* would let later cron, trigger and heartbeat
+  // turns reply (and send approval cards) there under a real account.
+  if (prompt.source && !isSessionRelayTurn(prompt)) {
     updateSessionSource(sessionKey, prompt.source);
   }
 
@@ -185,6 +195,9 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
   }
   let resolvedSession;
   try {
+    // A broker cache miss can yield after identity resolution. An attention
+    // receipt still belongs to the exact parent and executor captured upstream.
+    if (isThreadAttentionPrompt(prompt)) resolveRuntimeSessionIdentity({ sessionName, prompt });
     resolvedSession = resolveRuntimeSession({
       sessionName,
       prompt,
@@ -255,10 +268,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     configModel,
   });
   const selectedModel = modelBrokerPlanClaim?.plan.lease.model ?? runtimeResolution.options.model ?? configModel;
-  const model =
-    runtimeProviderId !== "claude" && isClaudeModelAlias(selectedModel)
-      ? resolvePreferredRuntimeModel(runtimeProviderId, selectedModel)
-      : selectedModel;
+  const model = applyProviderModelRule(runtimeProviderId, selectedModel) ?? selectedModel;
   if (model !== selectedModel) {
     log.info("Remapped runtime model to provider catalog", {
       sessionName,
@@ -302,8 +312,10 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
   let modelBrokerPlanHandedToBuilder = false;
 
   const streamingSession: RuntimeHostStreamingSession = {
+    sessionKey: dbSessionKey,
     agentId: agent.id,
     queryHandle: createPendingRuntimeHandle(runtimeProviderId),
+    runtimeProviderConfigRevision: session.runtimeProviderConfigRevision ?? 0,
     starting: true,
     abortController,
     pushMessage: null,
@@ -393,12 +405,24 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     });
 
     modelBrokerPlanHandedToBuilder = true;
+    const capacityRetryHandlers = {
+      sessionName,
+      session,
+      agent,
+      runId,
+      runtimeProviderId,
+      instanceId,
+      streamingSession,
+      crashRecovery,
+      safeEmit,
+    };
     const builtRuntimeRequest = await buildRuntimeStartRequest({
       runId,
       sessionName,
       prompt,
       session,
       agent,
+      configModel,
       runtimeProviderId,
       runtimeProvider,
       runtimeCapabilities,
@@ -409,6 +433,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       storedRuntimeSessionParams,
       storedProviderSessionId,
       canResumeStoredSession,
+      resumeDecision,
       resolvedSource,
       approvalSource,
       streamingSession,
@@ -416,6 +441,8 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       defaultRuntimeProviderId: DEFAULT_RUNTIME_PROVIDER_ID,
       crashRecovery,
       modelBrokerPlanClaim,
+      onCapacityRetryExhausted: createCapacityRetryExhaustionHandler(capacityRetryHandlers),
+      onCapacityRetryCancelled: createCapacityRetryCancellationHandler(capacityRetryHandlers),
     });
     runtimeCredentialAttempt = builtRuntimeRequest.runtimeCredentialAttempt;
     const { runtimeRequest, toolContext } = builtRuntimeRequest;
@@ -518,7 +545,9 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
 
     await safeEmit(`ravi.session.${sessionName}.runtime`, {
       type: "turn.failed",
+      ...(prompt._bridgeTurnId ? { _bridgeTurnId: prompt._bridgeTurnId } : {}),
       provider: runtimeProviderId,
+      _turnProvenance: classifyTurnProvenance({ prompt }),
       error: errorMessage,
       recoverable: false,
       ...(resolvedSource ? { _source: resolvedSource } : {}),

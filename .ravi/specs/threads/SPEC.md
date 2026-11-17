@@ -80,6 +80,7 @@ Claude, Codex, Pi, Slack, Discord, and other systems may expose their own thread
 - A thread MUST have a stable Ravi id independent of title, slug, chat id, session key, contact id, or provider-native thread id.
 - Thread slugs SHOULD be human-readable, lowercase, and stable enough for CLI use, but slug changes MUST NOT change identity.
 - A thread MAY exist without an agent, chat, contact, or session.
+- A task-owned Thread MUST follow `tasks/threads`: the task runtime owns lifecycle transitions and atomically persists successful closure and result; generic status commands MUST refuse that Thread.
 - A thread MAY link to multiple sessions and multiple chats.
 - A chat MAY have multiple Ravi threads. A chat-scoped thread MUST remain a thread, not a chat or provider-native thread.
 - A thread MAY involve multiple contacts and agents.

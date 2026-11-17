@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
@@ -102,11 +103,14 @@ interface ContractCallSite {
 function failThreadNotFound(op: string, threadRef: string, asJson?: boolean): never {
   const candidates = listThreads({ limit: 40 }).items.flatMap((thread) => [thread.id, thread.slug, thread.title]);
   contractFail(op, "THREAD_NOT_FOUND", `Thread not found: ${threadRef}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the thread id/slug (see suggestions; list with: ravi threads list --json)",
-      suggestions: suggestSimilar(threadRef, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the thread id/slug (see suggestions; list with: ravi threads list --json)",
+        suggestions: suggestSimilar(threadRef, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Thread not found: ${threadRef}`, { operation: op }),
   });
 }
 

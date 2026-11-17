@@ -1,3 +1,9 @@
+import { runThreadMutation } from "../../threads/schema-fence.js";
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
+import { CliExpectedError } from "../../cli/expected-error.js";
+import { ContractError } from "../../cli/agent-contract.js";
+import { resolveTriggerActivation } from "../../triggers/activation.js";
+import { dbListTriggers } from "../../triggers/triggers-db.js";
 import { randomUUID } from "node:crypto";
 import { executeWrite } from "../../db/write-retry.js";
 import { getDb } from "../../router/router-db.js";
@@ -25,12 +31,20 @@ export interface SlackThreadLifecycleRecord {
   initialPrompt?: string;
   /** Who asked for a programmatic thread, as shown on its root card. */
   requestedBy?: string;
+  /** Runtime context of the turn that asked for the thread; its turns never exceed that turn's overlay. */
+  initiatorContextId?: string;
   modelOverride?: string;
+  /** Runtime provider requested for the child, recorded so a delayed materialization keeps it. */
+  providerOverride?: string;
+  effortOverride?: string;
+  thinkingLevel?: string;
   creationClaimId?: string;
   creationClaimExpiresAt?: number;
   promptPublishedAt?: number;
   closeSequence: number;
   closeResult?: string;
+  /** Runtime context of the turn that closed the thread; the parent return never exceeds its overlay. */
+  closeContextId?: string;
   closedAt?: number;
   parentReturnRequested: boolean;
   parentEventId?: string;
@@ -61,12 +75,17 @@ interface SlackThreadLifecycleRow {
   canonical_root_message_id: string | null;
   initial_prompt: string | null;
   requested_by: string | null;
+  initiator_context_id: string | null;
   model_override: string | null;
+  provider_override: string | null;
+  effort_override: string | null;
+  thinking_level: string | null;
   creation_claim_id: string | null;
   creation_claim_expires_at: number | null;
   prompt_published_at: number | null;
   close_sequence: number;
   close_result: string | null;
+  close_context_id: string | null;
   closed_at: number | null;
   parent_return_requested: number;
   parent_event_id: string | null;
@@ -90,7 +109,11 @@ export interface CreateSlackThreadLifecycleInput {
   rootCanonicalChatId?: string;
   initialPrompt: string;
   requestedBy?: string;
+  initiatorContextId?: string;
   modelOverride?: string;
+  providerOverride?: string;
+  effortOverride?: string;
+  thinkingLevel?: string;
   createdAt?: number;
 }
 
@@ -121,35 +144,38 @@ export function createSlackThreadLifecycle(input: CreateSlackThreadLifecycleInpu
   executeWrite(
     getDb(),
     (database) => {
-      database
-        .prepare(
-          `
+      runThreadMutation(
+        database,
+        `
           INSERT INTO slack_thread_lifecycle (
             request_id, source, status, parent_session_key, parent_session_name,
             initiator_session_key, initiator_session_name, account_id, instance_id,
             platform_chat_id, root_canonical_chat_id, initial_prompt, requested_by, model_override,
+            provider_override, effort_override, thinking_level, initiator_context_id,
             created_at, updated_at
           )
-          VALUES (?, 'action', 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, 'action', 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(request_id) DO NOTHING
         `,
-        )
-        .run(
-          requestId,
-          requireText(input.parentSessionKey, "parentSessionKey"),
-          requireText(input.parentSessionName, "parentSessionName"),
-          cleanOptional(input.initiatorSessionKey),
-          cleanOptional(input.initiatorSessionName),
-          requireText(input.accountId, "accountId"),
-          requireText(input.instanceId, "instanceId"),
-          requireText(input.platformChatId, "platformChatId"),
-          cleanOptional(input.rootCanonicalChatId),
-          initialPrompt,
-          cleanOptional(input.requestedBy),
-          cleanOptional(input.modelOverride),
-          now,
-          now,
-        );
+        requestId,
+        requireText(input.parentSessionKey, "parentSessionKey"),
+        requireText(input.parentSessionName, "parentSessionName"),
+        cleanOptional(input.initiatorSessionKey),
+        cleanOptional(input.initiatorSessionName),
+        requireText(input.accountId, "accountId"),
+        requireText(input.instanceId, "instanceId"),
+        requireText(input.platformChatId, "platformChatId"),
+        cleanOptional(input.rootCanonicalChatId),
+        initialPrompt,
+        cleanOptional(input.requestedBy),
+        cleanOptional(input.modelOverride),
+        cleanOptional(input.providerOverride),
+        cleanOptional(input.effortOverride),
+        cleanOptional(input.thinkingLevel),
+        cleanOptional(input.initiatorContextId),
+        now,
+        now,
+      );
     },
     { label: "slack_thread_lifecycle_create" },
   );
@@ -176,6 +202,15 @@ export function findSlackThreadLifecycleByChildSession(childSessionKey: string):
     )
     .get(childSessionKey) as SlackThreadLifecycleRow | undefined;
   return row ? rowToSlackThreadLifecycle(row) : null;
+}
+
+/** The lifecycle survives session pruning; names must resolve unambiguously. */
+export function findSlackThreadLifecycleByChildRef(ref: string, database = getDb()): SlackThreadLifecycleRecord | null {
+  const rows = database
+    .prepare(`SELECT * FROM slack_thread_lifecycle
+      WHERE child_session_key = ? OR child_session_name = ? OR request_id = ? LIMIT 2`)
+    .all(ref, ref, ref) as SlackThreadLifecycleRow[];
+  return rows.length === 1 ? rowToSlackThreadLifecycle(rows[0]!) : null;
 }
 
 export function findSlackThreadLifecycleByProviderThread(input: {
@@ -206,9 +241,9 @@ export function markSlackThreadRootDelivered(input: {
   executeWrite(
     getDb(),
     (database) => {
-      database
-        .prepare(
-          `
+      runThreadMutation(
+        database,
+        `
           UPDATE slack_thread_lifecycle
           SET status = CASE WHEN status = 'queued' THEN 'root_delivered' ELSE status END,
               provider_thread_id = COALESCE(provider_thread_id, ?),
@@ -219,14 +254,12 @@ export function markSlackThreadRootDelivered(input: {
             AND source = 'action'
             AND (provider_thread_id IS NULL OR provider_thread_id = ?)
         `,
-        )
-        .run(
-          requireText(input.providerThreadId, "providerThreadId"),
-          cleanOptional(input.canonicalRootMessageId),
-          now,
-          requireText(input.requestId, "requestId"),
-          requireText(input.providerThreadId, "providerThreadId"),
-        );
+        requireText(input.providerThreadId, "providerThreadId"),
+        cleanOptional(input.canonicalRootMessageId),
+        now,
+        requireText(input.requestId, "requestId"),
+        requireText(input.providerThreadId, "providerThreadId"),
+      );
     },
     { label: "slack_thread_lifecycle_root_delivered" },
   );
@@ -245,9 +278,9 @@ export function claimSlackThreadCreation(input: {
   return executeWrite(
     getDb(),
     (database) => {
-      const updated = database
-        .prepare(
-          `
+      const updated = runThreadMutation(
+        database,
+        `
           UPDATE slack_thread_lifecycle
           SET status = 'starting',
               creation_claim_id = ?,
@@ -265,8 +298,12 @@ export function claimSlackThreadCreation(input: {
               )
             )
         `,
-        )
-        .run(claimId, expiresAt, now, input.requestId, now);
+        claimId,
+        expiresAt,
+        now,
+        input.requestId,
+        now,
+      );
       if (updated.changes === 0) return null;
       return selectSlackThreadLifecycle(database, input.requestId);
     },
@@ -284,9 +321,9 @@ export function releaseSlackThreadCreationClaim(input: {
   return executeWrite(
     getDb(),
     (database) =>
-      database
-        .prepare(
-          `
+      runThreadMutation(
+        database,
+        `
           UPDATE slack_thread_lifecycle
           SET status = 'root_delivered',
               creation_claim_id = NULL,
@@ -298,8 +335,11 @@ export function releaseSlackThreadCreationClaim(input: {
             AND creation_claim_id = ?
             AND prompt_published_at IS NULL
         `,
-        )
-        .run(input.failureReason, now, input.requestId, input.claimId).changes > 0,
+        input.failureReason,
+        now,
+        input.requestId,
+        input.claimId,
+      ).changes > 0,
     { label: "slack_thread_lifecycle_release_creation" },
   );
 }
@@ -316,9 +356,9 @@ export function completeSlackThreadCreation(input: {
   const completed = executeWrite(
     getDb(),
     (database) =>
-      database
-        .prepare(
-          `
+      runThreadMutation(
+        database,
+        `
           UPDATE slack_thread_lifecycle
           SET status = 'open',
               child_session_key = ?,
@@ -332,16 +372,14 @@ export function completeSlackThreadCreation(input: {
           WHERE request_id = ?
             AND creation_claim_id = ?
         `,
-        )
-        .run(
-          input.childSessionKey,
-          input.childSessionName,
-          input.threadCanonicalChatId,
-          now,
-          now,
-          input.requestId,
-          input.claimId,
-        ).changes > 0,
+        input.childSessionKey,
+        input.childSessionName,
+        input.threadCanonicalChatId,
+        now,
+        now,
+        input.requestId,
+        input.claimId,
+      ).changes > 0,
     { label: "slack_thread_lifecycle_complete_creation" },
   );
   if (!completed) {
@@ -382,9 +420,9 @@ export function registerInboundSlackThread(input: RegisterInboundSlackThreadInpu
   return executeWrite(
     getDb(),
     (database) => {
-      database
-        .prepare(
-          `
+      runThreadMutation(
+        database,
+        `
           INSERT INTO slack_thread_lifecycle (
             request_id, source, status, parent_session_key, parent_session_name,
             child_session_key, child_session_name, account_id, instance_id,
@@ -419,23 +457,21 @@ export function registerInboundSlackThread(input: RegisterInboundSlackThreadInpu
             END,
             updated_at = excluded.updated_at
         `,
-        )
-        .run(
-          requestId,
-          input.parentSessionKey,
-          input.parentSessionName,
-          input.childSessionKey,
-          input.childSessionName,
-          input.accountId,
-          input.instanceId,
-          input.platformChatId,
-          cleanOptional(input.rootCanonicalChatId),
-          input.threadCanonicalChatId,
-          input.providerThreadId,
-          now,
-          now,
-          now,
-        );
+        requestId,
+        input.parentSessionKey,
+        input.parentSessionName,
+        input.childSessionKey,
+        input.childSessionName,
+        input.accountId,
+        input.instanceId,
+        input.platformChatId,
+        cleanOptional(input.rootCanonicalChatId),
+        input.threadCanonicalChatId,
+        input.providerThreadId,
+        now,
+        now,
+        now,
+      );
       return selectSlackThreadLifecycleByProviderThread(database, input);
     },
     { label: "slack_thread_lifecycle_register_inbound" },
@@ -444,7 +480,9 @@ export function registerInboundSlackThread(input: RegisterInboundSlackThreadInpu
 
 export function closeSlackThreadLifecycle(input: {
   childSessionKey: string;
+  requestId?: string;
   returnResult?: string;
+  closeContextId?: string;
   closedAt?: number;
 }): CloseSlackThreadLifecycleResult {
   const now = input.closedAt ?? Date.now();
@@ -452,22 +490,67 @@ export function closeSlackThreadLifecycle(input: {
   return executeWrite(
     getDb(),
     (database) => {
-      const existing = selectSlackThreadLifecycleByChildSession(database, input.childSessionKey);
+      const existing = input.requestId
+        ? selectSlackThreadLifecycle(database, input.requestId)
+        : selectSlackThreadLifecycleByChildSession(database, input.childSessionKey);
+      if (existing && existing.childSessionKey !== input.childSessionKey) {
+        throw new Error("Slack thread lifecycle child does not match the selected request");
+      }
       if (!existing) {
         throw new Error(`Slack thread lifecycle not found for session: ${input.childSessionKey}`);
       }
+      // Read under the same write lock as the close: a durable subscriber must
+      // be handed off explicitly before its recipient can finish.
+      const triggerIds = dbListTriggers()
+        .filter(
+          (trigger) =>
+            !!trigger.replySession &&
+            (trigger.replySession === existing.childSessionKey || trigger.replySession === existing.childSessionName) &&
+            resolveTriggerActivation(trigger).state === "active",
+        )
+        .map((trigger) => trigger.id);
+      if (triggerIds.length) {
+        throw new ContractError(
+          "sessions close-thread",
+          "THREAD_TRIGGERS_PENDING",
+          `Thread still receives active triggers: ${triggerIds.join(", ")}.`,
+          1,
+          {
+            ...errorDiagnostic(`Thread still receives active triggers: ${triggerIds.join(", ")}.`, {
+              operation: "sessions close-thread",
+            }),
+            ...{
+              triggerIds,
+              suggestedAction:
+                "Repoint each trigger with ravi triggers set <id> replySession <parent-session>, verify the destination, then retry sessions close-thread.",
+            },
+          },
+        );
+      }
+      const pending = database
+        .query(`SELECT 1 FROM decisions d WHERE d.origin_type='thread' AND d.origin_id=?
+        AND (d.status='open' OR EXISTS (SELECT 1 FROM decision_deliveries x WHERE x.decision_id=d.id AND x.kind='answer' AND x.status NOT IN ('delivered','superseded'))) LIMIT 1`)
+        .get(existing.requestId);
+      if (pending)
+        throw new CliExpectedError(
+          "Thread has an open decision or an undelivered answer.",
+          "THREAD_DECISIONS_PENDING",
+          1,
+          "Answer the pending question and verify delivery before closing.",
+        );
       if (existing.status === "closed") {
         return { record: existing, changed: false };
       }
       const nextSequence = existing.closeSequence + 1;
       const parentEventId = returnResult ? `slack-thread-close:${existing.requestId}:${nextSequence}` : null;
-      const updated = database
-        .prepare(
-          `
+      const updated = runThreadMutation(
+        database,
+        `
           UPDATE slack_thread_lifecycle
           SET status = 'closed',
               close_sequence = ?,
               close_result = ?,
+              close_context_id = ?,
               closed_at = ?,
               parent_return_requested = ?,
               parent_event_id = ?,
@@ -478,8 +561,15 @@ export function closeSlackThreadLifecycle(input: {
           WHERE request_id = ?
             AND status != 'closed'
         `,
-        )
-        .run(nextSequence, returnResult, now, returnResult ? 1 : 0, parentEventId, now, existing.requestId);
+        nextSequence,
+        returnResult,
+        cleanOptional(input.closeContextId),
+        now,
+        returnResult ? 1 : 0,
+        parentEventId,
+        now,
+        existing.requestId,
+      );
       if (updated.changes === 0) {
         return {
           record: selectSlackThreadLifecycle(database, existing.requestId),
@@ -507,9 +597,9 @@ export function claimSlackThreadParentReturn(input: {
   return executeWrite(
     getDb(),
     (database) => {
-      const updated = database
-        .prepare(
-          `
+      const updated = runThreadMutation(
+        database,
+        `
           UPDATE slack_thread_lifecycle
           SET parent_notification_claim_id = ?,
               parent_notification_claim_expires_at = ?,
@@ -522,8 +612,12 @@ export function claimSlackThreadParentReturn(input: {
               OR COALESCE(parent_notification_claim_expires_at, 0) <= ?
             )
         `,
-        )
-        .run(claimId, expiresAt, now, input.requestId, now);
+        claimId,
+        expiresAt,
+        now,
+        input.requestId,
+        now,
+      );
       if (updated.changes === 0) return null;
       return selectSlackThreadLifecycle(database, input.requestId);
     },
@@ -541,9 +635,9 @@ export function releaseSlackThreadParentReturnClaim(input: {
   return executeWrite(
     getDb(),
     (database) =>
-      database
-        .prepare(
-          `
+      runThreadMutation(
+        database,
+        `
           UPDATE slack_thread_lifecycle
           SET parent_notification_claim_id = NULL,
               parent_notification_claim_expires_at = NULL,
@@ -553,8 +647,11 @@ export function releaseSlackThreadParentReturnClaim(input: {
             AND parent_notification_claim_id = ?
             AND parent_notified_at IS NULL
         `,
-        )
-        .run(input.failureReason, now, input.requestId, input.claimId).changes > 0,
+        input.failureReason,
+        now,
+        input.requestId,
+        input.claimId,
+      ).changes > 0,
     { label: "slack_thread_lifecycle_release_parent_return" },
   );
 }
@@ -568,9 +665,9 @@ export function completeSlackThreadParentReturn(input: {
   const completed = executeWrite(
     getDb(),
     (database) =>
-      database
-        .prepare(
-          `
+      runThreadMutation(
+        database,
+        `
           UPDATE slack_thread_lifecycle
           SET parent_notified_at = COALESCE(parent_notified_at, ?),
               parent_notification_claim_id = NULL,
@@ -580,8 +677,11 @@ export function completeSlackThreadParentReturn(input: {
           WHERE request_id = ?
             AND parent_notification_claim_id = ?
         `,
-        )
-        .run(now, now, input.requestId, input.claimId).changes > 0,
+        now,
+        now,
+        input.requestId,
+        input.claimId,
+      ).changes > 0,
     { label: "slack_thread_lifecycle_complete_parent_return" },
   );
   if (!completed) {
@@ -639,9 +739,9 @@ export function reopenSlackThreadLifecycle(requestId: string, now = Date.now()):
   return executeWrite(
     getDb(),
     (database) => {
-      database
-        .prepare(
-          `
+      runThreadMutation(
+        database,
+        `
           UPDATE slack_thread_lifecycle
           SET status = 'open',
               closed_at = NULL,
@@ -649,8 +749,9 @@ export function reopenSlackThreadLifecycle(requestId: string, now = Date.now()):
           WHERE request_id = ?
             AND status = 'closed'
         `,
-        )
-        .run(now, requestId);
+        now,
+        requestId,
+      );
       return selectSlackThreadLifecycle(database, requestId);
     },
     { label: "slack_thread_lifecycle_reopen" },
@@ -727,12 +828,17 @@ function rowToSlackThreadLifecycle(row: SlackThreadLifecycleRow): SlackThreadLif
     ...(row.canonical_root_message_id ? { canonicalRootMessageId: row.canonical_root_message_id } : {}),
     ...(row.initial_prompt ? { initialPrompt: row.initial_prompt } : {}),
     ...(row.requested_by ? { requestedBy: row.requested_by } : {}),
+    ...(row.initiator_context_id ? { initiatorContextId: row.initiator_context_id } : {}),
     ...(row.model_override ? { modelOverride: row.model_override } : {}),
+    ...(row.provider_override ? { providerOverride: row.provider_override } : {}),
+    ...(row.effort_override ? { effortOverride: row.effort_override } : {}),
+    ...(row.thinking_level ? { thinkingLevel: row.thinking_level } : {}),
     ...(row.creation_claim_id ? { creationClaimId: row.creation_claim_id } : {}),
     ...(row.creation_claim_expires_at !== null ? { creationClaimExpiresAt: row.creation_claim_expires_at } : {}),
     ...(row.prompt_published_at !== null ? { promptPublishedAt: row.prompt_published_at } : {}),
     closeSequence: row.close_sequence,
     ...(row.close_result ? { closeResult: row.close_result } : {}),
+    ...(row.close_context_id ? { closeContextId: row.close_context_id } : {}),
     ...(row.closed_at !== null ? { closedAt: row.closed_at } : {}),
     parentReturnRequested: row.parent_return_requested === 1,
     ...(row.parent_event_id ? { parentEventId: row.parent_event_id } : {}),

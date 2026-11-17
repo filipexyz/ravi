@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Permissions Commands - provider-runtime introspection only.
  *
@@ -6,10 +7,9 @@
 
 import "reflect-metadata";
 import { z } from "zod";
-import { addContactTag, getContact, removeContactTag, type Contact } from "../../contacts.js";
+import { getContact, removeContactTag, type Contact } from "../../contacts.js";
 import {
   dbDeleteContactChatGrant,
-  dbEnsureContactChatGrant,
   dbGetContactChatGrant,
   type ContactChatGrantScopeType,
 } from "../../permissions/contact-chat-grants.js";
@@ -26,15 +26,18 @@ import {
 import { dbGetChat, dbGetThreadParentChat, dbListChatsByRef, type ChatRecord } from "../../router/router-db.js";
 import { revokeLiveRuntimeContextsForContactGrant } from "../../runtime/context-registry.js";
 import { canonicalAssetIdsForTag, canonicalTagSlugsForAsset, tryNormalizeTagSlug } from "../../tags/index.js";
-import { CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
+import { CONTRACT_EXIT_POLICY, CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
 import { getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { strictCliOffsetPaginationSchema } from "../return-schemas.js";
 import {
-  ensureAgentRuntimeCapability,
+  AGENT_RUNTIME_PERMISSION_PROFILES,
   isChatOnlyRuntimePermissions,
+  materializeAgentRuntimeProfileCapabilities,
+  normalizeAgentRuntimePermissionProfile,
   readAgentRuntimePermissionsConfig,
 } from "../../permissions/agent-default-capabilities-provider.js";
+import { bootstrapCapabilitiesFor } from "../../permissions/runtime-bootstrap-provider.js";
 import {
   buildAuthorizationGuidance,
   formatCanonicalCapability,
@@ -45,12 +48,17 @@ import {
 } from "../../permissions/authorization-guidance.js";
 import { getPermissionDenial, type PermissionDenial } from "../../permissions/denials.js";
 import {
-  dbCreateTagDefinition,
-  dbGetTagDefinition,
-  dbUpdateTagDefinition,
-  normalizeTagSlug,
-} from "../../tags/index.js";
-import type { TagDefinition } from "../../tags/types.js";
+  assertProviderOwnedPermissionTag as assertProviderOwnedPermissionProfile,
+  capabilityListsEqual as grantCapabilityListsEqual,
+  derivePermissionProfileSlugForCapability,
+  ensureAgentCeilingCapability,
+  grantContactProfile,
+  labelFromProfile,
+  normalizePermissionProfileSlug,
+  upsertPermissionProfileDefinition,
+} from "../../permissions/apply-grant.js";
+import { dbGetTagDefinition, dbListTagDefinitions } from "../../tags/index.js";
+import type { TagDefinition, TagListCursor } from "../../tags/types.js";
 import type { OffsetPagination } from "../../utils/pagination.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import {
@@ -68,6 +76,8 @@ const CHAT_OPTION_DESCRIPTION =
 const CHAT_TAG_OPTION_DESCRIPTION = "Scope contact grants to every chat carrying this chat tag";
 const FORCE_OPTION_DESCRIPTION =
   "Explicitly use the global (all chats) contact scope. Prefer --chat; ask the human before going global.";
+const FULL_ACCESS_APPROVAL_MESSAGE =
+  "full-access requires verified operator approval. This command cannot consume an operator approval; --apply is blocked.";
 
 const providerSchema = z.object({
   id: z.string(),
@@ -775,7 +785,19 @@ function buildPermissionAllowPlan(input: PermissionAllowInput): PermissionAllowP
       : rejectScopeWithoutContacts(op, { ...input, force });
   const existingTag = dbGetTagDefinition(tagSlug);
   const explicitCapabilities = parseCapabilityList(input.capabilities);
-  const capabilities = resolveProfileCapabilities(op, existingTag, explicitCapabilities, input.asJson);
+  const capabilities = resolveProfileCapabilities(op, tagSlug, existingTag, explicitCapabilities, input.asJson);
+  // Command authority and --apply do not prove operator approval. Until this
+  // command can consume a verified approval, fail before any provider write.
+  if (input.apply && tagSlug === "permission-full-access") {
+    contractFail(op, "FULL_ACCESS_APPROVAL_REQUIRED", FULL_ACCESS_APPROVAL_MESSAGE, {
+      asJson: input.asJson,
+      exitCode: CONTRACT_EXIT_POLICY,
+      diagnostic: errorDiagnostic(FULL_ACCESS_APPROVAL_MESSAGE, { operation: op }),
+      details: {
+        suggestedAction: "Preview without --apply. Use the operator approval flow for a full-access grant.",
+      },
+    });
+  }
   const label = input.label?.trim() || existingTag?.label || labelFromProfile(tagSlug);
   const description = input.description?.trim() || existingTag?.description;
   const governedBefore = new Map(scopes.map((scope) => [scope.label, isScopeGoverned(scope)]));
@@ -854,7 +876,7 @@ function buildPermissionAllowPlan(input: PermissionAllowInput): PermissionAllowP
       apply: input.apply,
     }),
   };
-  if (!input.apply) {
+  if (!input.apply && tagSlug !== "permission-full-access") {
     payload.nextCommand = buildAllowApplyCommand(input);
   }
   return payload;
@@ -886,17 +908,21 @@ function buildPermissionDenyPlan(input: PermissionDenyInput): PermissionDenyPlan
   const profile = requiredOption(input.profile, "profile");
   const tagSlug = normalizePermissionTagSlug(profile);
   const existingTag = dbGetTagDefinition(tagSlug);
-  const capabilities = existingTag ? readPermissionTagCapabilities(existingTag) : [];
   const targets = parseSubjectRefs(input.subjects);
   if (targets.length === 0 || targets.some((target) => target.type !== "contact")) {
     contractFail(op, "USAGE_ERROR", "permissions deny revokes contact grants; pass --to contact:<id>.", {
-      asJson: input.asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
-      details: {
-        suggestedAction:
-          "Pass --to contact:<id>. Agent identity ceilings are managed with `ravi agents permissions <agent>`.",
-        acceptedFlags: ["--to contact:<id>", "--chat <chat-id|current>", "--chat-tag <tag>", "--force"],
+      ...{
+        asJson: input.asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction:
+            "Pass --to contact:<id>. Agent identity ceilings are managed with `ravi agents permissions <agent>`.",
+          acceptedFlags: ["--to contact:<id>", "--chat <chat-id|current>", "--chat-tag <tag>", "--force"],
+        },
       },
+      diagnostic: errorDiagnostic("permissions deny revokes contact grants; pass --to contact:<id>.", {
+        operation: op,
+      }),
     });
   }
   const contacts = resolveContactTargets(op, targets, input.asJson);
@@ -904,6 +930,7 @@ function buildPermissionDenyPlan(input: PermissionDenyInput): PermissionDenyPlan
     requireKnownChat: false,
     suggest: (scopeFlags) => buildDenyCommand(input, scopeFlags),
   });
+  const capabilities = resolveProfileCapabilities(op, tagSlug, existingTag, undefined, input.asJson);
   const governedBefore = new Map(scopes.map((scope) => [scope.label, isScopeGoverned(scope)]));
   const operations: PermissionAllowOperation[] = [];
 
@@ -978,12 +1005,17 @@ function buildPermissionListResult(input: PermissionListInput): PermissionListRe
   const targets = parseSubjectRefs(input.subjects);
   if (targets.some((target) => target.type !== "contact")) {
     contractFail(op, "USAGE_ERROR", "permissions list filters contact grants; pass --to contact:<id>.", {
-      asJson: input.asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
-      details: {
-        suggestedAction: "Inspect agent identity ceilings with `ravi permissions materialize --subject-type agent`.",
-        acceptedFlags: ["--to contact:<id>", "--chat <chat-id|current>", "--chat-tag <tag>", "--force", "--profile"],
+      ...{
+        asJson: input.asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: "Inspect agent identity ceilings with `ravi permissions materialize --subject-type agent`.",
+          acceptedFlags: ["--to contact:<id>", "--chat <chat-id|current>", "--chat-tag <tag>", "--force", "--profile"],
+        },
       },
+      diagnostic: errorDiagnostic("permissions list filters contact grants; pass --to contact:<id>.", {
+        operation: op,
+      }),
     });
   }
   const contacts = resolveContactTargets(op, targets, input.asJson);
@@ -1089,8 +1121,11 @@ function resolveContactTargets(op: string, targets: AuthorizationSubject[], asJs
     const contact = getContact(target.id);
     if (!contact) {
       contractFail(op, "CONTACT_NOT_FOUND", `Contact not found: ${target.id}`, {
-        asJson,
-        details: { suggestedAction: "Check the contact id with `ravi contacts find <query> --json`" },
+        ...{
+          asJson,
+          details: { suggestedAction: "Check the contact id with `ravi contacts find <query> --json`" },
+        },
+        diagnostic: errorDiagnostic(`Contact not found: ${target.id}`, { operation: op }),
       });
     }
     if (!contacts.some((existing) => existing.id === contact.id)) contacts.push(contact);
@@ -1105,12 +1140,18 @@ function rejectScopeWithoutContacts(op: string, input: ContactScopeInput): Resol
     "USAGE_ERROR",
     "--chat, --chat-tag and --force scope contact grants; add --to contact:<id> or drop them.",
     {
-      asJson: input.asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
-      details: {
-        suggestedAction:
-          "Agent targets and --agent ceilings are not chat-scoped. Pass --to contact:<id> to grant a user in a chat.",
+      ...{
+        asJson: input.asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction:
+            "Agent targets and --agent ceilings are not chat-scoped. Pass --to contact:<id> to grant a user in a chat.",
+        },
       },
+      diagnostic: errorDiagnostic(
+        "--chat, --chat-tag and --force scope contact grants; add --to contact:<id> or drop them.",
+        { operation: op },
+      ),
     },
   );
 }
@@ -1124,12 +1165,17 @@ function resolveContactScopes(
   const chatTagRef = input.chatTag?.trim();
   if (input.force && (chatRef || chatTagRef)) {
     contractFail(op, "USAGE_ERROR", "--force selects the global scope; it cannot be combined with --chat/--chat-tag.", {
-      asJson: input.asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
-      details: {
-        suggestedAction: "Keep --chat/--chat-tag for a scoped grant (recommended), or use only --force for global.",
-        suggestions: [options.suggest(scopeFlagsFor({ chat: chatRef, chatTag: chatTagRef, force: false })).join(" ")],
+      ...{
+        asJson: input.asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: "Keep --chat/--chat-tag for a scoped grant (recommended), or use only --force for global.",
+          suggestions: [options.suggest(scopeFlagsFor({ chat: chatRef, chatTag: chatTagRef, force: false })).join(" ")],
+        },
       },
+      diagnostic: errorDiagnostic("--force selects the global scope; it cannot be combined with --chat/--chat-tag.", {
+        operation: op,
+      }),
     });
   }
   if (!input.force && !chatRef && !chatTagRef) {
@@ -1144,16 +1190,22 @@ function resolveContactScopes(
       "CHAT_SCOPE_REQUIRED",
       "Contact permissions are chat-scoped: pass --chat <chat-id|current> or --chat-tag <tag>. Use --force only for an explicit global grant.",
       {
-        asJson: input.asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: {
-          suggestedAction: currentChat
-            ? `Ask the human whether this should apply only in this chat (--chat ${currentChat}) before considering --force.`
-            : "Ask the human which chat/group this should apply to before considering --force.",
-          suggestions,
-          acceptedFlags: ["--chat <chat-id|current>", "--chat-tag <tag>", "--force"],
-          ...(currentChat ? { currentChat } : {}),
+        ...{
+          asJson: input.asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: {
+            suggestedAction: currentChat
+              ? `Ask the human whether this should apply only in this chat (--chat ${currentChat}) before considering --force.`
+              : "Ask the human which chat/group this should apply to before considering --force.",
+            suggestions,
+            acceptedFlags: ["--chat <chat-id|current>", "--chat-tag <tag>", "--force"],
+            ...(currentChat ? { currentChat } : {}),
+          },
         },
+        diagnostic: errorDiagnostic(
+          "Contact permissions are chat-scoped: pass --chat <chat-id|current> or --chat-tag <tag>. Use --force only for an explicit global grant.",
+          { operation: op },
+        ),
       },
     );
   }
@@ -1165,11 +1217,14 @@ function resolveContactScopes(
     const chatTag = tryNormalizeTagSlug(chatTagRef);
     if (!chatTag) {
       contractFail(op, "USAGE_ERROR", `Invalid chat tag: ${chatTagRef}`, {
-        asJson: input.asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: {
-          suggestedAction: "Use a tag slug: lowercase letters, numbers, dots, underscores, colons or dashes.",
+        ...{
+          asJson: input.asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: {
+            suggestedAction: "Use a tag slug: lowercase letters, numbers, dots, underscores, colons or dashes.",
+          },
         },
+        diagnostic: errorDiagnostic(`Invalid chat tag: ${chatTagRef}`, { operation: op }),
       });
     }
     scopes.push({
@@ -1190,9 +1245,12 @@ function resolveChatScope(
   const current = chatRef === "current" ? readCurrentChatSource() : null;
   if (chatRef === "current" && !current) {
     contractFail(op, "USAGE_ERROR", "No current chat in this context; pass --chat <chat-id>.", {
-      asJson: options.asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
-      details: { suggestedAction: "Find the chat id with `ravi chats list --json` and pass --chat <chat-id>." },
+      ...{
+        asJson: options.asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: { suggestedAction: "Find the chat id with `ravi chats list --json` and pass --chat <chat-id>." },
+      },
+      diagnostic: errorDiagnostic("No current chat in this context; pass --chat <chat-id>.", { operation: op }),
     });
   }
   const ref = current?.chatId ?? chatRef;
@@ -1234,18 +1292,26 @@ function findChatForScope(
   if (matches.length === 1) return matches[0]!;
   if (matches.length > 1) {
     contractFail(op, "CHAT_AMBIGUOUS", `Chat reference ${ref} matches ${matches.length} chats; pass a canonical id.`, {
-      asJson: options.asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
-      details: {
-        suggestedAction: "Re-run with --chat <canonical-chat-id> from the suggestions.",
-        suggestions: matches.map((chat) => `${chat.id} (${chat.channel}${chat.title ? `: ${chat.title}` : ""})`),
+      ...{
+        asJson: options.asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: "Re-run with --chat <canonical-chat-id> from the suggestions.",
+          suggestions: matches.map((chat) => `${chat.id} (${chat.channel}${chat.title ? `: ${chat.title}` : ""})`),
+        },
       },
+      diagnostic: errorDiagnostic(`Chat reference ${ref} matches ${matches.length} chats; pass a canonical id.`, {
+        operation: op,
+      }),
     });
   }
   if (options.requireKnownChat) {
     contractFail(op, "CHAT_NOT_FOUND", `Chat not found: ${ref}`, {
-      asJson: options.asJson,
-      details: { suggestedAction: "Find the chat id with `ravi chats list --json` and pass --chat <chat-id>." },
+      ...{
+        asJson: options.asJson,
+        details: { suggestedAction: "Find the chat id with `ravi chats list --json` and pass --chat <chat-id>." },
+      },
+      diagnostic: errorDiagnostic(`Chat not found: ${ref}`, { operation: op }),
     });
   }
   return null;
@@ -1369,8 +1435,11 @@ function buildAllowHints(input: {
   governedBefore: Map<string, boolean>;
   apply: boolean;
 }): string[] {
-  if (input.contacts.length === 0) return [];
   const hints: string[] = [];
+  if (input.tagSlug === "permission-full-access") {
+    hints.push(FULL_ACCESS_APPROVAL_MESSAGE);
+  }
+  if (input.contacts.length === 0) return hints;
   if (input.force) {
     const currentChat = readCurrentChatId();
     hints.push(
@@ -1401,7 +1470,9 @@ function buildAllowHints(input: {
       );
     }
   }
-  if (input.agentCeilings.length === 0) {
+  if (input.capabilityRefs.length === 0) {
+    hints.push("This profile grants no capabilities. Other covering grants remain additive.");
+  } else if (input.agentCeilings.length === 0) {
     hints.push(
       `Contact grants never exceed the executor agent ceiling. Pass --agent <id> to ensure the agent can use ${input.capabilityRefs.join(", ")}.`,
     );
@@ -1522,21 +1593,76 @@ function buildListCommand(input: PermissionListInput, scopeFlags: string[]): str
 
 function resolveProfileCapabilities(
   op: string,
+  tagSlug: string,
   existingTag: TagDefinition | null,
   explicitCapabilities: AuthorizationCapability[] | undefined,
   asJson?: boolean,
 ): AuthorizationCapability[] {
+  const normalized = normalizeAgentRuntimePermissionProfile(tagSlug.slice("permission-".length));
+  const builtin = normalized === "none" ? null : normalized;
+  // A known zero-authority profile is valid. chat-only never inherits stale
+  // explicit capabilities, matching the executor runtime's reception ceiling.
+  if (builtin === "chat-only") return [];
+  const profileCapabilities =
+    builtin === "bootstrap"
+      ? bootstrapCapabilitiesFor("agent")
+      : builtin
+        ? materializeAgentRuntimeProfileCapabilities(builtin, `permission-profile:${tagSlug}`)
+        : [];
   const existingCapabilities = existingTag ? readPermissionTagCapabilities(existingTag) : [];
-  const capabilities = dedupeCapabilities([...(existingCapabilities ?? []), ...(explicitCapabilities ?? [])]);
-  if (capabilities.length === 0) {
+  const capabilities = dedupeCapabilities([
+    ...profileCapabilities.map(({ permission, objectType, objectId }) => ({ permission, objectType, objectId })),
+    ...existingCapabilities,
+    ...(explicitCapabilities ?? []),
+  ]);
+  // Revocation must work even after a definition was removed or emptied:
+  // the stored grant identity is enough, and live contexts still need revoking.
+  if (capabilities.length === 0 && !builtin && op !== "permissions deny") {
+    const profiles: string[] = [...AGENT_RUNTIME_PERMISSION_PROFILES];
+    const pageSize = 500;
+    let cursor: TagListCursor | undefined;
+    for (;;) {
+      const page = dbListTagDefinitions({
+        kind: "system",
+        source: "permissions",
+        limit: pageSize,
+        sort: "updated",
+        order: "desc",
+        cursor,
+      });
+      profiles.push(...page.filter((tag) => tag.slug.startsWith("permission-")).map((tag) => tag.slug));
+      // Advance over every tag, including pages containing no profiles.
+      const lastTag = page.at(-1);
+      if (!lastTag || page.length < pageSize) break;
+      cursor = { sort: "updated", order: "desc", value: lastTag.updatedAt, id: lastTag.id };
+    }
+    const inspectCommands = [
+      "ravi skills show permissions",
+      "ravi tags list --kind system --source permissions --json",
+    ];
+    // Keep the diagnostic within the remote transport's safe-line budget.
+    // Complete discovery stays in the listing command and structured details.
+    const inlineProfiles: string[] = [];
+    for (const choice of profiles) {
+      if ([...inlineProfiles, choice].join(", ").length > 300) break;
+      inlineProfiles.push(choice);
+    }
+    const profileSummary = inlineProfiles.join(", ") + (inlineProfiles.length < profiles.length ? ", ..." : "");
     contractFail(
       op,
       "USAGE_ERROR",
-      "No capabilities found for this profile. Provide --capabilities <permission>:<objectType>:<objectId> to create or bootstrap it.",
+      `Unknown or empty permission profile: ${tagSlug.slice(0, 160)}. Available profiles: ${profileSummary}. ` +
+        `Inspect built-ins with '${inspectCommands[0]}' and stored profiles with '${inspectCommands[1]}'. ` +
+        "Provide --capabilities <permission>:<objectType>:<objectId> to bootstrap a custom profile.",
       {
         asJson,
         exitCode: CONTRACT_EXIT_USAGE,
-        details: { suggestedAction: "Re-run with --capabilities <permission>:<objectType>:<objectId>." },
+        diagnostic: errorDiagnostic(`Unknown or empty permission profile: ${tagSlug.slice(0, 160)}`, { operation: op }),
+        details: {
+          acceptedValues: profiles,
+          inspectCommands,
+          suggestedAction: `Run '${inspectCommands[0]}' for built-ins or '${inspectCommands[1]}' for stored profiles.`,
+        },
       },
     );
   }
@@ -1553,15 +1679,34 @@ function planPermissionTagOperation(input: {
   apply: boolean;
   explicitCapabilitiesProvided: boolean;
 }): void {
+  if (input.apply) {
+    // Provider-owned profile upsert lives in src/permissions/apply-grant.ts so
+    // the CLI and the Slack grant card share one rule.
+    const result = upsertPermissionProfileDefinition({
+      profile: input.tagSlug,
+      capabilities: input.capabilities,
+      label: input.label,
+      ...(input.description ? { description: input.description } : {}),
+      explicitCapabilities: input.explicitCapabilitiesProvided,
+      updatedBy: "permissions.allow",
+    });
+    input.operations.push({
+      kind: "profile",
+      status: result.status,
+      target: result.tagSlug,
+      message: result.message,
+    });
+    return;
+  }
+
   if (input.existingTag) {
-    assertProviderOwnedPermissionTag(input.existingTag);
+    assertProviderOwnedPermissionProfile(input.tagSlug, input.existingTag.kind, input.existingTag.source);
     const current = readPermissionTagCapabilities(input.existingTag);
-    const sameCapabilities = capabilityListsEqual(current, input.capabilities);
     const shouldUpdate =
       input.explicitCapabilitiesProvided ||
       input.label !== input.existingTag.label ||
       (input.description ?? undefined) !== (input.existingTag.description ?? undefined) ||
-      !sameCapabilities;
+      !capabilityListsEqual(current, input.capabilities);
     if (!shouldUpdate) {
       input.operations.push({
         kind: "profile",
@@ -1571,48 +1716,11 @@ function planPermissionTagOperation(input: {
       });
       return;
     }
-    if (input.apply) {
-      dbUpdateTagDefinition({
-        slug: input.tagSlug,
-        label: input.label,
-        description: input.description ?? null,
-        kind: "system",
-        source: "permissions",
-        metadata: mergePermissionTagMetadata(input.existingTag.metadata, input.capabilities),
-        updatedBy: "permissions.allow",
-      });
-      input.operations.push({
-        kind: "profile",
-        status: "applied",
-        target: input.tagSlug,
-        message: "Updated provider-owned permission profile.",
-      });
-      return;
-    }
     input.operations.push({
       kind: "profile",
       status: "planned",
       target: input.tagSlug,
       message: "Would update provider-owned permission profile.",
-    });
-    return;
-  }
-
-  if (input.apply) {
-    dbCreateTagDefinition({
-      slug: input.tagSlug,
-      label: input.label,
-      description: input.description,
-      kind: "system",
-      source: "permissions",
-      metadata: permissionTagMetadata(input.capabilities),
-      createdBy: "permissions.allow",
-    });
-    input.operations.push({
-      kind: "profile",
-      status: "applied",
-      target: input.tagSlug,
-      message: "Created provider-owned permission profile.",
     });
     return;
   }
@@ -1642,12 +1750,19 @@ function planContactProfileOperation(input: {
     return;
   }
   if (input.apply) {
-    addContactTag(input.contact.id, input.tagSlug);
+    // Contact scoped grants live in src/permissions/apply-grant.ts: the CLI and
+    // the Slack grant card must not grow two versions of this rule.
+    const result = grantContactProfile({
+      contactId: input.contact.id,
+      profile: input.tagSlug,
+      scope: { type: "global" },
+      createdBy: "permissions.allow",
+    });
     input.operations.push({
       kind: "contact-profile-global",
-      status: "applied",
+      status: result.status,
       target,
-      message: "Attached global permission profile tag through contact policy (--force).",
+      message: result.message,
     });
     return;
   }
@@ -1713,12 +1828,17 @@ function planContactChatGrantOperation(input: {
     return;
   }
   if (input.apply) {
-    dbEnsureContactChatGrant({ ...key, createdBy: "permissions.allow" });
+    const result = grantContactProfile({
+      contactId: input.contact.id,
+      profile: input.tagSlug,
+      scope: contactGrantScopeRef(input.scope),
+      createdBy: "permissions.allow",
+    });
     input.operations.push({
       kind: "contact-chat-grant",
-      status: "applied",
+      status: result.status,
       target,
-      message: `Granted the permission profile to the contact only in ${input.scope.label}.`,
+      message: result.message,
     });
     return;
   }
@@ -1728,6 +1848,12 @@ function planContactChatGrantOperation(input: {
     target,
     message: `Would grant the permission profile to the contact only in ${input.scope.label}.`,
   });
+}
+
+function contactGrantScopeRef(
+  scope: Exclude<ResolvedContactScope, { type: "global" }>,
+): { type: "chat"; chatId: string } | { type: "chat_tag"; chatTag: string } {
+  return scope.type === "chat" ? { type: "chat", chatId: scope.chatId } : { type: "chat_tag", chatTag: scope.chatTag };
 }
 
 function planContactChatGrantRevokeOperation(input: {
@@ -1793,18 +1919,16 @@ function planAgentCapabilityOperation(input: {
 }): void {
   const capability = formatCanonicalCapability(input.capability);
   if (input.apply) {
-    const result = ensureAgentRuntimeCapability(input.agentId, input.capability);
-    if (!result.agent) {
-      throw new Error(`Agent not found: ${input.agentId}`);
-    }
+    const result = ensureAgentCeilingCapability({
+      agentId: input.agentId,
+      capability: input.capability,
+    });
     input.operations.push({
       kind: input.kind ?? "agent-profile",
-      status: result.changed ? "applied" : "unchanged",
-      target: `agent:${input.agentId}`,
-      capability,
-      message: result.changed
-        ? "Added capability to agent runtime ceiling."
-        : "Agent runtime ceiling already includes this capability.",
+      status: result.status,
+      target: result.target,
+      capability: result.capability,
+      message: result.message,
     });
     return;
   }
@@ -1820,7 +1944,7 @@ function planAgentCapabilityOperation(input: {
 function printPermissionAllowPlan(payload: PermissionAllowPlan): void {
   console.log(payload.dryRun ? "permission allow plan" : "permission allow applied");
   console.log(`profile: ${payload.tagSlug}`);
-  console.log(`capabilities: ${payload.capabilities.map(formatCanonicalCapability).join(", ")}`);
+  console.log(`capabilities: ${payload.capabilities.map(formatCanonicalCapability).join(", ") || "(none)"}`);
   if (payload.targets.length > 0) {
     console.log(`targets: ${payload.targets.map((target) => `${target.type}:${target.id}`).join(", ")}`);
   }
@@ -1883,15 +2007,7 @@ function printPermissionListResult(payload: PermissionListResult): void {
 }
 
 function normalizePermissionTagSlug(profile: string): string {
-  const base = profile
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._:-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  if (!base) {
-    throw new Error("Permission profile name is required.");
-  }
-  return normalizeTagSlug(base.startsWith("permission-") ? base : `permission-${base}`);
+  return normalizePermissionProfileSlug(profile);
 }
 
 function parseCapabilityList(value: string | undefined): AuthorizationCapability[] | undefined {
@@ -1975,53 +2091,12 @@ function dedupeStrings(values: string[]): string[] {
   return [...new Set(values)];
 }
 
-function assertProviderOwnedPermissionTag(tag: TagDefinition): void {
-  if (tag.kind !== "system" || tag.source !== "permissions") {
-    throw new Error(
-      `Tag ${tag.slug} is not provider-owned by permissions; refusing to mutate it as an authorization profile.`,
-    );
-  }
-}
-
 function capabilityListsEqual(a: AuthorizationCapability[], b: AuthorizationCapability[]): boolean {
-  const left = a.map(formatCanonicalCapability).sort();
-  const right = b.map(formatCanonicalCapability).sort();
-  return left.length === right.length && left.every((value, index) => value === right[index]);
-}
-
-function permissionTagMetadata(capabilities: AuthorizationCapability[]): Record<string, unknown> {
-  return {
-    permissions: {
-      capabilities: capabilities.map(formatCanonicalCapability),
-    },
-  };
-}
-
-function mergePermissionTagMetadata(
-  metadata: Record<string, unknown> | undefined,
-  capabilities: AuthorizationCapability[],
-): Record<string, unknown> {
-  const previousPermissions = isRecord(metadata?.permissions) ? metadata.permissions : {};
-  return {
-    ...(metadata ?? {}),
-    permissions: {
-      ...previousPermissions,
-      capabilities: capabilities.map(formatCanonicalCapability),
-    },
-  };
-}
-
-function labelFromProfile(profile: string): string {
-  const slug = profile.startsWith("permission-") ? profile.slice("permission-".length) : profile;
-  return slug
-    .split(/[-_.:]+/)
-    .filter(Boolean)
-    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
-    .join(" ");
+  return grantCapabilityListsEqual(a, b);
 }
 
 function deriveProfileName(capability: AuthorizationCapability): string {
-  return `permission-${capability.permission}-${capability.objectType}-${capability.objectId}`;
+  return derivePermissionProfileSlugForCapability(capability);
 }
 
 function buildAllowApplyCommand(input: PermissionAllowInput): string {

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { cliOnlyCommandError, requiresRemoteGateway } from "../remote-gateway.js";
 import { hostname } from "node:os";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
@@ -254,7 +255,13 @@ function toSafeCloudLogoutError(error: unknown): { code: CloudAuthError["code"];
   };
 }
 
-export async function runCloudAuthRootCommand<T>(_asJson: boolean | undefined, fn: () => Promise<T>): Promise<T> {
+export async function runCloudAuthRootCommand<T>(
+  _asJson: boolean | undefined,
+  fn: () => Promise<T>,
+  op = "login",
+): Promise<T> {
+  // The operator's Console login belongs to the host terminal, never a runtime turn.
+  if (requiresRemoteGateway(process.env)) throw cliOnlyCommandError(op);
   return fn();
 }
 

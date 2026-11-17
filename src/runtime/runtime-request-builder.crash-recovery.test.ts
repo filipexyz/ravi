@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { getOrCreateSession, type AgentConfig, type SessionEntry } from "../router/index.js";
-import { getSessionTurn, listSessionEvents } from "../session-trace/session-trace-db.js";
+import { getSessionTurn } from "../session-trace/session-trace-db.js";
+import { listSessionEventsForTest } from "../test/session-trace-events.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import type { RuntimeHostStreamingSession, RuntimeMessageTarget } from "./host-session.js";
 import { installCrashRecoveryApprovalFences } from "./runtime-request-builder.js";
 import { buildRuntimeStartRequest } from "./runtime-request-builder.js";
+import { registerModelBroker, unregisterModelBroker } from "./model-broker-registry.js";
+import type { ModelBrokerAttemptFeedback, ModelBrokerResolveRequest } from "./model-broker.js";
 import type {
   RuntimeCapabilities,
   RuntimeHostServices,
@@ -86,6 +89,45 @@ describe("runtime request crash recovery approval fences", () => {
       "request-user-input",
     ]);
     expect(streamingSession.currentTurnToolStarted).toBe(true);
+  });
+
+  it("announces one approval wait per authorization call and always closes it", async () => {
+    const waits: string[] = [];
+    const hostServices = createHostServices({
+      authorizeCommandExecution: mock(async (request) => {
+        // Tool, then executable: two cards from one authorization call.
+        request.beforeExternalApproval?.();
+        request.beforeExternalApproval?.();
+        waits.push("waiting");
+        return { approved: false, reason: "Timeout" };
+      }),
+      authorizeCapability: mock(async (request) => {
+        request.beforeExternalApproval?.();
+        throw new Error("boom");
+      }),
+      authorizeToolUse: mock(async () => ({ approved: true })),
+    });
+    const streamingSession = {
+      currentCrashRecoveryAttemptId: "attempt-a",
+      currentTurnToolStarted: false,
+      externalApprovalWait: {
+        begin: () => waits.push("begin"),
+        end: () => waits.push("end"),
+      },
+    };
+    installCrashRecoveryApprovalFences({
+      hostServices,
+      streamingSession,
+      crashRecovery: coordinatorWithMarker(() => {}),
+    });
+
+    await hostServices.authorizeCommandExecution({ command: "curl example.com" });
+    await expect(
+      hostServices.authorizeCapability({ permission: "execute", objectType: "group", objectId: "daemon" }),
+    ).rejects.toThrow("boom");
+    // No card, no wait.
+    await hostServices.authorizeToolUse({ toolName: "Edit" });
+    expect(waits).toEqual(["begin", "waiting", "end", "begin", "end"]);
   });
 
   it("denies user input before marking or externalizing when no durable attempt is bound", async () => {
@@ -473,6 +515,7 @@ function emptyRuntimeSession(): RuntimeSessionHandle {
 
 function traceStreamingSession(): RuntimeHostStreamingSession {
   return {
+    sessionKey: TRACE_SESSION_KEY,
     agentId: TRACE_AGENT_ID,
     queryHandle: emptyRuntimeSession(),
     starting: false,
@@ -507,6 +550,110 @@ describe("runtime request durable attempt preparation", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("reserves a fresh broker turn for the successor after restored retry expires before preparation", async () => {
+    const brokerId = "capacity-expiry-builder-test";
+    const previousRuntimeId = process.env.RAVI_RUNTIME_ID;
+    process.env.RAVI_RUNTIME_ID = "runtime-capacity-expiry-test";
+    const resolved: ModelBrokerResolveRequest[] = [];
+    const reported: ModelBrokerAttemptFeedback[] = [];
+    registerModelBroker(brokerId, () => ({
+      id: brokerId,
+      resolveRoute: async (input) => {
+        resolved.push(input);
+        return {
+          version: 1,
+          brokerId,
+          leaseId: `lease-${resolved.length}`,
+          attemptId: `credential-attempt-${resolved.length}`,
+          turnId: input.turnId,
+          runtimeId: input.runtimeId,
+          runtimeProvider: TRACE_PROVIDER_ID,
+          model: TRACE_MODEL,
+          routeRevision: "stable-route",
+          compatibilityRevision: "stable-session",
+          expiresAt: Date.now() + 60_000,
+          transport: {
+            scheme: "local-http-forwarder-v1",
+            protocol: "openai-responses",
+            origin: "http://127.0.0.1:43123",
+            path: "/v1/responses",
+            publicHeaders: {},
+          },
+        };
+      },
+      reportAttempt: async (input) => {
+        reported.push(input);
+        return { recorded: true, nextAction: "retain" };
+      },
+    }));
+    const streamingSession = traceStreamingSession();
+    const retry = streamingSession.pendingMessages[0]!;
+    retry.providerCapacityRetry = { startedAt: Date.now() - 31_000, retries: 2, notBefore: Date.now() - 30_000 };
+    streamingSession.pendingMessages.push(createQueuedRuntimeUserMessage({ prompt: "successor", source: traceSource }));
+    const capabilities: RuntimeCapabilities = {
+      ...traceCapabilities,
+      modelBroker: { protocols: ["openai-responses"], principalIsolation: "uid" },
+    };
+    let built: Awaited<ReturnType<typeof buildRuntimeStartRequest>> | undefined;
+    try {
+      built = await buildRuntimeStartRequest({
+        runId: "run-expired-capacity-builder",
+        sessionName: TRACE_SESSION_NAME,
+        prompt: retry.launchPrompt!,
+        session: traceSession(stateDir!),
+        agent: {
+          ...traceAgent(stateDir!),
+          defaults: { modelBroker: { brokerId, profileRef: "test", required: true } },
+        },
+        runtimeProviderId: TRACE_PROVIDER_ID,
+        runtimeProvider: {
+          id: TRACE_PROVIDER_ID,
+          getCapabilities: () => capabilities,
+          startSession: () => emptyRuntimeSession(),
+        },
+        runtimeCapabilities: capabilities,
+        sessionCwd: stateDir!,
+        dbSessionKey: TRACE_SESSION_KEY,
+        model: TRACE_MODEL,
+        runtimeResolution: {
+          options: { model: TRACE_MODEL },
+          sources: { model: "agent_default", effort: null, thinking: null },
+          hasTaskRuntimeContext: false,
+        },
+        storedRuntimeSessionParams: undefined,
+        canResumeStoredSession: false,
+        resolvedSource: traceSource,
+        streamingSession,
+        stashedMessages: new Map(),
+        defaultRuntimeProviderId: "claude",
+        crashRecovery: {
+          startTurnAttempt: () => ({ attemptId: "durable-successor" }),
+        } as unknown as RuntimeCrashRecoveryCoordinator,
+        onCapacityRetryExhausted: () => {
+          // The host settlement callback has abandoned the startup lease.
+          built!.runtimeCredentialAttempt!.modelBrokerAttemptTerminal = true;
+        },
+      });
+      const yielded = await built.runtimeRequest.prompt.next();
+      expect(yielded.value?.message.content).toBe("successor");
+      expect(resolved).toHaveLength(2);
+      expect(resolved[1]!.turnId).not.toBe(resolved[0]!.turnId);
+      expect(built.runtimeCredentialAttempt).toMatchObject({
+        attemptId: "credential-attempt-2",
+        modelBrokerTurnId: resolved[1]!.turnId,
+        modelBrokerAttemptTerminal: false,
+      });
+      expect(reported).toEqual([]);
+    } finally {
+      streamingSession.done = true;
+      streamingSession.onTurnComplete?.();
+      await built?.runtimeRequest.prompt.return(undefined);
+      unregisterModelBroker(brokerId);
+      if (previousRuntimeId === undefined) delete process.env.RAVI_RUNTIME_ID;
+      else process.env.RAVI_RUNTIME_ID = previousRuntimeId;
+    }
   });
 
   it("terminalizes the historical trace when durable attempt creation fails before provider delivery", async () => {
@@ -553,7 +700,9 @@ describe("runtime request durable attempt preparation", () => {
 
     await expect(runtimeRequest.prompt.next()).rejects.toThrow("attempt ledger unavailable");
 
-    const adapterRequest = listSessionEvents(TRACE_SESSION_KEY).find((event) => event.eventType === "adapter.request");
+    const adapterRequest = listSessionEventsForTest(TRACE_SESSION_KEY).find(
+      (event) => event.eventType === "adapter.request",
+    );
     expect(adapterRequest?.turnId).toBeTruthy();
     expect(getSessionTurn(adapterRequest!.turnId!)).toMatchObject({
       status: "failed",

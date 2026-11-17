@@ -1,6 +1,8 @@
 import { requireDeliveryBarrier } from "../delivery-barriers.js";
 import { saveMessage } from "../db.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
+import { resolveSession } from "../router/sessions.js";
+import { isTriggerOwnSessionKey } from "../triggers/authority.js";
 import { commentTask } from "../tasks/index.js";
 import { logger } from "../utils/logger.js";
 import { resolveHookTemplate } from "./template.js";
@@ -93,6 +95,13 @@ async function handleAppendHistory(
     return;
   }
 
+  // The journal of a trigger's own session is restated to its owner's turns:
+  // nothing is appended to it from outside (a prompt sent there is refused at
+  // intake the same way). Such a session goes by its key, so the name alone
+  // says it, before the session exists too.
+  if (isTriggerOwnSessionKey(sessionName) || isTriggerOwnSessionKey(resolveSession(sessionName)?.sessionKey)) {
+    throw new Error(`Hook ${hook.id} append_history cannot write to a trigger's own session`);
+  }
   saveMessage(sessionName, payload.role === "assistant" ? "assistant" : "user", message);
 }
 

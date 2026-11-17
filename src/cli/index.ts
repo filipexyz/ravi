@@ -13,6 +13,7 @@
 import "../daemon-stdin.js";
 // Loads ~/.ravi/.env before other modules initialize
 import "./env.js";
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 
 import "reflect-metadata";
 import { Command } from "commander";
@@ -30,6 +31,7 @@ import {
   installUsageContract,
   renderContractError,
   sqliteCapacityToContractError,
+  stateNotReadyToContractError,
   unexpectedErrorToContractError,
 } from "./agent-contract.js";
 import { runDoctor } from "./commands/doctor.js";
@@ -41,8 +43,11 @@ import { emitCliAuditEvent, runWithCliAudit, wasContractErrorAudited } from "./a
 import { configureCliLogging } from "./logging.js";
 import { spawnDirectTui } from "./tui-launcher.js";
 import { requireTuiSessionName } from "../tui/session-arg.js";
-import { maybeRunAppAliasRoute } from "../apps/router.js";
+import { maybeRunAppAliasRoute, resolveAppAliasInvocation } from "../apps/router.js";
+import { cliOnlyCommandError, REMOTE_GATEWAY_URL_ENV, requiresRemoteGateway } from "./remote-gateway.js";
 import { buildRootOperationalHelp } from "../runtime/runtime-operational-context.js";
+import { runWithContext } from "./context.js";
+import { usesOperatorRecoveryPath } from "./operator-runtime.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8"));
@@ -76,11 +81,13 @@ registerCommands(program, Object.values(allCommands) as Array<new () => object>)
 // envelope instead of plain text with exit 1. Unlisted groups keep commander's
 // default behavior until they are migrated.
 const AGENT_CONTRACT_DOMAINS = [
+  "decisions",
   "access",
   "agents",
   "artifacts",
   "audio",
   "bridges",
+  "bridge",
   "bug",
   "calendars",
   "channels",
@@ -112,6 +119,7 @@ const AGENT_CONTRACT_DOMAINS = [
   "metrics",
   "observers",
   "pages",
+  "pr",
   "projects",
   "prox",
   "react",
@@ -144,6 +152,22 @@ const AGENT_CONTRACT_DOMAINS = [
 ];
 for (const domain of AGENT_CONTRACT_DOMAINS) installUsageContract(program, domain);
 
+/**
+ * Root commands run outside registry.ts, so they apply its context-key gate
+ * themselves: a CLI holding RAVI_CONTEXT_KEY (or pointed at a gateway) acts for
+ * a runtime context and must never run an operator-terminal command locally.
+ */
+function refuseRootCommandInRuntimeSession(name: string, json?: boolean): void {
+  if (!runsForRuntimeContext()) return;
+  const error = cliOnlyCommandError(name);
+  renderContractError(error, json === true);
+  process.exit(error.exitCode);
+}
+
+function runsForRuntimeContext(): boolean {
+  return requiresRemoteGateway(process.env) || Boolean(process.env[REMOTE_GATEWAY_URL_ENV]?.trim());
+}
+
 // Top-level commands (not via decorator groups)
 program
   .command("doctor")
@@ -153,6 +177,7 @@ program
   .option("--strict", "Exit non-zero on warnings")
   .option("--domain <domain>", "Run one doctor domain")
   .action(async (options: { json?: boolean; full?: boolean; strict?: boolean; domain?: string }) => {
+    refuseRootCommandInRuntimeSession("doctor", options.json);
     await runWithCliAudit(
       {
         group: "_root",
@@ -176,6 +201,7 @@ program
   .command("setup")
   .description("Wizard interativo de configuração")
   .action(async () => {
+    refuseRootCommandInRuntimeSession("setup");
     await runWithCliAudit(
       {
         group: "_root",
@@ -194,19 +220,23 @@ program
   .option("--expected-integrity <sri>", "Require the npm sha512 SRI for an exact release")
   .option("--next", "Switch to dev builds (npm @next tag)")
   .option("--stable", "Switch to stable releases (npm @latest tag)")
-  .option("--no-restart", "Do not restart managed Ravi processes after updating")
   .option("--json", "Print a machine-readable result")
   .action(async (options: RaviUpdateOptions) => {
-    await runWithCliAudit(
-      {
-        group: "_root",
-        name: "update",
-        tool: "root_update",
-        input: { ...options },
-        closeLazyConnection: true,
-      },
-      () => runUpdate(options),
-    );
+    refuseRootCommandInRuntimeSession("update", options.json);
+    const update = () =>
+      runWithCliAudit(
+        {
+          group: "_root",
+          name: "update",
+          tool: "root_update",
+          input: { ...options },
+          closeLazyConnection: true,
+        },
+        () => runUpdate(options),
+      );
+    // An update must work while state is not prepared for the running release:
+    // the operator's terminal runs it without resolving a credential from SQLite.
+    await (usesOperatorRecoveryPath() ? runWithContext({}, update) : update());
   });
 
 program
@@ -227,6 +257,7 @@ program
       timeoutSeconds?: string;
       intervalSeconds?: string;
     }) => {
+      refuseRootCommandInRuntimeSession("login", options.json);
       await runWithCliAudit(
         {
           group: "_root",
@@ -246,6 +277,7 @@ program
   .option("--console <url>", "Console base URL")
   .option("--json", "Print raw JSON result")
   .action(async (options: { console?: string; json?: boolean }) => {
+    refuseRootCommandInRuntimeSession("whoami", options.json);
     await runWithCliAudit(
       {
         group: "_root",
@@ -254,7 +286,7 @@ program
         input: options,
         closeLazyConnection: true,
       },
-      () => runCloudAuthRootCommand(options.json, () => runWhoami(options)),
+      () => runCloudAuthRootCommand(options.json, () => runWhoami(options), "whoami"),
     );
   });
 
@@ -264,6 +296,7 @@ program
   .option("--console <url>", "Console base URL")
   .option("--json", "Print raw JSON result")
   .action(async (options: { console?: string; json?: boolean }) => {
+    refuseRootCommandInRuntimeSession("logout", options.json);
     await runWithCliAudit(
       {
         group: "_root",
@@ -272,7 +305,7 @@ program
         input: options,
         closeLazyConnection: true,
       },
-      () => runCloudAuthRootCommand(options.json, () => runLogout(options)),
+      () => runCloudAuthRootCommand(options.json, () => runLogout(options), "logout"),
     );
   });
 
@@ -303,14 +336,18 @@ program
   .description("Open the terminal UI for a session")
   .argument("[session]", "Session name or key")
   .action(async (session?: string) => {
+    refuseRootCommandInRuntimeSession("tui");
     const sessionName = session?.trim();
     if (!sessionName) {
       contractFail("tui", "USAGE_ERROR", "Usage: ravi tui <session>", {
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: {
-          suggestedAction: "Pass a session name: ravi tui <session>",
-          usage: "ravi tui <session>",
+        ...{
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: {
+            suggestedAction: "Pass a session name: ravi tui <session>",
+            usage: "ravi tui <session>",
+          },
         },
+        diagnostic: errorDiagnostic("Usage: ravi tui <session>", { operation: "tui" }),
       });
     }
     await runWithCliAudit(
@@ -334,6 +371,7 @@ program
   .option("--topic <pattern...>", "Override topic patterns")
   .option("--heartbeat-ms <ms>", "Heartbeat interval in milliseconds", "5000")
   .action(async (options: { scope: string; topic?: string[]; heartbeatMs: string }) => {
+    refuseRootCommandInRuntimeSession("stream");
     await emitCliAuditEvent({
       group: "_root",
       name: "stream",
@@ -386,7 +424,9 @@ void bootstrapCli().catch(async (error: unknown) => {
     return;
   }
   const contractError =
-    sqliteCapacityToContractError("cli bootstrap", error) ?? unexpectedErrorToContractError("cli bootstrap");
+    stateNotReadyToContractError("cli bootstrap", error) ??
+    sqliteCapacityToContractError("cli bootstrap", error) ??
+    unexpectedErrorToContractError("cli bootstrap", error);
   renderContractError(contractError, process.argv.includes("--json"));
   await emitCliAuditEvent({
     group: "cli",
@@ -403,6 +443,30 @@ void bootstrapCli().catch(async (error: unknown) => {
 
 async function bootstrapCli(): Promise<void> {
   if (await maybeRunManagedRuntimeRebindFromEnv()) return;
+
+  // A runtime context never runs an app alias in-process: it goes through
+  // `apps run`, which the gateway authorizes (command access, write-after-read).
+  if (runsForRuntimeContext()) {
+    const argv = process.argv.slice(2);
+    const invocation = resolveAppAliasInvocation(argv, { staticRootCommands: rootCommandNames(program) });
+    if (invocation) {
+      await program.parseAsync(
+        [
+          "apps",
+          "run",
+          invocation.appId,
+          ...(invocation.operation !== undefined ? [invocation.operation] : []),
+          ...(invocation.json ? ["--json"] : []),
+          ...(invocation.execute ? ["--execute"] : []),
+          ...(invocation.args.length > 0 ? ["--", ...invocation.args] : []),
+        ],
+        { from: "user" },
+      );
+      return;
+    }
+    await program.parseAsync();
+    return;
+  }
 
   const handledByAppAlias = await maybeRunAppAliasRoute(process.argv.slice(2), {
     staticRootCommands: rootCommandNames(program),

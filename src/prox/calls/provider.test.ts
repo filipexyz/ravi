@@ -202,7 +202,7 @@ describe("AgoraSipCallProvider", () => {
           auth:
             init?.headers instanceof Headers
               ? init.headers.get("authorization")
-              : (init?.headers as Record<string, string>).authorization,
+              : ((init?.headers as Record<string, string> | undefined)?.authorization ?? null),
         });
         return new Response(JSON.stringify({ agent_id: "agent_agora_123" }), {
           status: 200,

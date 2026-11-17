@@ -30,6 +30,7 @@ import { flushNats, publish } from "../nats.js";
 import { logger } from "../utils/logger.js";
 import { handOffMeetingInboxItem } from "../meetings/inbox-handoff.js";
 import { handleKnowledgeInboxItem, isKnowledgeInboxEvent } from "../knowledge/inbox/handler.js";
+import { acceptCloudInboxItem } from "../cloud-agents/delivery-runner.js";
 import { watchEventFromInboxPayload } from "../watch/events.js";
 import {
   ackInboxItems as ackInboxItemsRemote,
@@ -85,6 +86,8 @@ interface RunnerOptions {
   meetingHandoff?: (payload: InboxNatsPayload) => void;
   /** Called once per newly delivered item; runs `knowledge.*` items (mirror sync, gap answers) in the background. */
   knowledgeHandoff?: (payload: InboxNatsPayload) => void;
+  /** Called once per newly delivered item; records `cloud_agents` session deliveries for the cloud delivery runner. */
+  cloudAgentsHandoff?: (payload: InboxNatsPayload) => void;
   intervalMs?: number;
   nats?: InboxNatsPublishDependencies;
 }
@@ -136,6 +139,7 @@ export class InboxRunner {
   private tickInFlight: Promise<void> | null = null;
   private readonly meetingHandoff: (payload: InboxNatsPayload) => void;
   private readonly knowledgeHandoff: (payload: InboxNatsPayload) => void;
+  private readonly cloudAgentsHandoff: (payload: InboxNatsPayload) => void;
 
   constructor(options: RunnerOptions = {}) {
     this.intervalMs = options.intervalMs ?? DEFAULT_POLL_INTERVAL_MS;
@@ -146,6 +150,7 @@ export class InboxRunner {
       ((payload) => {
         if (isKnowledgeInboxEvent(payload.eventType)) void handleKnowledgeInboxItem(payload);
       });
+    this.cloudAgentsHandoff = options.cloudAgentsHandoff ?? ((payload) => void acceptCloudInboxItem(payload));
   }
 
   async start(): Promise<void> {
@@ -707,6 +712,11 @@ export class InboxRunner {
       this.knowledgeHandoff(enrichedNatsPayload);
     } catch (error) {
       log.warn("Knowledge inbox handoff failed", { itemId: input.item.itemId, error: errMessage(error) });
+    }
+    try {
+      this.cloudAgentsHandoff(enrichedNatsPayload);
+    } catch (error) {
+      log.warn("Cloud agents inbox handoff failed", { itemId: input.item.itemId, error: errMessage(error) });
     }
     return { delivered: true };
   }

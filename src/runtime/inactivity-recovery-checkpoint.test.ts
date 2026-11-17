@@ -67,6 +67,23 @@ describe("inactivity recovery checkpoint", () => {
     expect(checkpoint!.length).toBeLessThanOrEqual(1_600);
   });
 
+  it("never tells the model to redo an approval that went unanswered", () => {
+    const checkpoint = buildInactivityRecoveryCheckpoint({
+      objective: "Plan the migration.",
+      events: [
+        {
+          eventType: "tool.start",
+          preview: "ExitPlanMode",
+          payloadJson: { toolId: "tool-plan", toolName: "ExitPlanMode" },
+        },
+      ],
+    });
+
+    expect(checkpoint).not.toContain("redo incomplete tool `ExitPlanMode`");
+    expect(checkpoint).toContain("`ExitPlanMode` was waiting for a human answer that never came");
+    expect(checkpoint).toContain("Do not call it again on your own");
+  });
+
   it("returns nothing when the turn trace has no task context", () => {
     expect(buildInactivityRecoveryCheckpoint({ objective: "  ", events: [] })).toBeNull();
   });

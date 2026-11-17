@@ -3,6 +3,90 @@ import XCTest
 @testable import RaviSDK
 
 final class RaviErrorTests: XCTestCase {
+  func testRejectsMalformedContractIdentifiersWithoutDiscardingCause() throws {
+    for (code, op) in [
+      ("rctx_sdk_code_secret798", "rctx_sdk_op_secret798"),
+      ("AUTH_REQUIRED?token=SDK_CODE_QUERY_798", "audio generate?key=SDK_OP_QUERY_798"),
+      (String(repeating: "A", count: 97), String(repeating: "a", count: 161)),
+    ] {
+      let data = try JSONSerialization.data(withJSONObject: [
+        "success": false, "op": op, "exitCode": 1, "outcome": "failed",
+        "error": ["code": code, "message": "Provider refused request", "cause": "provider rejected the request", "retryable": false],
+      ])
+      guard case .contract(let body, _) = buildRaviError(statusCode: 422, data: data) else {
+        return XCTFail("Expected diagnostic contract")
+      }
+      XCTAssertEqual(body.error.code, "REMOTE_ERROR")
+      XCTAssertEqual(body.op, "gateway")
+      XCTAssertEqual(body.error.cause, "provider rejected the request")
+      XCTAssertFalse(String(describing: body).contains(code))
+      XCTAssertFalse(String(describing: body).contains(op))
+    }
+    let data = try JSONSerialization.data(withJSONObject: [
+      "success": false, "op": "apps showManifest", "exitCode": 1, "outcome": "failed",
+      "error": ["code": "not_found", "message": "App missing", "retryable": false],
+    ])
+    let body = try JSONDecoder().decode(RaviContractErrorBody.self, from: data)
+    XCTAssertEqual(body.error.code, "not_found")
+    XCTAssertEqual(body.op, "apps showManifest")
+  }
+
+  func testPreservesSpecificCauseAndTypedContext() throws {
+    let cause = "Cannot read audio\nCaused by: EACCES: permission denied, open /tmp/audio.wav; token=[redacted:token]"
+    let sentinel = "PRIVATE_DIAGNOSTIC_PAYLOAD"
+    let data = try JSONSerialization.data(withJSONObject: [
+      "success": false, "op": "transcribe file", "exitCode": 1, "outcome": "failed",
+      "error": [
+        "code": "TRANSCRIPTION_FAILED", "message": "Cannot read audio", "retryable": false,
+        "cause": cause, "body": sentinel, "headers": ["cookie": sentinel], "stack": sentinel,
+        "context": [
+          "status": 403, "provider": "openai", "model": "whisper-1", "operation": "transcribe file",
+          "code": "EACCES", "syscall": "open", "file": "/tmp/audio.wav",
+          "actor": ["type": "agent", "id": "main", "profile": sentinel, "credential": sentinel],
+          "headers": sentinel, "cookies": sentinel, "query": sentinel, "body": sentinel, "stack": sentinel,
+        ],
+      ],
+    ])
+    guard case .contract(let body, _) = buildRaviError(statusCode: 422, data: data) else {
+      return XCTFail("Expected diagnostic contract")
+    }
+    XCTAssertEqual(body.error.code, "TRANSCRIPTION_FAILED")
+    XCTAssertEqual(body.error.cause, cause)
+    XCTAssertEqual(body.error.details["cause"], .string(cause))
+    XCTAssertEqual(body.error.context?.status, 403)
+    XCTAssertEqual(body.error.context?.provider, "openai")
+    XCTAssertEqual(body.error.context?.model, "whisper-1")
+    XCTAssertEqual(body.error.context?.operation, "transcribe file")
+    XCTAssertEqual(body.error.context?.code, "EACCES")
+    XCTAssertEqual(body.error.context?.syscall, "open")
+    XCTAssertEqual(body.error.context?.file, "/tmp/audio.wav")
+    XCTAssertEqual(body.error.context?.actor?.type, "agent")
+    XCTAssertEqual(body.error.context?.actor?.id, "main")
+    XCTAssertFalse(String(describing: body).contains(sentinel))
+  }
+
+  func testRejectsInvalidDiagnosticFieldsWithoutDiscardingCause() throws {
+    for status in [99, 600, 401.5] {
+      let data = try JSONSerialization.data(withJSONObject: [
+        "success": false, "op": "transcribe file", "exitCode": 1, "outcome": "failed",
+        "error": [
+          "code": "TRANSCRIPTION_FAILED", "message": "quota exceeded", "retryable": false,
+          "cause": "quota exceeded", "context": [
+            "status": status, "provider": "https://host?key=private",
+            "actor": ["type": "agent", "id": "rctx_privatecredential"],
+          ],
+        ],
+      ])
+      guard case .contract(let body, _) = buildRaviError(statusCode: 422, data: data) else {
+        return XCTFail("Expected diagnostic contract")
+      }
+      XCTAssertEqual(body.error.cause, "quota exceeded")
+      XCTAssertNil(body.error.context?.status)
+      XCTAssertNil(body.error.context?.provider)
+      XCTAssertNil(body.error.context?.actor)
+    }
+  }
+
   func testCanonicalContractFailuresPreserveEnvelopeAndTaxonomy() throws {
     let fixtures: [(statusCode: Int, exitCode: Int, outcome: RaviContractOutcome, code: String)] = [
       (422, 1, .failed, "PROVIDER_ERROR"),

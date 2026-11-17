@@ -61,6 +61,101 @@ function getDenyReason(result: Record<string, unknown>): string {
 // Bash Permission Hook Tests
 // ============================================================================
 
+describe("Bash quoting permission boundary", () => {
+  it("allows literal search/JSON data with only the named executable grant", () => {
+    for (const command of [
+      "rg -F '$(whoami)' file",
+      'grep -F "\\$(whoami)" file',
+      "printf '%s' '{\"pattern\":\"$(id) `id` <(id) <<EOF\"}'",
+      "printf '%s' 'it'\\''s $(id)'",
+      'printf "%s" "<(id) >(id) <<EOF"',
+    ]) {
+      const executable = command.split(" ")[0]!;
+      const decision = evaluateBashPermission(command, {
+        agentId: "test-agent",
+        kind: "test-runtime",
+        capabilities: [{ permission: "execute", objectType: "executable", objectId: executable }],
+      });
+      expect(decision.allowed).toBe(true);
+    }
+  });
+
+  it("authorizes the commands inside substitutions by their own grants", () => {
+    const ctx = {
+      agentId: "test-agent",
+      kind: "test-runtime",
+      capabilities: ["printf", "cat"].map((objectId) => ({
+        permission: "execute",
+        objectType: "executable",
+        objectId,
+      })),
+    };
+    for (const command of ['printf "%s" "$(whoami)"', 'printf "%s" "$\\\n(whoami)"', 'printf "%s" "`whoami`"']) {
+      const decision = evaluateBashPermission(command, ctx);
+      expect(decision.allowed, command).toBe(false);
+      expect(decision.denialType, command).toBe("executable");
+      expect(decision.reason, command).toContain("whoami");
+    }
+    for (const command of ["cat <<'EOF'\nliteral\nEOF", "cat <(printf ok)"]) {
+      expect(evaluateBashPermission(command, ctx).allowed, command).toBe(true);
+    }
+  });
+
+  it("allows quoted shells and inline interpreters only with wildcard execute", () => {
+    for (const command of [
+      'ba"sh" -c "echo ok"',
+      'sudo "bash" -c "echo ok"',
+      'python3 "-c" "print(1)"',
+      'py"thon3" -c "print(1)"',
+      'node -e"console.log(1)"',
+      'cat script | "python3"',
+      "X=a#b bash -c id",
+      "python3 -W ignore#x -c code",
+      "X=a#b sudo bash -c id",
+      "printf code | python3 # comment",
+      "printf code | python3 2>/dev/null",
+      "printf code | X=a#b python3 2>/dev/null",
+    ]) {
+      const decision = evaluateBashPermission(command, {
+        agentId: "test-agent",
+        kind: "test-runtime",
+        capabilities: [{ permission: "execute", objectType: "executable", objectId: "*" }],
+      });
+      expect(decision.allowed, command).toBe(true);
+      const restricted = evaluateBashPermission(command, {
+        agentId: "test-agent",
+        kind: "test-runtime",
+        capabilities: ["printf", "cat", "bash", "sudo", "python3", "node"].map((objectId) => ({
+          permission: "execute",
+          objectType: "executable",
+          objectId,
+        })),
+      });
+      expect(restricted.allowed, command).toBe(false);
+      expect(restricted.denialType, command).toBe("shell_syntax");
+    }
+  });
+
+  it("does not turn literal data into permission to run a different executable", () => {
+    const decision = evaluateBashPermission("grep '$(id)' file; ba'sh' script", {
+      agentId: "test-agent",
+      kind: "test-runtime",
+      capabilities: [{ permission: "execute", objectType: "executable", objectId: "grep" }],
+    });
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toContain("bash");
+  });
+
+  it("documents the file-script limit: interpreter permission does not inspect script content", () => {
+    const decision = evaluateBashPermission("python3 ./script.py", {
+      agentId: "test-agent",
+      kind: "test-runtime",
+      capabilities: [{ permission: "execute", objectType: "executable", objectId: "python3" }],
+    });
+    expect(decision.allowed).toBe(true);
+  });
+});
+
 describe("createBashPermissionHook", () => {
   it("has matcher set to 'Bash'", () => {
     const hook = createBashPermissionHook({ getAgentId: () => undefined });
@@ -186,7 +281,7 @@ describe("createBashPermissionHook", () => {
       expect(JSON.stringify(denial)).not.toContain(command);
     });
 
-    it("blocks unconditional blocks regardless of grants", async () => {
+    it("blocks indirect execution despite named executable grants", async () => {
       const result = await callBashHook(
         "bash -c 'echo hi'",
         "test",
@@ -291,6 +386,7 @@ describe("createBashPermissionHook", () => {
         "env -u {RAVI_CONTEXT_KEY,} ravi crypto balance",
         "env -u R{A,}VI_CONTEXT_KEY ravi crypto balance",
         "X=RAVI_CONTEXT_KEY; env -u $X ravi crypto balance",
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell expansion under test
         "X=RAVI_CONTEXT_KEY; env -u ${X} ravi crypto balance",
         // Shell tricks around the env name.
         "/usr/bin/ENV -u RAVI_CONTEXT_KEY ravi crypto balance",
@@ -321,13 +417,13 @@ describe("createBashPermissionHook", () => {
       }
     });
 
-    it("blocks unconditional shells even with execute:executable:*", () => {
+    it("allows shells with execute:executable:*", () => {
       const decision = evaluateBashPermission("bash -c 'echo hi'", {
         agentId: "test",
         kind: "test-runtime",
         capabilities: [{ permission: "execute", objectType: "executable", objectId: "*" }],
       });
-      expect(decision.allowed).toBe(false);
+      expect(decision.allowed).toBe(true);
     });
 
     it("checks all executables in piped commands", async () => {
@@ -353,14 +449,14 @@ describe("createBashPermissionHook", () => {
       expect(isDenied(result)).toBe(false);
     });
 
-    it("blocks dangerous patterns before checking executables", async () => {
+    it("checks the command inside a substitution before allowing the outer command", async () => {
       const result = await callBashHook(
         "echo $(whoami)",
         "test",
         makeToolContext("test", [{ permission: "execute", objectType: "executable", objectId: "echo" }]),
       );
       expect(isDenied(result)).toBe(true);
-      expect(getDenyReason(result)).toContain("command substitution");
+      expect(getDenyReason(result)).toContain("whoami");
     });
 
     it("does not widen stale agent-runtime capabilities with the agent's materialized grants", () => {
@@ -585,6 +681,24 @@ describe("turn-runtime executor ceiling", () => {
     expect(decision.allowed).toBe(true);
   });
 
+  it("runs an executable a grantor approved for this turn, even outside the agent's ceiling", () => {
+    expect(evaluateBashPermission("curl https://example.com", whatsappTurn(bootstrapCaps)).allowed).toBe(false);
+
+    const approved = whatsappTurn([
+      ...bootstrapCaps,
+      { permission: "execute", objectType: "executable", objectId: "curl", source: "approval" },
+    ]);
+    expect(evaluateBashPermission("curl https://example.com", approved).allowed).toBe(true);
+    // The approval covers what was approved, nothing more.
+    expect(evaluateBashPermission("wget https://example.com", approved).allowed).toBe(false);
+    // A capability that merely sits in the snapshot is still bounded by the ceiling.
+    const unapproved = whatsappTurn([
+      ...bootstrapCaps,
+      { permission: "execute", objectType: "executable", objectId: "curl" },
+    ]);
+    expect(evaluateBashPermission("curl https://example.com", unapproved).allowed).toBe(false);
+  });
+
   it("picks up a mid-turn runtimePermissions expansion without resetting the session", () => {
     const stale = whatsappTurn(bootstrapCaps);
     expect(evaluateBashPermission("ssh host uptime", stale).allowed).toBe(false);
@@ -629,11 +743,11 @@ describe("turn-runtime executor ceiling", () => {
     expect(decision.allowed).toBe(false);
   });
 
-  it("still blocks unconditional shells under full-access", () => {
+  it("allows shells under effective full-access", () => {
     dbUpdateAgent(agentId, { defaults: { runtimePermissions: { profile: "full-access" } } });
 
     const decision = evaluateBashPermission("bash -c 'echo hi'", whatsappTurn(bootstrapCaps));
-    expect(decision.allowed).toBe(false);
+    expect(decision.allowed).toBe(true);
   });
 
   it("allows the Bash tool on a stale turn-runtime after full-access is applied", async () => {

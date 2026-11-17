@@ -1,0 +1,183 @@
+---
+id: cli/pr
+title: "Verified PR publication"
+kind: capability
+domain: cli
+capabilities:
+  - pr
+tags:
+  - cli
+  - github
+  - watch
+  - write-brake
+applies_to:
+  - src/cli/commands/pr.ts
+  - src/pr
+  - src/hooks/gh-pr-publish.ts
+  - src/cli/remote-gateway.ts
+owners:
+  - ravi-dev
+status: active
+normative: true
+---
+
+# Verified PR publication
+
+`ravi pr publish` uploads the current committed branch through Git Data API,
+creates or reuses its ready PR, and reconciles CI follow. Upload, verification,
+PR reconciliation and follow are internal helpers, not separate public commands.
+
+## Contract
+
+- `--repo owner/repo` and `--base branch` are required. New PRs also require
+  `--title` and `--body-file`; an existing PR keeps its human title/body.
+- `--expect-sha` optionally pins full HEAD. Default is capture HEAD during
+  preflight and verify it again before moving the ref and before success.
+- Without `--execute`, including explicit `--dry-run`, return exit 3 and a
+  typed plan with no GitHub writes, journal, watch or trigger mutations.
+  Combining the flags is usage error, exit 2. Failure/partial is exit 1;
+  complete publication is exit 0. `--json` preserves the native error envelope.
+- Publication writes the daemon-prepared journal in runtime state and has two
+  callers, told apart by the transport of the running context and never by
+  flags, environment or a credential file:
+  - **A Ravi session**, through the gateway/agent (transport `gateway` or
+    `tool`). It MUST carry a resolved authenticated runtime context bound to an
+    agent and a session. Session/source identity MUST come from that record,
+    not ambient aliases. CI follows the publishing session's durable origin,
+    and `--reply-session`, when given, MUST be that session. A runtime context
+    that belongs to no session MUST fail before body/worktree, GitHub, health
+    or journal IO with `PERMISSION_DENIED` (exit 1) and `pr publish requires an
+    authenticated session context; run through the gateway/agent.`, whatever
+    `--reply-session` names: it never becomes a terminal and never publishes
+    into another session.
+  - **The operator's terminal**, with the installed CLI and no runtime context
+    (`quality/state-boundary`). It acts as the local operator with admin
+    access and MUST pass `--reply-session <session>`: the session whose chat
+    receives the CI follow. That names a destination and grants no authority.
+    A missing flag MUST fail with `PUBLICATION_SESSION_REQUIRED` (exit 2); the
+    session MUST exist, be accessible and have a chat destination; all of it
+    is checked before body/worktree, GitHub, health or journal IO.
+  A CLI run from a source checkout or a worktree cannot open runtime state,
+  including the read of the reply session, so it cannot publish or preview.
+- Read the caller worktree and body file, never silently the gateway cwd.
+- A refusal MUST be shown to whoever ran the command. A gateway client and a
+  tool caller render the returned failure; in a terminal the command renders
+  it itself, once, as the JSON envelope or as text.
+- Declare `@CommandAccess(kind:mutate, resource:pr, action:publish, risk:high,
+  requiresConfirmation:true, localOperator:true)` and concrete `@Returns`;
+  no `@CliOnly`. Authorization runs before filesystem/network reads and
+  before effects. `--execute` grants neither capability nor review approval.
+  No auto-grants.
+- When authorization requires approval, response and permission-audit recovery
+  guidance MUST name the same way out: request approval/reissuance from the
+  authority, or have the operator run the command.
+
+## Integrity and supported scope
+
+- Require a clean named SHA-1 work branch, github.com origin matching repo,
+  existing base, and head distinct from base/default. No implicit fetch,
+  checkout, commit, merge, force update, fork destination or hook changes.
+- Read immutable Git objects (`cat-file`, NUL-delimited `ls-tree`), not the
+  working tree or space-split raw diffs. Recompute object hashes locally.
+  Preserve binary bytes, modes, symlinks, parent order, message and identity
+  timestamps including offsets. Create complete missing trees bottom-up.
+- Only reuse GitHub objects whose returned IDs match. Verify every created
+  blob/tree/commit ID and final tree AND commit SHA before changing refs.
+  An equivalent tree with a different commit SHA is failure, never a substitute.
+- Missing signed/noncanonical commits, non-UTF-8 paths/messages, new gitlinks,
+  LFS pointer uploads, SHA-256 repos and new root history are refused in v1.
+  Existing remote ancestry may contain these commits without reconstruction.
+- Bounds: 100 missing commits, 5,000 objects, 50 MiB total, 8 MiB per blob.
+  Exceeding them fails.
+- The time budget scales with the upload and is never unbounded. The preflight
+  runs on 180 seconds; once it has measured the upload, the same deadline
+  becomes 180 seconds plus 1 second per 250 KiB, at most 900 seconds.
+  `RAVI_PR_PUBLISH_TIMEOUT_MS` in the publishing process replaces the computed
+  value and obeys the same ceiling; an invalid value is a usage error. Each
+  subprocess gets 20 seconds plus 1 second per 250 KiB it carries. The journal
+  lease and the gateway client outlive the budget they wait for.
+- `PUBLICATION_TIMEOUT` MUST carry `timeout`: phase, budget, objects and bytes
+  GitHub confirmed in this attempt, and the measured totals (null before the
+  preflight measured them). A rerun for the same SHA MUST skip objects GitHub
+  already holds, so each attempt uploads only what is still missing.
+- `PUBLICATION_TIMEOUT` MUST mean the publication deadline ended, including
+  between the preflight and the first write. A subprocess stopped by its own
+  limit MUST fail with `PUBLICATION_REQUEST_TIMEOUT`, and one stopped by the
+  output cap with `PUBLICATION_RESPONSE_TOO_LARGE`; neither may report the
+  budget as expired nor recommend raising `RAVI_PR_PUBLISH_TIMEOUT_MS`.
+- Advance refs only with `force:false`; re-read before/after. GitHub has no
+  expected-old-SHA parameter: this detects races but does not promise CAS.
+  A same-SHA ref still requires PR/follow reconciliation and final verification.
+
+## Failure and recovery
+
+- Publication re-authorizes before every write, so a runtime context revoked or
+  expired mid-publication (the turn that launched a detached `--execute` ended)
+  MUST fail as `RUNTIME_CONTEXT_INACTIVE` (message covering revoked and expired) with a `suggestedAction` to rerun the
+  same command with the same `--expect-sha` from a live turn and keep it open
+  until it exits. It MUST NOT surface as `PERMISSION_DENIED`: a missing grant is
+  fixed by the operator, an ended context is not, and mistaking one for the
+  other sends the operator after a grant that is already there. The refusal
+  MUST be audited (`cli_command_access_context_inactive`). This holds for `pr
+  publish` only: the gateway preflight (`src/sdk/gateway/dispatcher.ts`) still
+  answers an inactive context with `PERMISSION_DENIED` 403 carrying the tag in
+  `details`, next to the existing `runtime_context_not_live` and `CONTEXT_EXPIRED`
+  401 names. Unifying those names is a follow-up, not part of this contract.
+  Through the remote gateway the CLI replaces the server's `suggestedAction`
+  with `publicationRecoveryAction(code)`, so that catalog MUST carry the
+  live-turn rerun instruction for `RUNTIME_CONTEXT_INACTIVE`; otherwise the
+  instruction this code exists to deliver is lost on the real path.
+  The ref write MUST rethrow `RUNTIME_CONTEXT_INACTIVE` like `PERMISSION_DENIED`,
+  without reading the ref back or journaling "ref confirmed".
+- Object upload is not transactional. A failed upload can leave unreachable
+  objects; do not delete them or roll back someone else's ref. Rerun the same
+  command, preferably with `--expect-sha`, observing actual remote state.
+- Tree/SHA divergence stops before a ref mutation. Local head changes, remote
+  branch movement and non-fast-forward updates fail explicitly.
+- Reuse the unique open PR for this repo/head/base. Another base, multiple open
+  matches or only closed/merged PRs is conflict. Never retarget or reopen.
+- A lost ref/PR creation response is reconciled by reading the exact remote
+  resource. A 422 alone is not success. Ref success followed by PR/follow
+  failure returns partial phase, SHA, PR number when known and uncertainty.
+- Reconcile through `ensureGhWatchFollow`, with a local active CI producer,
+  using its local-only path without requiring or creating a Console watch,
+  enabled correctly routed trigger and live runner confirmation of the loaded
+  subscription fingerprint. Missing or old runtime fails preflight; a lost
+  runner after mutation returns partial failure. `fireCount=0` is legitimate
+  before the first event. Never start another runner to make a probe pass.
+- Preflight MUST validate durable publisher ownership before any GitHub call,
+  using read-only lifecycle/session access so preview cannot bootstrap state.
+  Execute MUST revalidate the original publisher before object/ref/PR writes,
+  before follow registration and before success. A thread closing or being
+  pruned is safe while its saved lifecycle and durable parent remain; missing
+  or ambiguous lineage MUST fail closed. Verification and reported replySession
+  MUST refer to the resolved parent, never a frozen child destination.
+- Follow verification MUST compare expected and persisted `replySource` through
+  the same `serializeReplySource` projection used by trigger persistence:
+  `channel`, `accountId`, `chatId`, and a nonempty optional `threadId`.
+  Context-only `instanceId` and `canonicalChatId` MUST NOT be persisted or cause
+  a false mismatch. A missing/invalid destination or a real difference in any
+  persisted destination field MUST fail verification. Watch, trigger, ownership,
+  repository/PR filter and loaded-runner checks MUST remain required.
+- New PRs are ready; legacy drafts become ready after follow verification.
+  Final result includes repo/head/base, local and remote SHA/tree, PR URL,
+  watch/CI-watch/trigger IDs, publishing session, verification time and current
+  CI snapshot. Publication success does not assert that CI has passed.
+
+## Audit and Review Gate
+
+Persist an intent before each remote mutation and follow reconciliation, then
+confirmation or uncertain failure, in `pr_publication_events` in the runtime
+SQLite database. Use a dedicated synchronous FULL connection and a bounded
+local repo/head lease. Audit failure prevents further effects. The logical
+publication ID is repo/head/base/SHA; attempts have distinct IDs. Record actor,
+executor, public context ID, session, phase, object IDs and final PR/follow IDs;
+exclude credentials, context keys, file contents, PR body and raw subprocess
+output. The journal is evidence, never the authority for remote state.
+
+Ready only makes a PR eligible for review. Record independent review against
+the current SHA in the PR and respect the repository's actual required checks.
+Review Gate is retired; publication MUST NOT introduce a review check/ruleset.
+This command cannot approve, resolve discussions, merge or alter rulesets.
+New PR descriptions disclose Git Data API transport and that this command did
+not run git push/pre-push; the author supplies honest local/CI validation.

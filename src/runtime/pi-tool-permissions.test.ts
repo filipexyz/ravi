@@ -2,11 +2,15 @@ import { describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DETACH_SCRIPT_FILENAME, resetDetachScriptCache } from "../jobs/detach-script.js";
 import {
   PI_PERMISSION_HOOKS_READY_MESSAGE,
   PI_PERMISSION_MISSING_DECISION_REASON,
   PI_PERMISSION_OPAQUE_DENY_REASON,
   PI_PERMISSION_UI_TITLE,
+  PI_DYNAMIC_TOOL_UI_TITLE,
+  formatPiDynamicToolUiResponse,
+  parsePiDynamicToolUiRequest,
   PI_RAVI_PERMISSION_EXTENSION_SOURCE,
   authorizePiToolCall,
   buildPiPermissionUiResponse,
@@ -23,7 +27,28 @@ import {
   PiPermissionBridgeError,
   resolvePiExtensionUiResponse,
 } from "./pi-tool-permissions.js";
+import type { PiToolPermissionDecision } from "./pi-tool-permissions.js";
 import type { RuntimeHostServices } from "./types.js";
+
+// Autorizar um Bash materializa o wrapper de detach no state dir. Nos testes ele
+// precisa ser descartável: escrever em `~/.ravi` trocaria o wrapper que o daemon
+// usa pelo caminho deste arquivo de teste.
+process.env.RAVI_STATE_DIR = mkdtempSync(join(tmpdir(), "ravi-pi-permissions-"));
+resetDetachScriptCache();
+
+/**
+ * Bash autorizado volta com o comando reescrito para o wrapper de detach.
+ *
+ * A decisão continua sendo uma autorização — o gate viu o comando real e só
+ * depois o reescreveu. O que estas asserções fixam é que a reescrita acompanha a
+ * autorização, em vez de a autorização virar um `allowed: true` solto.
+ */
+function expectBashAuthorized(decision: PiToolPermissionDecision, command: string): void {
+  expect(decision.allowed).toBe(true);
+  expect(decision.command).toBeDefined();
+  expect(decision.command).toContain(DETACH_SCRIPT_FILENAME);
+  expect(decision.command).toContain(command);
+}
 
 describe("Pi tool permission bridge", () => {
   it("maps Pi built-in tools onto Ravi REBAC names", () => {
@@ -95,7 +120,7 @@ describe("Pi tool permission bridge", () => {
     );
     expect(tools).toEqual(["Bash"]);
     expect(commands).toEqual(["git status"]);
-    expect(allowed).toEqual({ allowed: true });
+    expectBashAuthorized(allowed, "git status");
   });
 
   it("denies bash when the tool is granted but command execution is blocked", async () => {
@@ -340,11 +365,12 @@ describe("Pi tool permission bridge", () => {
         reason: "slow command denied by bash policy.",
       }),
     });
-    expect(fastResponse).toEqual({
-      type: "extension_ui_response",
-      id: "ui-fast",
-      value: formatPiPermissionUiDecisionValue({ allowed: true }),
-    });
+    expect(fastResponse).not.toBeNull();
+    expect(fastResponse?.type).toBe("extension_ui_response");
+    expect(fastResponse?.id).toBe("ui-fast");
+    // O valor carrega a decisão, incluindo a reescrita do detach: comparar a
+    // string inteira contra uma decisão fabricada aqui só testaria o formato.
+    expectBashAuthorized(parsePiPermissionUiDecisionValue(fastResponse?.value), "fast-allow");
   });
 
   it("surfaces crash-recovery fence denials instead of the opaque fallback", async () => {
@@ -695,17 +721,16 @@ describe("Pi tool permission bridge", () => {
         "SKILL_NOT_AUTHORIZED: Skill 'ravi-system-image' is not authorized for this agent. It ships with Ravi, so there is nothing to install: grant it ('ravi skills grant <agent> image') or give the agent the 'use:skill:image' capability. Granting needs mutate:skills:grant; if this agent cannot run it, ask an operator.",
     });
 
-    await expect(
-      authorizePiToolCall(
-        "bash",
-        { command: "ravi skills show ravi-dev-app-creator --json" },
-        {
-          canUseTool: async () => ({ behavior: "allow" }),
-          approveRuntimeRequest: async () => ({ approved: true }),
-          allowedSkills: ["ravi-dev-app-creator"],
-        },
-      ),
-    ).resolves.toEqual({ allowed: true });
+    const grantedSkill = await authorizePiToolCall(
+      "bash",
+      { command: "ravi skills show ravi-dev-app-creator --json" },
+      {
+        canUseTool: async () => ({ behavior: "allow" }),
+        approveRuntimeRequest: async () => ({ approved: true }),
+        allowedSkills: ["ravi-dev-app-creator"],
+      },
+    );
+    expectBashAuthorized(grantedSkill, "ravi skills show ravi-dev-app-creator --json");
   });
 
   it("denies the unauthorized skill even when a granted skill shares the shell line", async () => {
@@ -728,12 +753,73 @@ describe("Pi tool permission bridge", () => {
       });
     }
 
-    await expect(
-      authorizePiToolCall(
-        "bash",
-        { command: "ravi skills install --source ~/.agents/skills/find-skills/SKILL.md --json" },
-        handlers,
-      ),
-    ).resolves.toEqual({ allowed: true });
+    const install = await authorizePiToolCall(
+      "bash",
+      { command: "ravi skills install --source ~/.agents/skills/find-skills/SKILL.md --json" },
+      handlers,
+    );
+    expectBashAuthorized(install, "ravi skills install --source ~/.agents/skills/find-skills/SKILL.md --json");
+  });
+});
+
+describe("pi dynamic tool bridge", () => {
+  it("registers host tools from the RAVI_PI_DYNAMIC_TOOLS env", () => {
+    expect(PI_RAVI_PERMISSION_EXTENSION_SOURCE).toContain("pi.registerTool(");
+    expect(PI_RAVI_PERMISSION_EXTENSION_SOURCE).toContain("RAVI_PI_DYNAMIC_TOOLS");
+    expect(PI_RAVI_PERMISSION_EXTENSION_SOURCE).toContain("RAVI_PI_DYNAMIC_TOOLS_FILE");
+    expect(PI_RAVI_PERMISSION_EXTENSION_SOURCE).toContain(PI_DYNAMIC_TOOL_UI_TITLE);
+  });
+
+  it("recognizes a host tool execution request", () => {
+    const request = parsePiDynamicToolUiRequest({
+      type: "extension_ui_request",
+      id: "evt-1",
+      title: PI_DYNAMIC_TOOL_UI_TITLE,
+      message: JSON.stringify({
+        toolName: "tasks_show",
+        toolCallId: "call-1",
+        arguments: { taskId: "task-1" },
+      }),
+    });
+    expect(request).toEqual({
+      id: "evt-1",
+      toolName: "tasks_show",
+      toolCallId: "call-1",
+      arguments: { taskId: "task-1" },
+    });
+  });
+
+  it("reads the payload from placeholder, where Pi RPC puts ctx.ui.input's second argument", () => {
+    const payload = JSON.stringify({ toolName: "tasks_report", toolCallId: "call-2", arguments: { taskId: "task-1" } });
+    const expected = { id: "evt-2", toolName: "tasks_report", toolCallId: "call-2", arguments: { taskId: "task-1" } };
+    expect(
+      parsePiDynamicToolUiRequest({
+        type: "extension_ui_request",
+        id: "evt-2",
+        method: "input",
+        title: PI_DYNAMIC_TOOL_UI_TITLE,
+        placeholder: payload,
+      }),
+    ).toEqual(expected);
+    expect(
+      parsePiDynamicToolUiRequest({ id: "evt-2", method: "input", title: PI_DYNAMIC_TOOL_UI_TITLE, prefill: payload }),
+    ).toEqual(expected);
+  });
+
+  it("ignores unrelated extension UI requests", () => {
+    expect(parsePiDynamicToolUiRequest({ title: "permission", id: "x" })).toBeNull();
+    expect(parsePiDynamicToolUiRequest({ title: PI_DYNAMIC_TOOL_UI_TITLE })).toBeNull();
+  });
+
+  it("encodes a host tool result for the bridge", () => {
+    const response = formatPiDynamicToolUiResponse(
+      { id: "evt-1", toolName: "tasks_show", arguments: {} },
+      { success: true, contentItems: [{ type: "inputText", text: "ok" }] },
+    );
+    expect(response).toEqual({
+      type: "extension_ui_response",
+      id: "evt-1",
+      value: JSON.stringify({ success: true, contentItems: [{ type: "inputText", text: "ok" }] }),
+    });
   });
 });

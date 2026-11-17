@@ -49,6 +49,23 @@ export const changedEntityReturnSchema = z
 
 export const commandEnvelopeReturnSchema = looseObjectSchema;
 
+export const platformIdentityLinkReturnSchema = z
+  .object({
+    status: z.literal("linked"),
+    agent: z.string(),
+    identity: z
+      .object({
+        id: z.string(),
+        channel: z.string(),
+        instanceId: z.string(),
+        platformUserId: z.string(),
+        ownerType: z.string().nullable(),
+        ownerId: z.string().nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+
 const contextCapabilityReturnSchema = z
   .object({
     permission: z.string(),
@@ -1548,6 +1565,46 @@ export const taskCommentReturnSchema = taskMutationReturnSchema
   })
   .passthrough();
 
+const taskDecisionAttentionItemReturnSchema = z.object({
+  id: z.string(),
+  key: z.string(),
+  ask: z.string(),
+  ownerType: z.enum(["human", "agent", "unassigned"]),
+  ownerId: z.string().nullable(),
+  askedBy: z.string().nullable(),
+  askedAt: z.number(),
+  blocks: z.boolean(),
+  ageSeconds: z.number(),
+});
+
+const taskDecisionAttentionEntryReturnSchema = z.object({
+  taskId: z.string(),
+  taskTitle: z.string(),
+  taskStatus: z.string(),
+  taskPriority: z.string(),
+  assigneeAgentId: z.string().nullable(),
+  assigneeSessionName: z.string().nullable(),
+  parked: z.boolean(),
+  waitingFor: z.enum(["human", "agent", "unassigned"]),
+  ageSeconds: z.number(),
+  decisionCount: z.number(),
+  decisions: z.array(taskDecisionAttentionItemReturnSchema),
+});
+
+export const taskDecisionAttentionReturnSchema = z.object({
+  kind: z.literal("task.decision.attention"),
+  generatedAt: z.number(),
+  total: z.number(),
+  parkedCount: z.number(),
+  decisionCount: z.number(),
+  filters: z.object({
+    agentId: z.string().optional(),
+    ownerType: z.enum(["human", "agent", "unassigned"]).optional(),
+    taskId: z.string().optional(),
+  }),
+  entries: z.array(taskDecisionAttentionEntryReturnSchema),
+});
+
 export const taskDispatchReturnSchema = z
   .object({
     mode: z.string(),
@@ -1866,7 +1923,7 @@ export const projectFixturesSeedReturnSchema = z
   })
   .passthrough();
 
-const managedRuntimeMemberReturnSchema = z
+export const managedRuntimeMemberReturnSchema = z
   .object({
     name: z.string(),
     managed: z.boolean(),
@@ -1875,12 +1932,19 @@ const managedRuntimeMemberReturnSchema = z
     pid: z.number().nullable(),
     bundlePath: z.string().nullable(),
     cwd: z.string().nullable(),
-    version: z.string().nullable(),
+    runningVersion: z.string().nullable(),
+    diskVersion: z.string().nullable(),
+    startedAt: z.number().nullable(),
+    stale: z.boolean(),
+    codeStale: z.boolean(),
+    envStale: z.boolean(),
+    identityVerified: z.boolean(),
+    warnings: z.array(z.string()),
     matchesCli: z.boolean().nullable(),
   })
   .strict();
 
-const managedRuntimeIdentityReturnSchema = z
+export const managedRuntimeIdentityReturnSchema = z
   .object({
     alignment: z.enum(["aligned", "drifted", "unknown", "not_running"]),
     cli: z
@@ -1902,6 +1966,7 @@ export const daemonStatusReturnSchema = z
     ravi: looseObjectSchema,
     infrastructure: looseObjectSchema,
     runtime: managedRuntimeIdentityReturnSchema,
+    warnings: z.array(z.string()),
     processes: z.array(looseObjectSchema),
   })
   .passthrough();
@@ -1958,6 +2023,18 @@ export const runtimeCredentialStatusReturnSchema = z
   })
   .passthrough();
 
+// status without an id returns the pool listing, while status <id> returns
+// one credential and its health. reset-health retains the single-item schema.
+export const runtimeCredentialsStatusReturnSchema = runtimeCredentialStatusReturnSchema
+  .partial()
+  .extend(runtimeCredentialsListReturnSchema.partial().shape)
+  .refine(
+    (value) =>
+      runtimeCredentialStatusReturnSchema.safeParse(value).success ||
+      runtimeCredentialsListReturnSchema.safeParse(value).success,
+    "Expected a credential with health or a complete credential-pool listing",
+  );
+
 export const runtimeCredentialRefreshReturnSchema = z
   .object({
     refreshed: z.array(looseObjectSchema),
@@ -1996,6 +2073,7 @@ export const runtimeEnvMutationReturnSchema = runtimeEnvEntryReturnSchema
   .extend({
     action: z.enum(["set", "unset"]),
     daemonReloadRequired: z.boolean(),
+    warnings: z.array(z.string()).optional(),
   })
   .strict();
 
@@ -2136,6 +2214,7 @@ export const cronMutationReturnSchema = z
     target: commandTargetSchema,
     changedCount: z.number(),
     job: looseObjectOrNullSchema,
+    warnings: z.array(z.string()).optional(),
   })
   .passthrough();
 
@@ -3600,6 +3679,40 @@ export const agentsUpdateReturnSchema = z
   })
   .strict();
 
+/** The `cloud` block of `agent.json`, as `ravi agents publish` reports it. */
+const cloudAgentBlockReturnSchema = z
+  .object({
+    model: z.string().optional(),
+    effort: z.string().optional(),
+    budgetUsd: z.number().optional(),
+    environment: z
+      .object({
+        networking: z.string().optional(),
+        allowedHosts: z.array(z.string()).optional(),
+        packages: z
+          .object({
+            apt: z.array(z.string()).optional(),
+            pip: z.array(z.string()).optional(),
+            npm: z.array(z.string()).optional(),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
+    mcp: z
+      .object({
+        ravi: z.boolean().optional(),
+        servers: z.array(z.object({ name: z.string(), url: z.string() }).strict()).optional(),
+      })
+      .strict()
+      .optional(),
+    tools: z.object({ webSearch: z.boolean().optional(), writes: z.string().optional() }).strict().optional(),
+    repositories: z.array(z.object({ repo: z.string(), branch: z.string().optional() }).strict()).optional(),
+    schedule: z.object({ cron: z.string(), timezone: z.string().optional() }).strict().optional(),
+  })
+  .strict();
+
 export const agentsPublishReturnSchema = z
   .object({
     success: z.literal(true),
@@ -3611,6 +3724,7 @@ export const agentsPublishReturnSchema = z
     item: libraryItemReturnSchema.nullable(),
     proposal: libraryProposalReturnSchema.nullable(),
     manifest: libraryAgentManifestReturnSchema,
+    cloud: cloudAgentBlockReturnSchema.nullable(),
     leftOut: z.array(z.object({ skill: z.string(), reason: z.string() }).strict()),
     next: z.string().nullable(),
   })

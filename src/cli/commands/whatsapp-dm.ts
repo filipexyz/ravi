@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * WhatsApp DM Commands - Send messages and read receipts
  */
@@ -33,11 +34,14 @@ function failDmContactNotFound(op: string, contactRef: string, asJson?: boolean)
     ...(digits.length >= 4 ? searchContacts(digits.slice(-4)) : []),
   ].flatMap((contact) => [contact.name ?? "", contact.phone ?? ""]);
   contractFail(op, "CONTACT_NOT_FOUND", `Cannot resolve to WhatsApp JID: ${contactRef}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the contact id/phone (list with: ravi contacts list --json)",
-      suggestions: suggestSimilar(contactRef, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the contact id/phone (list with: ravi contacts list --json)",
+        suggestions: suggestSimilar(contactRef, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Cannot resolve to WhatsApp JID: ${contactRef}`, { operation: op }),
   });
 }
 

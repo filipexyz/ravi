@@ -9,12 +9,15 @@
 
 import type { AgentConfig, SessionEntry } from "../router/types.js";
 import {
+  bumpSessionRuntimeProviderConfigRevision,
   clearProviderSession,
   getSessionsByAgent,
   updateRuntimeProviderState,
   updateSessionModelOverride,
   updateSessionRuntimeProviderOverride,
 } from "../router/sessions.js";
+import { getDb } from "../router/router-db.js";
+import { executeWrite } from "../db/write-retry.js";
 import { resolveRequestedRuntimeProvider } from "./runtime-selection.js";
 import type { RuntimeEffort } from "./effort.js";
 import type { RuntimeProviderId } from "./types.js";
@@ -138,10 +141,16 @@ function rematerializeSessionRuntimeProvider(
     sessionHasStoredProviderId(session) &&
     Boolean(previousRuntimeProvider && previousRuntimeProvider !== agentProvider);
 
-  if (shouldClearStoredSession) {
-    clearProviderSession(session.sessionKey);
-  }
-  updateRuntimeProviderState(session.sessionKey, agentProvider);
+  const materialize = () => {
+    bumpSessionRuntimeProviderConfigRevision(session.sessionKey);
+    if (shouldClearStoredSession) clearProviderSession(session.sessionKey);
+    updateRuntimeProviderState(session.sessionKey, agentProvider);
+  };
+  // Thread configuration already owns the transaction; administrative sync
+  // calls this directly and must invalidate old handles with the same write.
+  const db = getDb();
+  if (db.inTransaction) materialize();
+  else executeWrite(db, materialize, { label: "session_runtime_rematerialize" });
 
   const report: AgentSessionRematerializeReport = {
     sessionName: sessionRuntimeDisplayName(session),

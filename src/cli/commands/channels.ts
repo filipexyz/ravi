@@ -1,10 +1,13 @@
+import { assertRuntimeMaintenanceInactive, assertRuntimeReplacementPrepared } from "../../runtime-maintenance.js";
 /**
  * Channels Commands - manage native Ravi channel runner.
  */
 
 import "reflect-metadata";
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { spawnSync } from "node:child_process";
 import { realpathSync } from "node:fs";
+import { which } from "bun";
 import { z } from "zod";
 import {
   probeChannelRunnerHealth,
@@ -14,6 +17,8 @@ import {
 import { ChannelRunner, runChannelRunnerFromEnv } from "../../channels/runner.js";
 import { inspectManagedChannelRunner } from "../../channels/runner-liveness.js";
 import { buildRunnerPm2Env } from "../../channels/pm2-env.js";
+import { buildChannelsPm2Env, buildChannelsPm2StartArgs } from "../../daemon-stdin.js";
+import { buildManagedRuntimeIdentity, managedRuntimeWarnings } from "../../managed-runtime.js";
 import { getCredentialConnection, listCredentialConnections } from "../../credentials/index.js";
 import { nats } from "../../nats.js";
 import {
@@ -33,6 +38,7 @@ import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { jsonObjectSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
 import { inspectCliRuntimeTarget, type CliRuntimeTargetSummary } from "../runtime-target.js";
 import { resolveDaemonRuntimeTarget, type DaemonRuntimeTarget } from "./daemon.js";
+import { managedRuntimeIdentityReturnSchema, managedRuntimeMemberReturnSchema } from "./operational-return-schemas.js";
 
 const pm2ProcessReturnSchema = z
   .object({
@@ -54,6 +60,7 @@ const channelAdapterHealthReturnSchema = z
     channelId: z.string(),
     status: z.enum(["disabled", "starting", "connected", "degraded", "reconnecting", "disconnected", "failed"]),
     reason: z.string().optional(),
+    detail: z.string().optional(),
     connectedAt: z.number().optional(),
     lastPongAt: z.number().optional(),
     reconnectCount: z.number().int().nonnegative().optional(),
@@ -117,7 +124,9 @@ const channelsHealthReturnSchema = z
 const channelsStatusReturnSchema = z.object({
   pm2Available: z.boolean(),
   processName: z.string(),
-  channels: pm2ProcessReturnSchema,
+  channels: pm2ProcessReturnSchema.extend(managedRuntimeMemberReturnSchema.shape),
+  runtime: managedRuntimeIdentityReturnSchema,
+  warnings: z.array(z.string()),
   processes: z.array(pm2ProcessReturnSchema),
   health: channelsHealthReturnSchema.optional(),
   runner: channelRunnerHealthSnapshotReturnSchema.nullable().optional(),
@@ -209,6 +218,11 @@ function failChannelNotFound(op: string, name: string, asJson?: boolean): never 
   const candidates = dbListChannels().map((channel) => channel.name);
   contractFail(op, "CHANNEL_NOT_FOUND", `Channel not found: ${name}`, {
     asJson,
+    diagnostic: errorDiagnostic("No native channel config with this name exists in the local Ravi config store.", {
+      operation: op,
+      provider: "ravi",
+      code: "LOCAL_CHANNEL_CONFIG_NOT_FOUND",
+    }),
     details: {
       suggestedAction: "Check the channel config name (see suggestions; list with: ravi channels list --json)",
       suggestions: suggestSimilar(name, candidates),
@@ -232,6 +246,14 @@ function requireCredentialConnectionForChannel(
     );
     contractFail(op, "CREDENTIAL_CONNECTION_NOT_FOUND", `Credential connection not found: ${provider}:${connection}`, {
       asJson,
+      diagnostic: errorDiagnostic(
+        "The referenced credential connection does not exist in the local credential store.",
+        {
+          operation: op,
+          provider,
+          code: "LOCAL_CREDENTIAL_CONNECTION_NOT_FOUND",
+        },
+      ),
       details: {
         suggestedAction: `Add it with: ravi credentials connections add --provider ${provider} --connection ${connection}`,
         suggestions: suggestSimilar(`${provider}:${connection}`, candidates),
@@ -258,7 +280,9 @@ function runPm2Quiet(
   args: string[],
   options: { cwd?: string; envOverrides?: Record<string, string> } = {},
 ): { status: number } {
-  const result = spawnSync("pm2", args, {
+  const executable = which("pm2", { PATH: process.env.PATH });
+  if (!executable) return { status: 1 };
+  const result = spawnSync(executable, args, {
     stdio: ["ignore", "pipe", "pipe"],
     encoding: "utf-8",
     cwd: options.cwd,
@@ -279,6 +303,12 @@ function recreateChannelRunner(
   runnerEnv: Record<string, string>,
   asJson?: boolean,
 ): { status: number; saveStatus: number | null } {
+  assertRuntimeReplacementPrepared();
+  const args = buildChannelsPm2StartArgs({
+    bundlePath: target.bundlePath,
+    processes: getPm2Processes({ strict: true }),
+  });
+  const env = { ...runnerEnv, ...buildChannelsPm2Env() };
   if (getPm2Process(CHANNELS_PM2_PROCESS_NAME)) {
     const stopped = asJson
       ? runPm2Quiet(["delete", CHANNELS_PM2_PROCESS_NAME])
@@ -286,10 +316,9 @@ function recreateChannelRunner(
     if (stopped.status !== 0) fail("Failed to stop channel runner before restart");
   }
 
-  const args = ["start", "bun", "--name", CHANNELS_PM2_PROCESS_NAME, "--", target.bundlePath, "channels", "run"];
   const { status } = asJson
-    ? runPm2Quiet(args, { cwd: target.cwd, envOverrides: runnerEnv })
-    : runPm2(args, runnerEnv, { cwd: target.cwd });
+    ? runPm2Quiet(args, { cwd: target.cwd, envOverrides: env })
+    : runPm2(args, env, { cwd: target.cwd });
   return { status, saveStatus: status === 0 ? persistPm2ProcessList() : null };
 }
 
@@ -331,16 +360,21 @@ function serializePm2Process(process: ReturnType<typeof getPm2Process>, fallback
 type Pm2ProcessSnapshot = ReturnType<typeof getPm2Processes>[number];
 
 function buildChannelsStatusJson(
-  options: { pm2Available?: boolean; processes?: Pm2ProcessSnapshot[] } = {},
-): Record<string, unknown> {
+  options: { pm2Available?: boolean; processes?: Pm2ProcessSnapshot[]; warn?: boolean } = {},
+) {
   const pm2Available = options.pm2Available ?? isPm2Available();
   const processes = options.processes ?? (pm2Available ? getPm2Processes() : []);
   const channels = processes.find((process) => process.name === CHANNELS_PM2_PROCESS_NAME);
+  const runtime = buildManagedRuntimeIdentity(processes, process.env.RAVI_BUNDLE ?? process.argv[1]);
+  const warnings = managedRuntimeWarnings(runtime);
+  if (options.warn) for (const warning of warnings) console.warn(warning);
 
   return {
     pm2Available,
     processName: CHANNELS_PM2_PROCESS_NAME,
-    channels: serializePm2Process(channels, CHANNELS_PM2_PROCESS_NAME),
+    channels: { ...serializePm2Process(channels, CHANNELS_PM2_PROCESS_NAME), ...runtime.channels },
+    runtime,
+    warnings,
     processes: processes.map((process) => serializePm2Process(process, process.name)),
   };
 }
@@ -664,7 +698,9 @@ export class ChannelsCommands {
     @Option({ flags: "-b, --build", description: "Use dist bundle from source repo" }) build?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertRuntimeMaintenanceInactive();
     requirePm2();
+    assertRuntimeReplacementPrepared();
 
     // PM2 "online" alone is not liveness: a runner whose Slack Socket Mode
     // loop died keeps its PM2 entry. Probe the PID-scoped health subject and
@@ -675,7 +711,7 @@ export class ChannelsCommands {
         action: "start" as const,
         changed: false,
         reason: "already_running",
-        status: buildChannelsStatusJson(),
+        status: buildChannelsStatusJson({ warn: !asJson }),
       };
       if (asJson) printJson(payload);
       else console.log("Channel runner is already running");
@@ -704,7 +740,7 @@ export class ChannelsCommands {
         ...(decision.pid !== null ? { previousPid: decision.pid } : {}),
         target,
         runnerEnv: publicRunnerEnv(runnerEnv),
-        status: buildChannelsStatusJson(),
+        status: buildChannelsStatusJson({ warn: !asJson }),
       };
       if (asJson) printJson(payload);
       if (status !== 0) fail("Failed to restart stale channel runner");
@@ -717,17 +753,21 @@ export class ChannelsCommands {
       return payload;
     }
 
-    const args = ["start", "bun", "--name", CHANNELS_PM2_PROCESS_NAME, "--", target.bundlePath, "channels", "run"];
+    const args = buildChannelsPm2StartArgs({
+      bundlePath: target.bundlePath,
+      processes: getPm2Processes({ strict: true }),
+    });
+    const env = { ...runnerEnv, ...buildChannelsPm2Env() };
     const { status } = asJson
-      ? runPm2Quiet(args, { cwd: target.cwd, envOverrides: runnerEnv })
-      : runPm2(args, runnerEnv, { cwd: target.cwd });
+      ? runPm2Quiet(args, { cwd: target.cwd, envOverrides: env })
+      : runPm2(args, env, { cwd: target.cwd });
     const payload = {
       action: "start" as const,
       changed: status === 0,
       pm2Status: status,
       target,
       runnerEnv: publicRunnerEnv(runnerEnv),
-      status: buildChannelsStatusJson(),
+      status: buildChannelsStatusJson({ warn: !asJson }),
     };
 
     if (asJson) {
@@ -751,7 +791,7 @@ export class ChannelsCommands {
         action: "stop" as const,
         changed: false,
         reason: "not_running",
-        status: buildChannelsStatusJson(),
+        status: buildChannelsStatusJson({ warn: !asJson }),
       };
       if (asJson) printJson(payload);
       else console.log("Channel runner is not running");
@@ -765,7 +805,7 @@ export class ChannelsCommands {
       action: "stop" as const,
       changed: status === 0,
       pm2Status: status,
-      status: buildChannelsStatusJson(),
+      status: buildChannelsStatusJson({ warn: !asJson }),
     };
     if (asJson) {
       printJson(payload);
@@ -784,6 +824,7 @@ export class ChannelsCommands {
     @Option({ flags: "-b, --build", description: "Use dist bundle from source repo" }) build?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertRuntimeMaintenanceInactive();
     requirePm2();
     const runnerEnv = buildRunnerPm2Env();
     const target = requireRuntimeTarget(build);
@@ -795,7 +836,7 @@ export class ChannelsCommands {
       pm2Status: status,
       target,
       runnerEnv: publicRunnerEnv(runnerEnv),
-      status: buildChannelsStatusJson(),
+      status: buildChannelsStatusJson({ warn: !asJson }),
     };
     if (asJson) {
       printJson(payload);
@@ -829,11 +870,16 @@ export class ChannelsCommands {
     console.log(
       `  ${CHANNELS_PM2_PROCESS_NAME}: ${String(channels.status)}${channels.pid ? ` (PID ${channels.pid})` : ""}`,
     );
+    console.log(`  running: ${channels.runningVersion ?? "unknown"}  disk: ${channels.diskVersion ?? "unknown"}`);
+    console.log(`  stale: ${channels.stale}  code: ${channels.codeStale}  env: ${channels.envStale}`);
+    if (typeof channels.startedAt === "number") console.log(`  started: ${new Date(channels.startedAt).toISOString()}`);
+    for (const warning of payload.warnings as string[]) console.warn(warning);
     const health = payload.health as Record<string, unknown>;
     console.log(`  health: ${String(health.status)}${health.reason ? ` (${String(health.reason)})` : ""}`);
     const runner = payload.runner as ChannelRunnerHealthSnapshot | null;
     for (const adapter of runner?.adapters ?? []) {
-      console.log(`  ${adapter.id}: ${adapter.status}${adapter.reason ? ` (${adapter.reason})` : ""}`);
+      const why = [adapter.reason, adapter.detail].filter(Boolean).join(": ");
+      console.log(`  ${adapter.id}: ${adapter.status}${why ? ` (${why})` : ""}`);
     }
     return payload;
   }

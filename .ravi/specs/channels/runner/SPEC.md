@@ -66,3 +66,26 @@ PID as current.
 ## Locks
 
 Adapters SHOULD use process or credential-scoped locks before opening external sockets. Slack MUST prevent duplicate Socket Mode consumers for the same connection.
+
+## Process identity and freshness
+
+- Daemon and runner status MUST expose `runningVersion`, `diskVersion`,
+  `startedAt`, `stale`, `codeStale`, `envStale` and `identityVerified`.
+- `runningVersion` MUST come from an immutable boot observation matched to
+  the current PID and PM2 `pm_uptime`; it MUST NOT be read from the installed
+  package at status time. Legacy or unverifiable processes MUST report null.
+- PM2 `created_at` is registration age, not process start; status MUST use
+  `pm_uptime`, including after automatic restarts.
+- A changed bundle hash or bundle mtime newer than process start MUST mark
+  code stale even when the path and version string are unchanged.
+- An env file modified after process start MUST mark env stale. Only file
+  metadata MAY enter status; secret values MUST NOT enter receipts or warnings.
+- Runner bootstrap MUST load managed `.env` values over inherited process
+  values, so an explicit restart actually adopts the file it certifies.
+- `runtime.alignment` MUST include CLI, daemon and managed channel runner.
+  Known staleness MUST prevent aligned; missing boot identity MUST remain
+  unknown. A daemon-only installation need not invent a missing runner.
+- Status and package/env mutations MUST name each stale process and its
+  explicit restart command. Staleness detection MUST NOT restart any process.
+- Existing legacy state MUST be visible as unknown until an explicit restart
+  writes a verifiable receipt; adding a guard for new starts alone is insufficient.

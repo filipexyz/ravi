@@ -30,11 +30,12 @@ const ROLLUP_INTERVAL_MS = 60 * 60_000; // 1 hour
 const PRUNE_INTERVAL_MS = 24 * 60 * 60_000;
 
 /**
- * Delay the first TTL prune until the crash-recovery boot lease (30s) has been
- * renewed. An immediate unbounded prune on this same event loop is what expired
- * the lease on large production DBs.
+ * Delay the first TTL prune until the crash-recovery boot lease has been
+ * renewed at least once, so a large first prune never competes with boot
+ * recovery for the write lock. Must stay above
+ * `DEFAULT_CRASH_RECOVERY_LEASE_MS` (120s).
  */
-export const PRUNE_BOOT_DELAY_MS = 60_000;
+export const PRUNE_BOOT_DELAY_MS = 150_000;
 
 export interface StartEphemeralRunnerOptions {
   /** Override the post-boot delay before the first TTL prune. */

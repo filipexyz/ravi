@@ -1,8 +1,13 @@
-import { describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { ConsoleApiClient } from "../cloud-auth/client.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import type { CloudCredentials } from "../cloud-auth/types.js";
+import { TurnRefusalError } from "../cloud-auth/turn-refusal.js";
 import { runWithContext } from "../cli/context.js";
+import { createContact } from "../contacts.js";
+import { getOrCreateSession } from "../router/sessions.js";
+import { createRuntimeContext } from "../runtime/context-registry.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   BASES_READ_SCOPE,
   BASES_WRITE_SCOPE,
@@ -137,6 +142,341 @@ describe("RaviBasesClient transport", () => {
     await expect(client.listBases()).resolves.toEqual({ bases: [] });
     expect(tokens).toEqual(["access-secret", "access-new"]);
     expect(written.map((credentials) => credentials.accessToken)).toEqual(["access-new"]);
+  });
+});
+
+describe("Bases reads in a delegated turn", () => {
+  // Console decides read or write by route; the CLI names the person of the turn on every
+  // call, reads included, so a linked person's reads act as that person.
+  it("sends the turn's contact on GET and POST reads, and on writes", async () => {
+    const calls: FetchCall[] = [];
+    const respond = fetchReturning(calls, () =>
+      jsonResponse({ columns: [], rows: [], nextCursor: null, users: {}, row: ROW, idempotentReplay: false }),
+    );
+    const client = makeBasesClient(respond, {
+      client: new ConsoleApiClient({
+        consoleUrl: "https://console.example",
+        fetch: respond as typeof fetch,
+        actorContact: () => "c_ana",
+      }),
+    });
+
+    await client.getBase("crm");
+    await client.listViews("crm");
+    await client.queryView("crm", "view_1", {});
+    await client.queryRows("crm", {});
+    await client.chartData("crm", "chart_1");
+    await client.getViewRow("crm", "view_1", "row_1");
+    await client.updateViewRow("crm", "view_1", "row_1", { values: { ok: "pending" }, expectedVersion: 2 });
+
+    expect(calls).toHaveLength(7);
+    for (const call of calls) expect(call.headers["x-ravi-actor-contact"]).toBe("c_ana");
+  });
+
+  it("refuses a turn Ravi cannot attribute before any Console call, reads included", async () => {
+    let consoleCalls = 0;
+    const client = {
+      requestJson: async () => {
+        consoleCalls += 1;
+        return {};
+      },
+    } as unknown as ConsoleApiClient;
+    await expect(
+      openBasesClient(
+        { project: "sales" },
+        { client, readCredentials: () => makeCredentials(), unattributedTurn: () => true, env: {} },
+      ),
+    ).rejects.toMatchObject({ code: "ACTOR_UNKNOWN", reason: { kind: "unknown" } });
+    expect(consoleCalls).toBe(0);
+
+    const routine = openBasesClient(
+      { project: "sales" },
+      {
+        client,
+        readCredentials: () => makeCredentials(),
+        unattributedTurn: () => ({
+          reason: {
+            kind: "routine_not_operator_owned",
+            routine: "cron",
+            jobId: "job_1",
+            ownerPrincipal: "contact:c_ana",
+          },
+          actorPrincipal: "automation:cron:job_1",
+        }),
+        env: {},
+      },
+    );
+    await expect(routine).rejects.toBeInstanceOf(TurnRefusalError);
+    await expect(routine).rejects.toMatchObject({
+      code: "ACTOR_UNKNOWN",
+      exitCode: 3,
+      details: { refusalReason: "routine_not_operator_owned", jobId: "job_1", ownerPrincipal: "contact:c_ana" },
+    });
+    expect(consoleCalls).toBe(0);
+
+    const attributed = await openBasesClient(
+      { project: "sales" },
+      {
+        client,
+        readCredentials: () => makeCredentials(),
+        unattributedTurn: () => false,
+        getContext: () => undefined,
+        env: {},
+      },
+    );
+    expect(attributed.projectRef).toBe("sales");
+  });
+
+  it("sends no contact outside a delegated turn", async () => {
+    const calls: FetchCall[] = [];
+    const respond = fetchReturning(calls, () => jsonResponse({ columns: [], rows: [], nextCursor: null, users: {} }));
+    const client = makeBasesClient(respond, {
+      client: new ConsoleApiClient({
+        consoleUrl: "https://console.example",
+        fetch: respond as typeof fetch,
+        actorContact: () => null,
+      }),
+    });
+
+    await client.queryView("crm", "view_1", {});
+    expect(calls[0]?.headers["x-ravi-actor-contact"]).toBeUndefined();
+  });
+});
+
+describe("Bases in a turn a trigger fired", () => {
+  // The default wiring, with the daemon's own record of the turn: who owns
+  // the trigger decides who the call acts as, and nothing is sent for a
+  // trigger nobody owns or one that answers into someone else's chat.
+  let stateDir: string | null = null;
+  let previousContextKey: string | undefined;
+  const realFetch = globalThis.fetch;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-bases-trigger-turn-");
+    previousContextKey = process.env.RAVI_CONTEXT_KEY;
+  });
+
+  afterEach(async () => {
+    globalThis.fetch = realFetch;
+    if (previousContextKey === undefined) delete process.env.RAVI_CONTEXT_KEY;
+    else process.env.RAVI_CONTEXT_KEY = previousContextKey;
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  /** The session the trigger's runner created for it, where its fires run. */
+  const OWN_SESSION = "agent:main:trigger:trg_1:own";
+
+  function enterTriggerTurn(
+    ownerPrincipal?: string,
+    ownerIsOperator = false,
+    turnReplyTarget: Record<string, unknown> = { kind: "none" },
+    session: { runsIn?: string; sentTo?: string | null } = {},
+  ): void {
+    const ownSessionKey = session.sentTo === undefined ? OWN_SESSION : session.sentTo;
+    const sessionKey = session.runsIn ?? OWN_SESSION;
+    // A turn runs in a session that exists; the trigger's own was created by its runner.
+    getOrCreateSession(sessionKey, "main", stateDir ?? "/tmp", undefined, { triggerRunner: true });
+    const context = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: "main",
+      sessionKey,
+      sessionName: "requests-queue",
+      metadata: {
+        actorResolution: "resolved",
+        executorAgentId: "main",
+        actorPrincipal: "automation:trigger:trg_1",
+        agentIdentityCompartment: "automation:trigger:trg_1",
+        turnReplyTarget,
+        ...(ownerPrincipal
+          ? { triggerRunAuthority: { triggerId: "trg_1", ownerPrincipal, ownerIsOperator, ownSessionKey } }
+          : {}),
+      },
+    });
+    process.env.RAVI_CONTEXT_KEY = context.contextKey;
+  }
+
+  /** Every Console call goes through the process's own fetch: no client is injected. */
+  function captureConsoleCalls(): FetchCall[] {
+    const calls: FetchCall[] = [];
+    globalThis.fetch = fetchReturning(calls, () =>
+      jsonResponse({ columns: [], rows: [], nextCursor: null, users: {} }),
+    ) as typeof fetch;
+    return calls;
+  }
+
+  async function queryAsTheTurn(): Promise<void> {
+    const client = await openBasesClient(
+      { project: "sales" },
+      { readCredentials: () => makeCredentials(), getContext: () => undefined },
+    );
+    await client.queryView("crm", "view_1", {});
+  }
+
+  it("acts as the operator for a trigger the operator owns, naming no contact", async () => {
+    const calls = captureConsoleCalls();
+    enterTriggerTurn("operator", true);
+    await queryAsTheTurn();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.headers["x-ravi-actor-contact"]).toBeUndefined();
+  });
+
+  it("acts for the contact who owns the trigger", async () => {
+    const calls = captureConsoleCalls();
+    const contact = createContact({ phone: "5511888888888", name: "Ana", status: "allowed", source: "manual" });
+    enterTriggerTurn(`contact:${contact.id}`);
+    await queryAsTheTurn();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.headers["x-ravi-actor-contact"]).toBe(contact.id);
+  });
+
+  it("names the same actor on the project lookup as on the Bases calls", async () => {
+    const calls = captureConsoleCalls();
+    const contact = createContact({ phone: "5511888888888", name: "Ana", status: "allowed", source: "manual" });
+    enterTriggerTurn(`contact:${contact.id}`);
+    let lookupClient: ConsoleApiClient | undefined;
+
+    // No project given: the lookup lists the projects with the client Bases built.
+    const client = await openBasesClient(
+      {},
+      {
+        readCredentials: () => makeCredentials(),
+        getContext: () => undefined,
+        // The saved-scope store lives in the isolated state directory.
+        env: { RAVI_STATE_DIR: process.env.RAVI_STATE_DIR },
+        cwd: stateDir ?? undefined,
+        listProjects: async (_options, deps) => {
+          lookupClient = deps?.client;
+          await deps?.client?.requestJson("GET", "/api/cli/projects", undefined, "access-secret");
+          const project = { id: "prj_1", slug: "sales", name: "Sales" };
+          return {
+            success: true,
+            consoleUrl: "https://console.example",
+            total: 1,
+            projects: [project],
+            items: [project],
+          } as never;
+        },
+      },
+    );
+    await client.queryView("crm", "view_1", {});
+
+    expect(lookupClient).toBeInstanceOf(ConsoleApiClient);
+    expect(client.projectRef).toBe("sales");
+    expect(calls.map((call) => new URL(call.url).pathname)).toEqual([
+      "/api/cli/projects",
+      "/api/cli/projects/sales/bases/crm/views/view_1/query",
+    ]);
+    for (const call of calls) expect(call.headers["x-ravi-actor-contact"]).toBe(contact.id);
+  });
+
+  it("refuses a trigger nobody owns before any Console call", async () => {
+    const calls = captureConsoleCalls();
+    for (const enter of [() => enterTriggerTurn("unknown"), () => enterTriggerTurn("agent:helper")]) {
+      enter();
+      const error = await captureError(queryAsTheTurn);
+      expect(error).toBeInstanceOf(TurnRefusalError);
+      expect(error).toMatchObject({
+        code: "ACTOR_UNKNOWN",
+        exitCode: 3,
+        details: { refusalReason: "routine_not_operator_owned", routine: "trigger", jobId: "trg_1" },
+      });
+      expect((error as TurnRefusalError).message).toContain("trigger trg_1");
+      expect((error as TurnRefusalError).suggestedAction).toContain("create it again");
+    }
+    // No snapshot at all (a turn fired before owners were carried): refused as unknown.
+    enterTriggerTurn();
+    expect(await captureError(queryAsTheTurn)).toMatchObject({
+      code: "ACTOR_UNKNOWN",
+      details: { refusalReason: "unknown" },
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it("refuses an owned trigger outside a session of its own, before any Console call", async () => {
+    const calls = captureConsoleCalls();
+    const chatSession = "agent:main:whatsapp:wa-main:dm:5511888888888";
+    for (const enter of [
+      // Fired into the agent's main session, or into a chat's.
+      () => enterTriggerTurn("operator", true, { kind: "none" }, { runsIn: "agent:main:main", sentTo: null }),
+      () => enterTriggerTurn("operator", true, { kind: "none" }, { runsIn: chatSession, sentTo: null }),
+      // Sent to the trigger's own session, but the turn runs in another one.
+      () => enterTriggerTurn("operator", true, { kind: "none" }, { runsIn: chatSession }),
+    ]) {
+      enter();
+      const error = await captureError(queryAsTheTurn);
+      expect(error).toBeInstanceOf(TurnRefusalError);
+      expect(error).toMatchObject({
+        code: "ACTOR_UNKNOWN",
+        exitCode: 3,
+        details: { refusalReason: "routine_shared_session", routine: "trigger", jobId: "trg_1" },
+      });
+      expect((error as TurnRefusalError).message).toContain("a session the trigger does not own");
+      expect((error as TurnRefusalError).suggestedAction).toContain("ravi triggers set trg_1 session isolated");
+    }
+    expect(calls).toEqual([]);
+  });
+
+  it("refuses an owned trigger whose answer goes to someone else's chat, before any Console call", async () => {
+    const calls = captureConsoleCalls();
+    const intoGroup = { kind: "chat", channel: "whatsapp", chatId: "120363000000000000@g.us" };
+    enterTriggerTurn("operator", true, intoGroup);
+
+    const error = await captureError(queryAsTheTurn);
+    expect(error).toBeInstanceOf(TurnRefusalError);
+    expect(error).toMatchObject({
+      code: "ACTOR_UNKNOWN",
+      exitCode: 3,
+      details: { refusalReason: "routine_answers_elsewhere", routine: "trigger", jobId: "trg_1" },
+    });
+    expect((error as TurnRefusalError).suggestedAction).toContain("ravi triggers show trg_1");
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("Bases H2 transport", () => {
+  it("posts filtered subscriptions, agent fills and reruns, and lists the project's Pages sites", async () => {
+    const calls: FetchCall[] = [];
+    const client = makeBasesClient(
+      fetchReturning(calls, (call) =>
+        call.url.endsWith("/pages")
+          ? jsonResponse([{ site: { id: "site_1", slug: "acme", defaultHostname: "acme.ravi.page", isDefault: true } }])
+          : jsonResponse({ row: ROW, users: {}, idempotentReplay: false }),
+      ),
+      { clientHint: () => ({ agentId: "dev", sdk: "ravi-cli" }) },
+    );
+
+    await client.subscribe("crm", { events: ["agent.requested"] });
+    await client.fillAgentCell("crm", "row_1", "resumo", { inputsHash: "0123456789abcdef", value: "ok" });
+    await client.rerunAgentCell("crm", "row_1", "resumo");
+    const sites = await client.listPagesSites();
+    await client.createView("crm", { name: "Fila" }, { idempotencyKey: "crm:view:fila" });
+
+    expect(calls.map((call) => `${call.method} ${call.url.replace("https://console.example", "")}`)).toEqual([
+      "POST /api/cli/projects/sales/bases/crm/subscriptions",
+      "POST /api/cli/projects/sales/bases/crm/rows/row_1/agent/resumo",
+      "POST /api/cli/projects/sales/bases/crm/rows/row_1/agent/resumo/rerun",
+      "GET /api/cli/projects/sales/pages",
+      "POST /api/cli/projects/sales/bases/crm/views",
+    ]);
+    expect(calls[0]?.body).toEqual({ events: ["agent.requested"] });
+    expect(calls[1]).toMatchObject({
+      headers: { "Idempotency-Key": "ravi-cli:fixed-key-0001" },
+      body: {
+        inputsHash: "0123456789abcdef",
+        value: "ok",
+        idempotencyKey: "ravi-cli:fixed-key-0001",
+        clientHint: { agentId: "dev", sdk: "ravi-cli" },
+      },
+    });
+    expect(calls[2]?.body).toEqual({ clientHint: { agentId: "dev", sdk: "ravi-cli" } });
+    expect(sites).toEqual([{ id: "site_1", slug: "acme", hostname: "acme.ravi.page", isDefault: true }]);
+    // Schema creates carry the key but not the ledger hint.
+    expect(calls[4]).toMatchObject({
+      headers: { "Idempotency-Key": "crm:view:fila" },
+      body: { name: "Fila", idempotencyKey: "crm:view:fila" },
+    });
+    expect(calls[4]?.body).not.toHaveProperty("clientHint");
   });
 });
 

@@ -74,6 +74,11 @@ function extractErrorMessage(json: Record<string, unknown> | null, fallback: str
   if (!json) return fallback;
   const error = json.error;
   if (typeof error === "string" && error.trim()) return error;
+  if (error && typeof error === "object") {
+    const detail = error as Record<string, unknown>;
+    if (typeof detail.message === "string" && detail.message.trim()) return detail.message;
+    if (typeof detail.code === "string" && detail.code.trim()) return `Omni rejected media: ${detail.code}`;
+  }
   const message = json.message;
   if (typeof message === "string" && message.trim()) return message;
   return fallback;
@@ -151,7 +156,10 @@ export async function sendMediaWithOmniCli(
   const target = resolveMediaSendTarget(args.target);
 
   if (target.channel?.toLowerCase() === "slack") {
-    const delivery = await (dependencies.sendSlackMedia ?? sendSlackMedia)({
+    const deliver =
+      dependencies.sendSlackMedia ??
+      ((input: SlackMediaSendInput) => sendSlackMedia(input, { authority: { kind: "local-operator" } }));
+    const delivery = await deliver({
       accountId: target.accountId,
       chatId: target.chatId,
       filePath: absPath,
@@ -209,7 +217,7 @@ export async function sendMediaWithOmniCli(
       });
       child.on("error", (error) => {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-          rejectExecution(new Error("omni CLI not found in PATH."));
+          rejectExecution(new Error("omni CLI not found in PATH.", { cause: error }));
           return;
         }
         rejectExecution(error);
@@ -220,12 +228,23 @@ export async function sendMediaWithOmniCli(
 
         if (code !== 0) {
           const fallback = stderr.trim() || stdout.trim() || `omni send failed with exit code ${code ?? "unknown"}.`;
-          const message = extractErrorMessage(stderrJson ?? stdoutJson, fallback);
+          const response = stderrJson ?? stdoutJson;
+          const message = extractErrorMessage(response, fallback);
+          const detail =
+            response?.error && typeof response.error === "object"
+              ? (response.error as Record<string, unknown>)
+              : response;
+          const status = detail?.status ?? detail?.statusCode ?? response?.status;
+          const providerError = Object.assign(new Error(message, { cause: detail?.cause }), {
+            ...(typeof detail?.code === "string" ? { code: detail.code } : {}),
+            ...(typeof status === "number" ? { status } : {}),
+            context: { operation: "media send", provider: "omni" },
+          });
           if (isOmniCliAuthFailure(stderr, stdout, message)) {
-            rejectExecution(new MediaSendAuthError());
+            rejectExecution(new MediaSendAuthError(providerError));
             return;
           }
-          rejectExecution(new Error(message));
+          rejectExecution(providerError);
           return;
         }
 

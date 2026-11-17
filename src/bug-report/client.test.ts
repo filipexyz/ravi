@@ -1,9 +1,13 @@
 import { describe, expect, it } from "bun:test";
+import { ConsoleApiClient } from "../cloud-auth/client.js";
+import { CloudAuthError } from "../cloud-auth/errors.js";
 import {
   asUuid,
   bugCommentIdempotencyKey,
   bugReportCommentApiPath,
   bugReportSubscribeApiPath,
+  RaviBugReportClient,
+  requireBugId,
   toConsoleBugCommentBody,
   toConsoleBugCreateBody,
 } from "./client.js";
@@ -74,7 +78,9 @@ describe("toConsoleBugCreateBody", () => {
 
 describe("bugReportSubscribeApiPath", () => {
   it("keeps the Console follow contract on /api/cli/bugs/:id/subscribe", () => {
-    expect(bugReportSubscribeApiPath("bug_1")).toBe("/api/cli/bugs/bug_1/subscribe");
+    expect(bugReportSubscribeApiPath("b1b1b1b1-1111-4111-8111-111111111111")).toBe(
+      "/api/cli/bugs/b1b1b1b1-1111-4111-8111-111111111111/subscribe",
+    );
   });
 });
 
@@ -115,8 +121,9 @@ describe("toConsoleBugCommentBody", () => {
 
 describe("bugReportCommentApiPath", () => {
   it("keeps the Console append contract on /api/cli/bugs/:id/comments", () => {
-    expect(bugReportCommentApiPath("bug_1")).toBe("/api/cli/bugs/bug_1/comments");
-    expect(bugReportCommentApiPath("bug/with spaces")).toBe("/api/cli/bugs/bug%2Fwith%20spaces/comments");
+    expect(bugReportCommentApiPath("b1b1b1b1-1111-4111-8111-111111111111")).toBe(
+      "/api/cli/bugs/b1b1b1b1-1111-4111-8111-111111111111/comments",
+    );
   });
 });
 
@@ -128,20 +135,24 @@ describe("bugCommentIdempotencyKey", () => {
   };
 
   it("is stable for the same sanitized payload and bug id", () => {
-    expect(bugCommentIdempotencyKey("bug_1", comment)).toBe(bugCommentIdempotencyKey("bug_1", comment));
-    expect(bugCommentIdempotencyKey("bug_1", comment)).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(bugCommentIdempotencyKey("b1b1b1b1-1111-4111-8111-111111111111", comment)).toBe(
+      bugCommentIdempotencyKey("b1b1b1b1-1111-4111-8111-111111111111", comment),
+    );
+    expect(bugCommentIdempotencyKey("b1b1b1b1-1111-4111-8111-111111111111", comment)).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 
   it("changes when the bug id or sanitized text changes", () => {
-    expect(bugCommentIdempotencyKey("bug_1", comment)).not.toBe(bugCommentIdempotencyKey("bug_2", comment));
-    expect(bugCommentIdempotencyKey("bug_1", comment)).not.toBe(
-      bugCommentIdempotencyKey("bug_1", { ...comment, text: "Different follow-up" }),
+    expect(bugCommentIdempotencyKey("b1b1b1b1-1111-4111-8111-111111111111", comment)).not.toBe(
+      bugCommentIdempotencyKey("b2b2b2b2-2222-4222-8222-222222222222", comment),
+    );
+    expect(bugCommentIdempotencyKey("b1b1b1b1-1111-4111-8111-111111111111", comment)).not.toBe(
+      bugCommentIdempotencyKey("b1b1b1b1-1111-4111-8111-111111111111", { ...comment, text: "Different follow-up" }),
     );
   });
 
   it("ignores redaction metadata so retries of the same body keep the key", () => {
-    const first = bugCommentIdempotencyKey("bug_1", comment);
-    const retry = bugCommentIdempotencyKey("bug_1", {
+    const first = bugCommentIdempotencyKey("b1b1b1b1-1111-4111-8111-111111111111", comment);
+    const retry = bugCommentIdempotencyKey("b1b1b1b1-1111-4111-8111-111111111111", {
       ...comment,
       sanitization: { rulesApplied: ["redact-bearer-tokens"] },
       evidence: { notes: ["one"], redactions: ["Bearer token"] },
@@ -150,7 +161,9 @@ describe("bugCommentIdempotencyKey", () => {
   });
 
   it("uses an explicit key when provided", () => {
-    expect(bugCommentIdempotencyKey("bug_1", comment, " idem_custom ")).toBe("idem_custom");
+    expect(bugCommentIdempotencyKey("b1b1b1b1-1111-4111-8111-111111111111", comment, " idem_custom ")).toBe(
+      "idem_custom",
+    );
   });
 });
 
@@ -161,5 +174,80 @@ describe("asUuid", () => {
     expect(asUuid("acme")).toBeUndefined();
     expect(asUuid("org_1")).toBeUndefined();
     expect(asUuid(undefined)).toBeUndefined();
+  });
+});
+
+describe("requireBugId", () => {
+  const BUG_UUID = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+
+  it("accepts a full UUID and sends it lowercase", () => {
+    expect(requireBugId(` ${BUG_UUID.toUpperCase()} `)).toBe(BUG_UUID);
+  });
+
+  it("rejects the short id prefix with a message that names the id", () => {
+    let thrown: unknown;
+    try {
+      requireBugId("0a1b2c3d");
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(CloudAuthError);
+    expect((thrown as CloudAuthError).code).toBe("PAYLOAD_INVALID");
+    expect((thrown as CloudAuthError).message).toBe(
+      'Invalid bug id "0a1b2c3d": use the full UUID shown by `ravi bug list`.',
+    );
+    expect(() => requireBugId("bug/with spaces")).toThrow(/Invalid bug id/);
+    expect(() => requireBugId("  ")).toThrow("Missing bug id.");
+  });
+});
+
+describe("RaviBugReportClient.comment errors", () => {
+  const BUG_UUID = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+  const comment: BugCommentDossier = { schemaVersion: BUG_COMMENT_SCHEMA_ID, text: "More logs" };
+
+  function bugClient(status: number, body: string | null) {
+    const fetched: string[] = [];
+    const api = new ConsoleApiClient({
+      consoleUrl: "https://console.test",
+      fetch: (async (url: string) => {
+        fetched.push(url);
+        return new Response(body, {
+          status,
+          headers: body?.startsWith("{") ? { "content-type": "application/json" } : {},
+        });
+      }) as unknown as (url: string, init?: RequestInit) => Promise<Response>,
+    });
+    return { client: new RaviBugReportClient(api), fetched };
+  }
+
+  async function errorOf(promise: Promise<unknown>): Promise<CloudAuthError> {
+    try {
+      await promise;
+    } catch (error) {
+      if (error instanceof CloudAuthError) return error;
+      throw error;
+    }
+    throw new Error("expected a CloudAuthError");
+  }
+
+  it("rejects a short id before any request", async () => {
+    const { client, fetched } = bugClient(200, "{}");
+    const error = await errorOf(client.comment("t", { id: "0a1b2c3d", comment }));
+    expect(error.code).toBe("PAYLOAD_INVALID");
+    expect(error.message).toContain("full UUID");
+    expect(fetched).toHaveLength(0);
+  });
+
+  it("keeps a coded 404 (unknown bug) instead of the missing-route fallback", async () => {
+    const body = JSON.stringify({ error: { code: "PAYLOAD_INVALID", message: "Bug report was not found." } });
+    const error = await errorOf(bugClient(404, body).client.comment("t", { id: BUG_UUID, comment }));
+    expect(error.code).toBe("PAYLOAD_INVALID");
+    expect(error.message).toBe("Bug report was not found.");
+  });
+
+  it("reads a bare 404 as a Console without the comment route", async () => {
+    const error = await errorOf(bugClient(404, "<html>nope</html>").client.comment("t", { id: BUG_UUID, comment }));
+    expect(error.code).toBe("SERVER_UNAVAILABLE");
+    expect(error.message).toContain("Console has no comment route yet");
   });
 });

@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
@@ -138,20 +139,28 @@ export class ConnectorsCommands {
           return final;
         case "expired":
           contractFail("connectors connect", "CONNECTOR_AUTH_EXPIRED", "Authorization expired before completion.", {
-            asJson,
-            details: {
-              retryable: true,
-              suggestedAction: `Start a new authorization flow with: ravi connectors connect ${provider}`,
+            ...{
+              asJson,
+              details: {
+                retryable: true,
+                suggestedAction: `Start a new authorization flow with: ravi connectors connect ${provider}`,
+              },
             },
+            diagnostic: errorDiagnostic("Authorization expired before completion.", {
+              operation: "connectors connect",
+            }),
           });
         case "rejected":
           contractFail("connectors connect", "CONNECTOR_AUTH_REJECTED", "Authorization was rejected by Console.", {
-            asJson,
-            details: {
-              retryable: false,
-              suggestedAction:
-                "Open the link signed in as the same Console user who started it, or check that your organization allows the connector",
+            ...{
+              asJson,
+              details: {
+                retryable: false,
+                suggestedAction:
+                  "Open the link signed in as the same Console user who started it, or check that your organization allows the connector",
+              },
             },
+            diagnostic: errorDiagnostic("Authorization was rejected by Console.", { operation: "connectors connect" }),
           });
         default:
           contractFail(
@@ -159,11 +168,16 @@ export class ConnectorsCommands {
             "CONNECTOR_AUTH_STATE_INVALID",
             "Authorization ended in an invalid state.",
             {
-              asJson,
-              details: {
-                retryable: false,
-                suggestedAction: "Inspect connector status in Console before retrying",
+              ...{
+                asJson,
+                details: {
+                  retryable: false,
+                  suggestedAction: "Inspect connector status in Console before retrying",
+                },
               },
+              diagnostic: errorDiagnostic("Authorization ended in an invalid state.", {
+                operation: "connectors connect",
+              }),
             },
           );
       }
@@ -322,35 +336,48 @@ EXAMPLES
       const providerId = provider.trim().toLowerCase();
       if (!isConnectorModeProvider(providerId)) {
         contractFail(op, "USAGE_ERROR", `Unknown provider: ${provider}. Providers with a mode: google.`, {
-          asJson,
-          exitCode: CONTRACT_EXIT_USAGE,
-          details: {
-            suggestedAction: "Pass a provider that has a mode (google)",
-            acceptedPositionals: [...CONNECTOR_MODE_PROVIDERS],
+          ...{
+            asJson,
+            exitCode: CONTRACT_EXIT_USAGE,
+            details: {
+              suggestedAction: "Pass a provider that has a mode (google)",
+              acceptedPositionals: [...CONNECTOR_MODE_PROVIDERS],
+            },
           },
+          diagnostic: errorDiagnostic(`Unknown provider: ${provider}. Providers with a mode: google.`, {
+            operation: op,
+          }),
         });
       }
       const next = value === undefined ? undefined : parseConnectorModeArg(value);
       if (next === null) {
         contractFail(op, "USAGE_ERROR", `Unknown mode: ${value}. Modes: owner, person-asking, shared.`, {
-          asJson,
-          exitCode: CONTRACT_EXIT_USAGE,
-          details: {
-            suggestedAction: "Pass owner, person-asking or shared, or omit the mode to show the current one",
-            acceptedPositionals: [...CONNECTOR_MODE_ARGS],
+          ...{
+            asJson,
+            exitCode: CONTRACT_EXIT_USAGE,
+            details: {
+              suggestedAction: "Pass owner, person-asking or shared, or omit the mode to show the current one",
+              acceptedPositionals: [...CONNECTOR_MODE_ARGS],
+            },
           },
+          diagnostic: errorDiagnostic(`Unknown mode: ${value}. Modes: owner, person-asking, shared.`, {
+            operation: op,
+          }),
         });
       }
       if (!dbGetAgent(agentId)) {
         contractFail(op, "AGENT_NOT_FOUND", `Agent not found: ${agentId}`, {
-          asJson,
-          details: {
-            suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
-            suggestions: suggestSimilar(
-              agentId,
-              dbListAgents().map((item) => item.id),
-            ),
+          ...{
+            asJson,
+            details: {
+              suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
+              suggestions: suggestSimilar(
+                agentId,
+                dbListAgents().map((item) => item.id),
+              ),
+            },
           },
+          diagnostic: errorDiagnostic(`Agent not found: ${agentId}`, { operation: op }),
         });
       }
 

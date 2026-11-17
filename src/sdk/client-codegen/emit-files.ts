@@ -13,6 +13,7 @@
 
 import type { CommandRegistryEntry, RegistrySnapshot } from "../../cli/registry-snapshot.js";
 import {
+  camelCase,
   inputSchemaName,
   inputTypeName,
   methodName,
@@ -20,6 +21,7 @@ import {
   returnSchemaName,
   returnTypeName,
   assertIdentifier,
+  assertParameterIdentifier,
 } from "./naming.js";
 import { jsonSchemaToTs } from "./json-schema-to-ts.js";
 import { buildInputSchema, buildReturnSchema, buildSignature, type CommandSignature } from "./registry-shape.js";
@@ -297,10 +299,21 @@ function renderMethod(cmd: CommandRegistryEntry, indent: number, typeImports: Se
   typeImports.add(returnName);
 
   const params: string[] = [];
-  const variadicArg = sig.args.find((a) => a.variadic);
-  for (const arg of sig.args) {
-    const optional = arg.required ? "" : "?";
-    params.push(`${arg.name}${optional}: ${arg.type}`);
+  const usedNames = new Set(sig.options.length > 0 ? ["options"] : []);
+  const args = sig.args.map((arg) => {
+    const baseName = camelCase(arg.name);
+    assertParameterIdentifier(baseName, `argument(${cmd.fullName}, ${arg.name})`);
+    let paramName = baseName;
+    let suffix = 2;
+    while (usedNames.has(paramName)) paramName = `${baseName}_${suffix++}`;
+    usedNames.add(paramName);
+    return { ...arg, paramName };
+  });
+  for (const arg of args) {
+    const followedByRequiredOptions = sig.options.length > 0 && !sig.optionsOptional;
+    const optional = !arg.required && !followedByRequiredOptions ? "?" : "";
+    const type = !arg.required && followedByRequiredOptions ? `${arg.type} | undefined` : arg.type;
+    params.push(`${arg.paramName}${optional}: ${type}`);
   }
   if (sig.options.length > 0) {
     const optBag = renderOptionsBag(sig, indent + 1);
@@ -312,15 +325,17 @@ function renderMethod(cmd: CommandRegistryEntry, indent: number, typeImports: Se
   const commandLiteral = JSON.stringify(cmd.command);
 
   const bodyParts: string[] = [];
-  for (const arg of sig.args) {
-    bodyParts.push(arg.name);
+  for (const arg of args) {
+    // Local identifiers are language-specific; the gateway requires the raw registry key.
+    const rawKey = JSON.stringify(arg.name);
+    // Even quoted __proto__ uses the prototype setter; a computed key creates an own property.
+    const propertyKey = arg.name === "__proto__" ? `[${rawKey}]` : rawKey;
+    bodyParts.push(arg.name === arg.paramName ? arg.paramName : `${propertyKey}: ${arg.paramName}`);
   }
   if (sig.options.length > 0) {
     bodyParts.push(`...(options ?? {})`);
   }
   const bodyLiteral = bodyParts.length > 0 ? `{ ${bodyParts.join(", ")} }` : "{}";
-
-  void variadicArg; // signature already encodes variadic via type
 
   const lines: string[] = [];
   lines.push(`async (${params.join(", ")}): Promise<${returnName}> => {`);
@@ -340,13 +355,18 @@ function renderOptionsBag(sig: CommandSignature, indent: number): string {
   if (sig.options.length === 0) return "Record<string, never>";
   const pad = "  ".repeat(indent);
   const close = "  ".repeat(indent - 1);
-  const lines = ["{"];
-  for (const o of sig.options) {
-    const optional = o.required ? "" : "?";
-    lines.push(`${pad}${o.name}${optional}: ${o.type};`);
-  }
-  lines.push(`${close}}`);
-  return lines.join("\n");
+  const alternatives = sig.requiredAnyOfOptions ?? [undefined];
+  return alternatives
+    .map((requiredOption) => {
+      const lines = ["{"];
+      for (const o of sig.options) {
+        const optional = o.required || o.name === requiredOption ? "" : "?";
+        lines.push(`${pad}${o.name}${optional}: ${o.type};`);
+      }
+      lines.push(`${close}}`);
+      return lines.join("\n");
+    })
+    .join(" | ");
 }
 
 /* -------------------------------------------------------------------------- */

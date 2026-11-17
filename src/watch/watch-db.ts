@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getDb, getDbChanges } from "../router/router-db.js";
+import { clearLocalWatchSnapshot } from "./local-state.js";
 import type { EffectiveWatchPlacement, WatchListPage, WatchRecord, WatchStatus } from "./types.js";
 
 interface WatchRow {
@@ -48,8 +49,17 @@ export function upsertWatch(input: WatchUpsertInput): WatchRecord {
   ensureWatchSchema();
   const now = Date.now();
   const id = input.id ?? randomUUID();
-  const existing = getWatch(id);
-  const status = input.status ?? existing?.status ?? "active";
+  // A busca inclui linhas soft-deleted de propósito. O id do watch local é
+  // determinístico (provider + resourceRef + eventTypes), então recriar o mesmo
+  // watch reencontra a linha antiga. Se esta busca filtrasse `deleted_at IS NULL`,
+  // o upsert cairia no INSERT e colidiria com a PRIMARY KEY da linha apagada:
+  // nenhum watch local nascia e o CI ficava mudo.
+  const existing = getWatchRow(id);
+  const reviving = existing !== null && existing.deleted_at !== null;
+  // Uma linha soft-deleted tem status `deleted`. Reaproveitar esse status na
+  // revivência produziria um watch com `deleted_at` nulo e status `deleted`,
+  // que não aparece em `listWatches` nem produz evento.
+  const status = input.status ?? (reviving ? "active" : existing?.status) ?? "active";
 
   if (existing) {
     getDb()
@@ -70,8 +80,10 @@ export function upsertWatch(input: WatchUpsertInput): WatchRecord {
           last_event_at = ?,
           last_delivery_at = ?,
           last_error_code = ?,
+          created_at = ?,
           updated_at = ?,
-          disabled_at = ?
+          disabled_at = ?,
+          deleted_at = NULL
         WHERE id = ?`,
       )
       .run(
@@ -87,13 +99,20 @@ export function upsertWatch(input: WatchUpsertInput): WatchRecord {
         input.delivery ? JSON.stringify(input.delivery) : null,
         JSON.stringify(input.eventSubjects),
         input.remoteWatch ? JSON.stringify(input.remoteWatch) : null,
-        input.lastEventAt ?? existing.lastEventAt,
-        input.lastDeliveryAt ?? existing.lastDeliveryAt,
-        input.lastErrorCode ?? existing.lastErrorCode,
+        // Revivência é um ciclo novo: métricas do ciclo anterior não valem mais.
+        input.lastEventAt ?? (reviving ? null : existing.last_event_at),
+        input.lastDeliveryAt ?? (reviving ? null : existing.last_delivery_at),
+        input.lastErrorCode ?? (reviving ? null : existing.last_error_code),
+        reviving ? now : existing.created_at,
         now,
-        status === "disabled" ? (existing.disabledAt ?? now) : null,
+        status === "disabled" ? ((reviving ? null : existing.disabled_at) ?? now) : null,
         id,
       );
+    if (reviving && input.placement === "local") {
+      // O snapshot do poller descreve a leitura do ciclo anterior. Mantê-lo faria
+      // o watch recriado despejar toda a diferença desde então como evento novo.
+      clearLocalWatchSnapshot(id);
+    }
     return getWatch(id)!;
   }
 
@@ -133,11 +152,15 @@ export function upsertWatch(input: WatchUpsertInput): WatchRecord {
 }
 
 export function getWatch(id: string): WatchRecord | null {
+  const row = getWatchRow(id);
+  return row && row.deleted_at === null ? rowToWatch(row) : null;
+}
+
+/** Linha bruta, inclusive soft-deleted. Só o upsert precisa enxergar as apagadas. */
+function getWatchRow(id: string): WatchRow | null {
   ensureWatchSchema();
-  const row = getDb().prepare("SELECT * FROM watches WHERE id = ? AND deleted_at IS NULL").get(id) as
-    | WatchRow
-    | undefined;
-  return row ? rowToWatch(row) : null;
+  const row = getDb().prepare("SELECT * FROM watches WHERE id = ?").get(id) as WatchRow | undefined;
+  return row ?? null;
 }
 
 export function listWatches(input: {

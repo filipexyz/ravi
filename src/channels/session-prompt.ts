@@ -12,6 +12,8 @@ export interface PublishChannelSessionPromptInput {
   sessionName: string;
   action: ChannelTurnAction;
   principal: RuntimeTurnOriginPrincipal;
+  /** Runtime context of the turn this one comes from; it can only narrow the new turn. */
+  callerContextId?: string;
   payload: Record<string, unknown>;
   options?: PublishSessionPromptOptions;
 }
@@ -29,7 +31,7 @@ export async function publishChannelSessionPrompt(
     input.sessionName,
     {
       ...input.payload,
-      _turnOrigin: buildChannelTurnOrigin(input.action, input.principal),
+      _turnOrigin: buildChannelTurnOrigin(input.action, input.principal, input.callerContextId),
     },
     input.options,
   );

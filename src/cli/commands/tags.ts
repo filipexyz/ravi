@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { ContractError, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
@@ -27,6 +28,7 @@ import {
   dbUpdateTagDefinition,
 } from "../../tags/index.js";
 import { attachTagToSelector, detachTagFromSelector, resolveTagTarget } from "../../tags/service.js";
+import { assertProviderOwnedTagWriteAuthority } from "../../permissions/privileged-contact-writes.js";
 import { hasTagTargetSelector, type TagTargetSelectorInput } from "../../tags/targets.js";
 import type {
   TagAssetType,
@@ -332,11 +334,14 @@ function printJson(payload: unknown): void {
 function failTagNotFound(op: string, slug: string, asJson?: boolean): never {
   const candidates = dbListTagDefinitions({ limit: 40 }).flatMap((tag) => [tag.slug, tag.label]);
   contractFail(op, "TAG_NOT_FOUND", `Tag not found: ${slug}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the tag slug (see suggestions for similar tags, or run 'ravi tags list')",
-      suggestions: suggestSimilar(slug, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the tag slug (see suggestions for similar tags, or run 'ravi tags list')",
+        suggestions: suggestSimilar(slug, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Tag not found: ${slug}`, { operation: op }),
   });
 }
 
@@ -351,6 +356,11 @@ function rethrowTagCommandError(op: string, slug: string, err: unknown, asJson?:
   const message = err instanceof Error ? err.message : String(err);
   if (/^tag not found:/i.test(message)) failTagNotFound(op, slug, asJson);
   fail(message);
+}
+
+/** Definitions the contact-policy provider reads as permission profiles. */
+function isPermissionDefinition(kind: string | null | undefined, source: string | null | undefined): boolean {
+  return kind === "system" && source === "permissions";
 }
 
 @Group({
@@ -389,11 +399,17 @@ export class TagCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
+    const requestedKind = requireTagKind(kind);
+    assertProviderOwnedTagWriteAuthority(
+      "tags create",
+      normalizeSlug(slug),
+      isPermissionDefinition(requestedKind, source?.trim()),
+    );
     const tag = dbCreateTagDefinition({
       slug: normalizeSlug(slug),
       label: label?.trim() || normalizeSlug(slug),
       ...(description?.trim() ? { description: description.trim() } : {}),
-      kind: requireTagKind(kind),
+      kind: requestedKind,
       ...(source?.trim() ? { source: source.trim() } : {}),
       ...(parseMetadata(metadataJson) ? { metadata: parseMetadata(metadataJson) } : {}),
       createdBy: resolveTagActor(),
@@ -536,6 +552,16 @@ export class TagCommands {
   ) {
     const normalizedSlug = normalizeSlug(slug);
     const normalizedKey = key.trim();
+    const existing = dbGetTagDefinition(normalizedSlug);
+    assertProviderOwnedTagWriteAuthority(
+      "tags set",
+      normalizedSlug,
+      isPermissionDefinition(existing?.kind, existing?.source) ||
+        isPermissionDefinition(
+          normalizedKey === "kind" ? value.trim().toLowerCase() : existing?.kind,
+          normalizedKey === "source" ? value.trim() : existing?.source,
+        ),
+    );
     const base = { slug: normalizedSlug, updatedBy: resolveTagActor() };
     const tag = (() => {
       try {
@@ -685,6 +711,12 @@ export class TagCommands {
   ) {
     const metadata = parseMetadata(metadataJson);
     const normalizedSlug = normalizeSlug(slug);
+    const attachedDefinition = dbGetTagDefinition(normalizedSlug);
+    assertProviderOwnedTagWriteAuthority(
+      "tags attach",
+      normalizedSlug,
+      isPermissionDefinition(attachedDefinition?.kind, attachedDefinition?.source),
+    );
     const { binding } = (() => {
       try {
         return attachTagToSelector({
@@ -821,6 +853,12 @@ export class TagCommands {
     asJson?: boolean,
   ) {
     const normalizedSlug = normalizeSlug(slug);
+    const detachedDefinition = dbGetTagDefinition(normalizedSlug);
+    assertProviderOwnedTagWriteAuthority(
+      "tags detach",
+      normalizedSlug,
+      isPermissionDefinition(detachedDefinition?.kind, detachedDefinition?.source),
+    );
     const { target, removed } = (() => {
       try {
         return detachTagFromSelector({

@@ -14,10 +14,10 @@ import {
   dbListContactChatGrantsCoveringChat,
   type ContactChatGrant,
 } from "./contact-chat-grants.js";
+import { PERMISSION_TAG_PREFIX, normalizePermissionTag } from "./permission-tags.js";
 import type { PermissionProvider, PermissionProviderDecision, PermissionProviderRequest } from "./provider-types.js";
 
 const ADMIN_CONTACT_TAGS = new Set(["permission-admin", "permission-owner", "permission-superadmin"]);
-const PERMISSION_TAG_PREFIX = "permission-";
 const PERMISSION_TAG_SOURCE = "permissions";
 const ADMIN_CAPABILITY = "admin:system:*";
 
@@ -231,7 +231,7 @@ function toContactProfileGrant(grant: ContactChatGrant): ContactProfileGrant {
 }
 
 function globalProfileGrantsFromTags(contactId: string, rawTags: readonly string[]): ContactProfileGrant[] {
-  const tags = [...new Set(rawTags.map(normalizeTag).filter((tag): tag is string => Boolean(tag)))];
+  const tags = [...new Set(rawTags.map(normalizePermissionTag).filter((tag): tag is string => Boolean(tag)))];
   return tags.flatMap((tag) => {
     if (!tag.startsWith(PERMISSION_TAG_PREFIX)) return [];
     const capabilities = readProfileCapabilityStrings(tag);
@@ -266,13 +266,14 @@ function materializeGlobalTagCapabilities(contactId: string, rawTags: readonly s
   );
 }
 
-function normalizeTag(value: string): string | null {
-  const normalized = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return normalized || null;
+/** Provider-owned permission tags a contact carries, in normalized form. */
+export function contactPermissionPolicyTags(contactId: string): string[] {
+  const tags = getContactDetails(contactId)?.policy?.tags ?? [];
+  return [
+    ...new Set(
+      tags.map(normalizePermissionTag).filter((tag): tag is string => Boolean(tag?.startsWith(PERMISSION_TAG_PREFIX))),
+    ),
+  ];
 }
 
 function isPermissionTagDefinition(definition: TagDefinition | null): definition is TagDefinition {

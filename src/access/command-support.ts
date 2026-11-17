@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { z } from "zod";
 
 import { contractFail, ContractError } from "../cli/agent-contract.js";
@@ -61,9 +62,12 @@ export async function runAccessCommand<T>(
     const failure = describeAccessFailure(error, op);
     if (failure) {
       contractFail(op, failure.code, failure.message, {
-        asJson,
-        exitCode: failure.exitCode,
-        details: failure.details,
+        ...{
+          asJson,
+          exitCode: failure.exitCode,
+          details: failure.details,
+        },
+        diagnostic: errorDiagnostic(error, { operation: op }),
       });
     }
     throw cloudAuthErrorFromUnknown(error);

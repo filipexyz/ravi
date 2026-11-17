@@ -110,6 +110,12 @@ mock.module("../../triggers/index.js", () => ({
   },
 }));
 
+// The turn classification reads the daemon's tables; here the test says whose turn it is.
+let watchTurnOwner = "operator";
+mock.module("../../triggers/ownership.js", () => ({
+  resolveTriggerOwnerForCurrentTurn: () => watchTurnOwner,
+}));
+
 mock.module("../../nats.js", () => ({
   connectNats: async () => {},
   closeNats: async () => {},
@@ -208,6 +214,7 @@ beforeEach(() => {
   emitCalls.length = 0;
   watchStore = [buildWatch()];
   watchOperationError = null;
+  watchTurnOwner = "operator";
 });
 
 // ---------------------------------------------------------------------------
@@ -286,6 +293,7 @@ describe("watch write brake", () => {
   });
 
   it("trigger with --execute creates the trigger scoped to the watch", async () => {
+    watchTurnOwner = "contact:c_watcher";
     const commands = new WatchCommands();
     const payload = await silenced(() =>
       commands.trigger(
@@ -310,6 +318,8 @@ describe("watch write brake", () => {
       agentId: "main",
       accountId: "acc-main",
       session: "isolated",
+      // The turn that arms the trigger owns it.
+      ownerPrincipal: "contact:c_watcher",
     });
     expect(payload).toMatchObject({ status: "created" });
   });
@@ -351,7 +361,7 @@ describe("watch write brake", () => {
           undefined,
           undefined,
         ),
-      ).rejects.toMatchObject({ code: "COMMAND_FAILED", exitCode: 1 });
+      ).rejects.toMatchObject({ code: "VALIDATION_ERROR", exitCode: 2 });
     });
 
     expect(createTriggerCalls).toHaveLength(0);
@@ -453,7 +463,9 @@ describe("watch envelopes and compact mode", () => {
   });
 
   it("redacts unexpected provider failures as UNHANDLED_ERROR", async () => {
-    watchOperationError = new Error("provider https://secret.invalid?token=abc failed");
+    watchOperationError = new Error("provider https://secret.invalid?token=abc failed", {
+      cause: Object.assign(new Error("socket connect timed out"), { code: "ETIMEDOUT", syscall: "connect" }),
+    });
 
     const error = await expectContractError(
       () => new WatchCommands().disable("watch-gh-1", true),
@@ -462,6 +474,13 @@ describe("watch envelopes and compact mode", () => {
     );
     expect(error.message).toBe("Command failed unexpectedly.");
     expect(JSON.stringify(error.envelope())).not.toContain("secret.invalid");
+    expect(JSON.stringify(error.envelope())).not.toContain("token=abc");
+    expect(error.details.cause).toBe("provider [redacted:credential] failed\nCaused by: socket connect timed out");
+    expect(error.details.context).toMatchObject({
+      operation: "watch disable",
+      code: "ETIMEDOUT",
+      syscall: "connect",
+    });
   });
 
   it("show on an unknown watch exits 1 with WATCH_NOT_FOUND and suggestions from the local store", async () => {

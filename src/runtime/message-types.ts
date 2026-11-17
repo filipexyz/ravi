@@ -1,4 +1,6 @@
+import type { CronRunAuthority } from "../cron/authority.js";
 import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barriers.js";
+import type { TriggerRunAuthority } from "../triggers/authority.js";
 import type { ThreadHandoffPromptMetadata } from "../threads/types.js";
 import type { RuntimeEventMetadata } from "./types.js";
 import type { RuntimeProviderId } from "./types.js";
@@ -124,6 +126,8 @@ export interface DaemonRestartResumePromptMetadata {
 }
 
 export interface ChannelBackendPromptMetadata {
+  /** Physical Ravi trace turn; distinct from the channel request's binding.turnId. */
+  traceTurnId?: string;
   protocol: "ravi.channel.backend";
   schemaVersion: 1;
   ingressRequestId: string;
@@ -143,6 +147,12 @@ export interface ChannelBackendPromptMetadata {
   };
 }
 
+/** Host-owned reference to the durable input; never inferred from the reply target or latest session sender. */
+export interface ChannelAutomaticOutputOrigin {
+  readonly kind: "channel_backend";
+  readonly binding: Readonly<ChannelBackendPromptMetadata["binding"]>;
+}
+
 export type SessionRelayAction = "send" | "ask" | "answer" | "execute" | "inform";
 
 export interface RuntimeTurnOriginPrincipal {
@@ -154,6 +164,11 @@ interface RuntimeTurnOriginEnvelope {
   protocol: "ravi.runtime.turn-origin";
   schemaVersion: 1;
   principal: RuntimeTurnOriginPrincipal;
+  /**
+   * The runtime context of the turn that produced this one. It can only narrow
+   * the new turn (to a contact overlay's capabilities), never widen it.
+   */
+  callerContextId?: string;
 }
 
 export interface SessionRelayTurnOriginMetadata extends RuntimeTurnOriginEnvelope {
@@ -177,10 +192,20 @@ export interface ChannelTurnOriginMetadata extends RuntimeTurnOriginEnvelope {
  * a credential: access to the internal prompt bus is the trust boundary.
  * `source` and `context` continue to describe the reply surface.
  */
-export type RuntimeTurnOriginMetadata = SessionRelayTurnOriginMetadata | ChannelTurnOriginMetadata;
+export interface SignalTurnOriginMetadata extends RuntimeTurnOriginEnvelope {
+  producer: "signals";
+  action: "escalate";
+}
+
+export type RuntimeTurnOriginMetadata =
+  | SessionRelayTurnOriginMetadata
+  | ChannelTurnOriginMetadata
+  | SignalTurnOriginMetadata;
 
 /** Prompt message structure */
 export interface PromptMessage {
+  /** Trusted bridge producer reference; all authority is reloaded from its durable receipt. */
+  _bridgeTurnId?: string;
   prompt: string;
   /** Ravi Commands that produced this prompt, when a user invoked #command. */
   commands?: RaviCommandPromptMetadata[];
@@ -218,10 +243,16 @@ export interface PromptMessage {
   _cron?: boolean;
   /** Cron job id when `_cron` is true. */
   _jobId?: string;
+  /** Durable identity of this admitted cron execution, distinct from its job. */
+  _cronRunId?: string;
+  /** Ownership fixed by the runner before dispatch, never rebuilt from a live job. */
+  _cronAuthority?: CronRunAuthority;
   /** Trigger runner prompt marker. */
   _trigger?: boolean;
   /** Trigger id when `_trigger` is true. */
   _triggerId?: string;
+  /** Ownership fixed by the runner when the trigger fired, never rebuilt from the live trigger. */
+  _triggerAuthority?: TriggerRunAuthority;
   /** Session followup runner prompt marker. */
   _sessionFollowup?: boolean;
   /** Session followup cadence id when `_sessionFollowup` is true. */
@@ -230,6 +261,14 @@ export interface PromptMessage {
   _sessionFollowupRunId?: string;
   /** Ravi thread metadata. Distinct from provider-native thread/topic IDs. */
   _thread?: ThreadHandoffPromptMetadata;
+  /** Durable decision-answer admission; validated against the stored envelope. */
+  _decisionDeliveryId?: string;
+  /** Durable task dispatch admission, keyed by the execution assignment. */
+  _taskAssignmentId?: string;
+  /** Frozen assignment session identity, rechecked at runtime launch. */
+  _taskSessionKey?: string;
+  /** Canonical waiting session, rechecked after asynchronous dispatch preflight. */
+  _decisionSessionKey?: string;
   /**
    * Internal restart envelope: start a fresh runtime only to drain messages that
    * were already persisted and stashed by the previous runtime session.
@@ -260,6 +299,17 @@ export interface PromptMessage {
   _channelBackend?: ChannelBackendPromptMetadata;
   /** Validated provenance asserted by a trusted internal producer; not a credential. */
   _turnOrigin?: RuntimeTurnOriginMetadata;
+  /** Trusted Slack lifecycle provenance, used to batch lossless progress reports. */
+  _slackThreadLifecycle?: {
+    eventId?: string;
+    eventType: string;
+    requestId: string;
+    parentSessionKey: string;
+    childSessionKey: string;
+    childSessionName?: string;
+    providerThreadId?: string;
+    [key: string]: unknown;
+  };
   /**
    * Channel bootstrap that must not occupy a runtime pool slot until a later
    * interactive turn. The dispatcher stashes the inform and prepends it.
@@ -285,6 +335,25 @@ export interface PromptMessage {
 }
 
 export type RuntimeLaunchPrompt = PromptMessage;
+
+/** Trusted internal occurrence metadata; the consumer still validates its durable receipt. */
+export function isThreadAttentionPrompt(prompt: RuntimeLaunchPrompt): boolean {
+  const meta = prompt._slackThreadLifecycle;
+  return meta?.eventType === "thread.attention" || meta?.eventId?.startsWith("slack-thread-attention:") === true;
+}
+
+export function assertThreadAttentionSession(
+  prompt: RuntimeLaunchPrompt,
+  session: { sessionKey: string; agentId: string } | null | undefined,
+): void {
+  if (
+    isThreadAttentionPrompt(prompt) &&
+    (!session ||
+      session.sessionKey !== prompt._slackThreadLifecycle?.parentSessionKey ||
+      session.agentId !== prompt._agentId)
+  )
+    throw new Error("Thread attention session changed before runtime admission");
+}
 
 export type ResponseMediaType = "image" | "video" | "audio" | "document";
 
@@ -312,6 +381,8 @@ export type ResponseContentPart =
 
 /** Response message structure */
 export interface ResponseMessage {
+  /** Canonical session_turns.turn_id, never a provider-native turn id. */
+  traceTurnId?: string;
   response?: string;
   error?: string;
   content?: ResponseContentPart[];
@@ -319,6 +390,10 @@ export interface ResponseMessage {
   metadata?: RuntimeEventMetadata | null;
   /** Unique emit ID to detect ghost/duplicate responses */
   _emitId?: string;
+  /** Immutable native-turn provenance, independently carried when the output target is reconstructed. */
+  _automaticOutputOrigin?: ChannelAutomaticOutputOrigin;
+  /** Frozen complete native bot reply, shared by its terminal text and generated attachments. */
+  _automaticTerminalResponseId?: string;
   usage?: {
     input_tokens: number;
     output_tokens: number;

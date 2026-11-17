@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { contractDryRun, contractFail } from "../agent-contract.js";
@@ -123,11 +124,14 @@ const workObjectSuggestReturnSchema = z.object({
 
 function failWorkObjectNotFound(op: string, ref: string, asJson?: boolean): never {
   contractFail(op, "WORK_OBJECT_NOT_FOUND", `Work Object not found: ${ref}`, {
-    asJson,
-    details: {
-      suggestedAction:
-        "Check the reference (URL or type:id). Task-backed objects use --type task --id <task-id>; list ids with: ravi tasks list --json",
+    ...{
+      asJson,
+      details: {
+        suggestedAction:
+          "Check the reference (URL or type:id). Task-backed objects use --type task --id <task-id>; list ids with: ravi tasks list --json",
+      },
     },
+    diagnostic: errorDiagnostic(`Work Object not found: ${ref}`, { operation: op }),
   });
 }
 

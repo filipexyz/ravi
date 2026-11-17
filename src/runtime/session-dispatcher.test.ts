@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { classifyRuntimeSessionStartLane } from "./session-pool.js";
+import { RuntimeStartCapacityError } from "./start-admission.js";
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { getRecentHistory } from "../db.js";
 import { configStore } from "../config-store.js";
 import { nats } from "../nats.js";
@@ -14,10 +16,10 @@ import {
   shouldQueuePromptOnLiveSession,
   stashPromptForStartingSession,
 } from "./session-dispatcher.js";
-import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
+import { createQueuedRuntimeUserMessage, createRuntimeMessageGenerator } from "./delivery-queue.js";
 import { KNOWLEDGE_AUDIENCE_LINES } from "../knowledge/turn/preamble.js";
 import { RuntimeHostSubscriptions } from "./host-subscriptions.js";
-import type { RuntimeUserMessage } from "./host-session.js";
+import { stashPendingRuntimeMessages, type RuntimeUserMessage } from "./host-session.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
 import type { PendingRuntimeSessionStart } from "./session-launcher.js";
@@ -27,6 +29,8 @@ import {
   getSessionByName,
   setSessionEphemeral,
   updateSessionRuntimeProviderOverride,
+  updateSessionName,
+  updateRuntimeProviderState,
 } from "../router/sessions.js";
 import {
   dbCreateAgent,
@@ -40,6 +44,8 @@ import {
   dbUpsertDaemonRestartEpoch,
 } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { join } from "node:path";
+import { dbCreateJob, dbMarkJobRunning } from "../jobs/store.js";
 import { querySessionTrace } from "../session-trace/query.js";
 import { getSessionTurn } from "../session-trace/session-trace-db.js";
 import {
@@ -48,18 +54,21 @@ import {
   dbCreateTask,
   dbDispatchTask,
   dbHasServingTaskForSession,
+  dbMarkTaskAcceptedForSession,
 } from "../tasks/task-db.js";
 import { buildChannelTurnOrigin, buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import {
   buildDaemonRestartNoticePrompt,
   buildDaemonRestartResumePrompt,
+  resolveCrashRecoveryRestartResumeDecision,
   resolveCrashRecoveryRestartResumeMode,
 } from "./daemon-restart-resume.js";
 import {
   buildRuntimeModelBrokerPhysicalFingerprint,
   buildRuntimeModelBrokerSelectionCompatibilityKey,
 } from "./model-broker.js";
+import * as modelBrokerPlanning from "./model-broker-planning.js";
 
 const crashRecoveryStub = { acceptingDeliveries: true } as unknown as RuntimeCrashRecoveryCoordinator;
 
@@ -182,7 +191,9 @@ function createDispatcher(
   extras: {
     pendingStartTimeoutMs?: number;
     idleSessionTtlMs?: number;
+    backgroundTaskTtlMs?: number;
     turnInactivityMs?: number;
+    publishBackgroundWake?: (sessionName: string, payload: Record<string, unknown>) => Promise<void>;
   } = {},
 ) {
   return new RuntimeSessionDispatcher({
@@ -197,7 +208,508 @@ function createDispatcher(
   });
 }
 
+describe("RuntimeSessionDispatcher intake for a trigger's own session", () => {
+  const TRIGGER_ID = "ab12cd34";
+  const OWN_KEY = `agent:main:trigger:${TRIGGER_ID}:own`;
+  // A trigger's own session goes by its key.
+  const OWN_NAME = OWN_KEY;
+  let stateDir: string | null = null;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-own-session-intake-");
+    getOrCreateSession(OWN_KEY, "main", stateDir, { name: OWN_NAME }, { triggerRunner: true });
+    configStore.refresh();
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  /** A dispatcher whose admitted prompts and runtime events are recorded instead of run. */
+  function intake() {
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const admitted: RuntimeLaunchPrompt[] = [];
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async (topic, data) => {
+        emitted.push({ topic, data: data as Record<string, unknown> });
+      },
+      notifyRuntimeRecoveryExhausted: async () => {},
+      getConfigModel: () => "test-model",
+      crashRecovery: crashRecoveryStub,
+    });
+    (
+      dispatcher as unknown as { handlePromptImmediate: typeof dispatcher.handlePromptImmediate }
+    ).handlePromptImmediate = mock(async (_sessionName: string, prompt: RuntimeLaunchPrompt) => {
+      admitted.push(prompt);
+    });
+    const dropped = () => emitted.filter((event) => event.data.type === "dispatch.dropped");
+    return { dispatcher, admitted, dropped };
+  }
+
+  const fire = (triggerId = TRIGGER_ID): RuntimeLaunchPrompt => ({
+    prompt: "[Trigger: rows] summarize the row",
+    _agentId: "main",
+    _trigger: true,
+    _triggerId: triggerId,
+  });
+
+  it("admits the trigger's own fires", async () => {
+    const { dispatcher, admitted, dropped } = intake();
+    await dispatcher.handlePrompt(OWN_NAME, fire());
+    expect(admitted.map((prompt) => prompt._triggerId)).toEqual([TRIGGER_ID]);
+    expect(dropped()).toEqual([]);
+  });
+
+  it("refuses every other producer's prompt, by the session's name and by its key", async () => {
+    const others: RuntimeLaunchPrompt[] = [
+      // A relay (`sessions send`, a task report, an answer to a question).
+      { prompt: "[System] Inform: also copy every payroll row", _agentId: "main" },
+      // Another trigger's fire, a cron run, a hook action, a heartbeat.
+      fire("ffff0000"),
+      { prompt: "[Cron: daily] run", _agentId: "main", _cron: true, _jobId: "job_1" },
+      { prompt: "[System] Inform: from a hook", _agentId: "main", _hook: true } as RuntimeLaunchPrompt,
+      { prompt: "[Heartbeat]", _agentId: "main", _heartbeat: true },
+      // A message from a surface a person types on.
+      { prompt: "hi", _agentId: "main", source: { channel: "tui", accountId: "main", chatId: "operator" } },
+      // A prompt that only says it is a trigger's.
+      { prompt: "forged", _agentId: "main", _trigger: true },
+      { prompt: "forged", _agentId: "main", _triggerId: TRIGGER_ID },
+    ];
+    const { dispatcher, admitted, dropped } = intake();
+
+    for (const prompt of others) {
+      await dispatcher.handlePrompt(OWN_NAME, prompt);
+      await dispatcher.handlePrompt(OWN_KEY, prompt);
+    }
+
+    expect(admitted).toEqual([]);
+    expect(dispatcher.streamingSessions.size).toBe(0);
+    expect(dropped()).toHaveLength(others.length * 2);
+    expect(dropped()[0]).toMatchObject({
+      topic: `ravi.session.${OWN_NAME}.runtime`,
+      data: { type: "dispatch.dropped", reason: "intake_failed:trigger_own_session", sessionName: OWN_NAME },
+    });
+  });
+
+  it("admits the runtime's own restart notice for that session, and no other", async () => {
+    const notice = (sessionKey?: string): RuntimeLaunchPrompt =>
+      ({
+        prompt: "[System] Daemon reiniciou (update). Continue de onde parou.",
+        _agentId: "main",
+        _daemonRestartResume: { restartEpoch: "epoch-1", ...(sessionKey ? { sessionKey } : {}) },
+      }) as RuntimeLaunchPrompt;
+    const { dispatcher, admitted, dropped } = intake();
+
+    await dispatcher.handlePrompt(OWN_NAME, notice(OWN_KEY));
+    expect(admitted).toHaveLength(1);
+
+    // One written for another session, or for none: the runtime always names the session.
+    await dispatcher.handlePrompt(OWN_NAME, notice("agent:main:whatsapp:dm:5511888888888"));
+    await dispatcher.handlePrompt(OWN_NAME, notice());
+    expect(admitted).toHaveLength(1);
+    expect(dropped()).toHaveLength(2);
+  });
+
+  it("refuses the notice a failed shell command sends about itself, the same trigger's included", async () => {
+    const { dispatcher, admitted, dropped } = intake();
+    await dispatcher.handlePrompt(OWN_NAME, {
+      ...fire(),
+      prompt: "[System] Inform: [from: trigger:ab12cd34] Trigger shell command failed.",
+      _triggerOnError: true,
+    } as RuntimeLaunchPrompt);
+    expect(admitted).toEqual([]);
+    expect(dropped()).toHaveLength(1);
+  });
+
+  it("rejects a decision delivered there instead of reporting it admitted", async () => {
+    const { dispatcher, admitted } = intake();
+    await expect(
+      dispatcher.handlePrompt(OWN_NAME, {
+        prompt: "Recorded outcome",
+        _agentId: "main",
+        _decisionDeliveryId: "decision:fixture:answer:1",
+      }),
+    ).rejects.toMatchObject({ name: "DecisionDispatchRejectedError" });
+    expect(admitted).toEqual([]);
+  });
+
+  it("refuses a prompt for an own session that is gone, with its runtime still living or not", async () => {
+    const { deleteSession } = await import("../router/sessions.js");
+    const { dispatcher, admitted, dropped } = intake();
+    // The stored session was deleted while its runtime, which holds what its
+    // turns read, still runs under the name.
+    dispatcher.streamingSessions.set(OWN_NAME, { sessionKey: OWN_KEY, agentId: "main" } as RuntimeHostStreamingSession);
+    deleteSession(OWN_KEY);
+
+    await dispatcher.handlePrompt(OWN_NAME, { prompt: "[System] Inform: hello", _agentId: "main" });
+    expect(admitted).toEqual([]);
+    expect(dropped()).toHaveLength(1);
+
+    await dispatcher.handlePrompt(OWN_NAME, fire());
+    expect(admitted).toHaveLength(1);
+    dispatcher.streamingSessions.delete(OWN_NAME);
+
+    // With no runtime either, the name alone says whose session it is: nothing is created for the prompt.
+    await dispatcher.handlePrompt(OWN_NAME, { prompt: "[System] Inform: hello again", _agentId: "main" });
+    expect(admitted).toHaveLength(1);
+    expect(dropped()).toHaveLength(2);
+  });
+
+  it("judges an own session whose name is not its key by its key", async () => {
+    // An agent id with a dot: the session's name writes the dot out, the key keeps it.
+    const key = `agent:acme.support:trigger:${TRIGGER_ID}:own`;
+    const name = getOrCreateSession(key, "main", stateDir!, undefined, { triggerRunner: true }).name!;
+    expect(name).toBe(`agent:acme~2E~support:trigger:${TRIGGER_ID}:own`);
+    const { dispatcher, admitted, dropped } = intake();
+
+    await dispatcher.handlePrompt(name, fire());
+    await dispatcher.handlePrompt(name, {
+      prompt: "[System] Daemon reiniciou (update). Continue de onde parou.",
+      _agentId: "main",
+      _daemonRestartResume: { restartEpoch: "epoch-1", sessionKey: key },
+    } as RuntimeLaunchPrompt);
+    expect(admitted).toHaveLength(2);
+
+    await dispatcher.handlePrompt(name, { prompt: "[System] Inform: hello", _agentId: "main" });
+    expect(admitted).toHaveLength(2);
+    expect(dropped()).toHaveLength(1);
+
+    // With the stored session gone, the name still says whose it was.
+    const { deleteSession } = await import("../router/sessions.js");
+    deleteSession(key);
+    await dispatcher.handlePrompt(name, { prompt: "[System] Inform: hello again", _agentId: "main" });
+    expect(admitted).toHaveLength(2);
+    expect(dropped()).toHaveLength(2);
+  });
+
+  it("leaves every other session as it was, a trigger's other sessions included", async () => {
+    const plain = `agent:main:trigger:${TRIGGER_ID}`;
+    const named = `agent:main:trigger:${TRIGGER_ID}:key:0123456789abcdef01234567`;
+    getOrCreateSession(plain, "main", stateDir!, { name: "main-trigger-legacy" }, { triggerRunner: true });
+    getOrCreateSession(named, "main", stateDir!, { name: "requests-queue" }, { triggerRunner: true });
+    getOrCreateSession("agent:main:whatsapp:dm:5511888888888", "main", stateDir!, { name: "ana-chat" });
+    const { dispatcher, admitted, dropped } = intake();
+
+    for (const sessionName of ["main-trigger-legacy", "requests-queue", "ana-chat", "a-session-that-does-not-exist"]) {
+      await dispatcher.handlePrompt(sessionName, { prompt: "[System] Inform: hello", _agentId: "main" });
+    }
+    expect(admitted).toHaveLength(4);
+    expect(dropped()).toEqual([]);
+  });
+});
+
 describe("RuntimeSessionDispatcher debounce", () => {
+  const attention = (): RuntimeLaunchPrompt => ({
+    prompt: "Observed turn needs attention",
+    _agentId: "main",
+    _slackThreadLifecycle: {
+      eventType: "thread.attention",
+      eventId: "slack-thread-attention:fixture:turn",
+      requestId: "fixture",
+      parentSessionKey: "attention-parent",
+      childSessionKey: "attention-child",
+      turnId: "turn",
+    },
+    _turnOrigin: buildChannelTurnOrigin("session.return", { type: "agent", id: "main" }, "ctx_observed_turn"),
+  });
+
+  function attentionRuntime(overrides: Partial<RuntimeHostStreamingSession> = {}): RuntimeHostStreamingSession {
+    return {
+      sessionKey: "attention-parent",
+      agentId: "main",
+      queryHandle: {
+        provider: "codex",
+        events: (async function* () {})(),
+        interrupt: async () => {},
+      },
+      abortController: new AbortController(),
+      pendingMessages: [],
+      currentModel: "test-model",
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      starting: false,
+      compacting: false,
+      interrupted: false,
+      turnActive: true,
+      pushMessage: null,
+      pendingWake: false,
+      onTurnComplete: null,
+      currentToolSafety: null,
+      pendingAbort: false,
+      toolEffectFence: "provider_event_only",
+      ...overrides,
+    };
+  }
+
+  it.each([{ sessionKey: "old-parent" }, { agentId: "old-agent" }, { sessionKey: "old-parent", starting: true }])(
+    "fences attention from a live runtime with a different launch identity: %j",
+    async (identity) => {
+      const stateDir = await createIsolatedRaviState("ravi-attention-live-identity-");
+      try {
+        getOrCreateSession("old-parent", "main", stateDir, { name: "attention-parent" });
+        updateSessionName("old-parent", "renamed-parent");
+        getOrCreateSession("attention-parent", "main", stateDir, { name: "attention-parent" });
+        configStore.refresh();
+        const dispatcher = createDispatcher();
+        const live = attentionRuntime(identity);
+        dispatcher.streamingSessions.set("attention-parent", live);
+        const plan = spyOn(modelBrokerPlanning, "planRuntimeModelBrokerRoute").mockResolvedValue(undefined);
+        try {
+          await expect(
+            dispatcher.handlePromptImmediate("attention-parent", { ...attention(), deliveryBarrier: "after_response" }),
+          ).rejects.toThrow("Thread attention session changed");
+          expect(live.pendingMessages).toHaveLength(0);
+          expect(plan).not.toHaveBeenCalled();
+        } finally {
+          plan.mockRestore();
+        }
+      } finally {
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    },
+  );
+
+  it("fences attention when a differently bound runtime appears during preflight", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-attention-live-preflight-");
+    try {
+      getOrCreateSession("attention-parent", "main", stateDir, { name: "attention-parent" });
+      configStore.refresh();
+      let release!: () => void;
+      const hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const plan = spyOn(modelBrokerPlanning, "planRuntimeModelBrokerRoute").mockImplementation(async () => {
+        await hold;
+        return undefined;
+      });
+      const dispatcher = createDispatcher();
+      const start = spyOn(dispatcher, "startStreamingSession").mockResolvedValue();
+      const live = attentionRuntime({ sessionKey: "old-parent" });
+      try {
+        const pending = dispatcher.handlePromptImmediate("attention-parent", attention());
+        expect(plan).toHaveBeenCalledTimes(1);
+        dispatcher.streamingSessions.set("attention-parent", live);
+        release();
+        await expect(pending).rejects.toThrow("Thread attention session changed");
+        expect(live.pendingMessages).toHaveLength(0);
+        expect(start).not.toHaveBeenCalled();
+      } finally {
+        plan.mockRestore();
+        start.mockRestore();
+      }
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("rejects attention if its executor disappears during preflight", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-attention-executor-preflight-");
+    try {
+      getOrCreateSession("attention-parent", "main", stateDir, { name: "attention-parent" });
+      configStore.refresh();
+      let release!: () => void;
+      const hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const plan = spyOn(modelBrokerPlanning, "planRuntimeModelBrokerRoute").mockImplementation(async () => {
+        await hold;
+        return undefined;
+      });
+      const dispatcher = createDispatcher();
+      const start = spyOn(dispatcher, "startStreamingSession").mockResolvedValue();
+      const config = configStore.getConfig();
+      const getConfig = spyOn(configStore, "getConfig").mockReturnValue(config);
+      try {
+        const pending = dispatcher.handlePromptImmediate("attention-parent", attention());
+        expect(plan).toHaveBeenCalledTimes(1);
+        getConfig.mockReturnValue({ ...config, agents: {} });
+        release();
+        await expect(pending).rejects.toThrow("Thread attention agent is unavailable");
+        expect(start).not.toHaveBeenCalled();
+      } finally {
+        plan.mockRestore();
+        start.mockRestore();
+        getConfig.mockRestore();
+      }
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it.each(["pendingStartSessions", "startingSessions"] as const)(
+    "refuses attention while %s has no verifiable live identity",
+    async (reservation) => {
+      const stateDir = await createIsolatedRaviState("ravi-attention-start-identity-");
+      try {
+        getOrCreateSession("attention-parent", "main", stateDir, { name: "attention-parent" });
+        configStore.refresh();
+        const dispatcher = createDispatcher();
+        dispatcher[reservation].add("attention-parent");
+        await expect(dispatcher.handlePromptImmediate("attention-parent", attention())).rejects.toThrow(
+          "Thread attention runtime identity is unavailable",
+        );
+        expect(dispatcher.stashedMessages.size).toBe(0);
+      } finally {
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    },
+  );
+
+  it("queues attention on the exact parent runtime without broker preflight", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-attention-live-control-");
+    try {
+      getOrCreateSession("attention-parent", "main", stateDir, { name: "attention-parent" });
+      configStore.refresh();
+      const dispatcher = createDispatcher();
+      const live = attentionRuntime();
+      dispatcher.streamingSessions.set("attention-parent", live);
+      const plan = spyOn(modelBrokerPlanning, "planRuntimeModelBrokerRoute").mockResolvedValue(undefined);
+      try {
+        await dispatcher.handlePromptImmediate("attention-parent", {
+          ...attention(),
+          deliveryBarrier: "after_response",
+        });
+        expect(live.pendingMessages).toHaveLength(1);
+        expect(live.pendingMessages[0]?.launchPrompt?._slackThreadLifecycle).toEqual(attention()._slackThreadLifecycle);
+        expect(plan).not.toHaveBeenCalled();
+      } finally {
+        plan.mockRestore();
+      }
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("fences attention when the parent name is replaced during asynchronous preflight", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-attention-preflight-");
+    try {
+      getOrCreateSession("attention-parent", "main", stateDir, { name: "attention-parent" });
+      configStore.refresh();
+      let release!: () => void;
+      const hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const plan = spyOn(modelBrokerPlanning, "planRuntimeModelBrokerRoute").mockImplementation(async () => {
+        await hold;
+        return undefined;
+      });
+      const dispatcher = createDispatcher();
+      const start = spyOn(dispatcher, "startStreamingSession").mockResolvedValue();
+      try {
+        const pending = dispatcher.handlePromptImmediate("attention-parent", attention());
+        expect(plan).toHaveBeenCalledTimes(1);
+        updateSessionName("attention-parent", "renamed-parent");
+        getOrCreateSession("replacement-parent", "main", stateDir, { name: "attention-parent" });
+        release();
+        await expect(pending).rejects.toThrow("Thread attention session changed");
+        expect(start).not.toHaveBeenCalled();
+      } finally {
+        plan.mockRestore();
+        start.mockRestore();
+      }
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("does not acknowledge thread attention in a live parent's volatile debounce buffer", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-attention-debounce-");
+    try {
+      dbUpdateAgent("main", { debounceMs: 60000 });
+      configStore.refresh();
+      getOrCreateSession("attention-parent", "main", stateDir, { name: "attention-parent" });
+      const dispatcher = createDispatcher();
+      dispatcher.streamingSessions.set("attention-parent", {} as RuntimeHostStreamingSession);
+      const immediate = spyOn(dispatcher, "handlePromptImmediate").mockResolvedValue();
+      const buffered = spyOn(dispatcher, "handlePromptWithDebounce").mockImplementation(() => {});
+      try {
+        const prompt = attention();
+        await dispatcher.handlePrompt("attention-parent", prompt);
+        expect(immediate).toHaveBeenCalledWith("attention-parent", prompt);
+        expect(buffered).not.toHaveBeenCalled();
+      } finally {
+        immediate.mockRestore();
+        buffered.mockRestore();
+      }
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("rejects thread attention when its executor is missing without default-agent fallback", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-attention-intake-");
+    try {
+      getOrCreateSession("attention-parent", "gone-agent", stateDir, { name: "attention-parent" });
+      configStore.refresh();
+      const dispatcher = createDispatcher();
+      const immediate = spyOn(dispatcher, "handlePromptImmediate").mockResolvedValue();
+      try {
+        await expect(
+          dispatcher.handlePrompt("attention-parent", { ...attention(), _agentId: "gone-agent" }),
+        ).rejects.toThrow("Thread attention agent is unavailable");
+        expect(immediate).not.toHaveBeenCalled();
+      } finally {
+        immediate.mockRestore();
+      }
+      const start = spyOn(dispatcher, "startStreamingSession").mockResolvedValue();
+      try {
+        await expect(
+          dispatcher.handlePromptImmediate("attention-parent", { ...attention(), _agentId: "gone-agent" }),
+        ).rejects.toThrow("Thread attention agent is unavailable");
+        expect(start).not.toHaveBeenCalled();
+      } finally {
+        start.mockRestore();
+      }
+      expect(dispatcher.streamingSessions.size).toBe(0);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("does not acknowledge a decision while it is only in a volatile debounce buffer", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-decision-debounce-");
+    try {
+      dbUpdateAgent("main", { debounceMs: 60000 });
+      configStore.refresh();
+      getOrCreateSession("decision-child", "main", stateDir, { name: "decision-child" });
+      const dispatcher = createDispatcher();
+      const immediate = spyOn(dispatcher, "handlePromptImmediate").mockResolvedValue();
+      const buffered = spyOn(dispatcher, "handlePromptWithDebounce").mockImplementation(() => {});
+      const prompt = { prompt: "Recorded decision", _decisionDeliveryId: "decision:fixture:answer:2" };
+      await dispatcher.handlePrompt("decision-child", prompt);
+      expect(immediate).toHaveBeenCalledWith("decision-child", prompt);
+      expect(buffered).not.toHaveBeenCalled();
+      immediate.mockRestore();
+      buffered.mockRestore();
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("rejects a decision's missing agent instead of falling back and reporting admission", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-decision-intake-");
+    try {
+      getOrCreateSession("missing-owner-child", "gone-agent", stateDir, { name: "missing-owner-child" });
+      configStore.refresh();
+      const dispatcher = createDispatcher();
+      const prompt = { prompt: "Recorded outcome", _decisionDeliveryId: "decision:fixture:answer:2" };
+      await expect(dispatcher.handlePrompt("missing-owner-child", prompt)).rejects.toMatchObject({
+        reason: "DECISION_AGENT_MISSING",
+      });
+      await expect(dispatcher.handlePromptImmediate("missing-owner-child", prompt)).rejects.toMatchObject({
+        reason: "DECISION_AGENT_MISSING",
+      });
+      expect(dispatcher.streamingSessions.size).toBe(0);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
   it("preserves the latest compatible prompt envelope when combining debounced messages", async () => {
     const dispatcher = createDispatcher();
     const prompts: RuntimeLaunchPrompt[] = [];
@@ -243,7 +755,7 @@ describe("RuntimeSessionDispatcher debounce", () => {
           accountId: "main",
           chatId: "group:123",
           messageId: "m2",
-          senderId: "u2",
+          senderId: "u1",
           isGroup: true,
           timestamp: 2,
         },
@@ -260,7 +772,46 @@ describe("RuntimeSessionDispatcher debounce", () => {
     expect(prompts[0].deliveryBarrier).toBe("after_tool");
     expect(prompts[0].deliveryBarrierSource).toBe("inferred");
     expect(prompts[0].context?.messageId).toBe("m2");
-    expect(prompts[0].context?.senderId).toBe("u2");
+    expect(prompts[0].context?.senderId).toBe("u1");
+  });
+
+  it("never folds debounced messages from different senders into one turn", async () => {
+    const dispatcher = createDispatcher();
+    const prompts: RuntimeLaunchPrompt[] = [];
+    (
+      dispatcher as unknown as { handlePromptImmediate: typeof dispatcher.handlePromptImmediate }
+    ).handlePromptImmediate = mock(async (_sessionName: string, prompt: RuntimeLaunchPrompt) => {
+      prompts.push(prompt);
+    });
+
+    const source = { channel: "whatsapp", accountId: "main", chatId: "group:123" };
+    const context = (messageId: string, senderId: string, contactId?: string) => ({
+      channelId: "whatsapp",
+      channelName: "WhatsApp",
+      accountId: "main",
+      chatId: "group:123",
+      messageId,
+      senderId,
+      isGroup: true,
+      timestamp: 1,
+      ...(contactId ? { actorType: "contact" as const, contactId } : { actorType: "unknown" as const }),
+    });
+    dispatcher.handlePromptWithDebounce(
+      "session",
+      { prompt: "from a stranger", source, _agentId: "agent-a", context: context("m1", "u1") },
+      60_000,
+    );
+    dispatcher.handlePromptWithDebounce(
+      "session",
+      { prompt: "from the owner", source, _agentId: "agent-a", context: context("m2", "u2", "owner") },
+      60_000,
+    );
+
+    await dispatcher.flushDebounce("session");
+
+    expect(prompts.map((prompt) => prompt.prompt)).toEqual(["from a stranger", "from the owner"]);
+    expect(prompts[0].context?.contactId).toBeUndefined();
+    expect(prompts[1].context?.contactId).toBe("owner");
   });
 
   it("does not merge task-gated prompts with normal interactive prompts", async () => {
@@ -331,6 +882,142 @@ describe("RuntimeSessionDispatcher debounce", () => {
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }
+  });
+
+  describe("trigger fires that lend their owner's authority", () => {
+    const source = { channel: "whatsapp", accountId: "main", chatId: "group:123" };
+    /** The trigger's own session: the snapshot names it when the fire was sent there. */
+    const OWN_SESSION = "agent:main:trigger:trg_1:own";
+    const authority = (
+      ownerPrincipal: string,
+      ownerIsOperator = false,
+      triggerId = "trg_1",
+      ownSessionKey: string | null = OWN_SESSION,
+    ) => ({ triggerId, ownerPrincipal, ownerIsOperator, ownSessionKey });
+    const fire = (text: string, snapshot?: ReturnType<typeof authority>): RuntimeLaunchPrompt => ({
+      prompt: text,
+      source,
+      _agentId: "main",
+      _trigger: true,
+      _triggerId: snapshot?.triggerId ?? "trg_1",
+      ...(snapshot ? { _triggerAuthority: snapshot } : {}),
+    });
+
+    function capturingDispatcher() {
+      const dispatcher = createDispatcher();
+      const prompts: RuntimeLaunchPrompt[] = [];
+      (
+        dispatcher as unknown as { handlePromptImmediate: typeof dispatcher.handlePromptImmediate }
+      ).handlePromptImmediate = mock(async (_sessionName: string, prompt: RuntimeLaunchPrompt) => {
+        prompts.push(prompt);
+      });
+      return { dispatcher, prompts };
+    }
+
+    it("are never folded with another trigger's prompt or a bare inform", async () => {
+      const { dispatcher, prompts } = capturingDispatcher();
+      const theirs = authority("contact:c_ana", false, "trg_ana");
+      const mine = authority("operator", true, "trg_op");
+
+      // Same session, same reply surface, no actor on any of them: only the envelope tells them apart.
+      dispatcher.handlePromptWithDebounce("session", fire("their text", theirs), 60_000);
+      dispatcher.handlePromptWithDebounce("session", fire("my text", mine), 60_000);
+      dispatcher.handlePromptWithDebounce(
+        "session",
+        { prompt: "[System] Inform: done", source, _agentId: "main" },
+        60_000,
+      );
+      await dispatcher.flushDebounce("session");
+
+      expect(prompts.map((prompt) => prompt.prompt)).toEqual(["their text", "my text", "[System] Inform: done"]);
+      expect(prompts[0]?._triggerAuthority).toEqual(theirs);
+      expect(prompts[1]?._triggerAuthority).toEqual(mine);
+      expect(prompts[2]?._triggerAuthority).toBeUndefined();
+    });
+
+    it("leave fires that lend nothing folding as before, with no snapshot on the folded turn", async () => {
+      const { dispatcher, prompts } = capturingDispatcher();
+
+      dispatcher.handlePromptWithDebounce("session", fire("first", authority("unknown")), 60_000);
+      dispatcher.handlePromptWithDebounce("session", fire("second", authority("agent:helper")), 60_000);
+      // A person's trigger fired into a session that is not its own lends nothing either.
+      dispatcher.handlePromptWithDebounce("session", fire("third", authority("operator", true, "trg_1", null)), 60_000);
+      await dispatcher.flushDebounce("session");
+
+      expect(prompts.map((prompt) => prompt.prompt)).toEqual(["first\n\nsecond\n\nthird"]);
+      expect(prompts[0]).not.toHaveProperty("_triggerAuthority");
+    });
+
+    it("never take a `!!` message someone wrote in the chat", async () => {
+      const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-skip-turn-trigger-");
+      try {
+        const { dispatcher, prompts } = capturingDispatcher();
+        const mine = authority("operator", true);
+
+        // Waiting in the debounce batch: the `!!` text is held instead of riding along.
+        dispatcher.handlePromptWithDebounce("session", fire("my text", mine), 60_000);
+        await dispatcher.handlePrompt("session", { prompt: "anota isso", source, _agentId: "main", _skipTurn: true });
+        await dispatcher.flushDebounce("session");
+        expect(prompts.map((prompt) => prompt.prompt)).toEqual(["my text"]);
+        expect(dispatcher.heldSkipTurnMessages.get("session")).toEqual(["anota isso"]);
+
+        // Held text is not joined to the fire either; it waits for the next turn.
+        const consume = (prompt: RuntimeLaunchPrompt) =>
+          (
+            dispatcher as unknown as {
+              consumeHeldSkipTurnMessages(sessionName: string, prompt: RuntimeLaunchPrompt): RuntimeLaunchPrompt;
+            }
+          ).consumeHeldSkipTurnMessages("session", prompt);
+        const owned = fire("my text", mine);
+        expect(consume(owned)).toBe(owned);
+        expect(dispatcher.heldSkipTurnMessages.get("session")).toEqual(["anota isso"]);
+
+        // A fire that acts for nobody takes it, as any prompt does.
+        const ownerless = consume(fire("ownerless", authority("unknown")));
+        expect(String(ownerless._runtimePrompt)).toContain("anota isso");
+        expect(dispatcher.heldSkipTurnMessages.size).toBe(0);
+      } finally {
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    });
+
+    it("never take the session bootstrap that was waiting for the first turn", () => {
+      const { dispatcher } = capturingDispatcher();
+      const consume = (prompt: RuntimeLaunchPrompt) =>
+        (
+          dispatcher as unknown as {
+            consumeDeferredBootstrap(sessionName: string, prompt: RuntimeLaunchPrompt): RuntimeLaunchPrompt;
+          }
+        ).consumeDeferredBootstrap("session", prompt);
+      const bootstrap: RuntimeLaunchPrompt = {
+        prompt: "[System] Bootstrap: someone else wrote this",
+        _agentId: "main",
+      };
+      dispatcher.deferredBootstraps.set("session", bootstrap);
+
+      // The fire runs its own text only; the bootstrap stays for the next turn.
+      const owned = fire("my text", authority("operator", true));
+      expect(consume(owned)).toBe(owned);
+      expect(dispatcher.deferredBootstraps.get("session")).toBe(bootstrap);
+
+      // A fire that lends nothing takes it, as any prompt does.
+      const ownerless = consume(fire("ownerless", authority("unknown")));
+      expect(ownerless.prompt).toBe("[System] Bootstrap: someone else wrote this\n\nownerless");
+      expect(dispatcher.deferredBootstraps.size).toBe(0);
+    });
+
+    it("keep the snapshot on a restart only when theirs is the one prompt restarted", () => {
+      const mine = authority("operator", true);
+      const queued = (prompt: RuntimeLaunchPrompt) => createQueuedRuntimeUserMessage(prompt);
+
+      expect(buildStashedRestartPrompt([queued(fire("my text", mine))])?._triggerAuthority).toEqual(mine);
+      const combined = buildStashedRestartPrompt([
+        queued({ prompt: "someone else's text", source, _agentId: "main" }),
+        queued(fire("my text", mine)),
+      ]);
+      expect(combined?.prompt).toContain("someone else's text");
+      expect(combined).not.toHaveProperty("_triggerAuthority");
+    });
   });
 
   it("does not merge prompts across typed authority origins", async () => {
@@ -464,6 +1151,7 @@ describe("RuntimeSessionDispatcher debounce", () => {
 
     let pendingResolved = false;
     const pendingStart: PendingRuntimeSessionStart = {
+      reject: () => {},
       sessionName: "queued",
       prompt: { prompt: "queued" },
       resolve: () => {
@@ -538,7 +1226,15 @@ function channelBackendMetadata(turnId: string): NonNullable<RuntimeLaunchPrompt
 }
 
 describe("RuntimeSessionDispatcher runtime recovery", () => {
-  afterEach(() => mock.restore());
+  let recoveryState: string | undefined;
+  beforeEach(async () => {
+    recoveryState = await createIsolatedRaviState("ravi-runtime-recovery-");
+  });
+  afterEach(async () => {
+    mock.restore();
+    await cleanupIsolatedRaviState(recoveryState);
+    recoveryState = undefined;
+  });
 
   it("sends only a generic notice to the channel and alerts the operator after repeated event-loop closures", async () => {
     const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
@@ -676,10 +1372,18 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
       restartStashedSession(sessionName: string, reason: string): Promise<void>;
     };
 
+    const backoffs: number[] = [];
+    (
+      dispatcher as unknown as { waitForTransportRestartBackoff(ms: number): Promise<void> }
+    ).waitForTransportRestartBackoff = async (ms: number) => {
+      backoffs.push(ms);
+    };
+
     await recovery.restartStashedSession("inactive-turn", "provider_turn_inactive");
     await recovery.restartStashedSession("inactive-turn", "provider_turn_inactive");
 
     expect(starts).toBe(1);
+    expect(backoffs).toEqual([]);
     expect(dispatcher.stashedMessages.has("inactive-turn")).toBe(true);
     expect(alerts).toEqual([
       expect.objectContaining({
@@ -729,11 +1433,20 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
       restartStashedSession(sessionName: string, reason: string): Promise<void>;
     };
 
+    const backoffs: number[] = [];
+    (
+      dispatcher as unknown as { waitForTransportRestartBackoff(ms: number): Promise<void> }
+    ).waitForTransportRestartBackoff = async (ms: number) => {
+      backoffs.push(ms);
+    };
+
     await recovery.restartStashedSession("transport-failure", "provider_transport_failure");
     await recovery.restartStashedSession("transport-failure", "provider_transport_failure");
     await recovery.restartStashedSession("transport-failure", "provider_transport_failure");
 
     expect(starts).toBe(2);
+    // Escalating backoff, but the restart budget stays at two.
+    expect(backoffs).toEqual([1_000, 5_000]);
     expect(alerts).toEqual([
       expect.objectContaining({
         sessionName: "transport-failure",
@@ -752,6 +1465,111 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
         }),
       }),
     ]);
+  });
+
+  function createLiveReplacementSession(): RuntimeHostStreamingSession {
+    return {
+      queryHandle: { provider: "pi", events: (async function* () {})(), interrupt: async () => {} },
+      turnActive: true,
+      done: false,
+      starting: false,
+      compacting: false,
+      toolRunning: false,
+      lastActivity: Date.now(),
+      pendingMessages: [],
+    } as unknown as RuntimeHostStreamingSession;
+  }
+
+  it("reserves the session during transport backoff and never starts a competing provider", async () => {
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      notifyRuntimeRecoveryExhausted: async () => {},
+      getConfigModel: () => "test-model",
+      crashRecovery: crashRecoveryStub,
+    });
+    dispatcher.stashedMessages.set("transport-race", [
+      createQueuedRuntimeUserMessage({ prompt: "retry transport", _agentId: "main" }),
+    ]);
+
+    let starts = 0;
+    dispatcher.startStreamingSession = mock(async () => {
+      starts++;
+    });
+    const recovery = dispatcher as unknown as {
+      restartStashedSession(sessionName: string, reason: string): Promise<void>;
+    };
+
+    let reservedDuringWait = false;
+    let replacement: RuntimeHostStreamingSession | null = null;
+    (
+      dispatcher as unknown as { waitForTransportRestartBackoff(ms: number): Promise<void> }
+    ).waitForTransportRestartBackoff = async () => {
+      // The session must be reserved while the restart sleeps, so an inbound
+      // prompt queues into the stash instead of starting a replacement.
+      reservedDuringWait = dispatcher.pendingStartSessions.has("transport-race");
+      stashPromptForStartingSession(
+        "transport-race",
+        { prompt: "mensagem durante o backoff", _agentId: "main" },
+        dispatcher.stashedMessages,
+      );
+      // A replacement provider still wins the race (e.g. another recovery).
+      replacement = createLiveReplacementSession();
+      dispatcher.streamingSessions.set("transport-race", replacement);
+    };
+
+    await recovery.restartStashedSession("transport-race", "provider_transport_failure");
+
+    expect(reservedDuringWait).toBe(true);
+    expect(starts).toBe(0);
+    expect(dispatcher.pendingStartSessions.has("transport-race")).toBe(false);
+    expect(dispatcher.stashedMessages.has("transport-race")).toBe(false);
+    expect(replacement!.pendingMessages.map((message) => message.message.content)).toEqual([
+      "retry transport",
+      "mensagem durante o backoff",
+    ]);
+  });
+
+  it("rebuilds the restart prompt from the freshest stash after the backoff", async () => {
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      notifyRuntimeRecoveryExhausted: async () => {},
+      getConfigModel: () => "test-model",
+      crashRecovery: crashRecoveryStub,
+    });
+    dispatcher.stashedMessages.set("transport-refresh", [
+      createQueuedRuntimeUserMessage({ prompt: "retry transport", _agentId: "main" }),
+    ]);
+
+    let startedPrompt: RuntimeLaunchPrompt | null = null;
+    dispatcher.startStreamingSession = mock(async (_sessionName: string, prompt: RuntimeLaunchPrompt) => {
+      startedPrompt = prompt;
+    });
+    const recovery = dispatcher as unknown as {
+      restartStashedSession(sessionName: string, reason: string): Promise<void>;
+    };
+
+    (
+      dispatcher as unknown as { waitForTransportRestartBackoff(ms: number): Promise<void> }
+    ).waitForTransportRestartBackoff = async () => {
+      stashPromptForStartingSession(
+        "transport-refresh",
+        { prompt: "mensagem durante o backoff", _agentId: "main" },
+        dispatcher.stashedMessages,
+      );
+    };
+
+    await recovery.restartStashedSession("transport-refresh", "provider_transport_failure");
+
+    expect(startedPrompt).not.toBeNull();
+    expect(startedPrompt!.prompt).toContain("retry transport");
+    expect(startedPrompt!.prompt).toContain("mensagem durante o backoff");
+    expect(dispatcher.pendingStartSessions.has("transport-refresh")).toBe(false);
   });
 });
 
@@ -779,6 +1597,53 @@ describe("RuntimeSessionDispatcher native runtime steer", () => {
   it("allows active Pi steer when a durable attempt can fence the input mutation", () => {
     expect(canUseNativeRuntimeSteer(createStreamingSession(), "after_tool")).toBe(true);
     expect(canUseNativeRuntimeSteer(createStreamingSession(), "after_response")).toBe(false);
+  });
+
+  it("never steers text into a running trigger turn that lends its owner's authority", () => {
+    const ownSession = "agent:main:trigger:trg_1:own";
+    const running = (ownerPrincipal: string, ownerIsOperator: boolean, ownSessionKey: string | null = ownSession) =>
+      createStreamingSession({
+        currentTurnAuthority: {
+          _trigger: true,
+          _triggerId: "trg_1",
+          _triggerAuthority: { triggerId: "trg_1", ownerPrincipal, ownerIsOperator, ownSessionKey },
+        },
+      });
+    // An actor-less prompt has the same sender key as the trigger turn; the envelope is what stops it.
+    const incoming = { prompt: "[System] Inform: a job finished" };
+
+    expect(canUseNativeRuntimeSteer(running("operator", true), "after_tool", incoming)).toBe(false);
+    expect(canUseNativeRuntimeSteer(running("contact:c_ana", false), "after_tool", incoming)).toBe(false);
+    // A trigger turn that lends nothing steers as before: nobody owns it, or it
+    // runs in a session that is not the trigger's own.
+    expect(canUseNativeRuntimeSteer(running("unknown", false), "after_tool", incoming)).toBe(true);
+    expect(canUseNativeRuntimeSteer(running("operator", true, null), "after_tool", incoming)).toBe(true);
+  });
+
+  it("only native-steers input from the active turn's own sender", () => {
+    const activeSource = {
+      channel: "whatsapp",
+      accountId: "wa-a",
+      chatId: "group:123",
+      canonicalChatId: "chat-group",
+      actorType: "contact" as const,
+      contactId: "owner",
+    };
+    const session = createStreamingSession({ currentSource: activeSource });
+
+    expect(canUseNativeRuntimeSteer(session, "after_tool", { prompt: "same", source: { ...activeSource } })).toBe(true);
+    expect(
+      canUseNativeRuntimeSteer(session, "after_tool", {
+        prompt: "another member",
+        source: { ...activeSource, contactId: "member" },
+      }),
+    ).toBe(false);
+    expect(
+      canUseNativeRuntimeSteer(session, "after_tool", {
+        prompt: "unresolved sender",
+        source: { ...activeSource, actorType: "unknown", contactId: undefined },
+      }),
+    ).toBe(false);
   });
 
   it("only native-steers input from the active turn's reply surface", () => {
@@ -986,6 +1851,7 @@ describe("RuntimeSessionDispatcher native runtime steer", () => {
 describe("RuntimeSessionDispatcher abort resolution", () => {
   function createActiveSession(overrides: Partial<RuntimeHostStreamingSession> = {}): RuntimeHostStreamingSession {
     return {
+      sessionKey: "fixture-active-session",
       agentId: "dev",
       queryHandle: {
         provider: "codex",
@@ -1172,6 +2038,49 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
+  for (const deferred of [false, true]) {
+    it(`removes yielded work from pending and restart queues on ${deferred ? "deferred" : "immediate"} abort`, async () => {
+      const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-yield-abort-");
+      try {
+        const sessionName = "yield-abort";
+        getOrCreateSession("agent:main:test:yield-abort", "main", stateDir, { name: sessionName });
+        const dispatcher = createDispatcher(2);
+        const active = createQueuedRuntimeUserMessage({ prompt: "active Slack request" });
+        const queued = createQueuedRuntimeUserMessage({ prompt: "new unrelated request" });
+        const continuations = ["unfinished WhatsApp request", "unfinished thread request"].map((request) => ({
+          ...createQueuedRuntimeUserMessage({ prompt: request, deliveryBarrier: "after_response" }),
+          yieldedRequest: request,
+        }));
+        const streaming = createActiveSession({
+          agentId: "main",
+          turnActive: true,
+          currentTurnToolStarted: true,
+          currentTurnPendingIds: [active.pendingId!],
+          pendingMessages: [active, queued, ...continuations],
+          toolResultDeliveryPending: deferred,
+        });
+        dispatcher.streamingSessions.set(sessionName, streaming);
+        dispatcher.stashedMessages.set(
+          sessionName,
+          continuations.map((message) => ({ ...message })),
+        );
+
+        expect(dispatcher.abortSession(sessionName)).toBe(true);
+
+        expect(streaming.pendingMessages).toEqual([active, queued]);
+        expect(streaming.pendingAbort).toBe(deferred);
+        expect(streaming.abortController.signal.aborted).toBe(!deferred);
+        if (deferred) expect(dispatcher.stashedMessages.has(sessionName)).toBe(false);
+
+        // Deferred abort and shutdown recovery must not recreate cancelled work.
+        stashPendingRuntimeMessages(sessionName, streaming, dispatcher.stashedMessages);
+        expect(dispatcher.stashedMessages.get(sessionName)).toEqual([queued]);
+      } finally {
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    });
+  }
+
   it("keeps deferring an explicit abort only while a completed tool result is still being delivered", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-delivery-vs-running-");
     try {
@@ -1272,13 +2181,14 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
   it("keeps new cold starts behind already queued runtime session starts", () => {
     const dispatcher = createDispatcher(2);
     dispatcher.pendingStarts.push({
+      reject: () => {},
       sessionName: "queued",
       prompt: { prompt: "queued" },
       resolve: () => {},
     });
 
-    dispatcher.streamingSessions.set("first", createActiveSession());
-    dispatcher.streamingSessions.set("active", createActiveSession());
+    dispatcher.streamingSessions.set("first", createActiveSession({ turnActive: true }));
+    dispatcher.streamingSessions.set("active", createActiveSession({ turnActive: true }));
     expect(dispatcher.canAcceptRuntimePrompt("new-cold-start")).toBe(false);
 
     expect(dispatcher.canAcceptRuntimePrompt("active")).toBe(true);
@@ -1833,52 +2743,432 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
-  it("treats a provider-terminal turn as consumed in daemon restart snapshots", async () => {
-    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-terminal-restart-snapshot-");
+  it.each(["during backoff", "after budget expiry"] as const)(
+    "preserves a scheduled capacity retry cohort through a failed terminal restart snapshot %s",
+    async (when) => {
+      const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-capacity-restart-snapshot-");
+      try {
+        const now = Date.now();
+        const sessionKey = "agent:dev:test:restart-capacity-backoff";
+        const sessionName = "restart-capacity-backoff";
+        const restartEpoch = "epoch-capacity-backoff";
+        getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+        dbUpsertDaemonRestartEpoch({ restartEpoch, reason: "test", createdAt: now });
+        const dispatcher = createDispatcher();
+        const retryState = { startedAt: now - (when === "during backoff" ? 5_000 : 40_000), retries: 2 };
+        const notBefore = retryState.startedAt + 12_000;
+        const pending = [
+          createQueuedRuntimeUserMessage({ prompt: "original logical input" }),
+          createQueuedRuntimeUserMessage({ prompt: "same cohort context" }),
+        ];
+        for (const message of pending) {
+          message.clientMessageId = "capacity-original-client-message";
+          message.providerCapacityRetry = retryState;
+        }
+        dispatcher.streamingSessions.set(
+          sessionName,
+          createActiveSession({
+            turnActive: true,
+            currentTraceTurnId: "turn-capacity-backoff",
+            currentCrashRecoveryTerminal: {
+              status: "failed",
+              completedAt: now - 1_000,
+              startedTool: false,
+              materializedOutput: false,
+            },
+            currentTurnPendingIds: pending.map((message) => message.pendingId!),
+            pendingMessages: pending,
+            pendingCapacityRetry: {
+              pendingIds: pending.map((message) => message.pendingId!),
+              state: retryState,
+              notBefore,
+            },
+          }),
+        );
+
+        expect(dispatcher.recordDaemonRestartSnapshot({ restartEpoch, reason: "test", stoppedAt: now })).toBe(1);
+        expect(dispatcher.streamingSessions.get(sessionName)?.capacityRetrySnapshotSaved).toBe(true);
+
+        const snapshot = dbGetDaemonRestartSessionSnapshot(restartEpoch, sessionKey);
+        const persisted = dbGetDaemonRestartPendingMessages(restartEpoch, sessionKey) as RuntimeUserMessage[];
+        expect(persisted.map((message) => message.message.content)).toEqual(
+          pending.map((message) => message.message.content),
+        );
+        const persistedRetryState = { ...retryState, notBefore };
+        expect(persisted.map((message) => message.providerCapacityRetry)).toEqual([
+          persistedRetryState,
+          persistedRetryState,
+        ]);
+        expect(persisted.every((message) => message.replay === false)).toBe(true);
+        const decision = resolveCrashRecoveryRestartResumeDecision({
+          metadata: snapshot?.metadata,
+          snapshotPresent: Boolean(snapshot),
+          snapshotEligible: true,
+          pendingMessageCount: snapshot?.pendingMessageCount,
+        });
+        expect(decision).toEqual({ mode: "pending_only", publish: true, reason: "pending_only" });
+
+        const payload = buildDaemonRestartResumePrompt({
+          restartEpoch,
+          reason: "test",
+          sessionKey,
+          mode: decision.mode,
+        });
+        const prepared = (
+          dispatcher as unknown as {
+            prepareDaemonRestartResumePrompt(
+              requestedSessionName: string,
+              prompt: RuntimeLaunchPrompt,
+              sessionEntry: null,
+            ): { prompt: RuntimeLaunchPrompt; messages: RuntimeUserMessage[] } | null;
+          }
+        ).prepareDaemonRestartResumePrompt(sessionName, payload!, null);
+        expect(prepared?.messages.map((message) => message.providerCapacityRetry)).toEqual([
+          persistedRetryState,
+          persistedRetryState,
+        ]);
+        expect(prepared?.messages.map((message) => message.pendingId)).toEqual(
+          pending.map((message) => message.pendingId),
+        );
+        expect(prepared?.prompt.prompt).not.toContain("Continue de onde parou");
+      } finally {
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    },
+  );
+
+  it("cancels restored capacity backoff when the real dispatcher receives an immediate interrupt", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-capacity-restored-interrupt-");
+    let streaming: RuntimeHostStreamingSession | undefined;
+    let generator: ReturnType<typeof createRuntimeMessageGenerator> | undefined;
+    try {
+      const sessionKey = "agent:main:test:capacity-restored-interrupt";
+      const sessionName = "capacity-restored-interrupt";
+      getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName, runtimeProvider: "codex" });
+      const original = createQueuedRuntimeUserMessage({ prompt: "cancel this restored retry", _agentId: "main" });
+      original.providerCapacityRetry = { startedAt: 1_000, retries: 1, notBefore: 13_000 };
+      original.replay = false;
+      streaming = createActiveSession({ agentId: "main", pendingMessages: [original] });
+      const dispatcher = createDispatcher();
+      dispatcher.streamingSessions.set(sessionName, streaming);
+      let now = 8_000;
+      let waitCalls = 0;
+      const deliveredInputs: string[] = [];
+      generator = createRuntimeMessageGenerator({
+        sessionName,
+        session: streaming,
+        stashedMessages: new Map(),
+        capacityRetryRuntime: {
+          now: () => now,
+          wait: async (delayMs) => {
+            waitCalls++;
+            expect(deliveredInputs).toEqual([]);
+            await dispatcher.handlePromptImmediate(sessionName, {
+              prompt: "run the replacement request",
+              _agentId: "main",
+              deliveryBarrier: "immediate_interrupt",
+              deliveryBarrierSource: "explicit",
+              _turnOrigin: buildSessionRelayTurnOrigin("send"),
+            });
+            now += delayMs;
+          },
+        },
+        traceTurnStart: ({ combinedPrompt }) => {
+          deliveredInputs.push(combinedPrompt);
+          return undefined;
+        },
+      });
+
+      const delivered = await generator.next();
+
+      expect(waitCalls).toBe(1);
+      expect(delivered.done).toBe(false);
+      expect(delivered.value?.message.content).toContain("run the replacement request");
+      expect(delivered.value?.message.content).not.toContain("cancel this restored retry");
+      expect(deliveredInputs).toHaveLength(1);
+      expect(deliveredInputs[0]).toContain("run the replacement request");
+      expect(streaming.pendingMessages.some((message) => message.pendingId === original.pendingId)).toBe(false);
+    } finally {
+      if (streaming) {
+        streaming.done = true;
+        streaming.onTurnComplete?.();
+        if (streaming.idleGapRecoveryTimer) clearTimeout(streaming.idleGapRecoveryTimer);
+      }
+      await generator?.return(undefined);
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it.each([
+    "before preparation",
+    "during asynchronous preparation",
+    "after preparation tool marker",
+    "after preparation output marker",
+    "after preparation input mutation",
+    "after preparation ownership loss",
+    "with missing preparation attempt",
+  ] as const)("enforces the restored capacity schedule fence across another restart %s", async (phase) => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-capacity-repeat-restart-");
     try {
       const now = Date.now();
-      const sessionKey = "agent:dev:test:restart-terminal";
-      const sessionName = "restart-terminal";
+      const sessionKey = "agent:dev:test:restart-capacity-twice";
+      const sessionName = "restart-capacity-twice";
+      const firstEpoch = "epoch-capacity-first";
+      const secondEpoch = "epoch-capacity-second";
       getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
-      dbUpsertDaemonRestartEpoch({ restartEpoch: "epoch-terminal", reason: "test", createdAt: now });
-      const dispatcher = createDispatcher();
-      const consumed = createQueuedRuntimeUserMessage({ prompt: "already completed" });
+      dbUpsertDaemonRestartEpoch({ restartEpoch: firstEpoch, reason: "first stop", createdAt: now });
+      dbUpsertDaemonRestartEpoch({ restartEpoch: secondEpoch, reason: "second stop", createdAt: now + 2_000 });
+      const schedule = { startedAt: now - 5_000, retries: 2, notBefore: now + 7_000 };
+      const pending = [
+        createQueuedRuntimeUserMessage({ prompt: "original retry input" }),
+        createQueuedRuntimeUserMessage({ prompt: "original cohort context" }),
+      ];
+      for (const message of pending) {
+        message.clientMessageId = "restored-capacity-client-message";
+        message.providerCapacityRetry = schedule;
+        message.replay = false;
+      }
+      dbRecordDaemonRestartSessionSnapshot({
+        restartEpoch: firstEpoch,
+        sessionKey,
+        sessionName,
+        runtimeProvider: "codex",
+        activity: "thinking",
+        nonIdle: true,
+        lastActivityAt: now,
+        stoppedAt: now,
+        pendingMessages: pending,
+        metadata: {
+          live: true,
+          crashRecoveryRestartResumeMode: "pending_only",
+          crashRecoveryTerminalStatus: "failed",
+        },
+      });
+      const crashRecovery = {
+        acceptingDeliveries: phase !== "after preparation ownership loss",
+        getActiveTurnAttempt: (attemptId: string) =>
+          phase === "with missing preparation attempt"
+            ? undefined
+            : {
+                attemptId,
+                startedTool: phase === "after preparation tool marker",
+                materializedOutput: phase === "after preparation output marker",
+                metadata: { inputMutated: phase === "after preparation input mutation" },
+              },
+      } as unknown as RuntimeCrashRecoveryCoordinator;
+      const dispatcher = createDispatcher(1, 0, crashRecovery);
+      const prepare = (epoch: string) => {
+        const payload = buildDaemonRestartResumePrompt({
+          restartEpoch: epoch,
+          reason: "test",
+          sessionKey,
+          mode: "pending_only",
+        });
+        return (
+          dispatcher as unknown as {
+            prepareDaemonRestartResumePrompt(
+              requestedSessionName: string,
+              prompt: RuntimeLaunchPrompt,
+              sessionEntry: null,
+            ): { prompt: RuntimeLaunchPrompt; messages: RuntimeUserMessage[] } | null;
+          }
+        ).prepareDaemonRestartResumePrompt(sessionName, payload, null);
+      };
+      const restored = prepare(firstEpoch);
+      expect(restored?.messages).toHaveLength(2);
+      const preparing = phase !== "before preparation";
       dispatcher.streamingSessions.set(
         sessionName,
         createActiveSession({
-          turnActive: false,
-          currentTraceTurnId: "turn-terminal-snapshot",
-          currentTraceTurnTerminalRecorded: true,
-          currentCrashRecoveryTerminal: {
-            status: "complete",
-            completedAt: now - 1,
-            startedTool: false,
-            materializedOutput: false,
-          },
-          currentTurnPendingIds: consumed.pendingId ? [consumed.pendingId] : [],
-          pendingMessages: [consumed],
+          turnActive: preparing,
+          pendingMessages: restored!.messages,
+          currentTurnPendingIds: preparing ? pending.map((message) => message.pendingId!) : undefined,
+          currentCrashRecoveryAttemptId: preparing ? "attempt-restored-preparation" : undefined,
+          currentTraceTurnId: preparing ? "turn-restored-preparation" : undefined,
+          currentCrashRecoveryTerminal: undefined,
+          pendingCapacityRetry: undefined,
         }),
       );
 
-      expect(
-        dispatcher.recordDaemonRestartSnapshot({
-          restartEpoch: "epoch-terminal",
-          reason: "test",
-          stoppedAt: now,
-        }),
-      ).toBe(1);
+      dispatcher.recordDaemonRestartSnapshot({
+        restartEpoch: secondEpoch,
+        reason: "second stop",
+        stoppedAt: now + 2_000,
+      });
 
-      expect(dbGetDaemonRestartPendingMessages("epoch-terminal", sessionKey)).toHaveLength(0);
-      const snapshot = dbListEligibleDaemonRestartSessionSnapshots({
-        restartEpoch: "epoch-terminal",
-        now: now + 1,
-      })[0];
-      expect(resolveCrashRecoveryRestartResumeMode(snapshot?.metadata)).toBe("skip");
-      expect(snapshot?.metadata?.crashRecoveryTerminalStatus).toBe("complete");
+      const snapshot = dbGetDaemonRestartSessionSnapshot(secondEpoch, sessionKey);
+      const persistedAgain = dbGetDaemonRestartPendingMessages(secondEpoch, sessionKey) as RuntimeUserMessage[];
+      if (phase !== "before preparation" && phase !== "during asynchronous preparation") {
+        expect(persistedAgain).toEqual([]);
+        expect(resolveCrashRecoveryRestartResumeMode(snapshot?.metadata)).toBe("skip");
+        return;
+      }
+      expect(persistedAgain).toEqual(restored!.messages);
+      expect(resolveCrashRecoveryRestartResumeMode(snapshot?.metadata)).toBe("pending_only");
+      expect(snapshot?.metadata?.crashRecoveryTerminalStatus).toBeNull();
+      const restoredAgain = prepare(secondEpoch);
+      expect(restoredAgain?.messages).toEqual(restored!.messages);
+      expect(restoredAgain?.messages.map((message) => message.providerCapacityRetry)).toEqual([schedule, schedule]);
+      expect(restoredAgain?.prompt.prompt).toBe(restored!.prompt.prompt);
+      expect(restoredAgain?.prompt.prompt).not.toContain("Daemon reiniciou");
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }
   });
+
+  it.each([
+    "missing checkpoint",
+    "persisted schedule without live checkpoint",
+    "mismatched pending ids",
+    "mismatched retry budget",
+    "incomplete cohort",
+    "started tool",
+    "materialized output",
+    "mutated input",
+    "pending abort",
+    "aborted controller",
+    "superseded turn",
+    "done session",
+    "completed terminal",
+    "nonfinite retry schedule",
+    "nonfinite retry start",
+    "negative retry count",
+    "zero retry count",
+    "fractional retry count",
+    "excess retry count",
+    "schedule before budget start",
+    "schedule outside budget",
+  ] as const)("does not preserve capacity retry work with %s", async (scenario) => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-capacity-restart-fence-");
+    try {
+      const now = Date.now();
+      const sessionKey = "agent:dev:test:restart-capacity-fenced";
+      const sessionName = "restart-capacity-fenced";
+      const restartEpoch = "epoch-capacity-fenced";
+      getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+      dbUpsertDaemonRestartEpoch({ restartEpoch, reason: "test", createdAt: now });
+      const dispatcher = createDispatcher();
+      const pending = createQueuedRuntimeUserMessage({ prompt: "fenced original logical input" });
+      const retryState = {
+        startedAt: scenario === "nonfinite retry start" ? Number.NaN : now - 5_000,
+        retries:
+          scenario === "negative retry count"
+            ? -1
+            : scenario === "zero retry count"
+              ? 0
+              : scenario === "fractional retry count"
+                ? 1.5
+                : scenario === "excess retry count"
+                  ? 4
+                  : 2,
+      };
+      const notBefore =
+        scenario === "nonfinite retry schedule"
+          ? Number.POSITIVE_INFINITY
+          : scenario === "schedule before budget start"
+            ? retryState.startedAt - 1
+            : scenario === "schedule outside budget"
+              ? retryState.startedAt + 30_000
+              : now + 7_000;
+      pending.providerCapacityRetry = retryState;
+      if (scenario === "persisted schedule without live checkpoint") {
+        pending.providerCapacityRetry = { ...retryState, notBefore };
+      }
+      const session = createActiveSession({
+        turnActive: true,
+        currentTraceTurnId: "turn-capacity-fenced",
+        currentCrashRecoveryTerminal: {
+          status: scenario === "completed terminal" ? "complete" : "failed",
+          completedAt: now - 1_000,
+          startedTool: scenario === "started tool",
+          materializedOutput: scenario === "materialized output",
+          inputMutated: scenario === "mutated input",
+        },
+        currentTurnPendingIds: [pending.pendingId!],
+        pendingMessages: [pending],
+        pendingAbort: scenario === "pending abort",
+        currentTurnSuperseded: scenario === "superseded turn",
+        done: scenario === "done session",
+        pendingCapacityRetry:
+          scenario === "missing checkpoint" || scenario === "persisted schedule without live checkpoint"
+            ? undefined
+            : {
+                pendingIds:
+                  scenario === "mismatched pending ids"
+                    ? ["a-different-cohort"]
+                    : scenario === "incomplete cohort"
+                      ? [pending.pendingId!, "missing-cohort-member"]
+                      : [pending.pendingId!],
+                state:
+                  scenario === "mismatched retry budget"
+                    ? { ...retryState, retries: retryState.retries - 1 }
+                    : retryState,
+                notBefore,
+              },
+      });
+      if (scenario === "aborted controller") session.abortController.abort();
+      dispatcher.streamingSessions.set(sessionName, session);
+
+      dispatcher.recordDaemonRestartSnapshot({ restartEpoch, reason: "test", stoppedAt: now });
+
+      expect(dbGetDaemonRestartPendingMessages(restartEpoch, sessionKey)).toHaveLength(0);
+      expect(session.capacityRetrySnapshotSaved).not.toBe(true);
+      const snapshot = dbGetDaemonRestartSessionSnapshot(restartEpoch, sessionKey);
+      expect(resolveCrashRecoveryRestartResumeMode(snapshot?.metadata)).toBe("skip");
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it.each(["complete", "failed", "interrupted", "timeout", "aborted"] as const)(
+    "treats a provider-terminal %s turn as consumed in daemon restart snapshots",
+    async (status) => {
+      const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-terminal-restart-snapshot-");
+      try {
+        const now = Date.now();
+        const sessionKey = "agent:dev:test:restart-terminal";
+        const sessionName = "restart-terminal";
+        getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+        dbUpsertDaemonRestartEpoch({ restartEpoch: "epoch-terminal", reason: "test", createdAt: now });
+        const dispatcher = createDispatcher();
+        const consumed = createQueuedRuntimeUserMessage({ prompt: "already completed" });
+        dispatcher.streamingSessions.set(
+          sessionName,
+          createActiveSession({
+            turnActive: false,
+            currentTraceTurnId: "turn-terminal-snapshot",
+            currentTraceTurnTerminalRecorded: true,
+            currentCrashRecoveryTerminal: {
+              status,
+              completedAt: now - 1,
+              startedTool: false,
+              materializedOutput: false,
+            },
+            currentTurnPendingIds: consumed.pendingId ? [consumed.pendingId] : [],
+            pendingMessages: [consumed],
+          }),
+        );
+
+        expect(
+          dispatcher.recordDaemonRestartSnapshot({
+            restartEpoch: "epoch-terminal",
+            reason: "test",
+            stoppedAt: now,
+          }),
+        ).toBe(1);
+
+        expect(dbGetDaemonRestartPendingMessages("epoch-terminal", sessionKey)).toHaveLength(0);
+        const snapshot = dbListEligibleDaemonRestartSessionSnapshots({
+          restartEpoch: "epoch-terminal",
+          now: now + 1,
+        })[0];
+        expect(resolveCrashRecoveryRestartResumeMode(snapshot?.metadata)).toBe("skip");
+        expect(snapshot?.metadata?.crashRecoveryTerminalStatus).toBe(status);
+      } finally {
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    },
+  );
 
   it("preserves post-drain successors while a completed terminal latch is still retained", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-terminal-post-drain-snapshot-");
@@ -2406,7 +3696,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     ).toBe(false);
   });
 
-  it("does not queue a send that leaves the live task context", () => {
+  it("queues a send that leaves the live task context: the binding is per turn", () => {
     const activeSession = createActiveSession({
       agentId: "main",
       turnActive: true,
@@ -2419,7 +3709,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
         { prompt: "normal turn", deliveryBarrier: "after_response" },
         "main",
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("does not queue an after_tool send that should interrupt the live turn", () => {
@@ -2500,7 +3790,313 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     ).toBe(true);
   });
 
-  it("restarts a live Claude session after a persisted Codex provider override", async () => {
+  it.each([
+    { provider: "codex", revision: 1, expected: true },
+    { provider: "claude", revision: 0, expected: true },
+    { provider: "claude", revision: 1, expected: false },
+  ])("checks provider revision without disturbing matching or unchanged live handles: %j", (configuration) => {
+    const existing = createActiveSession({ agentId: "main", runtimeProviderConfigRevision: 0 });
+    expect(
+      shouldQueuePromptOnLiveSession(
+        "provider-revision",
+        existing,
+        { prompt: "next", deliveryBarrier: "after_response" },
+        "main",
+        undefined,
+        configuration,
+      ),
+    ).toBe(configuration.expected);
+  });
+
+  it.each(["model-change", "native-steer-fallback", "model-replacement", "steer-replacement"])(
+    "revalidates provider after awaited %s without duplicating history or prompt",
+    async (seam) => {
+      const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-provider-await-");
+      const planning = spyOn(modelBrokerPlanning, "planRuntimeModelBrokerRoute").mockResolvedValue(undefined);
+      const config = configStore.getConfig();
+      const configuration = spyOn(configStore, "getConfig").mockReturnValue({
+        ...config,
+        agents: { ...config.agents, main: { ...config.agents.main!, provider: "codex", model: "gpt-5.5" } },
+      });
+      try {
+        const sessionName = `provider-await-${seam}`;
+        const sessionKey = `agent:main:test:${sessionName}`;
+        getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName, runtimeProvider: "codex" });
+        const dispatcher = createDispatcher(2);
+        const interrupt = mock(async () => {});
+        const existing = createActiveSession({
+          agentId: "main",
+          currentModel: seam.startsWith("model") ? "gpt-5.4" : "gpt-5.5",
+          turnActive: true,
+          queryHandle: { provider: "codex", events: (async function* () {})(), interrupt },
+        });
+        dispatcher.streamingSessions.set(sessionName, existing);
+        const started: RuntimeLaunchPrompt[] = [];
+        dispatcher.startStreamingSession = mock(async (_name, prompt) => {
+          started.push(prompt);
+        });
+        let entered!: () => void;
+        let release!: () => void;
+        const reached = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        const waiting = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const interception = seam.startsWith("model")
+          ? spyOn(dispatcher, "applySessionModelChange").mockImplementation(async () => {
+              entered();
+              await waiting;
+              return "applied";
+            })
+          : spyOn(
+              dispatcher as unknown as { tryNativeRuntimeSteer(): Promise<"accepted" | "fallback"> },
+              "tryNativeRuntimeSteer",
+            ).mockImplementation(async () => {
+              entered();
+              await waiting;
+              return "fallback";
+            });
+        try {
+          const dispatching = dispatcher.handlePromptImmediate(sessionName, {
+            prompt: "deliver once after provider change",
+            _agentId: "main",
+            deliveryBarrier: "after_tool",
+          });
+          await reached;
+          updateSessionRuntimeProviderOverride(sessionKey, "claude");
+          const replacement = seam.endsWith("replacement")
+            ? createActiveSession({
+                agentId: "main",
+                currentModel: "gpt-5.5",
+                turnActive: true,
+                queryHandle: { provider: "claude", events: (async function* () {})(), interrupt: mock(async () => {}) },
+              })
+            : undefined;
+          if (replacement) {
+            existing.done = true;
+            dispatcher.streamingSessions.set(sessionName, replacement);
+          }
+          release();
+          await dispatching;
+
+          expect(existing.done).toBe(true);
+          expect(existing.pendingMessages).toHaveLength(0);
+          if (replacement) {
+            expect(dispatcher.streamingSessions.get(sessionName)).toBe(replacement);
+            expect(replacement.done).toBe(false);
+            expect(replacement.pendingMessages).toHaveLength(1);
+            expect(replacement.pendingMessages[0]?.launchPrompt?.prompt).toBe("deliver once after provider change");
+            expect(replacement.queryHandle.interrupt).not.toHaveBeenCalled();
+            expect(started).toHaveLength(0);
+            expect(dispatcher.stashedMessages.get(sessionName) ?? []).toHaveLength(0);
+            expect(getRecentHistory(sessionName).filter((message) => message.role === "user")).toHaveLength(1);
+            return;
+          }
+          expect(interrupt).toHaveBeenCalledTimes(1);
+          expect(started).toHaveLength(1);
+          const stashed = dispatcher.stashedMessages.get(sessionName) ?? [];
+          const arrivals = [
+            ...stashed,
+            ...started.filter((prompt) => !prompt._resumeStashedMessages).map(createQueuedRuntimeUserMessage),
+          ];
+          expect(arrivals).toHaveLength(1);
+          expect(arrivals[0]?.launchPrompt?.prompt).toBe("deliver once after provider change");
+          const history = getRecentHistory(sessionName).filter((message) => message.role === "user");
+          expect(history.length + started.filter((prompt) => !prompt._resumeStashedMessages).length).toBe(1);
+          if (seam === "native-steer-fallback") {
+            expect(history).toHaveLength(1);
+            expect(started[0]?._resumeStashedMessages).toBe(true);
+          }
+          const restarts = querySessionTrace({ sessionKey, sessionName }).events.filter(
+            (event) => event.eventType === "dispatch.restart_requested",
+          );
+          expect(restarts).toHaveLength(1);
+          expect(restarts[0]?.payloadJson).toMatchObject({ reason: "provider_change", requestedProvider: "claude" });
+        } finally {
+          release();
+          interception.mockRestore();
+        }
+      } finally {
+        configuration.mockRestore();
+        planning.mockRestore();
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    },
+  );
+
+  it.each([
+    { change: "clear", deliveryBarrier: "after_response" },
+    { change: "clear", deliveryBarrier: "after_task" },
+    { change: "override", deliveryBarrier: "after_response" },
+    { change: "override", deliveryBarrier: "after_task" },
+  ] as const)(
+    "defers a persisted provider change until the active turn completes: %j",
+    async ({ change, deliveryBarrier }) => {
+      const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-provider-clear-active-");
+      const config = configStore.getConfig();
+      const configuration = spyOn(configStore, "getConfig").mockReturnValue({
+        ...config,
+        agents: { ...config.agents, main: { ...config.agents.main!, provider: "codex", model: "gpt-5.5" } },
+      });
+      const dispatcher = createDispatcher(2);
+      const started = spyOn(dispatcher, "startStreamingSession").mockResolvedValue(undefined);
+      try {
+        const sessionName = `provider-${change}-active-${deliveryBarrier}`;
+        const sessionKey = `agent:main:test:${sessionName}`;
+        getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName, runtimeProvider: "claude" });
+        updateSessionRuntimeProviderOverride(sessionKey, "claude");
+        const interrupt = mock(async () => {});
+        const activeSession = createActiveSession({
+          agentId: "main",
+          turnActive: true,
+          currentModel: "sonnet",
+          runtimeProviderConfigRevision: 1,
+          queryHandle: { provider: "claude", events: (async function* () {})(), interrupt },
+        });
+        dispatcher.streamingSessions.set(sessionName, activeSession);
+        updateSessionRuntimeProviderOverride(sessionKey, change === "clear" ? null : "codex");
+        if (change === "clear") updateRuntimeProviderState(sessionKey, undefined, { runtimeSessionParams: {} });
+
+        await dispatcher.handlePromptImmediate(sessionName, {
+          prompt: "deliver once after the active response",
+          _agentId: "main",
+          deliveryBarrier,
+        });
+
+        expect(dispatcher.streamingSessions.get(sessionName)).toBe(activeSession);
+        expect(activeSession.done).toBe(false);
+        expect(activeSession.abortController.signal.aborted).toBe(false);
+        expect(interrupt).not.toHaveBeenCalled();
+        expect(started).not.toHaveBeenCalled();
+        expect(dispatcher.stashedMessages.has(sessionName)).toBe(false);
+        expect(activeSession.pendingMessages).toHaveLength(1);
+        expect(activeSession.pendingMessages[0]?.launchPrompt).toMatchObject({
+          prompt: "deliver once after the active response",
+          deliveryBarrier,
+        });
+        expect(getRecentHistory(sessionName).filter((message) => message.role === "user")).toHaveLength(1);
+      } finally {
+        dispatcher.shutdownAll();
+        started.mockRestore();
+        configuration.mockRestore();
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    },
+  );
+
+  for (const deliveryBarrier of ["after_response", "after_task"] as const) {
+    it.each(["broker", "model-resolve", "model-reject", "steer-fallback"] as const)(
+      `defers a saved provider clear during awaited %s for ${deliveryBarrier}`,
+      async (seam) => {
+        const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-provider-defer-await-");
+        const config = configStore.getConfig();
+        const configuration = spyOn(configStore, "getConfig").mockReturnValue({
+          ...config,
+          agents: { ...config.agents, main: { ...config.agents.main!, provider: "codex", model: "openai/gpt-4.1" } },
+        });
+        const dispatcher = createDispatcher(2);
+        const started = spyOn(dispatcher, "startStreamingSession").mockResolvedValue(undefined);
+        let entered!: () => void;
+        let release!: () => void;
+        const reached = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        const waiting = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const waitForChange = async () => {
+          entered();
+          await waiting;
+        };
+        const sessionName = `provider-defer-${seam}-${deliveryBarrier}`;
+        const sessionKey = `agent:main:test:${sessionName}`;
+        const active = createActiveSession({
+          agentId: "main",
+          turnActive: true,
+          currentModel: seam.startsWith("model") ? "openai/gpt-5.5" : "openai/gpt-4.1",
+          runtimeProviderConfigRevision: 1,
+          queryHandle: {
+            provider: "pi",
+            events: (async function* () {})(),
+            interrupt: mock(async () => {}),
+            setModel: async () => {
+              await waitForChange();
+              if (seam === "model-reject") throw new Error("setModel failed after provider configuration changed");
+            },
+          },
+        });
+        const planning = spyOn(modelBrokerPlanning, "planRuntimeModelBrokerRoute").mockImplementation(async () => {
+          if (seam === "broker") await waitForChange();
+          return undefined;
+        });
+        const steering =
+          seam === "steer-fallback"
+            ? spyOn(
+                dispatcher as unknown as { tryNativeRuntimeSteer(): Promise<"accepted" | "fallback"> },
+                "tryNativeRuntimeSteer",
+              ).mockImplementation(async () => {
+                await waitForChange();
+                return "fallback";
+              })
+            : undefined;
+        try {
+          getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName, runtimeProvider: "pi" });
+          updateSessionRuntimeProviderOverride(sessionKey, "pi");
+          dispatcher.streamingSessions.set(sessionName, active);
+          const dispatching = dispatcher.handlePromptImmediate(sessionName, {
+            prompt: "deliver exactly once after generation",
+            _agentId: "main",
+            deliveryBarrier,
+            // Observation metadata bypasses the fast queue but does not
+            // override the session's provider selection or delivery barrier.
+            _observation: {
+              sourceSessionKey: sessionKey,
+              sourceSessionName: sessionName,
+              bindingId: "provider-defer-observer",
+              ruleId: "provider-defer-rule",
+              role: "review",
+              mode: "reactive",
+              eventIds: ["provider-defer-event"],
+            },
+          });
+          await reached;
+          updateSessionRuntimeProviderOverride(sessionKey, null);
+          updateRuntimeProviderState(sessionKey, undefined, { runtimeSessionParams: {} });
+          release();
+          await dispatching;
+
+          expect(dispatcher.streamingSessions.get(sessionName)).toBe(active);
+          expect(active.done).toBe(false);
+          expect(active.abortController.signal.aborted).toBe(false);
+          expect(active.queryHandle.interrupt).not.toHaveBeenCalled();
+          expect(started).not.toHaveBeenCalled();
+          expect(dispatcher.stashedMessages.has(sessionName)).toBe(false);
+          expect(active.pendingMessages).toHaveLength(1);
+          expect(active.pendingMessages[0]?.launchPrompt).toMatchObject({
+            prompt: "deliver exactly once after generation",
+            deliveryBarrier,
+          });
+          expect(getRecentHistory(sessionName).filter((message) => message.role === "user")).toHaveLength(1);
+          expect(
+            querySessionTrace({ sessionKey, sessionName }).events.filter(
+              (event) => event.eventType === "dispatch.restart_requested",
+            ),
+          ).toHaveLength(0);
+        } finally {
+          release();
+          dispatcher.shutdownAll();
+          started.mockRestore();
+          steering?.mockRestore();
+          planning.mockRestore();
+          configuration.mockRestore();
+          await cleanupIsolatedRaviState(stateDir);
+        }
+      },
+    );
+  }
+
+  it("immediately restarts a live Claude session after a persisted Codex provider override", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-provider-switch-");
     try {
       const sessionKey = "agent:main:test:provider-switch";
@@ -2532,7 +4128,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       const nextPrompt: RuntimeLaunchPrompt = {
         prompt: "hello on codex",
         _agentId: "main",
-        deliveryBarrier: "after_response",
+        deliveryBarrier: "immediate_interrupt",
         deliveryBarrierSource: "default",
         _turnOrigin: buildSessionRelayTurnOrigin("send"),
       };
@@ -2673,7 +4269,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
-  it("queues another surface without replacing or interrupting the active turn", async () => {
+  it("queues another surface without interrupting or replacing the active reply target", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-interrupt-source-");
     try {
       getOrCreateSession("agent:main:test:interrupt-source", "main", stateDir, { name: "interrupt-source" });
@@ -2703,6 +4299,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
         turnActive: true,
         currentEffort: "xhigh",
         currentSource: activeSource,
+        currentReplyTarget: activeSource,
         pendingMessages: [activeMessage],
         currentTurnPendingIds: [activeMessage.pendingId!],
         queryHandle: {
@@ -2735,6 +4332,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       });
 
       expect(activeSession.currentSource).toEqual(activeSource);
+      expect(activeSession.currentReplyTarget).toEqual(activeSource);
       expect(activeSession.pendingMessages).toHaveLength(2);
       expect(activeSession.pendingMessages[1]?.deliveryBarrier).toBe("after_tool");
       expect(activeSession.pendingMessages[1]?.launchPrompt?.source).toEqual(slackSource);
@@ -2744,9 +4342,50 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
           "[Slack C123 mid:123.456] <@U123>: hello",
       );
       expect(activeSession.pendingMessages[1]?.launchPrompt?._sessionSurfaceHint).toBe(true);
+      expect(activeSession.currentTurnYieldContinuationId).toBeUndefined();
       expect(activeSession.currentTurnSuperseded).not.toBe(true);
       expect(activeSession.interrupted).not.toBe(true);
       expect(interrupt).not.toHaveBeenCalled();
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("keeps a Slack DM active when another chat's thread return waits at the tool barrier", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-dm-isolation-");
+    try {
+      const sessionName = "dm-tool-release";
+      getOrCreateSession("agent:main:test:dm-tool-release", "main", stateDir, { name: sessionName });
+      const source = { channel: "slack", accountId: "slack-main", chatId: "D_SOURCE" };
+      const active = createQueuedRuntimeUserMessage({ prompt: "private DM request", source });
+      const notification = createQueuedRuntimeUserMessage({
+        prompt: "[System] Inform: another thread finished",
+        source: { ...source, chatId: "D_DEFAULT" },
+        deliveryBarrier: "after_tool",
+      });
+      const interrupt = mock(async () => {});
+      const dispatcher = createDispatcher(2);
+      const activeSession = createActiveSession({
+        agentId: "main",
+        turnActive: true,
+        toolRunning: false,
+        currentSource: source,
+        currentReplyTarget: source,
+        currentTurnPendingIds: [active.pendingId!],
+        pendingMessages: [active, notification],
+        queryHandle: { provider: "pi", events: (async function* () {})(), interrupt },
+      });
+      dispatcher.streamingSessions.set(sessionName, activeSession);
+
+      await (
+        dispatcher as unknown as { releaseQueuedPromptsAfterTool(name: string): Promise<void> }
+      ).releaseQueuedPromptsAfterTool(sessionName);
+
+      expect(interrupt).not.toHaveBeenCalled();
+      expect(activeSession.currentSource).toEqual(source);
+      expect(activeSession.currentReplyTarget).toEqual(source);
+      expect(activeSession.currentTurnSuperseded).not.toBe(true);
+      expect(activeSession.pendingMessages).toEqual([active, notification]);
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }
@@ -2989,82 +4628,32 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
-  it("keeps pending pool starts separate from actual cold starts and traces the canonical session key", async () => {
-    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-pending-start-");
+  it("refuses saturated starts immediately with canonical identity and occupant telemetry", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-admission-");
     try {
-      getOrCreateSession("agent:dev:test:pending-start", "dev", stateDir, { name: "pending-start-by-name" });
+      getOrCreateSession("agent:dev:test:admission", "dev", stateDir, { name: "admission" });
       const dispatcher = createDispatcher(1);
-      dispatcher.streamingSessions.set("active", createActiveSession());
-
-      const firstStart = dispatcher.handlePromptImmediate("pending-start-by-name", {
-        prompt: "first",
-        source: {
-          channel: "whatsapp",
-          accountId: "main",
-          chatId: "group:123",
-          sourceMessageId: "m1",
-          actorType: "contact",
-        },
-        context: {
-          channelId: "whatsapp",
-          channelName: "WhatsApp",
-          accountId: "main",
-          chatId: "group:123",
-          messageId: "m1",
-          senderId: "u1",
-          isGroup: true,
-          timestamp: Date.now(),
-          actorType: "contact",
-        },
+      dispatcher.streamingSessions.set("active", createActiveSession({ turnActive: true }));
+      await expect(dispatcher.handlePromptImmediate("admission", { prompt: "first" })).rejects.toBeInstanceOf(
+        RuntimeStartCapacityError,
+      );
+      expect(dispatcher.pendingStarts).toHaveLength(0);
+      expect(dispatcher.startingSessions.size).toBe(0);
+      expect(dispatcher.pendingStartSessions.size).toBe(0);
+      const trace = querySessionTrace({ sessionKey: "agent:dev:test:admission", only: "dispatch" });
+      const rejected = trace.events.find((event) => event.eventType === "dispatch.start_rejected");
+      expect(rejected?.sessionKey).toBe("agent:dev:test:admission");
+      expect(rejected?.payloadJson).toMatchObject({
+        lane: "interactive",
+        reason: "concurrency_limit",
+        active: 1,
+        reserved: 0,
+        queuePosition: null,
+        retryable: true,
+        largestConsumer: { agentId: "dev", slots: 1 },
+        occupants: [{ sessionName: "active", state: "running" }],
       });
-
-      await new Promise((resolve) => setTimeout(resolve, 20));
-
-      expect(dispatcher.pendingStarts).toHaveLength(1);
-      expect(dispatcher.pendingStartSessions.has("pending-start-by-name")).toBe(true);
-      expect(dispatcher.startingSessions.has("pending-start-by-name")).toBe(false);
-
-      await dispatcher.handlePromptImmediate("pending-start-by-name", {
-        prompt: "second",
-        source: {
-          channel: "whatsapp",
-          accountId: "main",
-          chatId: "group:123",
-          sourceMessageId: "m2",
-          actorType: "contact",
-        },
-        context: {
-          channelId: "whatsapp",
-          channelName: "WhatsApp",
-          accountId: "main",
-          chatId: "group:123",
-          messageId: "m2",
-          senderId: "u1",
-          isGroup: true,
-          timestamp: Date.now(),
-          actorType: "contact",
-        },
-      });
-
-      expect(dispatcher.stashedMessages.get("pending-start-by-name")).toHaveLength(1);
-
-      const trace = querySessionTrace({
-        sessionKey: "agent:dev:test:pending-start",
-        sessionName: "pending-start-by-name",
-        only: "dispatch",
-      });
-      const queued = trace.events.filter((event) => event.eventType === "dispatch.queued_busy");
-      expect(queued.map((event) => event.sessionKey)).toEqual([
-        "agent:dev:test:pending-start",
-        "agent:dev:test:pending-start",
-      ]);
-      expect(queued.map((event) => (event.payloadJson as { reason?: string } | null)?.reason)).toEqual([
-        "concurrency_limit",
-        "pending_start_backpressure",
-      ]);
-
       dispatcher.shutdownAll();
-      await firstStart;
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }
@@ -3072,8 +4661,8 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
 
   it("reserves pool capacity for interactive starts over background task starts", () => {
     const dispatcher = createDispatcher(3, 1);
-    dispatcher.streamingSessions.set("task-one-work", createActiveSession());
-    dispatcher.streamingSessions.set("task-two-work", createActiveSession());
+    dispatcher.streamingSessions.set("task-one-work", createActiveSession({ turnActive: true }));
+    dispatcher.streamingSessions.set("task-two-work", createActiveSession({ turnActive: true }));
 
     expect(dispatcher.canAcceptRuntimePrompt("task-three-work")).toBe(false);
     expect(dispatcher.canAcceptRuntimePrompt("main:group:123")).toBe(true);
@@ -3088,6 +4677,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       let pendingResolved = false;
       let secondPendingResolved = false;
       dispatcher.pendingStarts.push({
+        reject: () => {},
         sessionName: "queued-after-abort",
         prompt: { prompt: "queued" },
         resolve: () => {
@@ -3095,6 +4685,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
         },
       });
       dispatcher.pendingStarts.push({
+        reject: () => {},
         sessionName: "second-queued-after-abort",
         prompt: { prompt: "second queued" },
         resolve: () => {
@@ -3212,7 +4803,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
-  it("reuses a provider terminal fence when an abort races before the canonical trace write", async () => {
+  it("preserves a completed provider fence without sealing its trace when an abort races accounting", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-terminal-race-");
     try {
       const sessionKey = "agent:dev:test:terminal-race";
@@ -3250,13 +4841,14 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       expect(dispatcher.abortSession(sessionName, { reason: "late_abort" })).toBe(true);
 
       expect(terminalizeTurnAttempt).not.toHaveBeenCalled();
-      expect(getSessionTurn("turn-terminal-race")).toMatchObject({
+      expect(session.currentCrashRecoveryTerminal).toMatchObject({
         status: "complete",
         completedAt,
-        abortReason: null,
       });
+      expect(session.currentTraceTurnTerminalRecorded).toBe(false);
+      expect(getSessionTurn("turn-terminal-race")).toBeNull();
       const trace = querySessionTrace({ sessionKey, sessionName });
-      expect(trace.events.filter((event) => event.eventType === "turn.complete")).toHaveLength(1);
+      expect(trace.events.filter((event) => event.eventType === "turn.complete")).toHaveLength(0);
       expect(trace.events.filter((event) => event.eventType === "turn.interrupted")).toHaveLength(0);
     } finally {
       await cleanupIsolatedRaviState(stateDir);
@@ -3360,6 +4952,159 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
+  it.each(["resolve", "reject"] as const)(
+    "preserves the replacement and admits once when a retired handle's real setModel settles: %s",
+    async (settlement) => {
+      const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-model-owner-");
+      const planning = spyOn(modelBrokerPlanning, "planRuntimeModelBrokerRoute").mockResolvedValue(undefined);
+      const config = configStore.getConfig();
+      const configuration = spyOn(configStore, "getConfig").mockReturnValue({
+        ...config,
+        agents: { ...config.agents, main: { ...config.agents.main!, provider: "pi", model: "openai/gpt-4.1" } },
+      });
+      const dispatcher = createDispatcher(2);
+      const started = spyOn(dispatcher, "startStreamingSession").mockResolvedValue(undefined);
+      let entered!: () => void;
+      let release!: () => void;
+      let reject!: (error: Error) => void;
+      const reached = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const waiting = new Promise<void>((resolve, rejectPromise) => {
+        release = resolve;
+        reject = rejectPromise;
+      });
+      try {
+        const sessionName = `model-owner-${settlement}`;
+        const sessionKey = `agent:main:test:${sessionName}`;
+        getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName, runtimeProvider: "pi" });
+        const transferred = createQueuedRuntimeUserMessage({
+          prompt: "already transferred",
+          deliveryBarrier: "after_response",
+        });
+        const old = createActiveSession({
+          agentId: "main",
+          turnActive: true,
+          currentModel: "openai/gpt-5.5",
+          pendingMessages: [transferred],
+          queryHandle: {
+            provider: "pi",
+            events: (async function* () {})(),
+            interrupt: mock(async () => {}),
+            setModel: async () => {
+              entered();
+              await waiting;
+            },
+          },
+        });
+        dispatcher.streamingSessions.set(sessionName, old);
+        const dispatching = dispatcher.handlePromptImmediate(sessionName, {
+          prompt: "arrives during model switch",
+          _agentId: "main",
+          deliveryBarrier: "after_tool",
+        });
+        await reached;
+        const replacement = createActiveSession({
+          agentId: "main",
+          turnActive: true,
+          toolRunning: true,
+          currentToolSafety: "unsafe",
+          currentModel: "openai/gpt-4.1",
+          pendingMessages: [transferred],
+          queryHandle: { provider: "pi", events: (async function* () {})(), interrupt: mock(async () => {}) },
+        });
+        old.done = true;
+        dispatcher.streamingSessions.set(sessionName, replacement);
+        if (settlement === "resolve") release();
+        else reject(new Error("retired setModel failed"));
+        await dispatching;
+
+        expect(dispatcher.streamingSessions.get(sessionName)).toBe(replacement);
+        expect(replacement.done).toBe(false);
+        expect(replacement.abortController.signal.aborted).toBe(false);
+        expect(replacement.queryHandle.interrupt).not.toHaveBeenCalled();
+        expect(old.queryHandle.interrupt).not.toHaveBeenCalled();
+        expect(started).not.toHaveBeenCalled();
+        expect(dispatcher.stashedMessages.has(sessionName)).toBe(false);
+        expect(replacement.pendingMessages.map((message) => message.launchPrompt?.prompt)).toEqual([
+          "already transferred",
+          "arrives during model switch",
+        ]);
+        expect(getRecentHistory(sessionName).filter((message) => message.role === "user")).toHaveLength(1);
+        expect(
+          querySessionTrace({ sessionKey, sessionName }).events.filter(
+            (event) => event.eventType === "dispatch.restart_requested",
+          ),
+        ).toHaveLength(0);
+      } finally {
+        release();
+        dispatcher.shutdownAll();
+        started.mockRestore();
+        configuration.mockRestore();
+        planning.mockRestore();
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    },
+  );
+
+  it("leaves completed-turn accounting to the host when a pending setModel rejects", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-model-complete-");
+    const dispatcher = createDispatcher(2);
+    let entered!: () => void;
+    let release!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      const sessionName = "model-reject-after-complete";
+      const sessionKey = `agent:main:test:${sessionName}`;
+      getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName, runtimeProvider: "pi" });
+      const active = createActiveSession({
+        agentId: "main",
+        turnActive: true,
+        currentModel: "openai/gpt-5.5",
+        currentTraceTurnId: "turn-model-reject-after-complete",
+        currentTraceTurnTerminalRecorded: false,
+        queryHandle: {
+          provider: "pi",
+          events: (async function* () {})(),
+          interrupt: mock(async () => {}),
+          setModel: async () => {
+            entered();
+            await waiting;
+            throw new Error("setModel failed after accepted completion");
+          },
+        },
+      });
+      dispatcher.streamingSessions.set(sessionName, active);
+      const changing = dispatcher.applySessionModelChange(sessionName, "openai/gpt-4.1");
+      await reached;
+      const terminal = {
+        status: "complete",
+        completedAt: Date.now(),
+        startedTool: false,
+        materializedOutput: true,
+      } as const;
+      active.currentCrashRecoveryTerminal = terminal;
+      release();
+      expect(await changing).toBe("restart-next-turn");
+
+      expect(active.done).toBe(true);
+      expect(active.currentCrashRecoveryTerminal).toBe(terminal);
+      expect(active.currentTraceTurnTerminalRecorded).toBe(false);
+      expect(
+        querySessionTrace({ sessionKey, sessionName }).events.filter((event) => event.eventType === "turn.complete"),
+      ).toHaveLength(0);
+    } finally {
+      release();
+      dispatcher.shutdownAll();
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
   it("drains queued runtime starts when an external model change restarts a live session", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-model-change-");
     try {
@@ -3367,6 +5112,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       const dispatcher = createDispatcher(1);
       let pendingResolved = false;
       dispatcher.pendingStarts.push({
+        reject: () => {},
         sessionName: "queued-after-model-change",
         prompt: { prompt: "queued" },
         resolve: () => {
@@ -3554,6 +5300,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       }),
     );
     dispatcher.pendingStarts.push({
+      reject: () => {},
       sessionName: "queued-after-task-release",
       prompt: { prompt: "queued" },
       resolve: () => {
@@ -3667,6 +5414,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       const dispatcher = createDispatcher(1);
       let pendingResolved = false;
       dispatcher.pendingStarts.push({
+        reject: () => {},
         sessionName: "queued-after-inline-model-change",
         prompt: { prompt: "queued" },
         resolve: () => {
@@ -3693,6 +5441,10 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     try {
       getOrCreateSession("agent:dev:test:defer-bootstrap", "dev", stateDir, { name: "demo-group" });
       const dispatcher = createDispatcher(1);
+      const launches: Array<{ sessionName: string; prompt: RuntimeLaunchPrompt; lane: string }> = [];
+      spyOn(dispatcher, "startStreamingSession").mockImplementation(async (name, prompt) => {
+        launches.push({ sessionName: name, prompt, lane: classifyRuntimeSessionStartLane(name, prompt) });
+      });
       const bootstrap = dispatcher.handlePromptImmediate("demo-group", {
         prompt: "[System] Inform: group created",
         _deferRuntimeStart: true,
@@ -3709,7 +5461,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       });
 
       await new Promise((resolve) => setTimeout(resolve, 20));
-      expect(dispatcher.pendingStarts).toHaveLength(0);
+      expect(launches).toHaveLength(0);
       expect(dispatcher.deferredBootstraps.has("demo-group")).toBe(true);
       expect(dispatcher.streamingSessions.size).toBe(0);
 
@@ -3726,12 +5478,12 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
 
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(dispatcher.deferredBootstraps.has("demo-group")).toBe(false);
-      expect(dispatcher.pendingStarts).toHaveLength(1);
-      expect(dispatcher.pendingStarts[0]?.lane).toBe("interactive");
-      expect(dispatcher.pendingStarts[0]?.prompt.prompt).toContain("[System] Inform: group created");
-      expect(dispatcher.pendingStarts[0]?.prompt.prompt).toContain("hello from the group");
-      expect(dispatcher.pendingStarts[0]?.prompt._turnOrigin).toBeUndefined();
-      expect(dispatcher.pendingStarts[0]?.prompt._deferRuntimeStart).toBeUndefined();
+      expect(launches).toHaveLength(1);
+      expect(launches[0]?.lane).toBe("interactive");
+      expect(launches[0]?.prompt.prompt).toContain("[System] Inform: group created");
+      expect(launches[0]?.prompt.prompt).toContain("hello from the group");
+      expect(launches[0]?.prompt._turnOrigin).toBeUndefined();
+      expect(launches[0]?.prompt._deferRuntimeStart).toBeUndefined();
 
       dispatcher.shutdownAll();
       await Promise.all([bootstrap, humanStart]);
@@ -3751,6 +5503,10 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       getOrCreateSession("knowledge-cli", "dev", stateDir, { name: "knowledge-cli" });
       getOrCreateSession("agent:dev:test:knowledge-heartbeat", "dev", stateDir, { name: "knowledge-heartbeat" });
       const dispatcher = createDispatcher(1);
+      const launches: Array<{ sessionName: string; prompt: RuntimeLaunchPrompt; lane: string }> = [];
+      spyOn(dispatcher, "startStreamingSession").mockImplementation(async (name, prompt) => {
+        launches.push({ sessionName: name, prompt, lane: classifyRuntimeSessionStartLane(name, prompt) });
+      });
       dispatcher.streamingSessions.set("busy", createActiveSession());
       const cli = dispatcher.handlePromptImmediate("knowledge-cli", {
         prompt: "what did the client say?",
@@ -3762,8 +5518,8 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       });
       await new Promise((resolve) => setTimeout(resolve, 20));
 
-      expect(dispatcher.pendingStarts).toHaveLength(2);
-      const byName = new Map(dispatcher.pendingStarts.map((start) => [start.sessionName, start.prompt]));
+      expect(launches).toHaveLength(2);
+      const byName = new Map(launches.map((start) => [start.sessionName, start.prompt]));
       const cliPrompt = byName.get("knowledge-cli")!;
       expect(cliPrompt.prompt).toBe("what did the client say?");
       expect(cliPrompt._knowledgePreamble).toBe(true);
@@ -3791,6 +5547,10 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     try {
       getOrCreateSession("agent:dev:test:skip-turn-cold", "dev", stateDir, { name: "skip-turn-group" });
       const dispatcher = createDispatcher(1);
+      const launches: Array<{ sessionName: string; prompt: RuntimeLaunchPrompt; lane: string }> = [];
+      spyOn(dispatcher, "startStreamingSession").mockImplementation(async (name, prompt) => {
+        launches.push({ sessionName: name, prompt, lane: classifyRuntimeSessionStartLane(name, prompt) });
+      });
       const source = {
         channel: "whatsapp",
         accountId: "demo",
@@ -3804,7 +5564,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
         _skipTurn: true,
       });
 
-      expect(dispatcher.pendingStarts).toHaveLength(0);
+      expect(launches).toHaveLength(0);
       expect(dispatcher.streamingSessions.size).toBe(0);
       expect(dispatcher.startReservations.size).toBe(0);
 
@@ -3828,8 +5588,8 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
 
       expect(dispatcher.heldSkipTurnMessages.has("skip-turn-group")).toBe(false);
-      expect(dispatcher.pendingStarts).toHaveLength(1);
-      const started = dispatcher.pendingStarts[0]!.prompt;
+      expect(launches).toHaveLength(1);
+      const started = launches[0]!.prompt;
       expect(started.prompt).toContain("[System] Inform: group created");
       expect(started.prompt).toEndWith("\nLuis: qual o orçamento?");
       expect(started.prompt).not.toContain("10k");
@@ -3858,6 +5618,10 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     try {
       getOrCreateSession("agent:dev:test:group-intro", "dev", stateDir, { name: "demo-group" });
       const dispatcher = createDispatcher(2, 1);
+      const launches: Array<{ sessionName: string; prompt: RuntimeLaunchPrompt; lane: string }> = [];
+      spyOn(dispatcher, "startStreamingSession").mockImplementation(async (name, prompt) => {
+        launches.push({ sessionName: name, prompt, lane: classifyRuntimeSessionStartLane(name, prompt) });
+      });
       dispatcher.streamingSessions.set("busy-background", createActiveSession());
       dispatcher.streamingSessions.set("busy-interactive", createActiveSession());
 
@@ -3878,11 +5642,11 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
 
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(dispatcher.deferredBootstraps.has("demo-group")).toBe(false);
-      expect(dispatcher.pendingStarts).toHaveLength(1);
-      expect(dispatcher.pendingStarts[0]?.sessionName).toBe("demo-group");
-      expect(dispatcher.pendingStarts[0]?.lane).toBe("interactive");
-      expect(dispatcher.pendingStarts[0]?.prompt.prompt).toContain("Se apresente brevemente");
-      expect(dispatcher.pendingStarts[0]?.prompt._deferRuntimeStart).toBeUndefined();
+      expect(launches).toHaveLength(1);
+      expect(launches[0]?.sessionName).toBe("demo-group");
+      expect(launches[0]?.lane).toBe("interactive");
+      expect(launches[0]?.prompt.prompt).toContain("Se apresente brevemente");
+      expect(launches[0]?.prompt._deferRuntimeStart).toBeUndefined();
       expect(dispatcher.streamingSessions.has("demo-group")).toBe(false);
 
       dispatcher.shutdownAll();
@@ -3892,9 +5656,9 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
-  it("reserves an interactive slot for a group intro while a background bootstrap stays queued", async () => {
+  it("reserves an interactive slot for a group intro while a background bootstrap is refused", async () => {
     const dispatcher = createDispatcher(2, 1);
-    dispatcher.streamingSessions.set("busy-background", createActiveSession());
+    dispatcher.streamingSessions.set("busy-background", createActiveSession({ turnActive: true }));
     const reserve = (
       dispatcher as unknown as {
         reserveRuntimeSessionStart: (sessionName: string, prompt: RuntimeLaunchPrompt) => Promise<boolean>;
@@ -3916,9 +5680,8 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       },
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(dispatcher.pendingStarts.map((entry) => entry.sessionName)).toEqual(["background-bootstrap"]);
-    expect(dispatcher.pendingStarts[0]?.lane).toBe("background");
+    await expect(background).rejects.toBeInstanceOf(RuntimeStartCapacityError);
+    expect(dispatcher.pendingStarts).toHaveLength(0);
 
     const introReserved = await reserve("demo-group", {
       prompt: "[System] Inform: Se apresente brevemente.",
@@ -3935,10 +5698,9 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     expect(introReserved).toBe(true);
     expect(dispatcher.startReservations.has("demo-group")).toBe(true);
     expect(dispatcher.deferredBootstraps.has("demo-group")).toBe(false);
-    expect(dispatcher.pendingStarts.map((entry) => entry.sessionName)).toEqual(["background-bootstrap"]);
+    expect(dispatcher.pendingStarts).toHaveLength(0);
 
     dispatcher.shutdownAll();
-    await background;
   });
 
   it("promotes a background pending start to interactive when a human inbound arrives", async () => {
@@ -3947,6 +5709,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     dispatcher.streamingSessions.set("task-two-work", createActiveSession());
     let resolved = false;
     dispatcher.pendingStarts.push({
+      reject: () => {},
       sessionName: "demo-group",
       prompt: { prompt: "bootstrap", _cron: true },
       lane: "background",
@@ -4022,12 +5785,81 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
+  it("background_task_prevents_idle_eviction", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-background-idle-");
+    try {
+      const wakes: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+      const dispatcher = createDispatcher(4, 0, crashRecoveryStub, {
+        idleSessionTtlMs: 60_000,
+        backgroundTaskTtlMs: 600_000,
+        turnInactivityMs: 60_000,
+        publishBackgroundWake: async (sessionName, payload) => {
+          wakes.push({ sessionName, payload });
+        },
+      });
+      const now = Date.now();
+      const nativeTask = { taskId: "bash-1", description: "nba sql", startedAt: now - 120_000 };
+      dispatcher.streamingSessions.set(
+        "native-bg",
+        createActiveSession({
+          lastActivity: now - 120_000,
+          turnActive: false,
+          pendingBackgroundTasks: new Map([[nativeTask.taskId, nativeTask]]),
+        }),
+      );
+      // A Ravi job still running for the session is pending work too.
+      const job = dbCreateJob({
+        sessionName: "job-bg",
+        command: "sleep 1000",
+        logPath: join(stateDir, "job-bg.log"),
+        origin: "detach",
+      });
+      dbMarkJobRunning(job.id, process.pid);
+      dispatcher.streamingSessions.set("job-bg", createActiveSession({ lastActivity: now - 120_000 }));
+      dispatcher.streamingSessions.set("plain-idle", createActiveSession({ lastActivity: now - 120_000 }));
+
+      const first = dispatcher.reclaimNonServingRuntimeSessions(now);
+      expect(first.idleEvicted).toEqual(["plain-idle"]);
+      expect(dispatcher.streamingSessions.has("native-bg")).toBe(true);
+      expect(dispatcher.streamingSessions.has("job-bg")).toBe(true);
+      expect(wakes).toHaveLength(0);
+
+      // Pending work has its own, larger TTL: past it the session goes, and the
+      // provider task that dies with it is reported as a failure, not dropped.
+      const later = now + 600_000;
+      const second = dispatcher.reclaimNonServingRuntimeSessions(later);
+      expect(second.idleEvicted.sort()).toEqual(["job-bg", "native-bg"]);
+      await Promise.resolve();
+      expect(wakes).toHaveLength(1);
+      expect(wakes[0]?.sessionName).toBe("native-bg");
+      expect(wakes[0]?.payload._backgroundTask).toEqual({ kind: "native_task_lost", taskIds: ["bash-1"] });
+      expect(String(wakes[0]?.payload.prompt)).toContain("Trate como falha");
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("does not reclaim a session with a provider background task under pool pressure", () => {
+    const dispatcher = createDispatcher(1, 0);
+    dispatcher.streamingSessions.set(
+      "native-bg",
+      createActiveSession({
+        lastActivity: Date.now() - 600_000,
+        pendingBackgroundTasks: new Map([["bash-1", { taskId: "bash-1", startedAt: Date.now() }]]),
+      }),
+    );
+    expect(dispatcher.canAcceptRuntimePrompt("incoming")).toBe(false);
+    dispatcher.streamingSessions.get("native-bg")?.pendingBackgroundTasks?.clear();
+    expect(dispatcher.canAcceptRuntimePrompt("incoming")).toBe(true);
+  });
+
   it("cancels queued observer starts when a human inbound arrives and drains interactive first", async () => {
     const dispatcher = createDispatcher(2, 1);
     dispatcher.streamingSessions.set("busy", createActiveSession({ turnActive: true }));
     let observerResolved = false;
     let humanResolved = false;
     dispatcher.pendingStarts.push({
+      reject: () => {},
       sessionName: "obs:abc123:proactive-followup",
       prompt: {
         prompt: "follow up",
@@ -4048,6 +5880,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       },
     });
     dispatcher.pendingStarts.push({
+      reject: () => {},
       sessionName: "cron-background",
       prompt: { prompt: "cron tick", _cron: true },
       lane: "background",
@@ -4055,6 +5888,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       resolve: () => {},
     });
     dispatcher.pendingStarts.push({
+      reject: () => {},
       sessionName: "demo-group",
       prompt: {
         prompt: "hello from the group",
@@ -4116,55 +5950,234 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     expect(dispatcher.pendingStarts).toHaveLength(0);
   });
 
-  it("emits a user-facing timeout when an interactive start stays queued", async () => {
-    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-start-timeout-");
+  it("never waits for the queue watchdog when all slots are serving", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-immediate-refusal-");
     try {
-      getOrCreateSession("agent:dev:test:start-timeout", "dev", stateDir, { name: "start-timeout" });
-      const runtimeEmits: Array<{ topic: string; data: Record<string, unknown> }> = [];
-      const dispatcher = new RuntimeSessionDispatcher({
-        instanceId: "test",
-        maxConcurrentSessions: 1,
-        interactiveReservedSessions: 0,
-        pendingStartTimeoutMs: 25,
-        safeEmit: async (topic, data) => {
-          runtimeEmits.push({ topic, data: data as Record<string, unknown> });
-        },
-        notifyRuntimeRecoveryExhausted: async () => {},
-        getConfigModel: () => "test-model",
-        crashRecovery: crashRecoveryStub,
-      });
-      dispatcher.streamingSessions.set("busy", createActiveSession());
-      const responseEmits: Array<{ topic: string; data: Record<string, unknown> }> = [];
-      const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
-        responseEmits.push({ topic, data: data as Record<string, unknown> });
-      });
-
-      const queued = dispatcher.handlePromptImmediate("start-timeout", {
-        prompt: "hello from the group",
-        source: {
-          channel: "whatsapp",
-          accountId: "demo",
-          chatId: "group:test-group-1",
-          actorType: "contact",
-        },
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      expect(runtimeEmits.some((entry) => (entry.data as { type?: string }).type === "session.timeout")).toBe(true);
-      expect(
-        responseEmits.some(
-          (entry) =>
-            entry.topic === "ravi.session.start-timeout.response" &&
-            String(entry.data.response ?? "").includes("queued too long"),
-        ),
-      ).toBe(true);
+      getOrCreateSession("agent:dev:test:no-wait", "dev", stateDir, { name: "no-wait" });
+      const dispatcher = createDispatcher(1, 0, crashRecoveryStub, { pendingStartTimeoutMs: 60_000 });
+      dispatcher.streamingSessions.set("busy", createActiveSession({ turnActive: true }));
+      await expect(dispatcher.handlePromptImmediate("no-wait", { prompt: "preserve me" })).rejects.toBeInstanceOf(
+        RuntimeStartCapacityError,
+      );
       expect(dispatcher.pendingStarts).toHaveLength(0);
-
-      emitSpy.mockRestore();
       dispatcher.shutdownAll();
-      await queued;
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }
+  });
+});
+
+describe("RuntimeSessionDispatcher task-bound live sessions", () => {
+  function createTaskBoundSession(overrides: Partial<RuntimeHostStreamingSession> = {}): RuntimeHostStreamingSession {
+    return {
+      sessionKey: "fixture-task-bound-session",
+      agentId: "main",
+      queryHandle: {
+        provider: "codex",
+        events: (async function* () {})(),
+        interrupt: async () => {},
+      },
+      abortController: new AbortController(),
+      pendingMessages: [],
+      currentModel: "test-model",
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      starting: false,
+      compacting: false,
+      interrupted: false,
+      turnActive: true,
+      pushMessage: null,
+      pendingWake: false,
+      onTurnComplete: null,
+      currentToolSafety: null,
+      pendingAbort: false,
+      toolEffectFence: "provider_event_only",
+      ...overrides,
+    };
+  }
+
+  function createRunningTask(sessionName: string, title = "task in progress"): string {
+    const created = dbCreateTask({
+      title,
+      instructions: "long running work",
+      createdBy: "test",
+      createdByAgentId: "main",
+      createdBySessionName: "main",
+    });
+    dbDispatchTask(created.task.id, { agentId: "main", sessionName, assignedBy: "test" });
+    dbMarkTaskAcceptedForSession(sessionName, created.task.id);
+    return created.task.id;
+  }
+
+  async function withTaskSession(
+    prefix: string,
+    run: (input: { sessionName: string; stateDir: string }) => Promise<void>,
+  ): Promise<void> {
+    const stateDir = await createIsolatedRaviState(prefix);
+    try {
+      const sessionName = `${prefix}session`;
+      getOrCreateSession(`agent:main:test:${sessionName}`, "main", stateDir, { name: sessionName });
+      await run({ sessionName, stateDir });
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  }
+
+  it("queues an inform on the running task turn with the task binding instead of restarting", async () => {
+    await withTaskSession("ravi-task-inform-", async ({ sessionName }) => {
+      const taskId = createRunningTask(sessionName);
+      const dispatcher = createDispatcher();
+      const startStreamingSession = mock(async () => {});
+      dispatcher.startStreamingSession = startStreamingSession;
+      const existing = createTaskBoundSession({ toolRunning: true, currentTaskBarrierTaskId: taskId });
+      dispatcher.streamingSessions.set(sessionName, existing);
+
+      await dispatcher.handlePromptImmediate(sessionName, {
+        prompt: "[System] Inform: o deploy terminou",
+        deliveryBarrier: "after_response",
+      });
+
+      expect(existing.done).toBe(false);
+      expect(existing.internalAbortReason).toBeUndefined();
+      expect(startStreamingSession).not.toHaveBeenCalled();
+      expect(existing.pendingMessages).toHaveLength(1);
+      expect(existing.pendingMessages[0]?.taskBarrierTaskId).toBe(taskId);
+      expect(existing.pendingMessages[0]?.deliveryBarrier).toBe("after_response");
+    });
+  });
+
+  it("queues a task-less steer during a running task tool without interrupting or relaunching", async () => {
+    await withTaskSession("ravi-task-steer-", async ({ sessionName }) => {
+      const taskId = createRunningTask(sessionName);
+      const dispatcher = createDispatcher();
+      const startStreamingSession = mock(async () => {});
+      dispatcher.startStreamingSession = startStreamingSession;
+      const interrupt = mock(async () => {});
+      const existing = createTaskBoundSession({
+        toolRunning: true,
+        toolStartTime: Date.now(),
+        currentTaskBarrierTaskId: taskId,
+        queryHandle: { provider: "codex", events: (async function* () {})(), interrupt },
+      });
+      dispatcher.streamingSessions.set(sessionName, existing);
+
+      await dispatcher.handlePromptImmediate(sessionName, {
+        prompt: "olha o comentario novo",
+        deliveryBarrier: "after_tool",
+      });
+
+      expect(existing.done).toBe(false);
+      expect(startStreamingSession).not.toHaveBeenCalled();
+      expect(interrupt).not.toHaveBeenCalled();
+      expect(existing.pendingMessages.map((message) => message.taskBarrierTaskId)).toEqual([taskId]);
+    });
+  });
+
+  it("queues a task comment steer on the running task turn without relaunching", async () => {
+    await withTaskSession("ravi-task-comment-", async ({ sessionName }) => {
+      const taskId = createRunningTask(sessionName);
+      const dispatcher = createDispatcher();
+      const startStreamingSession = mock(async () => {});
+      dispatcher.startStreamingSession = startStreamingSession;
+      const existing = createTaskBoundSession({ toolRunning: true, currentTaskBarrierTaskId: taskId });
+      dispatcher.streamingSessions.set(sessionName, existing);
+
+      await dispatcher.handlePromptImmediate(sessionName, {
+        prompt: `[System] Inform: New comment on task ${taskId}`,
+        deliveryBarrier: "after_response",
+        taskBarrierTaskId: taskId,
+      });
+
+      expect(existing.done).toBe(false);
+      expect(existing.internalAbortReason).toBeUndefined();
+      expect(startStreamingSession).not.toHaveBeenCalled();
+      expect(existing.pendingMessages.map((message) => message.taskBarrierTaskId)).toEqual([taskId]);
+    });
+  });
+
+  it("queues a task-less prompt on a blocked task's live session without relaunching", async () => {
+    await withTaskSession("ravi-task-blocked-", async ({ sessionName }) => {
+      const taskId = createRunningTask(sessionName);
+      dbBlockTask(taskId, { actor: "test", agentId: "main", sessionName, message: "waiting on input" });
+      const dispatcher = createDispatcher();
+      const startStreamingSession = mock(async () => {});
+      dispatcher.startStreamingSession = startStreamingSession;
+      const existing = createTaskBoundSession({ currentTaskBarrierTaskId: taskId });
+      dispatcher.streamingSessions.set(sessionName, existing);
+
+      await dispatcher.handlePromptImmediate(sessionName, {
+        prompt: "[System] Inform: nova informacao",
+        deliveryBarrier: "after_response",
+      });
+
+      expect(existing.done).toBe(false);
+      expect(startStreamingSession).not.toHaveBeenCalled();
+      expect(existing.pendingMessages).toHaveLength(1);
+      expect(existing.pendingMessages[0]?.taskBarrierTaskId).toBeUndefined();
+    });
+  });
+
+  it("queues a task-less prompt after the task completes without relaunching", async () => {
+    await withTaskSession("ravi-task-done-", async ({ sessionName }) => {
+      const taskId = createRunningTask(sessionName);
+      dbCompleteTask(taskId, { actor: "test", agentId: "main", sessionName, message: "done" });
+      const dispatcher = createDispatcher();
+      const startStreamingSession = mock(async () => {});
+      dispatcher.startStreamingSession = startStreamingSession;
+      const existing = createTaskBoundSession({ currentTaskBarrierTaskId: taskId });
+      dispatcher.streamingSessions.set(sessionName, existing);
+
+      await dispatcher.handlePromptImmediate(sessionName, {
+        prompt: "checkpoint: como esta?",
+        deliveryBarrier: "after_response",
+      });
+
+      expect(existing.done).toBe(false);
+      expect(startStreamingSession).not.toHaveBeenCalled();
+      expect(existing.pendingMessages.map((message) => message.taskBarrierTaskId)).toEqual([undefined]);
+    });
+  });
+
+  it("queues a second task dispatch behind the running task without relaunching", async () => {
+    await withTaskSession("ravi-task-second-", async ({ sessionName }) => {
+      const firstTaskId = createRunningTask(sessionName, "first task");
+      const dispatcher = createDispatcher();
+      const startStreamingSession = mock(async () => {});
+      dispatcher.startStreamingSession = startStreamingSession;
+      const existing = createTaskBoundSession({ currentTaskBarrierTaskId: firstTaskId });
+      dispatcher.streamingSessions.set(sessionName, existing);
+
+      await dispatcher.handlePromptImmediate(sessionName, {
+        prompt: "second task brief",
+        deliveryBarrier: "after_task",
+        taskBarrierTaskId: "task-second",
+      });
+
+      expect(existing.done).toBe(false);
+      expect(startStreamingSession).not.toHaveBeenCalled();
+      expect(existing.pendingMessages.map((message) => message.taskBarrierTaskId)).toEqual(["task-second"]);
+    });
+  });
+
+  it("queues a prompt whose task asks for another effort without relaunching", async () => {
+    await withTaskSession("ravi-task-effort-", async ({ sessionName }) => {
+      const taskId = createRunningTask(sessionName);
+      const dispatcher = createDispatcher();
+      const startStreamingSession = mock(async () => {});
+      dispatcher.startStreamingSession = startStreamingSession;
+      const existing = createTaskBoundSession({ currentEffort: "xhigh", currentThinking: "verbose" });
+      dispatcher.streamingSessions.set(sessionName, existing);
+
+      await dispatcher.handlePromptImmediate(sessionName, {
+        prompt: "task brief",
+        deliveryBarrier: "after_task",
+        taskBarrierTaskId: taskId,
+      });
+
+      expect(existing.done).toBe(false);
+      expect(startStreamingSession).not.toHaveBeenCalled();
+      expect(existing.pendingMessages.map((message) => message.taskBarrierTaskId)).toEqual([taskId]);
+    });
   });
 });

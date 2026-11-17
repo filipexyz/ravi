@@ -331,6 +331,8 @@ ravi pages read https://docs.acme.com/ --custom-domain
 
 `ravi pages domains <host> <hostname>` binds a domain you own to a host. Without `--execute` it prints the DNS to create and writes nothing. With `--execute` it moves the setup forward and exits with `DOMAIN_SETUP_REQUIRED` while DNS work is pending. The message names the step (ownership, DNS, certificate) and the exact records; run the same command again once DNS has propagated.
 
+`ravi pages list` shows each host's custom domains. A pending one says why it does not serve yet, the DNS still missing and the command to check again; `ravi pages published` lists pending ones below the pages. Only ready domains appear in `urls`, so a hostname missing there does not serve the host, even when it answers 200 from another server.
+
 | Record | When |
 |---|---|
 | `TXT _ravi-verify.<domain>` | Once per domain, proves the organization owns it. |
@@ -341,14 +343,14 @@ The root domain (`example.com`) serves the host directly when your DNS provider 
 
 ## Data pages
 
-Pages that read and write a Base (`--uses ravi.bases.*`) work only for signed-in members of the organization, on `private` or `protected_link` routes. `ship` refuses them on a public route (exit 2) unless you pass `--members-best-effort` on purpose. `--uses` applies to the whole host. See [Interactive pages with Bases](/console/bases).
+Pages that read and write a Base (`--uses ravi.bases.*`) work only for signed-in members of the organization, on `private` or `protected_link` routes. `ship` refuses them on a public route (exit 2) unless you pass `--members-best-effort` on purpose. Each ship declares the actions its own route calls; the host allows the union over its active routes, so shipping one route never removes another's. See [Interactive pages with Bases](/console/bases).
 
 ## Advanced and compatibility commands
 
 | Command | What it does |
 |---|---|
 | `ravi pages create <host>` | Creates a host record only, no content. Dry-run without `--execute` (exit 3). |
-| `ravi pages publish <project> <host> <source>` | Uploads to an existing host, or publishes a local `art_*`. Dry-run without `--execute` (exit 3). It cannot declare `--uses`, so a data page republished with it loses its actions; use `ship` on hosts with data pages. |
+| `ravi pages publish <project> <host> <source>` | Uploads to an existing host, or publishes a local `art_*`. Dry-run without `--execute` (exit 3). It cannot declare `--uses`, so a data route republished with it loses its own actions (other routes keep theirs); use `ship` for data pages. |
 | `ravi pages domains <host> <hostname> --execute` | Binds a custom domain to the host. |
 | `ravi pages ship <slug> ...` | Ships to a legacy extra host named `<slug>.ravi.page`. |
 

@@ -6,9 +6,8 @@ agregados. O gráfico herda o acesso de leitura da view, inclusive princípios
 em modo `aggregate`.
 
 Não há tela de gráficos no Console. O agent cria o gráfico pelo CLI e o
-desenha numa Ravi Page gerada, com os dados de `ravi.bases.charts.data`
-(`ravi skills show pages --file references/layouts.md`, seção Gráficos e
-dashboards).
+mostra numa Ravi Page com `<ravi-chart chart="<id>"></ravi-chart>`
+(`ravi skills show pages --file references/widgets.md`).
 
 ```bash
 ravi bases charts list tarefas --json
@@ -91,15 +90,15 @@ O connector `ravi.bases.charts.data` (input `{ chartId }`) devolve o mesmo com
 1. View do gráfico com `page_viewer` do site em `access.read` (com
    `"mode": "aggregate"` quando quem vê não pode ver linhas).
 2. `ravi bases charts create ...` e guarde o `id`.
-3. A página chama `ravi.bases.charts.data` com o `chartId` constante e desenha
-   em SVG puro com o renderizador de `layouts.md` (skill pages): barras
-   empilhadas, linha, área, pizza/donut, número único; os outros marks viram
-   tabela.
-4. Ship com `--uses ravi.bases.charts.data` (mais `ravi.bases.views.describe`
-   se a página ler o `layout.chartId` de uma view `chart`), somado aos ids das
-   outras páginas de dados do host.
+3. A página põe `<ravi-chart chart="<id>"></ravi-chart>`: o ship confere o
+   gráfico e põe `ravi.bases.charts.data` no `--uses` sozinho. A tag desenha
+   barras, linha, área, pontos, pizza/donut, mapa de calor e número único,
+   com legenda e tabela para leitor de tela, e relê a cada minuto.
+4. Só desenhe à mão (renderizador de `layouts.md`, skill pages, com
+   `--uses ravi.bases.charts.data` no ship da rota) quando a tag não cobre:
+   mark próprio ou clique que filtra a página.
 
-Use SVG próprio por padrão. Biblioteca de gráfico via CDN é opcional; a
+À mão, use SVG próprio por padrão. Biblioteca de gráfico via CDN é opcional; a
 página continua sem token e sem dados embutidos. O spec salvo não serve direto
 ao Vega-Lite: os `groups` já vêm agregados e têm chave por canal (`x`, `y`,
 `color`, ...), não por coluna. Para usar o Vega-Lite, troque o `field` de cada

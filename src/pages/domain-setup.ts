@@ -154,3 +154,77 @@ export function plannedPageDomainDnsLines(hostnames: string[]): string[] {
   );
   return lines;
 }
+
+/** A custom hostname bound to a Pages host, as Console lists it on each host (`customDomains`). */
+export interface PageCustomDomain {
+  hostname: string;
+  status: "ready" | "pending";
+  apex?: boolean;
+  nextActionCode?: string;
+  dnsRecords?: PageDomainDnsRecord[];
+}
+
+function projectCustomDomain(value: unknown): PageCustomDomain | undefined {
+  const domain = objectValue(value);
+  if (!domain) return undefined;
+  const hostname = typeof domain.hostname === "string" ? domain.hostname.toLowerCase() : "";
+  const status = domain.status;
+  if (!HOSTNAME_PATTERN.test(hostname) || (status !== "ready" && status !== "pending")) return undefined;
+  const projected: PageCustomDomain = { hostname, status };
+  if (domain.apex === true) projected.apex = true;
+  const nextAction = objectValue(domain.nextAction);
+  if (status === "pending" && nextAction) {
+    if (typeof nextAction.code === "string" && ACTION_CODE_PATTERN.test(nextAction.code)) {
+      projected.nextActionCode = nextAction.code;
+    }
+    const dnsRecords = projectRecords(nextAction.dnsRecords);
+    if (dnsRecords.length > 0) projected.dnsRecords = dnsRecords;
+  }
+  return projected;
+}
+
+/** Safe custom domains from a host's `customDomains`; an older Console sends none. */
+export function projectPageCustomDomains(value: unknown): PageCustomDomain[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .slice(0, MAX_SETUPS)
+    .map(projectCustomDomain)
+    .filter((domain): domain is PageCustomDomain => Boolean(domain));
+}
+
+const PENDING_DOMAIN_REASONS: Record<string, string> = {
+  configure_pages_dns: "not serving yet: the DNS below is missing or was not checked since it was added",
+  wait_for_pages: "not serving yet: Ravi Pages is still provisioning it",
+  retry_provider_check: "not serving yet: the domain provider was unavailable at the last check",
+  contact_operator: "not serving yet: provisioning needs Ravi operator attention",
+};
+
+/**
+ * Lines for one host's custom domains. A pending one says why it does not
+ * serve, the DNS to add, and how to check again, so a hostname that still
+ * points elsewhere is never mistaken for one that serves the host.
+ */
+export function pageCustomDomainLines(
+  domains: PageCustomDomain[],
+  recheckCommand: (hostname: string) => string,
+): string[] {
+  const lines: string[] = [];
+  for (const domain of domains) {
+    if (domain.status === "ready") {
+      lines.push(`custom domain ${domain.hostname}  ready`);
+      continue;
+    }
+    const reason = (domain.nextActionCode && PENDING_DOMAIN_REASONS[domain.nextActionCode]) ?? "not serving yet";
+    lines.push(`custom domain ${domain.hostname}  ${reason}`);
+    for (const record of domain.dnsRecords ?? []) {
+      lines.push(`  ${record.type} ${record.name} = ${record.value}  (proxy off / DNS only)`);
+    }
+    if (domain.apex) {
+      lines.push(
+        "  Root domain: the DNS provider must support CNAME flattening or ALIAS/ANAME; a plain A record does not reach Pages.",
+      );
+    }
+    lines.push(`  Check again: ${recheckCommand(domain.hostname)}`);
+  }
+  return lines;
+}

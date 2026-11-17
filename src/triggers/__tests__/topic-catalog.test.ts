@@ -2,6 +2,24 @@ import { describe, expect, it } from "bun:test";
 import { findTriggerTopicCatalogEntry, getTriggerTopicCatalog, getTriggerTopicDiagnostic } from "../topic-catalog.js";
 
 describe("trigger topic catalog", () => {
+  it("lists every Bases event type delivered on ravi.console.inbox.item", () => {
+    const entry = findTriggerTopicCatalogEntry("ravi.console.inbox.item");
+    const notes = (entry?.notes ?? []).join("\n");
+    for (const eventType of [
+      "bases.row.created",
+      "bases.rows.bulk_changed",
+      "bases.approval.requested",
+      "bases.approval.decided",
+      "bases.agent.requested",
+      "bases.agent.backfill",
+    ]) {
+      expect(notes).toContain(eventType);
+    }
+    expect(entry?.schema?.fields.map((field) => field.path)).toEqual(
+      expect.arrayContaining(["payload.propertyId", "payload.subscriptionId", "payload.row"]),
+    );
+  });
+
   it("registers the canonical inbound reaction subject", () => {
     expect(getTriggerTopicCatalog()).toContainEqual(
       expect.objectContaining({
@@ -59,6 +77,24 @@ describe("trigger topic catalog", () => {
         ]),
       },
     });
+  });
+
+  it("registers the permission grant audit subject with its payload schema", () => {
+    const entry = findTriggerTopicCatalogEntry("ravi.audit.permission_grant");
+    expect(entry).toMatchObject({
+      id: "audit.permission_grant",
+      category: "audit",
+      pattern: "ravi.audit.permission_grant",
+      schema: { version: 1 },
+    });
+    expect(entry?.payload).toContain("resolvedDenials");
+    const fields = new Map((entry?.schema?.fields ?? []).map((field) => [field.path, field]));
+    for (const path of ["type", "agentId", "requestId", "capability", "intent", "scope", "clicker"]) {
+      expect(fields.get(path)?.required).toBe(true);
+    }
+    expect(fields.get("resolvedDenials")).toMatchObject({ type: "number" });
+    // A registered catalog entry is a valid trigger topic: no diagnostic warning.
+    expect(getTriggerTopicDiagnostic("ravi.audit.permission_grant")).toBeUndefined();
   });
 
   it("warns about inferred channel reaction aliases", () => {

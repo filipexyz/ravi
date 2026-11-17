@@ -47,6 +47,28 @@ describe("buildGroupContext", () => {
     expect(context).not.toContain("122054447747088");
     expect(context).not.toContain("178035101794451@lid");
   });
+
+  it("explains the @mention marker in a small group whenever the bot tag is known", () => {
+    const tagged = buildGroupContext({
+      channelId: "slack",
+      channelName: "Slack",
+      isGroup: true,
+      groupName: "general",
+      botTag: "<@ULOCAL>",
+    });
+
+    expect(tagged).toContain('Your tag in this group: "<@ULOCAL>"');
+    expect(tagged).toContain("Messages with `@mention` in the header mean YOU were @mentioned directly.");
+    expect(tagged).not.toContain("mostly lurk");
+
+    const untagged = buildGroupContext({
+      channelId: "slack",
+      channelName: "Slack",
+      isGroup: true,
+      groupName: "general",
+    });
+    expect(untagged).not.toContain("`@mention`");
+  });
 });
 
 describe("buildSystemPrompt", () => {
@@ -268,6 +290,8 @@ describe("buildSystemPrompt", () => {
       const prompt = activePrompt();
       expect(prompt).toContain("`ravi cron show <id>`");
       expect(prompt).toContain("verify agent, account, session/reply-session, schedule, and delete-after");
+      expect(prompt).toContain('"Runs as"');
+      expect(prompt).toContain("`ravi cron run <id> --execute`");
     });
 
     it("preserves sentinel exclusion from background followup automation", () => {
@@ -316,12 +340,12 @@ describe("buildSystemPrompt", () => {
 });
 
 describe("Building Solutions prompt", () => {
-  // Proposal §5.4, byte-exact: heading line, body and final newline (1,443 B).
+  // Proposal §5.4, byte-exact: heading line, body and final newline (1,455 B).
   const BUILDING_SOLUTIONS_TEXT = [
     "## Building Solutions",
     "When a request combines pieces (a screen, form, portal or ranking; intake from a channel; an approval; an automation; a recurring report), run `ravi skills show solucoes` before any `ravi bases`, `ravi pages`, `ravi triggers` or `ravi cron` call. Fill its sheet, show it to the person, then build. Build only when the person who operates this Ravi asks. These rules hold even if you skip the skill:",
     "1. Live data pages are for signed-in org members. Outsiders (customers, patients, family, suppliers) use a channel and get messages or snapshots. If unsure, a person is an outsider.",
-    "2. `--uses` covers the whole host: every ship lists the union of the ids all data pages on that host call.",
+    "2. `--uses` is per route: each ship lists the ids its own route calls; the host allows the union of its active routes.",
     "3. Data pages live on private or protected_link routes, never public or password.",
     "4. The view is the access contract: `$viewer` filter, `write.set` for owner fields, form = `read: []` + `create`.",
     "5. Cooldown drops events: trigger prompts process every row in state X; the event row id is only a hint.",
@@ -337,7 +361,7 @@ describe("Building Solutions prompt", () => {
   const ctx = { channelId: "whatsapp-baileys", channelName: "WhatsApp", isGroup: false };
 
   it("renders the proposal text byte-exact, once, right above Background Followup Automation", () => {
-    expect(Buffer.byteLength(BUILDING_SOLUTIONS_TEXT)).toBe(1443);
+    expect(Buffer.byteLength(BUILDING_SOLUTIONS_TEXT)).toBe(1455);
 
     const sections = buildSystemPromptSections("main", ctx, undefined, "dev", { buildingSolutions: true });
     const ids = sections.map((section) => section.id);
@@ -447,5 +471,31 @@ describe("Slack Threads section", () => {
     expect(
       buildSystemPrompt("observer", slack, undefined, "observer", { agentMode: "sentinel", slackThreads: "channel" }),
     ).not.toContain("## Slack Threads");
+  });
+});
+
+describe("Slack output formatting", () => {
+  it("asks for slack:// app links with text chosen from the context", () => {
+    const sections = buildSystemPromptSections("main", { channelId: "slack", channelName: "Slack", isGroup: true });
+    const formatting = sections.find((section) => section.id === "channel.output_formatting")?.content ?? "";
+
+    expect(formatting).toContain("`slack://channel?team=<team-id>&id=<channel-id>`, adding `&thread_ts=<thread-ts>`");
+    expect(formatting).toContain("`https://app.slack.com` links always open the browser");
+    expect(formatting).toContain("with text you choose from the context");
+  });
+
+  it("asks for standard Markdown, with long documents in their own markdown block", () => {
+    const sections = buildSystemPromptSections("main", { channelId: "slack", channelName: "Slack", isGroup: false });
+    const formatting = sections.find((section) => section.id === "channel.output_formatting")?.content ?? "";
+
+    expect(formatting).toContain("Write standard Markdown");
+    expect(formatting).toContain("never redraw a table in ASCII");
+    expect(formatting).toContain("goes in its own ```markdown block");
+    expect(formatting).not.toContain("ASCII para tabelas");
+  });
+
+  it("leaves other channels without the Slack link rule", () => {
+    const prompt = buildSystemPrompt("main", { channelId: "matrix", channelName: "Matrix", isGroup: false });
+    expect(prompt).not.toContain("slack://");
   });
 });

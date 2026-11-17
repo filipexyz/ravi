@@ -6,6 +6,7 @@ domain: credentials
 capabilities:
   - broker
   - controls
+  - slack-intake
 tags:
   - secrets
   - security
@@ -61,15 +62,20 @@ and runtime/model provider credential pools.
   credential selection and health.
 - `ravi credentials` MUST own provider/action connections and secret refs.
 - Provider secrets MUST NOT appear in chat, prompts, stdout, JSON output, logs,
-  traces, errors, audit rows, markdown, SQLite, or unencrypted local files.
+  traces, errors, audit rows, markdown or SQLite. The explicit local file backend
+  is permitted: broker-owned references, mode-0700 directory, mode-0600 secret
+  files, atomic writes. These files are plaintext protected by the host account;
+  ordinary working files, attachments and artifacts remain prohibited sinks.
 - Persistent metadata MUST store secret refs only, never secret values.
 - Persistent metadata MUST include lifecycle fields needed for safe operation:
   owner, purpose, scopes, status, created/updated timestamps, last used time,
   rotation time, expiration time and disabled time when available.
 - Public CLI/SDK output SHOULD prefer stable connection ids and redacted backend
   aliases over raw backend coordinates.
-- Local development SHOULD use macOS Keychain when available.
-- Production SHOULD use Vault/KMS or an equivalent secret manager.
+- Local storage SHOULD default to private files on Linux and macOS, without a
+  desktop or external service dependency. Keychain and Vault are optional.
+- Deployments requiring managed encryption or central key control SHOULD choose
+  Vault/KMS or an equivalent secret manager explicitly.
 - The broker MUST validate both caller identity and capabilities before
   resolving a provider secret.
 - Sensitive provider actions MUST request approval before resolving a provider

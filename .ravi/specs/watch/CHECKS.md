@@ -22,6 +22,66 @@ For each connector event, verify:
 4. `watchId`, `connector`, `placement`, and `eventType` are present;
 5. event payload is enough for trigger filters.
 
+## Watch Identity Regression
+
+Local watch ids are deterministic (`provider` + `resourceRef` + `eventTypes`).
+Recreating a watch that was deleted earlier MUST revive the soft-deleted row
+instead of inserting a new one:
+
+1. create → delete → create with the same event types succeeds and yields one
+   visible watch, not `UNIQUE constraint failed: watches.id`;
+2. the revived watch is `active` (never inherits the `deleted` status) and has
+   `deletedAt` null;
+3. lifecycle fields (`lastEventAt`, `lastDeliveryAt`, `lastErrorCode`) and the
+   local poller snapshot from the previous cycle do not carry over.
+
+## Comment Coverage
+
+A local watch subscribed to `pull_request_comment.created`:
+
+1. publishes one event per new comment on an open PR, with `repository`,
+   `number`, `pull_request.number`, `commentId`, `url`, `author` and `body`;
+2. does not publish twice for the same comment id, including after an edit;
+3. keeps the comment state when a tick fails to read comments instead of treating
+   the next read as all-new;
+4. does not spend the two extra `gh api` calls when the watch does not subscribe
+   to comments;
+5. treats a snapshot written before comment reading existed as baseline.
+
+## Follow Coverage
+
+A PR follow owns its event producer, not just its trigger:
+
+1. `ensureRepoWatch` reuses a local watch only when it covers the current derived
+   set, and replaces its own outdated watch when the set grew;
+2. it never removes a local watch without the ownership mark;
+3. the maintenance sweep ensures a watch for every repo that still has a live
+   follow, so a follow whose watch was deleted heals without a new `gh pr create`;
+4. a failure while ensuring watches is logged and counted, and never deletes the
+   follow trigger.
+
+## PR Publication Regression
+
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/triggers/__tests__/runner-debounce.test.ts`
+  passes `delivers all three PR #833 review comments from 2026-11-15T23:52:33Z exactly once`:
+  three comments with distinct event keys in one second each retain their body
+  and URL; replay with new envelope ids does not redeliver; loop-marked events
+  do not fire; a new sentinel comment still arrives.
+- `src/hooks/gh-watch.test.ts` verifies creation without cooldown/debounce,
+  repair during reuse and maintenance, preservation of paused state and saved
+  recipient, no edits to unrelated triggers and an idempotent second sweep.
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/pr/follow-health.test.ts src/hooks/gh-pr-publish.test.ts`
+  rejects persisted or loaded follow timing policies that still drop bursts.
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/hooks/gh-pr-publish.test.ts src/hooks/gh-watch.test.ts src/hooks/gh-follow-sweep.test.ts` passes.
+- Creating through the API sets `draft: false`, creates the standard repo watch
+  and `gh-follow:<repo>#<number>` trigger, and routes it to the publishing session.
+- Repeating publication for an orphan ready PR or legacy draft creates no second
+  PR/follow. A stale follow is repaired in place, including a missing CI producer.
+- DB/CI producer/refresh/ready failures cannot produce a success response;
+  retry recovers the same PR, including refresh after a persisted trigger.
+- A missing publishing session, remote SHA mismatch, foreign head repo or a head
+  changing during publication fails closed. No unrelated PR is promoted.
+
 ## Trigger Regression
 
 Create a watch-trigger pair from a group chat.

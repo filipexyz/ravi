@@ -1,3 +1,6 @@
+import { assertRuntimeMaintenanceInactive, assertRuntimeReplacementPrepared } from "../../runtime-maintenance.js";
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
+import { readDaemonSchemaPhase } from "../../db/daemon-schema-owner.js";
 /**
  * Daemon Commands - Manage ravi via PM2
  */
@@ -27,7 +30,7 @@ import {
   daemonMutationReturnSchema,
   daemonStatusReturnSchema,
 } from "./operational-return-schemas.js";
-import { buildDaemonPm2StartArgs, ensurePm2InertStdinWrapper, maybeNeuterDaemonStdin } from "../../daemon-stdin.js";
+import { buildDaemonPm2StartArgs, maybeNeuterDaemonStdin } from "../../daemon-stdin.js";
 import {
   DAEMON_RESTART_HANDOFF_ENV,
   DAEMON_RESTART_HANDOFF_WORKER_ENV,
@@ -37,8 +40,16 @@ import {
   performSupervisedDaemonRestart,
   shouldHandoffDaemonRestart,
 } from "../daemon-restart-supervision.js";
-import { isPm2Available, runPm2, isRaviRunning, getRaviPid, getPm2Processes, PM2_PROCESS_NAME } from "../../pm2.js";
-import { buildManagedRuntimeIdentity } from "../../managed-runtime.js";
+import {
+  buildPm2Env,
+  isPm2Available,
+  runPm2,
+  isRaviRunning,
+  getRaviPid,
+  getPm2Processes,
+  PM2_PROCESS_NAME,
+} from "../../pm2.js";
+import { buildManagedRuntimeIdentity, managedRuntimeWarnings } from "../../managed-runtime.js";
 import {
   ADMIN_BOOTSTRAP_AGENT_ID,
   ADMIN_BOOTSTRAP_KIND,
@@ -147,6 +158,9 @@ function writeRestartReason(
     ...(targetSession ? { sessionName: targetSession } : {}),
   };
   writeFileSync(RESTART_REASON_FILE, JSON.stringify(payload));
+  // The installed operator hands this file to the daemon; only runtime code
+  // may persist the epoch in the real database.
+  if (!hasRuntimeInvocationContext()) return;
   try {
     dbUpsertDaemonRestartEpoch({
       restartEpoch,
@@ -193,7 +207,7 @@ function runPm2Quiet(args: string[], options: { cwd?: string } = {}): { status: 
     stdio: ["ignore", "pipe", "pipe"],
     encoding: "utf-8",
     cwd: options.cwd,
-    env: process.env as Record<string, string>,
+    env: buildPm2Env(),
   });
   return { status: result.status ?? 1 };
 }
@@ -247,21 +261,30 @@ function serializePm2Process(process: Pm2ProcessSnapshot | undefined, fallbackNa
   };
 }
 
-function buildDaemonStatusJson(): Record<string, unknown> {
-  const pm2Available = isPm2Available();
-  const processes = pm2Available ? getPm2Processes() : [];
+export function buildDaemonStatusJson(
+  warn = false,
+  options: { pm2Available?: boolean; processes?: Pm2ProcessSnapshot[]; cliBundlePath?: string } = {},
+) {
+  const pm2Available = options.pm2Available ?? isPm2Available();
+  const processes = options.processes ?? (pm2Available ? getPm2Processes() : []);
   const findProcess = (name: string) => processes.find((process) => process.name === name);
-  const runtime = buildManagedRuntimeIdentity(processes, process.env.RAVI_BUNDLE ?? process.argv[1]);
+  const runtime = buildManagedRuntimeIdentity(
+    processes,
+    options.cliBundlePath ?? process.env.RAVI_BUNDLE ?? process.argv[1],
+  );
+  const warnings = managedRuntimeWarnings(runtime);
+  if (warn) for (const warning of warnings) console.warn(warning);
 
   return {
     pm2Available,
     processName: PM2_PROCESS_NAME,
-    ravi: serializePm2Process(findProcess(PM2_PROCESS_NAME), PM2_PROCESS_NAME),
+    ravi: { ...serializePm2Process(findProcess(PM2_PROCESS_NAME), PM2_PROCESS_NAME), ...runtime.daemon },
     infrastructure: {
       omniNats: serializePm2Process(findProcess("omni-nats"), "omni-nats"),
       omniApi: serializePm2Process(findProcess("omni-api"), "omni-api"),
     },
     runtime,
+    warnings,
     processes: processes.map((process) => serializePm2Process(process, process.name)),
   };
 }
@@ -372,13 +395,9 @@ function requirePm2() {
   }
 }
 
-function startDaemonPm2Args(bundlePath: string, options: { force?: boolean; bunPath?: string } = {}): string[] {
-  const args = buildDaemonPm2StartArgs({
-    bundlePath,
-    bunPath: options.bunPath ?? "bun",
-    stdinWrapperPath: ensurePm2InertStdinWrapper(bundlePath),
-  });
-  // A second supervised instance has to exist before the running one is stopped.
+function startDaemonPm2Args(bundlePath: string, options: { force?: boolean } = {}): string[] {
+  const args = buildDaemonPm2StartArgs({ bundlePath });
+  // A supervised standby has to exist before the running owner is stopped.
   // PM2 refuses that unless the start is forced; the old pm id is deleted later.
   if (options.force) args.splice(1, 0, "--force");
   return args;
@@ -428,6 +447,7 @@ export class DaemonCommands {
   @CommandAccess({ kind: "mutate", resource: "daemon", action: "start", risk: "high" })
   @Returns(daemonMutationReturnSchema)
   start(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+    assertRuntimeMaintenanceInactive();
     requirePm2();
 
     if (isRaviRunning()) {
@@ -435,7 +455,7 @@ export class DaemonCommands {
         action: "start" as const,
         changed: false,
         reason: "already_running" as const,
-        status: buildDaemonStatusJson(),
+        status: buildDaemonStatusJson(!asJson),
       };
       if (asJson) {
         printJson(payload);
@@ -445,6 +465,8 @@ export class DaemonCommands {
       }
       return payload;
     }
+
+    assertRuntimeReplacementPrepared();
 
     // Clean up old launchd/systemd if present
     this.cleanupLegacyServices({ silent: Boolean(asJson) });
@@ -459,7 +481,7 @@ export class DaemonCommands {
       changed: status === 0,
       pm2Status: status,
       target,
-      status: buildDaemonStatusJson(),
+      status: buildDaemonStatusJson(!asJson),
     };
 
     if (asJson) {
@@ -487,7 +509,7 @@ export class DaemonCommands {
         action: "stop" as const,
         changed: false,
         reason: "not_running" as const,
-        status: buildDaemonStatusJson(),
+        status: buildDaemonStatusJson(!asJson),
       };
       if (asJson) {
         printJson(payload);
@@ -502,7 +524,7 @@ export class DaemonCommands {
       action: "stop" as const,
       changed: status === 0,
       pm2Status: status,
-      status: buildDaemonStatusJson(),
+      status: buildDaemonStatusJson(!asJson),
     };
     if (asJson) {
       printJson(payload);
@@ -526,7 +548,9 @@ export class DaemonCommands {
     @Option({ flags: "-b, --build", description: "Run build before restarting (dev mode)" }) build?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertRuntimeMaintenanceInactive();
     requirePm2();
+    assertRuntimeReplacementPrepared();
 
     if (!message) {
       fail('Flag -m é obrigatória. Use: ravi daemon restart -m "motivo"');
@@ -591,7 +615,7 @@ export class DaemonCommands {
         printJson(payload);
       } else {
         console.log(
-          `Daemon restart handed off. The running daemon stays up until a supervised successor is online. Log: ${logPath}`,
+          `Daemon restart handed off. The running daemon stays up until a supervised replacement is waiting to take over. Log: ${logPath}`,
         );
       }
       return payload;
@@ -607,20 +631,22 @@ export class DaemonCommands {
           cwd: target.cwd,
         });
         if (!asJson) console.log("Build completed");
-      } catch {
+      } catch (error) {
         buildResult = { requested: true, ok: false };
-        if (asJson) {
-          const payload = {
-            action: "restart",
-            changed: false,
-            build: buildResult,
-            message,
-            target,
-            status: buildDaemonStatusJson(),
-          };
-          printJson(payload);
-        }
-        fail("Build failed, aborting restart");
+        contractFail("daemon restart", "COMMAND_FAILED", "Build failed, aborting restart", {
+          asJson,
+          diagnostic: errorDiagnostic(error, { operation: "daemon restart" }),
+          details: asJson
+            ? {
+                action: "restart",
+                changed: false,
+                build: buildResult,
+                message,
+                target,
+                status: buildDaemonStatusJson(false),
+              }
+            : undefined,
+        });
       }
     }
 
@@ -644,11 +670,13 @@ export class DaemonCommands {
             pmId: process.pm_id,
             pid: process.pid,
             status: process.status,
+            startedAt: process.startedAt ?? undefined,
           })),
       start: ({ force }) => runPm2Status(startDaemonPm2Args(target.bundlePath, { force }), target.cwd),
       deletePmId: (pmId) => runPm2Status(["delete", String(pmId)]),
       save: () => persistPm2ProcessList(),
       pidAlive,
+      schemaPhase: readDaemonSchemaPhase,
       readyTimeoutMs: optionalDurationMs("RAVI_DAEMON_RESTART_READY_TIMEOUT_MS"),
       detachTimeoutMs: optionalDurationMs("RAVI_DAEMON_RESTART_DETACH_TIMEOUT_MS"),
       pollMs: optionalDurationMs("RAVI_DAEMON_RESTART_POLL_MS"),
@@ -670,7 +698,7 @@ export class DaemonCommands {
       build: buildResult,
       target,
       logPath,
-      status: buildDaemonStatusJson(),
+      status: buildDaemonStatusJson(!asJson),
     };
 
     if (asJson) printJson(payload);
@@ -701,30 +729,31 @@ export class DaemonCommands {
       return payload;
     }
 
-    const procs = getPm2Processes();
+    const procs = payload.processes;
     const ravi = procs.find((p) => p.name === PM2_PROCESS_NAME);
     const omniApi = procs.find((p) => p.name === "omni-api");
     const omniNats = procs.find((p) => p.name === "omni-nats");
-    const runtime = buildManagedRuntimeIdentity(procs, process.env.RAVI_BUNDLE ?? process.argv[1]);
+    const runtime = payload.runtime;
 
     console.log("\nRavi Daemon Status");
     console.log("──────────────────");
 
     if (ravi) {
-      const mem = (ravi.memory / 1024 / 1024).toFixed(1);
+      const mem = ravi.memoryMb;
       console.log(`  ravi:      ${ravi.status === "online" ? "online" : ravi.status}  (PID ${ravi.pid}, ${mem}MB)`);
     } else {
       console.log("  ravi:      stopped");
     }
 
-    const runtimeVersion = runtime.daemon.version ?? runtime.channels.version ?? runtime.cli.version;
-    console.log(`  runtime:   ${runtime.alignment}${runtimeVersion ? ` (${runtimeVersion})` : ""}`);
-    if (runtime.alignment === "drifted") {
-      console.log(`    cli:      ${runtime.cli.version ?? "unknown"}  ${runtime.cli.bundlePath ?? "-"}`);
-      console.log(`    daemon:   ${runtime.daemon.version ?? "unknown"}  ${runtime.daemon.bundlePath ?? "-"}`);
-      console.log(`    channels: ${runtime.channels.version ?? "unknown"}  ${runtime.channels.bundlePath ?? "-"}`);
-      console.log("    fix:      ravi update");
+    console.log(`  runtime:   ${runtime.alignment}`);
+    console.log(`    cli:      ${runtime.cli.version ?? "unknown"}  ${runtime.cli.bundlePath ?? "-"}`);
+    for (const member of [runtime.daemon, runtime.channels]) {
+      console.log(
+        `    ${member.name}: running=${member.runningVersion ?? "unknown"} disk=${member.diskVersion ?? "unknown"} stale=${member.stale}`,
+      );
+      if (member.startedAt !== null) console.log(`      started: ${new Date(member.startedAt).toISOString()}`);
     }
+    for (const warning of payload.warnings) console.warn(warning);
 
     if (omniNats) {
       console.log(`  omni-nats: ${omniNats.status === "online" ? "online" : omniNats.status}  (PID ${omniNats.pid})`);
@@ -733,7 +762,7 @@ export class DaemonCommands {
     }
 
     if (omniApi) {
-      const mem = (omniApi.memory / 1024 / 1024).toFixed(1);
+      const mem = omniApi.memoryMb;
       console.log(
         `  omni-api:  ${omniApi.status === "online" ? "online" : omniApi.status}  (PID ${omniApi.pid}, ${mem}MB)`,
       );
@@ -769,12 +798,15 @@ export class DaemonCommands {
   ) {
     if (follow && getContext()?.transport) {
       contractFail("daemon logs", "INTERACTIVE_ONLY", "--follow requires an interactive CLI terminal.", {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: {
-          acceptedFlags: ["--tail <lines>", "--path", "--json"],
-          suggestedAction: "Request a bounded log snapshot with --tail instead of --follow",
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: {
+            acceptedFlags: ["--tail <lines>", "--path", "--json"],
+            suggestedAction: "Request a bounded log snapshot with --tail instead of --follow",
+          },
         },
+        diagnostic: errorDiagnostic("--follow requires an interactive CLI terminal.", { operation: "daemon logs" }),
       });
     }
 
@@ -966,7 +998,7 @@ export class DaemonCommands {
       wasRunning,
       deleteStatus,
       saveStatus: saveResult.status,
-      status: buildDaemonStatusJson(),
+      status: buildDaemonStatusJson(!asJson),
     };
     if (asJson) {
       printJson(payload);
@@ -1220,14 +1252,19 @@ ANTHROPIC_API_KEY=
         "ADMIN_CONTEXT_EXISTS",
         "Refusing to bootstrap: a live admin context already exists.",
         {
-          asJson,
-          exitCode: CONTRACT_EXIT_POLICY,
-          details: {
-            reason: "admin_context_exists",
-            existing,
-            suggestedAction:
-              "Revoke the existing admin context with 'ravi context revoke <id>' before rotating the bootstrap key",
+          ...{
+            asJson,
+            exitCode: CONTRACT_EXIT_POLICY,
+            details: {
+              reason: "admin_context_exists",
+              existing,
+              suggestedAction:
+                "Revoke the existing admin context with 'ravi context revoke <id>' before rotating the bootstrap key",
+            },
           },
+          diagnostic: errorDiagnostic("Refusing to bootstrap: a live admin context already exists.", {
+            operation: "daemon init-admin-key",
+          }),
         },
       );
     }

@@ -49,6 +49,8 @@ Most producers are fire-and-forget. If their default is too aggressive, every in
 
 ## Expected Impact
 
+An interrupt alone does not guarantee responsiveness: selecting the oldest isolated envelope afterward can put dozens of reports ahead of the person who interrupted. Selection therefore prioritizes eligible human work before applying envelope bounds. Progress batching retains the original atoms and complete text, reducing provider turns without inventing a summary or borrowing another delegation's authority. Different caller contexts deliberately remain separate even if this limits consolidation.
+
 - Fewer interrupted agent turns from notifications and cross-session messages.
 - More reliable task completion when other sessions keep sending updates.
 - Clear operator control for urgent messages through explicit immediate delivery.

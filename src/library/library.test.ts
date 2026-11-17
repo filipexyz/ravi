@@ -245,9 +245,10 @@ describe("library authorization", () => {
 
 describe("library external turns and view", () => {
   it("refuses externalAllowed:false outside the operator's own turn, and hides it from search", async () => {
+    const query = "externalvisibilityfixture";
     const fake = createFakeConsole([
-      fakeSkill({ slug: "interna" }),
-      fakeSkill({ slug: "publica", externalAllowed: true, description: "interna publica" }),
+      fakeSkill({ slug: "interna", description: query }),
+      fakeSkill({ slug: "publica", externalAllowed: true, description: query }),
     ]);
     await expect(
       showLibrarySkill({ ref: parseLibraryRef("org/interna")! }, deps(fake, null, false)),
@@ -256,9 +257,9 @@ describe("library external turns and view", () => {
     const allowed = await showLibrarySkill({ ref: parseLibraryRef("org/publica")! }, deps(fake, null, false));
     expect(allowed?.ref.ref).toBe("org/publica");
 
-    const external = await searchSkills({ query: "interna", local: false }, deps(fake, null, false));
+    const external = await searchSkills({ query, local: false }, deps(fake, null, false));
     expect(external.items.map((item) => item.ref)).toEqual(["org/publica"]);
-    const own = await searchSkills({ query: "interna" }, deps(fake, null, true));
+    const own = await searchSkills({ query }, deps(fake, null, true));
     expect(own.items.map((item) => item.ref).sort()).toEqual(["org/interna", "org/publica"]);
   });
 

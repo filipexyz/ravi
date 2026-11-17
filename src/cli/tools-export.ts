@@ -234,6 +234,7 @@ function buildHandler(
       const contractError = permissionDeniedToContractError(
         commandOperation(group, command),
         accessResult.errorMessage,
+        accessResult.denialDetails ?? {},
       );
       const envelope = JSON.stringify(contractError.envelope());
       nats

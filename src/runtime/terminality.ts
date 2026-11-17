@@ -1,4 +1,4 @@
-import type { RuntimeEvent, RuntimeEventMetadata } from "./types.js";
+import type { RuntimeEvent, RuntimeEventMetadata, RuntimeSessionState } from "./types.js";
 
 export type RuntimeTerminalEvent = Extract<
   RuntimeEvent,
@@ -10,9 +10,12 @@ export function isRuntimeTerminalEvent(event: RuntimeEvent): event is RuntimeTer
 }
 
 export interface RuntimeFailedTerminalInput {
+  preExecutionRejected?: boolean;
+  providerSessionId?: string;
+  session?: RuntimeSessionState;
   error: string;
   recoverable?: boolean;
-  failureKind?: "transport";
+  failureKind?: "transport" | "provider_capacity_exhausted" | "provider_capacity_retry_unsafe";
   rawEvent?: Record<string, unknown>;
   metadata?: RuntimeEventMetadata;
 }
@@ -53,6 +56,9 @@ export function createRuntimeTerminalEventTracker(): RuntimeTerminalEventTracker
       }
       return {
         type: "turn.failed",
+        ...(input.preExecutionRejected ? { preExecutionRejected: true } : {}),
+        ...(input.providerSessionId ? { providerSessionId: input.providerSessionId } : {}),
+        ...(input.session ? { session: input.session } : {}),
         error: input.error,
         recoverable: input.recoverable,
         ...(input.failureKind ? { failureKind: input.failureKind } : {}),

@@ -5,7 +5,8 @@ import { runWithContext } from "../cli/context.js";
 import { cloudErrorToContractError } from "../cli/cloud-error-contract.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import { join } from "node:path";
-import { dbCreateCronJob } from "../cron/cron-db.js";
+import { CRON_RUN_AUTHORITY_ENV } from "../cron/authority.js";
+import { dbCreateCronJob, dbGetCronJob } from "../cron/cron-db.js";
 import { JobsRunner } from "../jobs/runner.js";
 import { dbCreateJob } from "../jobs/store.js";
 import { TriggerRunner } from "../triggers/runner.js";
@@ -34,6 +35,7 @@ import {
   buildAgentExecContext,
   buildExecContext,
   classifyConnectorTurn,
+  cronOwnerActsAsOperator,
   decodeExecContextHeader,
   encodeExecContextHeader,
   EXEC_CONTEXT_MAX_BYTES,
@@ -47,7 +49,12 @@ import {
 } from "./connector-turn.js";
 import { readAgentConnectorMode, type ConnectorUseMode, writeAgentConnectorMode } from "./connector-mode.js";
 
-const OWNER = { activeUserId: "user_luis", activeOrgId: "org_1", ownerName: "Luis" } satisfies ConnectorTurnDeps;
+const OWNER = {
+  activeUserId: "user_luis",
+  activeOrgId: "org_1",
+  ownerName: "Luis",
+  getContactStatus: () => "allowed",
+} satisfies ConnectorTurnDeps;
 /** The owner's direct chat in a session of its own (dmScope per-peer). */
 const OWNER_DM_SESSION = { sessionKey: "agent:main:whatsapp:wa-main:dm:5511999999999", sessionName: "luis-dm" };
 /** What the runtime records for a relay whose answer goes back to the waiting terminal. */
@@ -64,11 +71,29 @@ afterEach(async () => {
   stateDir = null;
 });
 
+function snapshotFor(jobId: string) {
+  const job = dbGetCronJob(jobId);
+  return job
+    ? {
+        jobId,
+        ownerPrincipal: job.ownerPrincipal ?? "operator",
+        ownerIsOperator: cronOwnerActsAsOperator(job.ownerPrincipal ?? null, OWNER),
+      }
+    : null;
+}
+
+function cronEnv(jobId: string) {
+  return { ...spawnedAutomationEnv("cron", jobId), [CRON_RUN_AUTHORITY_ENV]: JSON.stringify(snapshotFor(jobId)) };
+}
+
 function turnContext(
   metadata: Record<string, unknown>,
   extra: { sessionName?: string; sessionKey?: string } = {},
 ): ContextRecord {
-  if (extra.sessionKey) getOrCreateSession(extra.sessionKey, "main", stateDir ?? "/tmp");
+  // A trigger's own session exists because its runner created it.
+  if (extra.sessionKey) {
+    getOrCreateSession(extra.sessionKey, "main", stateDir ?? "/tmp", undefined, { triggerRunner: true });
+  }
   return createRuntimeContext({
     kind: "turn-runtime",
     agentId: "main",
@@ -366,6 +391,7 @@ describe("connector turn classification", () => {
   describe("cron routines", () => {
     function cronTurn(jobId: string) {
       return turnContext({
+        cronRunAuthority: snapshotFor(jobId),
         actorPrincipal: `automation:cron:${jobId}`,
         agentIdentityCompartment: `automation:cron:${jobId}`,
       });
@@ -403,8 +429,71 @@ describe("connector turn classification", () => {
     it("refuses a job created by a contact", () => {
       const job = createJob("contact:c_ana");
 
-      const error = expectBlocked(classify(cronTurn(job.id)), "CONNECTOR_SPEAKER_NOT_OWNER");
+      const result = classify(cronTurn(job.id));
+      const error = expectBlocked(result, "CONNECTOR_SPEAKER_NOT_OWNER");
       expect(error.message).toContain("contact:c_ana");
+      expect(!result.ok && result.routineOwner).toEqual({ kind: "cron", id: job.id, ownerPrincipal: "contact:c_ana" });
+    });
+
+    it("agrees with cronOwnerActsAsOperator for every owner", () => {
+      writeCachedActorBinding({
+        contactId: "c_luis",
+        actorPrincipal: "contact:c_luis",
+        consoleUserId: "user_luis",
+        orgId: "org_1",
+        installationId: "inst_1",
+      });
+      const owners: Array<[string | null, boolean]> = [
+        [null, true],
+        ["operator", true],
+        ["contact:c_luis", true],
+        ["contact:c_ana", false],
+        ["unknown", false],
+        ["agent:helper", false],
+      ];
+      for (const [ownerPrincipal, expected] of owners) {
+        expect(cronOwnerActsAsOperator(ownerPrincipal, OWNER)).toBe(expected);
+        const job = createJob(ownerPrincipal ?? undefined);
+        expect(classify(cronTurn(job.id)).ok).toBe(expected);
+      }
+      expect(cronOwnerActsAsOperator("contact:c_luis", { ...OWNER, activeUserId: "user_other" })).toBe(false);
+    });
+
+    it("inherits admission through a child but refuses child-supplied actor authority", () => {
+      const job = createJob("contact:c_ana");
+      const parent = cronTurn(job.id);
+      const child = issueRuntimeContext({ parent, cliName: "child" });
+      const inherited = classify(child);
+      expect(!inherited.ok && inherited.routineOwner?.ownerPrincipal).toBe("contact:c_ana");
+      const forged = issueRuntimeContext({
+        parent,
+        cliName: "child",
+        metadata: {
+          actorPrincipal: `automation:cron:${job.id}`,
+          cronRunAuthority: { jobId: job.id, ownerPrincipal: "operator", ownerIsOperator: true },
+        },
+      });
+      const refused = classify(forged);
+      expectBlocked(refused, "CONNECTOR_SPEAKER_NOT_OWNER");
+      expect(!refused.ok && refused.routineOwner).toBeUndefined();
+    });
+
+    it("does not promote a contact run when its identity is linked to the operator later", () => {
+      const job = createJob("contact:c_ana");
+      const context = cronTurn(job.id);
+      bindToConsole("c_ana", "user_luis");
+      expectBlocked(classify(context), "CONNECTOR_SPEAKER_NOT_OWNER");
+      expect(classify(cronTurn(job.id)).ok).toBe(true);
+    });
+
+    it("revokes an operator-linked contact run when that admitted contact is blocked", () => {
+      bindToConsole("c_luis", "user_luis");
+      const job = createJob("contact:c_luis");
+      const context = cronTurn(job.id);
+      expect(classify(context).ok).toBe(true);
+      const result = classify(context, { getContactStatus: () => "blocked" });
+      expectBlocked(result, "CONNECTOR_SPEAKER_NOT_OWNER");
+      expect(!result.ok && result.routineOwner).toBeUndefined();
     });
 
     it("refuses a job that no longer exists", () => {
@@ -464,7 +553,7 @@ describe("connector turn classification", () => {
       const operatorJob = createJob("operator");
       const contactJob = createJob("contact:c_bob");
 
-      const allowed = resolveConnectorTurn({ ...OWNER, env: spawnedAutomationEnv("cron", operatorJob.id) });
+      const allowed = resolveConnectorTurn({ ...OWNER, env: cronEnv(operatorJob.id) });
       expect(allowed).toEqual({
         ok: true,
         turn: {
@@ -474,18 +563,15 @@ describe("connector turn classification", () => {
           routine: { kind: "cron", id: operatorJob.id },
         },
       });
-      expectBlocked(
-        resolveConnectorTurn({ ...OWNER, env: spawnedAutomationEnv("cron", contactJob.id) }),
-        "CONNECTOR_SPEAKER_NOT_OWNER",
-      );
+      expectBlocked(resolveConnectorTurn({ ...OWNER, env: cronEnv(contactJob.id) }), "CONNECTOR_SPEAKER_NOT_OWNER");
     });
 
     it("records a cron created inside a spawned automation as owned by that automation", () => {
       const contactJob = createJob("contact:c_bob");
 
-      expect(
-        resolveCronOwnerPrincipalForCurrentTurn({ ...OWNER, env: spawnedAutomationEnv("cron", contactJob.id) }),
-      ).toBe(`automation:cron:${contactJob.id}`);
+      expect(resolveCronOwnerPrincipalForCurrentTurn({ ...OWNER, env: cronEnv(contactJob.id) })).toBe(
+        `automation:cron:${contactJob.id}`,
+      );
       expect(resolveCronOwnerPrincipalForCurrentTurn({ ...OWNER, env: spawnedAutomationEnv("job", "job_1") })).toBe(
         "automation:job:job_1",
       );
@@ -657,6 +743,7 @@ describe("connector turn classification", () => {
 
       const result = classify(
         turnContext({
+          cronRunAuthority: snapshotFor(job.id),
           actorPrincipal: `automation:cron:${job.id}`,
           agentIdentityCompartment: `chat:${chat.id}`,
           actorMetadata: { channel: "whatsapp", canonicalChatId: chat.id },
@@ -1608,6 +1695,7 @@ describe("per-agent connector mode", () => {
         ownerPrincipal: "operator",
       });
       const cron = {
+        cronRunAuthority: snapshotFor(job.id),
         actorPrincipal: `automation:cron:${job.id}`,
         agentIdentityCompartment: `automation:cron:${job.id}`,
       };
@@ -1805,6 +1893,333 @@ describe("per-agent connector mode", () => {
           { keepAgentId: true },
         ),
       ).toThrow("too large");
+    });
+  });
+});
+
+describe("trigger turns", () => {
+  const ALLOWED = { getContactStatus: () => "allowed" };
+  const OWNER_JID = "5511999999999@s.whatsapp.net";
+  const ANA_JID = "5511888888888@s.whatsapp.net";
+  const GROUP_JID = "120363012345678901@g.us";
+  /** The trigger's own session: the one only its `isolated` fires enter while a person owns it. */
+  const TRIGGER_SESSION = "agent:main:trigger:trg_1:own";
+  /** Sessions a trigger's runner also creates, which never lend: the plain one, a named one, another trigger's own. */
+  const PLAIN_TRIGGER_SESSION = "agent:main:trigger:trg_1";
+  const NAMED_TRIGGER_SESSION = "agent:main:trigger:trg_1:key:0123456789abcdef01234567";
+  const OTHER_TRIGGER_SESSION = "agent:main:trigger:trg_2:own";
+
+  function triggerTurn(
+    triggerRunAuthority?: unknown,
+    extra: { metadata?: Record<string, unknown>; sessionKey?: string | null; triggerId?: string } = {},
+  ): ContextRecord {
+    const triggerId = extra.triggerId ?? "trg_1";
+    const sessionKey = extra.sessionKey === undefined ? TRIGGER_SESSION : extra.sessionKey;
+    return turnContext(
+      {
+        actorPrincipal: `automation:trigger:${triggerId}`,
+        agentIdentityCompartment: `automation:trigger:${triggerId}`,
+        // Where the runtime recorded the answer goes: nowhere, unless a test says otherwise.
+        ...TO_TERMINAL,
+        ...(triggerRunAuthority !== undefined ? { triggerRunAuthority } : {}),
+        ...extra.metadata,
+      },
+      sessionKey ? { sessionKey } : {},
+    );
+  }
+
+  /** The runner's snapshot: by default a fire sent to the trigger's own session. */
+  function authority(
+    ownerPrincipal: string,
+    ownerIsOperator: boolean,
+    triggerId = "trg_1",
+    ownSessionKey: string | null = TRIGGER_SESSION,
+  ) {
+    return { triggerId, ownerPrincipal, ownerIsOperator, ownSessionKey };
+  }
+
+  function triggerOwnerOf(result: ReturnType<typeof resolveConnectorTurn>) {
+    if (result.ok) throw new Error("a trigger turn must stay refused for connectors");
+    return result.triggerOwner;
+  }
+
+  function linkedDirectChats() {
+    upsertDirectChat(OWNER_JID, "c_luis");
+    bindToConsole("c_luis", "user_luis");
+    upsertDirectChat(ANA_JID, "c_ana");
+    bindToConsole("c_ana", "user_ana");
+  }
+
+  it("stays refused for connectors whoever owns the trigger, with the same refusal", () => {
+    const ownerless = classify(triggerTurn());
+    const ownerlessError = expectBlocked(ownerless, "CONNECTOR_SPEAKER_NOT_OWNER");
+    for (const snapshot of [authority("operator", true), authority("contact:c_ana", false)]) {
+      const error = expectBlocked(classify(triggerTurn(snapshot), ALLOWED), "CONNECTOR_SPEAKER_NOT_OWNER");
+      expect(error.message).toBe(ownerlessError.message);
+    }
+  });
+
+  it("reports the owner the runner admitted", () => {
+    expect(triggerOwnerOf(classify(triggerTurn(authority("operator", true))))).toEqual({
+      id: "trg_1",
+      ownerPrincipal: "operator",
+      actsAsOperator: true,
+      ownSession: true,
+      answersToOwner: true,
+    });
+    expect(triggerOwnerOf(classify(triggerTurn(authority("contact:c_ana", false)), ALLOWED))).toEqual({
+      id: "trg_1",
+      ownerPrincipal: "contact:c_ana",
+      actsAsOperator: false,
+      ownSession: true,
+      answersToOwner: true,
+    });
+    // Nobody to keep the answer with.
+    expect(triggerOwnerOf(classify(triggerTurn(authority("unknown", false))))).toEqual({
+      id: "trg_1",
+      ownerPrincipal: "unknown",
+      actsAsOperator: false,
+      ownSession: true,
+      answersToOwner: false,
+    });
+  });
+
+  it("reports no owner without a valid snapshot for this trigger", () => {
+    expect(triggerOwnerOf(classify(triggerTurn()))).toBeUndefined();
+    expect(triggerOwnerOf(classify(triggerTurn(authority("operator", true, "trg_other"))))).toBeUndefined();
+    for (const malformed of [
+      "operator",
+      [authority("operator", true)],
+      { triggerId: "trg_1", ownerPrincipal: "operator", ownSessionKey: TRIGGER_SESSION },
+      { triggerId: "trg_1", ownerPrincipal: "  ", ownerIsOperator: true, ownSessionKey: TRIGGER_SESSION },
+      { triggerId: "trg_1", ownerPrincipal: "operator", ownerIsOperator: "true", ownSessionKey: TRIGGER_SESSION },
+      // A snapshot that does not say which session the fire was sent to.
+      { triggerId: "trg_1", ownerPrincipal: "operator", ownerIsOperator: true },
+      { triggerId: "trg_1", ownerPrincipal: "operator", ownerIsOperator: true, ownSessionKey: "" },
+      { triggerId: "trg_1", ownerPrincipal: "operator", ownerIsOperator: true, ownSessionKey: true },
+    ]) {
+      expect(triggerOwnerOf(classify(triggerTurn(malformed)))).toBeUndefined();
+    }
+  });
+
+  it("never acts as the operator beyond what the snapshot admitted or the owner is now", () => {
+    // Admitted as a contact, linked to the operator afterwards: no promotion.
+    const later = triggerTurn(authority("contact:c_ana", false));
+    bindToConsole("c_ana", "user_luis");
+    expect(triggerOwnerOf(classify(later, ALLOWED))?.actsAsOperator).toBe(false);
+    // Admitted as the operator's contact, and still bound to them: the operator.
+    bindToConsole("c_luis", "user_luis");
+    expect(triggerOwnerOf(classify(triggerTurn(authority("contact:c_luis", true)), ALLOWED))?.actsAsOperator).toBe(
+      true,
+    );
+    // Admitted as the operator's contact, but the login changed since: not the operator.
+    expect(
+      triggerOwnerOf(
+        classify(triggerTurn(authority("contact:c_luis", true)), { ...ALLOWED, activeUserId: "user_other" }),
+      )?.actsAsOperator,
+    ).toBe(false);
+    // An agent or an unknown owner is never the operator, whatever the snapshot claims.
+    expect(triggerOwnerOf(classify(triggerTurn(authority("agent:helper", true))))?.actsAsOperator).toBe(false);
+    expect(triggerOwnerOf(classify(triggerTurn(authority("unknown", true))))?.actsAsOperator).toBe(false);
+  });
+
+  it("reports no owner when the contact who owns the trigger is removed or blocked", () => {
+    const context = triggerTurn(authority("contact:c_ana", false));
+    expect(triggerOwnerOf(classify(context, { getContactStatus: () => "blocked" }))).toBeUndefined();
+    expect(triggerOwnerOf(classify(context, { getContactStatus: () => null }))).toBeUndefined();
+  });
+
+  it("inherits the owner through a child but refuses child-supplied authority", () => {
+    const parent = triggerTurn(authority("contact:c_ana", false));
+    const child = issueRuntimeContext({ parent, cliName: "child" });
+    expect(triggerOwnerOf(classify(child, ALLOWED))).toMatchObject({
+      ownerPrincipal: "contact:c_ana",
+      ownSession: true,
+      answersToOwner: true,
+    });
+
+    const forged = issueRuntimeContext({
+      parent,
+      cliName: "child",
+      metadata: {
+        actorPrincipal: "automation:trigger:trg_1",
+        triggerRunAuthority: authority("operator", true),
+      },
+    });
+    expectBlocked(classify(forged, ALLOWED), "CONNECTOR_SPEAKER_NOT_OWNER");
+    expect(triggerOwnerOf(classify(forged, ALLOWED))).toBeUndefined();
+  });
+
+  it("reports no owner for a shell trigger the daemon spawned", () => {
+    const result = resolveConnectorTurn({ ...OWNER, env: spawnedAutomationEnv("trigger", "trg_1") });
+    expectBlocked(result, "CONNECTOR_SPEAKER_NOT_OWNER");
+    expect(triggerOwnerOf(result)).toBeUndefined();
+  });
+
+  describe("the session the turn runs in", () => {
+    const ownSession = (context: ContextRecord, deps: ConnectorTurnDeps = ALLOWED) =>
+      triggerOwnerOf(classify(context, deps))?.ownSession;
+    const operator = authority("operator", true);
+
+    it("is the trigger's own when the turn runs in the own session the runner sent the fire to", () => {
+      expect(ownSession(triggerTurn(operator))).toBe(true);
+      expect(ownSession(triggerTurn(authority("contact:c_ana", false)))).toBe(true);
+    });
+
+    it("is not when the runner sent the fire anywhere but the trigger's own session", () => {
+      // The agent's main session, a chat's session, a named session: the
+      // runner names no session, wherever the turn then runs.
+      const elsewhere = authority("operator", true, "trg_1", null);
+      expect(ownSession(triggerTurn(elsewhere, { sessionKey: "agent:main:main" }))).toBe(false);
+      expect(ownSession(triggerTurn(elsewhere, { sessionKey: OWNER_DM_SESSION.sessionKey }))).toBe(false);
+      expect(ownSession(triggerTurn(elsewhere, { sessionKey: NAMED_TRIGGER_SESSION }))).toBe(false);
+      expect(ownSession(triggerTurn(elsewhere))).toBe(false);
+    });
+
+    it("is not when the turn runs anywhere but the session the fire was sent to", () => {
+      // The name the fire was published to now belongs to another session:
+      // a chat's, the agent's main one, or another trigger's.
+      expect(ownSession(triggerTurn(operator, { sessionKey: OWNER_DM_SESSION.sessionKey }))).toBe(false);
+      expect(ownSession(triggerTurn(operator, { sessionKey: "agent:main:main" }))).toBe(false);
+      expect(ownSession(triggerTurn(operator, { sessionKey: OTHER_TRIGGER_SESSION }))).toBe(false);
+      // A turn whose contexts name no session cannot be placed.
+      expect(ownSession(triggerTurn(operator, { sessionKey: null }))).toBe(false);
+    });
+
+    it("is never a session other than this trigger's own, whatever the snapshot names", () => {
+      const named = (sessionKey: string) =>
+        ownSession(triggerTurn(authority("operator", true, "trg_1", sessionKey), { sessionKey }));
+      // A chat's session and the agent's main one.
+      expect(named(OWNER_DM_SESSION.sessionKey)).toBe(false);
+      expect(named("agent:main:main")).toBe(false);
+      // Sessions a trigger's runner creates that anyone can reach by name, or that hold
+      // the turns of a trigger nobody owned: the plain one and a named one.
+      expect(named(PLAIN_TRIGGER_SESSION)).toBe(false);
+      expect(named(NAMED_TRIGGER_SESSION)).toBe(false);
+      // Another trigger's own session, the same owner's included.
+      expect(named(OTHER_TRIGGER_SESSION)).toBe(false);
+      // A thread opened from the trigger's own session has its own participants.
+      expect(named(`${TRIGGER_SESSION}:thread:1700000000.000100`)).toBe(false);
+    });
+  });
+
+  describe("a trigger's own session a conversation is wired into", () => {
+    const ownSession = (context: ContextRecord, deps: ConnectorTurnDeps = ALLOWED) =>
+      triggerOwnerOf(classify(context, deps))?.ownSession;
+    const operator = authority("operator", true);
+    const ana = authority("contact:c_ana", false);
+    /** Attaches a chat to the trigger's session, as inbound routing or an operator would. */
+    const attach = (chatId: string, output = false) => {
+      getOrCreateSession(TRIGGER_SESSION, "main", stateDir ?? "/tmp", undefined, { triggerRunner: true });
+      attachChatToSession({
+        sessionKey: TRIGGER_SESSION,
+        chatId,
+        role: output ? "primary" : "input",
+        attachedByType: "system",
+        attachedReason: "inbound-route",
+        setOutputTarget: output,
+      });
+    };
+    const groupChat = () =>
+      dbUpsertChat({ channel: "whatsapp", instanceId: "wa-main", platformChatId: GROUP_JID, chatType: "group" });
+
+    it("stays the trigger's own with no chat attached and no route into it", () => {
+      expect(ownSession(triggerTurn(operator))).toBe(true);
+      expect(ownSession(triggerTurn(ana))).toBe(true);
+    });
+
+    it("is no longer the trigger's own once a chat feeds it, even without receiving the answer", () => {
+      linkedDirectChats();
+      // Attached as an input only: the answer would not go there, but that
+      // conversation now shares what the turn reads.
+      attach(upsertDirectChat(ANA_JID, "c_ana").id);
+      expect(ownSession(triggerTurn(operator))).toBe(false);
+    });
+
+    it("is no longer the trigger's own with a group attached", () => {
+      attach(groupChat().id, true);
+      expect(ownSession(triggerTurn(operator))).toBe(false);
+    });
+
+    it("is no longer the trigger's own with its owner's own direct chat attached either", () => {
+      linkedDirectChats();
+      // The session runs the trigger's fires only: it is not a place to chat,
+      // the owner's chat included.
+      attach(upsertDirectChat(OWNER_JID, "c_luis").id, true);
+      expect(ownSession(triggerTurn(operator))).toBe(false);
+      expect(ownSession(triggerTurn(authority("contact:c_luis", true)))).toBe(false);
+    });
+
+    it("is no longer a contact's own with that contact's direct chat attached", () => {
+      linkedDirectChats();
+      attach(upsertDirectChat(ANA_JID, "c_ana").id, true);
+      expect(ownSession(triggerTurn(ana))).toBe(false);
+    });
+
+    it("is no longer the trigger's own when a route sends chats into it by name", () => {
+      expect(ownSession(triggerTurn(operator))).toBe(true);
+      // `triggerTurn` runs in the session named `main-session`.
+      dbCreateRoute({ pattern: "*", accountId: "wa-main", agent: "main", session: "main-session" });
+      expect(ownSession(triggerTurn(operator))).toBe(false);
+    });
+  });
+
+  describe("where the turn answers", () => {
+    const answers = (context: ContextRecord, deps: ConnectorTurnDeps = ALLOWED) =>
+      triggerOwnerOf(classify(context, deps))?.answersToOwner;
+    const operator = authority("operator", true);
+    const ana = authority("contact:c_ana", false);
+
+    it("stays with the owner when the answer is posted to no chat", () => {
+      expect(answers(triggerTurn(operator))).toBe(true);
+      expect(answers(triggerTurn(ana))).toBe(true);
+    });
+
+    it("cannot be told without the reply target the runtime records for every turn", () => {
+      const noTarget = { metadata: { turnReplyTarget: undefined } };
+      expect(answers(triggerTurn(operator, noTarget))).toBe(false);
+      expect(answers(triggerTurn(ana, noTarget))).toBe(false);
+      const malformed = { metadata: { turnReplyTarget: { kind: "chat" } } };
+      expect(answers(triggerTurn(operator, malformed))).toBe(false);
+    });
+
+    it("does not stay with the owner when the turn started with a chat bound, whoever's chat it is", () => {
+      linkedDirectChats();
+      const into = (chatId: string) => ({
+        metadata: { turnReplyTarget: { kind: "chat", channel: "whatsapp", chatId } },
+      });
+
+      // Someone else's direct chat, a group, a chat Ravi does not know, and
+      // the owner's own: the answer of a turn that acts for its owner is
+      // posted to no chat.
+      for (const jid of [ANA_JID, GROUP_JID, "5511000000000@s.whatsapp.net", OWNER_JID]) {
+        expect(answers(triggerTurn(operator, into(jid)))).toBe(false);
+      }
+      expect(answers(triggerTurn(ana, into(ANA_JID)))).toBe(false);
+    });
+
+    it("reads only the target the runtime bound, not the chat the prompt names as its source", () => {
+      // The source chat is where the answer goes only when it is attached to
+      // the session, and then it is the recorded target. Recorded as nowhere,
+      // the answer is posted nowhere, whatever chat the prompt names.
+      const from = (compartment: string) => ({ metadata: { agentIdentityCompartment: compartment } });
+      expect(answers(triggerTurn(operator, from(`dm:${OWNER_JID}`)))).toBe(true);
+      expect(answers(triggerTurn(operator, from(`dm:${ANA_JID}`)))).toBe(true);
+      expect(answers(triggerTurn(operator, from(`chat:${GROUP_JID}`)))).toBe(true);
+    });
+
+    it("cannot be told while no chat was bound and one may still be found", () => {
+      // The runtime pins a turn that lends its owner's authority to no answer
+      // when no chat is bound, so `unresolved` never reaches here for one. If
+      // it does, the answer is not the owner's.
+      const unresolved = { metadata: { turnReplyTarget: { kind: "unresolved" } } };
+      expect(answers(triggerTurn(operator, unresolved))).toBe(false);
+      expect(answers(triggerTurn(ana, unresolved))).toBe(false);
+    });
+
+    it("is nobody's when nobody a routine can act for owns the trigger", () => {
+      expect(answers(triggerTurn(authority("unknown", false)))).toBe(false);
+      expect(answers(triggerTurn(authority("agent:helper", false)))).toBe(false);
     });
   });
 });

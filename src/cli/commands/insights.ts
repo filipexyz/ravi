@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { getContext } from "../context.js";
@@ -48,12 +49,15 @@ const INSIGHT_LINK_TYPES = ["task", "session", "agent", "artifact", "profile"] a
 
 function failInsightsUsage(op: string, message: string, acceptedValues: readonly string[], asJson?: boolean): never {
   contractFail(op, "USAGE_ERROR", message, {
-    asJson,
-    exitCode: CONTRACT_EXIT_USAGE,
-    details: {
-      suggestedAction: `Re-run '${op}' with one of: ${acceptedValues.join(", ")}`,
-      acceptedValues: [...acceptedValues],
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        suggestedAction: `Re-run '${op}' with one of: ${acceptedValues.join(", ")}`,
+        acceptedValues: [...acceptedValues],
+      },
     },
+    diagnostic: errorDiagnostic(message, { operation: op }),
   });
 }
 
@@ -61,9 +65,12 @@ function requireInsightLimit(op: string, limit: string | undefined, asJson?: boo
   const parsedLimit = Number.parseInt(limit ?? "20", 10);
   if (!Number.isFinite(parsedLimit) || parsedLimit <= 0) {
     contractFail(op, "USAGE_ERROR", `Invalid --limit: ${limit}. Use a positive integer.`, {
-      asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
-      details: { suggestedAction: `Re-run '${op}' with --limit <positive integer>` },
+      ...{
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: { suggestedAction: `Re-run '${op}' with --limit <positive integer>` },
+      },
+      diagnostic: errorDiagnostic(`Invalid --limit: ${limit}. Use a positive integer.`, { operation: op }),
     });
   }
   return parsedLimit;
@@ -80,11 +87,14 @@ function insightIdCandidates(): string[] {
 
 function failInsightNotFound(op: string, id: string, asJson?: boolean): never {
   contractFail(op, "INSIGHT_NOT_FOUND", `Insight not found: ${id}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the insight id (see suggestions; list with: ravi insights list --json)",
-      suggestions: suggestSimilar(id, insightIdCandidates()),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the insight id (see suggestions; list with: ravi insights list --json)",
+        suggestions: suggestSimilar(id, insightIdCandidates()),
+      },
     },
+    diagnostic: errorDiagnostic(`Insight not found: ${id}`, { operation: op }),
   });
 }
 

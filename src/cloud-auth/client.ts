@@ -282,6 +282,29 @@ export class ConsoleApiClient {
     return (payload ?? {}) as T;
   }
 
+  /**
+   * An authenticated GET whose success body is bytes (a file the Console
+   * proxies). Failures carry the same JSON envelope and mapping as `requestJson`.
+   */
+  async requestBytes(path: string, accessToken: string): Promise<{ bytes: Uint8Array; contentType: string | null }> {
+    const headers: Record<string, string> = { Accept: "*/*", Authorization: `Bearer ${accessToken}` };
+    const contactId = await this.turnActorContact(path);
+    if (contactId) headers[ACTOR_CONTACT_HEADER] = contactId;
+    let response: Response;
+    try {
+      response = await this.fetchImpl(`${this.consoleUrl}${path}`, { method: "GET", headers });
+    } catch (error) {
+      throw classifyConsoleNetworkError(error, inspectExecutionPlane());
+    }
+    if (!response.ok) {
+      throw mapConsoleError(response.status, await readJsonBody(response), response.headers, path);
+    }
+    return {
+      bytes: new Uint8Array(await response.arrayBuffer()),
+      contentType: response.headers.get("content-type"),
+    };
+  }
+
   private async turnActorContact(path: string): Promise<string | null> {
     if (SESSION_PATHS.some((prefix) => path.startsWith(prefix))) return null;
     this.actorContactValue ??= Promise.resolve()
@@ -633,7 +656,11 @@ function mapConsoleError(status: number, payload: unknown, headers: Headers | un
       ? "LINK_REQUESTS_UNAVAILABLE"
       : status === 404 && !hasConsoleErrorCode(data, nested) && isConsoleKnowledgePath(path)
         ? "KNOWLEDGE_UNAVAILABLE"
-        : statusToErrorCode(status, { authFlow: isConsoleAuthPath(path) });
+        : // A Console from before bug comments answers the route with a bare 404;
+          // its own 404 (unknown bug) carries `error.code`.
+          status === 404 && !hasConsoleErrorCode(data, nested) && isConsoleBugCommentsPath(path)
+          ? "SERVER_UNAVAILABLE"
+          : statusToErrorCode(status, { authFlow: isConsoleAuthPath(path) });
   const code = normalizeCloudAuthErrorCode(rawCode, fallback, { linkAliases: isConsoleLinkPath(path) });
   const message =
     stringValue(data?.message) ??
@@ -652,8 +679,10 @@ function mapConsoleError(status: number, payload: unknown, headers: Headers | un
       : nestedDetails;
   const requestId = stringValue(nested?.requestId) ?? stringValue(data?.requestId) ?? undefined;
   // Keep a Console code the CLI does not know (it maps to the fallback) so callers can act on it.
+  // Lowercase codes (`cloud_credential_missing`) are kept in their uppercase form.
+  const upperCode = typeof rawCode === "string" ? rawCode.trim().toUpperCase() : undefined;
   const consoleCode =
-    typeof rawCode === "string" && /^[A-Z][A-Z0-9_]{1,63}$/.test(rawCode) && rawCode !== code ? rawCode : undefined;
+    upperCode && /^[A-Z][A-Z0-9_]{1,63}$/.test(upperCode) && upperCode !== code ? upperCode : undefined;
   return new CloudAuthError(code, message, {
     ...cloudAuthErrorOptions(status, headers, data, issues),
     ...(details ? { details } : {}),
@@ -674,6 +703,10 @@ const KNOWLEDGE_PATH = "/api/cli/knowledge";
 
 function isConsoleKnowledgePath(path: string): boolean {
   return path === KNOWLEDGE_PATH || path.startsWith(`${KNOWLEDGE_PATH}/`) || path.startsWith(`${KNOWLEDGE_PATH}?`);
+}
+
+function isConsoleBugCommentsPath(path: string): boolean {
+  return /^\/api\/cli\/bugs\/[^/?]+\/comments(?:[/?]|$)/.test(path);
 }
 
 /** A string `code` in the body or in the CLI envelope's `error`. */

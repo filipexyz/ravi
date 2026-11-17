@@ -102,6 +102,8 @@ Each exit-3 envelope carries one English line in `issues[]` telling the agent wh
 - `~/.ravi/knowledge.db` (own file, WAL), with FTS5 tables and a `LIKE` fallback when FTS5 is missing.
 - The indexer reads `chat.db` messages past a watermark and `~/.ravi/meetings/*/transcription.json` (skipping `meetings/cloud/`), skips curator and Library-request sessions and forgotten subjects, and runs on the leader every 60 s and before each search (200 ms budget in the gateway, 1500 ms on the terminal).
 - Local runs keep refs, tiers, a hash of the query and issue codes, never the query or text.
+- Local `--who` MUST apply folded, case-insensitive speaker matching before ranking, candidate scan limits and result limits, in both FTS5 and LIKE searches. Matching rows MUST NOT be lost because unrelated speakers rank above them. AND matches precede OR matches within the selected speakers.
+- Proposal idempotency MUST be stable for retries of the same normalized payload and distinguish changes to kind, project, body, title, audience, evidence and supersedes. Hash input MUST preserve field boundaries.
 
 ## Contact memory (F2)
 
@@ -113,6 +115,9 @@ Each exit-3 envelope carries one English line in `issues[]` telling the agent wh
 - `remember` from a channel turn is active only when the text appears in the operator's own last message (`authoredText`, excluding quotes and transcripts); otherwise it is a draft confirmed from the terminal. **Accepted residual risk:** forwarded messages carry no marker in the envelope, so a forwarded text looks authored.
 - `forget --about` archives every item of the subject, deletes its local index rows and records the subject as forgotten, so the indexer, curator and packet never learn it again. The `⟦forget⟧` marker redacts at once and keeps a guard-only row (no packet) for 30 minutes, so the link guard and marker stripping still apply to that DM; a forgotten contact's `⟦gap⟧` keeps no gap.
 - Gap questions are cut to 1000 UTF-16 code units without splitting a surrogate pair. A gap whose instance name is not a valid instance id, or that the Console refuses with `PAYLOAD_INVALID`, is `dropped`, not retried.
+- Local pending/uploaded gaps MUST deduplicate only for the same question and recipient (instance, contact, channel, account and chat). Equal questions from different recipients keep independent rows, daily limits and notification state, while retaining the shared question hash for Console deduplication. A shared proposal answer MUST reach every waiting recipient whose instance mirror permits the FAQ; a failed delivery retries only that recipient, and dropping one contact's gaps MUST NOT discard another contact's wait.
+- If a gap upload returns an already approved proposal with a non-empty answer and FAQ, the local wait MUST become `answered` immediately. The same sync can notify a later recipient when its instance mirror permits the FAQ, without requiring a second answer event from the Console.
+- Forgetting a contact MUST drop all outstanding gaps (`pending`, `uploaded` and `answered`), including approved answers waiting for their FAQ mirror or a delivery retry. Later syncs MUST NOT notify those dropped waits. Already notified history and other contacts' waits are preserved; repeated forgetting is idempotent.
 - The curator (off unless `knowledge.curator.agent` is a no-exec agent) runs nightly in a throwaway session whose chat rows are deleted afterwards, and keeps only items whose spans appear verbatim in the contact's own words.
 
 ## Egress guard

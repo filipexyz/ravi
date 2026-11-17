@@ -1,3 +1,5 @@
+import { errorDiagnostic, projectDiagnosticContext, type ErrorDiagnostic } from "../utils/error-diagnostic.js";
+import { safeDiagnosticField } from "../../packages/ravi-os-sdk/src/diagnostic-redactor.js";
 import { stripVTControlCharacters } from "node:util";
 import {
   CLOUD_AUTH_ERROR_CODES,
@@ -16,6 +18,7 @@ import {
 import { getContext } from "./context.js";
 import { projectPageDomainSetups } from "../pages/domain-setup.js";
 import { turnLinkContract } from "../identity-link/turn-link-copy.js";
+import { TurnRefusalError, turnRefusalDetails } from "../cloud-auth/turn-refusal.js";
 import { payloadInvalidIssues, sanitizePayloadInvalidMessage } from "./payload-error-message.js";
 
 export function commandOperation(group: string, command: string): string {
@@ -30,25 +33,97 @@ export function cloudErrorToContractError(op: string, error: CloudAuthError): Co
   const domainSetup =
     error.code === "DOMAIN_SETUP_REQUIRED" ? projectPageDomainSetups(error.details?.setups) : undefined;
   const turnLink = turnLinkErrorCopy(error);
+  const turnRefusal = turnRefusalErrorCopy(error);
+  const message =
+    turnRefusal?.message ?? turnLink?.message ?? connectorTurn?.message ?? publicMessage(error.code, error.message);
   return new ContractError(
     op,
     error.code,
-    turnLink?.message ?? connectorTurn?.message ?? publicMessage(error.code, error.message),
+    message,
     error.code === "PAYLOAD_INVALID"
       ? CONTRACT_EXIT_USAGE
       : isConnectorPolicyCode(error.code) || connectorTurn?.policy
         ? CONTRACT_EXIT_POLICY
         : CONTRACT_EXIT_ERROR,
     {
-      retryable: isRetryableCloudAuthError(error),
-      ...(error.status !== undefined ? { status: error.status } : {}),
-      ...(issues ? { issues } : {}),
-      suggestedAction: suggestedAction(error.code),
-      ...(domainSetup ? { domainSetup } : {}),
-      ...(connectorTurn?.details ?? {}),
-      ...(turnLink?.details ?? {}),
+      ...cloudFailureDiagnostic(op, error, message),
+      ...{
+        retryable: isRetryableCloudAuthError(error),
+        ...(error.status !== undefined ? { status: error.status } : {}),
+        ...(issues ? { issues } : {}),
+        suggestedAction: suggestedAction(error.code),
+        ...(domainSetup ? { domainSetup } : {}),
+        ...(connectorTurn?.details ?? {}),
+        ...(turnLink?.details ?? {}),
+        ...(turnRefusal?.details ?? {}),
+      },
     },
   );
+}
+
+/**
+ * CloudAuthError.message may contain a remote response body, even when the
+ * outer headline comes from our catalog. Only local projections and already
+ * contracted causes cross this boundary; untyped fetch/provider text has no
+ * provenance here and is represented by a marker, not copied into cause.
+ */
+function cloudFailureDiagnostic(op: string, error: CloudAuthError, message: string): ErrorDiagnostic {
+  const messages: string[] = [];
+  const seen = new Set<CloudAuthError>();
+  let current: unknown = error;
+  let inheritedContext = {};
+  while (current instanceof CloudAuthError) {
+    if (seen.has(current)) {
+      messages.push("[circular cause]");
+      current = undefined;
+      break;
+    }
+    if (seen.size >= 16) {
+      messages.push("[cause chain truncated]");
+      current = undefined;
+      break;
+    }
+    seen.add(current);
+    const local =
+      turnRefusalErrorCopy(current)?.message ??
+      turnLinkErrorCopy(current)?.message ??
+      connectorTurnCopy(current)?.message;
+    const projected = current === error ? message : (local ?? publicMessage(current.code, current.message));
+    messages.push(projected);
+    const projectedSource =
+      local !== undefined ||
+      current.code === "DOMAIN_SETUP_REQUIRED" ||
+      (current.code === "PAYLOAD_INVALID" && sanitizePayloadInvalidMessage(current.message) !== undefined);
+    if (!projectedSource && current.message !== projected) messages.push("[redacted:provider.body]");
+    current = safeDiagnosticField(current, "cause");
+  }
+  if (current instanceof ContractError) {
+    const contracted = current.envelope().error;
+    messages.push(typeof contracted.cause === "string" ? contracted.cause : contracted.message);
+    inheritedContext = projectDiagnosticContext(contracted.context);
+  } else if (current !== undefined && current !== null) {
+    messages.push("[redacted:provider.body]");
+  }
+  return errorDiagnostic(messages.join("\nCaused by: "), {
+    ...inheritedContext,
+    operation: op,
+    provider: "console",
+    code: error.code,
+    ...(error.status !== undefined ? { status: error.status } : {}),
+  });
+}
+
+/**
+ * `ACTOR_UNKNOWN` this side built (a {@link TurnRefusalError}): its reason
+ * and the copy for that reason. The class is the mark: a Console response is
+ * never one, so a remote `ACTOR_UNKNOWN` keeps the catalog copy whatever its
+ * details say.
+ */
+function turnRefusalErrorCopy(error: CloudAuthError): { message: string; details: ContractErrorDetails } | null {
+  if (!(error instanceof TurnRefusalError)) return null;
+  const message = sanitizePublicContractMessage(error.message);
+  if (!message) return null;
+  return { message, details: { ...turnRefusalDetails(error.reason), suggestedAction: error.suggestedAction } };
 }
 
 /**
@@ -182,6 +257,8 @@ function publicMessage(code: CloudAuthError["code"], sourceMessage: string): str
       return "Only the owner of this connection can do that.";
     case "ACTOR_NOT_LINKED":
       return "The person asking is not linked to a Console user on this Ravi.";
+    case "ACTOR_UNKNOWN":
+      return "Ravi could not tell who is asking in this turn, so it will not act on anyone's behalf.";
     case "KNOWLEDGE_TURN_NOT_OPERATOR":
       return "Knowledge answers only the operator's own turns.";
     case "KNOWLEDGE_DISABLED":
@@ -302,6 +379,8 @@ function suggestedAction(code: CloudAuthError["code"]): string {
       return "ask the connection's owner to make this change";
     case "ACTOR_NOT_LINKED":
       return "run `ravi link` from the person's own chat turn; Ravi sends them a private approval link";
+    case "ACTOR_UNKNOWN":
+      return "do not retry from this turn; the person can ask from their own chat, or the operator can run the command in the terminal";
   }
 }
 

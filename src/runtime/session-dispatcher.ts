@@ -1,4 +1,20 @@
+import {
+  isRuntimeSessionServing,
+  RuntimeStartCapacityError,
+  type RuntimeStartCapacitySnapshot,
+} from "./start-admission.js";
+import {
+  BACKGROUND_TASK_LOST_REASON,
+  buildBackgroundTaskLostPrompt,
+  decideIdleEviction,
+  deliverBackgroundWake,
+  hasProcessBoundBackgroundWork,
+  resolveRuntimeBackgroundTaskTtlMs,
+  type BackgroundWakePublisher,
+} from "./background-work.js";
 import { configStore } from "../config-store.js";
+import { DecisionDispatchRejectedError } from "../decisions/model.js";
+import { isThreadAttentionPrompt, assertThreadAttentionSession } from "./message-types.js";
 import { projectChannelRuntimeEvent } from "../channels/runtime-events.js";
 import { saveMessage } from "../db.js";
 import {
@@ -34,12 +50,15 @@ import {
   createQueuedRuntimeUserMessage,
   getRuntimePromptDeliveryBarrier,
   hasIsolatedRuntimeTurnEnvelope,
+  withoutSharedTriggerAuthority,
+  runtimeTurnActorKey,
   hasDeliverableRuntimeMessages,
   prepareRuntimeInterruptSuccessor,
   shouldInterruptRuntimeForIncoming,
   type RuntimeInterruptSuccessorPreparation,
   wakeRuntimeSessionIfDeliverable,
 } from "./delivery-queue.js";
+import { triggerAuthorityLendsOwner, triggerOwnSessionAdmitsPrompt } from "../triggers/authority.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import {
   CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY,
@@ -70,6 +89,7 @@ import type { RuntimeSafeEmit } from "./host-event-loop.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import { FATAL_TOOL_FAILURE_REASON } from "./fatal-tool-failure.js";
 import { formatUserFacingTurnFailure } from "./public-failure.js";
+import { isScheduledProviderCapacityRetry } from "./provider-capacity-retry.js";
 import { isUserFacingPromptSource, reportRuntimePromptIntakeFailure } from "./intake-failure.js";
 import {
   startRuntimeSession,
@@ -85,7 +105,7 @@ import {
   resolveRuntimePromptText,
   withSessionSurfaceHint,
 } from "./session-surface-hint.js";
-import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
+import { resolveInheritedTaskBindingTaskId, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import {
   RUNTIME_SESSION_RECLAIM_INTERVAL_MS,
   buildRuntimeSessionPoolSnapshot,
@@ -110,6 +130,11 @@ const MAX_RUNTIME_EVENT_LOOP_RESTARTS = 2;
 const MAX_PROVIDER_TURN_INACTIVE_RESTARTS = 1;
 const MAX_PROVIDER_TRANSPORT_FAILURE_RESTARTS = 2;
 const MAX_FATAL_TOOL_FAILURE_RESTARTS = 1;
+// Transport restarts escalate instead of hammering a provider that just dropped
+// the connection. The budget stays at two restarts; the schedule only spaces
+// them out (attempt 1 → 1s, attempt 2 → 5s, attempt 3 → 15s if the budget ever
+// grows). Everything else restarts immediately, as before.
+const TRANSPORT_RESTART_BACKOFF_MS: readonly number[] = [1_000, 5_000, 15_000];
 const RUNTIME_RECOVERY_RESTART_LIMITS: Readonly<Partial<Record<string, number>>> = {
   [RUNTIME_EVENT_LOOP_CLOSED_REASON]: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
   [PROVIDER_TURN_INACTIVE_REASON]: MAX_PROVIDER_TURN_INACTIVE_RESTARTS,
@@ -130,6 +155,12 @@ function resolveBarrierStuckAlertMs(value = process.env.RAVI_RUNTIME_BARRIER_STU
     return Math.max(1, parsed);
   }
   return DEFAULT_BARRIER_STUCK_ALERT_MS;
+}
+
+function resolveTransportRestartBackoffMs(reason: string, restartAttempt: number | undefined): number {
+  if (reason !== PROVIDER_TRANSPORT_FAILURE_REASON || restartAttempt === undefined) return 0;
+  const index = Math.min(Math.max(restartAttempt, 1), TRANSPORT_RESTART_BACKOFF_MS.length) - 1;
+  return TRANSPORT_RESTART_BACKOFF_MS[index] ?? 0;
 }
 
 interface DebounceState {
@@ -167,8 +198,12 @@ export interface RuntimeSessionDispatcherOptions {
   crashRecovery: RuntimeCrashRecoveryCoordinator;
   pendingStartTimeoutMs?: number;
   idleSessionTtlMs?: number;
+  /** How long a session with pending background work may sit without a turn. */
+  backgroundTaskTtlMs?: number;
   turnInactivityMs?: number;
   reclaimIntervalMs?: number;
+  /** Durable wake used to report background work lost on eviction. Injectable for tests. */
+  publishBackgroundWake?: BackgroundWakePublisher;
 }
 
 export interface RuntimeAbortProvenance {
@@ -206,6 +241,10 @@ export class RuntimeSessionDispatcher {
 
   private idleSessionTtlMs(): number {
     return this.options.idleSessionTtlMs ?? resolveRuntimeIdleSessionTtlMs();
+  }
+
+  private backgroundTaskTtlMs(): number {
+    return this.options.backgroundTaskTtlMs ?? resolveRuntimeBackgroundTaskTtlMs();
   }
 
   private turnInactivityMs(): number {
@@ -251,7 +290,14 @@ export class RuntimeSessionDispatcher {
       if (this.pendingStartSessions.has(sessionName)) return true;
       if (this.startingSessions.has(sessionName)) return true;
     }
-    return this.hasRuntimeSessionPoolSlotForStart(sessionName);
+    const limit =
+      this.resolveStartLane(sessionName) === "background"
+        ? this.getBackgroundStartLimit()
+        : this.options.maxConcurrentSessions;
+    const reclaimable = [...this.streamingSessions].filter(
+      ([name, session]) => session.done || this.isReclaimableForStart(name, session),
+    ).length;
+    return this.getRuntimeSessionPoolUsedSlots() - reclaimable < limit;
   }
 
   recordDaemonRestartSnapshot(options: DaemonRestartSnapshotOptions): number {
@@ -315,26 +361,35 @@ export class RuntimeSessionDispatcher {
         continue;
       }
       const terminalTurnConsumed = session.currentCrashRecoveryTerminal !== undefined;
+      const scheduledCapacityMessages = getScheduledCapacityRestartMessages(session, this.options.crashRecovery);
       const pendingMessages = (
-        terminalTurnConsumed
+        scheduledCapacityMessages ??
+        (terminalTurnConsumed
           ? (session.currentTurnPendingIds?.length ?? 0) > 0
             ? getPendingRuntimeTurnSuccessors(session)
             : session.pendingMessages
-          : getCrashRecoveryReplayablePendingRuntimeMessages(session, this.options.crashRecovery)
+          : getCrashRecoveryReplayablePendingRuntimeMessages(session, this.options.crashRecovery))
       ).map(cloneRuntimeUserMessage);
       const durableReplaySafety = getRuntimeTurnReplaySafety(session, this.options.crashRecovery);
       // A provider-terminal physical turn has already been consumed even when
       // it produced no external output or tool side effect. Explicit retry
       // paths may still use the global replay helper for interrupted/failed
       // turns, but a daemon restart must never resurrect any terminal turn.
+      // A separately authorized capacity retry is pending-only work, not
+      // permission to continue the failed physical attempt.
       const replaySafety = terminalTurnConsumed
         ? { ...durableReplaySafety, replayable: false as const }
         : durableReplaySafety;
-      const restartResumeMode = replaySafety.replayable
-        ? "continue"
-        : pendingMessages.length > 0
-          ? "pending_only"
-          : "skip";
+      const hasScheduledCapacityRetry = pendingMessages.some(
+        (message) => message.providerCapacityRetry?.notBefore !== undefined,
+      );
+      const restartResumeMode = hasScheduledCapacityRetry
+        ? "pending_only"
+        : replaySafety.replayable
+          ? "continue"
+          : pendingMessages.length > 0
+            ? "pending_only"
+            : "skip";
       const nonIdle = !replaySafety.replayable || isDaemonRestartNonIdleSession(session) || pendingMessages.length > 0;
       const snapshot = getAccumulator(sessionName, {
         agentId: session.agentId,
@@ -415,6 +470,14 @@ export class RuntimeSessionDispatcher {
         metadata: snapshot.metadata,
         recordedAt: stoppedAt,
       });
+      const live = this.streamingSessions.get(snapshot.sessionName);
+      if (live) {
+        // Only a successful durable write authorizes the retiring runtime to
+        // leave the logical channel request open for the next daemon.
+        live.capacityRetrySnapshotSaved = snapshot.pendingMessages.some(
+          (message) => message.providerCapacityRetry?.notBefore !== undefined,
+        );
+      }
       recorded++;
     }
 
@@ -546,6 +609,7 @@ export class RuntimeSessionDispatcher {
     const sessionEntry =
       getSessionByName(sessionName) ?? (identity.sessionKey ? getSession(identity.sessionKey) : null);
     const sessionKey = sessionEntry?.sessionKey ?? identity.sessionKey ?? sessionName;
+    cancelYieldedRuntimeWork(sessionName, session, this.stashedMessages);
 
     // A completed tool result whose provider callback write is still in flight
     // is an atomic barrier: closing the provider mid-write leaves its thread
@@ -628,6 +692,7 @@ export class RuntimeSessionDispatcher {
         type: "turn.interrupted",
         provider: session.queryHandle.provider,
         reason: abortReason,
+        ...(session.currentBridgeTurnId ? { _bridgeTurnId: session.currentBridgeTurnId } : {}),
         sessionName,
         ...(cancelledTool ? { cancelledTool } : {}),
         ...(session.currentSource ? { _source: session.currentSource } : {}),
@@ -651,6 +716,7 @@ export class RuntimeSessionDispatcher {
       modelSource?: string | null;
       modelPresetId?: string | null;
       modelPresetVersion?: number | null;
+      deferRestart?: (streaming: RuntimeHostStreamingSession) => boolean;
     } = {},
   ): Promise<"missing" | "unchanged" | "applied" | "restart-next-turn"> {
     const resolved = resolveRuntimeStreamingSession(this.streamingSessions, {
@@ -680,6 +746,7 @@ export class RuntimeSessionDispatcher {
       const previousModel = streaming.currentModel;
       try {
         const switched = await applyDirectRuntimeModelSwitch(streaming.queryHandle, model);
+        if (this.streamingSessions.get(sessionName) !== streaming || streaming.done) return "missing";
         if (!switched) {
           throw new Error("Runtime handle rejected live model switch");
         }
@@ -705,6 +772,7 @@ export class RuntimeSessionDispatcher {
         streaming.currentModel = model;
         return "applied";
       } catch (error) {
+        if (this.streamingSessions.get(sessionName) !== streaming || streaming.done) return "missing";
         const message = error instanceof Error ? error.message : String(error);
         log.warn("Live model switch failed; restarting session on next turn", {
           sessionName,
@@ -735,6 +803,8 @@ export class RuntimeSessionDispatcher {
         });
       }
     }
+
+    if (options.deferRestart?.(streaming)) return "unchanged";
 
     const hasStashedMessages = streaming.pendingMessages.length > 0;
     if (hasStashedMessages) {
@@ -843,9 +913,43 @@ export class RuntimeSessionDispatcher {
   async handlePrompt(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void> {
     const routerConfig = configStore.getConfig();
     const sessionEntry = getSessionByName(sessionName);
+    assertThreadAttentionSession(prompt, sessionEntry);
+    // Every prompt a producer publishes comes through here. A trigger's own
+    // session runs that trigger's fires and nothing else, so no relay, task
+    // report, cron run, hook action or chat message becomes a turn there.
+    // The session as stored and the one a runtime still living under this
+    // name was started for: neither may be an own session this prompt is not
+    // for. With neither left the name itself says it, since an own session
+    // goes by its key.
+    const targetSession = sessionEntry ?? getSession(sessionName);
+    const liveSessionKey = this.streamingSessions.get(sessionName)?.sessionKey;
+    const targetKeys = targetSession || liveSessionKey ? [targetSession?.sessionKey, liveSessionKey] : [sessionName];
+    const refusedKey = targetKeys.find((key) => key && !triggerOwnSessionAdmitsPrompt(key, prompt));
+    if (refusedKey) {
+      if (prompt._decisionDeliveryId) throw new DecisionDispatchRejectedError();
+      if (prompt._taskAssignmentId) throw new Error("Task assignment session runs a trigger's fires only");
+      if (isThreadAttentionPrompt(prompt)) throw new Error("Thread attention session runs a trigger's fires only");
+      reportRuntimePromptIntakeFailure({
+        sessionName,
+        prompt,
+        reason: "trigger_own_session",
+        stage: "dispatch",
+        instanceId: this.options.instanceId,
+        safeEmit: this.options.safeEmit,
+        details: { sessionKey: refusedKey },
+      });
+      return;
+    }
     const agentId = prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
-    const agent = routerConfig.agents[agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
+    const agent =
+      routerConfig.agents[agentId] ??
+      (prompt._decisionDeliveryId || prompt._taskAssignmentId || isThreadAttentionPrompt(prompt)
+        ? undefined
+        : routerConfig.agents[routerConfig.defaultAgent]);
     if (!agent) {
+      if (prompt._decisionDeliveryId) throw new DecisionDispatchRejectedError();
+      if (prompt._taskAssignmentId) throw new Error("Task assignment agent is unavailable");
+      if (isThreadAttentionPrompt(prompt)) throw new Error("Thread attention agent is unavailable");
       this.reportPromptIntakeFailure(sessionName, prompt, agentId);
       return;
     }
@@ -859,7 +963,16 @@ export class RuntimeSessionDispatcher {
     const debounceMs = isGroup && agent?.groupDebounceMs ? agent.groupDebounceMs : agent?.debounceMs;
     log.debug("handlePrompt", { sessionName, agentId, debounceMs, isGroup });
 
-    if (debounceMs && debounceMs > 0) {
+    // Durable admission must not acknowledge a timer buffer, and cold starts
+    // must prove capacity before any volatile debounce can accept their prompt.
+    if (
+      !prompt._decisionDeliveryId &&
+      !prompt._taskAssignmentId &&
+      !isThreadAttentionPrompt(prompt) &&
+      debounceMs &&
+      debounceMs > 0 &&
+      this.streamingSessions.has(sessionName)
+    ) {
       this.handlePromptWithDebounce(sessionName, prompt, debounceMs);
       return;
     }
@@ -914,13 +1027,43 @@ export class RuntimeSessionDispatcher {
     }
   }
 
-  async handlePromptImmediate(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void> {
+  private assertThreadAttentionRuntime(
+    sessionName: string,
+    prompt: RuntimeLaunchPrompt,
+    live = this.streamingSessions.get(sessionName),
+  ): void {
+    if (!isThreadAttentionPrompt(prompt)) return;
+    assertThreadAttentionSession(prompt, getSessionByName(sessionName));
+    if (!prompt._agentId || !configStore.getConfig().agents[prompt._agentId]) {
+      throw new Error("Thread attention agent is unavailable");
+    }
+    if (live && !live.done) {
+      // Names are reusable; only the key captured when this handle launched
+      // proves that a queued/steered return reaches its intended parent.
+      assertThreadAttentionSession(prompt, live);
+    } else if (this.pendingStartSessions.has(sessionName) || this.startingSessions.has(sessionName)) {
+      throw new Error("Thread attention runtime identity is unavailable before admission");
+    }
+  }
+
+  async handlePromptImmediate(
+    sessionName: string,
+    prompt: RuntimeLaunchPrompt,
+    sessionKeyOverride?: string,
+  ): Promise<void> {
+    const heldBeforeAdmission = this.heldSkipTurnMessages.get(sessionName);
+    const bootstrapBeforeAdmission = this.deferredBootstraps.get(sessionName);
     if (!prompt._resumeStashedMessages) {
       this.runtimeRecoveryRestartAttempts.delete(sessionName);
     }
     const routerConfig = configStore.getConfig();
-    const sessionEntry = getSessionByName(sessionName) ?? getSession(sessionName);
-    const existing = this.streamingSessions.get(sessionName);
+    let sessionEntry = sessionKeyOverride
+      ? getSession(sessionKeyOverride)
+      : (getSessionByName(sessionName) ?? getSession(sessionName));
+    assertThreadAttentionSession(prompt, sessionEntry);
+    const canonicalSessionKey = sessionEntry?.sessionKey ?? sessionKeyOverride;
+    let existing = this.streamingSessions.get(sessionName);
+    this.assertThreadAttentionRuntime(sessionName, prompt, existing);
     let daemonRestartMessages: RuntimeUserMessage[] | undefined;
     if (prompt._daemonRestartResume) {
       const needsColdStartStash =
@@ -949,12 +1092,31 @@ export class RuntimeSessionDispatcher {
     if (!prompt._resumeStashedMessages) {
       prompt = withSessionSurfaceHint(prompt);
     }
+    const inheritedTaskBarrierTaskId = resolveInheritedTaskBindingTaskId({
+      sessionName,
+      prompt,
+      liveTaskBarrierTaskId: existing && !existing.done ? existing.currentTaskBarrierTaskId : undefined,
+    });
+    if (inheritedTaskBarrierTaskId) {
+      log.info("Prompt inherits the session's active task binding", {
+        sessionName,
+        taskBarrierTaskId: inheritedTaskBarrierTaskId,
+      });
+      prompt = { ...prompt, taskBarrierTaskId: inheritedTaskBarrierTaskId };
+    }
     if (classifyRuntimeSessionStartLane(sessionName, prompt) === "interactive") {
       this.dropQueuedObserverPendingStarts();
     }
     const agentId = prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
-    const agent = routerConfig.agents[agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
+    const agent =
+      routerConfig.agents[agentId] ??
+      (prompt._decisionDeliveryId || prompt._taskAssignmentId || isThreadAttentionPrompt(prompt)
+        ? undefined
+        : routerConfig.agents[routerConfig.defaultAgent]);
     if (!agent) {
+      if (prompt._decisionDeliveryId) throw new DecisionDispatchRejectedError();
+      if (prompt._taskAssignmentId) throw new Error("Task assignment agent is unavailable");
+      if (isThreadAttentionPrompt(prompt)) throw new Error("Thread attention agent is unavailable");
       this.reportPromptIntakeFailure(sessionName, prompt, agentId);
       return;
     }
@@ -964,19 +1126,53 @@ export class RuntimeSessionDispatcher {
     prompt = withKnowledgePreamble(prompt, { agentId: agent.id, sessionName });
     const sessionRuntimeProviderOverride =
       prompt._observation && prompt._runtimeProviderId ? undefined : sessionEntry?.runtimeProviderOverride;
-    // Resolve next-turn provider before the live-queue shortcut so a persisted
-    // set-provider override can take provider_change. Last-used / agent-default
-    // mismatches must not block live_session_queue on their own.
-    let requestedProvider: RuntimeProviderId = resolveRequestedRuntimeProvider({
-      observationProviderId: prompt._observation && prompt._runtimeProviderId ? prompt._runtimeProviderId : undefined,
-      sessionProviderOverride: sessionRuntimeProviderOverride,
-      lastUsedProvider: sessionEntry?.runtimeProvider,
-      restartSnapshotProvider: prompt._daemonRestartResume?.runtimeProvider,
-      agent,
-    }).value;
+    let modelBrokerPlan: RuntimeModelBrokerPlan | undefined;
+    // A newer clear is intent too, even though its override is null. Unchanged
+    // last-used/default differences alone must not replace a live launch.
+    const resolveSelectedProvider = (): RuntimeProviderId =>
+      modelBrokerPlan?.lease.runtimeProvider ??
+      resolveRequestedRuntimeProvider({
+        observationProviderId: prompt._observation && prompt._runtimeProviderId ? prompt._runtimeProviderId : undefined,
+        sessionProviderOverride: sessionEntry?.runtimeProviderOverride,
+        lastUsedProvider: sessionEntry?.runtimeProvider,
+        restartSnapshotProvider: prompt._daemonRestartResume?.runtimeProvider,
+        agent,
+      }).value;
+    let requestedProvider = resolveSelectedProvider();
+    const refreshProviderSelection = () => {
+      sessionEntry = canonicalSessionKey
+        ? getSession(canonicalSessionKey)
+        : (getSessionByName(sessionName) ?? getSession(sessionName));
+      if (isThreadAttentionPrompt(prompt)) {
+        sessionEntry = getSessionByName(sessionName);
+        assertThreadAttentionSession(prompt, sessionEntry);
+        this.assertThreadAttentionRuntime(sessionName, prompt);
+      }
+      requestedProvider = resolveSelectedProvider();
+    };
+    const shouldDeferSavedProviderChange = (live: RuntimeHostStreamingSession): boolean => {
+      const barrier = getRuntimePromptDeliveryBarrier(prompt);
+      // Saved configuration changes the next provider turn. Preserve the exact
+      // successor atom behind its barrier while the current turn is generating.
+      return (
+        !live.done &&
+        live.agentId === agent.id &&
+        !modelBrokerPlan &&
+        !prompt._runtimeProviderId &&
+        (sessionEntry?.runtimeProviderConfigRevision ?? 0) !== (live.runtimeProviderConfigRevision ?? 0) &&
+        requestedProvider !== live.queryHandle.provider &&
+        live.turnActive &&
+        live.currentCrashRecoveryTerminal?.status !== "complete" &&
+        (barrier === "after_response" || barrier === "after_task")
+      );
+    };
     if (
       existing &&
-      shouldQueuePromptOnLiveSession(sessionName, existing, prompt, agent.id, sessionRuntimeProviderOverride)
+      (shouldDeferSavedProviderChange(existing) ||
+        shouldQueuePromptOnLiveSession(sessionName, existing, prompt, agent.id, sessionRuntimeProviderOverride, {
+          provider: requestedProvider,
+          revision: sessionEntry?.runtimeProviderConfigRevision ?? 0,
+        }))
     ) {
       await this.enqueuePromptOnLiveSession(sessionName, existing, prompt, {
         sessionEntry: sessionEntry ?? undefined,
@@ -985,7 +1181,6 @@ export class RuntimeSessionDispatcher {
       });
       return;
     }
-    let modelBrokerPlan: RuntimeModelBrokerPlan | undefined;
     const modelBrokerTurnId = prompt._modelBrokerTurnId ?? createSessionTraceTurnId();
     modelBrokerPlan = await planRuntimeModelBrokerRoute({
       agent,
@@ -996,26 +1191,37 @@ export class RuntimeSessionDispatcher {
     if (modelBrokerPlan && prompt._modelBrokerTurnId !== modelBrokerTurnId) {
       prompt = { ...prompt, _modelBrokerTurnId: modelBrokerTurnId };
     }
-    if (modelBrokerPlan) {
-      requestedProvider = modelBrokerPlan.lease.runtimeProvider;
-    }
+    // Preflight can yield while explicit provider configuration changes.
+    // The broker lease and observation override retain their higher priority.
+    refreshProviderSelection();
+    existing = this.streamingSessions.get(sessionName);
     let retainReleasedSlot = false;
 
     if (existing && !existing.done) {
-      if (existing.agentId !== agent.id || existing.queryHandle.provider !== requestedProvider) {
-        const restartReason = existing.agentId !== agent.id ? "agent_change" : "provider_change";
+      if (shouldDeferSavedProviderChange(existing)) {
+        await this.enqueuePromptOnLiveSession(sessionName, existing, prompt, {
+          sessionEntry: sessionEntry ?? undefined,
+          agentId: sessionEntry?.agentId ?? agent.id,
+          daemonRestartMessages,
+        });
+        return;
+      }
+      const retireForRuntimeIdentityChange = (live: RuntimeHostStreamingSession): boolean => {
+        if (this.streamingSessions.get(sessionName) !== live || live.done) return false;
+        if (live.agentId === agent.id && live.queryHandle.provider === requestedProvider) return false;
+        const restartReason = live.agentId !== agent.id ? "agent_change" : "provider_change";
         log.info("Streaming: restarting session after runtime identity change", {
           sessionName,
           reason: restartReason,
-          activeAgentId: existing.agentId,
+          activeAgentId: live.agentId,
           requestedAgentId: agent.id,
-          activeProvider: existing.queryHandle.provider,
+          activeProvider: live.queryHandle.provider,
           requestedProvider,
-          queueSize: existing.pendingMessages.length,
+          queueSize: live.pendingMessages.length,
         });
 
-        if (existing.pendingMessages.length > 0) {
-          stashPendingRuntimeMessages(sessionName, existing, this.stashedMessages, {
+        if (live.pendingMessages.length > 0) {
+          stashPendingRuntimeMessages(sessionName, live, this.stashedMessages, {
             crashRecovery: this.options.crashRecovery,
           });
         }
@@ -1023,34 +1229,38 @@ export class RuntimeSessionDispatcher {
         recordRuntimeTraceEvent({
           sessionKey: sessionEntry?.sessionKey ?? sessionName,
           sessionName,
-          agentId: existing.agentId,
-          runId: existing.traceRunId,
-          turnId: existing.currentTraceTurnId,
-          provider: existing.queryHandle.provider,
-          model: existing.currentModel,
+          agentId: live.agentId,
+          runId: live.traceRunId,
+          turnId: live.currentTraceTurnId,
+          provider: live.queryHandle.provider,
+          model: live.currentModel,
           eventType: "dispatch.restart_requested",
           eventGroup: "dispatch",
           status: "requested",
-          source: existing.currentSource,
+          source: live.currentSource,
           payloadJson: {
             reason: restartReason,
-            activeAgentId: existing.agentId,
+            activeAgentId: live.agentId,
             requestedAgentId: agent.id,
-            activeProvider: existing.queryHandle.provider,
+            activeProvider: live.queryHandle.provider,
             requestedProvider,
           },
         });
         recordStreamingTurnInterruptedTrace(
           this.options.crashRecovery,
           sessionName,
-          existing,
+          live,
           restartReason,
           sessionEntry?.sessionKey,
         );
-        shutdownRuntimeStreamingSession(existing, restartReason);
-        this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
-        retainReleasedSlot = true;
-      } else {
+        shutdownRuntimeStreamingSession(live, restartReason);
+        if (this.streamingSessions.get(sessionName) === live) {
+          this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
+          retainReleasedSlot = true;
+        }
+        return true;
+      };
+      if (!retireForRuntimeIdentityChange(existing)) {
         const requestedRuntime = resolveRuntimeForPrompt({
           sessionName,
           prompt,
@@ -1062,21 +1272,14 @@ export class RuntimeSessionDispatcher {
           modelBrokerPlan?.lease.model ?? requestedRuntime.options.model ?? this.options.getConfigModel();
         const modelBrokerConfigurationChanged = runtimeModelBrokerConfigurationRequiresRestart(existing, agent);
         const modelBrokerRouteChanged = runtimeModelBrokerRouteRequiresRestart(existing, modelBrokerPlan);
-        if (
-          modelBrokerConfigurationChanged ||
-          modelBrokerRouteChanged ||
-          runtimePromptRequiresRestart(existing, requestedRuntime, prompt)
-        ) {
-          log.info("Streaming: restarting session after runtime task settings change", {
+        // Task binding, effort and thinking are per-turn data (see beforeTurnStart in
+        // runtime-request-builder.ts): they never relaunch the runtime. Only a model
+        // broker credential or route change needs a new provider process.
+        if (modelBrokerConfigurationChanged || modelBrokerRouteChanged) {
+          log.info("Streaming: restarting session after model broker change", {
             sessionName,
             modelBrokerConfigurationChanged,
             modelBrokerRouteChanged,
-            currentTaskBarrierTaskId: existing.currentTaskBarrierTaskId ?? null,
-            requestedTaskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId) ?? null,
-            currentEffort: existing.currentEffort ?? null,
-            requestedEffort: requestedRuntime.options.effort ?? null,
-            currentThinking: existing.currentThinking ?? null,
-            requestedThinking: requestedRuntime.options.thinking ?? null,
           });
           stashPendingRuntimeMessages(sessionName, existing, this.stashedMessages, {
             crashRecovery: this.options.crashRecovery,
@@ -1094,23 +1297,19 @@ export class RuntimeSessionDispatcher {
             status: "requested",
             source: existing.currentSource,
             payloadJson: {
-              reason: "runtime_task_settings_change",
-              currentTaskBarrierTaskId: existing.currentTaskBarrierTaskId ?? null,
-              requestedTaskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId) ?? null,
-              currentEffort: existing.currentEffort ?? null,
-              requestedEffort: requestedRuntime.options.effort ?? null,
-              currentThinking: existing.currentThinking ?? null,
-              requestedThinking: requestedRuntime.options.thinking ?? null,
+              reason: "model_broker_change",
+              modelBrokerConfigurationChanged,
+              modelBrokerRouteChanged,
             },
           });
           recordStreamingTurnInterruptedTrace(
             this.options.crashRecovery,
             sessionName,
             existing,
-            "runtime_task_settings_change",
+            "model_broker_change",
             sessionEntry?.sessionKey,
           );
-          shutdownRuntimeStreamingSession(existing, "runtime_task_settings_change");
+          shutdownRuntimeStreamingSession(existing, "model_broker_change");
           this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
           await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot: true });
           return;
@@ -1123,9 +1322,33 @@ export class RuntimeSessionDispatcher {
             modelSource: requestedRuntime.sources.model,
             modelPresetId: requestedRuntime.modelPresetId ?? null,
             modelPresetVersion: requestedRuntime.modelPresetVersion ?? null,
+            deferRestart: (streaming) => {
+              refreshProviderSelection();
+              return shouldDeferSavedProviderChange(streaming);
+            },
           });
-          if (modelStatus === "restart-next-turn") {
+          refreshProviderSelection();
+          const afterModelChange = this.streamingSessions.get(sessionName);
+          if (modelStatus === "restart-next-turn" && !afterModelChange) {
             await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot: true });
+            return;
+          }
+          if (afterModelChange !== existing || afterModelChange?.done) {
+            // No history has been recorded yet. Re-admit on the replacement
+            // instead of retiring or pushing onto the completed handle.
+            await this.handlePromptImmediate(sessionName, prompt, canonicalSessionKey);
+            return;
+          }
+          if (shouldDeferSavedProviderChange(existing)) {
+            await this.enqueuePromptOnLiveSession(sessionName, existing, prompt, {
+              sessionEntry: sessionEntry ?? undefined,
+              agentId: sessionEntry?.agentId ?? agent.id,
+              daemonRestartMessages,
+            });
+            return;
+          }
+          if (retireForRuntimeIdentityChange(existing)) {
+            await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot });
             return;
           }
         }
@@ -1157,15 +1380,38 @@ export class RuntimeSessionDispatcher {
           ? "fallback"
           : await this.tryNativeRuntimeSteer(sessionName, existing, prompt, barrier, sessionEntry?.sessionKey);
         if (nativeSteer === "accepted") {
-          updateRuntimeLiveState(sessionName, {
-            activity: "thinking",
-            summary: "runtime control accepted",
-            agentId: existing.agentId,
-            runId: existing.traceRunId,
-            provider: existing.queryHandle.provider,
-            model: existing.currentModel,
-            source: prompt.source ?? existing.currentSource,
-          });
+          if (this.streamingSessions.get(sessionName) === existing && !existing.done) {
+            updateRuntimeLiveState(sessionName, {
+              activity: "thinking",
+              summary: "runtime control accepted",
+              agentId: existing.agentId,
+              runId: existing.traceRunId,
+              provider: existing.queryHandle.provider,
+              model: existing.currentModel,
+              source: prompt.source ?? existing.currentSource,
+            });
+          }
+          return;
+        }
+
+        refreshProviderSelection();
+        existing = this.streamingSessions.get(sessionName);
+        if (
+          !existing ||
+          existing.done ||
+          (!shouldDeferSavedProviderChange(existing) && retireForRuntimeIdentityChange(existing))
+        ) {
+          if (existing?.done && this.streamingSessions.get(sessionName) === existing) {
+            this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
+            retainReleasedSlot = true;
+          }
+          // The failed steer already recorded this user message. Carry its
+          // original atom into the replacement without recording it twice.
+          if (!prompt._resumeStashedMessages) {
+            stashPromptForStartingSession(sessionName, prompt, this.stashedMessages);
+            prompt = { ...prompt, _resumeStashedMessages: true };
+          }
+          await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot });
           return;
         }
 
@@ -1528,7 +1774,17 @@ export class RuntimeSessionDispatcher {
         deliveryBarrierSource: prompt.deliveryBarrierSource ?? null,
       },
     });
-    await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot });
+    try {
+      await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot });
+    } catch (error) {
+      if (error instanceof RuntimeStartCapacityError) {
+        // These atoms were consumed only to compose this attempt. Keep them for
+        // the redelivered original, which has not entered the provider.
+        if (heldBeforeAdmission) this.heldSkipTurnMessages.set(sessionName, heldBeforeAdmission);
+        if (bootstrapBeforeAdmission) this.deferredBootstraps.set(sessionName, bootstrapBeforeAdmission);
+      }
+      throw error;
+    }
   }
 
   // A missing agent is permanent: acknowledge the prompt (no throw, so JetStream
@@ -1709,122 +1965,116 @@ export class RuntimeSessionDispatcher {
       return true;
     }
 
+    this.reclaimIdleSessionsForStart(sessionName, prompt);
     if (!this.hasRuntimeSessionPoolSlotForStart(sessionName, prompt)) {
-      const reclaimedObservers = this.reclaimIdleObserverSessions();
-      if (reclaimedObservers.length > 0 && this.hasRuntimeSessionPoolSlotForStart(sessionName, prompt)) {
-        log.info("Reclaimed idle observer sessions for runtime start", {
-          sessionName,
-          reclaimed: reclaimedObservers,
-        });
-      }
-    }
-
-    const incomingLane = classifyRuntimeSessionStartLane(sessionName, prompt);
-    if (incomingLane === "interactive") {
-      this.dropQueuedObserverPendingStarts();
-    }
-
-    if (!this.hasRuntimeSessionPoolSlotForStart(sessionName, prompt)) {
-      const lane = incomingLane;
       if (isObserverRuntimeStart(sessionName, prompt)) {
-        log.info("Dropping observer session start — runtime session pool busy", {
-          sessionName,
-          active: this.streamingSessions.size,
-          queued: this.pendingStarts.length,
-          max: this.options.maxConcurrentSessions,
-          lane,
-          reason: "observer_throttled",
-        });
+        log.info("Dropping observer session start — runtime session pool busy", { sessionName });
         return false;
       }
-      const queued = this.pendingStarts.length + 1;
-      const reason = this.getRuntimeSessionPoolNoSlotReason(sessionName, prompt);
-      const reserved = this.getStartReservationCount();
+      const capacity = this.describeStartCapacity(sessionName, prompt);
       const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
-      log.warn("Session start queued - runtime session pool busy", {
-        sessionName,
-        active: this.streamingSessions.size,
-        reserved,
-        queued,
-        max: this.options.maxConcurrentSessions,
-        interactiveReserved: this.options.interactiveReservedSessions,
-        backgroundLimit: this.getBackgroundStartLimit(),
-        lane,
-        reason,
-      });
+      log.warn("Runtime start refused immediately", { sessionName, ...capacity });
       recordRuntimeTraceEvent({
-        sessionKey: traceIdentity.sessionKey,
+        ...traceIdentity,
         sessionName,
-        agentId: traceIdentity.agentId,
-        eventType: "dispatch.queued_busy",
+        eventType: "dispatch.start_rejected",
         eventGroup: "dispatch",
-        status: "queued",
+        status: "rejected",
         source: prompt.source,
-        messageId: prompt.context?.messageId,
-        payloadJson: {
-          reason,
-          active: this.streamingSessions.size,
-          reserved,
-          queued,
-          max: this.options.maxConcurrentSessions,
-          interactiveReserved: this.options.interactiveReservedSessions,
-          backgroundLimit: this.getBackgroundStartLimit(),
-          lane,
-          taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
-          deliveryBarrier: describeDeliveryBarrier(getRuntimePromptDeliveryBarrier(prompt)),
-          deliveryBarrierSource: prompt.deliveryBarrierSource ?? null,
-        },
+        messageId: prompt.context?.messageId ?? prompt.source?.sourceMessageId,
+        payloadJson: { ...capacity, retryable: true },
       });
-      this.options
-        .safeEmit(`ravi.session.${sessionName}.runtime`, {
-          type: "dispatch.queued",
-          reason,
-          active: this.streamingSessions.size,
-          reserved,
-          queued,
-          max: this.options.maxConcurrentSessions,
-          interactiveReserved: this.options.interactiveReservedSessions,
-          backgroundLimit: this.getBackgroundStartLimit(),
-          lane,
-          timestamp: new Date().toISOString(),
-        })
-        .catch((error) => {
-          log.warn("Failed to emit dispatch.queued event", { sessionName, error });
-        });
-
-      const pendingStart: PendingRuntimeSessionStart = {
-        sessionName,
-        prompt,
-        resolve: () => {},
-        cancelled: false,
-        queuedAt: Date.now(),
-        lane,
-      };
-      this.armPendingStartTimeout(pendingStart);
-      await new Promise<void>((resolve) => {
-        pendingStart.resolve = resolve;
-        this.pendingStarts.push(pendingStart);
-      });
-      this.clearPendingStartTimeout(pendingStart);
-      if (pendingStart.cancelled) {
-        log.info("Pending session start cancelled", { sessionName });
-        return false;
-      }
-      if (!this.startReservations.has(sessionName)) {
-        this.startReservations.add(sessionName);
-      }
-      log.info("Pending session start resumed", {
-        sessionName,
-        active: this.streamingSessions.size,
-        reserved: this.getStartReservationCount(),
-        queued: this.pendingStarts.length,
-        max: this.options.maxConcurrentSessions,
-      });
-      return true;
+      // Do not acknowledge the delivery or copy it into an in-memory capacity queue.
+      throw new RuntimeStartCapacityError(capacity);
     }
 
     this.startReservations.add(sessionName);
     return true;
+  }
+
+  private isReclaimableForStart(sessionName: string, session: RuntimeHostStreamingSession): boolean {
+    return (
+      !isRuntimeSessionServing(session) &&
+      // A provider-owned background task dies with the process; pool pressure
+      // must not be the thing that loses its completion.
+      !hasProcessBoundBackgroundWork(session) &&
+      !this.startReservations.has(sessionName) &&
+      !this.startingSessions.has(sessionName) &&
+      !this.debounceStates.has(sessionName) &&
+      !this.stashedMessages.get(sessionName)?.length
+    );
+  }
+
+  private reclaimIdleSessionsForStart(sessionName: string, prompt: RuntimeLaunchPrompt): void {
+    const candidates = [...this.streamingSessions.entries()]
+      .filter(([name, session]) => session.done || this.isReclaimableForStart(name, session))
+      .sort(([, a], [, b]) => a.lastActivity - b.lastActivity);
+    const limit =
+      this.resolveStartLane(sessionName, prompt) === "background" && this.options.interactiveReservedSessions > 0
+        ? this.getBackgroundStartLimit()
+        : this.options.maxConcurrentSessions;
+    // Preserve idle state if even reclaiming every candidate cannot admit work.
+    if (this.getRuntimeSessionPoolUsedSlots() - candidates.length >= limit) return;
+    for (const [name, session] of candidates) {
+      if (this.hasRuntimeSessionPoolSlotForStart(sessionName, prompt)) break;
+      log.info("Reclaiming idle runtime session for admission", {
+        sessionName: name,
+        incomingSession: sessionName,
+        idleMs: Date.now() - session.lastActivity,
+      });
+      shutdownRuntimeStreamingSession(session, "pool_pressure_idle_reclaim");
+      // Reserve synchronously before yielding: another start cannot steal this slot.
+      this.releaseRuntimeSessionSlot(name, { drainPendingStarts: false });
+      markRuntimeLiveIdle(name, "idle evicted for runtime admission");
+    }
+  }
+
+  private describeStartCapacity(
+    sessionName: string,
+    prompt: RuntimeLaunchPrompt,
+    queuePosition: number | null = null,
+  ): RuntimeStartCapacitySnapshot {
+    const now = Date.now();
+    const occupants: RuntimeStartCapacitySnapshot["occupants"] = [...this.streamingSessions].map(([name, session]) => ({
+      sessionName: name,
+      agentId: session.agentId,
+      provider: session.queryHandle.provider,
+      state: session.starting
+        ? "starting"
+        : session.toolRunning
+          ? "tool"
+          : session.compacting
+            ? "compacting"
+            : session.turnActive
+              ? "running"
+              : isRuntimeSessionServing(session)
+                ? "pending"
+                : "idle",
+      inactiveMs: Math.max(0, now - session.lastActivity),
+    }));
+    for (const name of this.startReservations) {
+      if (this.streamingSessions.has(name)) continue;
+      occupants.push({
+        sessionName: name,
+        agentId: this.inFlightStartPrompts.get(name)?._agentId ?? "unknown",
+        state: "reserved",
+        inactiveMs: 0,
+      });
+    }
+    const byAgent = new Map<string, number>();
+    for (const occupant of occupants) byAgent.set(occupant.agentId, (byAgent.get(occupant.agentId) ?? 0) + 1);
+    const largest = [...byAgent].sort((a, b) => b[1] - a[1])[0];
+    return {
+      lane: classifyRuntimeSessionStartLane(sessionName, prompt),
+      reason: this.getRuntimeSessionPoolNoSlotReason(sessionName, prompt),
+      active: this.streamingSessions.size,
+      reserved: this.getStartReservationCount(),
+      max: this.options.maxConcurrentSessions,
+      backgroundLimit: this.getBackgroundStartLimit(),
+      queuePosition,
+      occupants,
+      largestConsumer: largest ? { agentId: largest[0], slots: largest[1] } : null,
+    };
   }
 
   private releaseRuntimeSessionStartReservation(sessionName: string): void {
@@ -1925,18 +2175,22 @@ export class RuntimeSessionDispatcher {
     this.barrierStuckAlerted.delete(sessionName);
   }
 
+  private async waitForTransportRestartBackoff(backoffMs: number): Promise<void> {
+    await new Promise<void>((resolve) => setTimeout(resolve, backoffMs));
+  }
+
   private async restartStashedSession(sessionName: string, reason: string): Promise<void> {
     const stashed = this.stashedMessages.get(sessionName);
     if (!stashed || stashed.length === 0) {
       return;
     }
 
-    const prompt = buildStashedRestartPrompt(stashed);
+    let prompt = buildStashedRestartPrompt(stashed);
     if (!prompt) {
       return;
     }
 
-    const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
+    let traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
     const maxRestartAttempts = RUNTIME_RECOVERY_RESTART_LIMITS[reason];
     const previousRestarts = this.runtimeRecoveryRestartAttempts.get(sessionName);
     const restartAttempt = maxRestartAttempts === undefined ? undefined : (previousRestarts?.[reason] ?? 0) + 1;
@@ -2037,6 +2291,73 @@ export class RuntimeSessionDispatcher {
         ...previousRestarts,
         [reason]: restartAttempt,
       });
+    }
+
+    const backoffMs = resolveTransportRestartBackoffMs(reason, restartAttempt);
+    if (backoffMs > 0) {
+      log.info("Backing off before restarting session after provider transport failure", {
+        sessionName,
+        reason,
+        restartAttempt,
+        backoffMs,
+      });
+      // Reserve the session for the whole backoff. The failed provider was
+      // already removed, so without this reservation an inbound prompt can
+      // start a replacement while we sleep and the restart below would then
+      // start a second provider for the same session. While the session is
+      // pending, `handlePromptImmediate` queues prompts into the stash instead
+      // of starting a competing session.
+      this.pendingStartSessions.add(sessionName);
+      try {
+        await this.waitForTransportRestartBackoff(backoffMs);
+      } finally {
+        this.pendingStartSessions.delete(sessionName);
+      }
+
+      const liveAfterBackoff = this.streamingSessions.get(sessionName);
+      if (liveAfterBackoff && !liveAfterBackoff.done) {
+        // Someone else won the race while we slept. Never start a second
+        // provider: hand any prompts that queued during the backoff to the
+        // live session instead.
+        const queued = this.stashedMessages.get(sessionName) ?? [];
+        if (queued.length > 0) {
+          appendUniqueRuntimeMessages(liveAfterBackoff.pendingMessages, queued);
+          this.stashedMessages.delete(sessionName);
+          this.wakeStreamingSessionIfDeliverable(sessionName);
+        }
+        log.info("Skipping restart: a replacement provider started during backoff", {
+          sessionName,
+          reason,
+          handedOffPrompts: queued.length,
+        });
+        recordRuntimeTraceEvent({
+          sessionKey: traceIdentity.sessionKey,
+          sessionName,
+          agentId: traceIdentity.agentId ?? prompt._agentId,
+          provider: prompt._runtimeProviderId,
+          eventType: "dispatch.restart_skipped",
+          eventGroup: "dispatch",
+          status: "skipped",
+          source: prompt.source,
+          messageId: prompt.context?.messageId,
+          payloadJson: {
+            reason,
+            skippedReason: "replacement_started_during_backoff",
+            handedOffPrompts: queued.length,
+          },
+        });
+        return;
+      }
+
+      // Rebuild from the freshest stash: a prompt may have queued while we
+      // slept, and the restart must not replay the stale pre-backoff prompt.
+      const refreshedStash = this.stashedMessages.get(sessionName) ?? [];
+      const refreshedPrompt = refreshedStash.length > 0 ? buildStashedRestartPrompt(refreshedStash) : null;
+      if (!refreshedPrompt) {
+        return;
+      }
+      prompt = refreshedPrompt;
+      traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
     }
 
     recordRuntimeTraceEvent({
@@ -2155,11 +2476,32 @@ export class RuntimeSessionDispatcher {
         session.pendingMessages.length > 0 ||
         Boolean(session.pendingWake);
       if (!servingWork && idleTtlMs > 0 && idleMs >= idleTtlMs) {
-        log.info("Reclaiming idle runtime session", { sessionName, idleMs, timeoutMs: idleTtlMs });
-        shutdownRuntimeStreamingSession(session, "idle_session_ttl");
+        // Pending background work is not idleness: the completion would die
+        // with the provider process (bug 081dac32).
+        const decision = decideIdleEviction({
+          sessionName,
+          holder: session,
+          idleMs,
+          idleTtlMs,
+          backgroundTtlMs: this.backgroundTaskTtlMs(),
+        });
+        if (!decision.evict) continue;
+        const reason = decision.reason === "background_task_ttl" ? BACKGROUND_TASK_LOST_REASON : "idle_session_ttl";
+        log.info("Reclaiming idle runtime session", { sessionName, idleMs, timeoutMs: idleTtlMs, reason });
+        shutdownRuntimeStreamingSession(session, reason);
         this.releaseRuntimeSessionSlot(sessionName);
         markRuntimeLiveIdle(sessionName, "idle evicted");
         idleEvicted.push(sessionName);
+        if (decision.lostNativeTasks.length > 0) {
+          this.reportLostBackgroundTasks(
+            sessionName,
+            buildBackgroundTaskLostPrompt({
+              tasks: decision.lostNativeTasks,
+              idleMs,
+            }),
+            decision.lostNativeTasks.map((task) => task.taskId),
+          );
+        }
         continue;
       }
       if (servingWork && (session.turnActive || session.toolRunning || session.starting) && idleMs >= stuckAfterMs) {
@@ -2181,6 +2523,24 @@ export class RuntimeSessionDispatcher {
     const orphanTasks = this.auditOrphanTaskSessions();
     const timedOutStarts = this.failExpiredPendingStarts(now);
     return { idleEvicted, stuckReleased, orphanTasks, timedOutStarts };
+  }
+
+  private reportLostBackgroundTasks(sessionName: string, prompt: string, taskIds: string[]): void {
+    void deliverBackgroundWake({
+      sessionName,
+      prompt,
+      meta: { kind: "native_task_lost", taskIds },
+      ...(this.options.publishBackgroundWake ? { publish: this.options.publishBackgroundWake } : {}),
+      onAttemptFailed: ({ error, attempt, willRetry }) => {
+        log.error("Could not report lost background tasks; the session owes an answer", {
+          sessionName,
+          taskIds,
+          attempt,
+          willRetry,
+          error,
+        });
+      },
+    });
   }
 
   reclaimIdleObserverSessions(now = Date.now(), options: { drainPendingStarts?: boolean } = {}): string[] {
@@ -2254,6 +2614,11 @@ export class RuntimeSessionDispatcher {
   }
 
   private consumeDeferredBootstrap(sessionName: string, prompt: RuntimeLaunchPrompt): RuntimeLaunchPrompt {
+    // A trigger fire that lends its owner's authority runs its own text only;
+    // the deferred bootstrap waits for the next turn.
+    if (triggerAuthorityLendsOwner(prompt._triggerAuthority)) {
+      return prompt;
+    }
     const deferred = this.deferredBootstraps.get(sessionName);
     if (!deferred) {
       return prompt;
@@ -2281,7 +2646,8 @@ export class RuntimeSessionDispatcher {
   ): void {
     const debounce = this.debounceStates.get(sessionName);
     const lastDebounced = debounce?.messages.at(-1);
-    if (debounce && lastDebounced) {
+    // Never onto a trigger fire that lends its owner's authority: `!!` text is someone else's.
+    if (debounce && lastDebounced && !triggerAuthorityLendsOwner(lastDebounced._triggerAuthority)) {
       // Ride along with the batch that is already waiting so arrival order
       // holds, without extending its window.
       debounce.messages[debounce.messages.length - 1] = appendSkipTurnText(lastDebounced, prompt);
@@ -2325,6 +2691,11 @@ export class RuntimeSessionDispatcher {
     if (prompt._deferRuntimeStart || prompt._resumeStashedMessages || prompt._daemonRestartResume) {
       return prompt;
     }
+    // A trigger fire that lends its owner's authority runs its own text only;
+    // the held `!!` text waits for the next turn.
+    if (triggerAuthorityLendsOwner(prompt._triggerAuthority)) {
+      return prompt;
+    }
     const held = this.heldSkipTurnMessages.get(sessionName);
     if (!held) {
       return prompt;
@@ -2334,19 +2705,6 @@ export class RuntimeSessionDispatcher {
       ...prompt,
       _runtimePrompt: combineSessionSurfacePromptContents([...held, resolveRuntimePromptText(prompt)]),
     };
-  }
-
-  private armPendingStartTimeout(pendingStart: PendingRuntimeSessionStart): void {
-    this.clearPendingStartTimeout(pendingStart);
-    const timeoutMs = this.pendingStartTimeoutMs();
-    if (timeoutMs <= 0) {
-      return;
-    }
-    pendingStart.timeout = setTimeout(() => {
-      pendingStart.timeout = undefined;
-      this.failQueuedPendingStart(pendingStart, "pending_start_timeout");
-    }, timeoutMs);
-    pendingStart.timeout.unref?.();
   }
 
   private clearPendingStartTimeout(pendingStart: PendingRuntimeSessionStart): void {
@@ -2407,74 +2765,41 @@ export class RuntimeSessionDispatcher {
     if (pendingStart.cancelled) {
       return;
     }
-    const sessionName = pendingStart.sessionName;
-    const prompt = pendingStart.prompt;
-    const lane = this.resolveStartLane(sessionName, prompt, pendingStart.lane);
-    const source = prompt.source;
-    const userFacing = lane === "interactive" || isUserFacingPromptSource(source);
+    const { sessionName, prompt } = pendingStart;
+    const index = this.pendingStarts.indexOf(pendingStart);
+    const capacity = this.describeStartCapacity(sessionName, prompt, index < 0 ? null : index + 1);
+    const timedOut = reason === "pending_start_timeout";
     pendingStart.cancelled = true;
     this.clearPendingStartTimeout(pendingStart);
-    const index = this.pendingStarts.indexOf(pendingStart);
-    if (index >= 0) {
-      this.pendingStarts.splice(index, 1);
-    }
-    pendingStart.resolve();
-
+    if (index >= 0) this.pendingStarts.splice(index, 1);
     const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
-    const timedOut = reason === "pending_start_timeout";
-    if (timedOut) {
-      log.warn("Pending session start timed out", {
-        sessionName,
-        lane,
-        reason,
-        queued: this.pendingStarts.length,
-        userFacing,
-      });
-    }
+    log.warn("Pending runtime start released", { sessionName, ...capacity, reason });
     recordRuntimeTraceEvent({
-      sessionKey: traceIdentity.sessionKey,
+      ...traceIdentity,
       sessionName,
-      agentId: traceIdentity.agentId,
       eventType: timedOut ? "dispatch.start_timeout" : "dispatch.dropped",
       eventGroup: "dispatch",
-      status: "failed",
-      source,
-      messageId: prompt.context?.messageId,
-      payloadJson: {
-        reason,
-        lane,
-        userFacing,
-      },
+      status: timedOut ? "retryable" : "dropped",
+      source: prompt.source,
+      messageId: prompt.context?.messageId ?? prompt.source?.sourceMessageId,
+      payloadJson: { ...capacity, reason, retryable: timedOut },
     });
-    this.options
-      .safeEmit(`ravi.session.${sessionName}.runtime`, {
-        type: timedOut ? "session.timeout" : "dispatch.dropped",
-        reason,
-        lane,
-        sessionName,
-        ...(source ? { _source: source } : {}),
-        timestamp: new Date().toISOString(),
-      })
-      .catch((error) => {
-        log.warn("Failed to emit pending start failure event", { sessionName, reason, error });
-      });
-
-    if (timedOut && userFacing && source) {
-      const response = formatUserFacingTurnFailure(
-        "Runtime session start stayed queued too long. Send another message to retry.",
-      );
-      nats
-        .emit(`ravi.session.${sessionName}.response`, {
-          response,
-          target: source,
-          _emitId: Math.random().toString(36).slice(2, 8),
-          _instanceId: this.options.instanceId,
-          _pid: process.pid,
-          _v: 2,
+    // A watchdog is not acceptance. Reject back to the original durable delivery.
+    if (timedOut) {
+      pendingStart.reject(new RuntimeStartCapacityError({ ...capacity, reason }));
+    } else {
+      this.options
+        .safeEmit(`ravi.session.${sessionName}.runtime`, {
+          type: "dispatch.dropped",
+          ...(prompt._bridgeTurnId ? { _bridgeTurnId: prompt._bridgeTurnId } : {}),
+          reason,
+          lane: capacity.lane,
+          sessionName,
+          ...(prompt.source ? { _source: prompt.source } : {}),
+          timestamp: new Date().toISOString(),
         })
-        .catch((error) => {
-          log.warn("Failed to emit pending start timeout response", { sessionName, error });
-        });
+        .catch((error) => log.warn("Failed to emit pending start failure event", { sessionName, reason, error }));
+      pendingStart.resolve();
     }
   }
 
@@ -2607,6 +2932,7 @@ export class RuntimeSessionDispatcher {
     const source = prompt?.source ?? fallbackPrompt?.source ?? existing.currentSource;
     const barrier = successor.message.deliveryBarrier ?? DEFAULT_DELIVERY_BARRIER;
     existing.currentTurnSuperseded = true;
+    existing.currentTurnYieldContinuationId = undefined;
     existing.interrupted = true;
     nats
       .emit(`ravi.session.${sessionName}.runtime`, {
@@ -2674,7 +3000,7 @@ export class RuntimeSessionDispatcher {
       });
     }
     existing.queryHandle.interrupt().catch(() => {});
-    await terminalizeCoalescedChannelMessages(sessionName, successor.coalescedMessages);
+    await terminalizePendingChannelMessages(sessionName, successor.coalescedMessages);
   }
 
   private async enqueuePromptOnLiveSession(
@@ -2688,6 +3014,7 @@ export class RuntimeSessionDispatcher {
     },
   ): Promise<void> {
     const { sessionEntry, agentId, daemonRestartMessages } = options;
+    this.assertThreadAttentionRuntime(sessionName, prompt, existing);
     log.info("Streaming: pushing message to existing session", { sessionName, reason: "live_session_queue" });
     if (sessionEntry) {
       updateRuntimeSessionMetadata(sessionEntry.sessionKey, prompt);
@@ -2805,6 +3132,26 @@ export class RuntimeSessionDispatcher {
 
     const decision = shouldInterruptRuntimeForIncoming(sessionName, existing, barrier, prompt.taskBarrierTaskId);
     if (decision.interrupt) {
+      const currentIds = new Set(existing.currentTurnPendingIds ?? []);
+      const waitingForRestoredRetry = existing.pendingMessages.some(
+        (message) =>
+          message.pendingId &&
+          currentIds.has(message.pendingId) &&
+          message.providerCapacityRetry?.notBefore !== undefined,
+      );
+      if (waitingForRestoredRetry) {
+        const successor = prepareRuntimeInterruptSuccessor(sessionName, existing);
+        if (successor) {
+          await this.interruptForRuntimeSuccessor(
+            sessionName,
+            existing,
+            successor,
+            decision.reason,
+            prompt,
+            sessionEntry?.sessionKey ?? sessionName,
+          );
+        }
+      }
       return;
     }
     log.info("Streaming: queueing (busy)", {
@@ -2863,6 +3210,7 @@ export class RuntimeSessionDispatcher {
     barrier: DeliveryBarrier,
     sessionKey = sessionName,
   ): Promise<"accepted" | "fallback"> {
+    this.assertThreadAttentionRuntime(sessionName, prompt, existing);
     if (!canUseNativeRuntimeSteer(existing, barrier, prompt)) {
       return "fallback";
     }
@@ -2953,6 +3301,7 @@ export function shouldQueuePromptOnLiveSession(
   prompt: RuntimeLaunchPrompt,
   agentId: string,
   sessionProviderOverride?: RuntimeProviderId | null,
+  providerConfiguration?: { provider: RuntimeProviderId; revision: number },
 ): boolean {
   if (existing.done || existing.agentId !== agentId) {
     return false;
@@ -2971,7 +3320,11 @@ export function shouldQueuePromptOnLiveSession(
   if (explicitSessionProvider && existing.queryHandle.provider !== explicitSessionProvider) {
     return false;
   }
-  if (existing.currentTaskBarrierTaskId !== normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId)) {
+  if (
+    providerConfiguration &&
+    providerConfiguration.revision !== (existing.runtimeProviderConfigRevision ?? 0) &&
+    providerConfiguration.provider !== existing.queryHandle.provider
+  ) {
     return false;
   }
   const barrier = getRuntimePromptDeliveryBarrier(prompt);
@@ -3042,7 +3395,10 @@ export function canUseNativeRuntimeSteer(
   return (
     barrier === "after_tool" &&
     !hasIsolatedRuntimeTurnEnvelope(prompt) &&
+    // Nothing is injected into a running trigger turn that lends its owner's authority.
+    !triggerAuthorityLendsOwner(session.currentTurnAuthority?._triggerAuthority) &&
     isSameRuntimeTurnSurface(session.currentSource, prompt?.source) &&
+    isSameRuntimeTurnActor(session, prompt) &&
     supportsNativeSteer &&
     session.turnActive &&
     Boolean(session.currentCrashRecoveryAttemptId) &&
@@ -3054,6 +3410,17 @@ export function canUseNativeRuntimeSteer(
     getPendingRuntimeTurnSuccessors(session).length === 0 &&
     canReuseLivePiSteerAuthority(session.currentRuntimeContextKey)
   );
+}
+
+/**
+ * Native steer injects text into the running turn without rebuilding its
+ * context, so only the sender that turn was authorized for may steer it.
+ */
+function isSameRuntimeTurnActor(session: RuntimeHostStreamingSession, prompt?: RuntimeLaunchPrompt): boolean {
+  if (prompt?._observation) return false;
+  const active = runtimeTurnActorKey({ source: session.currentSource, context: session.currentTurnAuthority?.context });
+  const incoming = runtimeTurnActorKey(prompt);
+  return active !== null && incoming !== null && active === incoming;
 }
 
 /** Unset keys stay compatible. A published key must still resolve or steer is refused. */
@@ -3083,7 +3450,8 @@ function buildDebouncedRuntimePrompts(messages: RuntimeLaunchPrompt[]): RuntimeL
   let currentKey: string | null = null;
 
   for (const message of messages) {
-    if (hasIsolatedRuntimeTurnEnvelope(message)) {
+    // An isolated envelope, or a sender with no identity at all, is its own turn.
+    if (hasIsolatedRuntimeTurnEnvelope(message) || runtimeTurnActorKey(message) === null) {
       if (currentBatch.length > 0) {
         batches.push(currentBatch);
         currentBatch = [];
@@ -3118,13 +3486,16 @@ function combineDebounceBatch(batch: RuntimeLaunchPrompt[]): RuntimeLaunchPrompt
     })),
   );
 
-  return {
-    ...last,
-    prompt: batch.map((entry) => entry.prompt).join("\n\n"),
-    deliveryBarrier: delivery.barrier,
-    deliveryBarrierSource: delivery.source,
-    commands: batch.flatMap((entry) => entry.commands ?? []),
-  };
+  return withoutSharedTriggerAuthority(
+    {
+      ...last,
+      prompt: batch.map((entry) => entry.prompt).join("\n\n"),
+      deliveryBarrier: delivery.barrier,
+      deliveryBarrierSource: delivery.source,
+      commands: batch.flatMap((entry) => entry.commands ?? []),
+    },
+    batch.length,
+  );
 }
 
 function getDebounceCompatibilityKey(prompt: RuntimeLaunchPrompt): string {
@@ -3138,6 +3509,8 @@ function getDebounceCompatibilityKey(prompt: RuntimeLaunchPrompt): string {
     deliveryClass,
     source: prompt.source ? getMessageTargetKey(prompt.source) : "",
     approvalSource: prompt._approvalSource ? getMessageTargetKey(prompt._approvalSource) : "",
+    // The batch runs under the last message's actor, so it never mixes senders.
+    actor: runtimeTurnActorKey(prompt) ?? "",
   });
 }
 
@@ -3209,7 +3582,7 @@ export function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): Runti
     .join("\n\n")
     .trim();
 
-  return {
+  const restart: RuntimeLaunchPrompt = {
     ...(newestLaunchPrompt ?? {
       prompt: combinedPrompt,
       deliveryBarrier: delivery.barrier,
@@ -3226,6 +3599,8 @@ export function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): Runti
         : messages.flatMap((message) => message.commands ?? []),
     _resumeStashedMessages: true,
   };
+  // The combined text of several stashed prompts never runs as one trigger's owner.
+  return withoutSharedTriggerAuthority(restart, messages.length);
 }
 
 function selectStashedRestartPromptEnvelope(launchPrompts: RuntimeLaunchPrompt[]): RuntimeLaunchPrompt | undefined {
@@ -3347,7 +3722,108 @@ function cloneRuntimeUserMessage(message: RuntimeUserMessage): RuntimeUserMessag
   return JSON.parse(JSON.stringify(message)) as RuntimeUserMessage;
 }
 
-async function terminalizeCoalescedChannelMessages(sessionName: string, messages: RuntimeUserMessage[]): Promise<void> {
+/**
+ * A terminal physical turn is consumed. During a capacity wait the host may
+ * already have authorized a distinct next attempt for its exact input cohort.
+ * Persist that pending work without weakening the generic terminal fence.
+ */
+function getScheduledCapacityRestartMessages(
+  session: RuntimeHostStreamingSession,
+  crashRecovery?: RuntimeCrashRecoveryCoordinator,
+): RuntimeUserMessage[] | undefined {
+  const checkpoint = session.pendingCapacityRetry;
+  if (
+    session.done ||
+    session.pendingAbort ||
+    session.abortController.signal.aborted ||
+    session.internalAbortReason ||
+    session.currentTurnSuperseded
+  ) {
+    return undefined;
+  }
+  const safety = getRuntimeTurnReplaySafety(session, crashRecovery);
+  const ownIds = new Set(session.currentTurnPendingIds ?? []);
+  // A restored schedule is consumed synchronously at provider handoff. While
+  // it still exists on every current input atom, even async turn preparation
+  // has not delivered that cohort. Preserve it across a second restart too.
+  if (!session.currentCrashRecoveryTerminal && !checkpoint && ownIds.size > 0) {
+    const ownMessages = session.pendingMessages.filter((message) => message.pendingId && ownIds.has(message.pendingId));
+    if (
+      safety.durableBinding === "missing" ||
+      safety.startedTool ||
+      safety.materializedOutput ||
+      safety.inputMutated ||
+      ownMessages.length !== ownIds.size ||
+      !ownMessages.every((message) => isScheduledProviderCapacityRetry(message.providerCapacityRetry))
+    ) {
+      return undefined;
+    }
+    return session.pendingMessages.map((message) =>
+      message.pendingId && ownIds.has(message.pendingId) ? { ...message, replay: false } : message,
+    );
+  }
+  if (!checkpoint || session.currentCrashRecoveryTerminal?.status !== "failed") return undefined;
+  const scheduledState = { ...checkpoint.state, notBefore: checkpoint.notBefore };
+  if (
+    safety.durableBinding !== "terminal" ||
+    safety.startedTool ||
+    safety.materializedOutput ||
+    safety.inputMutated ||
+    !isScheduledProviderCapacityRetry(scheduledState)
+  ) {
+    return undefined;
+  }
+  const retryIds = new Set(checkpoint.pendingIds);
+  if (
+    ownIds.size === 0 ||
+    ownIds.size !== retryIds.size ||
+    checkpoint.pendingIds.length !== retryIds.size ||
+    [...ownIds].some((id) => !retryIds.has(id))
+  ) {
+    return undefined;
+  }
+  const ownMessages = session.pendingMessages.filter((message) => message.pendingId && retryIds.has(message.pendingId));
+  if (
+    ownMessages.length !== retryIds.size ||
+    ownMessages.some(
+      (message) =>
+        message.providerCapacityRetry?.startedAt !== checkpoint.state.startedAt ||
+        message.providerCapacityRetry?.retries !== checkpoint.state.retries,
+    )
+  ) {
+    return undefined;
+  }
+  return session.pendingMessages.map((message) =>
+    message.pendingId && retryIds.has(message.pendingId)
+      ? { ...message, replay: false, providerCapacityRetry: { ...scheduledState } }
+      : message,
+  );
+}
+
+/** Cancel suspended work before either abort path can stash it for a restart. */
+function cancelYieldedRuntimeWork(
+  sessionName: string,
+  session: RuntimeHostStreamingSession,
+  stashedMessages: Map<string, RuntimeUserMessage[]>,
+): void {
+  const cancelled: RuntimeUserMessage[] = [];
+  const keep = (message: RuntimeUserMessage) => {
+    if (message.yieldedRequest === undefined) return true;
+    cancelled.push(message);
+    return false;
+  };
+  session.pendingMessages = session.pendingMessages.filter(keep);
+  const stashed = stashedMessages.get(sessionName);
+  if (stashed) {
+    const remaining = stashed.filter(keep);
+    if (remaining.length > 0) stashedMessages.set(sessionName, remaining);
+    else stashedMessages.delete(sessionName);
+  }
+  session.currentTurnYieldContinuationId = undefined;
+  void terminalizePendingChannelMessages(sessionName, cancelled);
+}
+
+async function terminalizePendingChannelMessages(sessionName: string, messages: RuntimeUserMessage[]): Promise<void> {
   for (const message of messages) {
     const metadata = message.launchPrompt?._channelBackend;
     if (!metadata) continue;
@@ -3357,7 +3833,7 @@ async function terminalizeCoalescedChannelMessages(sessionName: string, messages
         event: { type: "turn.interrupted" },
       });
     } catch (error) {
-      log.warn("Failed to terminalize coalesced channel turn", {
+      log.warn("Failed to terminalize pending channel turn", {
         sessionName,
         turnId: metadata.binding.turnId,
         error,
@@ -3474,6 +3950,14 @@ function recordStreamingTurnInterruptedTrace(
 ): void {
   const requestedCompletedAt = Date.now();
   const existingTerminal = session.currentCrashRecoveryTerminal;
+  // Accepted provider terminals belong to the host, which may still be awaiting
+  // accounting. Retirement must not seal their trace before usage and costs arrive.
+  if (
+    existingTerminal?.status === "complete" ||
+    existingTerminal?.status === "failed" ||
+    existingTerminal?.status === "interrupted"
+  )
+    return;
   if (!existingTerminal && !session.currentTraceTurnId && !session.currentCrashRecoveryAttemptId) {
     return;
   }
@@ -3546,7 +4030,7 @@ function recordStreamingTurnInterruptedTrace(
     model: session.currentModel,
     status: terminalStatus,
     eventType: runtimeTurnAttemptTerminalEventType(terminalStatus),
-    abortReason: terminalStatus === "complete" || !dispatcherWonTerminal ? null : reason,
+    abortReason: dispatcherWonTerminal ? reason : null,
     startedAt: session.currentTraceTurnStartedAt,
     completedAt: terminal.completedAt,
     payloadJson: {

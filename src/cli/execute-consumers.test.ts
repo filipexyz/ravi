@@ -24,6 +24,83 @@ type ExecuteConsumer = {
 
 const executeConsumers: readonly ExecuteConsumer[] = [
   {
+    name: "cloud run approval hints in run show and follow",
+    path: "src/cli/commands/cloud-agents.ts",
+    marker: "Approve: ravi cloud runs approve",
+    expected: "--execute",
+    matches: 2,
+  },
+  {
+    name: "cloud run approval relayed to a task's session",
+    path: "src/cloud-agents/task-watcher.ts",
+    marker: "Approve: ravi cloud runs approve",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
+    name: "cloud run question hint in run show and follow",
+    path: "src/cli/commands/cloud-agents.ts",
+    marker: "Answer:  ravi cloud runs answer",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
+    name: "cloud run question relayed to a delivery session",
+    path: "src/cloud-agents/chat-copy.ts",
+    marker: "ravi cloud runs answer",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
+    name: "cloud deploy next-step hint",
+    path: "src/cli/commands/cloud-agents.ts",
+    marker: "Run it: ravi cloud runs start",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
+    name: "cloud key error hints",
+    path: "src/cli/cloud-agents-contract.ts",
+    marker: "ravi cloud key set --stdin",
+    expected: "--execute",
+    matches: 2,
+  },
+  {
+    name: "cloud product error hints: secrets",
+    path: "src/cli/cloud-agents-contract.ts",
+    marker: "ravi cloud secrets set",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
+    name: "cloud product error hints: approval",
+    path: "src/cli/cloud-agents-contract.ts",
+    marker: "ravi cloud agents approve",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
+    name: "cloud product error hints: credits",
+    path: "src/cli/cloud-agents-contract.ts",
+    marker: "ravi cloud credits topup",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
+    name: "cloud product error hints: caps",
+    path: "src/cli/cloud-agents-contract.ts",
+    marker: "ravi cloud agents cap",
+    expected: "--execute",
+    matches: 1,
+  },
+  {
+    name: "cloud catalog install approval hints",
+    path: "src/cli/commands/cloud-catalog.ts",
+    marker: "ravi cloud agents approve",
+    expected: "--execute",
+    matches: 2,
+  },
+  {
     name: "task dispatch status hint",
     path: "src/cli/commands/tasks.ts",
     marker: "ravi tasks dispatch",
@@ -131,6 +208,17 @@ const executeConsumers: readonly ExecuteConsumer[] = [
 ];
 
 const executeInstructions = [
+  {
+    name: "thread decision question in the sessions skill",
+    path: "src/plugins/internal/ravi-system/skills/sessions/SKILL.md",
+    instruction:
+      'ravi decisions ask --thread <sessão-filha> --key janela --ask "Qual janela?" --owner human:<contato> --execute --json',
+  },
+  {
+    name: "thread decision answer in the sessions skill",
+    path: "src/plugins/internal/ravi-system/skills/sessions/SKILL.md",
+    instruction: 'ravi decisions answer <decision-id> --text "Após 18h" --execute --json',
+  },
   {
     name: "session reset documentation",
     path: "README.md",
@@ -547,6 +635,364 @@ const executeInstructions = [
     path: "src/cli/commands/knowledge.ts",
     instruction: "ravi knowledge forget --about contact:<contact-id> --redact --execute",
   },
+  {
+    name: "Cloud key set skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi cloud key set --stdin --execute < ~/secrets/anthropic-key",
+  },
+  {
+    name: "Cloud key set documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi cloud key set --stdin --execute < ~/secrets/anthropic-key",
+  },
+  {
+    name: "Cloud key set help",
+    path: "src/cli/commands/cloud-agents.ts",
+    instruction: "ravi cloud key set --stdin --execute < ~/secrets/anthropic-key",
+  },
+  {
+    name: "Cloud agents deploy skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi cloud agents deploy triage --project clinica --execute",
+  },
+  {
+    name: "Cloud agents deploy documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi cloud agents deploy triage --project clinica --execute",
+  },
+  {
+    name: "Cloud agents deploy help",
+    path: "src/cli/commands/cloud-agents.ts",
+    instruction: "ravi cloud agents deploy triage --project clinica --execute",
+  },
+  {
+    name: "Cloud runs start skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: 'ravi cloud runs start triage "Summarize yesterday\'s open tickets" --project clinica --execute',
+  },
+  {
+    name: "Cloud runs start documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: 'ravi cloud runs start triage "Summarize yesterday\'s open tickets" --project clinica --execute',
+  },
+  {
+    name: "Cloud runs start help",
+    path: "src/cli/commands/cloud-agents.ts",
+    instruction: 'ravi cloud runs start triage "Summarize yesterday\'s open tickets" --project clinica --execute',
+  },
+  {
+    name: "Cloud runs reply skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: 'ravi cloud runs reply <run> "Also check the billing queue" --execute',
+  },
+  {
+    name: "Cloud runs reply documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: 'ravi cloud runs reply <run> "Also check the billing queue" --execute',
+  },
+  {
+    name: "Cloud runs approve skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi cloud runs approve <run> <approval> --execute",
+  },
+  {
+    name: "Cloud runs approve documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi cloud runs approve <run> <approval> --execute",
+  },
+  {
+    name: "Cloud runs approve help",
+    path: "src/cli/commands/cloud-agents.ts",
+    instruction: "ravi cloud runs approve <run> <approval> --execute",
+  },
+  {
+    name: "Cloud runs answer help",
+    path: "src/cli/commands/cloud-agents.ts",
+    instruction: 'ravi cloud runs answer <run> <question> "<answer>" --execute',
+  },
+  {
+    name: "Cloud schedules add skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction:
+      'ravi cloud schedules add triage --cron "0 9 * * 1-5" --timezone America/Sao_Paulo --project clinica --execute',
+  },
+  {
+    name: "Cloud schedules add documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction:
+      'ravi cloud schedules add triage --cron "0 9 * * 1-5" --timezone America/Sao_Paulo --project clinica --execute',
+  },
+  {
+    name: "Cloud schedules add help",
+    path: "src/cli/commands/cloud-agents.ts",
+    instruction:
+      'ravi cloud schedules add triage --cron "0 9 * * 1-5" --timezone America/Sao_Paulo --project clinica --execute',
+  },
+  {
+    name: "Cloud schedules enable skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi cloud schedules update <id> --enable --execute",
+  },
+  {
+    name: "Cloud schedules enable documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi cloud schedules update <id> --enable --execute",
+  },
+  {
+    name: "Cloud schedules enable help",
+    path: "src/cli/commands/cloud-agents.ts",
+    instruction: "ravi cloud schedules update <id> --enable --execute",
+  },
+  {
+    name: "Cloud task dispatch skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi tasks dispatch <task> --agent triage --cloud --budget 5 --execute",
+  },
+  {
+    name: "Cloud task dispatch documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi tasks dispatch <task> --agent triage --cloud --budget 5 --execute",
+  },
+  {
+    name: "Cloud secrets set skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi cloud secrets set STRIPE_API_KEY --host api.stripe.com --stdin --execute < ~/secrets/stripe",
+  },
+  {
+    name: "Cloud secrets set documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi cloud secrets set STRIPE_API_KEY --host api.stripe.com --stdin --execute < ~/secrets/stripe",
+  },
+  {
+    name: "Cloud secrets set help",
+    path: "src/cli/commands/cloud-secrets.ts",
+    instruction: "ravi cloud secrets set STRIPE_API_KEY --host api.stripe.com --stdin --execute < ~/secrets/stripe",
+  },
+  {
+    name: "Cloud triggers create skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction:
+      'ravi cloud triggers create triage --source bases --base pedidos --events row.created --prompt "Triage this request: {{event}}" --project clinica --execute',
+  },
+  {
+    name: "Cloud triggers create documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction:
+      'ravi cloud triggers create triage --source bases --base pedidos --events row.created --prompt "Triage this request: {{event}}" --project clinica --execute',
+  },
+  {
+    name: "Cloud triggers create help",
+    path: "src/cli/commands/cloud-triggers.ts",
+    instruction:
+      'ravi cloud triggers create triage --source bases --base pedidos --events row.created --prompt "Triage this request: {{event}}" --project clinica --execute',
+  },
+  {
+    name: "Cloud triggers enable skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi cloud triggers update <id> --enable --execute",
+  },
+  {
+    name: "Cloud triggers enable documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi cloud triggers update <id> --enable --execute",
+  },
+  {
+    name: "Cloud triggers enable help",
+    path: "src/cli/commands/cloud-triggers.ts",
+    instruction: "ravi cloud triggers update <id> --enable --execute",
+  },
+  {
+    name: "Cloud credits topup skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi cloud credits topup 100 --execute",
+  },
+  {
+    name: "Cloud credits topup documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi cloud credits topup 100 --execute",
+  },
+  {
+    name: "Cloud credits topup help",
+    path: "src/cli/commands/cloud-credits.ts",
+    instruction: "ravi cloud credits topup 100 --execute",
+  },
+  {
+    name: "Cloud settings monthly cap skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi cloud settings set --monthly-cap 500 --execute",
+  },
+  {
+    name: "Cloud settings monthly cap documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi cloud settings set --monthly-cap 500 --execute",
+  },
+  {
+    name: "Cloud settings monthly cap help",
+    path: "src/cli/commands/cloud-settings.ts",
+    instruction: "ravi cloud settings set --monthly-cap 500 --execute",
+  },
+  {
+    name: "Cloud settings billing mode skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi cloud settings set --billing-mode credits --execute",
+  },
+  {
+    name: "Cloud settings billing mode documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi cloud settings set --billing-mode credits --execute",
+  },
+  {
+    name: "Cloud settings billing mode help",
+    path: "src/cli/commands/cloud-settings.ts",
+    instruction: "ravi cloud settings set --billing-mode credits --execute",
+  },
+  {
+    name: "Cloud catalog install skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi cloud catalog install clinic-triage --project clinica --execute",
+  },
+  {
+    name: "Cloud catalog install documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi cloud catalog install clinic-triage --project clinica --execute",
+  },
+  {
+    name: "Cloud catalog install help",
+    path: "src/cli/commands/cloud-catalog.ts",
+    instruction: "ravi cloud catalog install clinic-triage --project clinica --execute",
+  },
+  {
+    name: "Cloud catalog packs install skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi cloud catalog packs install clinic --project clinica --execute",
+  },
+  {
+    name: "Cloud catalog packs install documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi cloud catalog packs install clinic --project clinica --execute",
+  },
+  {
+    name: "Cloud catalog packs install help",
+    path: "src/cli/commands/cloud-catalog.ts",
+    instruction: "ravi cloud catalog packs install clinic --project clinica --execute",
+  },
+  {
+    name: "Cloud webhook set skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi cloud webhook set --stdin --execute < <file-with-the-secret>",
+  },
+  {
+    name: "Cloud webhook set documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi cloud webhook set --stdin --execute < <file-with-the-secret>",
+  },
+  {
+    name: "Cloud webhook set help",
+    path: "src/cli/commands/cloud-webhook.ts",
+    instruction: "ravi cloud webhook set --stdin --execute < <file-with-the-secret>",
+  },
+  {
+    name: "Cloud agents approve skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi cloud agents approve triage --project clinica --execute",
+  },
+  {
+    name: "Cloud agents approve documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi cloud agents approve triage --project clinica --execute",
+  },
+  {
+    name: "Cloud agents approve help",
+    path: "src/cli/commands/cloud-agent-admin.ts",
+    instruction: "ravi cloud agents approve triage --project clinica --execute",
+  },
+  {
+    name: "Cloud agents cap skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi cloud agents cap triage 100 --project clinica --execute",
+  },
+  {
+    name: "Cloud agents cap documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi cloud agents cap triage 100 --project clinica --execute",
+  },
+  {
+    name: "Cloud agents cap help",
+    path: "src/cli/commands/cloud-agent-admin.ts",
+    instruction: "ravi cloud agents cap triage 100 --project clinica --execute",
+  },
+  {
+    name: "Cloud agents memory reset skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi cloud agents memory-reset triage --project clinica --execute",
+  },
+  {
+    name: "Cloud agents memory reset documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi cloud agents memory-reset triage --project clinica --execute",
+  },
+  {
+    name: "Cloud agents memory reset help",
+    path: "src/cli/commands/cloud-agent-admin.ts",
+    instruction: "ravi cloud agents memory-reset triage --project clinica --execute",
+  },
+  {
+    name: "Cloud worker enable skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: "ravi cloud worker enable --execute",
+  },
+  {
+    name: "Cloud worker enable documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: "ravi cloud worker enable --execute",
+  },
+  {
+    name: "Cloud worker enable help",
+    path: "src/cli/commands/cloud-worker.ts",
+    instruction: "ravi cloud worker enable --execute",
+  },
+  {
+    name: "Cloud runs answer skill",
+    path: "src/plugins/internal/ravi-system/skills/cloud-agents/SKILL.md",
+    instruction: 'ravi cloud runs answer <run> <question> "<answer>" --execute',
+  },
+  {
+    name: "Cloud runs answer documentation",
+    path: "docs/console/cloud-agents.mdx",
+    instruction: 'ravi cloud runs answer <run> <question> "<answer>" --execute',
+  },
+  {
+    name: "Bases approve in the bases skill",
+    path: "src/plugins/internal/ravi-system/skills/bases/references/approvals-agent-columns.md",
+    instruction: 'ravi bases rows approve compras <row> aprovacao --note "Ok" --execute --json',
+  },
+  {
+    name: "Bases reject in the bases skill",
+    path: "src/plugins/internal/ravi-system/skills/bases/references/approvals-agent-columns.md",
+    instruction: 'ravi bases rows reject compras <row> aprovacao --note "Sem orçamento" --execute --json',
+  },
+  {
+    name: "Bases approve documentation",
+    path: "docs/console/bases.mdx",
+    instruction: 'ravi bases rows approve requests <rowId> approval --note "Ok" --execute --json',
+  },
+  {
+    name: "Bases reject documentation",
+    path: "docs/console/bases.mdx",
+    instruction: "ravi bases rows reject requests <rowId> approval --execute --json",
+  },
+  {
+    name: "Bases views share in the bases skill",
+    path: "src/plugins/internal/ravi-system/skills/bases/references/views-access-forms.md",
+    instruction:
+      "ravi bases views share <base> <view> --site <slug|id|host> [--write a,b] [--create] [--archive] [--write-only] --json --execute",
+  },
+  {
+    name: "Bases views share documentation",
+    path: "docs/console/bases.mdx",
+    instruction:
+      "ravi bases views share requests <VIEW_ID> --site <host> [--write a,b] [--create] [--archive] [--write-only] --execute",
+  },
 ] as const;
 
 const obsoleteExecuteConsumers = [
@@ -833,6 +1279,21 @@ const obsoleteExecuteConsumers = [
     path: "docs/console/widgets.mdx",
     obsolete: "ravi bases views bind requests <view id> none --execute",
     current: "ravi bases views bind requests <view id> none",
+  },
+  {
+    name: "request-approval in the bases skill: asking applies at once",
+    path: "src/plugins/internal/ravi-system/skills/bases/references/approvals-agent-columns.md",
+    obsolete:
+      'ravi bases rows request-approval compras <row> aprovacao --note "Acima do teto" --idempotency-key compras:<row>:pedir:<id-do-pedido> --json --execute',
+    current:
+      'ravi bases rows request-approval compras <row> aprovacao --note "Acima do teto" --idempotency-key compras:<row>:pedir:<id-do-pedido> --json',
+  },
+  {
+    name: "rows fill in the bases skill: filling an agent cell applies at once",
+    path: "src/plugins/internal/ravi-system/skills/bases/references/approvals-agent-columns.md",
+    obsolete:
+      'ravi bases rows fill leads <row> resumo --inputs-hash <hash> --value "Quer migrar o ERP" --json --execute',
+    current: 'ravi bases rows fill leads <row> resumo --inputs-hash <hash> --value "Quer migrar o ERP" --json',
   },
   {
     name: "widgets check in the pages skill: a read",

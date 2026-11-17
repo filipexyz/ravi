@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 /**
  * CLI Registry - Bridges decorators to Commander.js
  *
@@ -32,6 +33,12 @@ import { enforceCliCommandAuthorization, redactCommandAccessInput } from "./comm
 import { emitCliAuditEvent } from "./audit.js";
 import { getContext, runWithContext } from "./context.js";
 import { omitRenderingFlags } from "./registry-snapshot.js";
+import {
+  createLocalCredentialOperatorContext,
+  isLocalCredentialCommand,
+  isLocalRecoveryCommand,
+  usesOperatorRecoveryPath,
+} from "./operator-runtime.js";
 import {
   codexHookTransportFailure,
   dispatchRemoteCodexBashHook,
@@ -250,6 +257,14 @@ function registerCommand(
       if (input[optName] === undefined) input[optName] = optionValue;
     }
 
+    // The operator's terminal runs its commands here, on real state the CLI
+    // opens without preparing. Two families must work with no database at all,
+    // so a stopped or half-updated daemon can be recovered: the daemon and
+    // channel lifecycle, and the credential file.
+    const installedOperator = usesOperatorRecoveryPath();
+    const localRecovery = installedOperator && isLocalRecoveryCommand(groupName, cmdMeta.name);
+    const localCredentials = installedOperator && isLocalCredentialCommand(groupName, cmdMeta.name);
+
     let remoteConfig: RemoteGatewayConfig | null;
     try {
       remoteConfig = await resolveRemoteGatewayConfig(process.env, commandOperation(groupName, cmdMeta.name));
@@ -303,88 +318,96 @@ function registerCommand(
       process.exit(error.exitCode);
     }
 
-    const accessResult = enforceCliCommandAuthorization({
-      group: groupName,
-      command: cmdMeta.name,
-      access,
-      input,
-      source: "cli",
-      scope,
-    });
-    const auditInput = redactCommandAccessInput(access, input);
-    if (!accessResult.allowed) {
-      const contractError = permissionDeniedToContractError(
-        commandOperation(groupName, cmdMeta.name),
-        accessResult.errorMessage,
-      );
-      renderContractError(contractError, input.json === true);
+    const handlerContext = localCredentials
+      ? createLocalCredentialOperatorContext()
+      : localRecovery
+        ? {}
+        : (getContext() ?? {});
+    await runWithContext(handlerContext, async () => {
+      const accessResult = enforceCliCommandAuthorization({
+        group: groupName,
+        command: cmdMeta.name,
+        access,
+        input,
+        source: "cli",
+        scope,
+      });
+      const auditInput = redactCommandAccessInput(access, input);
+      if (!accessResult.allowed) {
+        const contractError = permissionDeniedToContractError(
+          commandOperation(groupName, cmdMeta.name),
+          accessResult.errorMessage,
+          accessResult.denialDetails ?? {},
+        );
+        renderContractError(contractError, input.json === true);
+        await emitCliAuditEvent({
+          group: groupName,
+          name: cmdMeta.name,
+          tool: toolName,
+          input: auditInput,
+          outcome: "denied",
+          exitCode: 1,
+          errorCode: "PERMISSION_DENIED",
+          status: "completed",
+          closeLazyConnection: false,
+        });
+        const { flushAuditAndExit } = await import("../permissions/scope.js");
+        await flushAuditAndExit(1);
+      }
+
+      // Execute and emit single event with input + output
+      const startTime = Date.now();
+      let outcome: "succeeded" | "blocked" | "usage_error" | "denied" | "failed" = "succeeded";
+      let contractExitCode: number | null = null;
+      let contractErrorCode: string | undefined;
+
+      try {
+        const method = (instance as Record<string, Function>)[cmdMeta.method];
+        const result = method.apply(instance, finalArgs);
+        const returnValue = result instanceof Promise ? await result : result;
+        if (returnValue instanceof Response) {
+          if (!returnValue.ok) {
+            const error = binaryResponseToContractError(commandOperation(groupName, cmdMeta.name), returnValue.status);
+            renderContractError(error, input.json === true);
+            throw error;
+          }
+          process.stdout.write(new Uint8Array(await returnValue.arrayBuffer()));
+        }
+      } catch (err) {
+        const op = commandOperation(groupName, cmdMeta.name);
+        const contractError =
+          err instanceof ContractError
+            ? err
+            : isCloudAuthError(err)
+              ? cloudErrorToContractError(op, err)
+              : mapExecutionErrorToContractError(op, err);
+        if (contractError) {
+          if (isCloudAuthError(err)) renderCloudContractError(contractError, input.json === true);
+          else if (!(err instanceof ContractError)) renderContractError(contractError, input.json === true);
+          // contractFail/contractDryRun already emitted the envelope (or the
+          // legacy text); preserve the Manual v2 exit taxonomy (1 error ·
+          // 2 usage · 3 policy brake) instead of the generic error path.
+          contractExitCode = contractError.exitCode;
+          contractErrorCode = contractError.code;
+          outcome = contractFailureOutcome(contractError);
+        }
+      }
+
       await emitCliAuditEvent({
         group: groupName,
         name: cmdMeta.name,
         tool: toolName,
         input: auditInput,
-        outcome: "denied",
-        exitCode: 1,
-        errorCode: "PERMISSION_DENIED",
+        outcome,
+        exitCode: contractExitCode ?? undefined,
+        errorCode: contractErrorCode,
         status: "completed",
-        closeLazyConnection: false,
+        durationMs: Date.now() - startTime,
+        closeLazyConnection: true,
       });
-      const { flushAuditAndExit } = await import("../permissions/scope.js");
-      await flushAuditAndExit(1);
-    }
 
-    // Execute and emit single event with input + output
-    const startTime = Date.now();
-    let outcome: "succeeded" | "blocked" | "usage_error" | "denied" | "failed" = "succeeded";
-    let contractExitCode: number | null = null;
-    let contractErrorCode: string | undefined;
-
-    try {
-      const method = (instance as Record<string, Function>)[cmdMeta.method];
-      const result = runWithContext(getContext() ?? {}, () => method.apply(instance, finalArgs));
-      const returnValue = result instanceof Promise ? await result : result;
-      if (returnValue instanceof Response) {
-        if (!returnValue.ok) {
-          const error = binaryResponseToContractError(commandOperation(groupName, cmdMeta.name), returnValue.status);
-          renderContractError(error, input.json === true);
-          throw error;
-        }
-        process.stdout.write(new Uint8Array(await returnValue.arrayBuffer()));
-      }
-    } catch (err) {
-      const op = commandOperation(groupName, cmdMeta.name);
-      const contractError =
-        err instanceof ContractError
-          ? err
-          : isCloudAuthError(err)
-            ? cloudErrorToContractError(op, err)
-            : mapExecutionErrorToContractError(op, err);
-      if (contractError) {
-        if (isCloudAuthError(err)) renderCloudContractError(contractError, input.json === true);
-        else if (!(err instanceof ContractError)) renderContractError(contractError, input.json === true);
-        // contractFail/contractDryRun already emitted the envelope (or the
-        // legacy text); preserve the Manual v2 exit taxonomy (1 error ·
-        // 2 usage · 3 policy brake) instead of the generic error path.
-        contractExitCode = contractError.exitCode;
-        contractErrorCode = contractError.code;
-        outcome = contractFailureOutcome(contractError);
-      }
-    }
-
-    await emitCliAuditEvent({
-      group: groupName,
-      name: cmdMeta.name,
-      tool: toolName,
-      input: auditInput,
-      outcome,
-      exitCode: contractExitCode ?? undefined,
-      errorCode: contractErrorCode,
-      status: "completed",
-      durationMs: Date.now() - startTime,
-      closeLazyConnection: true,
+      if (contractExitCode !== null) process.exit(contractExitCode);
     });
-
-    if (contractExitCode !== null) process.exit(contractExitCode);
   });
 }
 
@@ -436,7 +459,10 @@ async function dispatchRemoteCommand(input: DispatchRemoteCommandInput): Promise
       "Remote gateway mode requires a runtime context key.",
       1,
       {
-        suggestedAction: "Set RAVI_CONTEXT_KEY or add a local Ravi context credential issued by the target gateway",
+        ...errorDiagnostic("Remote gateway mode requires a runtime context key.", { operation: op }),
+        ...{
+          suggestedAction: "Set RAVI_CONTEXT_KEY or add a local Ravi context credential issued by the target gateway",
+        },
       },
     );
     renderContractError(error, input.input.json === true);
@@ -454,10 +480,13 @@ async function dispatchRemoteCommand(input: DispatchRemoteCommandInput): Promise
       cwd: process.cwd(),
       timeoutMs: input.timeoutMs,
     });
-  } catch {
+  } catch (caughtError) {
     const error = new ContractError(op, "SERVER_UNAVAILABLE", "Remote gateway request failed.", 1, {
-      retryable: true,
-      suggestedAction: "Check gateway availability and retry",
+      ...errorDiagnostic(caughtError, { operation: op }),
+      ...{
+        retryable: true,
+        suggestedAction: "Check gateway availability and retry",
+      },
     });
     renderContractError(error, input.input.json === true);
     process.exit(error.exitCode);

@@ -1,6 +1,9 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
+  buildGhFollowTriggerInput,
+  ensureFollowWatchProducer,
   ensureGhWatchFollow,
+  resolveGhFollowContext,
   ensureRepoWatch,
   findExistingGhFollowTrigger,
   ghFollowFilter,
@@ -12,6 +15,20 @@ import {
 import { evaluateFilter, validateFilter } from "../triggers/filter.js";
 import type { Trigger, TriggerInput } from "../triggers/index.js";
 import type { WatchRecord } from "../watch/types.js";
+
+import { registerInboundSlackThread, closeSlackThreadLifecycle } from "../channels/slack/thread-lifecycle-store.js";
+import { getOrCreateSession, deleteSession } from "../router/sessions.js";
+import { dbCreateTrigger, dbGetTrigger } from "../triggers/triggers-db.js";
+import { runGhFollowMaintenance } from "./gh-follow-sweep.js";
+import { createIsolatedRaviState, cleanupIsolatedRaviState } from "../test/ravi-state.js";
+
+let stateDir: string | null = null;
+beforeEach(async () => {
+  stateDir = await createIsolatedRaviState("ravi-gh-follow-owner-");
+});
+afterEach(async () => {
+  await cleanupIsolatedRaviState(stateDir);
+});
 
 function watch(overrides: Partial<WatchRecord> = {}): WatchRecord {
   return {
@@ -272,10 +289,17 @@ describe("gh watch follow", () => {
     expect(created).toBe(1);
   });
 
-  it("does not create a second local watch when one is already there", async () => {
+  it("does not create a second local watch when one already covers the event set", async () => {
     let created = 0;
     const result = await ensureRepoWatch("o/r", {
-      listWatches: () => ({ items: [watch(), watch({ id: "local_1", placement: "local" })], total: 2 }) as never,
+      listWatches: () =>
+        ({
+          items: [
+            watch(),
+            watch({ id: "local_1", placement: "local", eventTypes: LOCAL_TYPES, filters: { managedBy: "gh-follow" } }),
+          ],
+          total: 2,
+        }) as never,
       localEventTypes: () => LOCAL_TYPES,
       createWatch: async () => {
         created += 1;
@@ -285,6 +309,85 @@ describe("gh watch follow", () => {
 
     expect(result).toMatchObject({ ciWatchId: "local_1", ciWatchReused: true });
     expect(created).toBe(0);
+  });
+
+  it("replaces its own local watch when the derivation gained new events", async () => {
+    const created: string[][] = [];
+    const removed: string[] = [];
+    const result = await ensureRepoWatch("o/r", {
+      listWatches: () =>
+        ({
+          items: [
+            watch(),
+            // Watch criado quando a derivação só produzia ciclo de vida.
+            watch({
+              id: "local_old",
+              placement: "local",
+              eventTypes: ["pull_request.opened"],
+              filters: { managedBy: "gh-follow" },
+            }),
+          ],
+          total: 2,
+        }) as never,
+      localEventTypes: () => LOCAL_TYPES,
+      createWatch: async (input) => {
+        created.push(input.eventTypes ?? []);
+        return { watch: watch({ id: "local_new", placement: "local" }), createdRemote: false };
+      },
+      removeWatch: async (id) => {
+        removed.push(id);
+        return true;
+      },
+    });
+
+    // Reaproveitar o watch antigo deixaria o follow mudo no evento novo.
+    expect(created).toEqual([LOCAL_TYPES]);
+    expect(result).toMatchObject({ ciWatchId: "local_new", ciWatchReused: false });
+    expect(removed).toEqual(["local_old"]);
+  });
+
+  it("does not replace a local watch someone else created without the ownership mark", async () => {
+    const removed: string[] = [];
+    await ensureRepoWatch("o/r", {
+      listWatches: () =>
+        ({
+          items: [watch(), watch({ id: "local_user", placement: "local", eventTypes: ["pull_request.opened"] })],
+          total: 2,
+        }) as never,
+      localEventTypes: () => LOCAL_TYPES,
+      createWatch: async () => ({ watch: watch({ id: "local_new", placement: "local" }), createdRemote: false }),
+      removeWatch: async (id) => {
+        removed.push(id);
+        return true;
+      },
+    });
+
+    expect(removed).toEqual([]);
+  });
+
+  it("does not reactivate a disabled local watch that belongs to the user", async () => {
+    const created: string[] = [];
+    const disabled = watch({
+      id: "local_user_off",
+      placement: "local",
+      status: "disabled",
+      eventTypes: LOCAL_TYPES,
+      filters: {},
+    });
+
+    const result = await ensureRepoWatch("o/r", {
+      // O id do watch local é derivado de repo + eventos: criar aqui encontraria
+      // essa mesma linha e a traria de volta como ativa.
+      listWatches: (input) => ({ items: input?.status === "all" ? [disabled] : [], total: 1 }) as never,
+      localEventTypes: () => LOCAL_TYPES,
+      createWatch: async (input) => {
+        if (input.placement === "local") created.push("local");
+        return { watch: watch({ id: "local_new", placement: "local" }), createdRemote: false };
+      },
+    });
+
+    expect(created).toEqual([]);
+    expect(result.ciWatchId).toBeNull();
   });
 
   it("requests exactly the locally supported event types for the CI watch", async () => {
@@ -335,6 +438,50 @@ describe("gh watch follow", () => {
     expect(result).toMatchObject({ watchId: "local_1", reused: false });
   });
 
+  it("ensures only the local producer without touching the Console watch", async () => {
+    const placements: string[] = [];
+    const result = await ensureFollowWatchProducer("o/r", {
+      listWatches: () => ({ items: [] }) as never,
+      localEventTypes: () => LOCAL_TYPES,
+      createWatch: async (input) => {
+        placements.push(input.placement ?? "console");
+        return { watch: watch({ id: "local_new", placement: "local" }), createdRemote: false };
+      },
+    });
+
+    // A manutenção roda a cada minuto: criar watch de Console aqui seria chamada
+    // de rede por repo por tick.
+    expect(placements).toEqual(["local"]);
+    expect(result).toMatchObject({ ciWatchId: "local_new", ciWatchReused: false });
+  });
+
+  it("reconciles the producer to the current event set on every maintenance pass", async () => {
+    const created: string[][] = [];
+    const result = await ensureFollowWatchProducer("o/r", {
+      listWatches: () =>
+        ({
+          items: [
+            watch(),
+            watch({
+              id: "local_old",
+              placement: "local",
+              eventTypes: ["pull_request.opened"],
+              filters: { managedBy: "gh-follow" },
+            }),
+          ],
+        }) as never,
+      localEventTypes: () => LOCAL_TYPES,
+      createWatch: async (input) => {
+        created.push(input.eventTypes ?? []);
+        return { watch: watch({ id: "local_new", placement: "local" }), createdRemote: false };
+      },
+      removeWatch: async () => true,
+    });
+
+    expect(created).toEqual([LOCAL_TYPES]);
+    expect(result.ciWatchId).toBe("local_new");
+  });
+
   it("creates the PR trigger once and reuses it afterwards", async () => {
     const created: string[] = [];
     const deps = {
@@ -342,10 +489,13 @@ describe("gh watch follow", () => {
       createWatch: async () => ({ watch: watch(), createdRemote: false }),
       listTriggers: () => [] as Trigger[],
       createTrigger: (input: TriggerInput) => {
+        expect(input.cooldownMs).toBe(0);
+        expect(input.debounceMs).toBe(0);
         created.push(input.name);
         return trigger();
       },
       emitTriggersRefresh: async () => {},
+      updateTrigger: () => true,
     };
 
     const first = await ensureGhWatchFollow({ repo: "o/r", prNumber: 7, context: { sessionName: "dev" } }, deps);
@@ -359,6 +509,40 @@ describe("gh watch follow", () => {
     );
     expect(second.triggerReused).toBe(true);
     expect(created).toHaveLength(1);
+  });
+
+  it("refreshes the instructions of an existing follow", async () => {
+    const updates: Array<{ id: string; patch: Record<string, unknown> }> = [];
+    const stale = trigger({
+      message: "Activity on o/r#7. Tell the user what changed.",
+      filter: "old",
+      topic: "ravi.watch.github.*",
+      cooldownMs: 30_000,
+      debounceMs: 2_000,
+    });
+
+    const result = await ensureGhWatchFollow(
+      { repo: "o/r", prNumber: 7, context: { sessionName: "dev" } },
+      {
+        listWatches: () => ({ items: [watch()] }) as never,
+        listTriggers: () => [stale],
+        emitTriggersRefresh: async () => {},
+        updateTrigger: (id, patch) => {
+          updates.push({ id, patch: patch as Record<string, unknown> });
+          return true;
+        },
+      },
+    );
+
+    // Sem isso, acompanhamentos antigos seguem com o texto velho e nunca passam a
+    // considerar comentário, mesmo recebendo o evento.
+    expect(result.triggerRepaired).toBe(true);
+    expect(updates).toHaveLength(1);
+    expect(String(updates[0].patch.message)).toContain("comment");
+    expect(updates[0].patch.filter).toBe(ghFollowFilter("o/r", 7));
+    expect(updates[0].patch.topic).toBe("ravi.watch.github.>");
+    expect(updates[0].patch.cooldownMs).toBe(0);
+    expect(updates[0].patch.debounceMs).toBe(0);
   });
 
   it("does not create a trigger without a PR number", async () => {
@@ -745,5 +929,166 @@ describe("gh watch observation", () => {
     await observeGhBashCommand("gh pr view 1 --repo o/r", {}, d);
 
     expect(listed).toBe(0);
+  });
+
+  it("creates nothing for text the Bash gate never runs as gh", async () => {
+    resetGhWatchCaches();
+    let work = 0;
+    const d = deps({
+      listWatches: () => {
+        work += 1;
+        return { items: [] } as never;
+      },
+      createTrigger: () => {
+        work += 1;
+        return trigger();
+      },
+      addPending: () => {
+        work += 1;
+      },
+    });
+
+    await observeGhBashCommand("ls x\\;gh pr edit 7 -R o/r", { cwd: "/repo", sessionName: "main" }, d);
+    expect(tokenizeShellCommand("ls x\\;gh")).toEqual(["ls", "x;gh"]);
+    expect(work).toBe(0);
+  });
+});
+
+describe("durable PR follow owner", () => {
+  function seed() {
+    getOrCreateSession("parent-key", "agent-test", "/tmp/follow-test", { name: "parent" });
+    getOrCreateSession("parent-key:thread:1.2", "agent-test", "/tmp/follow-test", { name: "child" });
+    return registerInboundSlackThread({
+      parentSessionKey: "parent-key",
+      parentSessionName: "parent",
+      childSessionKey: "parent-key:thread:1.2",
+      childSessionName: "child",
+      accountId: "slack-account",
+      instanceId: "slack-instance",
+      platformChatId: "C123",
+      threadCanonicalChatId: "thread-chat",
+      providerThreadId: "1.2",
+    });
+  }
+  const deps = { listWatches: () => ({ items: [watch()] }) as never, emitTriggersRefresh: async () => {} };
+  const childContext = {
+    sessionName: "child",
+    source: { channel: "slack", accountId: "slack-account", chatId: "C123#1.2", threadId: "1.2" },
+  };
+
+  it("creates a follow at the parent, with root fallback, and allows the child to close", async () => {
+    const record = seed();
+    const result = await ensureGhWatchFollow({ repo: "o/r", prNumber: 7, context: childContext }, deps);
+    expect(dbGetTrigger(result.triggerId!)!).toMatchObject({
+      replySession: "parent",
+      replySource: { channel: "slack", accountId: "slack-account", chatId: "C123" },
+    });
+    expect(dbGetTrigger(result.triggerId!)!.replySource?.threadId).toBeUndefined();
+    expect(closeSlackThreadLifecycle({ childSessionKey: record.childSessionKey! }).changed).toBe(true);
+  });
+
+  it("resolves a delayed creation after the child has closed and been pruned", async () => {
+    const record = seed();
+    closeSlackThreadLifecycle({ childSessionKey: record.childSessionKey! });
+    deleteSession(record.childSessionKey!);
+    const result = await ensureGhWatchFollow({ repo: "o/r", prNumber: 7, context: childContext }, deps);
+    expect(dbGetTrigger(result.triggerId!)!.replySession).toBe("parent");
+  });
+
+  it("reconciles an existing follow using its saved parent, not the new observer", async () => {
+    seed();
+    const old = dbCreateTrigger({
+      name: "gh-follow:o/r#7",
+      topic: "ravi.watch.github.>",
+      message: "old",
+      session: "main",
+      replySession: "child",
+      replySource: childContext.source,
+    });
+    const result = await ensureGhWatchFollow({ repo: "o/r", prNumber: 7, context: { sessionName: "unrelated" } }, deps);
+    expect(result.triggerId).toBe(old.id);
+    expect(result.triggerRepaired).toBe(true);
+    expect(dbGetTrigger(old.id)!.replySession).toBe("parent");
+    expect(dbGetTrigger(old.id)!.replySource?.chatId).toBe("C123");
+  });
+
+  it("maintenance repairs a closed child's legacy follow and refreshes the runner", async () => {
+    const record = seed();
+    closeSlackThreadLifecycle({ childSessionKey: record.childSessionKey! });
+    const old = dbCreateTrigger({
+      name: "gh-follow:o/r#7",
+      topic: "ravi.watch.github.>",
+      message: "old",
+      session: "main",
+      replySession: "child",
+      replySource: childContext.source,
+    });
+    let refreshes = 0;
+    const result = await runGhFollowMaintenance({
+      readPending: () => [],
+      listPrStates: () => new Map([[7, "OPEN"]]),
+      listWatches: () => [],
+      ensureWatches: async () => {},
+      emitTriggersRefresh: async () => {
+        refreshes++;
+      },
+    });
+    expect(result.triggersRepaired).toBe(1);
+    expect(refreshes).toBe(1);
+    expect(dbGetTrigger(old.id)!.replySession).toBe("parent");
+  });
+
+  it("fails closed when a known thread has no parent or an unknown thread has no lifecycle", () => {
+    seed();
+    deleteSession("parent-key");
+    expect(() => resolveGhFollowContext(childContext)).toThrow("parent session is missing");
+    expect(() => resolveGhFollowContext({ sessionKey: "missing:thread:1.2" })).toThrow("lifecycle is missing");
+    expect(resolveGhFollowContext({ sessionName: "normal" })).toEqual({ sessionName: "normal" });
+  });
+
+  it("maintenance removes burst loss from existing follows once without changing owners or paused state", async () => {
+    seed();
+    const input = buildGhFollowTriggerInput("o/r", 833, { sessionName: "parent", source: childContext.source });
+    const legacy = dbCreateTrigger({ ...input, cooldownMs: 30_000 });
+    const paused = dbCreateTrigger({
+      ...input,
+      name: "gh-follow:o/r#834",
+      cooldownMs: 30_000,
+      debounceMs: 2_000,
+      enabled: false,
+    });
+    const unrelated = dbCreateTrigger({ ...input, name: "custom-review", cooldownMs: 30_000, debounceMs: 2_000 });
+    let refreshes = 0;
+    const maintenanceDeps = {
+      readPending: () => [],
+      listPrStates: () =>
+        new Map([
+          [833, "OPEN"],
+          [834, "OPEN"],
+        ]),
+      listWatches: () => [],
+      ensureWatches: async () => {},
+      emitTriggersRefresh: async () => {
+        refreshes++;
+      },
+    };
+
+    expect((await runGhFollowMaintenance(maintenanceDeps)).triggersRepaired).toBe(2);
+    expect(dbGetTrigger(legacy.id)).toMatchObject({
+      cooldownMs: 0,
+      debounceMs: 0,
+      replySession: "parent",
+      replySource: childContext.source,
+      enabled: true,
+    });
+    expect(dbGetTrigger(paused.id)).toMatchObject({
+      cooldownMs: 0,
+      debounceMs: 0,
+      enabled: false,
+      replySession: "parent",
+    });
+    expect(dbGetTrigger(unrelated.id)).toMatchObject({ cooldownMs: 30_000, debounceMs: 2_000 });
+    expect((await runGhFollowMaintenance(maintenanceDeps)).triggersRepaired).toBe(0);
+    expect(refreshes).toBe(1);
   });
 });

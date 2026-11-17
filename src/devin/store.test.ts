@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { attachTagSlugsToAsset, dbFindTagBindings } from "../tags/index.js";
@@ -42,6 +43,18 @@ describe("Devin store", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("does not reuse a writable handle after the selected state directory changes", () => {
+    upsertDevinSession(fakeSession());
+    const previous = process.env.RAVI_STATE_DIR!;
+    try {
+      process.env.RAVI_STATE_DIR = join(previous, "other");
+      expect(listDevinSessions()).toEqual([]);
+    } finally {
+      process.env.RAVI_STATE_DIR = previous;
+    }
+    expect(listDevinSessions()).toHaveLength(1);
   });
 
   it("uses a dedicated devin.db and upserts sessions by remote id", () => {

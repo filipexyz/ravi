@@ -90,13 +90,16 @@ export function createChannelLinkMessenger(): LinkMessenger {
     async send(target, text, options = {}) {
       const channel = canonicalChannelId(target.channel);
       if (channel === "slack") {
-        const delivered = await sendSlackText({
-          accountId: target.accountId,
-          chatId: target.chatId,
-          text,
-          ...(target.threadId ? { threadId: target.threadId } : {}),
-          ...(options.privateLink ? { unfurlLinks: false } : {}),
-        });
+        const delivered = await sendSlackText(
+          {
+            accountId: target.accountId,
+            chatId: target.chatId,
+            text,
+            ...(target.threadId ? { threadId: target.threadId } : {}),
+            ...(options.privateLink ? { unfurlLinks: false } : {}),
+          },
+          { authority: { kind: "internal-service", service: "identity-link" } },
+        );
         const landed = delivered.raw.channel;
         return { chatId: typeof landed === "string" && landed ? landed : target.chatId };
       }
@@ -116,7 +119,10 @@ export function createChannelLinkMessenger(): LinkMessenger {
     async lookupEmail(route) {
       if (route.channel !== "slack" || !route.slackUserId) return null;
       try {
-        return await lookupSlackUserEmail({ accountId: route.accountId, userId: route.slackUserId });
+        return await lookupSlackUserEmail(
+          { accountId: route.accountId, userId: route.slackUserId },
+          { authority: { kind: "internal-service", service: "identity-link" } },
+        );
       } catch {
         return null;
       }

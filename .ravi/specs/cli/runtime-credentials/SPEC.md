@@ -96,3 +96,11 @@ teaches this surface.
   would miss the enable/disable/reset-health/refresh paths.
 - `runtime-credentials.test.ts` must mock `../context.js` with `hasContext`
   returning true, or the contract helpers call `process.exit` in tests.
+
+## Optional status id
+
+`runtime credentials status` without an id MUST validate as the pool listing
+(`credentials`, `providerHealth`, pagination and total). With an id it MUST
+validate as `{credential, health}`. The command return schema and generated
+clients MUST express both variants. `reset-health` remains a single credential
+response. Neither status variant mutates credentials or exposes secrets.

@@ -1,3 +1,4 @@
+import { authorizeBridgeCommand } from "../bridge/command.js";
 import { runWithContext } from "../cli/context.js";
 import { getAllCommandClasses, createSdkTools } from "../cli/tool-definitions.js";
 import { extractTools, type ExportedTool, type ToolResult } from "../cli/tools-export.js";
@@ -5,6 +6,7 @@ import { logger } from "../utils/logger.js";
 
 const log = logger.child("runtime:host-services");
 import {
+  canExecuteArbitraryShell,
   checkDangerousPatterns,
   emitBashDeniedAudit,
   evaluateBashPermission,
@@ -46,6 +48,7 @@ import {
 import { formatSkillNotAuthorizedReason, isSkillAuthorizedForAgent } from "./skill-authorization.js";
 import { isLibraryPluginSkillAllowedForTurn } from "../library/session-plugins.js";
 import { isOperatorOwnTurn } from "../library/turn.js";
+import { contextCan, fileWriteToolTargets, providerConfigWriteDenial } from "../permissions/provider-config-paths.js";
 import {
   commandLineRunsSkillRemediation,
   extractRequestedSkillsFromCommandLine,
@@ -67,6 +70,8 @@ export interface RuntimeHostServicesOptions {
   approvalSource?: ApprovalTarget;
   toolContext: Record<string, unknown>;
   onSkillGatePersisted?: SkillGatePersistedListener;
+  /** The session's working directory, which the provider resolves relative tool paths against. */
+  cwd?: string;
 }
 
 function hasUnrestrictedToolExecution(agentId: string): boolean {
@@ -460,7 +465,7 @@ function toDynamicToolContentItems(content: ToolResult["content"]): RuntimeDynam
 }
 
 async function authorizeRuntimeCommandExecution(
-  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "onSkillGatePersisted">,
+  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "onSkillGatePersisted" | "cwd">,
   request: RuntimeCommandAuthorizationRequest,
 ): Promise<RuntimeApprovalResult> {
   const command = request.command;
@@ -473,18 +478,29 @@ async function authorizeRuntimeCommandExecution(
     return { approved: false, reason: "Runtime command approval request did not include a command." };
   }
 
+  if (options.context.metadata?.bridgeTurnId !== undefined)
+    return authorizeBridgeCommand(options.context, command, request.eventData, request.beforeExternalApproval);
+
   const eventData = request.eventData;
   const buildBashContext = () => ({
+    contextId: options.context.contextId,
+    context: options.context,
     agentId: options.agentId,
     kind: options.context.kind,
+    metadata: options.context.metadata,
+    source: options.context.source,
     ...(options.context.sessionKey ? { sessionKey: options.context.sessionKey } : {}),
     sessionName: options.context.sessionName ?? options.sessionName,
     capabilities: options.context.capabilities,
+    ...(options.cwd ? { cwd: options.cwd } : {}),
   });
 
   const preliminary = evaluateBashPermission(command, buildBashContext());
-  if (!preliminary.allowed && preliminary.denialType === "env_spoofing") {
-    emitBashDeniedAudit(command, preliminary, options.agentId);
+  if (
+    !preliminary.allowed &&
+    (preliminary.denialType === "env_spoofing" || preliminary.denialType === "shell_syntax")
+  ) {
+    emitBashDeniedAudit(command, preliminary, options.agentId, buildBashContext());
     return { approved: false, reason: preliminary.reason ?? "Command denied by Ravi policy." };
   }
 
@@ -521,10 +537,11 @@ async function authorizeRuntimeCommandExecution(
     return { approved: false, reason };
   }
 
+  const arbitraryShell = canExecuteArbitraryShell(buildBashContext());
   const dangerous = checkDangerousPatterns(command);
-  if (!dangerous.safe) {
+  if (!dangerous.safe && !arbitraryShell) {
     emitRuntimePolicyDenied(options, {
-      type: "executable",
+      type: "shell_syntax",
       denied: "command_policy:dangerous_pattern",
       reason: dangerous.reason ?? "Command denied by Ravi policy.",
       command,
@@ -533,10 +550,12 @@ async function authorizeRuntimeCommandExecution(
     return { approved: false, reason: dangerous.reason ?? "Command denied by Ravi policy." };
   }
 
-  const parsed = parseBashCommand(command);
-  if (!parsed.success) {
+  // With arbitrary execution, parsing is only best-effort skill discovery.
+  // A failed discovery must not become an empty, authoritative executable list.
+  const parsed = parseBashCommand(command, { allowInlineCode: arbitraryShell });
+  if (!parsed.success && !arbitraryShell) {
     emitRuntimePolicyDenied(options, {
-      type: "executable",
+      type: "shell_syntax",
       denied: "command_policy:parse_error",
       reason: parsed.error ?? "Failed to parse command for approval.",
       command,
@@ -562,7 +581,12 @@ async function authorizeRuntimeCommandExecution(
   }
   inherited = inherited && toolAuthorization.inherited;
 
-  if (!canWithCapabilityContext(options.context, "execute", "executable", "*")) {
+  if (!canExecuteArbitraryShell(buildBashContext())) {
+    const current = evaluateBashPermission(command, buildBashContext());
+    if (!current.allowed && current.denialType === "shell_syntax") {
+      emitBashDeniedAudit(command, current, options.agentId, buildBashContext());
+      return { approved: false, reason: current.reason ?? "Command denied by Ravi policy." };
+    }
     for (const executable of parsed.executables) {
       if (UNCONDITIONAL_BLOCKS.has(executable)) {
         const reason = `${executable} is blocked by Ravi command policy.`;
@@ -626,13 +650,13 @@ async function authorizeRuntimeCommandExecution(
 
   const finalDecision = evaluateBashPermission(command, buildBashContext());
   if (!finalDecision.allowed) {
-    emitBashDeniedAudit(command, finalDecision, options.agentId);
+    emitBashDeniedAudit(command, finalDecision, options.agentId, buildBashContext());
     return { approved: false, reason: finalDecision.reason ?? "Command denied by Ravi policy." };
   }
 
   const gateDecision = evaluateRuntimeCommandSkillGate({
     commandLine: command,
-    executables: parsed.executables,
+    ...(parsed.success && dangerous.safe ? { executables: parsed.executables } : {}),
     context: options.context,
     toolName: "Bash",
     onSkillGatePersisted: options.onSkillGatePersisted,
@@ -683,7 +707,7 @@ async function authorizeRuntimeCommandExecution(
 }
 
 async function authorizeRuntimeToolUse(
-  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "onSkillGatePersisted">,
+  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "onSkillGatePersisted" | "cwd">,
   request: RuntimeToolUseAuthorizationRequest,
 ): Promise<RuntimeApprovalResult> {
   const result = await authorizeRuntimeContext({
@@ -697,6 +721,23 @@ async function authorizeRuntimeToolUse(
 
   if (!result.allowed) {
     return { approved: false, reason: result.reason ?? `${request.toolName} permission denied.` };
+  }
+
+  const configWriteDenial = providerConfigWriteDenial({
+    can: contextCan(options.context),
+    agentId: options.agentId,
+    targets: fileWriteToolTargets(request.toolName, request.input),
+    cwd: options.cwd,
+  });
+  if (configWriteDenial) {
+    emitRuntimePolicyDenied(options, {
+      type: "tool",
+      denied: `tool:${request.toolName}`,
+      reason: configWriteDenial,
+      blockType: "runtime_provider_config_write",
+      detail: { toolName: request.toolName },
+    });
+    return { approved: false, reason: configWriteDenial };
   }
 
   const deniedToolSkill = extractRequestedSkillsFromToolCall(request.toolName, request.input).find(

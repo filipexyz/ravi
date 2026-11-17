@@ -240,9 +240,9 @@ describe("registerCommands", () => {
     }) as typeof process.exit;
 
     try {
-      await expect(
-        runWithContext({}, () => program.parseAsync(["node", "test", "clionly", "run"])),
-      ).rejects.toThrow("__cli_only_exit__");
+      await expect(runWithContext({}, () => program.parseAsync(["node", "test", "clionly", "run"]))).rejects.toThrow(
+        "__cli_only_exit__",
+      );
     } finally {
       globalThis.fetch = originalFetch;
       console.error = originalError;

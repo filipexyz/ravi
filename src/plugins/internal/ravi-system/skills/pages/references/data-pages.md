@@ -12,9 +12,9 @@ Regras 1 a 3 da skill solucoes, detalhadas em "Ship" e "Quem passa":
 1. Página de dados só para membro logado da org. Gente de fora entra por canal
    e recebe mensagem ou snapshot. Na dúvida, é de fora. (Sem sessão de membro,
    nada responde.)
-2. `--uses` é do host inteiro e o último ship manda: todo ship nesse host leva
-   a união dos ids de todas as páginas de dados. `pages publish` e
-   `artifacts publish` apagam a lista. (O Console lê o `uses` da release ativa.)
+2. Cada ship declara no `--uses` os ids que a própria rota chama. O host
+   libera a união do `uses` das rotas ativas: o ship de outra rota não tira
+   os ids desta. (O Console lê o `uses` de cada rota da release ativa.)
 3. Página de dados mora em rota `private` (padrão do ship) ou `protected_link`;
    nunca `public` nem `password`. (Só nelas o Pages pede login.)
 
@@ -28,17 +28,16 @@ Regras 1 a 3 da skill solucoes, detalhadas em "Ship" e "Quem passa":
    site".
 2. **Gráficos.** Se a tela tem gráficos, crie-os sobre uma view (skill bases,
    `charts.md`).
-3. **Página.** Lista, board, tabela, galeria ou formulário: escreva a tag
-   (`<ravi-view>`, `<ravi-form>`; `widgets.md`). O que a tag não cobre:
-   parta de um esqueleto (`esqueletos/board.html.txt` ou
-   `formulario.html.txt`, mais `_client.js.txt` como `client.js`), com as
-   cores do tema (`theme.md`). Ids de view e gráfico entram como atributo ou
+3. **Página.** Lista, board, tabela, galeria, calendário, formulário ou
+   gráfico: escreva a tag (`<ravi-view>`, `<ravi-form>`, `<ravi-chart>`;
+   `widgets.md`). O que a tag não cobre: parta de um esqueleto
+   (`esqueletos/board.html.txt` ou `formulario.html.txt`, mais
+   `_client.js.txt` como `client.js`), com as cores do tema (`theme.md`). Ids de view e gráfico entram como atributo ou
    constante.
    Dados nunca entram no HTML: a página busca tudo na hora, como quem vê.
-4. **Ship.** `ravi pages ship ... --uses <ids>` com os `ravi.bases.*` que a
-   página chama, mais os das outras páginas de dados do mesmo host (o
-   allowlist é do host; veja "Ship"). Os ids das tags o ship soma sozinho;
-   os das outras páginas continuam com você.
+4. **Ship.** `ravi pages ship ... --uses <ids>` com os `ravi.bases.*` que
+   esta página chama (veja "Ship"). Os ids das tags o ship soma sozinho; os
+   das outras rotas do host continuam valendo sem você repetir.
 5. **Verifique** e mande a URL para a pessoa abrir, junto com o aviso do
    passo 1.
 
@@ -52,8 +51,8 @@ ravi pages ship --project <p> --title "Pautas" --route /pautas --body "<p>Em con
 ravi pages list --project <p> --json      # sites[]: o id do que tem isDefault: true
 ```
 
-Num host que já tem páginas de dados, o ship do esqueleto também leva o
-`--uses` com a união: sem ele, as outras páginas param (veja "Ship").
+O ship do esqueleto vai sem `--uses`, mesmo num host que já tem páginas de
+dados: ele não tira os ids das outras rotas.
 
 Uma view por tela (ou por conjunto de permissões):
 
@@ -70,6 +69,9 @@ Uma view por tela (ou por conjunto de permissões):
 ravi bases views create <base> --spec @view.json --json    # guarde o id
 ```
 
+Com tag, o ship soma esses ids sozinho (`widgets.md`); a tabela é o
+`--uses` do HTML à mão.
+
 | tela | layout | `--uses` (sem o prefixo `ravi.bases.`) |
 |---|---|---|
 | tabela ou lista só leitura | `table` / `list` | `views.describe`, `views.query` |
@@ -82,8 +84,8 @@ ravi bases views create <base> --spec @view.json --json    # guarde o id
 | dashboard | `chart` ou qualquer | `charts.data` (+ `views.describe` se ler `layout.chartId`) |
 
 No `--uses`, sempre o id completo: `ravi.bases.views.describe`, não
-`views.describe`. Um índice de rotas usa `ravi.pages.published.list`, que
-também entra na união.
+`views.describe`. Um índice de rotas declara `ravi.pages.published.list` no
+próprio ship.
 
 ### Ship
 
@@ -100,22 +102,24 @@ ravi pages ship --project <p> --title "Pautas" --route /pautas --dir ./pautas \
   não é sessão do Pages, e "Entrar de novo" só mostra a senha de novo.
   Por isso o ship recusa, sem publicar, `ravi.bases.*` no `--uses` em rota
   `public`. `--members-best-effort` passa por cima de propósito, só quando
-  todo leitor é membro já logado. Página pública estática vai noutro projeto
-  (`ravi pages ship --project <outro>`), nunca no host das páginas de dados.
+  todo leitor é membro já logado. Página pública estática pode morar no mesmo
+  host: o ship dela vai sem `ravi.bases.*` e não tira os ids das outras rotas.
 - `ravi.bases.*` nunca entra no allowlist implícito. Id fora do `--uses` dá
   `connector_not_allowlisted`. A página passou a chamar outra action? Ship de
   novo com o id.
-- Hoje o allowlist é do host, não da rota: o Console lê o `uses` da release
-  ativa do host, que é a do último ship em qualquer rota. Num host com várias
-  páginas de dados, declare em todo ship nesse host a união dos ids que essas
-  páginas chamam, e não faça ship sem `--uses` ali. Isso não amplia acesso: a
-  view já concede ao site inteiro.
-- Sem `uses` declarado, o host libera só as leituras `ravi.projects.list`,
-  `ravi.pages.sites.list` e `ravi.pages.published.list`. Declarar `--uses`
-  tira as três: ponha na união as que alguma página chama. Ship sem `--uses`
-  num host de dados volta a esse conjunto e derruba as páginas de dados.
-- `pages publish` e `artifacts publish` não mandam `--uses` e apagam a lista:
-  num host de dados, só `pages ship`.
+- O allowlist vale para o host inteiro e é a união do `uses` de todas as
+  rotas ativas. Cada rota contribui o `uses` do ship que publicou a versão que
+  ela serve; o ship de outra rota, com outra lista ou sem nenhuma, não tira
+  nada dela. Um id sai quando nenhuma rota ativa o declara mais (rota removida
+  ou re-ship sem ele). Isso não amplia acesso: a view já concede ao site
+  inteiro.
+- Enquanto nenhuma rota ativa declarou `uses`, o host libera só as leituras
+  `ravi.projects.list`, `ravi.pages.sites.list` e `ravi.pages.published.list`.
+  Depois que alguma declarou, valem só os ids declarados: a rota que chama uma
+  das três declara no próprio ship. `ravi.pages.theme.get` passa sempre.
+- `pages publish` e `artifacts publish` não gravam `uses`: na rota de uma
+  página de dados, a página perde os ids dela. Para página de dados, só
+  `pages ship`.
 - `CONFLICT` (409, "Read unread Ravi Pages comments before publishing."): há
   comentário não lido de outra pessoa nessa rota, e o CLI ainda não lê comentários. Peça à pessoa logada neste Ravi
   (o CLI publica em nome dela) que leia na barra do operador da página, ou
@@ -176,6 +180,7 @@ Todos revision 1, input estrito (chave desconhecida dá `payload_invalid`),
 |---|---|---|---|
 | `ravi.bases.views.describe` | leitura | `{ viewId }` | `{ id, baseId, name, description, layout, version, columns, capabilities, valid }` |
 | `ravi.bases.views.query` | leitura | `{ viewId, filter?, sort?, limit?, cursor? }` | `{ columns, rows: Row[], nextCursor, users }` |
+| `ravi.bases.views.version` | leitura | `{ viewId }` | `{ fingerprint }` |
 | `ravi.bases.views.rows.get` | leitura | `{ viewId, rowId }` | `{ rowId, version, values, body?, users }` |
 | `ravi.bases.views.rows.create` | escrita | `{ viewId, values, body?, idempotencyKey }` | `{ rowId, version }` |
 | `ravi.bases.views.rows.update` | escrita | `{ viewId, rowId, values, body?, expectedVersion, idempotencyKey }` | `Row` |
@@ -212,6 +217,9 @@ Todos revision 1, input estrito (chave desconhecida dá `payload_invalid`),
   somado com AND ao filtro da view, só com colunas projetadas (não `body`).
   Devolva `nextCursor` como `cursor` sem mudar `filter` nem `sort`; o cursor
   vale 15 minutos.
+- `version`: `fingerprint` muda quando muda alguma linha que quem chama vê
+  pela view (contagem, última alteração e soma das versões). Barato: serve
+  para saber quando reler sem buscar as linhas.
 - `rows.get`: exige leitura de linhas. Linha fora do filtro, arquivada ou
   inexistente dão o mesmo `404 not_found`.
 - `rows.create` e `rows.update`: só `writeColumns` (e `body` se `"body"`
@@ -225,7 +233,7 @@ Todos revision 1, input estrito (chave desconhecida dá `payload_invalid`),
   (`ravi bases rows restore`).
 - Nenhuma escrita aceita `lastWriteWins`.
 
-Os outros quatro dos 11 ids: `ravi.projects.list` (`{ limit? }`),
+Os outros quatro dos 12 ids: `ravi.projects.list` (`{ limit? }`),
 `ravi.pages.sites.list` e `ravi.pages.published.list`
 (`{ limit?, projectRef? }`) e `ravi.identity.assertion` (`{ aud }` →
 `{ token }`; skill pages). Não há action para listar views, ler histórico,
@@ -248,7 +256,9 @@ com `<script src="client.js"></script>`, relativo, antes do script da página
 (a rota vira `/<rota>/`; inferido do Worker). Com `--html`, cole o conteúdo
 num `<script>`. As mensagens saem num `<p id="banner" hidden></p>`.
 
-Não há push: releia a view com `poll(fn, ms)`, piso de 30 s. O Console aceita
+Não há push: releia a view com `poll(fn, ms)`, piso de 30 s. Com
+`ravi.bases.views.version` no `--uses`, dá para consultar a impressão digital a
+cada 5 s e reler só quando ela mudar (as tags fazem isso sozinhas). O Console aceita
 120 chamadas por minuto por viewer por site; acima disso,
 `connector_rate_limited`, e o cliente espera e repete.
 
@@ -259,7 +269,7 @@ Não há push: releia a view com `poll(fn, ms)`, piso de 30 s. O Console aceita
 | `connector_session_required` | 401 | sem sessão do Pages: sessão vencida, rota `public` sem login, ou rota com senha (sessão de senha não conta) | link "Entrar de novo" (recarrega): em rota `private` ou `protected_link`, o Pages leva ao login e volta. Em rota com senha ou `public` isso não resolve: publique em rota `private` sem senha |
 | `connector_unauthorized` | 401 | sessão inválida ou expirada, ou `Origin` diferente do host | o mesmo |
 | `connector_permission_required` | 403 | sessão do Pages que não é de login (captura, sem escopo), ou Bases não liberado para a org ou o papel | "sem permissão"; não repita |
-| `connector_not_allowlisted` | 403 | id fora do `uses` da release | erro de publish: ship de novo com o id na união do host |
+| `connector_not_allowlisted` | 403 | id fora da união do `uses` das rotas ativas | erro de publish: ship de novo desta rota com o id no `--uses` |
 | `connector_capability_unsupported` | 400 | id desconhecido ou revision diferente da publicada | erro de publish: ship de novo |
 | `payload_invalid` | 400 | input fora do schema: chave a mais, UUID inválido, `limit` fora de 1-500, chave de idempotência inválida | bug da página; mensagem genérica |
 | `validation_failed` | 400 | valor inválido; `fieldErrors` por chave | cada mensagem sob o campo da chave; chaves sem campo (`values`, `body`, `expectedVersion`, `idempotencyKey`) no topo do formulário |
@@ -356,9 +366,10 @@ Para escrever:
 - O filtro da view, e não a página, separa o que é de cada pessoa?
 - Fiz o ship de esqueleto e peguei o `siteId` em `pages list` antes de criar a
   view?
-- `--uses` lista os ids que o HTML chama, mais os das outras páginas de dados
-  do mesmo host (e as leituras `ravi.pages.*` que alguma página use)?
-- Nenhum `pages publish` ou `artifacts publish` nesse host?
+- `--uses` lista os ids que o HTML desta rota chama (e as leituras
+  `ravi.pages.*` que ela use)?
+- A rota da página de dados saiu por `pages ship`, não por `pages publish` ou
+  `artifacts publish`?
 - Você disse à pessoa qual host (todas as rotas) passou a ler, e a escrever
   quais colunas, em qual view?
 - A rota é `private` ou `protected_link`, e quem abre é membro logado?

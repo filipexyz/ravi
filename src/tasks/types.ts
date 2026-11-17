@@ -1,4 +1,6 @@
+import type { Decision, DecisionOwnerType, DecisionStatus } from "../decisions/types.js";
 import type { RuntimeEffort } from "../runtime/effort.js";
+import type { SubjectRef } from "../identity/subject.js";
 
 export type TaskStatus = "open" | "dispatched" | "in_progress" | "blocked" | "done" | "failed";
 
@@ -86,6 +88,8 @@ export type TaskEventType =
   | "task.resumed"
   | "task.done"
   | "task.failed"
+  | "task.decision.open"
+  | "task.decision.answered"
   | "task.child.blocked"
   | "task.child.done"
   | "task.child.failed";
@@ -94,6 +98,8 @@ export const TASK_AUTOMATION_EVENTS = [
   "task.blocked",
   "task.done",
   "task.failed",
+  "task.decision.open",
+  "task.decision.answered",
   "task.child.blocked",
   "task.child.done",
   "task.child.failed",
@@ -300,6 +306,7 @@ export interface ResolvedTaskProfile extends TaskProfileDefinition {
 
 export interface TaskRecord {
   id: string;
+  threadId: string;
   title: string;
   instructions: string;
   status: TaskStatus;
@@ -320,6 +327,8 @@ export interface TaskRecord {
   createdBy?: string;
   createdByAgentId?: string;
   createdBySessionName?: string;
+  /** On whose behalf this task exists. The actor (who ran it) is a separate concept. */
+  subject?: SubjectRef;
   assigneeAgentId?: string;
   assigneeSessionName?: string;
   worktree?: TaskWorktreeConfig;
@@ -337,6 +346,7 @@ export interface TaskRecord {
 
 export interface TaskAssignment {
   id: string;
+  executionStatus?: "legacy" | "pending" | "accepting" | "refused" | "admitted" | "uncertain";
   taskId: string;
   agentId: string;
   sessionName: string;
@@ -404,6 +414,81 @@ export interface TaskLaunchPlan {
   updatedAt: number;
 }
 
+export type TaskDecisionStatus = DecisionStatus;
+export type TaskDecisionOwnerType = DecisionOwnerType;
+/** Task's read projection of the shared primitive; parked is computed separately. */
+export type TaskDecision = Omit<Decision, "origin" | "revision"> & { taskId: string };
+
+export interface TaskDecisionInput {
+  key: string;
+  ask: string;
+  ownerType?: TaskDecisionOwnerType;
+  ownerId?: string | null;
+  blocks?: boolean;
+  actor?: string;
+  agentId?: string;
+  sessionName?: string;
+}
+
+export interface TaskDecisionAnswerInput {
+  key: string;
+  answer: string;
+  actor?: string;
+  agentId?: string;
+  sessionName?: string;
+}
+
+export interface TaskDecisionAttentionOptions {
+  agentId?: string;
+  ownerType?: TaskDecisionOwnerType;
+  taskId?: string;
+}
+
+export interface TaskDecisionAttentionItem {
+  id: string;
+  key: string;
+  ask: string;
+  ownerType: TaskDecisionOwnerType;
+  ownerId: string | null;
+  askedBy: string | null;
+  askedAt: number;
+  blocks: boolean;
+  ageSeconds: number;
+}
+
+export interface TaskDecisionAttentionEntry {
+  taskId: string;
+  taskTitle: string;
+  taskStatus: TaskStatus;
+  taskPriority: TaskPriority;
+  assigneeAgentId: string | null;
+  assigneeSessionName: string | null;
+  parked: boolean;
+  waitingFor: TaskDecisionOwnerType;
+  ageSeconds: number;
+  decisionCount: number;
+  decisions: TaskDecisionAttentionItem[];
+}
+
+export interface TaskDecisionAttentionReport {
+  kind: "task.decision.attention";
+  generatedAt: number;
+  total: number;
+  parkedCount: number;
+  decisionCount: number;
+  filters: TaskDecisionAttentionOptions;
+  entries: TaskDecisionAttentionEntry[];
+}
+
+export interface TaskOpenDecisionRow {
+  decision: TaskDecision;
+  taskTitle: string;
+  taskStatus: TaskStatus;
+  taskPriority: TaskPriority;
+  assigneeAgentId: string | null;
+  assigneeSessionName: string | null;
+}
+
 export interface TaskDependencyEdge {
   direction: "dependency" | "dependent";
   taskId: string;
@@ -431,6 +516,8 @@ export interface TaskReadiness {
 }
 
 export interface CreateTaskInput {
+  /** Stable caller-scoped operation key. Retry returns the original task and thread. */
+  idempotencyKey?: string;
   title: string;
   instructions: string;
   priority?: TaskPriority;
@@ -447,6 +534,8 @@ export interface CreateTaskInput {
   createdBy?: string;
   createdByAgentId?: string;
   createdBySessionName?: string;
+  /** On whose behalf this task exists; inherited from the parent task when omitted. */
+  subject?: SubjectRef;
   parentTaskId?: string;
   dependsOnTaskIds?: string[];
   worktree?: TaskWorktreeConfig;

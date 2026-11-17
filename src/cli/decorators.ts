@@ -43,6 +43,10 @@ export interface CommandAccessOptions {
   risk: CommandAccessRisk;
   requiresContext?: CommandAccessContextRequirement[];
   resourceId?: string;
+  /** Reviewed remote execution boundary. Omitted commands are not exposed to Console authority. */
+  consoleScope?: "installation" | "project" | "session";
+  /** Requires signed Console authority; ordinary runtime context keys cannot invoke this command. */
+  consoleOnly?: boolean;
   /** Require the concrete resource candidate; semantic and legacy command grants cannot substitute for it. */
   requireConcreteResource?: boolean;
   /**
@@ -71,6 +75,8 @@ export interface CommandOptions {
   name: string;
   description: string;
   aliases?: string[];
+  /** At least one of these option names is required by the command's input contract. */
+  requiredAnyOfOptions?: readonly string[];
   /**
    * Optional extended help text rendered after the auto-generated usage section
    * (`commander addHelpText("after", ...)`). Use for educational examples, flag

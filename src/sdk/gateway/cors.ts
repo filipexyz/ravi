@@ -55,9 +55,7 @@ export function isDevLocalhostOrigin(origin: string): boolean {
   if (url.protocol !== "http:") return false;
   if (!LOCALHOST_HOSTS.has(url.hostname)) return false;
   if (url.username || url.password) return false;
-  const expected = url.port
-    ? `${url.protocol}//${url.hostname}:${url.port}`
-    : `${url.protocol}//${url.hostname}`;
+  const expected = url.port ? `${url.protocol}//${url.hostname}:${url.port}` : `${url.protocol}//${url.hostname}`;
   return origin === expected;
 }
 
@@ -97,6 +95,7 @@ export function corsHeaders(
     "Access-Control-Allow-Methods": CORS_ALLOW_METHODS,
     "Access-Control-Allow-Headers": allowHeaders(requestedHeaders),
     "Access-Control-Max-Age": CORS_MAX_AGE_SECONDS,
+    "Access-Control-Expose-Headers": "x-request-id",
     Vary: "Origin",
   };
 }

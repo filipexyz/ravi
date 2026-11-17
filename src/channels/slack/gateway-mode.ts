@@ -16,6 +16,8 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3
 export interface SlackGatewayEnvelopeProcessor {
   handleEnvelope(envelope: SlackSocketEnvelope): Promise<"duplicate" | "ignored" | "processed">;
   resumePendingInboundEnvelopes(): Promise<unknown>;
+  /** Optional: start resolving the local bot identity before the first event. */
+  warmLocalBotIdentity?(): void;
 }
 
 export interface SlackGatewayModeServiceOptions {
@@ -80,6 +82,7 @@ export class SlackGatewayModeService {
   }
 
   private async runLoop(): Promise<void> {
+    this.options.processor.warmLocalBotIdentity?.();
     await this.options.processor.resumePendingInboundEnvelopes().catch(() => {});
     while (this.running) {
       try {

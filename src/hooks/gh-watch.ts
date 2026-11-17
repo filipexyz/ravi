@@ -17,13 +17,28 @@
  */
 
 import { execFileSync } from "node:child_process";
+import type { Database } from "bun:sqlite";
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import { dbGetAgent } from "../router/router-db.js";
 import type { ContextSource } from "../router/router-db.js";
-import { dbCreateTrigger, dbListTriggers, type Trigger, type TriggerInput } from "../triggers/index.js";
+import { getSession, resolveSession } from "../router/sessions.js";
+import { findSlackThreadLifecycleByChildRef } from "../channels/slack/thread-lifecycle-store.js";
+import {
+  dbCreateTrigger,
+  dbListTriggers,
+  dbUpdateTrigger,
+  type Trigger,
+  type TriggerInput,
+} from "../triggers/index.js";
 import type { TriggerReplySource } from "../triggers/types.js";
 import { logger } from "../utils/logger.js";
-import { createWatch, listWatchConnectors, listWatchRecords } from "../watch/index.js";
+import { parseBashCommand } from "../bash/parser.js";
+import {
+  createWatch,
+  listWatchConnectors,
+  listWatchRecords,
+  removeWatch as removeWatchOperation,
+} from "../watch/index.js";
 import type { WatchRecord } from "../watch/types.js";
 import { addPendingGhFollow, type PendingGhFollow } from "./gh-follow-pending.js";
 
@@ -76,15 +91,14 @@ const GH_ADMIN_SCOPES = new Set([
   "search",
 ]);
 
-export const GH_FOLLOW_COOLDOWN_MS = 30_000;
-
 /**
  * O follow precisa dos dois lados: o evento de ciclo de vida da PR e o resultado
- * de CI. `ravi.watch.github.*` cobre ambos (o filtro por repo+PR descarta o
+ * de CI. `ravi.watch.github.>` cobre ambos (o filtro por repo+PR descarta o
  * resto), enquanto um tópico só de `pull_request.*` deixaria "o CI quebrou" sem
  * caminho até a sessão.
  */
-export const GH_PR_FOLLOW_TOPIC = "ravi.watch.github.*";
+// NATS '*' consumes exactly one token; event types such as workflow_run.completed consume two.
+export const GH_PR_FOLLOW_TOPIC = "ravi.watch.github.>";
 
 export interface GhWatchIntent {
   scope: "pr" | "run" | "repo" | "api";
@@ -109,19 +123,24 @@ export interface GhWatchFollowResult {
   repo: string;
   watchId: string | null;
   watchReused: boolean;
-  /** Watch local que cobre CI. Sem ele o follow só vê ciclo de vida de PR. */
+  /** Watch local que cobre CI e comentários. Sem ele o follow só vê ciclo de vida. */
   ciWatchId?: string | null;
   ciWatchReused?: boolean;
   triggerId?: string;
   triggerReused?: boolean;
+  /** Acompanhamento antigo que recebeu instrução/filtro atualizados nesta passagem. */
+  triggerRepaired?: boolean;
   triggerSkipped?: "no_pr_number";
 }
 
 export interface GhWatchFollowDeps {
+  /** Explicit publication only needs the local producer; do not introduce Console network work. */
+  localOnly?: boolean;
   listWatches?: typeof listWatchRecords;
   createWatch?: typeof createWatch;
   listTriggers?: () => Trigger[];
   createTrigger?: (input: TriggerInput) => Trigger;
+  updateTrigger?: (id: string, patch: Partial<TriggerInput>) => boolean | Trigger | null;
   emitTriggersRefresh?: () => Promise<void>;
   resolveAccountForAgent?: (agentId: string) => string | undefined;
 }
@@ -146,6 +165,13 @@ export function tokenizeShellCommand(command: string): string[] {
 
   for (let index = 0; index < command.length; index += 1) {
     const char = command[index]!;
+    // A backslash escapes the next character outside single quotes, as in the
+    // shell, so `x\;gh` stays one argument here as it does for the Bash gate.
+    if (char === "\\" && quote !== "'") {
+      current += command[index + 1] ?? "";
+      index += 1;
+      continue;
+    }
     if (quote) {
       if (char === quote) {
         quote = null;
@@ -161,6 +187,12 @@ export function tokenizeShellCommand(command: string): string[] {
     if (/\s/.test(char)) {
       if (current) tokens.push(current);
       current = "";
+      continue;
+    }
+    if (char === "\n") {
+      if (current) tokens.push(current);
+      current = "";
+      tokens.push(";");
       continue;
     }
     if (char === "|" || char === "&" || char === ";" || char === "(" || char === ")") {
@@ -562,15 +594,83 @@ export function buildGhFollowTriggerInput(
   return {
     name: ghFollowTriggerName(repo, prNumber),
     topic: GH_PR_FOLLOW_TOPIC,
-    message: `Activity on ${repo}#${prNumber} (PR lifecycle or CI result). Tell the user in one short line what changed — state and title, or the CI conclusion when present — and include the url from this event.`,
+    message: `Activity on ${repo}#${prNumber} (PR lifecycle, CI result or a new comment). Tell the user in one short line what changed — state and title, the CI conclusion, or who commented and what they said — and include the url from this event. A bot comment that asks nothing of the user (author ending in [bot]): answer @@SILENT@@.`,
     agentId: context.agentId,
     accountId: context.accountId,
     replySession: context.sessionName ?? context.sessionKey,
     replySource: context.source,
     session: "main",
-    cooldownMs: GH_FOLLOW_COOLDOWN_MS,
+    // Every distinct review/CI event matters. Dedupe handles retries; neither
+    // cooldown nor the bounded in-memory debounce can preserve every event.
+    cooldownMs: 0,
+    debounceMs: 0,
     filter: ghFollowFilter(repo, prNumber),
   };
+}
+
+/** The lifecycle survives pruning, including delayed `gh pr create` resolution. */
+export function resolveGhFollowContext(context: GhWatchFollowContext, database?: Database): GhWatchFollowContext {
+  const ref = context.sessionKey ?? context.sessionName;
+  if (!ref) return context;
+  const thread = findSlackThreadLifecycleByChildRef(ref, database);
+  if (!thread) {
+    const session = database
+      ? (database
+          .query("SELECT session_key AS sessionKey FROM sessions WHERE session_key=? OR name=?")
+          .get(ref, ref) as { sessionKey: string } | null)
+      : resolveSession(ref);
+    if (
+      ref.includes(":thread:") ||
+      session?.sessionKey.includes(":thread:") ||
+      (!session && context.source?.channel === "slack" && context.source.threadId)
+    ) {
+      throw new Error("Cannot register PR follow: thread lifecycle is missing or ambiguous.");
+    }
+    return context;
+  }
+  const parent = database
+    ? (database
+        .query("SELECT session_key AS sessionKey, name, agent_id AS agentId FROM sessions WHERE session_key=?")
+        .get(thread.parentSessionKey) as { sessionKey: string; name: string | null; agentId: string } | null)
+    : getSession(thread.parentSessionKey);
+  if (!parent || parent.sessionKey.includes(":thread:")) {
+    throw new Error("Cannot register PR follow: durable parent session is missing.");
+  }
+  return {
+    ...context,
+    agentId: parent.agentId,
+    accountId: thread.accountId,
+    sessionName: parent.name ?? parent.sessionKey,
+    sessionKey: parent.sessionKey,
+    // Never keep the child's frozen replySource as fallback after handoff.
+    source: { channel: "slack", accountId: thread.accountId, chatId: thread.platformChatId },
+  };
+}
+
+/** Reconcile the saved owner's lifecycle; a new observer must not steal a follow. */
+export function ghFollowReplyTargetPatch(trigger: Trigger): Partial<TriggerInput> {
+  if (!trigger.replySession) return {};
+  const resolved = resolveGhFollowContext({
+    agentId: trigger.agentId,
+    accountId: trigger.accountId,
+    sessionName: trigger.replySession,
+    source: trigger.replySource,
+  });
+  if (resolved.sessionName === trigger.replySession) return {};
+  return {
+    agentId: resolved.agentId,
+    accountId: resolved.accountId,
+    replySession: resolved.sessionName,
+    replySource: resolved.source,
+  };
+}
+
+/** Cooldown drops distinct events; the bounded in-memory debounce can too. */
+export function ghFollowDeliveryPatch(trigger: Trigger): Partial<TriggerInput> {
+  const patch: Partial<TriggerInput> = {};
+  if (trigger.cooldownMs !== 0) patch.cooldownMs = 0;
+  if ((trigger.debounceMs ?? 0) !== 0) patch.debounceMs = 0;
+  return patch;
 }
 
 export function findExistingGhFollowTrigger(repo: string, prNumber: number, triggers: Trigger[]): Trigger | undefined {
@@ -590,6 +690,11 @@ export const GH_FOLLOW_MANAGED_FILTER = { managedBy: "gh-follow" } as const;
 /** Um watch é nosso quando carrega a marca de propriedade. */
 export function isGhFollowManagedWatch(watch: { filters?: Record<string, unknown> | null }): boolean {
   return watch.filters?.managedBy === GH_FOLLOW_MANAGED_FILTER.managedBy;
+}
+
+/** Um watch local só serve se declara tudo que a derivação sabe produzir. */
+function coversLocalEventTypes(watch: WatchRecord, localEventTypes: string[]): boolean {
+  return localEventTypes.every((eventType) => watch.eventTypes.includes(eventType));
 }
 
 /**
@@ -612,33 +717,137 @@ export function locallySupportedEventTypes(provider = "github"): string[] {
  * Console, que é o caminho de entrega que hoje funciona sem depender de poller.
  *
  * Além dele, garante um watch **local** com os eventos que o Console não entrega
- * (CI). São dois watches porque servem a dois produtores diferentes, e o filtro do
- * trigger não se importa de onde o evento veio.
+ * (CI e comentário). São dois watches porque servem a dois produtores diferentes, e
+ * o filtro do trigger não se importa de onde o evento veio.
  */
 export async function ensureRepoWatch(
   repo: string,
-  deps: Pick<GhWatchFollowDeps, "listWatches" | "createWatch"> & { localEventTypes?: () => string[] } = {},
+  deps: Pick<GhWatchFollowDeps, "listWatches" | "createWatch" | "localOnly"> & {
+    localEventTypes?: () => string[];
+    removeWatch?: (id: string) => Promise<boolean>;
+  } = {},
 ): Promise<{ watchId: string | null; reused: boolean; ciWatchId: string | null; ciWatchReused: boolean }> {
-  const listWatches = deps.listWatches ?? listWatchRecords;
   const create = deps.createWatch ?? createWatch;
-  const localEventTypes = (deps.localEventTypes ?? locallySupportedEventTypes)();
+  const activeWatches = listActiveRepoWatches(repo, deps.listWatches ?? listWatchRecords);
+  const { ciWatchId, ciWatchReused } = await reconcileLocalWatch(repo, activeWatches, deps);
+  if (deps.localOnly) return { watchId: ciWatchId, reused: ciWatchReused, ciWatchId, ciWatchReused };
+  const anyWatch = activeWatches[0];
 
-  let activeWatches: WatchRecord[] = [];
+  if (anyWatch) return { watchId: anyWatch.id, reused: true, ciWatchId, ciWatchReused };
+
   try {
-    activeWatches = listWatches({ provider: "github", status: "active", limit: 200 }).items.filter(
+    const created = await create({ provider: "github", resourceRef: repo });
+    return { watchId: created.watch.id, reused: false, ciWatchId, ciWatchReused };
+  } catch (error) {
+    // Sem login de Console, o único caminho restante é polling local: o watch
+    // existe e passa a produzir assim que o runner local estiver ativo.
+    log.warn("Could not create console watch, relying on local", { repo, error });
+    return { watchId: ciWatchId, reused: false, ciWatchId, ciWatchReused };
+  }
+}
+
+/**
+ * Garante só o produtor local (CI e comentários), sem tocar em watch de Console.
+ *
+ * É o que a manutenção do follow precisa a cada tick: o watch de Console é
+ * criado no nascimento do acompanhamento, mas o local é o que some e deixa o
+ * trigger mudo. Repetir a criação de Console aqui seria uma chamada de rede por
+ * repo por minuto.
+ */
+export async function ensureFollowWatchProducer(
+  repo: string,
+  deps: Pick<GhWatchFollowDeps, "listWatches" | "createWatch"> & {
+    localEventTypes?: () => string[];
+    removeWatch?: (id: string) => Promise<boolean>;
+  } = {},
+): Promise<{ ciWatchId: string | null; ciWatchReused: boolean }> {
+  const activeWatches = listActiveRepoWatches(repo, deps.listWatches ?? listWatchRecords);
+  return reconcileLocalWatch(repo, activeWatches, deps);
+}
+
+function listActiveRepoWatches(repo: string, listWatches: typeof listWatchRecords): WatchRecord[] {
+  try {
+    return listWatches({ provider: "github", status: "active", limit: 200 }).items.filter(
       (watch) => watch.resourceRef === repo,
     );
   } catch (error) {
     log.warn("Could not list watches while ensuring repo watch", { repo, error });
+    return [];
   }
+}
 
-  const anyWatch = activeWatches[0];
-  const localWatch = activeWatches.find((watch) => watch.placement === "local");
+/**
+ * Watch local desativado do mesmo repo que cobre os mesmos eventos e não é do
+ * follow.
+ *
+ * Criar o watch aqui o traria de volta como `active` e trocaria os filtros dele:
+ * o id local é derivado de repo + eventos, então o upsert encontra essa linha.
+ * Depois o sweep de órfãos poderia apagá-la. Desativado por outra pessoa não é
+ * nosso para religar.
+ */
+function findForeignInactiveLocalWatch(
+  repo: string,
+  localEventTypes: string[],
+  listWatches: typeof listWatchRecords,
+): WatchRecord | undefined {
+  try {
+    return listWatches({ provider: "github", status: "all", limit: 200 }).items.find(
+      (watch) =>
+        watch.resourceRef === repo &&
+        watch.placement === "local" &&
+        watch.status !== "active" &&
+        !isGhFollowManagedWatch(watch) &&
+        coversLocalEventTypes(watch, localEventTypes),
+    );
+  } catch (error) {
+    log.warn("Could not list watches while checking disabled local watches", { repo, error });
+    return undefined;
+  }
+}
 
-  let ciWatchId: string | null = localWatch?.id ?? null;
-  let ciWatchReused = Boolean(localWatch);
-  if (!localWatch) {
+async function reconcileLocalWatch(
+  repo: string,
+  activeWatches: WatchRecord[],
+  deps: Pick<GhWatchFollowDeps, "createWatch" | "listWatches"> & {
+    localEventTypes?: () => string[];
+    removeWatch?: (id: string) => Promise<boolean>;
+  },
+): Promise<{ ciWatchId: string | null; ciWatchReused: boolean }> {
+  const create = deps.createWatch ?? createWatch;
+  const removeWatch = deps.removeWatch ?? removeWatchOperation;
+  const localEventTypes = (deps.localEventTypes ?? locallySupportedEventTypes)();
+
+  // Só um watch que declara o conjunto inteiro serve. Reaproveitar um watch local
+  // antigo (feito quando a derivação produzia menos eventos) deixaria o follow mudo
+  // justamente no evento novo — foi o caso de CI e de comentário.
+  const reusableLocal = activeWatches.find(
+    (watch) => watch.placement === "local" && coversLocalEventTypes(watch, localEventTypes),
+  );
+  const staleManagedLocal = activeWatches.find(
+    (watch) =>
+      watch.placement === "local" && isGhFollowManagedWatch(watch) && !coversLocalEventTypes(watch, localEventTypes),
+  );
+
+  let ciWatchId: string | null = reusableLocal?.id ?? null;
+  let ciWatchReused = Boolean(reusableLocal);
+  if (!reusableLocal) {
     if (localEventTypes.length > 0) {
+      // O id do watch local é derivado de repo + eventos, então criar aqui
+      // reativaria uma linha desativada de outra pessoa e trocaria os filtros
+      // dela: o sweep de órfãos poderia apagar em seguida. Watch desativado que
+      // não carrega a nossa marca não é nosso para religar.
+      const foreignInactive = findForeignInactiveLocalWatch(
+        repo,
+        localEventTypes,
+        deps.listWatches ?? listWatchRecords,
+      );
+      if (foreignInactive) {
+        log.warn("Local watch for this repo is disabled and belongs to the user; not taking it over", {
+          repo,
+          watchId: foreignInactive.id,
+        });
+        return { ciWatchId: null, ciWatchReused: false };
+      }
       try {
         const created = await create({
           provider: "github",
@@ -655,21 +864,23 @@ export async function ensureRepoWatch(
     }
   }
 
-  if (anyWatch) return { watchId: anyWatch.id, reused: true, ciWatchId, ciWatchReused };
-
-  try {
-    const created = await create({ provider: "github", resourceRef: repo });
-    return { watchId: created.watch.id, reused: false, ciWatchId, ciWatchReused };
-  } catch (error) {
-    // Sem login de Console, o único caminho restante é polling local: o watch
-    // existe e passa a produzir assim que o runner local estiver ativo.
-    log.warn("Could not create console watch, relying on local", { repo, error });
-    return { watchId: ciWatchId, reused: false, ciWatchId, ciWatchReused };
+  // O watch antigo já foi substituído por um que cobre o conjunto atual. Só
+  // removemos o que carrega a nossa marca e depois que o novo existe: apagar
+  // antes de ter substituto deixaria o repo sem produtor local.
+  if (staleManagedLocal && ciWatchId && ciWatchId !== staleManagedLocal.id) {
+    try {
+      await removeWatch(staleManagedLocal.id);
+      log.info("Removed outdated local CI watch", { repo, watchId: staleManagedLocal.id, replacement: ciWatchId });
+    } catch (error) {
+      log.warn("Could not remove outdated local CI watch", { repo, watchId: staleManagedLocal.id, error });
+    }
   }
+
+  return { ciWatchId, ciWatchReused };
 }
 
 export async function ensureGhWatchFollow(
-  input: { repo: string; prNumber: number | null; context?: GhWatchFollowContext },
+  input: { repo: string; prNumber: number | null; context?: GhWatchFollowContext; reconcile?: boolean },
   deps: GhWatchFollowDeps = {},
 ): Promise<GhWatchFollowResult> {
   const context = input.context ?? {};
@@ -687,33 +898,74 @@ export async function ensureGhWatchFollow(
     return result;
   }
 
-  const listTriggers = deps.listTriggers ?? dbListTriggers;
-  const existing = findExistingGhFollowTrigger(input.repo, input.prNumber, listTriggers());
-  if (existing) {
-    result.triggerId = existing.id;
-    result.triggerReused = true;
-    return result;
-  }
-
-  const resolved: GhWatchFollowContext = { ...context };
+  // A follow created from inside a thread belongs to the durable parent, so closing
+  // the child cannot take down the only recipient of the PR's lifecycle and CI.
+  const resolved: GhWatchFollowContext = resolveGhFollowContext({ ...context });
   if (!resolved.accountId && resolved.agentId) {
     try {
       const { getAccountForAgent } = await import("../router/router-db.js");
       resolved.accountId = (deps.resolveAccountForAgent ?? getAccountForAgent)(resolved.agentId);
     } catch {
-      // Lookup opcional: o roteamento em fire-time ainda resolve a conta.
+      // Optional: fire-time routing can still resolve the account.
     }
   }
+  const desired = buildGhFollowTriggerInput(input.repo, input.prNumber, resolved);
+  const listTriggers = deps.listTriggers ?? dbListTriggers;
+  const existing = findExistingGhFollowTrigger(input.repo, input.prNumber, listTriggers());
+  if (existing) {
+    result.triggerId = existing.id;
+    result.triggerReused = true;
+    // A instrução envelhece: quando a declaração de eventos cresce (comentário),
+    // o trigger antigo continua mandando o agente ler só ciclo de vida e CI. Sem
+    // atualizar aqui, acompanhamentos existentes nunca recebem o texto novo.
+    const patch: Partial<TriggerInput> = ghFollowDeliveryPatch(existing);
+    if (existing.message !== desired.message) patch.message = desired.message;
+    if (existing.filter !== desired.filter) patch.filter = desired.filter;
+    if (existing.topic !== desired.topic) patch.topic = desired.topic;
+    // A closed owner thread must not take the follow down with it: always repoint
+    // the saved owner to its live lifecycle target, even when only observing.
+    Object.assign(patch, ghFollowReplyTargetPatch(existing));
+    // Explicit publication owns this follow; automatic observation does not
+    // steal another session's subscription or re-enable a deliberately paused one.
+    if (input.reconcile) {
+      for (const key of ["agentId", "accountId", "replySession", "replySource", "session"] as const) {
+        if (desired[key] !== undefined && JSON.stringify(existing[key]) !== JSON.stringify(desired[key])) {
+          Object.assign(patch, { [key]: desired[key] });
+        }
+      }
+      if (!existing.enabled) patch.enabled = true;
+    }
+    if (Object.keys(patch).length > 0) {
+      try {
+        const updated = (deps.updateTrigger ?? dbUpdateTrigger)(existing.id, patch);
+        if (!updated) throw new Error(`Could not reconcile gh follow ${existing.id}`);
+        result.triggerRepaired = true;
+        await (deps.emitTriggersRefresh ?? defaultEmitTriggersRefresh)();
+      } catch (error) {
+        if (input.reconcile) throw error;
+        log.warn("Could not refresh gh follow instructions", { triggerId: existing.id, error });
+      }
+    }
+    if (result.triggerRepaired || input.reconcile) {
+      // Retry refresh even when the DB already matches: an earlier publication
+      // may have failed after persisting its trigger but before notifying the runner.
+      try {
+        await (deps.emitTriggersRefresh ?? defaultEmitTriggersRefresh)();
+      } catch (error) {
+        if (input.reconcile) throw error;
+      }
+    }
+    return result;
+  }
 
-  const trigger = (deps.createTrigger ?? dbCreateTrigger)(
-    buildGhFollowTriggerInput(input.repo, input.prNumber, resolved),
-  );
+  const trigger = (deps.createTrigger ?? dbCreateTrigger)(desired);
   result.triggerId = trigger.id;
   result.triggerReused = false;
 
   try {
     await (deps.emitTriggersRefresh ?? defaultEmitTriggersRefresh)();
-  } catch {
+  } catch (error) {
+    if (input.reconcile) throw error;
     // Durable: o daemon recarrega no próximo refresh/restart.
   }
   return result;
@@ -820,6 +1072,12 @@ export async function observeGhBashCommand(
   try {
     if (process.env.RAVI_WATCH_GH_AUTODETECT === "0") return;
     if (!command.includes("gh")) return;
+    // Observe only what the Bash gate approved: its parser must see `gh` (or a
+    // wrapper this observer looks through) run in this command, or text that
+    // never runs gh could still create a follow.
+    const parsed = parseBashCommand(command);
+    if (!parsed.success || !parsed.executables.some((exec) => exec === "gh" || Object.hasOwn(COMMAND_WRAPPERS, exec)))
+      return;
 
     const intent = parseGhWatchIntent(command);
     if (!intent?.follow) return;

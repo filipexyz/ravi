@@ -12,7 +12,7 @@ voltam para o dispatcher single-shot.
 - OpenAPI and SDK codegen MUST NOT expose CLI-only streaming handlers as normal
   request/response operations.
 - Gateway stream channels MUST enforce auth, audit open/close, keepalive,
-  drop-tail backpressure behavior, and reconnect semantics.
+  drop-oldest backpressure behavior, and reconnect semantics.
 
 1. **Nenhum handler streaming/process/interactive escapa pra route-table**
 
@@ -61,9 +61,17 @@ voltam para o dispatcher single-shot.
 
    Espera-se: `ok: cliOnly methods absent`.
 
-### SSE Checks Ativos
+### SSE Checks Ativos (canais NATS; exceções de `session-view` abaixo)
 
 4. **Auth obrigatória em /api/v1/_stream/**: request sem Bearer retorna 401.
+
+4b. **Paridade com erros do gateway na abertura**: contexto expirado retorna
+    `401 CONTEXT_EXPIRED`; revogado (inclusive também expirado) ou desconhecido,
+    `401 AUTH_REQUIRED`; contexto vivo sem grant, `403 PERMISSION_DENIED` com
+    `error.cause` nomeando a permissão. Recusas não iniciam subscribe, não
+    emitem audit de abertura e não expõem a chave. Contexto vivo autorizado
+    abre SSE e entrega eventos. Regressão com registry real e estado isolado:
+    `bun test --preload ./src/test/isolated-runtime-preload.ts src/sdk/gateway/streaming/`.
 
 5. **Audit envelope casado**: `sdk.gateway.stream.opened` sempre tem
    `sdk.gateway.stream.closed` correspondente em até 1 hora.
@@ -100,3 +108,10 @@ voltam para o dispatcher single-shot.
 - **Confusão de prefixos:** se algum handler novo tentar registrar
   `/_stream/<channel>` colidindo com handler dispatcher, gateway MUST
   detectar collision em build do route-table e falhar.
+
+- `src/sdk/gateway/console.test.ts` cobre visão privada com cursor assinado e
+  ausência de renovação por leitura; a geração dos três SDKs inclui `sessionView`.
+
+- `session-view` usa delegação Console, `id:` HMAC, journal durável sem descarte,
+  batches de heartbeat e audit direto no SQLite privado; testes em
+  `src/sdk/gateway/console.test.ts` verificam rejeição local, replay e audit.

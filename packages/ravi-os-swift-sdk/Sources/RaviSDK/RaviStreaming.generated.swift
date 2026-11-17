@@ -19,6 +19,21 @@ public struct RaviSseEvent<Data: Decodable & Sendable>: Sendable {
   }
 }
 
+public struct SessionViewStreamOptions: Sendable {
+  public var projectId: String?
+  public var conversationId: String?
+  public var cursor: String?
+  public init(
+    projectId: String? = nil,
+    conversationId: String? = nil,
+    cursor: String? = nil
+  ) {
+    self.projectId = projectId
+    self.conversationId = conversationId
+    self.cursor = cursor
+  }
+}
+
 public struct EventsStreamOptions: Sendable {
   public var subject: String?
   public var filter: String?
@@ -69,6 +84,19 @@ public struct InstanceStreamOptions: Sendable {
 
 public struct AuditStreamOptions: Sendable {
   public init() {}
+}
+
+public struct SessionViewStreamPayload: Decodable, Sendable {
+  public let events: [RaviJSON]
+  public let cursor: String
+
+  public init(
+    events: [RaviJSON],
+    cursor: String
+  ) {
+    self.events = events
+    self.cursor = cursor
+  }
 }
 
 public struct GatewayTopicEvent: Decodable, Sendable {
@@ -376,6 +404,15 @@ public final class RaviStreamClient: @unchecked Sendable {
     self.contextKey = contextKey
     self.session = session
     self.extraHeaders = headers
+  }
+
+  /// Durable private session journal. Requires a fresh Console delegation; local runtime keys are denied.
+  public func sessionView(options: SessionViewStreamOptions = .init()) -> AsyncThrowingStream<RaviSseEvent<SessionViewStreamPayload>, Error> {
+    var queryItems: [URLQueryItem] = []
+    appendString(&queryItems, "projectId", options.projectId)
+    appendString(&queryItems, "conversationId", options.conversationId)
+    appendString(&queryItems, "cursor", options.cursor)
+    return stream(pathSegments: ["session-view"], queryItems: queryItems, as: SessionViewStreamPayload.self)
   }
 
   /// Subscribe to the full NATS event bus. Mirrors `ravi events stream` and suppresses the same noisy topics (message.*, reaction.*, instance.*, presence.typing, chat.unread-updated, .stream, claude stream chunks).

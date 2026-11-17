@@ -1,6 +1,16 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { authorizeContextCapabilities } from "../permissions/context-capabilities-provider.js";
+import { canWithCapabilityContext } from "../permissions/capability-context.js";
+import { recordBridgeRuntimeEvent } from "../bridge/native.js";
+import { bridgeContextCapabilities, bridgeContextLive } from "../bridge/authority.js";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { createContact } from "../contacts.js";
-import { dbEnsureContactChatGrant } from "../permissions/contact-chat-grants.js";
+import { blockContact, createContact } from "../contacts.js";
+import { accessActorFromTurn } from "../access/actor.js";
+import { resolveConnectorExecRoute, resolveConnectorTurn, resolveOperatorTurn } from "../link/connector-turn.js";
+import { upsertPermissionProfileDefinition } from "../permissions/apply-grant.js";
+import { dbDeleteContactChatGrant, dbEnsureContactChatGrant } from "../permissions/contact-chat-grants.js";
+import { dbCreateCronJob, dbUpdateCronJob } from "../cron/cron-db.js";
 import { canWithCapabilities } from "../permissions/provider-runtime.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
@@ -8,6 +18,8 @@ import {
   dbGetContext,
   dbListContexts,
   dbUpdateAgent,
+  dbUpdateContextCapabilities,
+  dbUpdateContextMetadata,
   dbUpsertChat,
   type ChatRecord,
 } from "../router/router-db.js";
@@ -18,11 +30,21 @@ import type { AgentConfig } from "../router/index.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { buildLibraryRequestPrompt } from "../library/request-turn.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
-import { createRuntimeContext, resolveRuntimeContext } from "./context-registry.js";
-import { buildRuntimeRequestContext, refreshRuntimeRequestContextForTurn } from "./runtime-request-context.js";
+import {
+  createRuntimeContext,
+  issueRuntimeContext,
+  resolveRuntimeContext,
+  revokeRuntimeContext,
+} from "./context-registry.js";
+import { pickRuntimeTurnAuthorityEnvelope } from "./delivery-queue.js";
+import {
+  buildRuntimeRequestContext,
+  refreshRuntimeRequestContextForTurn,
+  startActiveRuntimeRequestContextLease,
+} from "./runtime-request-context.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import { resolveRuntimePromptSource } from "./runtime-request-builder.js";
-import { buildChannelTurnOrigin, buildSessionRelayTurnOrigin } from "./turn-origin.js";
+import { buildChannelTurnOrigin, buildSessionRelayTurnOrigin, buildSignalTurnOrigin } from "./turn-origin.js";
 import { buildTurnReplyTarget, readTurnReplyTarget, type TurnReplyTarget } from "./turn-reply-target.js";
 
 let stateDir: string | null = null;
@@ -52,6 +74,93 @@ describe("runtime request context authority", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("refuses alternate providers before resolving a bridge turn or touching provider credentials", () => {
+    for (const provider of ["pi", "claude", "grok"] as const) {
+      expect(() =>
+        buildRuntimeRequestContext({
+          dbSessionKey: "agent:provider-agent:console:00000000-0000-4000-8000-000000000001",
+          sessionName: "console-00000000-0000-4000-8000-000000000001",
+          sessionCwd: agent.cwd,
+          agent,
+          prompt: { prompt: "private", _bridgeTurnId: "turn-test" },
+          runtimeProviderId: provider,
+          model: "test-model",
+          runtimeResolution,
+        }),
+      ).toThrow("isolated Codex provider");
+    }
+    expect(() =>
+      refreshRuntimeRequestContextForTurn({
+        runtimeContext: {} as any,
+        toolContext: {},
+        dbSessionKey: "agent:provider-agent:console:00000000-0000-4000-8000-000000000001",
+        sessionName: "private",
+        sessionCwd: agent.cwd,
+        agent,
+        prompt: { prompt: "next", _bridgeTurnId: "next-turn" },
+        runtimeProviderId: "pi",
+        model: "test",
+        runtimeResolution,
+      }),
+    ).toThrow("isolated Codex provider");
+    expect(existsSync(join(stateDir!, "human-bridge"))).toBe(false);
+  });
+
+  it("ordinary authorization and runtime events never open bridge state", () => {
+    const context = {
+      kind: "turn-runtime",
+      capabilities: [{ permission: "read", objectType: "test", objectId: "own" }],
+    };
+    expect(bridgeContextCapabilities(context)).toEqual(context.capabilities);
+    expect(bridgeContextLive(undefined)).toBe(true);
+    expect(canWithCapabilityContext(context, "read", "test", "own")).toBe(true);
+    expect(canWithCapabilityContext(context, "read", "test", "foreign")).toBe(false);
+    expect(
+      authorizeContextCapabilities({
+        permission: "read",
+        objectType: "test",
+        objectId: "own",
+        capabilities: context.capabilities,
+      }).decision,
+    ).toBe("allow");
+    recordBridgeRuntimeEvent("ravi.session.console-main.runtime", { type: "turn.complete" });
+    recordBridgeRuntimeEvent("ravi.session.console-00000000-0000-4000-8000-000000000001.runtime", {
+      type: "turn.complete",
+    });
+    expect(existsSync(join(stateDir!, "human-bridge"))).toBe(false);
+  });
+
+  it("keeps ordinary sessions whose agent is named console on their existing authority path", () => {
+    const consoleAgent = { id: "console", cwd: "/tmp/console-agent" };
+    dbCreateAgent(consoleAgent);
+    const key = "agent:console:main";
+    getOrCreateSession(key, consoleAgent.id, consoleAgent.cwd, { name: "console-main" });
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: key,
+      sessionName: "console-main",
+      sessionCwd: consoleAgent.cwd,
+      agent: consoleAgent,
+      prompt: { prompt: "ordinary Console integration" },
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+    });
+    expect(runtimeContext.metadata?.authorityMode).toBe("agent-identity");
+    expect(runtimeContext.metadata?.bridgeTurnId).toBeUndefined();
+    expect(() =>
+      buildRuntimeRequestContext({
+        dbSessionKey: "agent:console:console:00000000-0000-4000-8000-000000000001",
+        sessionName: "private-bridge",
+        sessionCwd: consoleAgent.cwd,
+        agent: consoleAgent,
+        prompt: { prompt: "missing delegation" },
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+      }),
+    ).toThrow("fresh human delegation");
   });
 
   it("uses agent identity authority by default when the env var is unset", () => {
@@ -1067,6 +1176,47 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
   });
 
+  it("keeps the authority of a cron turn on its host-made continuation", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    // A cron turn replies to a chat: its source names the surface, not an actor.
+    const cronTurn: RuntimeLaunchPrompt = {
+      prompt: "daily report",
+      source: { channel: "slack", accountId: "slack-main", chatId: "C0ABC123", canonicalChatId: "chat_group_1" },
+      _cron: true,
+      _jobId: "job-daily",
+    };
+    const continuation = (envelope: Partial<RuntimeLaunchPrompt>) =>
+      buildRuntimeRequestContext({
+        dbSessionKey: sessionKey,
+        sessionName,
+        sessionCwd: "/tmp/provider-agent",
+        agent,
+        prompt: {
+          ...envelope,
+          prompt: "[System] Inatividade: o provider ficou 180s sem produzir evento.",
+          source: cronTurn.source,
+        },
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+        resolvedSource: cronTurn.source,
+      }).runtimeContext;
+
+    const bare = continuation({});
+    expect(bare.metadata?.actorResolution).toBe("missing_contact");
+    expect(bare.capabilities).toEqual([]);
+
+    const inherited = continuation(pickRuntimeTurnAuthorityEnvelope(cronTurn));
+    expect(inherited.metadata).toMatchObject({
+      actorResolution: "resolved",
+      actorPrincipal: "automation:cron:job-daily",
+    });
+    expect(canWithCapabilities(inherited.capabilities, "read", "context", "codex-bash-hook")).toBe(true);
+    expect(canWithCapabilities(inherited.capabilities, "use", "tool", "Bash")).toBe(true);
+  });
+
   it("runs a Library request from another machine as an unresolved external actor", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     const requestSessionKey = `agent:${agent.id}:library-request:req-1`;
@@ -1170,6 +1320,59 @@ describe("runtime request context authority", () => {
     expect(runtimeContext.metadata?.actor).not.toHaveProperty("senderPhone");
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(true);
+  });
+
+  it("narrows a relay produced by a contact-overlay turn to that turn's capabilities", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    const overlayCaller = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: agent.id,
+      sessionKey,
+      sessionName,
+      capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash", source: "test" }],
+      metadata: { actorAuthorizationMode: "user-overlay", actorPrincipal: "contact:ana" },
+    });
+    const plainCaller = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: agent.id,
+      sessionKey,
+      capabilities: [],
+      metadata: { actorAuthorizationMode: "invoke-only" },
+    });
+
+    const build = (callerContextId: string) =>
+      buildRuntimeRequestContext({
+        dbSessionKey: sessionKey,
+        sessionName,
+        sessionCwd: agent.cwd,
+        agent,
+        prompt: {
+          prompt: "[System] Inform: do it",
+          _turnOrigin: buildSessionRelayTurnOrigin("inform", {
+            agentId: agent.id,
+            sessionKey,
+            sessionName,
+            contextId: callerContextId,
+          }),
+        },
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+      }).runtimeContext;
+
+    const narrowed = build(overlayCaller.contextId);
+    expect(narrowed.metadata?.relayNarrowing).toBe(true);
+    expect(narrowed.metadata?.relayCallerContactId).toBe("ana");
+    expect(canWithCapabilities(narrowed.capabilities, "use", "tool", "Bash")).toBe(true);
+    expect(canWithCapabilities(narrowed.capabilities, "use", "tool", "Read")).toBe(false);
+
+    const missing = build("ctx_missing_caller");
+    expect(canWithCapabilities(missing.capabilities, "use", "tool", "Bash")).toBe(false);
+
+    const plain = build(plainCaller.contextId);
+    expect(plain.metadata?.relayNarrowing).toBeUndefined();
+    expect(canWithCapabilities(plain.capabilities, "use", "tool", "Read")).toBe(true);
   });
 
   it("keeps a source-less operator relay in the target workspace compartment", () => {
@@ -1276,6 +1479,50 @@ describe("runtime request context authority", () => {
       turnOrigin: {
         producer: "channel",
         action: "session.bootstrap",
+      },
+      turnProvenance: {
+        origin: "system",
+        background: true,
+      },
+    });
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(true);
+  });
+
+  it("runs signal escalation in a chat under its typed automation origin", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    const prompt: RuntimeLaunchPrompt = {
+      prompt: "[System] Inform: introduce yourself",
+      source: {
+        channel: "telegram",
+        accountId: "main",
+        chatId: "test-group",
+        canonicalChatId: "chat_group_1",
+      },
+      _turnOrigin: buildSignalTurnOrigin("sig_review"),
+    };
+
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: agent.cwd,
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    });
+
+    expect(runtimeContext.metadata).toMatchObject({
+      actorPrincipal: "automation:signal:sig_review",
+      actorResolution: "resolved",
+      agentIdentityCompartment: "chat:chat_group_1",
+      turnOrigin: {
+        producer: "signals",
+        action: "escalate",
       },
       turnProvenance: {
         origin: "system",
@@ -1558,6 +1805,42 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
   });
 
+  it("keeps an unresolved sender's interrupted turn unresolved across a daemon restart", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+
+    for (const noticeOnly of [false, true]) {
+      const prompt: RuntimeLaunchPrompt = {
+        prompt: "[System] Daemon reiniciou (test). Continue de onde parou.",
+        source: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatId: "120363428243036323@g.us",
+          canonicalChatId: "chat_group_1",
+          actorType: "unknown",
+          normalizedSenderId: "5511900000999",
+        },
+        _daemonRestartResume: { restartEpoch: "restart-unknown", sessionKey, ...(noticeOnly ? { noticeOnly } : {}) },
+      };
+
+      const { runtimeContext } = buildRuntimeRequestContext({
+        dbSessionKey: sessionKey,
+        sessionName,
+        sessionCwd: "/tmp/provider-agent",
+        agent,
+        prompt,
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+        resolvedSource: prompt.source,
+      });
+
+      expect(runtimeContext.metadata?.actorPrincipal).not.toBe("automation:daemon-restart");
+      expect(runtimeContext.metadata?.actorResolution).toBe("missing_contact");
+      expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(false);
+    }
+  });
+
   it("preserves the contact principal for daemon restart resume prompts with a human snapshot source", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
@@ -1675,6 +1958,51 @@ describe("runtime request context authority", () => {
     );
     expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
     expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
+    // A prompt that carries no owner snapshot records none.
+    expect(runtimeContext.metadata?.triggerRunAuthority).toBeNull();
+  });
+
+  it("records the trigger owner the runner admitted, and only a snapshot for this trigger", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    const build = (authority: unknown) =>
+      buildRuntimeRequestContext({
+        dbSessionKey: sessionKey,
+        sessionName,
+        sessionCwd: "/tmp/provider-agent",
+        agent,
+        prompt: {
+          prompt: "[Trigger: requests] run",
+          _trigger: true,
+          _triggerId: "trigger-1",
+          _triggerAuthority: authority as never,
+        },
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+      }).runtimeContext;
+
+    const admitted = {
+      triggerId: "trigger-1",
+      ownerPrincipal: "contact:c_ana",
+      ownerIsOperator: false,
+      ownSessionKey: "agent:provider-agent:trigger:trigger-1:own",
+    };
+    const owned = build(admitted);
+    expect(owned.metadata?.triggerRunAuthority).toEqual(admitted);
+    // The owner is attribution for Bases only: it grants the turn nothing.
+    expect(owned.metadata?.actorPrincipal).toBe("automation:trigger:trigger-1");
+    expect(canWithCapabilities(owned.capabilities, "admin", "system", "*")).toBe(false);
+    // Fired into a session that is not the trigger's own: recorded as such.
+    const elsewhere = { ...admitted, ownSessionKey: null };
+    expect(build(elsewhere).metadata?.triggerRunAuthority).toEqual(elsewhere);
+
+    expect(build({ ...admitted, triggerId: "trigger-2" }).metadata?.triggerRunAuthority).toBeNull();
+    expect(build({ triggerId: "trigger-1", ownerPrincipal: "operator" }).metadata?.triggerRunAuthority).toBeNull();
+    // A snapshot that does not say which session the fire was sent to is not one.
+    const { ownSessionKey: _unsaid, ...withoutSession } = admitted;
+    expect(build(withoutSession).metadata?.triggerRunAuthority).toBeNull();
+    expect(build("operator").metadata?.triggerRunAuthority).toBeNull();
   });
 });
 
@@ -1790,6 +2118,98 @@ describe("runtime request context chat-scoped user overlay", () => {
     dbEnsureContactChatGrant({ contactId, profileSlug: "permission-image", scopeType, scopeId });
   }
 
+  function relayFor(caller: ReturnType<typeof contextFor>) {
+    const relaySessionName = `relay-${caller.contextId}`;
+    const relaySessionKey = `agent:${agent.id}:relay:${caller.contextId}`;
+    getOrCreateSession(relaySessionKey, agent.id, agent.cwd, { name: relaySessionName });
+    return buildRuntimeRequestContext({
+      dbSessionKey: relaySessionKey,
+      sessionName: relaySessionName,
+      sessionCwd: agent.cwd,
+      agent,
+      prompt: {
+        prompt: "[System] Inform: complete the queued request",
+        _turnOrigin: buildSessionRelayTurnOrigin("inform", {
+          agentId: agent.id,
+          sessionKey: caller.sessionKey,
+          sessionName: caller.sessionName,
+          contextId: caller.contextId,
+        }),
+      },
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+    }).runtimeContext;
+  }
+
+  it("keeps rotated callers usable for queued relays until their permission profile is reduced", () => {
+    const chat = groupChat("120363400000000012@g.us");
+    const plainChat = groupChat("120363400000000013@g.us");
+    const ana = createContact({ phone: "5511900000012", name: "Ana" });
+    grant(ana.id, "chat", chat.id);
+    const caller = contextFor(ana.id, chat);
+    const plainCaller = contextFor(ana.id, plainChat);
+
+    contextFor(ana.id, chat);
+    contextFor(ana.id, plainChat);
+    expect(resolveRuntimeContext(caller.contextKey)).toBeNull();
+    expect(resolveRuntimeContext(plainCaller.contextKey)).toBeNull();
+    const before = relayFor(caller);
+    expect(canWithCapabilities(before.capabilities, "mutate", "image", "generate")).toBe(true);
+    expect(before.metadata?.relayCallerContactId).toBe(ana.id);
+
+    upsertPermissionProfileDefinition({ profile: "image", capabilities: [], explicitCapabilities: true });
+
+    const queued = relayFor(caller);
+    expect(queued.capabilities).toEqual([]);
+    expect(queued.metadata).toMatchObject({ relayNarrowing: true, relayCallerContactId: ana.id });
+    expect(typeof dbGetContext(caller.contextId)?.metadata?.permissionProfileRevokedAt).toBe("number");
+
+    const chained = relayFor(queued);
+    expect(chained.capabilities).toEqual([]);
+    expect(chained.metadata).toMatchObject({ relayNarrowing: true, relayCallerContactId: ana.id });
+
+    const plain = relayFor(plainCaller);
+    expect(plain.metadata?.relayNarrowing).toBeUndefined();
+    expect(canWithCapabilities(plain.capabilities, "execute", "executable", "curl")).toBe(true);
+    expect(dbGetContext(plainCaller.contextId)?.metadata?.permissionProfileRevokedAt).toBeUndefined();
+  });
+
+  it("revokes existing relay chains from a rotated profile holder and prevents their queued reuse", () => {
+    const chat = groupChat("120363400000000014@g.us");
+    const ana = createContact({ phone: "5511900000014", name: "Ana" });
+    grant(ana.id, "chat", chat.id);
+    const caller = contextFor(ana.id, chat);
+    contextFor(ana.id, chat);
+    const relay = relayFor(caller);
+    const chained = relayFor(relay);
+    expect(resolveRuntimeContext(caller.contextKey)).toBeNull();
+    for (const context of [relay, chained]) {
+      expect(resolveRuntimeContext(context.contextKey)?.contextId).toBe(context.contextId);
+      expect(canWithCapabilities(context.capabilities, "mutate", "image", "generate")).toBe(true);
+      expect(context.metadata?.relayCallerContactId).toBe(ana.id);
+    }
+    const snapshots = [caller, relay, chained].map((context) => dbGetContext(context.contextId)!);
+    expect(snapshots[0]!.sessionName).toBeDefined();
+    expect(snapshots[0]!.source).toBeDefined();
+
+    upsertPermissionProfileDefinition({ profile: "image", capabilities: [], explicitCapabilities: true });
+
+    for (const snapshot of snapshots) {
+      const stored = dbGetContext(snapshot.contextId)!;
+      expect(stored.sessionName).toBe(snapshot.sessionName);
+      expect(stored.source).toEqual(snapshot.source);
+      expect(stored.lastUsedAt).toBe(snapshot.lastUsedAt);
+    }
+    for (const context of [relay, chained]) {
+      expect(resolveRuntimeContext(context.contextKey)).toBeNull();
+      expect(typeof dbGetContext(context.contextId)?.metadata?.permissionProfileRevokedAt).toBe("number");
+      const queued = relayFor(context);
+      expect(queued.capabilities).toEqual([]);
+      expect(queued.metadata).toMatchObject({ relayNarrowing: true, relayCallerContactId: ana.id });
+    }
+  });
+
   it("intersects a chat-scoped contact grant with the executor agent ceiling", () => {
     const chat = groupChat("120363400000000001@g.us");
     const ana = createContact({ phone: "5511900000001", name: "Ana" });
@@ -1812,6 +2232,63 @@ describe("runtime request context chat-scoped user overlay", () => {
     // In the agent ceiling but not granted to the contact in this chat.
     expect(canWithCapabilities(context.capabilities, "execute", "executable", "curl")).toBe(false);
     expect(canWithCapabilities(context.capabilities, "use", "tool", "Bash")).toBe(false);
+  });
+
+  it("runs a cron a narrowed contact wrote under that contact's current chat grants", () => {
+    const chat = groupChat("120363400000000009@g.us");
+    const ana = createContact({ phone: "5511900000009", name: "Ana" });
+    grant(ana.id, "chat", chat.id);
+    const job = dbCreateCronJob({
+      name: "ana-daily",
+      schedule: { type: "every", every: 60_000 },
+      message: "faz o relatorio",
+      agentId: agent.id,
+      ownerPrincipal: `contact:${ana.id}`,
+      creatorChat: chat.id,
+    });
+    const cronContext = () => {
+      const prompt: RuntimeLaunchPrompt = {
+        ...promptInChat(ana.id, chat),
+        _cron: true,
+        _jobId: job.id,
+        _cronAuthority: {
+          jobId: job.id,
+          ownerPrincipal: `contact:${ana.id}`,
+          ownerIsOperator: false,
+          creatorChat: chat.id,
+        },
+      };
+      const overlaySessionKey = `agent:provider-agent:cron:${job.id}`;
+      getOrCreateSession(overlaySessionKey, agent.id, agent.cwd, { name: `cron-${job.id}` });
+      return buildRuntimeRequestContext({
+        dbSessionKey: overlaySessionKey,
+        sessionName: `cron-${job.id}`,
+        sessionCwd: agent.cwd,
+        agent,
+        prompt,
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+        resolvedSource: prompt.source,
+      }).runtimeContext;
+    };
+
+    // The queued prompt retains the contact overlay after the live row changes.
+    dbUpdateCronJob(job.id, { ownerPrincipal: "operator", creatorChat: undefined });
+    const granted = cronContext();
+    expect(granted.metadata?.actorPrincipal).toBe(`automation:cron:${job.id}`);
+    expect(canWithCapabilities(granted.capabilities, "mutate", "image", "generate")).toBe(true);
+    expect(canWithCapabilities(granted.capabilities, "execute", "executable", "curl")).toBe(false);
+
+    dbDeleteContactChatGrant({
+      contactId: ana.id,
+      profileSlug: "permission-image",
+      scopeType: "chat",
+      scopeId: chat.id,
+    });
+    const revoked = cronContext();
+    expect(canWithCapabilities(revoked.capabilities, "mutate", "image", "generate")).toBe(false);
+    expect(canWithCapabilities(revoked.capabilities, "execute", "executable", "curl")).toBe(false);
   });
 
   it("keeps chats without contact grants on the agent identity", () => {
@@ -1992,6 +2469,342 @@ function promptInChat(contactId: string, chat: ChatRecord): RuntimeLaunchPrompt 
     },
   };
 }
+
+describe("verified human work handoffs", () => {
+  let handoffState: string | null = null;
+  let sequence = 0;
+  const originAgent = { id: "handoff-origin", cwd: "/tmp/handoff-origin" };
+  const workerAgent = { id: "handoff-worker", cwd: "/tmp/handoff-worker" };
+  type Turn = ReturnType<typeof buildRuntimeRequestContext>["runtimeContext"];
+  type Action = "session.bootstrap" | "session.return" | "send" | "ask" | "execute" | "inform" | "answer";
+
+  beforeEach(async () => {
+    handoffState = await createIsolatedRaviState("ravi-human-handoff-");
+    sequence = 0;
+    dbCreateAgent(originAgent);
+    dbCreateAgent(workerAgent);
+  });
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(handoffState);
+    handoffState = null;
+  });
+
+  function runtimeFor(prompt: RuntimeLaunchPrompt, target = originAgent, name = "human-origin") {
+    const key = `agent:${target.id}:slack:group:handoff:${name}`;
+    getOrCreateSession(key, target.id, target.cwd, { name });
+    return buildRuntimeRequestContext({
+      dbSessionKey: key,
+      sessionName: name,
+      sessionCwd: target.cwd,
+      agent: target,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource: prompt.source,
+    }).runtimeContext;
+  }
+
+  function humanTurn(phone = "5511900098001") {
+    const contact = createContact({ phone, name: "Requester" });
+    const prompt = promptForContact(contact.id, "Read the project database in a new work thread");
+    const caller = runtimeFor(prompt);
+    return { contact, caller, prompt };
+  }
+
+  function handoff(caller: Turn, action: Action = "execute", override: Partial<RuntimeLaunchPrompt> = {}) {
+    const origin = action.startsWith("session.")
+      ? buildChannelTurnOrigin(
+          action as "session.bootstrap" | "session.return",
+          { type: "agent", id: caller.agentId! },
+          caller.contextId,
+        )
+      : buildSessionRelayTurnOrigin(action as "send" | "ask" | "execute" | "inform" | "answer", {
+          agentId: caller.agentId,
+          sessionKey: caller.sessionKey,
+          sessionName: caller.sessionName,
+          contextId: caller.contextId,
+        });
+    const prompt: RuntimeLaunchPrompt = {
+      ...promptForContact("forged-destination-contact", "[System] Execute: continue the human's request"),
+      _turnOrigin: origin,
+      ...override,
+    };
+    return runtimeFor(prompt, workerAgent, `human-worker-${++sequence}`);
+  }
+
+  function connectorDeps(turn: Turn) {
+    return {
+      env: {},
+      runtimeContext: { present: true, record: turn },
+      activeUserId: "operator-user",
+      activeOrgId: "test-org",
+      ownerName: "Operator",
+    };
+  }
+
+  function accessFor(turn: Turn) {
+    return accessActorFromTurn(resolveConnectorTurn(connectorDeps(turn)), { getAgentName: () => "Worker" });
+  }
+
+  function expectHumanAuthorityRefused(turn: Turn) {
+    expect(accessFor(turn).kind).toBe("refused");
+    expect(turn.capabilities).toEqual([]);
+  }
+
+  it.each(["session.bootstrap", "send", "ask", "execute"] as const)(
+    "%s keeps the real requester and intersects the caller's capabilities",
+    (action) => {
+      const { caller, contact } = humanTurn();
+      dbUpdateContextCapabilities(caller.contextId, [{ permission: "read", objectType: "bases", objectId: "list" }]);
+      const child = handoff(caller, action);
+      expect(child.metadata?.actorPrincipal).toBe(`contact:${contact.id}`);
+      expect(child.metadata?.actor).toMatchObject({ actorType: "contact", contactId: contact.id });
+      expect(child.metadata?.actor).not.toHaveProperty("actorAgentId");
+      expect(child.metadata?.turnOrigin).toMatchObject({ principal: { type: "agent", id: originAgent.id } });
+      expect(canWithCapabilities(child.capabilities, "read", "bases", "list")).toBe(true);
+      expect(canWithCapabilities(child.capabilities, "use", "tool", "Bash")).toBe(false);
+      expect(accessFor(child)).toMatchObject({ kind: "contact", contactId: contact.id });
+    },
+  );
+
+  it.each(["inform", "answer", "session.return"] as const)(
+    "%s never turns a notification into a human request",
+    (action) => {
+      const { caller } = humanTurn();
+      const child = handoff(caller, action);
+      expect(child.metadata?.actorPrincipal).toBe(`agent:${originAgent.id}`);
+      expect(accessFor(child)).toMatchObject({ kind: "refused", reason: { kind: "agent_relay" } });
+    },
+  );
+
+  it.each(["agent", "unknown"] as const)("a %s caller cannot borrow a destination's human contact", (actorType) => {
+    const prompt = promptForContact("forged-contact", "forward something");
+    prompt.source!.actorType = actorType;
+    prompt.context!.actorType = actorType;
+    prompt.source!.actorAgentId = actorType === "agent" ? originAgent.id : undefined;
+    prompt.context!.actorAgentId = actorType === "agent" ? originAgent.id : undefined;
+    const child = handoff(runtimeFor(prompt));
+    expect(child.metadata?.actorPrincipal).toBe(`agent:${originAgent.id}`);
+    expect(accessFor(child).kind).toBe("refused");
+  });
+
+  it("keeps the captured requester when another person replaces the parent turn", () => {
+    const first = humanTurn();
+    const second = humanTurn("5511900098002");
+    expect(second.caller.metadata?.actorPrincipal).not.toBe(first.caller.metadata?.actorPrincipal);
+    expect(resolveRuntimeContext(first.caller.contextKey, { touch: false })).toBeNull();
+    const child = handoff(first.caller, "session.bootstrap");
+    expect(child.metadata?.actorPrincipal).toBe(`contact:${first.contact.id}`);
+    expect(accessFor(child)).toMatchObject({ kind: "contact", contactId: first.contact.id });
+  });
+
+  it("keeps one verified requester and the capability ceiling through multiple agent hops", () => {
+    const { caller, contact } = humanTurn();
+    dbUpdateContextCapabilities(caller.contextId, [{ permission: "read", objectType: "bases", objectId: "list" }]);
+    const child = handoff(caller, "session.bootstrap");
+    const grandchild = handoff(child, "execute");
+    expect(grandchild.metadata?.actorPrincipal).toBe(`contact:${contact.id}`);
+    expect(grandchild.metadata?.humanRequest).toMatchObject({ originContextId: caller.contextId });
+    expect(canWithCapabilities(grandchild.capabilities, "read", "bases", "list")).toBe(true);
+    expect(canWithCapabilities(grandchild.capabilities, "use", "tool", "Bash")).toBe(false);
+    expect(accessFor(grandchild)).toMatchObject({ kind: "contact", contactId: contact.id });
+  });
+
+  it.each(["turn_context_rotated", "turn_context_completed"])("admitted work survives %s", (reason) => {
+    const { caller, contact } = humanTurn();
+    revokeRuntimeContext(caller.contextId, { cascade: false, reason });
+    expect(accessFor(handoff(caller))).toMatchObject({ kind: "contact", contactId: contact.id });
+  });
+
+  it.each(["turn_context_aborted", "agent_permissions_changed", "operator_revoked"])(
+    "queued work does not retain human attribution after %s",
+    (reason) => {
+      const { caller } = humanTurn();
+      revokeRuntimeContext(caller.contextId, { cascade: false, reason });
+      expectHumanAuthorityRefused(handoff(caller));
+    },
+  );
+
+  it("a profile withdrawal invalidates a historical caller and a chain rooted there", () => {
+    const { caller } = humanTurn();
+    const child = handoff(caller);
+    dbUpdateContextMetadata(caller.contextId, { ...caller.metadata, permissionProfileRevokedAt: Date.now() });
+    expectHumanAuthorityRefused(handoff(caller));
+    expectHumanAuthorityRefused(handoff(child));
+  });
+
+  it("a blocked requester cannot lend identity to queued work", () => {
+    const { caller } = humanTurn();
+    blockContact("5511900098001");
+    expectHumanAuthorityRefused(handoff(caller));
+  });
+
+  it.each(["missing", "wrong-agent", "wrong-session"])("rejects a %s caller binding", (invalid) => {
+    const { caller } = humanTurn();
+    const origin = buildSessionRelayTurnOrigin("execute", {
+      agentId: invalid === "wrong-agent" ? workerAgent.id : caller.agentId,
+      sessionKey: invalid === "wrong-session" ? "another-session" : caller.sessionKey,
+      contextId: invalid === "missing" ? "ctx_missing" : caller.contextId,
+    });
+    expectHumanAuthorityRefused(handoff(caller, "execute", { _turnOrigin: origin }));
+  });
+
+  it("a CLI child cannot erase lineage to impersonate a host-issued human turn", () => {
+    const { caller } = humanTurn();
+    const forged = issueRuntimeContext({
+      parent: caller,
+      cliName: "untrusted-child",
+      kind: "turn-runtime",
+      inheritCapabilities: true,
+      metadata: { ...caller.metadata, parentContextId: undefined, issuedFor: undefined },
+    });
+    expect(forged.metadata?.parentContextId).toBe(caller.contextId);
+    expectHumanAuthorityRefused(handoff(forged));
+  });
+
+  it("a routine's contact metadata cannot be promoted to a fresh human request", () => {
+    const { caller } = humanTurn();
+    dbUpdateContextMetadata(caller.contextId, { ...caller.metadata, turnProvenance: { origin: "cron" } });
+    expectHumanAuthorityRefused(handoff(caller));
+  });
+
+  it("broken or cyclic ancestry cannot preserve a human claim", () => {
+    const { caller } = humanTurn();
+    const child = handoff(caller);
+    for (const contextId of ["ctx_missing_ancestor", child.contextId]) {
+      dbUpdateContextMetadata(child.contextId, {
+        ...child.metadata,
+        turnOrigin: buildSessionRelayTurnOrigin("execute", { agentId: child.agentId, contextId }),
+      });
+      expectHumanAuthorityRefused(handoff(child));
+    }
+  });
+
+  it("lease completion cannot erase an explicit revocation and readmit queued work", () => {
+    const { caller, prompt } = humanTurn();
+    const controller = new AbortController();
+    const stop = startActiveRuntimeRequestContextLease({
+      runtimeContext: caller,
+      agent: originAgent,
+      dbSessionKey: caller.sessionKey!,
+      sessionName: caller.sessionName!,
+      sessionCwd: originAgent.cwd,
+      prompt,
+      resolvedSource: prompt.source,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      signal: controller.signal,
+      isActive: () => true,
+    });
+    try {
+      revokeRuntimeContext(caller.contextId, { cascade: false, reason: "operator_revoked" });
+      expectHumanAuthorityRefused(handoff(caller));
+      stop();
+      expect(dbGetContext(caller.contextId)?.metadata?.revocationReason).toBe("operator_revoked");
+      expectHumanAuthorityRefused(handoff(caller));
+    } finally {
+      stop();
+    }
+  });
+
+  it.each(["ancestor-revocation", "blocked-contact"] as const)(
+    "an admitted child rechecks %s at every Bases call with cached or fresh context",
+    (cause) => {
+      const { caller, contact } = humanTurn();
+      const child = handoff(caller);
+      expect(accessFor(child)).toMatchObject({ kind: "contact", contactId: contact.id });
+      if (cause === "ancestor-revocation") {
+        revokeRuntimeContext(caller.contextId, { cascade: false, reason: "operator_revoked" });
+      } else {
+        blockContact("5511900098001");
+      }
+      // The child owns a separate live token: rejecting the operation must
+      // follow request lineage, not wait for the next lease heartbeat.
+      expect(resolveRuntimeContext(child.contextKey, { touch: false })?.contextId).toBe(child.contextId);
+      expect(accessFor(child).kind).toBe("refused");
+      expect(accessFor(dbGetContext(child.contextId)!).kind).toBe("refused");
+    },
+  );
+
+  it.each([false, true])(
+    "session actor projection preserves the handoff's connector restrictions (owner=%s)",
+    (isOwner) => {
+      const { caller, contact } = humanTurn();
+      const child = handoff(caller);
+      if (isOwner) {
+        dbUpdateContextMetadata(child.contextId, {
+          ...child.metadata,
+          consoleUserId: "operator-user",
+          consoleOrgId: "test-org",
+        });
+      }
+      const admin = createRuntimeContext({
+        kind: "admin-bootstrap",
+        capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
+      });
+      const projected = issueRuntimeContext({
+        parent: admin,
+        cliName: "projected-human-request",
+        inheritCapabilities: true,
+        identity: {
+          agentId: workerAgent.id,
+          sessionKey: child.sessionKey,
+          sessionName: child.sessionName,
+          projectSessionActor: true,
+        },
+      });
+      expect(accessFor(projected)).toMatchObject(
+        isOwner ? { kind: "operator" } : { kind: "contact", contactId: contact.id },
+      );
+      for (const mode of ["owner", "person_asking", "shared"] as const) {
+        for (const useShared of [false, true]) {
+          expect(
+            resolveConnectorExecRoute({
+              ...connectorDeps(projected),
+              provider: "gmail",
+              getAgentMode: () => mode,
+              useShared,
+            }).ok,
+          ).toBe(false);
+        }
+      }
+      expect(resolveOperatorTurn({ ...connectorDeps(projected), action: "change connector mode" }).ok).toBe(false);
+      revokeRuntimeContext(caller.contextId, { cascade: false, reason: "operator_revoked" });
+      expect(accessFor(projected).kind).toBe("refused");
+    },
+  );
+
+  it.each([false, true])(
+    "Bases attribution does not authorize connectors for a forwarded human (owner=%s)",
+    (isOwner) => {
+      const { caller, contact } = humanTurn();
+      const child = handoff(caller);
+      const context = isOwner
+        ? { ...child, metadata: { ...child.metadata, consoleUserId: "operator-user", consoleOrgId: "test-org" } }
+        : child;
+      expect(accessFor(context)).toMatchObject(
+        isOwner ? { kind: "operator" } : { kind: "contact", contactId: contact.id },
+      );
+      expect(resolveConnectorTurn(connectorDeps(context)).ok).toBe(false);
+      for (const mode of ["owner", "person_asking", "shared"] as const) {
+        expect(
+          resolveConnectorExecRoute({ ...connectorDeps(context), provider: "gmail", getAgentMode: () => mode }).ok,
+        ).toBe(false);
+        expect(
+          resolveConnectorExecRoute({
+            ...connectorDeps(context),
+            provider: "gmail",
+            getAgentMode: () => mode,
+            useShared: true,
+          }).ok,
+        ).toBe(false);
+      }
+      expect(resolveOperatorTurn({ ...connectorDeps(context), action: "change connector mode" }).ok).toBe(false);
+    },
+  );
+});
 
 function promptForContact(contactId: string, text: string): RuntimeLaunchPrompt {
   const senderName = contactId === "ana" ? "Ana" : contactId ? "Luís" : "Desconhecido";

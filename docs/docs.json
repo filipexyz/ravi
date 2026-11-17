@@ -56,6 +56,7 @@
               "console/login",
               "console/pages",
               "console/bases",
+              "console/cloud-agents",
               "console/widgets",
               "console/connectors",
               "console/meetings",

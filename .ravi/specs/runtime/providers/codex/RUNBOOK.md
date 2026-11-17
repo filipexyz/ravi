@@ -15,11 +15,12 @@
 ```bash
 ravi sessions runtime list <session> --json
 ravi sessions runtime read <session> --json
-ravi sessions runtime steer <session> "..." --json
 ravi sessions runtime interrupt <session> --json
 ravi sessions runtime rollback <session> 1 --json
 ravi sessions runtime fork <session> --json
 ```
+
+`sessions runtime steer` and `follow-up` are refused on the host with `RUNTIME_CONTROL_DISABLED` (nothing reaches Codex). To add input to a running session, use `ravi sessions send <session> "..." --steer` or `--immediate`; on Codex that goes through the Ravi queue or an interrupt, not native `turn/steer`.
 
 ## CLI Context Debug
 

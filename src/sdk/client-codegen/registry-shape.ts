@@ -7,6 +7,7 @@
 
 import { z, type ZodTypeAny } from "zod";
 import type { ArgRegistryEntry, CommandRegistryEntry, OptionRegistryEntry } from "../../cli/registry-snapshot.js";
+import { withRequiredAnyOfOptions } from "../input-constraints.js";
 import { jsonSchemaToTs, type JsonSchema } from "./json-schema-to-ts.js";
 
 const ZOD_OPTIONS = { unrepresentable: "any" } as const;
@@ -54,7 +55,7 @@ export function buildInputSchema(cmd: CommandRegistryEntry): JsonSchema {
     additionalProperties: false,
   };
   if (required.length > 0) (schema as { required: string[] }).required = [...required].sort();
-  return schema;
+  return withRequiredAnyOfOptions(schema, cmd.requiredAnyOfOptions);
 }
 
 /** Return the JSON Schema for a command's `@Returns(...)` declaration, if any. */
@@ -86,6 +87,8 @@ export interface CommandSignature {
   options: SignatureOption[];
   /** Whether the trailing options bag should be optional (`options?:`). */
   optionsOptional: boolean;
+  /** Inclusive option-presence constraint retained by generated method signatures. */
+  requiredAnyOfOptions?: readonly string[];
 }
 
 /**
@@ -123,8 +126,13 @@ export function buildSignature(cmd: CommandRegistryEntry, inputSchema: JsonSchem
   }
   options.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 
-  const optionsOptional = options.every((o) => !o.required);
-  return { args, options, optionsOptional };
+  const optionsOptional = !cmd.requiredAnyOfOptions?.length && options.every((o) => !o.required);
+  return {
+    args,
+    options,
+    optionsOptional,
+    ...(cmd.requiredAnyOfOptions ? { requiredAnyOfOptions: cmd.requiredAnyOfOptions } : {}),
+  };
 }
 
 function sortByIndex(args: ArgRegistryEntry[]): ArgRegistryEntry[] {

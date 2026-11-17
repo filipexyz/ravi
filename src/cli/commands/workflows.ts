@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { readFileSync, rmSync } from "node:fs";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
@@ -115,11 +116,14 @@ function failWorkflowSpecNotFound(op: string, specId: string, asJson?: boolean):
     .slice(0, 40)
     .flatMap((spec) => [spec.id, spec.title]);
   contractFail(op, "WORKFLOW_SPEC_NOT_FOUND", `Workflow spec not found: ${specId}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the spec id (see suggestions; list with: ravi workflows specs list --json)",
-      suggestions: suggestSimilar(specId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the spec id (see suggestions; list with: ravi workflows specs list --json)",
+        suggestions: suggestSimilar(specId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Workflow spec not found: ${specId}`, { operation: op }),
   });
 }
 
@@ -128,11 +132,14 @@ function failWorkflowRunNotFound(op: string, runId: string, asJson?: boolean): n
     .slice(0, 40)
     .flatMap((run) => [run.id, run.title]);
   contractFail(op, "WORKFLOW_RUN_NOT_FOUND", `Workflow run not found: ${runId}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the workflow run id (see suggestions; list with: ravi workflows runs list --json)",
-      suggestions: suggestSimilar(runId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the workflow run id (see suggestions; list with: ravi workflows runs list --json)",
+        suggestions: suggestSimilar(runId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Workflow run not found: ${runId}`, { operation: op }),
   });
 }
 
@@ -140,11 +147,14 @@ function failWorkflowNodeNotFound(op: string, runId: string, nodeKey: string, as
   const details = getWorkflowRunDetails(runId);
   const candidates = (details?.nodes ?? []).flatMap((node) => [node.specNodeKey, node.label ?? ""]);
   contractFail(op, "WORKFLOW_NODE_NOT_FOUND", `Workflow node not found in run ${runId}: ${nodeKey}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the node key (see suggestions; inspect with: ravi workflows runs show <run-id> --json)",
-      suggestions: suggestSimilar(nodeKey, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the node key (see suggestions; inspect with: ravi workflows runs show <run-id> --json)",
+        suggestions: suggestSimilar(nodeKey, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Workflow node not found in run ${runId}: ${nodeKey}`, { operation: op }),
   });
 }
 
@@ -181,8 +191,11 @@ function rethrowWorkflowCommandError(op: string, error: unknown, asJson?: boolea
   const task = /^Task not found: (.+)$/.exec(message);
   if (task?.[1]) {
     contractFail(op, "TASK_NOT_FOUND", message, {
-      asJson,
-      details: { suggestedAction: "Check the task id (list with: ravi tasks list --json)" },
+      ...{
+        asJson,
+        details: { suggestedAction: "Check the task id (list with: ravi tasks list --json)" },
+      },
+      diagnostic: errorDiagnostic(error, { operation: op }),
     });
   }
   fail(message);

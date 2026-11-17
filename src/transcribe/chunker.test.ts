@@ -56,3 +56,63 @@ describe("audio chunker", () => {
     }
   });
 });
+
+describe("audio chunker with a forged container duration", () => {
+  test("stops at the real end of the audio instead of looping over the declared duration", async () => {
+    if (!(await hasCommand("ffmpeg")) || !(await hasCommand("ffprobe"))) {
+      return;
+    }
+
+    const fixturePath = join(tmpdir(), `ravi-chunker-forged-${Date.now()}.ogg`);
+    try {
+      await execFileAsync("ffmpeg", [
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=440:duration=1.2",
+        "-c:a",
+        "libopus",
+        "-v",
+        "quiet",
+        fixturePath,
+      ]);
+
+      const input = await readFile(fixturePath);
+      const chunks = await splitAudioChunks(input, "ogg", { chunkDuration: 0.5, overlap: 0.1, durationHintSec: 1e9 });
+
+      expect(chunks.length).toBeGreaterThan(0);
+      expect(chunks.length).toBeLessThanOrEqual(4);
+    } finally {
+      await unlink(fixturePath).catch(() => {});
+    }
+  }, 30_000);
+
+  test("caps the chunk count", async () => {
+    if (!(await hasCommand("ffmpeg")) || !(await hasCommand("ffprobe"))) {
+      return;
+    }
+
+    const fixturePath = join(tmpdir(), `ravi-chunker-cap-${Date.now()}.ogg`);
+    try {
+      await execFileAsync("ffmpeg", [
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=440:duration=3",
+        "-c:a",
+        "libopus",
+        "-v",
+        "quiet",
+        fixturePath,
+      ]);
+
+      const input = await readFile(fixturePath);
+      const chunks = await splitAudioChunks(input, "ogg", { chunkDuration: 0.5, overlap: 0.1, maxChunks: 2 });
+      expect(chunks.length).toBe(2);
+    } finally {
+      await unlink(fixturePath).catch(() => {});
+    }
+  }, 30_000);
+});

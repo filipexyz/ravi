@@ -7,7 +7,9 @@
  * `ravi link` binding for it and credits (and authorizes) the write to the
  * bound person, with the operator kept as executor. With no binding Console
  * refuses writes (`ACTOR_NOT_LINKED`), which starts the person's link
- * (`identity-link/turn-link.ts`); reads stay the operator's.
+ * (`identity-link/turn-link.ts`); Bases refuses reads too. A turn Ravi cannot
+ * attribute sends no contact; Bases calls refuse it locally
+ * (`isUnattributedTurn`) instead of reading or writing as the operator.
  *
  * The contact comes from the same turn classification the access calls use
  * (`resolveAccessActor`), which reads the daemon's own record of the turn
@@ -20,6 +22,8 @@
 import { resolveAccessActor, type AccessActorDeps } from "../access/actor.js";
 import { getContext } from "../cli/context.js";
 import { RAVI_CONTEXT_KEY_ENV } from "../runtime/context-registry.js";
+import { readSpawnedAutomationPrincipal } from "../runtime/turn-origin.js";
+import type { TurnRefusal } from "./turn-refusal.js";
 
 export const ACTOR_CONTACT_HEADER = "x-ravi-actor-contact";
 
@@ -28,19 +32,90 @@ export function turnActorContactId(env: NodeJS.ProcessEnv = process.env, deps: A
   if (!deps.actor && !inRuntimeTurn(env)) return null;
   try {
     const decision = resolveAccessActor({ ...deps, turn: { ...deps.turn, env } });
-    return decision.kind === "contact" ? decision.contactId : null;
-  } catch {
+    if (decision.kind === "contact") return decision.contactId;
+    // A relay a contact's turn produced is still that contact's request: it
+    // never goes out as the operator alone.
+    if (decision.kind === "refused") return relayCallerContactId();
     return null;
+  } catch {
+    return relayCallerContactId();
+  }
+}
+
+function relayCallerContactId(): string | null {
+  const value = getContext()?.context?.metadata?.relayCallerContactId;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/**
+ * One classification for a call that must both admit the turn and name its
+ * actor, so the two can never disagree: the refusal when the turn may not
+ * act, else the contact it acts for (null for the operator, and outside a
+ * runtime turn).
+ */
+export function resolveTurnActor(
+  env: NodeJS.ProcessEnv = process.env,
+  deps: AccessActorDeps = {},
+): { refusal: TurnRefusal | null; contactId: string | null } {
+  if (!deps.actor && !inRuntimeTurn(env)) return { refusal: null, contactId: null };
+  try {
+    const decision = resolveAccessActor({ ...deps, turn: { ...deps.turn, env } });
+    if (decision.kind === "refused") {
+      return {
+        refusal: { reason: decision.reason ?? { kind: "unknown" }, actorPrincipal: decision.actorPrincipal },
+        contactId: null,
+      };
+    }
+    return { refusal: null, contactId: decision.kind === "contact" ? decision.contactId : null };
+  } catch {
+    // no-cause: a turn that cannot be classified is refused as unknown, never served as the operator
+    return { refusal: { reason: { kind: "unknown" }, actorPrincipal: "unknown" }, contactId: null };
   }
 }
 
 /**
  * A runtime turn is running this command: the CLI carries `RAVI_CONTEXT_KEY`,
  * or the daemon is running it for a turn (its gateway and in-process tools
- * set the context; the daemon's own environment has no key).
+ * set the context; the daemon's own environment has no key), or a shell cron
+ * the daemon spawned (`RAVI_AUTOMATION_PRINCIPAL=automation:cron:<id>`), so a
+ * job someone else owns is refused instead of acting as the operator. A shell
+ * trigger's process and a job's are not covered: no owner is enforced on them.
  */
 export function inRuntimeTurn(env: NodeJS.ProcessEnv = process.env): boolean {
   if (env[RAVI_CONTEXT_KEY_ENV]?.trim()) return true;
+  if (readSpawnedAutomationPrincipal(env)?.startsWith("automation:cron:")) return true;
   const transport = getContext({ localOnly: true })?.transport;
   return transport === "gateway" || transport === "tool";
+}
+
+/**
+ * True when a runtime turn runs this command and Ravi cannot say who asked
+ * (`resolveAccessActor` refused it: another agent's turn, an unresolved
+ * speaker), or the classification fails. Such a turn sends no contact, so a
+ * call that must act as the person of the turn refuses it instead of going
+ * out as the operator. Outside a runtime turn, and for the operator or a
+ * contact, false.
+ */
+export function isUnattributedTurn(env: NodeJS.ProcessEnv = process.env, deps: AccessActorDeps = {}): boolean {
+  return unattributedTurnRefusal(env, deps) !== null;
+}
+
+/**
+ * The refusal behind {@link isUnattributedTurn}, with its reason (a routine
+ * someone else owns, another agent's relay, an ended turn, unknown), or null
+ * when the turn may act.
+ */
+export function unattributedTurnRefusal(
+  env: NodeJS.ProcessEnv = process.env,
+  deps: AccessActorDeps = {},
+): TurnRefusal | null {
+  if (!deps.actor && !inRuntimeTurn(env)) return null;
+  try {
+    const decision = resolveAccessActor({ ...deps, turn: { ...deps.turn, env } });
+    return decision.kind === "refused"
+      ? { reason: decision.reason ?? { kind: "unknown" }, actorPrincipal: decision.actorPrincipal }
+      : null;
+  } catch {
+    return { reason: { kind: "unknown" }, actorPrincipal: "unknown" };
+  }
 }

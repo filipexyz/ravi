@@ -18,6 +18,9 @@ tags:
   - context-window
   - missing-session
 applies_to:
+  - src/runtime/runtime-request-builder.ts
+  - src/runtime/runtime-session-continuity.ts
+  - src/router/sessions.ts
   - src/runtime/context-window-recovery.ts
   - src/runtime/host-event-loop.ts
   - src/runtime/credential-classifier.ts
@@ -78,6 +81,9 @@ Providers own native compaction, thread/session ids, and raw error strings. Prov
 - Recovery MUST record trace data showing the failure, reset, provider, model, classifier match, prompt size, and restart reason.
 - Recovery MUST distinguish `runtime_context_window_exhausted` from `runtime_provider_session_missing` in restart reasons and session trace events.
 - If recovery prompt construction fails or no restart prompt can be built, Ravi MUST fail closed with a normal terminal failure.
+- If provider-state reset throws before the recovery handoff, the host MUST settle the captured logical channel request with its terminal failure under the existing owner, accepted-binding and lease fences, then preserve the reset error for diagnostics. A recorded physical terminal MUST NOT suppress that logical settlement. Successful recovery MUST keep the logical request open, without replaying or accounting for the failed physical attempt again.
+- If that failure requires a `running` bootstrap, bootstrap preparation MUST remain synchronous and terminal persistence MUST precede its first external notification await. Existing bounded persistence recovery retains its own ownership checks; a refusal before terminal commit MUST NOT borrow authority from a replacement. Notifications MUST retain their captured sequence and binding even when durable readback is already terminal. Losing ownership during a notification MUST NOT undo an accepted terminal or replay the physical attempt.
+- Retirement after a durable physical `failed` or `interrupted` terminal MUST defer its unfinished usage trace to the original host. That trace MUST retain the accepted terminal status/time and original attempt usage exactly once, without borrowing successor state. If the coordinator has subsequently failed closed on lease ownership, only historical trace completion is permitted: no diagnostic or bridge/runtime terminal notification may be authorized by the old latch. Without an accepted physical failure, ownership loss MUST remain fail-closed.
 
 ## Provider Notes
 
@@ -109,3 +115,17 @@ Other providers should enter this recovery path only after their adapters or sha
 - A missing-conversation error without stored provider state does not trigger another recovery restart.
 - Durable local messages remain readable after recovery.
 - Credential retry logic does not treat context-window exhaustion as a credential retry.
+
+## Cold Start After Eviction
+
+- Idle eviction MUST release only the live provider handle, never the stored provider binding or durable transcript.
+- Resume eligibility in the session resolver is preliminary. The request builder MUST also validate current skill visibility and credential compatibility; these guards MUST NOT be bypassed to preserve context.
+- When the final decision cannot resume, the first provider turn MUST receive a bounded transcript from the same Ravi session's durable messages, including prior decisions and commitments, before the unchanged current request. Native resume MUST NOT redundantly inject the transcript.
+- Recovery MUST NOT use another session, an attached chat's broader history, a parent's transcript, or agent-scoped memory as fallback. Historical instructions MUST remain quoted context, not new commands.
+- Recovery MUST be applied once per physical runtime start. It MUST preserve the current request, authority, source, queued-message ids and delivery barriers, and MUST NOT append a synthetic user row to history.
+- A child with its own provider binding, durable history or explicit reset boundary MUST NOT silently fork its parent when resume is rejected. A new child's parent fork MUST pass provider, cwd, skill and credential compatibility checks.
+- Explicit conversation reset MUST persist a durable message-id boundary (`sessions.history_reset_after_id`), retaining history for inspection while excluding all pre-reset messages from automatic context recovery. Provider-only recovery MUST preserve this boundary.
+- `runtime.continuity` MUST record the final strategy, independent skill/credential checks, reason, recovered message count, size and truncation. Preliminary `runtime.start.canResumeStoredSession` MUST NOT be treated as the final provider request.
+- Existing incompatible provider metadata MUST still reach same-session durable recovery. Adding a gate without a recovery path for existing state is a context-loss defect.
+
+The fallback is a bounded transcript (at most 36 recent messages / 12,000 characters with per-message truncation), not complete provider history or an LLM-generated summary. Older tool-only details require the existing same-session history/trace tools. Reset boundaries are recorded from this version onward; legacy explicit resets without a recorded boundary cannot be inferred from a missing provider id alone.

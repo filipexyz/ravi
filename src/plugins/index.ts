@@ -40,6 +40,7 @@ const USER_PLUGINS_DIR = join(homedir(), "ravi", "plugins");
 
 /** Process-local view of the immutable internal plugin snapshot. */
 let internalPluginSpecs: PluginSpec[] | undefined;
+let pluginDiscoveryOverrideForTests: (() => PluginSpec[]) | undefined;
 let lastPluginDiscoveryLogKey: string | undefined;
 
 /**
@@ -198,7 +199,19 @@ function getUserPlugins(): PluginSpec[] {
  *
  * @returns Array of plugin specs ready for the SDK
  */
+/**
+ * Test-only seam: replace plugin discovery for the current test file without
+ * `mock.module`, which leaks the mocked binding into modules loaded while the
+ * mock is active (every later file then sees the fake list).
+ */
+export function setPluginDiscoveryOverrideForTests(override: (() => PluginSpec[]) | undefined): void {
+  pluginDiscoveryOverrideForTests = override;
+}
+
 export function discoverPlugins(): PluginSpec[] {
+  if (pluginDiscoveryOverrideForTests) {
+    return pluginDiscoveryOverrideForTests();
+  }
   const internal = getInternalPlugins();
   const user = getUserPlugins();
 

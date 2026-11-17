@@ -1,6 +1,8 @@
+import { initializeStateSchema } from "../db/schema-owner.js";
+import { assertDatabaseTargetAllowed, openStateDatabase } from "../db/state-boundary.js";
 import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { Database } from "bun:sqlite";
+import type { Database } from "bun:sqlite";
 import { normalizeConsoleUrl } from "../cloud-auth/client.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import { getRaviStateDir } from "../utils/paths.js";
@@ -176,16 +178,21 @@ export function closeConsoleScopeStore(): void {
 
 function getDb(options: ConsoleScopeStoreOptions = {}): Database {
   const path = join(getRaviStateDir(options.env), "ravi.db");
+  assertDatabaseTargetAllowed(path, { env: options.env });
   if (handle?.path === path) return handle.db;
   handle?.db.close();
   mkdirSync(dirname(path), { recursive: true });
-  const db = new Database(path, { create: true });
+  const db = openStateDatabase(path, { create: true }, { env: options.env });
   ensureSchema(db);
   handle = { db, path };
   return db;
 }
 
 function ensureSchema(db: Database): void {
+  initializeStateSchema(db, "console-scope", () => migrateSchema(db));
+}
+
+function migrateSchema(db: Database): void {
   migrateLegacySchema(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS console_scope_defaults (
@@ -334,3 +341,5 @@ function parseJsonRecord(value: string | null): Record<string, unknown> | null {
 function text(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
+
+export { getDb as getConsoleScopeDb };

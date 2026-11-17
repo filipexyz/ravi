@@ -33,3 +33,20 @@ honest about who decides access.
 - Events reuse the inbox bridge. Bases row events are inbox items with
   `category: "bases"`, so triggers filter them with the existing predicate
   grammar and no new NATS subject has to be secured or documented.
+- Agent automations start as drafts. A trigger runs an agent on every
+  matching event, with no person in the loop. An agent that subscribes from a
+  conversation proposes that automation; the operator turns it on. From the
+  operator's own terminal the operator is already the one deciding.
+- Decisions stay human. `rows approve|reject` is braked and in no default
+  grant, and the Console only accepts a decision from a listed approver, so a
+  row text or a prompt cannot turn an agent into the approver.
+- Reads by default, writes by grant. Every agent may read Bases through views
+  and charts, where the Console already limits what each caller sees; direct
+  row reads and writes remain an explicit choice of the operator.
+- The actor rides on reads too. A view filtered by `$viewer` must show the
+  linked person's rows in that person's turn, not the operator's, and an
+  unlinked person must not read through the operator's login at all: the
+  Console refuses those reads with `ACTOR_NOT_LINKED`, which starts the link.
+- Retries replay. A keyed write never carries a version the CLI read just
+  before, because the Console hashes it into the request and a retry after a
+  lost response would read a newer one and conflict instead of replaying.

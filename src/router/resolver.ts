@@ -7,7 +7,13 @@
 import type { RouterConfig, AgentConfig, RouteConfig, MatchedRoute, ResolvedRoute, DmScope } from "./types.js";
 import { buildSessionKey } from "./session-key.js";
 import { generateSessionName, ensureUniqueName, slugify } from "./session-name.js";
-import { getOrCreateSession, getSession, updateSessionName, getSessionByName } from "./sessions.js";
+import {
+  getOrCreateSession,
+  getSession,
+  updateSessionName,
+  getSessionByName,
+  isSessionNameReserved,
+} from "./sessions.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("router");
@@ -188,6 +194,33 @@ export function resolveRoute(
 }
 
 /**
+ * A route forces a session that belongs to a different agent than the one
+ * the match resolved to (for example a chat subscription that overrode the
+ * agent but kept the route's fixed session). Terminal: retrying the same
+ * inbound produces the same conflict until the route or binding changes.
+ */
+export class RouteSessionAgentConflictError extends Error {
+  readonly code = "ROUTE_SESSION_AGENT_CONFLICT";
+  readonly terminal = true;
+
+  constructor(
+    readonly details: {
+      routeSession: string;
+      sessionKey: string;
+      sessionAgentId: string;
+      matchedAgentId: string;
+      matchedSessionKey: string;
+      routePattern?: string;
+    },
+  ) {
+    super(
+      `Route session "${details.routeSession}" belongs to agent ${details.sessionAgentId}, but the route resolved to agent ${details.matchedAgentId}`,
+    );
+    this.name = "RouteSessionAgentConflictError";
+  }
+}
+
+/**
  * Commit a previously matched route to the DB: ensures the session row
  * exists (idempotent) and assigns or reuses a canonical sessionName.
  *
@@ -222,6 +255,18 @@ export function commitMatchedRoute(
   if (forcedRouteSessionName && !threadId) {
     const target = forcedRouteSession;
     if (target && target.sessionKey !== sessionKey) {
+      // Never hand back one agent with another agent's session: ingress
+      // rejects the pair later, and the message is lost (bug a2d9fc1c).
+      if (target.agentId !== agentId) {
+        throw new RouteSessionAgentConflictError({
+          routeSession: forcedRouteSessionName,
+          sessionKey: target.sessionKey,
+          sessionAgentId: target.agentId,
+          matchedAgentId: agentId,
+          matchedSessionKey: sessionKey,
+          ...(route?.pattern ? { routePattern: route.pattern } : {}),
+        });
+      }
       log.info("Route redirecting to existing session", {
         routeSession: forcedRouteSessionName,
         targetKey: target.sessionKey,
@@ -249,8 +294,20 @@ export function commitMatchedRoute(
   });
   let sessionName = existing.name;
 
+  // A name reserved for a trigger's session is not this session's to take:
+  // the message still gets a session, under the name it would have without it.
+  const forcedNameReserved =
+    !!forcedRouteSessionName && isSessionNameReserved(effectiveSessionKey, forcedRouteSessionName);
+  if (forcedNameReserved && !threadId) {
+    log.warn("Route forces a session name reserved for a trigger's session; keeping the session's own name", {
+      routeSession: forcedRouteSessionName,
+      sessionKey: effectiveSessionKey,
+      ...(route?.pattern ? { routePattern: route.pattern } : {}),
+    });
+  }
+
   // Route-forced session name takes precedence
-  if (forcedRouteSessionName && !threadId && existing.name !== forcedRouteSessionName) {
+  if (forcedRouteSessionName && !forcedNameReserved && !threadId && existing.name !== forcedRouteSessionName) {
     sessionName = forcedRouteSessionName;
     updateSessionName(effectiveSessionKey, sessionName);
   } else if (!sessionName) {

@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { getDb, getDbChanges } from "../router/router-db.js";
-import type { JobCreateInput, JobOrigin, JobRecord, JobStatus } from "./types.js";
+import {
+  isJobTerminal,
+  type JobCreateInput,
+  type JobDeliveryState,
+  type JobOrigin,
+  type JobRecord,
+  type JobStatus,
+} from "./types.js";
 
 interface JobRow {
   id: string;
@@ -15,6 +22,10 @@ interface JobRow {
   log_path: string;
   origin: string;
   notified_at: number | null;
+  delivery_error?: string | null;
+  delivery_attempts?: number | null;
+  delivery_state?: string | null;
+  delivery_claimed_at?: number | null;
   started_at: number | null;
   finished_at: number | null;
   created_at: number;
@@ -35,11 +46,24 @@ function rowToJob(row: JobRow): JobRecord {
     logPath: row.log_path,
     origin: row.origin as JobOrigin,
     notifiedAt: row.notified_at,
+    deliveryError: row.delivery_error ?? null,
+    deliveryAttempts: row.delivery_attempts ?? 0,
+    deliveryState: deliveryStateFromRow(row),
+    deliveryClaimedAt: row.delivery_claimed_at ?? null,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+/**
+ * `notified_at` continua sendo a verdade de "entregue": linha antiga, sem
+ * `delivery_state`, é `notified` se tem o timestamp e `pending` se não tem.
+ */
+function deliveryStateFromRow(row: JobRow): JobDeliveryState {
+  if (row.notified_at) return "notified";
+  return row.delivery_state === "inflight" ? "inflight" : "pending";
 }
 
 export function dbCreateJob(input: JobCreateInput): JobRecord {
@@ -119,11 +143,101 @@ export function dbFinishJob(
   return getDbChanges() > 0;
 }
 
+/**
+ * Reserva a entrega do desfecho ANTES de publicar: `pending` -> `inflight`.
+ *
+ * É um compare-and-set numa única instrução, então duas rotas que veem o mesmo
+ * desfecho (tópico do CLI, reconcile, kill) não publicam as duas — só uma leva a
+ * reserva. Uma reserva `inflight` mais velha que `staleAfterMs` é de quem morreu
+ * ou travou no meio da publicação e pode ser retomada; a republicação usa a
+ * mesma chave de deduplicação, então colide se a primeira chegou à fila.
+ */
+export function dbClaimJobDelivery(id: string, input: { staleAfterMs: number; now?: number }): boolean {
+  ensureJobsSchema();
+  const now = input.now ?? Date.now();
+  getDb()
+    .prepare(
+      `UPDATE jobs
+          SET delivery_state = 'inflight', delivery_claimed_at = ?, updated_at = ?
+        WHERE id = ?
+          AND status IN ('succeeded','failed','killed')
+          AND session_name IS NOT NULL
+          AND notified_at IS NULL
+          AND (COALESCE(delivery_state, 'pending') = 'pending'
+               OR (delivery_state = 'inflight' AND COALESCE(delivery_claimed_at, 0) <= ?))`,
+    )
+    .run(now, now, id, now - input.staleAfterMs);
+  return getDbChanges() > 0;
+}
+
 export function dbMarkJobNotified(id: string): boolean {
   ensureJobsSchema();
   const now = Date.now();
-  getDb().prepare("UPDATE jobs SET notified_at = ?, updated_at = ? WHERE id = ?").run(now, now, id);
+  getDb()
+    .prepare(
+      "UPDATE jobs SET notified_at = ?, delivery_state = 'notified', delivery_claimed_at = NULL, updated_at = ? WHERE id = ?",
+    )
+    .run(now, now, id);
   return getDbChanges() > 0;
+}
+
+/**
+ * Entrega do desfecho falhou. O motivo fica na linha: um job terminal com
+ * `notified_at` nulo e `delivery_error` preenchido é o registro durável de que
+ * alguém ficou sem resposta, e o reconcile tenta de novo. A reserva volta para
+ * `pending`; quem já foi entregue por outra rota não é reaberto.
+ */
+export function dbRecordJobDeliveryFailure(id: string, error: string): boolean {
+  ensureJobsSchema();
+  const now = Date.now();
+  getDb()
+    .prepare(
+      `UPDATE jobs
+          SET delivery_error = ?, delivery_attempts = COALESCE(delivery_attempts, 0) + 1,
+              delivery_state = 'pending', delivery_claimed_at = NULL, updated_at = ?
+        WHERE id = ? AND notified_at IS NULL`,
+    )
+    .run(error.slice(0, 2_000), now, id);
+  return getDbChanges() > 0;
+}
+
+/**
+ * Jobs terminais de uma sessão cujo desfecho ainda não chegou nela.
+ *
+ * Entrega `inflight` não entra: alguém está publicando agora. Só volta para a
+ * lista quando a reserva passa de `staleAfterMs`.
+ */
+export function dbListUndeliveredJobs(input: {
+  maxAttempts: number;
+  staleAfterMs: number;
+  now?: number;
+  limit?: number;
+}): JobRecord[] {
+  ensureJobsSchema();
+  const now = input.now ?? Date.now();
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM jobs
+        WHERE status IN ('succeeded','failed','killed')
+          AND notified_at IS NULL
+          AND session_name IS NOT NULL
+          AND COALESCE(delivery_attempts, 0) < ?
+          AND (COALESCE(delivery_state, 'pending') = 'pending'
+               OR (delivery_state = 'inflight' AND COALESCE(delivery_claimed_at, 0) <= ?))
+        ORDER BY finished_at
+        LIMIT ?`,
+    )
+    .all(input.maxAttempts, now - input.staleAfterMs, Math.max(1, Math.min(input.limit ?? 50, 500))) as JobRow[];
+  return rows.map(rowToJob);
+}
+
+/** Ids dos jobs ainda não terminais de uma sessão: pendência que impede o despejo por idle. */
+export function dbListPendingJobIdsForSession(sessionName: string): string[] {
+  ensureJobsSchema();
+  const rows = getDb()
+    .prepare("SELECT id FROM jobs WHERE session_name = ? AND status IN ('pending','running') ORDER BY created_at")
+    .all(sessionName) as Array<{ id: string }>;
+  return rows.map((row) => row.id);
 }
 
 /** Jobs que ficaram marcados como rodando quando o daemon morreu. */
@@ -133,6 +247,63 @@ export function dbListRunningJobs(): JobRecord[] {
     .prepare("SELECT * FROM jobs WHERE status IN ('pending','running') ORDER BY created_at")
     .all() as JobRow[];
   return rows.map(rowToJob);
+}
+
+export interface JobRegisterInput {
+  id: string;
+  sessionName?: string | null;
+  agentId?: string | null;
+  command: string;
+  cwd?: string | null;
+  logPath: string;
+  pid: number | null;
+  /** Presente quando o comando terminou antes de o wrapper desistir de esperar. */
+  exit?: {
+    status: "succeeded" | "failed" | "killed";
+    exitCode: number | null;
+    signal: string | null;
+  } | null;
+}
+
+/**
+ * Registra um job que já está rodando, criado fora do daemon (o wrapper de detach).
+ *
+ * Idempotente de propósito: o wrapper pode registrar de novo depois de um
+ * `finish` que chegou antes da linha existir. Nunca reabre um job terminal.
+ */
+export function dbRegisterJob(input: JobRegisterInput): JobRecord {
+  ensureJobsSchema();
+  const existing = dbGetJob(input.id);
+  if (!existing) {
+    dbCreateJob({
+      id: input.id,
+      sessionName: input.sessionName ?? null,
+      agentId: input.agentId ?? null,
+      command: input.command,
+      cwd: input.cwd ?? null,
+      logPath: input.logPath,
+      origin: "detach",
+    });
+    dbMarkJobRunning(input.id, input.pid);
+  } else if (!isJobTerminal(existing.status)) {
+    const now = Date.now();
+    getDb()
+      .prepare(
+        "UPDATE jobs SET pid = ?, status = 'running', started_at = COALESCE(started_at, ?), updated_at = ? WHERE id = ?",
+      )
+      .run(input.pid, now, now, input.id);
+  }
+
+  if (input.exit) {
+    const current = dbGetJob(input.id);
+    if (current && !isJobTerminal(current.status)) {
+      dbFinishJob(input.id, input.exit);
+    }
+  }
+
+  const registered = dbGetJob(input.id);
+  if (!registered) throw new Error(`Job not found after register: ${input.id}`);
+  return registered;
 }
 
 function ensureJobsSchema(): void {
@@ -158,4 +329,22 @@ function ensureJobsSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_jobs_session ON jobs(session_name, created_at);
     CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status, created_at);
   `);
+  ensureJobsDeliveryColumns();
+}
+
+/**
+ * Colunas de entrega chegaram depois da tabela: banco existente ganha todas
+ * sem migração manual. Checado a cada chamada porque testes trocam o banco.
+ */
+function ensureJobsDeliveryColumns(): void {
+  const db = getDb();
+  const columns = new Set(
+    (db.prepare("PRAGMA table_info(jobs)").all() as Array<{ name: string }>).map((column) => column.name),
+  );
+  if (!columns.has("delivery_error")) db.exec("ALTER TABLE jobs ADD COLUMN delivery_error TEXT");
+  if (!columns.has("delivery_attempts")) {
+    db.exec("ALTER TABLE jobs ADD COLUMN delivery_attempts INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!columns.has("delivery_state")) db.exec("ALTER TABLE jobs ADD COLUMN delivery_state TEXT");
+  if (!columns.has("delivery_claimed_at")) db.exec("ALTER TABLE jobs ADD COLUMN delivery_claimed_at INTEGER");
 }

@@ -59,6 +59,20 @@ interface GhWorld {
   prs: GhPr[];
   runs: GhRun[];
   departed: GhDeparted[];
+  comments?: { issue?: GhIssueComment[]; review?: GhReviewComment[] };
+}
+
+interface GhIssueComment {
+  id: number;
+  body?: string;
+  html_url?: string;
+  issue_url?: string;
+  updated_at?: string;
+  user?: { login?: string };
+}
+
+interface GhReviewComment extends Omit<GhIssueComment, "issue_url"> {
+  pull_request_url?: string;
 }
 
 /**
@@ -81,6 +95,15 @@ function fakeGh(world: GhWorld): (args: string[]) => string {
       return JSON.stringify(found);
     }
     if (group === "run" && command === "list") return JSON.stringify(world.runs);
+    if (group === "api") {
+      // Só o que o poller pede: comentários recentes do repo.
+      const endpoint = command ?? "";
+      expect(endpoint.startsWith(`repos/${REPO}/`)).toBe(true);
+      const comments = endpoint.includes("/pulls/comments")
+        ? (world.comments?.review ?? [])
+        : (world.comments?.issue ?? []);
+      return JSON.stringify(comments);
+    }
     throw new Error(`unexpected gh invocation: ${args.join(" ")}`);
   };
 }
@@ -91,11 +114,30 @@ function produceEvents(before: GhWorld, after: GhWorld): string[] {
   const previous = snapshotFrom(before);
   const current = source.readSnapshot(REPO);
   const departed = source.readDeparted(REPO, departedNumbersBetween(previous, current));
-  return deriveLocalGitHubEvents(REPO, { previous, current, departed }).events.map((event) => event.eventType);
+  const comments = source.readComments?.(
+    REPO,
+    after.prs.map((pr) => pr.number),
+  );
+  return deriveLocalGitHubEvents(REPO, {
+    previous,
+    current,
+    departed,
+    ...(comments ? { comments } : {}),
+  }).events.map((event) => event.eventType);
 }
 
 function snapshotFrom(world: GhWorld): LocalWatchSnapshot {
-  return createGhLocalWatchSource(fakeGh(world)).readSnapshot(REPO);
+  const source = createGhLocalWatchSource(fakeGh(world));
+  const snapshot = source.readSnapshot(REPO);
+  const observed = source.readComments?.(
+    REPO,
+    world.prs.map((pr) => pr.number),
+  );
+  if (!observed) return snapshot;
+  return {
+    ...snapshot,
+    comments: Object.fromEntries(observed.map((comment) => [comment.key, { updatedAt: comment.updatedAt }])),
+  };
 }
 
 const BASE: GhWorld = { prs: [], runs: [], departed: [] };
@@ -144,6 +186,28 @@ const SCENARIOS: Record<string, { before: GhWorld; after: GhWorld }> = {
   "workflow_run.completed": {
     before: { prs: [], runs: [{ databaseId: 1, status: "queued", conclusion: null }], departed: [] },
     after: { prs: [], runs: [{ databaseId: 1, status: "completed", conclusion: "neutral" }], departed: [] },
+  },
+  // Comentário é o caso que o follow promete e não entregava: sem leitura de
+  // comentário, nenhum evento desse tipo existia.
+  "pull_request_comment.created": {
+    before: { prs: [{ number: 1 }], runs: [], departed: [], comments: {} },
+    after: {
+      prs: [{ number: 1 }],
+      runs: [],
+      departed: [],
+      comments: {
+        issue: [
+          {
+            id: 9,
+            body: "o teste quebrou no CI",
+            html_url: "https://github.com/owner/repo/pull/1#issuecomment-9",
+            issue_url: "https://api.github.com/repos/owner/repo/issues/1",
+            updated_at: "2026-10-22T19:00:00Z",
+            user: { login: "luis" },
+          },
+        ],
+      },
+    },
   },
 };
 

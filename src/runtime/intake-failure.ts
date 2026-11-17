@@ -5,13 +5,19 @@ import { logger } from "../utils/logger.js";
 import type { RuntimeSafeEmit } from "./host-event-loop.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { formatUserFacingTurnFailure } from "./public-failure.js";
+import { classifyTurnProvenance } from "./turn-provenance.js";
 
 const log = logger.child("runtime:intake-failure");
 
 export const RUNTIME_PROMPT_INTAKE_FAILED_USER_MESSAGE =
   "This message could not be delivered to an agent. Please contact the operator.";
 
-export type RuntimePromptIntakeFailureReason = "no_agent";
+/**
+ * `no_agent`: the prompt's agent no longer exists. `trigger_own_session`: the
+ * prompt was sent to a trigger's own session, which runs that trigger's fires
+ * only.
+ */
+export type RuntimePromptIntakeFailureReason = "no_agent" | "trigger_own_session";
 
 export function isUserFacingPromptSource(source: RuntimeLaunchPrompt["source"] | undefined): boolean {
   const channel = source?.channel?.trim().toLowerCase();
@@ -60,7 +66,9 @@ export function reportRuntimePromptIntakeFailure(input: {
   input
     .safeEmit(`ravi.session.${sessionName}.runtime`, {
       type: "dispatch.dropped",
+      ...(prompt._bridgeTurnId ? { _bridgeTurnId: prompt._bridgeTurnId } : {}),
       reason: `intake_failed:${reason}`,
+      _turnProvenance: classifyTurnProvenance({ prompt }),
       sessionName,
       ...(source ? { _source: source } : {}),
       timestamp: new Date().toISOString(),

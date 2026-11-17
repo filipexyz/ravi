@@ -5,6 +5,7 @@ Source agent: {{source.agentId}}
 Observer role: {{binding.observerRole}}
 Observer mode: {{binding.observerMode}}
 Delivery: realtime
+Delivery id: {{delivery.id}}
 Events: {{delivery.eventCount}}
 Run: {{delivery.runId}}
 

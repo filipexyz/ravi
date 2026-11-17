@@ -90,6 +90,8 @@ export type ChannelChatActionContent =
       readonly text: string;
       /** The person who asked for the thread, shown on its root card. */
       readonly requestedBy?: string;
+      /** Requested runtime shape (provider/model/effort), shown on the root card when set. */
+      readonly runtime?: string;
     };
 
 export interface ChatActionRequest {

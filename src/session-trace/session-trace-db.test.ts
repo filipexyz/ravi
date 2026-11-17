@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { listSessionEventsForTest } from "../test/session-trace-events.js";
 import {
   getSessionTraceBlob,
   getSessionTurn,
   listContactSessionSummaries,
   listRecentSessionEventsByType,
-  listSessionEvents,
   listSessionEventsByContactId,
+  listSessionEventsByTurn,
   recordSessionBlob,
   recordSessionEvent,
   redactJson,
@@ -89,20 +90,40 @@ describe("session trace db", () => {
     expect(first.id).not.toBe(second.id);
     expect(first.seq).toBe(1);
     expect(second.seq).toBe(2);
-    expect(first.preview).toBe(`Authorization: Bearer [REDACTED]`);
-    expect(first.error).toBe(`OPENAI_API_KEY=[REDACTED]`);
+    expect(first.preview).toBe(`Authorization: [redacted:authorization]`);
+    expect(first.error).toBe(`OPENAI_API_KEY=[redacted:openai_api_key]`);
     expect(first.payloadJson).toEqual({
-      env: {
-        OPENAI_API_KEY: "[REDACTED]",
-        RAVI_CONTEXT_KEY: "[REDACTED]",
-        RAVI_STATE_DIR: "/tmp/ravi-test",
-      },
-      headers: {
-        authorization: "[REDACTED]",
-      },
+      message: "OPENAI_API_KEY=[redacted:openai_api_key]",
+      cause: "OPENAI_API_KEY=[redacted:openai_api_key]",
+      context: {},
     });
 
-    expect(listSessionEvents("agent:main:main")).toHaveLength(2);
+    expect(listSessionEventsForTest("agent:main:main")).toHaveLength(2);
+  });
+
+  it("lists one turn's events without walking the rest of the session", () => {
+    const seed = (turnId: string | null, count: number, startSeq: number) => {
+      for (let index = 0; index < count; index += 1) {
+        recordSessionEvent({
+          sessionKey: "agent:main:main",
+          turnId,
+          eventType: "runtime.status",
+          eventGroup: "runtime",
+          status: "thinking",
+          seq: startSeq + index,
+          timestamp: startSeq + index,
+          createdAt: startSeq + index,
+        });
+      }
+    };
+    seed(null, 40, 1);
+    seed("turn-a", 3, 100);
+    seed("turn-b", 2, 200);
+
+    const events = listSessionEventsByTurn("turn-a");
+
+    expect(events.map((event) => event.turnId)).toEqual(["turn-a", "turn-a", "turn-a"]);
+    expect(events.map((event) => event.seq)).toEqual([100, 101, 102]);
   });
 
   it("lists recent session events by type without loading the full session trace", () => {

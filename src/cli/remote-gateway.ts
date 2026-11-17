@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 /**
  * Remote gateway dispatch for the Ravi CLI.
  *
@@ -22,9 +23,10 @@
  * structured issues) are preserved so file/project failures stay actionable.
  */
 
+import { projectDiagnosticContext, redactDiagnosticText } from "../utils/error-diagnostic.js";
 import { request as httpRequest } from "node:http";
-import { userInfo } from "node:os";
 import { join } from "node:path";
+import { resolveAccountHome } from "../utils/account-home.js";
 import {
   HOST_CLI_GATEWAY_ENV,
   HOST_CLI_GATEWAY_INTERNAL_ENV,
@@ -37,6 +39,7 @@ import {
   ContractError,
   CONTRACT_EXIT_USAGE,
   permissionDeniedToContractError,
+  projectPermissionProfileInspectionCommands,
   sanitizePublicContractMessage,
   type ContractErrorDetails,
 } from "./agent-contract.js";
@@ -45,9 +48,15 @@ import { CALLER_CWD_HEADER, parseCallerCwd } from "./caller-cwd.js";
 import { cloudContractCatalogCopy, safeDomainSetupMessage } from "./cloud-error-contract.js";
 import { plannedPageDomainDns, plannedPageDomainDnsLines, projectPageDomainSetups } from "../pages/domain-setup.js";
 import { localMediaSendCatalogCopy } from "./media-send-auth.js";
+import {
+  RUNTIME_CONTROL_DISABLED_REASON,
+  isRetryableRuntimeControlCode,
+  runtimeControlCatalogCopy,
+} from "../runtime/runtime-control-errors.js";
 import { turnLinkContract } from "../identity-link/turn-link-copy.js";
-import { isSafeLocalPayloadMessage } from "./payload-error-message.js";
+import { isSafeLocalPayloadMessage, looksLikeProviderDump } from "./payload-error-message.js";
 import { projectPublicIssues, sanitizePublicValue } from "./redaction.js";
+import { projectPublicationDetails, publicationRecoveryAction } from "../pr/contracts.js";
 
 export { CALLER_CWD_HEADER } from "./caller-cwd.js";
 
@@ -61,6 +70,18 @@ const REMOTE_CONTRACT_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/;
 const REMOTE_FLAG_PATTERN = /^--[a-z0-9][a-z0-9-]{0,63}$/;
 const REMOTE_POSITIONAL_PATTERN = /^(?:<[a-z][A-Za-z0-9_-]{0,63}(?:\.\.\.)?>|\[[a-z][A-Za-z0-9_-]{0,63}(?:\.\.\.)?\])$/;
 const REMOTE_SUGGESTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const REMOTE_PROFILE_VALUE_PATTERN = /^[a-z0-9][a-z0-9._:-]{0,127}$/;
+const REMOTE_PROFILE_CHOICES_MAX = 512;
+const REMOTE_PROFILE_INSPECTION_MESSAGE =
+  /^Unknown or empty permission profile: [a-z0-9][a-z0-9._:-]{0,159}\. Available profiles: [a-z0-9._:-]+(?:, (?:[a-z0-9._:-]+|\.\.\.))*\. Inspect built-ins with 'ravi skills show permissions' and stored profiles with 'ravi tags list --kind system --source permissions --json'\. Provide --capabilities <permission>:<objectType>:<objectId> to bootstrap a custom profile\.$/;
+// Canonical capability (`read:pages:list`, `admin:system:*`) and denial
+// metadata from the gateway envelope. Bounded so a hostile message cannot
+// smuggle free-form content through the denial projection.
+const REMOTE_CAPABILITY_PATTERN = /^[a-z][a-z0-9_-]*(?::[A-Za-z0-9*_.-]+){1,3}$/;
+const REMOTE_CAPABILITY_MAX = 160;
+const REMOTE_DENIAL_STAGE_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
+const REMOTE_DENIAL_ID_PATTERN = /^\d{1,19}$/;
+const MISSING_CAPABILITY_LINE_PATTERN = /^Missing capability:\s*([A-Za-z0-9*_.:-]+)\s*$/im;
 const REMOTE_PLAN_KEY_PATTERN = /^[a-z][A-Za-z0-9]{0,63}$/;
 const REMOTE_PLAN_BLOCKED_STRING_KEY_SEGMENTS = new Set([
   "body",
@@ -139,11 +160,13 @@ export function getRemoteGatewayConfig(env: NodeJS.ProcessEnv = process.env, op 
 export interface ResolveRemoteGatewayConfigOptions {
   probeSocket?: (socketPath: string) => Promise<boolean>;
   stateDir?: string;
+  /** Set only after the CLI has verified installed operator provenance. */
+  installedOperator?: boolean;
 }
 
 /**
  * Resolve an explicit HTTP(S)/unix gateway, or auto-bridge to the host unix
- * socket when this process is an isolated CLI (`RAVI_CONTEXT_KEY`) and the
+ * socket for runtime contexts or a verified installed operator when the
  * socket is actually connectable. Never auto-sets a loopback HTTP URL.
  */
 export async function resolveRemoteGatewayConfig(
@@ -160,7 +183,7 @@ export async function resolveAutoHostCliGateway(
   env: NodeJS.ProcessEnv = process.env,
   options: ResolveRemoteGatewayConfigOptions = {},
 ): Promise<RemoteGatewayConfig | null> {
-  if (!shouldAutoUseHostCliGateway(env)) return null;
+  if (!shouldAutoUseHostCliGateway(env, options.installedOperator)) return null;
   const stateDirs = options.stateDir ? [options.stateDir] : resolveHostCliGatewayStateDirs(env);
   const probe = options.probeSocket ?? probeUnixSocket;
   for (const stateDir of stateDirs) {
@@ -179,12 +202,12 @@ export async function resolveAutoHostCliGateway(
   return null;
 }
 
-export function shouldAutoUseHostCliGateway(env: NodeJS.ProcessEnv = process.env): boolean {
+export function shouldAutoUseHostCliGateway(env: NodeJS.ProcessEnv = process.env, installedOperator = false): boolean {
   if (env[REMOTE_GATEWAY_URL_ENV]?.trim()) return false;
   const disabled = env[HOST_CLI_GATEWAY_ENV]?.trim();
   if (disabled === "0" || disabled?.toLowerCase() === "false" || disabled?.toLowerCase() === "off") return false;
   if (env[HOST_CLI_GATEWAY_INTERNAL_ENV]?.trim() === "1") return false;
-  return Boolean(env.RAVI_CONTEXT_KEY?.trim());
+  return Boolean(env.RAVI_CONTEXT_KEY?.trim()) || installedOperator;
 }
 
 /**
@@ -198,21 +221,8 @@ export function shouldAutoUseHostCliGateway(env: NodeJS.ProcessEnv = process.env
 export function resolveHostCliGatewayStateDirs(env: NodeJS.ProcessEnv = process.env): string[] {
   const explicit = env.RAVI_STATE_DIR?.trim();
   if (explicit) return [explicit];
-  const accountHome = accountHomedir();
+  const accountHome = resolveAccountHome();
   return accountHome ? [join(accountHome, ".ravi")] : [];
-}
-
-/**
- * Home directory from the passwd entry. `os.homedir()` is not a fallback: it
- * reads `$HOME`. Without a passwd entry (some containers) nothing is probed,
- * so the daemon must publish `RAVI_STATE_DIR`, or the command fails closed.
- */
-function accountHomedir(): string | null {
-  try {
-    return userInfo().homedir || null;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -224,17 +234,17 @@ export function requiresRemoteGateway(env: NodeJS.ProcessEnv = process.env): boo
   return Boolean(env.RAVI_CONTEXT_KEY?.trim());
 }
 
-export function gatewayRequiredError(op: string): ContractError {
-  return new ContractError(
-    op,
-    "GATEWAY_REQUIRED",
-    "Commands running with RAVI_CONTEXT_KEY must go through the Ravi gateway, and none is reachable.",
-    1,
-    {
+export function gatewayRequiredError(op: string, installedOperator = false): ContractError {
+  const message = installedOperator
+    ? "This command requires the installed Ravi gateway, and none is reachable."
+    : "Commands running with RAVI_CONTEXT_KEY must go through the Ravi gateway, and none is reachable.";
+  return new ContractError(op, "GATEWAY_REQUIRED", message, 1, {
+    ...errorDiagnostic(message, { operation: op }),
+    ...{
       retryable: true,
       suggestedAction: `Start the Ravi daemon so its host CLI gateway socket is available, or set ${REMOTE_GATEWAY_URL_ENV}`,
     },
-  );
+  });
 }
 
 /**
@@ -249,8 +259,14 @@ export function cliOnlyCommandError(op: string): ContractError {
     "This command is exclusive to the local CLI and has no remote-call semantics: it cannot run from a turn inside a runtime session.",
     2,
     {
-      retryable: false,
-      suggestedAction: "Run it from a terminal on the host, outside a session turn.",
+      ...errorDiagnostic(
+        "This command is exclusive to the local CLI and has no remote-call semantics: it cannot run from a turn inside a runtime session.",
+        { operation: op },
+      ),
+      ...{
+        retryable: false,
+        suggestedAction: "Run it from a terminal on the host, outside a session turn.",
+      },
     },
   );
 }
@@ -270,7 +286,10 @@ function invalidRemoteGatewayError(op: string): ContractError {
     "REMOTE_GATEWAY_INVALID",
     `${REMOTE_GATEWAY_URL_ENV} must be a valid HTTP(S) or unix socket URL.`,
     CONTRACT_EXIT_USAGE,
-    { suggestedAction: `Correct or unset ${REMOTE_GATEWAY_URL_ENV} before retrying` },
+    {
+      ...errorDiagnostic(`${REMOTE_GATEWAY_URL_ENV} must be a valid HTTP(S) or unix socket URL.`, { operation: op }),
+      ...{ suggestedAction: `Correct or unset ${REMOTE_GATEWAY_URL_ENV} before retrying` },
+    },
   );
 }
 
@@ -310,6 +329,7 @@ export interface RemoteDispatchResult {
   /** Exact response bytes, used for binary @Returns responses. */
   bodyBytes?: Uint8Array;
   contentType: string | null;
+  requestId?: string;
 }
 
 export type RemoteDispatchOutput = { kind: "bytes"; value: Uint8Array } | { kind: "text"; value: string };
@@ -363,10 +383,12 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
   if (result.contentType?.includes("application/json")) {
     try {
       const body = JSON.parse(result.body) as Record<string, unknown>;
-      if (isCompleteContractErrorBody(body, op)) {
+      if (isCompleteContractErrorBody(body, op) || (body.op === "gateway" && isCompleteContractErrorBody(body))) {
         const turnLink = turnLinkRemoteCopy(body.error);
         const connectorTurn = turnLink ?? connectorTurnRemoteCopy(op, body.error);
-        const library = connectorTurn ? null : libraryRemoteCopy(op, body);
+        const refusal = connectorTurn
+          ? null
+          : (actorUnknownRemoteCopy(body) ?? operatorOnlyRemoteCopy(op, body) ?? libraryRemoteCopy(op, body));
         const projected = remoteContractFailureMessage(
           op,
           body.outcome,
@@ -374,35 +396,54 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
           body.error.message,
           body.error.code,
         );
-        // An issue-first projection already names the field; the Library copy only replaces the generic line.
-        const generic = projected === REMOTE_GENERIC_FAILURE || projected === REMOTE_GENERIC_BLOCKED;
+        // An issue-first projection already names the field; refusal copy only replaces the generic line.
+        const generic = projected === remoteFailureMessage(op, body.error.code) || projected === REMOTE_GENERIC_BLOCKED;
         const dnsHint =
           op === PAGES_DOMAINS_OP && isRemoteWriteBrake(body) ? plannedDomainDnsHint(body.error.plan) : null;
+        const requestId = safeRequestId(body.error.requestId) ?? safeRequestId(result.requestId);
         return new ContractError(
           op,
           body.error.code,
           connectorTurn?.message ??
-            (generic ? library?.message : undefined) ??
+            (generic ? refusal?.message : undefined) ??
             (dnsHint ? `${projected}\n${dnsHint}` : projected),
           body.exitCode,
           {
-            ...projectRemoteContractDetails(op, body, result.status),
-            ...(connectorTurn?.details ?? {}),
-            ...(library?.details ?? {}),
+            ...errorDiagnostic(
+              connectorTurn?.message ??
+                (generic ? refusal?.message : undefined) ??
+                (dnsHint ? `${projected}\n${dnsHint}` : projected),
+              { operation: op },
+            ),
+            ...{
+              ...projectRemoteContractDetails(op, body, result.status),
+              ...(requestId ? { requestId } : {}),
+              ...(connectorTurn?.details ?? {}),
+              ...(refusal?.details ?? {}),
+            },
           },
         );
       }
       if (body.error === "PermissionDenied") {
-        const denied = permissionDeniedToContractError(op, "Remote gateway denied the command.");
+        const denied = permissionDeniedToContractError(
+          op,
+          typeof body.reason === "string" ? redactDiagnosticText(body.reason) : "Remote gateway denied the command.",
+        );
         return new ContractError(denied.op, denied.code, denied.message, denied.exitCode, {
-          ...denied.details,
-          status: result.status,
+          ...errorDiagnostic(denied.message, { operation: denied.op }),
+          ...{
+            ...denied.details,
+            status: result.status,
+          },
         });
       }
       if (body.error === "Unauthorized") {
         return new ContractError(op, "AUTH_REQUIRED", "Remote gateway authentication failed.", 1, {
-          suggestedAction: "Refresh the runtime context credential and retry",
-          status: result.status,
+          ...errorDiagnostic("Remote gateway authentication failed.", { operation: op }),
+          ...{
+            suggestedAction: "Refresh the runtime context credential and retry",
+            status: result.status,
+          },
         });
       }
       const nestedError =
@@ -415,7 +456,10 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
         body.error === "BadRequest" ||
         (issues && result.status >= 400 && result.status < 500)
       ) {
-        return new ContractError(op, "USAGE_ERROR", remoteValidationFailureMessage(issues), CONTRACT_EXIT_USAGE, {
+        const sourceMessage = body.message ?? nestedError?.message;
+        const message = remoteValidationFailureMessage(issues, sourceMessage);
+        return new ContractError(op, "USAGE_ERROR", message, CONTRACT_EXIT_USAGE, {
+          ...errorDiagnostic(message, { operation: op }),
           suggestedAction: `Inspect '${op} --help' and retry with valid input`,
           status: result.status,
           ...(issues ? { issues } : {}),
@@ -425,11 +469,24 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
       // Fall through to a redacted transport failure.
     }
   }
-  return new ContractError(op, "SERVER_UNAVAILABLE", "Remote gateway request failed.", 1, {
-    retryable: result.status >= 500,
-    suggestedAction: "Check gateway availability and retry",
-    status: result.status,
-  });
+  return new ContractError(
+    op,
+    "SERVER_UNAVAILABLE",
+    `${op}: gateway returned HTTP ${result.status} without a valid error envelope. Report the requestId to the operator.`,
+    1,
+    {
+      ...errorDiagnostic(
+        `${op}: gateway returned HTTP ${result.status} without a valid error envelope. Report the requestId to the operator.`,
+        { operation: op },
+      ),
+      ...{
+        retryable: false,
+        ...(safeRequestId(result.requestId) ? { requestId: safeRequestId(result.requestId) } : {}),
+        suggestedAction: "Check gateway availability and report this response; do not automatically retry a write",
+        status: result.status,
+      },
+    },
+  );
 }
 
 interface CompleteContractErrorBody {
@@ -442,6 +499,182 @@ interface CompleteContractErrorBody {
 
 /** `ravi link` failures are relayed to people, so they keep the local cloud copy instead of a generic line. */
 const IDENTITY_LINK_OPS = new Set(["identity link", "identity unlink"]);
+
+function taskProfileCatalogCopy(op: string, code: string) {
+  if (!op.startsWith("tasks ") || code !== "TASK_PROFILE_NOT_FOUND") return undefined;
+  return {
+    message: "Task profile was not found in this runtime.",
+    suggestedAction:
+      "Check the profile id and the runtime's profile catalog with 'ravi tasks profiles list --json', then retry",
+  };
+}
+
+/**
+ * `sessions runtime *` refusals carry a RUNTIME_* code (or SESSION_NOT_FOUND,
+ * which also covers a session the caller may not modify). The relay renders
+ * local catalog copy for the code and keeps only typed state, never the
+ * daemon's free text.
+ */
+const SESSIONS_RUNTIME_OP_PREFIX = "sessions runtime ";
+const RUNTIME_SESSION_NOT_FOUND_COPY = {
+  message: "Session not found, or not visible to this context.",
+  suggestedAction:
+    "List visible sessions with: ravi sessions list --json (mutating runtime controls also need modify access)",
+};
+const RUNTIME_REMOTE_OPERATION_PATTERN = /^[a-z]+\.[a-z_]+$/;
+const RUNTIME_REMOTE_TURN_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+
+function sessionsRuntimeCatalogCopy(
+  op: string,
+  code: string,
+): { message: string; suggestedAction: string } | undefined {
+  if (op.startsWith("sessions ") && code === "SESSION_NOT_FOUND") return RUNTIME_SESSION_NOT_FOUND_COPY;
+  if (!op.startsWith(SESSIONS_RUNTIME_OP_PREFIX)) return undefined;
+  return runtimeControlCatalogCopy(code);
+}
+
+/**
+ * Slack thread commands and task dispatch refuse with typed THREAD_* /
+ * TASK_SESSION_THREAD_IDENTITY_CONFLICT codes (channels/slack/thread-lifecycle.ts,
+ * tasks/service.ts). The relay renders local copy for them instead of the
+ * daemon's free text, which names sessions and threads.
+ */
+const SESSIONS_THREAD_OPS = new Set([
+  "sessions create-thread",
+  "sessions report",
+  "sessions close-thread",
+  "sessions thread-send",
+]);
+const TASK_DISPATCH_OPS = new Set(["tasks dispatch"]);
+const THREAD_COMMAND_COPY: Readonly<Record<string, { message: string; suggestedAction: string }>> = {
+  THREAD_MODEL_INVALID: {
+    message: "Thread was not created: the requested model is invalid or incompatible with its runtime provider.",
+    suggestedAction:
+      "Pass a compatible --provider and --model together (for example --provider codex --model gpt-6-astra).",
+  },
+  THREAD_NOT_THREAD_CHILD: {
+    message: "This command is available only inside a Slack thread child session.",
+    suggestedAction: "Run it from the Slack thread's own session, or pass --session <thread session>",
+  },
+  THREAD_IDENTITY_MISMATCH: {
+    message:
+      "This session has the name of an open Slack thread but is not that thread's session; the thread lost its session.",
+    suggestedAction: "Check the thread with: ravi sessions threads --session <parent session>",
+  },
+  THREAD_NOT_CHANNEL_ROOT: {
+    message: "Only the channel session that owns these threads can send to them; this session is a thread.",
+    suggestedAction: "Send from the parent channel session, or use ravi sessions report from the thread",
+  },
+  THREAD_NOT_FOUND: {
+    message: "Slack thread not found for this session.",
+    suggestedAction: "List the session's threads with: ravi sessions threads --all --session <parent session>",
+  },
+  THREAD_NOT_STARTED: {
+    message: "The Slack thread has not started yet.",
+    suggestedAction: "Retry once the thread is open: ravi sessions threads",
+  },
+  THREAD_SESSION_MISSING: {
+    message: "The Slack thread's session no longer exists.",
+    suggestedAction: "Start a new thread instead of sending to this one",
+  },
+  THREAD_PARENT_MISSING: {
+    message: "The Slack thread's parent session no longer exists.",
+    suggestedAction: "Check the parent channel session with: ravi sessions list --json",
+  },
+  THREAD_DECISIONS_PENDING: {
+    message: "Thread has open decisions or an undelivered answer.",
+    suggestedAction: "Answer pending decisions and verify delivery before closing.",
+  },
+  THREAD_TRIGGERS_PENDING: {
+    message: "Thread still receives active triggers and cannot close.",
+    suggestedAction:
+      "Repoint each trigger with ravi triggers set <id> replySession <parent-session>, verify the destination, then retry sessions close-thread.",
+  },
+  THREAD_PARENT_RETURN_PENDING: {
+    message: "A previous return to the parent session is still pending.",
+    suggestedAction: "Retry after the parent session receives the pending return",
+  },
+};
+const TASK_DISPATCH_COPY: Readonly<Record<string, { message: string; suggestedAction: string }>> = {
+  TASK_SESSION_THREAD_IDENTITY_CONFLICT: {
+    message:
+      "The session name belongs to an open Slack thread whose session is gone or runs under another key; dispatching would create a session outside the thread.",
+    suggestedAction:
+      "Dispatch with another --session, or check the thread with: ravi sessions threads --session <parent session>",
+  },
+};
+
+const DECISION_COMMAND_COPY: Readonly<Record<string, { message: string; suggestedAction: string }>> = {
+  DECISION_NOT_FOUND: {
+    message: "Decision or origin not found in this scope.",
+    suggestedAction: "Use ravi decisions list from the authorized originating session.",
+  },
+  DECISION_NOT_OPEN: {
+    message: "The decision is not open; answers are immutable.",
+    suggestedAction: "Read ravi decisions show before recording a new question.",
+  },
+  DECISION_SELF_ANSWER: {
+    message: "The waiting worker cannot answer its own decision.",
+    suggestedAction: "Record the answer from the authorized parent session or operator CLI.",
+  },
+  DECISION_ORIGIN_MISMATCH: {
+    message: "The originating thread or waiting session binding changed.",
+    suggestedAction: "Inspect the thread and restore its original binding before retrying.",
+  },
+  DECISION_DELIVERY_UNCERTAIN: {
+    message: "Runtime admission is uncertain; the answer will not be repeated automatically.",
+    suggestedAction: "Have the local operator inspect the trace and use decisions resolve-delivery with evidence.",
+  },
+  DECISION_INVALID_KEY: {
+    message: "Invalid decision key.",
+    suggestedAction:
+      "Use a slug of 1 to 64 lowercase letters, digits, dots, underscores or dashes, starting with a letter or digit.",
+  },
+  DECISION_INVALID_OWNER: {
+    message: "Invalid decision owner.",
+    suggestedAction: "Use human:<contact>, agent:<id> or unassigned.",
+  },
+  DECISION_INVALID_ASK: {
+    message: "A non-empty question is required.",
+    suggestedAction: "Pass --ask with the explicit question.",
+  },
+  DECISION_INVALID_ANSWER: {
+    message: "A non-empty answer is required.",
+    suggestedAction: "Pass --text with the explicit outcome.",
+  },
+};
+
+function threadCommandCatalogCopy(op: string, code: string): { message: string; suggestedAction: string } | undefined {
+  const table = SESSIONS_THREAD_OPS.has(op)
+    ? THREAD_COMMAND_COPY
+    : TASK_DISPATCH_OPS.has(op)
+      ? TASK_DISPATCH_COPY
+      : op.startsWith("decisions ")
+        ? DECISION_COMMAND_COPY
+        : undefined;
+  return table && Object.hasOwn(table, code) ? table[code] : undefined;
+}
+
+function projectSessionsRuntimeDetails(remote: Record<string, unknown>): ContractErrorDetails {
+  const details: ContractErrorDetails = {};
+  const operation =
+    typeof remote.operation === "string" && RUNTIME_REMOTE_OPERATION_PATTERN.test(remote.operation)
+      ? remote.operation
+      : undefined;
+  if (
+    typeof remote.code === "string" &&
+    (remote.code === "RUNTIME_CONTROL_TIMEOUT" || remote.code === "RUNTIME_CONTROL_UNAVAILABLE")
+  ) {
+    details.retryable = isRetryableRuntimeControlCode(remote.code, operation);
+  }
+  if (typeof remote.activeTurn === "boolean") details.activeTurn = remote.activeTurn;
+  if (typeof remote.turnId === "string" && RUNTIME_REMOTE_TURN_ID_PATTERN.test(remote.turnId)) {
+    details.turnId = remote.turnId;
+  }
+  if (operation) details.operation = operation;
+  if (remote.disabledReason === RUNTIME_CONTROL_DISABLED_REASON) details.disabledReason = remote.disabledReason;
+  return details;
+}
 
 /**
  * Personal-connector commands. Their blocks tell the agent what to say and
@@ -511,7 +744,13 @@ const LIBRARY_REMOTE_OPS = new Set([
   "agents ask",
   "pages read",
 ]);
-const REMOTE_GENERIC_FAILURE = "Remote command failed.";
+function remoteFailureMessage(op: string, code?: string): string {
+  return `${op} failed (${code ?? "COMMAND_FAILED"}). Check the input with '${op} --help'; report the requestId if it persists.`;
+}
+
+function safeRequestId(value: unknown): string | undefined {
+  return typeof value === "string" && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value) ? value : undefined;
+}
 // `pages domains` relays Console's DNS instruction: the code says external DNS
 // work is pending, and the steps are projected field by field (domain-setup.ts).
 const PAGES_DOMAINS_OP = "pages domains";
@@ -530,18 +769,117 @@ export function isLibraryRemoteOp(op: string): boolean {
 }
 
 /**
- * Text mode prints the message and the issues; a Library refusal's next step
+ * `meetings read` and `agenda` refuse turns that are not the operator's own
+ * (meetings/read.ts). The daemon wrote the refusal for the agent: the rule
+ * that decided (`turn`), the next step and, when the operator asked in a
+ * group, the line to send them to their own chat. The relay keeps that copy
+ * instead of "Remote command was blocked by policy."
+ */
+const OPERATOR_ONLY_REMOTE_CODES: ReadonlyMap<string, (op: string) => boolean> = new Map([
+  ["MEETING_ACCESS_DENIED", (op: string) => op === "meetings read"],
+  ["CALENDAR_ACCESS_DENIED", (op: string) => op.startsWith("agenda ")],
+]);
+
+function isOperatorOnlyRefusal(op: string, code: string): boolean {
+  return OPERATOR_ONLY_REMOTE_CODES.get(code)?.(op) ?? false;
+}
+
+/** Preserve the daemon's public actor refusal without copying arbitrary remote details. */
+function actorUnknownRemoteCopy(
+  body: CompleteContractErrorBody,
+): { message: string; details: ContractErrorDetails } | null {
+  const remote = body.error;
+  if (body.outcome !== "blocked" || remote.code !== "ACTOR_UNKNOWN") return null;
+  const message = boundedRemoteLine(remote.message, LIBRARY_REMOTE_MESSAGE_MAX);
+  if (!message) return null;
+  const details: ContractErrorDetails = {};
+  const suggestedAction = boundedRemoteLine(remote.suggestedAction, LIBRARY_REMOTE_ACTION_MAX, "suggestedAction");
+  if (suggestedAction) details.suggestedAction = suggestedAction;
+  switch (remote.refusalReason) {
+    case "agent_relay":
+    case "ended":
+    case "unknown":
+      details.refusalReason = remote.refusalReason;
+      break;
+    case "routine_not_operator_owned": {
+      details.refusalReason = remote.refusalReason;
+      if (remote.routine === "cron" || remote.routine === "trigger") details.routine = remote.routine;
+      const jobId = boundedRemoteField(remote, ["jobId"], /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/, 128);
+      // A routine created from another routine's turn is owned by that automation.
+      const ownerPrincipal = boundedRemoteField(
+        remote,
+        ["ownerPrincipal"],
+        /^(?:unknown|(?:agent|contact):[A-Za-z0-9][A-Za-z0-9._-]{0,127}|automation:[A-Za-z0-9][A-Za-z0-9._:-]{0,123})$/,
+        136,
+      );
+      if (jobId) details.jobId = jobId;
+      if (ownerPrincipal) details.ownerPrincipal = ownerPrincipal;
+      break;
+    }
+    case "routine_shared_session":
+    case "routine_answers_elsewhere": {
+      details.refusalReason = remote.refusalReason;
+      if (remote.routine === "trigger") details.routine = remote.routine;
+      const jobId = boundedRemoteField(remote, ["jobId"], /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/, 128);
+      if (jobId) details.jobId = jobId;
+      break;
+    }
+  }
+  return { message, details };
+}
+
+function operatorOnlyRemoteCopy(
+  op: string,
+  body: CompleteContractErrorBody,
+): { message: string; details: ContractErrorDetails } | null {
+  const remote = body.error;
+  if (body.outcome !== "blocked" || !isOperatorOnlyRefusal(op, remote.code)) return null;
+  const message = boundedRemoteLine(remote.message, LIBRARY_REMOTE_MESSAGE_MAX);
+  if (!message) return null;
+  const details: ContractErrorDetails = {};
+  const suggestedAction = boundedRemoteLine(remote.suggestedAction, LIBRARY_REMOTE_ACTION_MAX, "suggestedAction");
+  if (suggestedAction) details.suggestedAction = suggestedAction;
+  for (const key of ["refusal", "turn"] as const) {
+    const value = remote[key];
+    if (typeof value === "string" && LIBRARY_REMOTE_TOKEN_PATTERN.test(value)) details[key] = value;
+  }
+  const chatLine = boundedRemoteLine(remote.chatLine, CONNECTOR_CHAT_LINE_MAX, "chatLine");
+  if (chatLine) {
+    details.chatLine = chatLine;
+    const chatLinePt = boundedRemoteLine(remote.chatLinePt, CONNECTOR_CHAT_LINE_MAX, "chatLinePt");
+    if (chatLinePt) details.chatLinePt = chatLinePt;
+    if (typeof remote.replyTo === "string" && CONNECTOR_REPLY_TO_VALUES.has(remote.replyTo)) {
+      details.replyTo = remote.replyTo;
+    }
+  }
+  return { message, details };
+}
+
+/**
+ * Text mode prints the message and the issues; a public refusal's next step
  * is printed too when no issue already carries it.
  */
 export function remoteNextStepLine(error: ContractError): string | null {
-  if (!isLibraryRemoteOp(error.op)) return null;
+  if (
+    !isLibraryRemoteOp(error.op) &&
+    !isOperatorOnlyRefusal(error.op, error.code) &&
+    error.code !== "ACTOR_UNKNOWN" &&
+    !safeRequestId(error.details.requestId)
+  )
+    return null;
   const next = error.details.suggestedAction;
   if (typeof next !== "string" || !next.trim()) return null;
   const issues = Array.isArray(error.details.issues) ? error.details.issues : [];
   const carried = issues.some(
     (issue) => issue && typeof issue === "object" && (issue as { code?: unknown }).code === "SUGGESTED_ACTION",
   );
-  return carried ? null : `Next: ${next}`;
+  const requestId = safeRequestId(error.details.requestId);
+  const diagnosticId = safeRequestId(error.details.diagnosticRequestId);
+  return carried
+    ? requestId
+      ? `requestId: ${requestId}`
+      : null
+    : `Next: ${next}${requestId ? ` (requestId: ${requestId}${diagnosticId ? `; diagnosticRequestId: ${diagnosticId}` : ""})` : ""}`;
 }
 
 function libraryRemoteCopy(
@@ -650,6 +988,7 @@ function connectorExpiresAt(value: unknown): string | undefined {
 /** A message, or a chat line under `detailKey` (sanitized as the envelope sanitizes that detail, links kept). */
 function boundedRemoteLine(value: unknown, max: number, detailKey?: string): string | undefined {
   if (typeof value !== "string" || value.length > max || hasControlCharacters(value)) return undefined;
+  if (/^Inspect redacted (?:remote|runtime) logs/.test(value)) return undefined;
   const safe = detailKey ? sanitizePublicValue(value, detailKey) : sanitizePublicContractMessage(value);
   return typeof safe === "string" && safe.trim() && safe.length <= max ? safe : undefined;
 }
@@ -703,8 +1042,8 @@ function remoteContractFailureMessage(
   sourceMessage?: string,
   code?: string,
 ): string {
-  if (outcome === "denied") return "Remote gateway denied the command.";
-  if (outcome === "usage_error") return remoteValidationFailureMessage(issues, sourceMessage);
+  if (outcome === "denied") return sanitizePublicContractMessage(sourceMessage) ?? "Remote gateway denied the command.";
+  if (outcome === "usage_error") return remoteValidationFailureMessage(issues, sourceMessage, true);
   if (op === PAGES_DOMAINS_OP && code === "DOMAIN_SETUP_REQUIRED" && sourceMessage) {
     return safeDomainSetupMessage(sourceMessage);
   }
@@ -721,33 +1060,76 @@ function remoteContractFailureMessage(
     const catalog = localMediaSendCatalogCopy(code);
     if (catalog) return catalog.message;
   }
+  if (code) {
+    const catalog =
+      sessionsRuntimeCatalogCopy(op, code) ?? threadCommandCatalogCopy(op, code) ?? taskProfileCatalogCopy(op, code);
+    if (catalog) return catalog.message;
+  }
   if (IDENTITY_LINK_OPS.has(op) && code) {
     const catalog = cloudContractCatalogCopy(code);
     if (catalog) return catalog.message;
   }
-  return REMOTE_GENERIC_FAILURE;
+  if (op === "pr publish") return remoteFailureMessage(op, code);
+  const safe = boundedRemoteLine(sourceMessage, LIBRARY_REMOTE_MESSAGE_MAX);
+  return safe &&
+    !/^(?:Remote command failed\.?|Command could not be completed\.?|Command failed unexpectedly\.?)$/.test(safe)
+    ? safe
+    : remoteFailureMessage(op, code);
 }
 
 function remoteValidationFailureMessage(
   issues?: ReturnType<typeof projectPublicIssues>,
-  sourceMessage?: string,
+  sourceMessage?: unknown,
+  canonical = false,
 ): string {
   const first = issues?.[0];
   if (first) {
     const path = first.path.filter((item) => item !== "<unknown>").join(".");
     return path ? `${path}: ${first.message}` : first.message;
   }
-  const safe = safeRemotePayloadMessage(sourceMessage);
-  if (safe) return safe;
+  // A validated contract already declares a public diagnostic. Keep the bounded
+  // single-line redactor, not a vocabulary allowlist that can erase handler guidance.
+  // Unstructured responses still need the narrower local-validation projection.
+  const safe = boundedRemoteLine(sourceMessage, LIBRARY_REMOTE_MESSAGE_MAX);
+  if (
+    safe &&
+    typeof sourceMessage === "string" &&
+    !looksLikeProviderDump(sourceMessage) &&
+    !/\bctx_/.test(sourceMessage)
+  ) {
+    if (canonical) return safe;
+    if (
+      safe === sourceMessage &&
+      (REMOTE_PROFILE_INSPECTION_MESSAGE.test(safe) ||
+        safe ===
+          "No capabilities found for this profile. Provide --capabilities <permission>:<objectType>:<objectId> to create or bootstrap it." ||
+        safe === "Profile is unknown. Run 'ravi skills show permissions' to inspect built-in profiles.")
+    )
+      return safe;
+    const projected = projectPublicIssues([{ path: [], code: "invalid", message: safe }])?.[0]?.message;
+    if (projected && isSafeLocalPayloadMessage(projected)) return projected;
+  }
   return "Remote gateway rejected the command input.";
 }
 
-function safeRemotePayloadMessage(message?: string): string | undefined {
-  if (!message) return undefined;
-  const issues = projectPublicIssues([{ path: [], code: "invalid", message }]);
-  const projected = issues?.[0]?.message;
-  if (!projected || !isSafeLocalPayloadMessage(projected)) return undefined;
-  return projected;
+function projectRemoteProfileChoices(
+  value: unknown,
+): { acceptedValues: string[]; acceptedValuesTruncated?: true } | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const choices: string[] = [];
+  for (const item of value) {
+    if (
+      typeof item !== "string" ||
+      !REMOTE_PROFILE_VALUE_PATTERN.test(item) ||
+      /\b(?:ctx_|rctx_|sk-)/.test(item) ||
+      redactDiagnosticText(item) !== item
+    )
+      continue;
+    if (choices.length === REMOTE_PROFILE_CHOICES_MAX)
+      return { acceptedValues: choices, acceptedValuesTruncated: true };
+    choices.push(item);
+  }
+  return choices.length ? { acceptedValues: choices } : undefined;
 }
 
 function remoteSuggestedAction(op: string, outcome: CompleteContractErrorBody["outcome"], code?: string): string {
@@ -757,7 +1139,7 @@ function remoteSuggestedAction(op: string, outcome: CompleteContractErrorBody["o
   if (outcome === "blocked" && code === "WRITE_REQUIRES_EXECUTE")
     return `Re-run '${op}' adding --execute to perform the write`;
   if (outcome === "blocked") return "Review the remote policy block before retrying the command";
-  return "Inspect redacted remote logs and retry when the underlying cause is resolved";
+  return `Check '${op} --help' and report code ${code ?? "COMMAND_FAILED"} with requestId to the operator before retrying`;
 }
 
 function boundedStringList(value: unknown, pattern: RegExp): string[] | undefined {
@@ -770,14 +1152,92 @@ function boundedStringList(value: unknown, pattern: RegExp): string[] | undefine
   return items.length > 0 ? items : undefined;
 }
 
+function projectRemoteDenial(body: CompleteContractErrorBody): ContractErrorDetails | undefined {
+  if (body.outcome !== "denied") return undefined;
+  const remote = body.error;
+  const details: ContractErrorDetails = { authorizationDecision: "denied" };
+  const capability = remoteCapability(remote);
+  if (capability) details.capability = capability;
+  const stage = boundedRemoteField(remote, ["stage", "denialStage", "denial_stage"], REMOTE_DENIAL_STAGE_PATTERN);
+  if (stage) details.stage = stage;
+  const denialId = remoteDenialId(remote);
+  if (denialId !== undefined) details.denialId = denialId;
+  return details;
+}
+
+/** Canonical capability from a structured field or from the server's `Missing capability:` line. */
+function remoteCapability(remote: Record<string, unknown>): string | undefined {
+  const structured = boundedRemoteField(
+    remote,
+    ["capability", "requiredCapability", "missingCapability"],
+    REMOTE_CAPABILITY_PATTERN,
+    REMOTE_CAPABILITY_MAX,
+  );
+  if (structured) return structured;
+  if (typeof remote.message !== "string") return undefined;
+  const match = remote.message.match(MISSING_CAPABILITY_LINE_PATTERN);
+  const candidate = match?.[1]?.trim();
+  if (!candidate || candidate.length > REMOTE_CAPABILITY_MAX) return undefined;
+  return REMOTE_CAPABILITY_PATTERN.test(candidate) ? candidate : undefined;
+}
+
+function boundedRemoteField(
+  record: Record<string, unknown>,
+  keys: string[],
+  pattern: RegExp,
+  max = 64,
+): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.length <= max && pattern.test(value)) return value;
+  }
+  return undefined;
+}
+
+function remoteDenialId(remote: Record<string, unknown>): number | undefined {
+  for (const key of ["denialId", "denial_id"]) {
+    const value = remote[key];
+    if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) return value;
+    if (typeof value === "string" && REMOTE_DENIAL_ID_PATTERN.test(value)) {
+      const parsed = Number(value);
+      if (Number.isSafeInteger(parsed) && parsed > 0) return parsed;
+    }
+  }
+  return undefined;
+}
+
 function projectRemoteContractDetails(
   op: string,
   body: CompleteContractErrorBody,
   status: number,
 ): ContractErrorDetails {
   const remote = body.error;
-  const details: ContractErrorDetails = { retryable: remote.retryable, status };
+  const details: ContractErrorDetails = {
+    retryable: remote.retryable,
+    status,
+    ...(typeof remote.cause === "string" ? { cause: redactDiagnosticText(remote.cause) } : {}),
+    ...(remote.context ? { context: projectDiagnosticContext(remote.context) } : {}),
+    ...(body.outcome === "denied" && typeof remote.cause !== "string"
+      ? {
+          cause: redactDiagnosticText(remote.message),
+          context: { ...projectDiagnosticContext(remote.context), operation: op, status },
+        }
+      : {}),
+  };
+  if (safeRequestId(remote.diagnosticRequestId))
+    details.diagnosticRequestId = safeRequestId(remote.diagnosticRequestId);
+  const denial = projectRemoteDenial(body);
+  if (denial) Object.assign(details, denial);
   const mediaCatalog = op === "media send" ? localMediaSendCatalogCopy(remote.code) : undefined;
+  const runtimeCatalog = sessionsRuntimeCatalogCopy(op, remote.code);
+  // A missing/hidden resource is intentionally indistinguishable. A remote
+  // diagnostic must not reintroduce the resource name removed by access policy.
+  if (runtimeCatalog && remote.code === "SESSION_NOT_FOUND") {
+    details.cause = runtimeCatalog.message;
+    details.context = { operation: op, status };
+  }
+  const threadCatalog = threadCommandCatalogCopy(op, remote.code);
+  const profileCatalog = body.outcome === "failed" ? taskProfileCatalogCopy(op, remote.code) : undefined;
   const identityCatalog = IDENTITY_LINK_OPS.has(op) ? cloudContractCatalogCopy(remote.code) : undefined;
   const connectorCatalog =
     isConnectorOp(op) && (body.outcome === "failed" || remote.code.startsWith("CONNECTOR_"))
@@ -789,12 +1249,48 @@ function projectRemoteContractDetails(
     if (domainSetup) details.domainSetup = domainSetup;
   } else if (mediaCatalog) {
     details.suggestedAction = mediaCatalog.suggestedAction;
+  } else if (runtimeCatalog) {
+    details.suggestedAction = runtimeCatalog.suggestedAction;
+    Object.assign(details, projectSessionsRuntimeDetails(remote));
+  } else if (threadCatalog) {
+    details.suggestedAction = threadCatalog.suggestedAction;
+    if (op === "sessions close-thread" && remote.code === "THREAD_TRIGGERS_PENDING") {
+      const triggerIds = boundedStringList(remote.triggerIds, /^[a-f0-9]{8}$/);
+      if (triggerIds) {
+        details.triggerIds = triggerIds;
+        details.suggestedAction = `Active triggers: ${triggerIds.join(", ")}. ${threadCatalog.suggestedAction}`;
+      }
+    }
+  } else if (profileCatalog) {
+    details.suggestedAction = profileCatalog.suggestedAction;
   } else if (identityCatalog && body.outcome === "failed") {
     details.suggestedAction = identityCatalog.suggestedAction;
   } else if (connectorCatalog) {
     details.suggestedAction = connectorCatalog.suggestedAction;
   } else if (typeof remote.suggestedAction === "string" || isRemoteWriteBrake(body)) {
-    details.suggestedAction = remoteSuggestedAction(op, body.outcome, remote.code);
+    const usageAction =
+      body.outcome === "usage_error" &&
+      typeof remote.suggestedAction === "string" &&
+      !looksLikeProviderDump(remote.suggestedAction) &&
+      !/\bctx_/.test(remote.suggestedAction)
+        ? boundedRemoteLine(remote.suggestedAction, LIBRARY_REMOTE_ACTION_MAX)
+        : undefined;
+    details.suggestedAction =
+      body.outcome === "usage_error"
+        ? (usageAction ?? remoteSuggestedAction(op, body.outcome, remote.code))
+        : body.outcome === "failed"
+          ? (boundedRemoteLine(remote.suggestedAction, LIBRARY_REMOTE_ACTION_MAX) ??
+            remoteSuggestedAction(op, body.outcome, remote.code))
+          : remoteSuggestedAction(op, body.outcome, remote.code);
+  }
+  if (!details.suggestedAction) details.suggestedAction = remoteSuggestedAction(op, body.outcome, remote.code);
+  for (const key of ["field", "argument"] as const) {
+    const value = remote[key];
+    if (
+      typeof value === "string" &&
+      (key === "argument" ? REMOTE_FLAG_PATTERN : /^[a-z][A-Za-z0-9_]{0,63}$/).test(value)
+    )
+      details[key] = value;
   }
   const suggestions = boundedStringList(remote.suggestions, REMOTE_SUGGESTION_ID_PATTERN);
   if (suggestions) details.suggestions = suggestions;
@@ -802,12 +1298,27 @@ function projectRemoteContractDetails(
   if (acceptedFlags) details.acceptedFlags = acceptedFlags;
   const acceptedPositionals = boundedStringList(remote.acceptedPositionals, REMOTE_POSITIONAL_PATTERN);
   if (acceptedPositionals) details.acceptedPositionals = acceptedPositionals;
+  const profileChoices = projectRemoteProfileChoices(remote.acceptedValues);
+  if (profileChoices) {
+    Object.assign(details, profileChoices);
+    if (remote.acceptedValuesTruncated === true) details.acceptedValuesTruncated = true;
+  }
+  const inspectCommands = projectPermissionProfileInspectionCommands(remote.inspectCommands);
+  if (inspectCommands) details.inspectCommands = inspectCommands;
   if (typeof remote.dryRun === "boolean") details.dryRun = remote.dryRun;
   const issues = projectPublicIssues(remote.issues);
   if (issues) details.issues = issues;
   const plan = projectRemotePlan(remote.plan);
   const plannedDns = op === PAGES_DOMAINS_OP ? projectPlannedDomainDns(remote.plan) : undefined;
   if (plan || plannedDns) details.plan = { ...(plan ?? {}), ...(plannedDns ? { dnsSetup: plannedDns } : {}) };
+  if (op === "pr publish") {
+    delete details.plan;
+    Object.assign(details, projectPublicationDetails(remote));
+    details.suggestedAction =
+      body.outcome === "failed"
+        ? publicationRecoveryAction(remote.code)
+        : remoteSuggestedAction(op, body.outcome, remote.code);
+  }
   return details;
 }
 
@@ -982,6 +1493,7 @@ async function fetchViaUnixSocket(input: {
             body: new TextDecoder().decode(bytes),
             bodyBytes: bytes,
             contentType: typeof res.headers["content-type"] === "string" ? res.headers["content-type"] : null,
+            requestId: safeRequestId(res.headers["x-request-id"]),
           });
         });
       },
@@ -1003,6 +1515,7 @@ async function remoteResultFromResponse(response: Response): Promise<RemoteDispa
     body: new TextDecoder().decode(bytes),
     bodyBytes: bytes,
     contentType: response.headers.get("content-type"),
+    requestId: safeRequestId(response.headers.get("x-request-id")),
   };
 }
 

@@ -91,6 +91,21 @@ Before or during shutdown, Ravi SHOULD persist a best-effort runtime activity sn
 - `last_activity_at` and `stopped_at`.
 - restart reason/message when known.
 
+A host-authorized capacity retry waiting after a failed physical attempt MUST
+survive as pending-only work for the exact original input cohort. Its snapshot
+MUST preserve the spent retry count, first-failure timestamp, and absolute
+`notBefore` deadline (including the upstream Retry-After floor). A carried budget
+without a current scheduling authorization MUST NOT revive a terminal attempt.
+After boot, the runtime MUST wait only the remaining delay and enforce the
+original elapsed budget before provider handoff, including preparation time.
+Expired work MUST report capacity exhaustion without another provider call.
+Abort, supersession, effects, or mismatched cohort identity invalidate the live
+checkpoint; unrelated queued successors keep their own order and authority.
+Once that snapshot write succeeds, daemon shutdown MUST leave the saved logical
+channel request open for its resumed attempt. This handoff exception MUST NOT
+apply to explicit abort/supersession or to an unsaved retry; its retiring runtime
+must detach the saved binding before asynchronous credential cleanup can fail.
+
 If graceful shutdown does not capture a snapshot, daemon boot MAY reconstruct eligibility from durable session trace/live-state rows, but MUST still enforce the 1h window and idempotency.
 
 ## Runtime Behavior

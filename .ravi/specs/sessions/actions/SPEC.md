@@ -59,6 +59,18 @@ expose a runnable `sessions close-thread` command only for the current Slack
 thread child. A return value on close explicitly opts into one parent
 completion event.
 
+`thread.configure` MUST expose `sessions thread-configure` only for a Slack
+channel-root parent the caller can modify, with the command's normal capability
+check. Its `usage.tools.configureThread` hint MUST explain allowed runtime
+fields, persisted readback, and next-turn application. It MUST NOT claim generic
+session access, start a turn, or expose a runnable action to a sibling/child or
+unauthorized caller. Configuration uses the persisted parent-child ownership
+contract in `channels/slack/threads` and retains provider-change authority.
+Its command and `usage.tools.configureThread` hint MUST bind `--session` to the
+selected, authorized parent with shell-safe quoting, including outside a
+runtime turn or when the selected parent differs from the current session.
+Discovery MUST NOT substitute the current session for that explicit parent.
+
 ## Own-Message Scope
 
 Recent mutable messages MUST be constrained by:

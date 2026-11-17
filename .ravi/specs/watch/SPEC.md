@@ -18,6 +18,11 @@ applies_to:
   - src/watch
   - src/inbox
   - src/triggers
+  - src/hooks/gh-watch.ts
+  - src/hooks/gh-follow-sweep.ts
+  - src/hooks/gh-pr-publish.ts
+  - src/cli/commands/pr.ts
+  - src/pr/follow-health.ts
 owners:
   - ravi-dev
 status: draft
@@ -120,6 +125,21 @@ Triggers MAY subscribe broadly with `ravi.watch.>` or narrowly to connector and
 event subjects. Trigger filters SHOULD inspect payload fields such as
 `watchId`, `source.repo`, `source.package`, or `eventType`.
 
+## Local Derivation Coverage
+
+A local connector observes state, so it can only announce what it can derive from
+two readings. The declaration and the derivation must be the same set.
+
+- An event type MUST be marked local-supported only when the local derivation can
+  actually produce it; the connector catalog reads that set from the derivation.
+- A watch MUST pay a source read only for the events it subscribes to; optional
+  reads (for example PR comments) stay off for watches that did not ask for them.
+- A snapshot written before an optional read existed MUST be treated as baseline:
+  the first tick after the upgrade records state and emits nothing.
+- A consumer that depends on the whole derived set (such as a PR follow) MUST
+  request the current set and MUST replace its own watch when that set grows,
+  instead of reusing a watch that silently covers less.
+
 ## Console Delivery Boundary
 
 Console delivery is not a separate event product. It is the local delivery
@@ -152,12 +172,61 @@ When a trigger is created from a watch command in a chat context, Ravi SHOULD:
 The trigger system remains the execution mechanism. Watch does not invent a
 second trigger runner.
 
+## PR Publication Follow
+
+- Generated `gh-follow` triggers MUST set `cooldownMs: 0` and `debounceMs: 0`
+  for every matching PR event, including review comments, lifecycle and CI.
+  Distinct events in the same second MUST each reach the session; timestamps
+  MUST NOT substitute for event identity. Existing event-key deduplication and
+  trigger-origin loop guards MUST remain active.
+- Follow reuse and maintenance MUST repair old cooldown/debounce settings in
+  place and refresh the runner. Maintenance MUST preserve the saved recipient
+  and disabled state and MUST NOT change unrelated triggers. Repeated repair
+  of an already corrected follow MUST perform no additional write or refresh.
+- Publication verification and the loaded-runner fingerprint MUST include
+  cooldown and debounce settings, so a stale lossy subscription cannot report
+  successful follow health. An absent debounce means zero, as in the runner.
+- The sanctioned Git Data API publication path is `ravi pr publish`, from
+  the publishing Ravi session (see `cli/pr`). A raw
+  `POST /pulls` alone is not a completed publication.
+- Publication MUST verify the remote branch against the local commit SHA,
+  create the PR ready for review, and call the same `ensureGhWatchFollow`
+  primitive used by `observeGhBashCommand`. It MUST NOT create another follow
+  registry or depend on a shell observer recognizing nested API commands.
+- Success MUST require a local CI event producer and a trigger filtered by
+  repository and PR, bound to the publishing session, with a runner refresh.
+  The existing trigger runner MUST answer a read-only NATS health request
+  scoped to its installation DB path, with local producer running state and
+  a fingerprint of its loaded subscription. Publication MUST confirm that
+  fingerprint matches the desired follow, not merely that a DB row exists.
+- The follow subscription MUST use `ravi.watch.github.>`: NATS `*` matches
+  one token and cannot receive `pull_request.opened` or `workflow_run.completed`.
+  Reconciliation MUST repair an existing selected follow's obsolete topic;
+  a persisted and loaded subscription to the wrong pattern is still broken.
+- Publication MUST validate durable ownership before GitHub I/O and revalidate
+  the original publisher at follow registration and completion. Follow health
+  MUST compare the loaded subscription against the resolved durable parent;
+  closing/pruning the child MUST NOT invalidate a correctly handed-off follow.
+- Re-running publication MUST reconcile the selected existing PR: create a
+  missing follow, repair stale topic/filter/destination, restore its producer,
+  and promote a legacy draft. It MUST reuse the existing PR and trigger ids.
+  It MUST NOT enumerate or promote unrelated drafts.
+- Partial failures MUST report incomplete publication and permit the same
+  command to recover it. Runner refresh MUST be retried even if a previous
+  attempt already persisted the desired trigger.
+- Independent review MUST be recorded in the PR description with the reviewed
+  SHA. Quality Gate is the required CI check; the retired Review Gate MUST NOT
+  be reinstated by publication. Ready means eligible for review, not approved.
+
 ## Acceptance Criteria
 
 - `ravi watch connectors` lists available connectors and placements.
 - `ravi watch create ...` creates a durable watch and prints trigger-ready
   topics.
 - Local watches and Console watches emit the same watch event shape.
+- A local watch subscribed to `pull_request_comment.created` publishes a new
+  comment once, including PR number, url, author and body, and never republishes
+  an edit.
 - Console-produced watch events arrive through Console delivery and publish normalized
   `ravi.watch...` subjects.
 - Ordinary `ravi triggers` subscriptions can react to watch events and reply in

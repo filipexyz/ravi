@@ -2,6 +2,7 @@ import { StringCodec, type Subscription } from "nats";
 import { getNats, nats } from "../nats.js";
 import { resolveSession, expandHome } from "../router/index.js";
 import { listTasks } from "../tasks/index.js";
+import { isTriggerOwnSessionKey } from "../triggers/authority.js";
 import { logger } from "../utils/logger.js";
 import { executeHookAction } from "./actions.js";
 import { dbGetHook, dbListHooks, dbUpdateHookState } from "./db.js";
@@ -131,6 +132,22 @@ export function buildSyntheticHookEvent(hook: HookRecord): NormalizedHookEvent {
 
 async function executeSingleHook(hook: HookRecord, event: NormalizedHookEvent): Promise<HookExecutionResult> {
   const now = Date.now();
+
+  // A trigger's own session is not observed: its prompts and tool output hold
+  // what its owner's turns read, so no hook acts on them, whatever its scope.
+  // Such a session goes by its key, so the name says it too, also once the
+  // stored session is gone and an event of its last turn still arrives.
+  const sessionKey =
+    event.sessionKey ?? (event.sessionName ? resolveSession(event.sessionName)?.sessionKey : undefined);
+  if (isTriggerOwnSessionKey(sessionKey) || isTriggerOwnSessionKey(event.sessionName)) {
+    return {
+      hookId: hook.id,
+      hookName: hook.name,
+      eventName: event.eventName,
+      skipped: "scope",
+      detail: "trigger_own_session",
+    };
+  }
 
   if (!matchesHook(hook, event)) {
     return {

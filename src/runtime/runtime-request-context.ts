@@ -1,6 +1,12 @@
 import { getAccountForAgent, type AgentConfig } from "../router/index.js";
+import { getContactDetails } from "../contacts.js";
+import { logger } from "../utils/logger.js";
+import { resolveBridgeInvocation } from "../bridge/authority.js";
+import { assertBridgeProvider, isBridgeSessionRef } from "../bridge/isolation.js";
 import {
   dbGetContext,
+  dbGetAgent,
+  dbRenewActiveContext,
   dbUpdateContextCapabilities,
   dbUpdateContextRuntimeState,
   type ContextCapability,
@@ -43,7 +49,11 @@ import {
 import type { RuntimeCapabilities, RuntimeProviderId } from "./types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import { resolveRuntimeTurnOrigin } from "./turn-origin.js";
+import { readCronRunAuthority } from "../cron/authority.js";
+import { readTriggerRunAuthority } from "../triggers/authority.js";
 import { TURN_REPLY_TARGET_METADATA_KEY, type TurnReplyTarget } from "./turn-reply-target.js";
+import { isRuntimeContextLive } from "./context-liveness.js";
+import { isWorkHandoff, resolveHumanRequestCaller } from "./human-request.js";
 
 export interface RuntimeRequestContextOptions {
   dbSessionKey: string;
@@ -56,6 +66,132 @@ export interface RuntimeRequestContextOptions {
   runtimeResolution: TaskRuntimeResolution;
   resolvedSource?: RuntimeMessageTarget;
   approvalSource?: RuntimeMessageTarget;
+}
+
+/** Host-owned lease: token use alone must never extend an invocation's authority. */
+export function startActiveRuntimeRequestContextLease(
+  options: RuntimeRequestContextOptions & {
+    runtimeContext: ContextRecord;
+    isActive: () => boolean;
+    signal: AbortSignal;
+  },
+): () => void {
+  const issued = structuredClone(options.runtimeContext);
+  // Bridge credentials and delegated children have independent lifetimes.
+  if (
+    issued.kind !== TURN_SCOPED_AUTHORITY_KIND ||
+    issued.metadata?.authorityMode !== AGENT_IDENTITY_AUTHORITY_MODE ||
+    issued.metadata?.parentContextId ||
+    issued.metadata?.bridgeTurnId
+  )
+    return () => {};
+  const prompt = structuredClone(options.prompt);
+  const resolvedSource = options.resolvedSource ? structuredClone(options.resolvedSource) : undefined;
+  let stopped = false;
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const stop = (cascade = false, reason = "turn_context_completed") => {
+    if (stopped) return;
+    stopped = true;
+    if (timer) clearInterval(timer);
+    options.signal.removeEventListener("abort", onAbort);
+    // Cached host services must stop authorizing even if persistence fails.
+    if (options.runtimeContext.contextId === issued.contextId) options.runtimeContext.revokedAt = Date.now();
+    try {
+      const stored = dbGetContext(issued.contextId);
+      if (!stored) return;
+      const revoked = revokeRuntimeContext(issued.contextId, { cascade, reason }).context;
+      if (options.runtimeContext.contextId === issued.contextId)
+        replaceRuntimeContextSnapshot(options.runtimeContext, revoked);
+    } catch (error) {
+      logger.child("runtime:context-lease").error("Failed to persist turn context revocation", {
+        contextId: issued.contextId,
+        error,
+      });
+    }
+  };
+  const onAbort = () => stop(true, "turn_context_aborted");
+  const renew = () => {
+    if (stopped) return;
+    if (!options.isActive() || options.runtimeContext.contextId !== issued.contextId) {
+      stop();
+      return;
+    }
+    try {
+      const stored = dbGetContext(issued.contextId);
+      // Never revive an expired/revoked/deleted credential, including a revoke
+      // racing the previous heartbeat. Rotation revokes only the captured id.
+      if (!stored || !isRuntimeContextLive(stored) || !dbGetAgent(options.agent.id)) {
+        stop(true, "turn_context_not_live");
+        return;
+      }
+      const actor = issued.metadata?.actorPrincipal;
+      const actorId = typeof actor === "string" && actor.startsWith("contact:") ? actor.slice(8) : undefined;
+      const relayContact = issued.metadata?.relayCallerContactId;
+      const contacts = [actorId, typeof relayContact === "string" ? relayContact : undefined];
+      for (const contactId of contacts) {
+        if (!contactId) continue;
+        const contact = getContactDetails(contactId, { includeDuplicateCandidates: false });
+        if (!contact || contact.policy?.status === "blocked" || contact.policy?.optOut) {
+          stop(true, "turn_actor_no_longer_eligible");
+          return;
+        }
+      }
+      if (typeof actor === "string" && actor.startsWith("agent:") && !dbGetAgent(actor.slice(6))) {
+        stop(true, "turn_actor_no_longer_eligible");
+        return;
+      }
+      const current = deriveRuntimeContextForPrompt({
+        agentId: options.agent.id,
+        sessionKey: options.dbSessionKey,
+        sessionName: options.sessionName,
+        prompt,
+        resolvedSource,
+        capabilities: buildRuntimeContextCapabilities(options.agent.id, options.sessionName, prompt),
+        metadata: issued.metadata ?? {},
+      });
+      const identityFields = ["actorPrincipal", "actorResolution", "actorAuthorizationMode", "agentIdentityPrincipal"];
+      const sameIdentity = identityFields.every((field) => current.metadata[field] === issued.metadata?.[field]);
+      const retained = buildEffectiveCapabilities({
+        agentCapabilities: issued.capabilities,
+        actorCapabilities: current.capabilities,
+      });
+      const capabilityKeys = (capabilities: ContextCapability[]) =>
+        [
+          ...new Set(
+            capabilities.map(({ permission, objectType, objectId }) => `${permission}:${objectType}:${objectId}`),
+          ),
+        ].sort();
+      const retainedKeys = new Set(capabilityKeys(retained));
+      if (!sameIdentity || !capabilityKeys(issued.capabilities).every((key) => retainedKeys.has(key))) {
+        stop(true, "turn_authority_reduced");
+        return;
+      }
+      // Atomic update checks liveness again. Capabilities, source and provenance
+      // are unchanged; grants added mid-turn only apply on the next turn.
+      const renewed = dbRenewActiveContext(issued.contextId, stored.expiresAt, DEFAULT_DERIVED_CONTEXT_TTL_MS);
+      if (!renewed) {
+        stop(true, "turn_context_not_live");
+        return;
+      }
+      replaceRuntimeContextSnapshot(options.runtimeContext, renewed);
+    } catch (error) {
+      logger.child("runtime:context-lease").warn("Active turn authority revalidation failed", {
+        contextId: issued.contextId,
+        error,
+      });
+      stop(true, "turn_authority_revalidation_failed");
+    }
+  };
+  options.signal.addEventListener("abort", onAbort, { once: true });
+  if (options.signal.aborted) onAbort();
+  // Relay narrowing carries historical caller snapshots. Their individual
+  // grant revocation is not fully represented in relay lineage, so preserve
+  // the original bounded lifetime until that authority can be revalidated.
+  else if (issued.metadata?.relayNarrowing !== true) {
+    timer = setInterval(renew, 60_000);
+    timer.unref();
+  }
+  return () => stop();
 }
 
 export function buildRuntimeRequestContext(options: RuntimeRequestContextOptions) {
@@ -72,6 +208,7 @@ export function buildRuntimeRequestContext(options: RuntimeRequestContextOptions
     approvalSource,
   } = options;
 
+  if (prompt._bridgeTurnId || isBridgeSessionRef(dbSessionKey)) assertBridgeProvider(runtimeProviderId);
   const capabilities = buildRuntimeContextCapabilities(agent.id, sessionName, prompt);
   // A fresh runtime launch owns the session's authority slot. Any turn-scoped
   // context still live here belongs to a runtime that is already gone: idle
@@ -149,6 +286,8 @@ export function refreshRuntimeRequestContextForTurn(options: {
   /** Where this turn's answer goes, as the runtime bound it for the turn. */
   replyTarget?: TurnReplyTarget;
 }): ContextRecord {
+  if (options.prompt._bridgeTurnId || isBridgeSessionRef(options.dbSessionKey))
+    assertBridgeProvider(options.runtimeProviderId);
   const derived = deriveRuntimeContextForPrompt({
     agentId: options.agent.id,
     sessionKey: options.dbSessionKey,
@@ -191,7 +330,7 @@ export function refreshRuntimeRequestContextForTurn(options: {
         reason: "turn_context_rotated",
       });
     }
-    Object.assign(options.runtimeContext, nextContext);
+    replaceRuntimeContextSnapshot(options.runtimeContext, nextContext);
   }
 
   options.toolContext.contextId = options.runtimeContext.contextId;
@@ -286,6 +425,11 @@ function deriveRuntimeContextForPrompt(options: {
   metadata: Record<string, unknown>;
   source: ContextSource | undefined;
 } {
+  if (options.prompt._bridgeTurnId || /^agent:[^:]+:console:[0-9a-f-]{36}$/.test(options.sessionKey)) {
+    if (!options.prompt._bridgeTurnId) throw new Error("Console turns require a fresh human delegation");
+    const bridge = resolveBridgeInvocation(options.prompt._bridgeTurnId, options.sessionKey, options.agentId);
+    return { ...bridge, metadata: { ...options.metadata, ...bridge.metadata } };
+  }
   const identity = buildAgentIdentityRuntimeContextInputForPrompt(options);
   return {
     capabilities: identity.capabilities,
@@ -316,11 +460,19 @@ function persistRuntimeContextInPlace(
       source: derived.source,
       metadata: derived.metadata,
     });
-    Object.assign(runtimeContext, persisted);
+    replaceRuntimeContextSnapshot(runtimeContext, persisted);
     return true;
   } catch {
     return false;
   }
+}
+
+/** Keep host service references, but never inherit omitted fields from the previous turn. */
+function replaceRuntimeContextSnapshot(target: ContextRecord, snapshot: ContextRecord): void {
+  for (const key of Object.keys(target)) {
+    if (!Object.hasOwn(snapshot, key)) Reflect.deleteProperty(target, key);
+  }
+  Object.assign(target, snapshot);
 }
 
 function buildAgentIdentityRuntimeContextInputForPrompt(options: {
@@ -343,7 +495,9 @@ function buildAgentIdentityRuntimeContextInputForPrompt(options: {
     actorPrincipal,
     hasPromptExternalAuthoritySurface(options.prompt),
   );
-  const userOverlay = resolveUserOverlay(actorPrincipal, surfacePrincipal, actorMetadata);
+  const userOverlay =
+    resolveStoredAutomationCreatorOverlay(options.prompt) ??
+    resolveUserOverlay(actorPrincipal, surfacePrincipal, actorMetadata);
 
   return buildAgentIdentityRuntimeContextInput({
     agentId: options.agentId,
@@ -357,6 +511,21 @@ function buildAgentIdentityRuntimeContextInputForPrompt(options: {
     consoleBinding,
     userOverlay,
   });
+}
+
+/**
+ * A job a contact wrote from a turn narrowed to their chat grants runs every
+ * turn under those grants as they are now: none left means no capabilities.
+ * The runner captured owner/chat with the prompt; queued work must not adopt
+ * a new owner or lose its overlay after an edit or one-shot deletion.
+ */
+function resolveStoredAutomationCreatorOverlay(prompt: RuntimeLaunchPrompt): ContactChatOverlay | null {
+  if (!prompt._cron || !prompt._jobId) return null;
+  const job = readCronRunAuthority(prompt._cronAuthority, prompt._jobId);
+  const owner = job?.ownerPrincipal ?? "";
+  if (!job?.creatorChat || !owner.startsWith("contact:")) return null;
+  const overlay = resolveContactChatOverlay({ contactId: owner.slice("contact:".length), chatId: job.creatorChat });
+  return { ...overlay, active: true };
 }
 
 function resolveUserOverlay(
@@ -410,11 +579,15 @@ function buildAgentIdentityRuntimeContextInput(options: {
   // In a chat governed by contact grants the sender's chat caps replace the
   // agent identity as the actor branch: agent_ceiling ∩ contact_chat_caps.
   const userOverlay = shouldMaterializeIdentity && options.userOverlay?.active ? options.userOverlay : null;
+  const relayCaller = resolveRelayCaller(options.prompt);
+  const relayNarrowing = relayCaller.narrowing;
+  const turnCapabilities =
+    relayNarrowing ?? (hasAnyCapability(observationCapabilities) ? observationCapabilities : undefined);
   const effectiveCapabilities = buildEffectiveCapabilities({
     agentCapabilities: agentIdentityCapabilities,
     actorCapabilities: userOverlay ? userOverlay.capabilities : agentIdentityCapabilities,
     ...(userOverlay ? { actorOverrideCapabilities: options.capabilities.filter(isTaskSelfCapability) } : {}),
-    turnCapabilities: hasAnyCapability(observationCapabilities) ? observationCapabilities : undefined,
+    turnCapabilities,
   });
 
   return {
@@ -442,12 +615,61 @@ function buildAgentIdentityRuntimeContextInput(options: {
       ...(taskSelfTaskId ? { taskSelfTaskId } : {}),
       actorCapabilityCount: userOverlay ? userOverlay.capabilities.length : 0,
       surfaceCapabilityCount: 0,
-      turnCapabilityCount: observationCapabilities.length,
-      ...(observationCapabilities.length > 0 ? { turnCapabilities: observationCapabilities } : {}),
+      turnCapabilityCount: turnCapabilities?.length ?? 0,
+      ...(turnCapabilities && turnCapabilities.length > 0 ? { turnCapabilities } : {}),
+      ...(relayNarrowing ? { relayNarrowing: true } : {}),
+      ...(relayCaller.contactId ? { relayCallerContactId: relayCaller.contactId } : {}),
       effectiveCapabilityCount: effectiveCapabilities.length,
       ...(options.consoleBinding?.consoleUserId ? { consoleUserId: options.consoleBinding.consoleUserId } : {}),
       ...(options.consoleBinding?.consoleOrgId ? { consoleOrgId: options.consoleBinding.consoleOrgId } : {}),
     },
+  };
+}
+
+/**
+ * A turn another turn produced (a session relay, a Slack thread bootstrap,
+ * report or return) never holds more than that turn when it was narrowed to a
+ * contact's chat grants. The caller context is looked up in ravi.db; one that
+ * no longer exists or whose profile authority was reduced narrows to nothing.
+ */
+function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
+  narrowing?: ContextCapability[];
+  /** The contact the producing turn acted for, so Console calls stay attributed to them. */
+  contactId?: string;
+} {
+  const origin = resolveRuntimeTurnOrigin(prompt._turnOrigin);
+  const callerContextId = origin?.callerContextId;
+  if (!callerContextId) return {};
+  const caller = dbGetContext(callerContextId);
+  if (!caller) return { narrowing: [] };
+  const metadata = caller.metadata ?? {};
+  const human = resolveHumanRequestCaller(prompt);
+  // A lost/revoked human handoff must not fall back to the agent's ambient
+  // ceiling. The requester is explicit even when its proof no longer passes.
+  const humanHandoffRefused = Boolean(
+    origin &&
+      isWorkHandoff(origin) &&
+      (String(metadata.actorPrincipal).startsWith("contact:") || metadata.humanRequest) &&
+      !human,
+  );
+  // Ordinary turn rotation revokes the key but intentionally keeps queued relays
+  // usable. A profile reduction invalidates the authority snapshot as well.
+  const profileRevoked = typeof metadata.permissionProfileRevokedAt === "number";
+  const narrowed =
+    metadata.actorAuthorizationMode === USER_OVERLAY_AUTHORIZATION_MODE ||
+    metadata.relayNarrowing === true ||
+    human !== null;
+  const actorPrincipal = typeof metadata.actorPrincipal === "string" ? metadata.actorPrincipal : "";
+  const contactId = actorPrincipal.startsWith("contact:")
+    ? actorPrincipal.slice("contact:".length)
+    : typeof metadata.relayCallerContactId === "string"
+      ? metadata.relayCallerContactId
+      : undefined;
+  return {
+    ...(profileRevoked || humanHandoffRefused || narrowed
+      ? { narrowing: profileRevoked || humanHandoffRefused ? [] : caller.capabilities }
+      : {}),
+    ...(contactId ? { contactId } : {}),
   };
 }
 
@@ -538,6 +760,8 @@ function resolveAuthorityActorMetadata(
   const source = resolvedSource ?? prompt.source;
   const context = prompt.context;
   const turnOrigin = resolveRuntimeTurnOrigin(prompt._turnOrigin);
+  const human = resolveHumanRequestCaller(prompt);
+  const humanActor = human?.caller.metadata?.actor as MessageActorMetadata | undefined;
   const promptPrincipal =
     resolveTurnOriginPrincipal(turnOrigin) ?? resolveAutomationPromptPrincipal(prompt, source, context);
   const promptIdentityProvenance = turnOrigin
@@ -548,14 +772,17 @@ function resolveAuthorityActorMetadata(
     ...(source ?? {}),
     ...(context ?? {}),
     canonicalChatId: context?.canonicalChatId ?? source?.canonicalChatId,
-    actorType: promptPrincipal
-      ? promptPrincipal.subjectType === "agent"
-        ? "agent"
-        : "automation"
-      : (context?.actorType ?? source?.actorType),
-    contactId: promptPrincipal ? undefined : (context?.contactId ?? source?.contactId),
-    actorAgentId:
-      promptPrincipal?.subjectType === "agent"
+    actorType: human
+      ? "contact"
+      : promptPrincipal
+        ? promptPrincipal.subjectType === "agent"
+          ? "agent"
+          : "automation"
+        : (context?.actorType ?? source?.actorType),
+    contactId: human?.contactId ?? (promptPrincipal ? undefined : (context?.contactId ?? source?.contactId)),
+    actorAgentId: human
+      ? undefined
+      : promptPrincipal?.subjectType === "agent"
         ? promptPrincipal.subjectId
         : promptPrincipal
           ? undefined
@@ -567,19 +794,28 @@ function resolveAuthorityActorMetadata(
           ? undefined
           : (context?.automationId ?? source?.automationId),
     identityProvenance: promptIdentityProvenance ?? context?.identityProvenance ?? source?.identityProvenance,
-    platformIdentityId: promptPrincipal ? undefined : (context?.platformIdentityId ?? source?.platformIdentityId),
-    rawSenderId: promptPrincipal ? undefined : (context?.rawSenderId ?? source?.rawSenderId),
-    normalizedSenderId: promptPrincipal ? undefined : (context?.normalizedSenderId ?? source?.normalizedSenderId),
-    identityConfidence: promptPrincipal ? undefined : (context?.identityConfidence ?? source?.identityConfidence),
+    platformIdentityId:
+      humanActor?.platformIdentityId ??
+      (promptPrincipal ? undefined : (context?.platformIdentityId ?? source?.platformIdentityId)),
+    rawSenderId:
+      humanActor?.rawSenderId ?? (promptPrincipal ? undefined : (context?.rawSenderId ?? source?.rawSenderId)),
+    normalizedSenderId:
+      humanActor?.normalizedSenderId ??
+      (promptPrincipal ? undefined : (context?.normalizedSenderId ?? source?.normalizedSenderId)),
+    identityConfidence:
+      humanActor?.identityConfidence ??
+      (promptPrincipal ? undefined : (context?.identityConfidence ?? source?.identityConfidence)),
     accountId: context?.accountId ?? source?.accountId,
     chatId: context?.chatId ?? source?.chatId,
     threadId: source?.threadId,
     sourceMessageId: source?.sourceMessageId,
-    senderName: turnOrigin
-      ? turnOrigin.producer === "session-relay"
-        ? (turnOrigin.session?.name ?? turnOrigin.principal.id)
-        : turnOrigin.principal.id
-      : context?.senderName,
+    senderName: human
+      ? cleanStringValue(human.caller.metadata?.actorDisplayName)
+      : turnOrigin
+        ? turnOrigin.producer === "session-relay"
+          ? (turnOrigin.session?.name ?? turnOrigin.principal.id)
+          : turnOrigin.principal.id
+        : context?.senderName,
     groupName: context?.groupName,
   };
 }
@@ -660,6 +896,7 @@ function buildRuntimeContextMetadata(options: {
 }): Record<string, unknown> {
   const actorMetadata = buildRuntimeContextActorMetadata(options.prompt, options.resolvedSource);
   const turnOrigin = resolveRuntimeTurnOrigin(options.prompt._turnOrigin);
+  const human = resolveHumanRequestCaller(options.prompt);
   return {
     runtimeProvider: options.runtimeProviderId,
     runtimeModel: options.model,
@@ -681,6 +918,17 @@ function buildRuntimeContextMetadata(options: {
     ...(options.replyTarget ? { [TURN_REPLY_TARGET_METADATA_KEY]: options.replyTarget } : {}),
     ...(actorMetadata ? { actor: actorMetadata, actorMetadata } : {}),
     ...(turnOrigin ? { turnOrigin } : {}),
+    ...(human
+      ? { humanRequest: { callerContextId: human.caller.contextId, originContextId: human.originContextId } }
+      : {}),
+    ...(options.prompt._cron && options.prompt._jobId
+      ? { cronRunAuthority: readCronRunAuthority(options.prompt._cronAuthority, options.prompt._jobId) }
+      : {}),
+    ...(options.prompt._trigger && options.prompt._triggerId
+      ? {
+          triggerRunAuthority: readTriggerRunAuthority(options.prompt._triggerAuthority, options.prompt._triggerId),
+        }
+      : {}),
     ...(options.prompt._observation ? { observation: { ...options.prompt._observation } } : {}),
     ...(options.prompt._thread ? { raviThread: options.prompt._thread } : {}),
   };
@@ -760,6 +1008,11 @@ function resolveAutomationPromptPrincipal(
     if (hasResolvedExternalActor(source) || hasResolvedExternalActor(context)) {
       return null;
     }
+    // An interrupted turn from a sender Ravi could not resolve stays unresolved:
+    // the restart must not lift it to the daemon's own authority.
+    if (hasRecordedExternalSender(source) || hasRecordedExternalSender(context)) {
+      return null;
+    }
     return { subjectType: "automation", subjectId: "daemon-restart" };
   }
   return null;
@@ -781,6 +1034,27 @@ function hasResolvedExternalActor(
   return Boolean(
     (metadata?.actorType === "contact" && cleanStringValue(metadata.contactId)) ||
       (metadata?.actorType === "agent" && cleanStringValue(metadata.actorAgentId)),
+  );
+}
+
+function hasRecordedExternalSender(
+  metadata:
+    | {
+        actorType?: string;
+        rawSenderId?: string;
+        normalizedSenderId?: string;
+        platformIdentityId?: string;
+        senderId?: string;
+      }
+    | undefined,
+): boolean {
+  return Boolean(
+    metadata &&
+      (metadata.actorType === "unknown" ||
+        cleanStringValue(metadata.rawSenderId) ||
+        cleanStringValue(metadata.normalizedSenderId) ||
+        cleanStringValue(metadata.platformIdentityId) ||
+        cleanStringValue(metadata.senderId)),
   );
 }
 

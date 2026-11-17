@@ -134,4 +134,31 @@ describe("channel runtime events contract", () => {
     expect(interrupt).toHaveBeenCalledWith(interruptRequest.binding.agentId, interruptRequest);
     expect(readback).toHaveBeenCalledWith(readbackRequest.binding.agentId, readbackRequest);
   });
+
+  it("preserves the physical trace turn id through terminal readback", async () => {
+    const request = await fixture<ChannelRuntimeReadbackRequest>("readback-request.json");
+    const result = await fixture<ChannelRuntimeReadbackResult>("readback-result.json");
+    const terminal = ChannelTerminalOutputEventSchema.parse(result.terminalEvent);
+    const traceTurnId = "physical-turn-readback";
+    const terminalEvent = {
+      ...terminal,
+      correlation: { ...terminal.correlation, traceTurnId },
+    };
+    const readbackResult = { ...result, terminalEvent };
+    const client = createChannelRuntimeClient({
+      channels: {
+        backend: {
+          runtime: {
+            interrupt: mock(async () => undefined),
+            readback: mock(async () => readbackResult),
+          },
+        },
+      },
+    });
+
+    await expect(client.readback(request)).resolves.toEqual(readbackResult);
+    expect(ChannelTerminalOutputEventSchema.parse(terminalEvent)).toEqual(terminalEvent);
+    expect(KnownChannelRuntimeEventSchema.parse(terminalEvent)).toEqual(terminalEvent);
+    expect(traceTurnId).not.toBe(result.binding.turnId);
+  });
 });

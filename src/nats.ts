@@ -7,7 +7,8 @@
  * Supports both explicit connect (daemon) and lazy connect (CLI).
  */
 
-import { connect, type NatsConnection, StringCodec } from "nats";
+import { connect, type Msg, type NatsConnection, type Subscription, StringCodec } from "nats";
+import { redactNatsUrl } from "./security/nats-exposure.js";
 import { logger } from "./utils/logger.js";
 
 const log = logger.child("nats");
@@ -42,7 +43,7 @@ export async function connectNats(
 
       if (opts?.explicit) explicitConnect = true;
 
-      log.info("Connected to NATS", { server: url, attempt });
+      log.info("Connected to NATS", { server: redactNatsUrl(url), attempt });
 
       // Log status changes (only for long-lived daemon connections)
       if (opts?.explicit) {
@@ -56,16 +57,18 @@ export async function connectNats(
     } catch (err) {
       if (attempt === maxRetries) {
         log[opts?.quiet ? "debug" : "error"]("Failed to connect to NATS after all retries", {
-          url,
+          url: redactNatsUrl(url),
           attempts: maxRetries,
         });
         throw err;
       }
-      log.info("NATS not ready, retrying...", { url, attempt, maxRetries });
+      log.info("NATS not ready, retrying...", { url: redactNatsUrl(url), attempt, maxRetries });
       await new Promise((r) => setTimeout(r, retryInterval));
     }
   }
 }
+
+export { redactNatsUrl };
 
 /** Whether NATS was explicitly connected (daemon) vs lazy (CLI) */
 export function isExplicitConnect(): boolean {
@@ -98,7 +101,7 @@ export async function ensureConnected(opts?: { quiet?: boolean }): Promise<NatsC
   } catch (err) {
     if (!opts?.quiet && !attempt.failureLogged) {
       attempt.failureLogged = true;
-      log.error("Failed to connect to NATS after all retries", { url: DEFAULT_URL, attempts: 1 });
+      log.error("Failed to connect to NATS after all retries", { url: redactNatsUrl(DEFAULT_URL), attempts: 1 });
     }
     throw err;
   }
@@ -151,6 +154,60 @@ export async function flushNats(): Promise<void> {
 export interface SubscribeOptions {
   /** NATS queue group name. When set, only one subscriber in the group receives each message. */
   queue?: string;
+  /** Closes the subscriptions and wakes an idle next() during owner shutdown. */
+  signal?: AbortSignal;
+}
+
+function assertSubscriptionCleanup(failures: Error[]): void {
+  if (failures.length) throw new AggregateError(failures, "NATS subscription close failed", { cause: failures[0] });
+}
+
+async function* abortableSubscription(sub: Subscription, signal: AbortSignal): AsyncGenerator<Msg> {
+  const failures: Error[] = [];
+  let closed = false;
+  let unsubscribeFailed = false;
+  let iterator: AsyncIterator<Msg> | undefined;
+  let wake: (() => void) | undefined;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    try {
+      sub.unsubscribe();
+    } catch (cause) {
+      unsubscribeFailed = true;
+      failures.push(new Error("NATS subscription unsubscribe failed", { cause }));
+      // A failed unsubscribe cannot settle an idle next(); fail the proof
+      // without waiting forever for cleanup that the transport rejected.
+      wake?.();
+    }
+  };
+  signal.addEventListener("abort", close, { once: true });
+  if (signal.aborted) close();
+  try {
+    iterator = sub[Symbol.asyncIterator]();
+    while (!signal.aborted) {
+      const result = await new Promise<IteratorResult<Msg>>((resolve, reject) => {
+        wake = () => resolve({ done: true, value: undefined });
+        Promise.resolve(iterator!.next()).then(resolve, reject);
+      });
+      wake = undefined;
+      if (result.done || signal.aborted) break;
+      yield result.value;
+    }
+  } catch (cause) {
+    failures.push(new Error("NATS subscription iteration failed", { cause }));
+  } finally {
+    signal.removeEventListener("abort", close);
+    close();
+    if (!unsubscribeFailed) {
+      try {
+        await iterator?.return?.();
+      } catch (cause) {
+        failures.push(new Error("NATS subscription iterator return failed", { cause }));
+      }
+    }
+    assertSubscriptionCleanup(failures);
+  }
 }
 
 /**
@@ -170,12 +227,13 @@ export interface SubscribeOptions {
 export async function* subscribe(
   ...args: [...string[], SubscribeOptions] | string[]
 ): AsyncGenerator<{ topic: string; data: Record<string, unknown> }> {
+  const last = args[args.length - 1];
+  if (typeof last === "object" && last?.signal?.aborted) return;
   const conn = await ensureConnected();
 
   // Parse args: last element may be an options object (not a string)
   let patternList: string[];
   let opts: SubscribeOptions | undefined;
-  const last = args[args.length - 1];
   if (args.length > 0 && typeof last === "object" && last !== null && !Array.isArray(last)) {
     opts = last as SubscribeOptions;
     patternList = args.slice(0, -1) as string[];
@@ -183,7 +241,7 @@ export async function* subscribe(
     patternList = args as string[];
   }
 
-  if (patternList.length === 0) return;
+  if (patternList.length === 0 || opts?.signal?.aborted) return;
 
   const subOpts = opts?.queue ? { queue: opts.queue } : undefined;
 
@@ -212,7 +270,7 @@ export async function* subscribe(
   if (patternList.length === 1) {
     // Fast path: single subscription
     const sub = conn.subscribe(patternList[0], subOpts);
-    for await (const msg of sub) {
+    for await (const msg of opts?.signal ? abortableSubscription(sub, opts.signal) : sub) {
       // Skip NATS internal subjects (JetStream replies, API calls, advisories)
       if (msg.subject.startsWith("_INBOX.") || msg.subject.startsWith("$")) continue;
       // Skip JetStream consumer deliveries (reply=$JS.ACK...) — these are duplicates
@@ -237,29 +295,52 @@ export async function* subscribe(
   let done = false;
 
   const subs = patternList.map((p) => conn.subscribe(p, subOpts));
+  const cancellation = opts?.signal ? new AbortController() : undefined;
+  const onAbort = () => {
+    done = true;
+    cancellation?.abort();
+    resolve?.();
+  };
+  opts?.signal?.addEventListener("abort", onAbort, { once: true });
+  if (opts?.signal?.aborted) onAbort();
+  let remaining = subs.length;
 
   // Pump each subscription into the shared queue
   const pumps = subs.map(async (sub) => {
-    for await (const msg of sub) {
-      if (done) return;
-      // Skip NATS internal subjects (JetStream replies, API calls, advisories)
-      if (msg.subject.startsWith("_INBOX.") || msg.subject.startsWith("$")) continue;
-      // Skip JetStream consumer deliveries (duplicates of core pub/sub)
-      if (msg.reply?.startsWith("$JS.ACK.")) continue;
-      try {
-        const raw = sc.decode(msg.data);
-        if (isDuplicate(msg.subject, raw)) continue;
-        const data = JSON.parse(raw) as Record<string, unknown>;
-        queue.push({ topic: msg.subject, data });
+    try {
+      for await (const msg of cancellation ? abortableSubscription(sub, cancellation.signal) : sub) {
+        if (done) return;
+        // Skip NATS internal subjects (JetStream replies, API calls, advisories)
+        if (msg.subject.startsWith("_INBOX.") || msg.subject.startsWith("$")) continue;
+        // Skip JetStream consumer deliveries (duplicates of core pub/sub)
+        if (msg.reply?.startsWith("$JS.ACK.")) continue;
+        try {
+          const raw = sc.decode(msg.data);
+          if (isDuplicate(msg.subject, raw)) continue;
+          const data = JSON.parse(raw) as Record<string, unknown>;
+          queue.push({ topic: msg.subject, data });
+          resolve?.();
+        } catch {
+          // Silently skip non-JSON messages (e.g. JetStream headers, binary payloads)
+        }
+      }
+    } catch (cause) {
+      if (cancellation) onAbort();
+      throw cause;
+    } finally {
+      remaining -= 1;
+      if (cancellation && remaining === 0) {
+        done = true;
         resolve?.();
-      } catch {
-        // Silently skip non-JSON messages (e.g. JetStream headers, binary payloads)
       }
     }
   });
 
+  // Observe pump rejection immediately; shutdown still reports every failure.
+  const settledPumps = opts?.signal ? Promise.allSettled(pumps) : undefined;
+
   try {
-    while (!done) {
+    while (!done || (cancellation && !cancellation.signal.aborted && queue.length > 0)) {
       if (queue.length > 0) {
         yield queue.shift()!;
       } else {
@@ -271,8 +352,19 @@ export async function* subscribe(
     }
   } finally {
     done = true;
-    for (const sub of subs) sub.unsubscribe();
-    await Promise.allSettled(pumps);
+    opts?.signal?.removeEventListener("abort", onAbort);
+    if (!opts?.signal) {
+      for (const sub of subs) sub.unsubscribe();
+      await Promise.allSettled(pumps);
+    } else {
+      onAbort();
+      const failures: Error[] = [];
+      for (const result of (await settledPumps) ?? []) {
+        if (result.status === "rejected")
+          failures.push(new Error("NATS subscription pump failed", { cause: result.reason }));
+      }
+      assertSubscriptionCleanup(failures);
+    }
   }
 }
 

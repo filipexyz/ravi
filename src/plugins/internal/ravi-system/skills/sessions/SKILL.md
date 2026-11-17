@@ -98,6 +98,41 @@ ravi sessions set-provider <name> <provider|clear>
 # Definir thinking level
 ravi sessions set-thinking <name> <level>
 
+# Atualizar provider/model/effort/thinking de uma vez, com prova de vida e rollback.
+# Antes de gravar, recusa valor inválido de provider/effort/thinking e modelo que o provider não
+# roda, nomeando os válidos. A validação de modelo depende do provider:
+# - todos: formato do id (sem espaço; só letras, dígitos e . _ : / -) e família contra o provider
+#   (ex.: modelo gpt com provider claude);
+# - claude/grok: por família, não por versão; versão desconhecida de família conhecida
+#   (ex.: um sonnet que ainda não existe) é gravada, e quem decide é a prova de vida;
+# - codex: com o cache de modelos da conta, exige o slug exato do cache; sem o cache, não confere o id;
+# - pi: depois do formato e da família, confere só a forma do seletor (provider/modelo; um id de
+#   provider sozinho é recusado). Não há catálogo de ids: qualquer modelo bem formado é gravado.
+# Depois aplica (as gravações dos eixos entram numa transação só: ou todas ou nenhuma), roda um turno
+# real de prova e, se a prova falhar ou lançar, restaura o estado anterior.
+# Prova que RETORNA falha e restauração que também falha: sai RUNTIME_PROBE_FAILED, e a causa da
+# restauração e o que está gravado vêm em error.runtimeUpdate (rollbackError, superseded,
+# storedStateKnown, before = valores anteriores, stored = o que está gravado agora). A restauração
+# é um UPDATE condicional que pode falhar antes de checar a posse, então o CLI relê o gravado:
+# ainda é a configuração não provada (suggestedAction manda conferir antes com ravi sessions info
+# <name> --json e só então restaurar, com o comando exato e --skip-probe, para a restauração explícita
+# não cair de novo na prova que falhou; uma atualização concorrente pode ter entrado depois da releitura),
+# já é a de uma atualização mais nova (nada a restaurar), já são os valores anteriores (a restauração
+# lançou depois de gravar: nada a restaurar) ou não deu para ler (storedStateKnown=false: rode
+# ravi sessions info <name> --json antes de qualquer coisa). Se um valor anterior não é representável
+# (id legado fora do formato aceito), o envelope mantém as flags com before/stored = null e o
+# suggestedAction não traz comando: inspecione com ravi sessions info e restaure à mão.
+# Prova que LANÇA exceção: o erro original sai intacto e uma restauração que falha só vai para o log
+# do daemon, sem RUNTIME_PROBE_FAILED nem error.runtimeUpdate; confira ravi sessions info <name> --json.
+ravi sessions update <name> --provider claude --model sonnet --effort ultra --thinking off
+# Ressalva: no Pi o id do modelo não é conferido, e Codex sem o cache de modelos também não.
+# Nesses dois casos só a prova de vida protege; não use --skip-probe.
+# Eixos são opcionais ('clear' limpa o override); --skip-probe aplica sem prova (sem rollback).
+# Limite: '--provider clear' com --skip-probe pode rematerializar a sessão para o provider do agent
+# quando o provider nativo dela estava velho; não é cópia exata do estado anterior.
+# --probe-timeout <s> limita a prova inteira: credencial, turno e encerramento (default 120s;
+# provider que ignora a interrupção ganha no máximo mais 5s para parar e 5s para fechar). Erro de uso sai com exit 2 e USAGE_ERROR, também em --json.
+
 # Resetar sessão (limpa conversa, mantém config; sem --execute é dry-run, exit 3)
 ravi sessions reset <name> --execute
 
@@ -279,6 +314,12 @@ ravi sessions create-thread "<mensagem inicial>" [--model <model>]
 ravi sessions threads [--all] --json
 ravi sessions thread-send <sessão-da-thread|request-id|thread-ts> "instruções"
 
+# No pai: configurar o próximo turno de uma filha pelo vínculo da thread
+ravi sessions thread-configure <sessão-da-thread|request-id|thread-ts> --effort ultra --json
+
+# No pai autorizado que possui a thread, para uma filha cujo provider efetivo já é codex
+ravi sessions thread-configure <sessão-da-thread> --model gpt-6-astra --effort ultra --json
+
 # Na thread: avisar a sessão do canal sem fechar, e fechar (com ou sem resultado)
 ravi sessions report "progresso, bloqueio ou decisão"
 ravi sessions close-thread [--return "resultado"]
@@ -289,8 +330,25 @@ A raiz da thread aparece no canal como um card: a primeira linha da mensagem ini
 Progresso e resultado chegam na sessão do canal como `[System] Inform: Slack thread "<título>" (<sessão-da-thread>) ...`. `thread-send` reabre uma thread fechada; a filha responde dentro da thread.
 
 Uma mensagem no canal que continua o assunto de uma thread já aberta vai para essa thread com `thread-send`, sem abrir outra. Threads não falam entre si: quando uma precisa de algo de outra, ela pede com `report` e a sessão do canal repassa com `thread-send`.
+`thread-configure` aceita `--provider`, `--model`, `--effort` e `--thinking`; pelo menos um é obrigatório. Um campo omitido é preservado e `clear` remove seu override. O resultado mostra `before`, `after` e `appliesOn: next-turn`: não interrompe o turno em execução nem reabre uma thread fechada. Confira `sessions actions --json` para descobrir `thread.configure`. A operação verifica o vínculo persistido com o pai e não concede acesso genérico para alterar ou ler outras sessões. Mudar o provider para fora do default continua exigindo a autoridade de `agents set`.
 
 `sessions send` envia prompt/contexto para a sessão do agent; ele não publica texto visível diretamente em WhatsApp, Telegram, Matrix ou outro canal externo. Se o objetivo é falar com uma pessoa/canal, deixe a sessão responder normalmente ou use uma CLI explícita de canal/mídia/outbound apropriada.
+
+`THREAD_TRIGGERS_PENDING` impede fechar enquanto algum trigger ativo aponta para a filha em `replySession`. O erro lista os ids: confira `ravi triggers show <id> --json`, repontando cada um com `ravi triggers set <id> replySession <sessão-pai>` antes de tentar fechar novamente. Não desative um follow vivo só para liberar o fechamento. Follows de PR gerados usam a sessão pai e reconciliam destinatários antigos.
+
+### Decisões de uma thread
+
+Uma thread pode precisar de decisão sem task. Leia `ravi skills show decisions`.
+
+```bash
+ravi decisions ask --thread <sessão-filha> --key janela --ask "Qual janela?" --owner human:<contato> --execute --json
+ravi decisions list --thread <sessão-filha> --json
+# Registrar pela sessão pai autorizada ou CLI do operador:
+ravi decisions answer <decision-id> --text "Após 18h" --execute --json
+ravi decisions show <decision-id> --json
+```
+
+A filha que espera não responde à própria pergunta; conversa comum não vira resposta automaticamente. O card prioriza a pendência e `threads --json` inclui `openDecisionCount`. Fechar com pergunta aberta ou resposta ainda não entregue falha com `THREAD_DECISIONS_PENDING`; resolva a pergunta e confira a entrega. `--by` e dono são proveniência, não prova de aprovação humana. O novo namespace não recebe grants automaticamente.
 
 ### Session Trace
 

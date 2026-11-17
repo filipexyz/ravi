@@ -184,6 +184,8 @@ function toAutomationEventType(type: TaskEvent["type"]): TaskAutomationEventType
     case "task.blocked":
     case "task.done":
     case "task.failed":
+    case "task.decision.open":
+    case "task.decision.answered":
     case "task.child.blocked":
     case "task.child.done":
     case "task.child.failed":

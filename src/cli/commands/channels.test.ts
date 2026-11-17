@@ -1,11 +1,22 @@
+import { seedPreparedThreadState, preparedThreadStateTables } from "../../test/prepared-thread-state.js";
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { listen, spawn } from "bun";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { createChannelRunnerHealthSnapshot, type ChannelRunnerRuntimeStatus } from "../../channels/health.js";
 import { dbGetChannel } from "../../router/router-db.js";
+import { buildChannelsPm2StartArgs } from "../../daemon-stdin.js";
 import {
   cleanupIsolatedRaviState,
   createIsolatedRaviState,
@@ -99,6 +110,7 @@ function createFakeChannelsRuntime(prefix: string, channelsEntry: Record<string,
     "utf8",
   );
   chmodSync(fakePm2Path, 0o755);
+  seedPreparedThreadState(join(root, "state"));
 
   return {
     bundlePath,
@@ -113,6 +125,7 @@ function createFakeChannelsRuntime(prefix: string, channelsEntry: Record<string,
       RAVI_DAEMON_CWD: runtimeRoot,
       RAVI_SUPPRESS_AUDIT_EVENTS: "1",
       CHANNELS_TEST_PM2_LOG: pm2LogPath,
+      PM2_HOME: join(root, "pm2-home"),
     } as Record<string, string>,
   };
 }
@@ -188,10 +201,28 @@ describe("channels runner lifecycle", () => {
     const pm2Log = readFileSync(runtime.pm2LogPath, "utf8");
 
     expect(result.status).toBe(0);
+    expect(preparedThreadStateTables(runtime.env.RAVI_STATE_DIR!)).toEqual([
+      "thread_schema_fence",
+      "thread_schema_write_lease",
+    ]);
     expect(result.stderr).toBe("");
     expect(pm2Log).toContain("delete ravi-channels");
-    expect(pm2Log).toContain(`start bun --name ravi-channels -- ${realpathSync(runtime.bundlePath)} channels run`);
+    expect(pm2Log).toContain(buildChannelsPm2StartArgs({ bundlePath: realpathSync(runtime.bundlePath) }).join(" "));
     expect(pm2Log).toContain("save --force");
+  }, 20_000);
+
+  it("refuses a Bun-name collision before deleting the existing channel runner", () => {
+    const runtime = createFakeChannelsRuntime("ravi-channels-collision-", ONLINE_CHANNELS_ENTRY);
+    const packageRoot = resolve(dirname(runtime.bundlePath), "../..");
+    writeFileSync(join(packageRoot, basename(process.execPath)), "conflicting package file");
+    const result = spawnSync("bun", ["src/cli/index.ts", "channels", "restart", "--json"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: runtime.env,
+    });
+    expect(result.status).not.toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toContain("shadows the selected Bun executable");
+    expect(readFileSync(runtime.pm2LogPath, "utf8")).not.toContain("delete ");
   }, 20_000);
 
   it("bounces a PM2-online runner whose health probe times out instead of reporting already_running", async () => {
@@ -208,6 +239,10 @@ describe("channels runner lifecycle", () => {
       const pm2Log = readFileSync(runtime.pm2LogPath, "utf8");
 
       expect(result.status).toBe(0);
+      expect(preparedThreadStateTables(runtime.env.RAVI_STATE_DIR!)).toEqual([
+        "thread_schema_fence",
+        "thread_schema_write_lease",
+      ]);
       expect(JSON.parse(result.stdout)).toMatchObject({
         action: "start",
         changed: true,
@@ -216,7 +251,7 @@ describe("channels runner lifecycle", () => {
         pm2Status: 0,
       });
       expect(pm2Log).toContain("delete ravi-channels");
-      expect(pm2Log).toContain(`start bun --name ravi-channels -- ${realpathSync(runtime.bundlePath)} channels run`);
+      expect(pm2Log).toContain(buildChannelsPm2StartArgs({ bundlePath: realpathSync(runtime.bundlePath) }).join(" "));
       expect(pm2Log).toContain("save --force");
     } finally {
       server.stop(true);
@@ -238,7 +273,7 @@ describe("channels runner lifecycle", () => {
     expect(result.status).not.toBe(0);
     expect(`${result.stdout}${result.stderr}`).toContain("health could not be confirmed (nats_unavailable)");
     expect(pm2Log).not.toContain("delete ravi-channels");
-    expect(pm2Log).not.toContain("start bun");
+    expect(pm2Log).not.toContain("start ");
   }, 20_000);
 });
 
@@ -298,6 +333,12 @@ describe("channels config contract", () => {
 
     expect(error.details.suggestions).toContain("ravi-rbbt-slack");
     expect(error.details.suggestedAction).toContain("ravi channels list");
+    expect(error.details.cause).toContain("local Ravi config store");
+    expect(error.details.context).toMatchObject({
+      operation: "channels show",
+      provider: "ravi",
+      code: "LOCAL_CHANNEL_CONFIG_NOT_FOUND",
+    });
   });
 
   it("set on an unknown channel exits 1 with CHANNEL_NOT_FOUND and does not write", async () => {
@@ -402,6 +443,41 @@ const ONLINE_CHANNELS_PROCESS = {
 };
 
 describe("channels live status", () => {
+  it("reports code and env staleness even while the runner answers healthy", async () => {
+    const startedAt = 1_721_563_200_000;
+    const cwd = join(stateDir!, "runtime");
+    const bundlePath = join(cwd, "dist/bundle/index.js");
+    mkdirSync(join(cwd, "dist/bundle"), { recursive: true });
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ name: "ravi.bot", version: "disk-version" }));
+    writeFileSync(bundlePath, "// newly installed code");
+    writeFileSync(join(stateDir!, ".env"), "EXAMPLE_KEY=secret-fixture\n");
+    for (const path of [bundlePath, join(stateDir!, ".env")]) {
+      utimesSync(path, new Date(startedAt + 1_000), new Date(startedAt + 1_000));
+    }
+    process.env.RAVI_BUNDLE = bundlePath;
+    const payload = await buildChannelsLiveStatusJson({
+      pm2Available: true,
+      processes: [
+        { ...ONLINE_CHANNELS_PROCESS, cwd, execPath: "/usr/bin/bun", args: [bundlePath, "channels", "run"], startedAt },
+      ],
+      probe: async () => ({ reachable: true, snapshot: liveRunnerStatus() }),
+    });
+    expect(payload).toMatchObject({
+      channels: {
+        runningVersion: null,
+        diskVersion: "disk-version",
+        startedAt,
+        stale: true,
+        codeStale: true,
+        envStale: true,
+      },
+      runtime: { alignment: "drifted" },
+      health: { status: "ready", reachable: true },
+    });
+    expect((payload.warnings as string[]).join("\n")).toContain("ravi channels restart");
+    expect(JSON.stringify(payload)).not.toContain("secret-fixture");
+  });
+
   it("separates PM2 process liveness from runner and Slack readiness", async () => {
     const snapshot = liveRunnerStatus();
     const probe = mock(async () => ({ reachable: true as const, snapshot }));

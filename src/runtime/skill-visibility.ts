@@ -1036,6 +1036,10 @@ function parseSkillFromShowOutput(output: unknown): ShowSkillDescriptor | null {
     return null;
   }
   const path = /^Path:\s+(.+)$/m.exec(text)?.[1]?.trim();
+  // A piped `--json` result may contain only SKILL.md bytes. Its heading is
+  // prose (e.g. "Sessions Manager"), not CLI identity metadata. In that case
+  // use the skill named by the command, as we do for explicit --raw reads.
+  if (!path) return null;
   const resolved = resolveLocalSkill(header);
   return {
     name: resolved?.name ?? header,

@@ -1,9 +1,12 @@
+import type { NativeBackgroundTask, UndeliveredBackgroundWake } from "./background-work.js";
 import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barriers.js";
 import type { SessionEntry } from "../router/index.js";
 import type { TurnProvenance } from "./turn-provenance.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import type { RuntimeTurnAuthorityEnvelope } from "./delivery-queue.js";
 import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
+import type { ProviderCapacityRetryState } from "./provider-capacity-retry.js";
 import type { SkillGatePersistedListener } from "./skill-gate.js";
 import type {
   ChannelBackendPromptMetadata,
@@ -70,6 +73,10 @@ export interface RuntimeUserMessage extends RuntimePromptMessage {
   launchPrompt?: RuntimeLaunchPrompt;
   pendingId?: string;
   queuedAt?: number;
+  /** Original work for a fresh continuation after yielding to another reply surface. */
+  yieldedRequest?: string;
+  /** Bounded capacity retry budget travels with this logical input across physical attempts. */
+  providerCapacityRetry?: ProviderCapacityRetryState;
 }
 
 export function runtimeTurnAttemptTerminalEventType(
@@ -82,10 +89,14 @@ export function runtimeTurnAttemptTerminalEventType(
 
 /** Streaming session - persistent runtime process that accepts messages via AsyncGenerator */
 export interface RuntimeHostStreamingSession {
+  /** Canonical session captured at launch; a reused name cannot rebind this handle. */
+  readonly sessionKey: string;
   /** Agent config used to start this runtime process. Changing it requires restart. */
   agentId: string;
   /** The runtime query handle */
   queryHandle: RuntimeSessionHandle;
+  /** Provider configuration captured before launching this handle. */
+  runtimeProviderConfigRevision?: number;
   /** True while the runtime provider is still bootstrapping */
   starting: boolean;
   /** Abort controller to kill the subprocess */
@@ -104,6 +115,8 @@ export interface RuntimeHostStreamingSession {
   lastBoundReplyTarget?: RuntimeMessageTarget;
   /** CLI-only or observer turns must not emit to a chat sink. */
   suppressChatEmit?: boolean;
+  /** Authority envelope of the current turn; host-made continuations of the turn inherit it. Set with `currentSource`. */
+  currentTurnAuthority?: RuntimeTurnAuthorityEnvelope;
   /** Provider-neutral channel backend identity for the currently executing turn. */
   currentChannelBackend?: ChannelBackendPromptMetadata;
   /** Runtime model currently assigned to this live stream */
@@ -114,6 +127,12 @@ export interface RuntimeHostStreamingSession {
   currentThinking?: RuntimeThinking;
   /** Explicit task context used to start this runtime process, if any. */
   currentTaskBarrierTaskId?: string;
+  /**
+   * Set by the event loop. Authorization calls `begin` when it starts waiting on
+   * a person (an approval card) and `end` when it returns, so the running tool's
+   * inactivity window covers the approval instead of expiring under it.
+   */
+  externalApprovalWait?: { begin(): void; end(): void };
   /** Tool tracking */
   toolRunning: boolean;
   /** A completed dynamic tool result is still being written to the provider callback. */
@@ -174,6 +193,8 @@ export interface RuntimeHostStreamingSession {
   currentTurnPendingIds?: string[];
   /** Whether a newer prompt intentionally preempted the active provider turn. */
   currentTurnSuperseded?: boolean;
+  /** Queued continuation owns the logical channel turn after this physical turn yields. */
+  currentTurnYieldContinuationId?: string;
   /** Whether the current provider turn has started at least one tool. Used to block unsafe replay. */
   currentTurnToolStarted?: boolean;
   /** Whether prompt-bearing provider control mutated the physical turn after its immutable handoff. */
@@ -187,6 +208,12 @@ export interface RuntimeHostStreamingSession {
   currentTraceSystemPromptSha256?: string;
   currentTraceRequestBlobSha256?: string;
   currentTraceTurnTerminalRecorded?: boolean;
+  /**
+   * Last `runtime.status` value already written to the trace for the current
+   * trace turn (`<turnId>\u0000<status>`). Providers repeat an identical status
+   * on every internal step; only transitions are persisted.
+   */
+  currentTraceStatusRecorded?: string;
   /** Whether this physical turn already published a runtime SSE terminal. */
   runtimeTerminalSseEmitted?: boolean;
   /** Durable crash-recovery attempt currently owning the provider turn. */
@@ -199,6 +226,14 @@ export interface RuntimeHostStreamingSession {
     materializedOutput: boolean;
     inputMutated?: boolean;
   };
+  /** Host-authorized next capacity attempt; distinct from the consumed physical turn. */
+  pendingCapacityRetry?: {
+    pendingIds: string[];
+    state: ProviderCapacityRetryState;
+    notBefore: number;
+  };
+  /** This scheduled retry was durably copied before daemon shutdown. */
+  capacityRetrySnapshotSaved?: boolean;
   /** Durable handoff failed before the prompt reached the provider. */
   durableTurnPreparationFailed?: boolean;
   /** Managed runtime credential selected for this provider process, if any. */
@@ -208,10 +243,22 @@ export interface RuntimeHostStreamingSession {
    * Native Pi steer must not keep a long-lived turn on a revoked/expired key.
    */
   currentRuntimeContextKey?: string;
+  currentBridgeTurnId?: string;
   /** Recovery timer for the narrow state where a provider is alive but not accepting queued input. */
   idleGapRecoveryTimer?: ReturnType<typeof setTimeout>;
   /** Timer that evicts an idle provider process from the runtime pool. */
   idleSessionEvictionTimer?: ReturnType<typeof setTimeout>;
+  /**
+   * Background tasks the provider opened (`task_started`) and has not reported
+   * finished. A session with an entry here is not idle: evicting it would kill
+   * the task with the provider process and lose the completion.
+   */
+  pendingBackgroundTasks?: Map<string, NativeBackgroundTask>;
+  /**
+   * Background outcomes whose wake the durable prompt queue has not accepted
+   * yet. They are being redelivered; until then the session is not idle.
+   */
+  undeliveredBackgroundWakes?: Map<string, UndeliveredBackgroundWake>;
   /**
    * Host-loop observer for skill-gate deliveries persisted in-process by the
    * authorize path. Set while the event loop owns this stream so live state
@@ -533,13 +580,15 @@ export function shutdownRuntimeStreamingSession(session: RuntimeHostStreamingSes
     session.pushMessage = null;
   }
 
+  // Abort owns cascading authority cleanup; terminal settlement releases only
+  // this turn's key and removes its listener, so the signal must happen first.
+  if (!session.abortController.signal.aborted) {
+    session.abortController.abort();
+  }
+
   if (session.onTurnComplete) {
     session.onTurnComplete();
     session.onTurnComplete = null;
-  }
-
-  if (!session.abortController.signal.aborted) {
-    session.abortController.abort();
   }
 }
 

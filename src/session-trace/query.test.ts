@@ -3,6 +3,7 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import { explainSessionTrace } from "./explain.js";
 import { recordSessionBlob, recordSessionEvent, sha256Text, upsertSessionTurn } from "./session-trace-db.js";
 import { parseSessionTraceTime, querySessionTrace } from "./query.js";
+import { getDb } from "../router/router-db.js";
 
 let stateDir: string | null = null;
 
@@ -299,6 +300,34 @@ describe("querySessionTrace", () => {
     expect(parseSessionTraceTime("2h", now)).toBe(now - 7_200_000);
     expect(parseSessionTraceTime("1234", now)).toBe(1234);
     expect(parseSessionTraceTime("2026-04-19T12:00:00.000Z", now)).toBe(now);
+  });
+  it("keeps the legacy session_name fallback indexable instead of a full table scan", () => {
+    seedCompleteTrace();
+
+    // session-trace/query.ts falls back to
+    //   (session_key IN (?) OR session_name IN (?))
+    // when the caller passes a name with no `sessions` row. Without an index on
+    // the name branch that OR degrades to a full scan of session_events: with
+    // 1.5M rows / 723MB of payload it took 8-25s in production (2026-10-25).
+    // The covering partial index on (timestamp DESC, session_key, session_name)
+    // keeps the fallback off the table; pin the plan so it cannot regress.
+    const plan = getDb()
+      .prepare(
+        `EXPLAIN QUERY PLAN
+         SELECT * FROM session_events
+         WHERE (session_key IN (?) OR session_name IN (?))
+           AND event_group != 'stream'
+           AND NOT (
+             event_type = 'adapter.raw'
+             OR event_type LIKE '%.stream%'
+             OR event_type LIKE '%.delta'
+             OR event_type LIKE '%provider_event%'
+           )`,
+      )
+      .all("agent:main:trace-session", "trace-session") as Array<{ detail: string }>;
+    const detail = plan.map((row) => row.detail).join("\n");
+    expect(detail).toContain("idx_session_events_visible_order_cover");
+    expect(detail).not.toMatch(/SCAN session_events(?!\s+USING)/);
   });
 });
 

@@ -1,3 +1,4 @@
+import { SessionResponseQueue } from "../gateway-response-order.js";
 import { StringCodec, type Subscription } from "nats";
 import { getNats } from "../nats.js";
 import type { MessageTarget } from "../runtime/message-types.js";
@@ -31,6 +32,8 @@ export interface ChannelPresenceConsumerOptions {
 }
 
 export class ChannelPresenceConsumer {
+  private readonly presenceQueue = new SessionResponseQueue();
+  private readonly deliveriesInFlight = new Set<Promise<void>>();
   private running = false;
   private loopPromise: Promise<void> | null = null;
   private subscription: Subscription | null = null;
@@ -55,6 +58,7 @@ export class ChannelPresenceConsumer {
     await this.loopPromise?.catch((error) => {
       log.debug("Channel presence consumer stopped after loop error", { error });
     });
+    await Promise.allSettled(this.deliveriesInFlight);
     this.subscription = null;
     this.loopPromise = null;
   }
@@ -79,10 +83,17 @@ export class ChannelPresenceConsumer {
         continue;
       }
 
-      await processChannelPresenceRequest(request, {
-        ...this.options,
-        presenceState: this.presenceState,
-      });
+      // A slow Slack API request must not hold presence for unrelated sessions.
+      const delivery = this.presenceQueue
+        .run(request.sessionName, () =>
+          processChannelPresenceRequest(request, {
+            ...this.options,
+            presenceState: this.presenceState,
+          }),
+        )
+        .catch((error) => log.warn("Native presence delivery failed", { sessionName: request.sessionName, error }));
+      this.deliveriesInFlight.add(delivery);
+      void delivery.finally(() => this.deliveriesInFlight.delete(delivery));
     }
   }
 }

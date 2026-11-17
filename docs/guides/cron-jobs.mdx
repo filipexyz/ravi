@@ -29,7 +29,7 @@ Jobs run inside the daemon, so `ravi daemon start` must be running.
     ```bash
     ravi cron show <id>
     ```
-    Look at `Agent`, `Account`, `Session`, `Reply session` and the `Routing` section. They tell you which session runs the prompt and which chat gets the answer (see [Where the answer goes](#where-the-answer-goes)).
+    Look at `Agent`, `Account`, `Session`, `Reply session` and the `Routing` section. They tell you which session runs the prompt and which chat gets the answer (see [Where the answer goes](#where-the-answer-goes)). Also check `Runs as`: a job that uses your personal connectors or Knowledge must run as you, and one someone else created uses Bases and Pages in their name (see [Who the job runs as](#who-the-job-runs-as)).
   </Step>
   <Step title="Run it once now">
     ```bash
@@ -49,6 +49,24 @@ Jobs run inside the daemon, so `ravi daemon start` must be running.
 <Tip>
 The easiest way to get answers in the right chat is to ask your agent, in that chat, to create the job. The agent runs `ravi cron add` from its session and the job remembers that session.
 </Tip>
+
+## Who the job runs as
+
+Every job has an owner, shown as `Runs as` in `ravi cron show <id>` and as `ownerPrincipal` and `runsAsOperator` in `--json`. The turn that creates the job sets it:
+
+- From the terminal, from your own direct chat, or when you (the owner) ask in a group, the job runs as `operator`.
+- When someone else asks in a chat, the job runs as that person's contact (`contact:<id>`). A `cron set` from such a turn that changes what the job runs or where it answers (its message, name, agent, reply session and so on) moves the job to that person too; editing its description, schedule, timeout or `delete-after` does not. For you it is narrower: someone else's job moves to you only when you write its message or command, so you never run a prompt you did not write with your own authority.
+
+A job runs with the authority of its current owner (its creator, or whoever last changed what it runs), never with your `ravi login`. Your login authenticates this Ravi installation; it does not lend your permissions to a job someone else owns.
+
+- A job someone else created acts as that person: `ravi bases` and Pages share, invites and access requests go out in their name, through their own `ravi link`, with their own role in the organization. Until they link their account the calls are refused with `ACTOR_NOT_LINKED`, and Ravi does not message them from the run, since nobody is asking. Personal connectors and Knowledge are your own, so they refuse the job (`CONNECTOR_SPEAKER_NOT_OWNER`, `KNOWLEDGE_TURN_NOT_OPERATOR`).
+- A job with no person as owner (`unknown`) is refused (`ACTOR_UNKNOWN`).
+
+`ravi cron add` and `ravi cron set` print a warning when the job does not run as you.
+
+Only you can own a shell job. A shell command runs with this machine's access and your credentials, so nothing can hold it to someone else's permissions. From anyone else's turn, `ravi cron add --shell` (and a `cron set` that would leave a shell job with someone else as owner) is refused with `CRON_SHELL_NOT_OPERATOR`, and the runner never runs a shell job someone else owns.
+
+The run still records `lastStatus: ok` when the agent turn completes, even if a command inside it was refused. So prove a job that needs these calls: for a recurring job, one `ravi cron run <id> --execute` produced the result you expected. A job that needs your connectors or Knowledge must run as you (`runsAsOperator: true` in `ravi cron show <id> --json`; a contact linked to you also acts as you). Don't run a one-shot job (`--at` or `--delete-after`) early to test it, because the manual run uses it up; check its settings and confirm after the scheduled run. An agent should report a refused job to you instead of disabling it.
 
 ## Schedules
 
@@ -138,6 +156,7 @@ ravi cron add "ETL batch" \
 - On success the run records `ok`, the exit code and the duration. Nothing is sent to any agent.
 - On failure (non-zero exit or timeout) the run records `error`, `lastError` with stderr, and `lastExitCode`. With `--on-error notify-session:<session>`, that session receives a `[System] Inform:` message with the command, exit code, stderr and stdout, and its agent decides what to do.
 - A one-shot (`--at` or `--delete-after`) shell job is deleted only after a successful run.
+- Only you can own a shell job: it is refused from anyone else's turn, and a shell job someone else owns does not run (see [Who the job runs as](#who-the-job-runs-as)).
 
 ## Run status
 
@@ -201,6 +220,13 @@ Scripts and other agents that create jobs on retries should pass `--idempotency-
     2. `ravi sessions read <session-name>`: the answer may be in the session.
     3. `ravi daemon logs -f`: `Response target unresolved — dropping emit` means the session that ran the turn has no chat to post to. See [Where the answer goes](#where-the-answer-goes).
     4. If the agent answered `@@SILENT@@`, nothing is posted by design.
+  </Accordion>
+  <Accordion title="It shows ok, but Bases or a connector refused it">
+    1. `ravi cron show <id> --json`: read `ownerPrincipal` and `runsAsOperator`.
+    2. `ACTOR_NOT_LINKED` with `linkFlow: routine`: the job runs as a contact who has not linked their Ravi account. They link it by messaging the agent in private; the job then acts as them.
+    3. `ACTOR_UNKNOWN` with `refusalReason: routine_not_operator_owned`: no person owns the job. Read its message or command and recreate it from the turn of the person it should act for.
+    4. `CONNECTOR_SPEAKER_NOT_OWNER` or `KNOWLEDGE_TURN_NOT_OPERATOR`: those are your own accounts, so only a job that runs as you can use them; recreate it from the terminal or your own chat.
+    5. For a recurring job, run `ravi cron run <id> --execute` once to check it.
   </Accordion>
   <Accordion title="A one-shot job shows (expired) in ravi cron list">
     Its time has passed without a successful run (the run failed, or the time was already past when you added it), and it will not run again. Delete it with `ravi cron rm <id> --execute`.

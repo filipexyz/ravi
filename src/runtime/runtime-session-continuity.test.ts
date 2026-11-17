@@ -33,7 +33,7 @@ describe("runtime session continuity", () => {
     stateDir = null;
   });
 
-  it("forks a thread from the parent when stale stored state is not resumable", () => {
+  it("does not replace an existing child with its parent when child state cannot resume", () => {
     getOrCreateSession(PARENT_SESSION_KEY, "agent-a", "/tmp/agent-a");
     updateProviderSession(PARENT_SESSION_KEY, "codex", "parent-provider-session");
 
@@ -47,10 +47,39 @@ describe("runtime session continuity", () => {
       defaultRuntimeProviderId: "claude",
     });
 
-    expect(continuity).toEqual({
-      forkFromProviderSessionId: "parent-provider-session",
-      resumeProviderSessionId: "parent-provider-session",
-    });
+    expect(continuity).toEqual({});
+  });
+
+  it("does not fork a parent when the child has durable history but lost provider state", () => {
+    getOrCreateSession(PARENT_SESSION_KEY, "agent-a", "/tmp/agent-a");
+    updateProviderSession(PARENT_SESSION_KEY, "codex", "parent-provider-session");
+    expect(
+      resolveRuntimeSessionContinuity({
+        dbSessionKey: THREAD_SESSION_KEY,
+        runtimeProviderId: "codex",
+        supportsSessionFork: true,
+        supportsSessionResume: true,
+        canResumeStoredSession: false,
+        defaultRuntimeProviderId: "codex",
+        hasSessionHistory: true,
+      }),
+    ).toEqual({});
+  });
+
+  it("does not bypass parent credential, skill or cwd compatibility for a new child", () => {
+    getOrCreateSession(PARENT_SESSION_KEY, "agent-a", "/tmp/agent-a");
+    updateProviderSession(PARENT_SESSION_KEY, "codex", "parent-provider-session");
+    expect(
+      resolveRuntimeSessionContinuity({
+        dbSessionKey: THREAD_SESSION_KEY,
+        runtimeProviderId: "codex",
+        supportsSessionFork: true,
+        supportsSessionResume: true,
+        canResumeStoredSession: false,
+        defaultRuntimeProviderId: "codex",
+        isParentSessionCompatible: () => false,
+      }),
+    ).toEqual({});
   });
 
   it("prefers resumable stored state over parent fork", () => {
@@ -89,6 +118,34 @@ describe("runtime session continuity", () => {
     expect(continuity).toEqual({
       forkFromProviderSessionId: "parent-provider-session",
       resumeProviderSessionId: "parent-provider-session",
+    });
+  });
+
+  it("never forks a trigger's own session into a thread opened from it", () => {
+    // What the owner's turns read stays in the own session: a chat thread
+    // routed to it gets a session that starts on its own.
+    const own = "agent:agent-a:trigger:ab12cd34:own";
+    getOrCreateSession(own, "agent-a", "/tmp/agent-a", undefined, { triggerRunner: true });
+    updateProviderSession(own, "codex", "own-provider-session");
+    const fork = (dbSessionKey: string) =>
+      resolveRuntimeSessionContinuity({
+        dbSessionKey,
+        runtimeProviderId: "codex",
+        supportsSessionFork: true,
+        supportsSessionResume: true,
+        canResumeStoredSession: false,
+        defaultRuntimeProviderId: "codex",
+      });
+
+    expect(fork(`${own}:thread:1713000000.000100`)).toEqual({});
+
+    // The plain session of a trigger nobody owns forks as any session does.
+    const plain = "agent:agent-a:trigger:ab12cd34";
+    getOrCreateSession(plain, "agent-a", "/tmp/agent-a", undefined, { triggerRunner: true });
+    updateProviderSession(plain, "codex", "plain-provider-session");
+    expect(fork(`${plain}:thread:1713000000.000100`)).toEqual({
+      forkFromProviderSessionId: "plain-provider-session",
+      resumeProviderSessionId: "plain-provider-session",
     });
   });
 });

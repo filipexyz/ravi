@@ -1,16 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { attachChatToSession, getOrCreateSession, updateSessionName } from "../router/sessions.js";
-import { dbUpsertChat } from "../router/router-db.js";
+import { dbUpsertChat, getDb, closeRouterDb } from "../router/router-db.js";
 import { recordDeliveryTrace, recordResponseEmittedTrace } from "./channel-trace.js";
 import { querySessionTrace } from "./query.js";
-import { recordAdapterRequestTrace } from "./runtime-trace.js";
+import { recordAdapterRequestTrace, recordTerminalTurnTrace, summarizeRuntimeCapabilities } from "./runtime-trace.js";
 import {
+  getLatestSessionTurn,
   getSessionTraceBlob,
+  getSessionTurn,
   listRecentSessionEventsByType,
-  listSessionEvents,
   recordSessionEvent,
+  recordSessionBlob,
+  upsertSessionTurn,
 } from "./session-trace-db.js";
+import { listSessionEventsForTest } from "../test/session-trace-events.js";
 
 let stateDir: string | null = null;
 
@@ -36,6 +40,151 @@ describe("session trace query", () => {
     stateDir = null;
   });
 
+  it("persists only normalized failure diagnostics in trace events and artifacts", () => {
+    const cause = "provider returned 401 on POST /v1/audio; cookie=session=fixture-cookie; private-tail";
+    const projectedCause = "provider returned 401 on POST /v1/audio; cookie=[redacted:cookie]";
+    const failure = {
+      code: "PROVIDER_DENIED",
+      message: "Upload failed",
+      cause,
+      context: { operation: "media send", provider: "omni", status: 401 },
+      body: { transcript: "PRIVATE_BODY" },
+      stack: "PRIVATE_STACK",
+      extra: "PRIVATE_FIELD",
+    };
+    const event = recordSessionEvent({
+      sessionKey: "agent:main:trace-limit",
+      sessionName: "trace-limit",
+      eventType: "tool.error",
+      eventGroup: "tool",
+      payloadJson: failure,
+      error: cause,
+      preview: cause,
+    });
+    const blob = recordSessionBlob({ kind: "tool.error", contentJson: failure });
+    const stored = querySessionTrace({ session: "trace-limit", limit: 10 }).events.find((item) => item.id === event.id);
+    expect(stored?.payloadJson).toEqual({
+      code: "PROVIDER_DENIED",
+      message: "Upload failed",
+      cause: projectedCause,
+      context: failure.context,
+    });
+    expect(stored?.error).toBe(projectedCause);
+    expect(stored?.preview).toBe(projectedCause);
+    expect(getSessionTraceBlob(blob.sha256)?.contentJson).toEqual(stored?.payloadJson);
+    for (const secret of ["fixture-cookie", "private-tail", "PRIVATE_BODY", "PRIVATE_STACK", "PRIVATE_FIELD"])
+      expect(JSON.stringify({ stored, blob })).not.toContain(secret);
+  });
+
+  it("keeps typed failure lifecycle controls and uses the event's original cause", () => {
+    const controls = {
+      reason: "no_agent",
+      stage: "dispatch",
+      agentId: "main",
+      userFacing: true,
+      abort_reason: "runtime_credential_rate_limited",
+      autoRecovered: false,
+      recoverable: true,
+      suppressedRecoverable: false,
+      credentialRetry: true,
+      credentialFailureKind: "rate_limited",
+      recoveryKind: "provider_session_missing",
+      resumeStashedMessages: true,
+      userResponseSuppressed: false,
+      is_error: true,
+      restartAttempts: 2,
+      stashedQueueSize: 0,
+      previousModel: "openai/gpt-5.5",
+      nextModel: "openai/gpt-4.1",
+      strategy: "direct-set",
+      fallback: "restart-next-turn",
+    };
+    const event = recordSessionEvent({
+      sessionKey: "agent:main:trace-limit",
+      eventType: "dispatch.intake_failed",
+      eventGroup: "dispatch",
+      error: "Runtime prompt intake failed (no_agent)",
+      payloadJson: { ...controls, arbitrary: "PRIVATE_FIELD", body: "PRIVATE_BODY", stack: "PRIVATE_STACK" },
+    });
+    expect(event.payloadJson).toEqual({
+      ...controls,
+      message: "Runtime prompt intake failed (no_agent)",
+      cause: "Runtime prompt intake failed (no_agent)",
+      context: {},
+    });
+    expect(JSON.stringify(event.payloadJson)).not.toContain("PRIVATE_");
+  });
+
+  it("preserves the canonical redaction marker in diagnostic artifacts", () => {
+    const blob = recordSessionBlob({
+      kind: "tool.error",
+      contentJson: { message: "provider denied", cause: "OPENAI_API_KEY=PRIVATE_CREDENTIAL" },
+    });
+    expect(getSessionTraceBlob(blob.sha256)?.contentJson).toEqual({
+      message: "provider denied",
+      cause: "OPENAI_API_KEY=[redacted:openai_api_key]",
+      context: {},
+    });
+  });
+
+  it("rejects secret or malformed lifecycle controls without reading arbitrary properties", () => {
+    let unknownReads = 0;
+    const event = recordSessionEvent({
+      sessionKey: "agent:main:trace-limit",
+      eventType: "turn.failed",
+      eventGroup: "turn",
+      error: "provider denied",
+      payloadJson: {
+        reason: "no_agent?key=PRIVATE_QUERY",
+        stage: "PRIVATE_STAGE",
+        agentId: "sk-PRIVATE_IDENTIFIER",
+        autoRecovered: "PRIVATE_BOOLEAN",
+        restartAttempts: Infinity,
+        stashedQueueSize: -1,
+        previousModel: "model?key=PRIVATE_QUERY",
+        nextModel: "sk-PRIVATE_MODEL",
+        strategy: "PRIVATE_STRATEGY",
+        fallback: "PRIVATE_FALLBACK",
+        get recoverable() {
+          throw new Error("PRIVATE_GETTER");
+        },
+        get arbitrary() {
+          unknownReads++;
+          throw new Error("PRIVATE_UNKNOWN_GETTER");
+        },
+      },
+    });
+    expect(event.payloadJson).toEqual({ message: "provider denied", cause: "provider denied", context: {} });
+    expect(unknownReads).toBe(0);
+  });
+
+  it("normalizes a provider event's cause without retaining raw bodies or headers", () => {
+    const event = recordSessionEvent({
+      sessionKey: "agent:main:trace-limit",
+      eventType: "turn.failed",
+      eventGroup: "turn",
+      error: "model unavailable",
+      payloadJson: {
+        recoverable: false,
+        rawEvent: {
+          message: "provider returned 401; cookie=PRIVATE_COOKIE; PRIVATE_TAIL",
+          status: 401,
+          body: { transcript: "PRIVATE_BODY" },
+          headers: { authorization: "PRIVATE_HEADER" },
+          stack: "PRIVATE_STACK",
+          arbitrary: "PRIVATE_FIELD",
+        },
+      },
+    });
+    expect(event.payloadJson).toEqual({
+      recoverable: false,
+      message: "model unavailable",
+      cause: "model unavailable\nCaused by: provider returned 401; cookie=[redacted:cookie]",
+      context: { status: 401 },
+    });
+    expect(JSON.stringify(event.payloadJson)).not.toContain("PRIVATE_");
+  });
+
   it("applies stream suppression before the bounded timeline limit", () => {
     recordTraceEvent("channel.message.received", "channel", 1000);
     recordTraceEvent("adapter.raw", "adapter", 1100);
@@ -52,6 +201,71 @@ describe("session trace query", () => {
         (event) => event.eventType,
       ),
     ).toEqual(["adapter.raw"]);
+  });
+
+  it("reads a session's newest turn started at or after a time", () => {
+    const sessionKey = "agent:main:latest-turn";
+    upsertSessionTurn({ turnId: "turn-old", sessionKey, status: "complete", startedAt: 1000, updatedAt: 1500 });
+    upsertSessionTurn({
+      turnId: "turn-new",
+      sessionKey,
+      status: "complete",
+      startedAt: 3000,
+      completedAt: 3500,
+      updatedAt: 3500,
+    });
+    upsertSessionTurn({
+      turnId: "turn-other",
+      sessionKey: "agent:main:other",
+      status: "running",
+      startedAt: 9000,
+      updatedAt: 9000,
+    });
+
+    expect(getLatestSessionTurn(sessionKey)?.turnId).toBe("turn-new");
+    expect(getLatestSessionTurn(sessionKey, 3000)).toMatchObject({ turnId: "turn-new", completedAt: 3500 });
+    expect(getLatestSessionTurn(sessionKey, 3001)).toBeNull();
+  });
+
+  it("upgrades existing turns while preserving measured usage and unknown new usage", () => {
+    upsertSessionTurn({
+      turnId: "legacy",
+      sessionKey: "agent:main:upgrade",
+      status: "complete",
+      startedAt: 1000,
+      updatedAt: 2000,
+      inputTokens: 42,
+      outputTokens: 7,
+      costUsd: 0.02,
+    });
+    // Reproduce the previous table shape, then open it through the real migration path.
+    getDb().exec("ALTER TABLE session_turns DROP COLUMN output_state");
+    closeRouterDb();
+    expect(getSessionTurn("legacy")).toMatchObject({
+      inputTokens: 42,
+      outputTokens: 7,
+      costUsd: 0.02,
+      outputState: null,
+    });
+    upsertSessionTurn({
+      turnId: "new-failed",
+      sessionKey: "agent:main:upgrade",
+      status: "failed",
+      startedAt: 3000,
+      updatedAt: 4000,
+      inputTokens: null,
+      outputTokens: null,
+      costUsd: null,
+      outputState: "incomplete",
+    });
+    closeRouterDb();
+    expect(getSessionTurn("new-failed")).toMatchObject({
+      inputTokens: null,
+      outputTokens: null,
+      costUsd: null,
+      outputState: "incomplete",
+    });
+    expect(getSessionTurn("legacy")?.inputTokens).toBe(42);
   });
 
   it("lists recent events by type using newest event ids first", () => {
@@ -134,6 +348,43 @@ describe("session trace query", () => {
     });
   });
 
+  it("records the signals rendered into the turn, and omits them when none were", () => {
+    const base = {
+      sessionKey: "agent:main:trace-limit",
+      sessionName: "trace-limit",
+      agentId: "main",
+      provider: "codex",
+      model: "gpt-5",
+      prompt: "hello",
+      systemPrompt: "system",
+      cwd: "/tmp/main",
+      resume: false,
+      fork: false,
+      hasHooks: false,
+      pluginNames: [],
+      mcpServerNames: [],
+      hasRemoteSpawn: false,
+    };
+    const withSignals = recordAdapterRequestTrace({
+      ...base,
+      runId: "run-signals",
+      turnId: "turn-signals",
+      signals: {
+        surfaced: ["sig_1"],
+        skipped: [{ id: "sig_2", reason: "budget" }],
+        budget: { used: 1, limit: 3, held: 1 },
+      },
+    });
+    expect(getSessionTraceBlob(withSignals!.requestBlobSha256)?.contentJson).toMatchObject({
+      signalsSurfaced: ["sig_1"],
+      signalsSkipped: [{ id: "sig_2", reason: "budget" }],
+      signalsBudget: { used: 1, limit: 3, held: 1 },
+    });
+
+    const without = recordAdapterRequestTrace({ ...base, runId: "run-no-signals", turnId: "turn-no-signals" });
+    expect(getSessionTraceBlob(without!.requestBlobSha256)?.contentJson).not.toHaveProperty("signalsSurfaced");
+  });
+
   it("records canonical and provider delivery receipt identity", () => {
     const sessionKey = "agent:main:delivery-receipt";
     const sessionName = "main-delivery-receipt";
@@ -157,7 +408,7 @@ describe("session trace query", () => {
       },
     });
 
-    expect(listSessionEvents(sessionKey)[0]?.payloadJson).toMatchObject({
+    expect(listSessionEventsForTest(sessionKey)[0]?.payloadJson).toMatchObject({
       deliveryMessageId: "slack:C123:1713000000.000100",
       canonicalMessageId: "cm_123",
       platformMessageId: "1713000000.000100",
@@ -201,13 +452,96 @@ describe("session trace query", () => {
       timestamp: 30,
     });
 
-    const event = listSessionEvents(sessionKey)[0];
+    const event = listSessionEventsForTest(sessionKey)[0];
     expect(event).toMatchObject({
       eventType: "response.emitted",
       sourceChatId: "5511999999999@s.whatsapp.net",
       canonicalChatId: chat.id,
       actorType: "agent",
       actorAgentId: "main",
+    });
+  });
+});
+
+describe("session turn usage and output state", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-session-turn-usage-test-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("keeps explicit terminal silence distinct from missing terminal after database reopen", () => {
+    const sessionKey = "agent:main:silence";
+    for (const turnId of ["silent", "unterminated"]) {
+      upsertSessionTurn({ turnId, sessionKey, status: "running", startedAt: 1000, updatedAt: 1000 });
+    }
+    recordTerminalTurnTrace({
+      sessionKey,
+      turnId: "silent",
+      status: "complete",
+      eventType: "turn.complete",
+      outputState: "silent",
+      completedAt: 2000,
+    });
+    closeRouterDb();
+    expect(getSessionTurn("silent")).toMatchObject({
+      status: "complete",
+      outputState: "silent",
+      completedAt: 2000,
+    });
+    expect(getSessionTurn("unterminated")).toMatchObject({
+      status: "running",
+      outputState: null,
+      completedAt: null,
+    });
+    expect(querySessionTrace({ session: sessionKey }).turns.find((turn) => turn.turnId === "silent")?.outputState).toBe(
+      "silent",
+    );
+  });
+
+  it("keeps unreported usage as NULL, never 0, and round-trips the output state", () => {
+    const sessionKey = "agent:main:usage-null";
+    upsertSessionTurn({ turnId: "turn-null", sessionKey, status: "running", startedAt: 1000, updatedAt: 1000 });
+    upsertSessionTurn({
+      turnId: "turn-null",
+      sessionKey,
+      status: "failed",
+      inputTokens: null,
+      outputTokens: null,
+      costUsd: null,
+      outputState: "incomplete",
+      completedAt: 2000,
+      updatedAt: 2000,
+    });
+    const turn = getSessionTurn("turn-null");
+    expect(turn?.inputTokens).toBeNull();
+    expect(turn?.outputTokens).toBeNull();
+    expect(turn?.cacheReadTokens).toBeNull();
+    expect(turn?.costUsd).toBeNull();
+    expect(turn?.outputState).toBe("incomplete");
+
+    upsertSessionTurn({ turnId: "turn-null", sessionKey, status: "failed", inputTokens: 12, updatedAt: 3000 });
+    expect(getSessionTurn("turn-null")?.inputTokens).toBe(12);
+    expect(getSessionTurn("turn-null")?.outputState).toBe("incomplete");
+  });
+});
+
+describe("runtime capability summary", () => {
+  it("reports host-disabled runtime controls apart from the supported ones", () => {
+    const summary = summarizeRuntimeCapabilities({
+      runtimeControl: {
+        supported: true,
+        operations: ["thread.read", "turn.steer", "turn.follow_up", "turn.interrupt"],
+      },
+    } as unknown as Parameters<typeof summarizeRuntimeCapabilities>[0]);
+
+    expect(summary.runtimeControl).toEqual({
+      supported: true,
+      operations: ["thread.read", "turn.interrupt"],
+      disabledOperations: ["turn.steer", "turn.follow_up"],
     });
   });
 });

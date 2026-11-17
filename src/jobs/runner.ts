@@ -16,19 +16,62 @@ import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { spawnedAutomationEnv } from "../runtime/turn-origin.js";
 import { logger } from "../utils/logger.js";
-import { dbFinishJob, dbGetJob, dbListJobs, dbListRunningJobs, dbMarkJobNotified, dbMarkJobRunning } from "./store.js";
+import {
+  dbClaimJobDelivery,
+  dbFinishJob,
+  dbGetJob,
+  dbListJobs,
+  dbListRunningJobs,
+  dbListUndeliveredJobs,
+  dbMarkJobNotified,
+  dbMarkJobRunning,
+  dbRecordJobDeliveryFailure,
+} from "./store.js";
 import { isJobTerminal, type JobRecord } from "./types.js";
+import { jobStatusFromExitCode, readJobExitState } from "./detach.js";
 
 const log = logger.child("jobs:runner");
 
 export const JOB_START_TOPIC = "ravi.jobs.start";
 export const JOB_KILL_TOPIC = "ravi.jobs.kill";
+/** Publicado pelo processo que terminou o comando (o shell do detach). */
+export const JOB_FINISHED_TOPIC = "ravi.jobs.finished";
 
 /** Depois disso, quem ignorou SIGTERM recebe SIGKILL. */
 export const KILL_ESCALATION_MS = 5_000;
 
 /** Tail que acompanha o aviso de conclusão. Suficiente para decidir, não para afogar. */
 export const JOB_RESULT_TAIL_CHARS = 2_000;
+/**
+ * Tentativas de entregar um desfecho antes de desistir. O reconcile roda a cada
+ * 30 s, então isto cobre alguns minutos de fila fora do ar; depois disso a linha
+ * fica com `delivery_error` como registro de quem ficou sem resposta.
+ */
+export const JOB_DELIVERY_MAX_ATTEMPTS = 20;
+
+/**
+ * Uma entrega `inflight` mais velha que isto é de quem morreu ou travou no meio
+ * da publicação, e o reconcile pode retomá-la.
+ *
+ * Precisa ser menor que a janela de deduplicação do SESSION_PROMPTS menos o
+ * intervalo do reconcile (30 s): o stream tem `max_age` de 60 s, e a janela de
+ * duplicatas do JetStream nunca passa do `max_age`. Com 30 s, a retomada cai
+ * entre 30 s e 60 s depois da reserva, dentro da janela — se a primeira
+ * publicação chegou à fila, a segunda colide com a chave e é descartada.
+ * Depois da janela (daemon fora por mais de um minuto com entrega em voo) a
+ * garantia volta a ser "pelo menos uma vez".
+ */
+export const JOB_DELIVERY_INFLIGHT_STALE_MS = 30_000;
+
+/** Chave estável do desfecho de um job: toda publicação dele carrega a mesma. */
+export function jobOutcomeMessageId(jobId: string): string {
+  return `job:${jobId}:done`;
+}
+
+export interface JobOutcomeDelivery {
+  /** Id de deduplicação da publicação; igual em toda tentativa do mesmo job. */
+  messageId: string;
+}
 
 export interface JobsRunnerOptions {
   /** Injetável para teste. */
@@ -38,7 +81,7 @@ export interface JobsRunnerOptions {
     logPath: string,
     env: Record<string, string>,
   ) => { pid: number | null; onExit: (cb: (code: number | null, signal: string | null) => void) => void };
-  notifySession?: (job: JobRecord, summary: string) => Promise<void>;
+  notifySession?: (job: JobRecord, summary: string, delivery: JobOutcomeDelivery) => Promise<void>;
   now?: () => number;
 }
 
@@ -49,14 +92,18 @@ interface SpawnedJob {
 export class JobsRunner {
   private running = false;
   private readonly jobs = new Map<string, SpawnedJob>();
+  /** Jobs cujo kill foi pedido: o desfecho não pode ser confundido com falha própria. */
+  private readonly killRequested = new Set<string>();
   private subscription: { unsubscribe?: () => void } | undefined;
   private reconcileTimer: ReturnType<typeof setInterval> | undefined;
   private readonly spawnCommand: NonNullable<JobsRunnerOptions["spawnCommand"]>;
   private readonly notify: NonNullable<JobsRunnerOptions["notifySession"]>;
+  private readonly now: () => number;
 
   constructor(options: JobsRunnerOptions = {}) {
     this.spawnCommand = options.spawnCommand ?? defaultSpawnCommand;
     this.notify = options.notifySession ?? defaultNotifySession;
+    this.now = options.now ?? Date.now;
   }
 
   async start(): Promise<void> {
@@ -69,6 +116,7 @@ export class JobsRunner {
     this.subscription = nats.subscribe(JOB_START_TOPIC) as unknown as { unsubscribe?: () => void };
     void this.consumeStartRequests();
     void this.consumeKillRequests();
+    void this.consumeFinishedRequests();
 
     this.reconcileTimer = setInterval(() => {
       void this.reconcileOrphans();
@@ -127,20 +175,72 @@ export class JobsRunner {
     return true;
   }
 
-  /** Entrega o desfecho na sessão que pediu. Sem sessão, não há para quem avisar. */
+  /**
+   * Entrega o desfecho na sessão que pediu. Sem sessão, não há para quem avisar.
+   *
+   * Várias rotas veem o mesmo desfecho (o tópico publicado pelo CLI, o reconcile,
+   * o kill), e a publicação é assíncrona. Por isso a entrega é reservada no banco
+   * ANTES do await: quem não leva a reserva não publica. Reler `notifiedAt` não
+   * bastava — ele só é gravado depois da publicação, e nesse intervalo uma
+   * segunda rota publicava o mesmo job e a sessão rodava dois turnos.
+   */
   private async deliverOutcome(job: JobRecord): Promise<void> {
     if (!job.sessionName) return;
+    const claimed = dbClaimJobDelivery(job.id, { staleAfterMs: JOB_DELIVERY_INFLIGHT_STALE_MS, now: this.now() });
+    if (!claimed) return;
+    const current = dbGetJob(job.id);
+    if (!current?.sessionName) return;
     try {
-      await this.notify(job, buildJobOutcomeSummary(job));
-      dbMarkJobNotified(job.id);
+      await this.notify(current, buildJobOutcomeSummary(current), { messageId: jobOutcomeMessageId(current.id) });
+      dbMarkJobNotified(current.id);
     } catch (error) {
-      log.warn("Could not deliver job outcome to session", { jobId: job.id, sessionName: job.sessionName, error });
+      // Nunca engolir: a linha guarda o motivo e o reconcile tenta de novo.
+      const reason = error instanceof Error ? error.message : String(error);
+      dbRecordJobDeliveryFailure(current.id, reason);
+      log.error("Could not deliver job outcome to session; will retry", {
+        jobId: current.id,
+        sessionName: current.sessionName,
+        attempts: current.deliveryAttempts + 1,
+        error,
+      });
     }
+  }
+
+  /**
+   * Um job terminou fora do daemon (detach) e avisou pelo tópico.
+   *
+   * Idempotente: o `finish` do CLI pode chegar duas vezes, e o reconcile pode
+   * ter chegado antes. Quem já foi avisado não é avisado de novo.
+   */
+  async handleJobFinished(jobId: string): Promise<void> {
+    const job = dbGetJob(jobId);
+    if (!job) return;
+    if (!isJobTerminal(job.status)) this.finishFromExitState(job);
+    const finished = dbGetJob(jobId);
+    if (!finished || !isJobTerminal(finished.status) || finished.notifiedAt) return;
+    await this.deliverOutcome(finished);
+  }
+
+  /**
+   * O shell que rodou o comando escreveu o exit code. Esse arquivo é a verdade:
+   * `pid vivo` não distingue comando terminando de processo reutilizado, e
+   * `signal` não é adivinhável a partir do banco.
+   */
+  private finishFromExitState(job: JobRecord): boolean {
+    const state = readJobExitState(job.logPath);
+    if (!state) return false;
+    dbFinishJob(job.id, {
+      status: jobStatusFromExitCode(state.exitCode),
+      exitCode: state.exitCode,
+      signal: state.signal,
+    });
+    return true;
   }
 
   async killJob(jobId: string): Promise<boolean> {
     const job = dbGetJob(jobId);
     if (!job || isJobTerminal(job.status)) return false;
+    this.killRequested.add(jobId);
     const pid = this.jobs.get(jobId)?.pid ?? job.pid ?? null;
     if (!pid) {
       dbFinishJob(jobId, { status: "killed", exitCode: null, signal: "SIGTERM" });
@@ -154,10 +254,47 @@ export class JobsRunner {
       if (isPidAlive(pid)) killProcessGroup(pid, "SIGKILL");
     }, KILL_ESCALATION_MS);
     escalation.unref?.();
+    // Job criado fora do daemon não tem `onExit` para chamar: alguém precisa
+    // observar a morte e entregar o desfecho, senão o kill parece não ter efeito.
+    if (!this.jobs.has(jobId)) void this.settleKilledJob(jobId, pid);
     return true;
   }
 
-  private async reconcileOrphans(): Promise<void> {
+  private async settleKilledJob(jobId: string, pid: number): Promise<void> {
+    const deadline = Date.now() + KILL_ESCALATION_MS + 2_000;
+    while (Date.now() < deadline && isPidAlive(pid)) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    if (this.jobs.has(jobId)) return;
+    const job = dbGetJob(jobId);
+    if (!job) return;
+    // O runner que rodou o comando também fecha a linha quando termina. Neste
+    // ponto ela já pode estar terminal — o que falta não é o status, é a entrega.
+    if (!isJobTerminal(job.status) && !this.finishFromExitState(job)) {
+      dbFinishJob(jobId, { status: "killed", exitCode: null, signal: "SIGTERM" });
+    }
+    const finished = dbGetJob(jobId);
+    if (finished && !finished.notifiedAt) await this.deliverOutcome(finished);
+  }
+
+  /** Desfechos que terminaram mas não chegaram à sessão (fila fora do ar, daemon reiniciando). */
+  async redeliverUndeliveredOutcomes(): Promise<void> {
+    const undelivered = dbListUndeliveredJobs({
+      maxAttempts: JOB_DELIVERY_MAX_ATTEMPTS,
+      staleAfterMs: JOB_DELIVERY_INFLIGHT_STALE_MS,
+      now: this.now(),
+    });
+    for (const job of undelivered) {
+      await this.deliverOutcome(job);
+    }
+  }
+
+  async reconcileOrphans(): Promise<void> {
+    await this.reconcileRunningJobs();
+    await this.redeliverUndeliveredOutcomes();
+  }
+
+  private async reconcileRunningJobs(): Promise<void> {
     for (const job of dbListRunningJobs()) {
       if (this.jobs.has(job.id)) continue;
       if (job.status === "pending") {
@@ -165,13 +302,33 @@ export class JobsRunner {
         this.startJob(job.id);
         continue;
       }
+      // Job de detach: o estado escrito pelo shell fecha o job com o código real.
+      if (this.finishFromExitState(job)) {
+        const finished = dbGetJob(job.id);
+        if (finished && !finished.notifiedAt) await this.deliverOutcome(finished);
+        continue;
+      }
       if (job.pid && isPidAlive(job.pid)) continue;
-      dbFinishJob(job.id, { status: "failed", exitCode: null, signal: null });
+      const killed = this.killRequested.has(job.id);
+      dbFinishJob(job.id, {
+        status: killed ? "killed" : "failed",
+        exitCode: null,
+        signal: killed ? "SIGTERM" : null,
+      });
       const finished = dbGetJob(job.id);
       if (finished && !finished.notifiedAt) {
         // O processo sumiu sem o daemon ver: entrega o que houver no log.
         await this.deliverOutcome(finished);
       }
+    }
+  }
+
+  private async consumeFinishedRequests(): Promise<void> {
+    for await (const event of nats.subscribe(JOB_FINISHED_TOPIC)) {
+      if (!this.running) return;
+      const data = event.data as { jobId?: string } | undefined;
+      if (!data?.jobId) continue;
+      await this.handleJobFinished(data.jobId);
     }
   }
 
@@ -216,14 +373,19 @@ export function readJobTail(logPath: string, maxChars = JOB_RESULT_TAIL_CHARS): 
   }
 }
 
-async function defaultNotifySession(job: JobRecord, summary: string): Promise<void> {
+async function defaultNotifySession(job: JobRecord, summary: string, delivery: JobOutcomeDelivery): Promise<void> {
   if (!job.sessionName) return;
-  await publishSessionPrompt(job.sessionName, {
-    prompt: summary,
-    deliveryBarrier: "after_response",
-    deliveryBarrierSource: "default",
-    _jobOutcome: { jobId: job.id, status: job.status },
-  });
+  await publishSessionPrompt(
+    job.sessionName,
+    {
+      prompt: summary,
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
+      _jobOutcome: { jobId: job.id, status: job.status },
+    },
+    // Mesma chave em toda tentativa: a fila descarta a republicação do mesmo desfecho.
+    { messageId: delivery.messageId },
+  );
 }
 
 function defaultSpawnCommand(command: string, cwd: string | null, logPath: string, env: Record<string, string>) {
@@ -283,6 +445,14 @@ export async function startJobsRunner(): Promise<void> {
   if (process.env.RAVI_JOBS_ENABLED === "0") {
     log.info("Jobs runner disabled by RAVI_JOBS_ENABLED=0");
     return;
+  }
+  // O wrapper de detach precisa existir antes do primeiro comando longo, e precisa
+  // ser gerado pelo mesmo runtime que observa os jobs.
+  try {
+    const { ensureDetachScript } = await import("./detach-script.js");
+    ensureDetachScript();
+  } catch (error) {
+    log.warn("Could not materialize the detach wrapper; long commands stay in the turn", { error });
   }
   await getJobsRunner().start();
 }

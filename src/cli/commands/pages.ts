@@ -1,3 +1,4 @@
+import { errorDiagnostic, redactDiagnosticText } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { z } from "zod";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option } from "../decorators.js";
@@ -6,8 +7,10 @@ import { CloudAuthError, cloudAuthErrorFromUnknown } from "../../cloud-auth/erro
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import { resolveConsoleProjectRef, type ConsoleScopeResolverDeps } from "../../console-scope/resolver.js";
 import type { ResolvedConsoleScope } from "../../console-scope/types.js";
+import { ArtifactInputError } from "../../artifacts/store.js";
 import {
   publishArtifactToConsole,
+  validateArtifactPublishSource,
   type ArtifactPublishDeps,
   type ArtifactPublishResult,
 } from "../../artifacts/publish-client.js";
@@ -120,8 +123,15 @@ import {
 } from "../../pages/ship.js";
 import { CONTRACT_EXIT_USAGE, ContractError, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
 import { getContext } from "../context.js";
-import { plannedPageDomainDns, plannedPageDomainDnsLines } from "../../pages/domain-setup.js";
+import {
+  type PageCustomDomain,
+  pageCustomDomainLines,
+  plannedPageDomainDns,
+  plannedPageDomainDnsLines,
+  projectPageCustomDomains,
+} from "../../pages/domain-setup.js";
 import { jsonObjectSchema, jsonValueSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
+import { sanitizePayloadInvalidMessage } from "../payload-error-message.js";
 import { readConfirmedSecret, type ConfirmedSecretInputOptions } from "../secret-input.js";
 import { artifactPublishReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
 
@@ -513,9 +523,12 @@ export class PagesCommands {
             failure.code,
             block ? `${failure.message} This turn is not the operator's own: ${block.why}.` : failure.message,
             {
-              asJson,
-              exitCode: failure.exitCode,
-              details: block ? { ...failure.details, turn: block.turn } : failure.details,
+              ...{
+                asJson,
+                exitCode: failure.exitCode,
+                details: block ? { ...failure.details, turn: block.turn } : failure.details,
+              },
+              diagnostic: errorDiagnostic(error, { operation: "pages read" }),
             },
           );
         }
@@ -831,6 +844,9 @@ export class PagesCommands {
       const parsed = parsePublishArgs(args, projectOption, siteOption);
       const normalizedVisibility = normalizePageVisibility(visibility);
       const parsedArtifactVersion = artifactVersion ? parseInteger(artifactVersion, "--artifact-version") : undefined;
+      // Side-effect-free source checks run before the brake, so a dry-run
+      // rejects a missing source or entrypoint instead of approving it.
+      await validateArtifactPublishSource(parsed.source, { entrypoint });
       if (execute !== true) {
         // Write brake (Manual v2 7.8): publishing uploads content and can
         // activate a release on a reachable route. Dry-run by default and exit 3
@@ -841,7 +857,7 @@ export class PagesCommands {
             project: parsed.project ?? "(Console scope default)",
             site: parsed.site ?? "(project Pages host)",
             source: parsed.source,
-            route: route ?? "/",
+            route: normalizePageRoutePath(route),
             visibility: normalizedVisibility ?? "(provider default)",
             entrypoint: entrypoint ?? "index.html",
             artifactVersion: parsedArtifactVersion ?? "latest",
@@ -1518,14 +1534,17 @@ export class PagesAssertionAudienceCommands {
         const rejection = describeAssertionAudienceSetRejection(error);
         if (rejection) {
           contractFail("pages assertion audiences set", "PAYLOAD_INVALID", rejection.message, {
-            asJson,
-            exitCode: CONTRACT_EXIT_USAGE,
-            details: {
-              retryable: false,
-              status: 400,
-              suggestedAction: rejection.suggestedAction,
-              ...(rejection.issues ? { issues: rejection.issues } : {}),
+            ...{
+              asJson,
+              exitCode: CONTRACT_EXIT_USAGE,
+              details: {
+                retryable: false,
+                status: 400,
+                suggestedAction: rejection.suggestedAction,
+                ...(rejection.issues ? { issues: rejection.issues } : {}),
+              },
             },
+            diagnostic: errorDiagnostic(error, { operation: "pages assertion audiences set" }),
           });
         }
         throw error;
@@ -2117,6 +2136,24 @@ const pageDomainBindReturnSchema = z.object({
   total: z.number(),
 });
 
+const consoleScopeNamedRefSchema = z.object({
+  id: z.string().nullable().optional(),
+  slug: z.string().nullable().optional(),
+  name: z.string().nullable().optional(),
+});
+
+const resolvedConsoleScopeSchema = z.object({
+  consoleUrl: z.string(),
+  organization: consoleScopeNamedRefSchema.nullable().optional(),
+  project: consoleScopeNamedRefSchema.extend({ ref: z.string() }).nullable().optional(),
+  source: z.string(),
+});
+
+// `pages publish` returns the artifact publish result plus the Console scope it
+// resolved. The artifact schema is strict, so the scope must be declared here or
+// the gateway answers a successful publish with RETURN_SHAPE_ERROR.
+const pagePublishReturnSchema = artifactPublishReturnSchema.extend({ scope: resolvedConsoleScopeSchema });
+
 const pagePasswordReturnSchema = z.object({
   success: z.literal(true),
   action: z.enum(["remove", "set", "status"]),
@@ -2334,7 +2371,7 @@ declareCommandReturns(PagesCommands, {
   read: pageReadReturnSchema,
   create: pageSiteCreateReturnSchema,
   ship: pageShipReturnSchema,
-  publish: artifactPublishReturnSchema,
+  publish: pagePublishReturnSchema,
   update: pageSiteUpdateReturnSchema,
   visibility: pageSiteUpdateReturnSchema,
   domains: pageDomainBindReturnSchema,
@@ -2368,10 +2405,20 @@ async function runPagesCommand<T>(op: string, asJson: boolean | undefined, run: 
     // envelope (or legacy text) and carry the exit taxonomy (1/2/3). Never let
     // the legacy CloudAuthError funnel swallow them (model: mail.ts).
     if (error instanceof ContractError) throw error;
-    const cloudError = cloudAuthErrorFromUnknown(error);
+    const cloudError = cloudAuthErrorFromUnknown(artifactInputToCloudError(error));
     failPagesNotFoundFromConsole(op, cloudError, asJson);
     throw cloudError;
   }
+}
+
+/** A bad local source or entrypoint is the caller's input, not a Console outage. */
+function artifactInputToCloudError(error: unknown): unknown {
+  if (!(error instanceof ArtifactInputError)) return error;
+  const message = sanitizePayloadInvalidMessage(error.message);
+  return new CloudAuthError("PAYLOAD_INVALID", error.message, {
+    cause: error,
+    ...(message ? { issues: [{ path: [error.field ?? "source"], code: "invalid", message }] } : {}),
+  });
 }
 
 /**
@@ -2383,16 +2430,28 @@ async function runPagesCommand<T>(op: string, asJson: boolean | undefined, run: 
  */
 function failPagesNotFoundFromConsole(op: string, error: CloudAuthError, asJson?: boolean): void {
   const message = error.message;
+  const diagnostic = errorDiagnostic(error, { operation: op });
+  // Pages lookup failures may name private hosts/routes. Keep the provider's
+  // reason and cause chain while treating those URLs as private input.
+  diagnostic.cause = redactDiagnosticText(diagnostic.cause, {
+    secrets: diagnostic.cause.match(/\bhttps?:\/\/\S+/gi) ?? [],
+  });
   if (/route\b.*not.?found|not.?found.*\broute/i.test(message)) {
     contractFail(op, "ROUTE_NOT_FOUND", "Pages route was not found.", {
-      asJson,
-      details: { suggestedAction: "List published routes with: ravi pages published --json" },
+      ...{
+        asJson,
+        details: { suggestedAction: "List published routes with: ravi pages published --json" },
+      },
+      diagnostic,
     });
   }
   if (/(site|pages host)\b.*not.?found|not.?found.*\bsite/i.test(message)) {
     contractFail(op, "SITE_NOT_FOUND", "Pages site was not found.", {
-      asJson,
-      details: { suggestedAction: "List Pages sites with: ravi pages list --json" },
+      ...{
+        asJson,
+        details: { suggestedAction: "List Pages sites with: ravi pages list --json" },
+      },
+      diagnostic,
     });
   }
 }
@@ -2495,6 +2554,13 @@ function printSiteList(
   );
   for (const site of result.sites) {
     console.log(`  - ${siteLabel(site)}`);
+    const slug = stringValue(site.slug);
+    if (!slug) continue;
+    for (const line of pageCustomDomainLines(projectPageCustomDomains(site.customDomains), (hostname) =>
+      domainRecheckCommand(result.projectRef, slug, hostname),
+    )) {
+      console.log(`      ${line}`);
+    }
   }
   if (pagination?.nextCommand) {
     console.log("\nNext page:");
@@ -2520,6 +2586,22 @@ function printPublishedPageList(
     console.log(`  - ${publishedPageLabel(page)}`);
     for (const url of stringArrayValue(page.urls)) {
       console.log(`      ${url}`);
+    }
+  }
+  // A pending domain belongs to the host, not the route: list it once per host.
+  const pendingBySite = new Map<string, PageCustomDomain[]>();
+  for (const page of result.pages) {
+    const slug = stringValue(page.siteSlug);
+    if (!slug || pendingBySite.has(slug)) continue;
+    const pending = projectPageCustomDomains(page.customDomains).filter((domain) => domain.status === "pending");
+    if (pending.length > 0) pendingBySite.set(slug, pending);
+  }
+  for (const [slug, pending] of pendingBySite) {
+    console.log(`\nCustom domains of ${slug} not serving yet:`);
+    for (const line of pageCustomDomainLines(pending, (hostname) =>
+      domainRecheckCommand(result.projectRef, slug, hostname),
+    )) {
+      console.log(`  ${line}`);
     }
   }
   if (pagination?.nextCommand) {
@@ -2597,16 +2679,23 @@ async function resolveShipHost(
 function failShipLiveDataOnPublicRoute(basesUses: string[], asJson: boolean | undefined): never {
   const [headline] = SHIP_LIVE_DATA_REFUSAL_LINES;
   contractFail("pages ship", "LIVE_DATA_PUBLIC_ROUTE", headline, {
-    asJson,
-    exitCode: CONTRACT_EXIT_USAGE,
-    details: {
-      retryable: false,
-      suggestedAction: `Drop --visibility to keep the route private for members, or ship a snapshot without ravi.bases.* in --uses for outsiders. Pass ${SHIP_MEMBERS_BEST_EFFORT_FLAG} only when every reader is an org member already signed in`,
-      basesUses,
-      visibility: "public",
-      override: SHIP_MEMBERS_BEST_EFFORT_FLAG,
-      issues: SHIP_LIVE_DATA_REFUSAL_LINES.map((line) => ({ path: [], code: "LIVE_DATA_PUBLIC_ROUTE", message: line })),
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        retryable: false,
+        suggestedAction: `Drop --visibility to keep the route private for members, or ship a snapshot without ravi.bases.* in --uses for outsiders. Pass ${SHIP_MEMBERS_BEST_EFFORT_FLAG} only when every reader is an org member already signed in`,
+        basesUses,
+        visibility: "public",
+        override: SHIP_MEMBERS_BEST_EFFORT_FLAG,
+        issues: SHIP_LIVE_DATA_REFUSAL_LINES.map((line) => ({
+          path: [],
+          code: "LIVE_DATA_PUBLIC_ROUTE",
+          message: line,
+        })),
+      },
     },
+    diagnostic: errorDiagnostic(headline, { operation: "pages ship" }),
   });
 }
 
@@ -2625,18 +2714,24 @@ function failShipKitInvalid(diagnostics: PageKitDiagnostic[], asJson: boolean | 
     "KIT_INVALID",
     `Refusing to ship: the page kit found ${errors} error(s) in the HTML. Nothing was uploaded or published.`,
     {
-      asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
-      details: {
-        retryable: false,
-        suggestedAction:
-          "Fix each listed path:line:column in the HTML (tags, widget refs, field mappings, theme ref), then ship again",
-        issues: diagnostics.slice(0, 50).map((diagnostic) => ({
-          path: [],
-          code: diagnostic.code,
-          message: truncateIssueLine(formatPageKitDiagnostic(diagnostic)),
-        })),
+      ...{
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          retryable: false,
+          suggestedAction:
+            "Fix each listed path:line:column in the HTML (tags, widget refs, field mappings, theme ref), then ship again",
+          issues: diagnostics.slice(0, 50).map((diagnostic) => ({
+            path: [],
+            code: diagnostic.code,
+            message: truncateIssueLine(formatPageKitDiagnostic(diagnostic)),
+          })),
+        },
       },
+      diagnostic: errorDiagnostic(
+        `Refusing to ship: the page kit found ${errors} error(s) in the HTML. Nothing was uploaded or published.`,
+        { operation: "pages ship" },
+      ),
     },
   );
 }
@@ -2662,19 +2757,25 @@ function failShipKitWidgetUnaudited(diagnostics: PageKitDiagnostic[], asJson: bo
     KIT_WIDGET_UNAUDITED,
     `Refusing to ship: ${names.length > 0 ? names.join(", ") : "a widget with code"} has no passing accessibility audit yet. Nothing was uploaded or published.`,
     {
-      asJson,
-      exitCode: CONTRACT_EXIT_USAGE,
-      details: {
-        retryable: false,
-        suggestedAction: `An org owner or admin must ${where} and run the accessibility audit until it passes, then ship again`,
-        // The URLs stay in suggestedAction and the issue lines: detail values are sanitized to their origin.
-        widgets: names,
-        issues: diagnostics.slice(0, 50).map((diagnostic) => ({
-          path: [],
-          code: diagnostic.code,
-          message: truncateIssueLine(formatPageKitDiagnostic(diagnostic)),
-        })),
+      ...{
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          retryable: false,
+          suggestedAction: `An org owner or admin must ${where} and run the accessibility audit until it passes, then ship again`,
+          // The URLs stay in suggestedAction and the issue lines: detail values are sanitized to their origin.
+          widgets: names,
+          issues: diagnostics.slice(0, 50).map((diagnostic) => ({
+            path: [],
+            code: diagnostic.code,
+            message: truncateIssueLine(formatPageKitDiagnostic(diagnostic)),
+          })),
+        },
       },
+      diagnostic: errorDiagnostic(
+        `Refusing to ship: ${names.length > 0 ? names.join(", ") : "a widget with code"} has no passing accessibility audit yet. Nothing was uploaded or published.`,
+        { operation: "pages ship" },
+      ),
     },
   );
 }
@@ -2910,6 +3011,10 @@ function printPasswordResult(result: PagePasswordManageResult): void {
   console.log(`  Route      ${result.path}`);
   console.log(`  Visibility ${result.route.effectiveVisibility}`);
   if (result.policy) console.log(`  Policy     ${result.policy.status} · version ${result.policy.version}`);
+}
+
+function domainRecheckCommand(projectRef: string, site: string, hostname: string): string {
+  return `ravi pages domains ${site} ${hostname} --project ${projectRef} --check --execute`;
 }
 
 function siteLabel(site: PageSitePayload): string {

@@ -2,7 +2,7 @@ import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 
-import { Arg, Command, Group, Option, Returns, Scope } from "../../cli/decorators.js";
+import { Arg, Command, CommandAccess, Group, Option, Returns, Scope } from "../../cli/decorators.js";
 import { buildRegistry, getRegistry } from "../../cli/registry-snapshot.js";
 import { emit, emitJson, commandPath } from "./emit.js";
 import { sortKeysDeep, stableStringify } from "./stable-stringify.js";
@@ -92,6 +92,38 @@ function resolvePointer(doc: unknown, ref: string): unknown {
 }
 
 describe("openapi emit", () => {
+  it("distinguishes Console-only operations from shared and ordinary runtime authority", () => {
+    @Group({ name: "authority", description: "Authority fixtures", scope: "resource" })
+    class AuthorityCommands {
+      @Command({ name: "private", description: "Private view" })
+      @CommandAccess({
+        kind: "read",
+        resource: "session",
+        action: "view",
+        risk: "low",
+        consoleScope: "session",
+        consoleOnly: true,
+      })
+      privateView() {}
+
+      @Command({ name: "shared", description: "Shared control" })
+      @CommandAccess({ kind: "mutate", resource: "session", action: "configure", risk: "low", consoleScope: "session" })
+      shared() {}
+    }
+    const spec = emit(buildRegistry([AuthorityCommands, NestedDemo]));
+    expect(spec.paths["/api/v1/authority/private"]!.post.security).toEqual([{ consoleDelegation: [] }]);
+    expect(spec.paths["/api/v1/authority/private"]!.post.description).toContain("dedicated Console listener");
+    expect(spec.paths["/api/v1/authority/shared"]!.post.security).toEqual([
+      { bearerAuth: [] },
+      { consoleDelegation: [] },
+    ]);
+    expect(spec.paths["/api/v1/demo/nested/show"]!.post.security).toEqual([{ bearerAuth: [] }]);
+    expect(spec.components!.securitySchemes!.consoleDelegation).toMatchObject({
+      type: "http",
+      scheme: "bearer",
+      bearerFormat: "JWT",
+    });
+  });
   it("produces a 3.1.0 doc with the expected top-level shape", () => {
     const spec = emit(fixture());
     expect(spec.openapi).toBe("3.1.0");

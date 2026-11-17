@@ -936,9 +936,10 @@ class AgentsPublishOptions {
 }
 
 class AgentsPublishReturn {
-  const AgentsPublishReturn({required this.agent, required this.contentHash, required this.item, required this.leftOut, required this.manifest, required this.next, required this.proposal, required this.ref, required this.success, required this.unchanged, required this.version});
+  const AgentsPublishReturn({required this.agent, required this.cloud, required this.contentHash, required this.item, required this.leftOut, required this.manifest, required this.next, required this.proposal, required this.ref, required this.success, required this.unchanged, required this.version});
 
   final String agent;
+  final RaviJson cloud;
   final String contentHash;
   final RaviJson item;
   final List<RaviJson> leftOut;
@@ -953,6 +954,7 @@ class AgentsPublishReturn {
   factory AgentsPublishReturn.fromJson(Map<String, Object?> json) {
     return AgentsPublishReturn(
       agent: raviJsonAsString(json["agent"]),
+      cloud: RaviJson.from(json["cloud"]),
       contentHash: raviJsonAsString(json["contentHash"]),
       item: RaviJson.from(json["item"]),
       leftOut: raviJsonAsList(json["leftOut"], RaviJson.from),
@@ -3082,9 +3084,10 @@ class BasesChartsArchiveReturn {
 BasesChartsArchiveReturn basesChartsArchiveReturnFromJson(Object? json) => BasesChartsArchiveReturn.fromJsonValue(json);
 
 class BasesChartsCreateOptions {
-  const BasesChartsCreateOptions({this.console, this.name, this.project, this.spec, this.view});
+  const BasesChartsCreateOptions({this.console, this.idempotencyKey, this.name, this.project, this.spec, this.view});
 
   final String? console;
+  final String? idempotencyKey;
   final String? name;
   final String? project;
   final String? spec;
@@ -3093,6 +3096,9 @@ class BasesChartsCreateOptions {
   void encodeBody(Map<String, RaviJson> into) {
     if (console != null) {
       into["console"] = RaviJson.from(console);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
     }
     if (name != null) {
       into["name"] = RaviJson.from(name);
@@ -3110,11 +3116,12 @@ class BasesChartsCreateOptions {
 }
 
 class BasesChartsCreateReturn {
-  const BasesChartsCreateReturn({required this.baseRef, required this.chart, required this.consoleUrl, required this.projectRef, required this.success});
+  const BasesChartsCreateReturn({required this.baseRef, required this.chart, required this.consoleUrl, required this.idempotencyKey, required this.projectRef, required this.success});
 
   final String baseRef;
   final RaviJson chart;
   final String consoleUrl;
+  final String idempotencyKey;
   final String projectRef;
   final bool success;
 
@@ -3123,6 +3130,7 @@ class BasesChartsCreateReturn {
       baseRef: raviJsonAsString(json["baseRef"]),
       chart: RaviJson.from(json["chart"]),
       consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotencyKey: raviJsonAsString(json["idempotencyKey"]),
       projectRef: raviJsonAsString(json["projectRef"]),
       success: raviJsonAsBool(json["success"]),
     );
@@ -3342,11 +3350,12 @@ class BasesChartsUpdateReturn {
 BasesChartsUpdateReturn basesChartsUpdateReturnFromJson(Object? json) => BasesChartsUpdateReturn.fromJsonValue(json);
 
 class BasesCreateOptions {
-  const BasesCreateOptions({this.console, this.description, this.icon, this.project, this.schema, this.slug, this.timezone});
+  const BasesCreateOptions({this.console, this.description, this.icon, this.idempotencyKey, this.project, this.schema, this.slug, this.timezone});
 
   final String? console;
   final String? description;
   final String? icon;
+  final String? idempotencyKey;
   final String? project;
   final String? schema;
   final String? slug;
@@ -3361,6 +3370,9 @@ class BasesCreateOptions {
     }
     if (icon != null) {
       into["icon"] = RaviJson.from(icon);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
     }
     if (project != null) {
       into["project"] = RaviJson.from(project);
@@ -3378,10 +3390,11 @@ class BasesCreateOptions {
 }
 
 class BasesCreateReturn {
-  const BasesCreateReturn({required this.base, required this.consoleUrl, required this.projectRef, required this.success});
+  const BasesCreateReturn({required this.base, required this.consoleUrl, required this.idempotencyKey, required this.projectRef, required this.success});
 
   final RaviJson base;
   final String consoleUrl;
+  final String idempotencyKey;
   final String projectRef;
   final bool success;
 
@@ -3389,6 +3402,7 @@ class BasesCreateReturn {
     return BasesCreateReturn(
       base: RaviJson.from(json["base"]),
       consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotencyKey: raviJsonAsString(json["idempotencyKey"]),
       projectRef: raviJsonAsString(json["projectRef"]),
       success: raviJsonAsBool(json["success"]),
     );
@@ -3464,20 +3478,33 @@ class BasesListReturn {
 BasesListReturn basesListReturnFromJson(Object? json) => BasesListReturn.fromJsonValue(json);
 
 class BasesPropsAddOptions {
-  const BasesPropsAddOptions({this.config, this.console, this.description, this.expectedSchemaVersion, this.key, this.options, this.position, this.project, this.required_, this.type});
+  const BasesPropsAddOptions({this.agent, this.approvers, this.config, this.console, this.description, this.expectedSchemaVersion, this.idempotencyKey, this.inputs, this.instructions, this.key, this.options, this.output, this.position, this.project, this.required_, this.resetOn, this.type});
 
+  final String? agent;
+  final String? approvers;
   final String? config;
   final String? console;
   final String? description;
   final String? expectedSchemaVersion;
+  final String? idempotencyKey;
+  final String? inputs;
+  final String? instructions;
   final String? key;
   final String? options;
+  final String? output;
   final String? position;
   final String? project;
   final bool? required_;
+  final String? resetOn;
   final String? type;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+    if (approvers != null) {
+      into["approvers"] = RaviJson.from(approvers);
+    }
     if (config != null) {
       into["config"] = RaviJson.from(config);
     }
@@ -3490,11 +3517,23 @@ class BasesPropsAddOptions {
     if (expectedSchemaVersion != null) {
       into["expectedSchemaVersion"] = RaviJson.from(expectedSchemaVersion);
     }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
+    if (inputs != null) {
+      into["inputs"] = RaviJson.from(inputs);
+    }
+    if (instructions != null) {
+      into["instructions"] = RaviJson.from(instructions);
+    }
     if (key != null) {
       into["key"] = RaviJson.from(key);
     }
     if (options != null) {
       into["options"] = RaviJson.from(options);
+    }
+    if (output != null) {
+      into["output"] = RaviJson.from(output);
     }
     if (position != null) {
       into["position"] = RaviJson.from(position);
@@ -3505,6 +3544,9 @@ class BasesPropsAddOptions {
     if (required_ != null) {
       into["required"] = RaviJson.from(required_);
     }
+    if (resetOn != null) {
+      into["resetOn"] = RaviJson.from(resetOn);
+    }
     if (type != null) {
       into["type"] = RaviJson.from(type);
     }
@@ -3512,10 +3554,11 @@ class BasesPropsAddOptions {
 }
 
 class BasesPropsAddReturn {
-  const BasesPropsAddReturn({required this.base, required this.consoleUrl, required this.projectRef, required this.property, required this.report, required this.success});
+  const BasesPropsAddReturn({required this.base, required this.consoleUrl, required this.idempotencyKey, required this.projectRef, required this.property, required this.report, required this.success});
 
   final RaviJson base;
   final String consoleUrl;
+  final String idempotencyKey;
   final String projectRef;
   final RaviJson property;
   final RaviJson report;
@@ -3525,6 +3568,7 @@ class BasesPropsAddReturn {
     return BasesPropsAddReturn(
       base: RaviJson.from(json["base"]),
       consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotencyKey: raviJsonAsString(json["idempotencyKey"]),
       projectRef: raviJsonAsString(json["projectRef"]),
       property: RaviJson.from(json["property"]),
       report: RaviJson.from(json["report"]),
@@ -3913,6 +3957,80 @@ class BasesRowsAddReturn {
 
 BasesRowsAddReturn basesRowsAddReturnFromJson(Object? json) => BasesRowsAddReturn.fromJsonValue(json);
 
+class BasesRowsApproveOptions {
+  const BasesRowsApproveOptions({this.console, this.execute, this.expectedVersion, this.idempotencyKey, this.note, this.project, this.view});
+
+  final String? console;
+  final bool? execute;
+  final String? expectedVersion;
+  final String? idempotencyKey;
+  final String? note;
+  final String? project;
+  final String? view;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (expectedVersion != null) {
+      into["expectedVersion"] = RaviJson.from(expectedVersion);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
+    if (note != null) {
+      into["note"] = RaviJson.from(note);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (view != null) {
+      into["view"] = RaviJson.from(view);
+    }
+  }
+}
+
+class BasesRowsApproveReturn {
+  const BasesRowsApproveReturn({required this.baseRef, required this.consoleUrl, required this.idempotencyKey, required this.idempotentReplay, required this.projectRef, required this.property, required this.row, required this.state, required this.success, required this.users, required this.viewId});
+
+  final String baseRef;
+  final String consoleUrl;
+  final String idempotencyKey;
+  final bool idempotentReplay;
+  final String projectRef;
+  final String property;
+  final RaviJson row;
+  final String state;
+  final bool success;
+  final Map<String, RaviJson> users;
+  final RaviJson viewId;
+
+  factory BasesRowsApproveReturn.fromJson(Map<String, Object?> json) {
+    return BasesRowsApproveReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotencyKey: raviJsonAsString(json["idempotencyKey"]),
+      idempotentReplay: raviJsonAsBool(json["idempotentReplay"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      property: raviJsonAsString(json["property"]),
+      row: RaviJson.from(json["row"]),
+      state: raviJsonAsString(json["state"]),
+      success: raviJsonAsBool(json["success"]),
+      users: raviJsonAsRaviJsonMap(json["users"]),
+      viewId: RaviJson.from(json["viewId"]),
+    );
+  }
+
+  static BasesRowsApproveReturn fromJsonValue(Object? json) {
+    return BasesRowsApproveReturn.fromJson(raviJsonObject(json, "BasesRowsApproveReturn"));
+  }
+}
+
+BasesRowsApproveReturn basesRowsApproveReturnFromJson(Object? json) => BasesRowsApproveReturn.fromJsonValue(json);
+
 class BasesRowsArchiveOptions {
   const BasesRowsArchiveOptions({this.console, this.expectedVersion, this.lastWriteWins, this.project, this.view});
 
@@ -4054,6 +4172,76 @@ class BasesRowsExportReturn {
 }
 
 BasesRowsExportReturn basesRowsExportReturnFromJson(Object? json) => BasesRowsExportReturn.fromJsonValue(json);
+
+class BasesRowsFillOptions {
+  const BasesRowsFillOptions({this.console, this.error, this.idempotencyKey, this.inputsHash, this.project, this.value});
+
+  final String? console;
+  final String? error;
+  final String? idempotencyKey;
+  final String? inputsHash;
+  final String? project;
+  final String? value;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (error != null) {
+      into["error"] = RaviJson.from(error);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
+    if (inputsHash != null) {
+      into["inputsHash"] = RaviJson.from(inputsHash);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (value != null) {
+      into["value"] = RaviJson.from(value);
+    }
+  }
+}
+
+class BasesRowsFillReturn {
+  const BasesRowsFillReturn({required this.baseRef, required this.consoleUrl, required this.idempotencyKey, required this.idempotentReplay, required this.projectRef, required this.property, required this.row, required this.success, required this.users, required this.viewId, this.warnings});
+
+  final String baseRef;
+  final String consoleUrl;
+  final String idempotencyKey;
+  final bool idempotentReplay;
+  final String projectRef;
+  final String property;
+  final RaviJson row;
+  final bool success;
+  final Map<String, RaviJson> users;
+  final RaviJson viewId;
+  final List<String>? warnings;
+
+  factory BasesRowsFillReturn.fromJson(Map<String, Object?> json) {
+    return BasesRowsFillReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotencyKey: raviJsonAsString(json["idempotencyKey"]),
+      idempotentReplay: raviJsonAsBool(json["idempotentReplay"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      property: raviJsonAsString(json["property"]),
+      row: RaviJson.from(json["row"]),
+      success: raviJsonAsBool(json["success"]),
+      users: raviJsonAsRaviJsonMap(json["users"]),
+      viewId: RaviJson.from(json["viewId"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
+    );
+  }
+
+  static BasesRowsFillReturn fromJsonValue(Object? json) {
+    return BasesRowsFillReturn.fromJson(raviJsonObject(json, "BasesRowsFillReturn"));
+  }
+}
+
+BasesRowsFillReturn basesRowsFillReturnFromJson(Object? json) => BasesRowsFillReturn.fromJsonValue(json);
 
 class BasesRowsGetOptions {
   const BasesRowsGetOptions({this.console, this.includeArchived, this.project, this.view});
@@ -4379,6 +4567,200 @@ class BasesRowsQueryReturn {
 
 BasesRowsQueryReturn basesRowsQueryReturnFromJson(Object? json) => BasesRowsQueryReturn.fromJsonValue(json);
 
+class BasesRowsRejectOptions {
+  const BasesRowsRejectOptions({this.console, this.execute, this.expectedVersion, this.idempotencyKey, this.note, this.project, this.view});
+
+  final String? console;
+  final bool? execute;
+  final String? expectedVersion;
+  final String? idempotencyKey;
+  final String? note;
+  final String? project;
+  final String? view;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (expectedVersion != null) {
+      into["expectedVersion"] = RaviJson.from(expectedVersion);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
+    if (note != null) {
+      into["note"] = RaviJson.from(note);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (view != null) {
+      into["view"] = RaviJson.from(view);
+    }
+  }
+}
+
+class BasesRowsRejectReturn {
+  const BasesRowsRejectReturn({required this.baseRef, required this.consoleUrl, required this.idempotencyKey, required this.idempotentReplay, required this.projectRef, required this.property, required this.row, required this.state, required this.success, required this.users, required this.viewId});
+
+  final String baseRef;
+  final String consoleUrl;
+  final String idempotencyKey;
+  final bool idempotentReplay;
+  final String projectRef;
+  final String property;
+  final RaviJson row;
+  final String state;
+  final bool success;
+  final Map<String, RaviJson> users;
+  final RaviJson viewId;
+
+  factory BasesRowsRejectReturn.fromJson(Map<String, Object?> json) {
+    return BasesRowsRejectReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotencyKey: raviJsonAsString(json["idempotencyKey"]),
+      idempotentReplay: raviJsonAsBool(json["idempotentReplay"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      property: raviJsonAsString(json["property"]),
+      row: RaviJson.from(json["row"]),
+      state: raviJsonAsString(json["state"]),
+      success: raviJsonAsBool(json["success"]),
+      users: raviJsonAsRaviJsonMap(json["users"]),
+      viewId: RaviJson.from(json["viewId"]),
+    );
+  }
+
+  static BasesRowsRejectReturn fromJsonValue(Object? json) {
+    return BasesRowsRejectReturn.fromJson(raviJsonObject(json, "BasesRowsRejectReturn"));
+  }
+}
+
+BasesRowsRejectReturn basesRowsRejectReturnFromJson(Object? json) => BasesRowsRejectReturn.fromJsonValue(json);
+
+class BasesRowsRequestApprovalOptions {
+  const BasesRowsRequestApprovalOptions({this.console, this.expectedVersion, this.idempotencyKey, this.note, this.project, this.view});
+
+  final String? console;
+  final String? expectedVersion;
+  final String? idempotencyKey;
+  final String? note;
+  final String? project;
+  final String? view;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (expectedVersion != null) {
+      into["expectedVersion"] = RaviJson.from(expectedVersion);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
+    if (note != null) {
+      into["note"] = RaviJson.from(note);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (view != null) {
+      into["view"] = RaviJson.from(view);
+    }
+  }
+}
+
+class BasesRowsRequestApprovalReturn {
+  const BasesRowsRequestApprovalReturn({required this.baseRef, required this.consoleUrl, required this.idempotencyKey, required this.idempotentReplay, required this.projectRef, required this.property, required this.row, required this.state, required this.success, required this.users, required this.viewId});
+
+  final String baseRef;
+  final String consoleUrl;
+  final String idempotencyKey;
+  final bool idempotentReplay;
+  final String projectRef;
+  final String property;
+  final RaviJson row;
+  final String state;
+  final bool success;
+  final Map<String, RaviJson> users;
+  final RaviJson viewId;
+
+  factory BasesRowsRequestApprovalReturn.fromJson(Map<String, Object?> json) {
+    return BasesRowsRequestApprovalReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotencyKey: raviJsonAsString(json["idempotencyKey"]),
+      idempotentReplay: raviJsonAsBool(json["idempotentReplay"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      property: raviJsonAsString(json["property"]),
+      row: RaviJson.from(json["row"]),
+      state: raviJsonAsString(json["state"]),
+      success: raviJsonAsBool(json["success"]),
+      users: raviJsonAsRaviJsonMap(json["users"]),
+      viewId: RaviJson.from(json["viewId"]),
+    );
+  }
+
+  static BasesRowsRequestApprovalReturn fromJsonValue(Object? json) {
+    return BasesRowsRequestApprovalReturn.fromJson(raviJsonObject(json, "BasesRowsRequestApprovalReturn"));
+  }
+}
+
+BasesRowsRequestApprovalReturn basesRowsRequestApprovalReturnFromJson(Object? json) => BasesRowsRequestApprovalReturn.fromJsonValue(json);
+
+class BasesRowsRerunOptions {
+  const BasesRowsRerunOptions({this.console, this.project});
+
+  final String? console;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class BasesRowsRerunReturn {
+  const BasesRowsRerunReturn({required this.baseRef, required this.consoleUrl, required this.idempotentReplay, required this.projectRef, required this.property, required this.row, required this.success, required this.users, required this.viewId});
+
+  final String baseRef;
+  final String consoleUrl;
+  final bool idempotentReplay;
+  final String projectRef;
+  final String property;
+  final RaviJson row;
+  final bool success;
+  final Map<String, RaviJson> users;
+  final RaviJson viewId;
+
+  factory BasesRowsRerunReturn.fromJson(Map<String, Object?> json) {
+    return BasesRowsRerunReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotentReplay: raviJsonAsBool(json["idempotentReplay"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      property: raviJsonAsString(json["property"]),
+      row: RaviJson.from(json["row"]),
+      success: raviJsonAsBool(json["success"]),
+      users: raviJsonAsRaviJsonMap(json["users"]),
+      viewId: RaviJson.from(json["viewId"]),
+    );
+  }
+
+  static BasesRowsRerunReturn fromJsonValue(Object? json) {
+    return BasesRowsRerunReturn.fromJson(raviJsonObject(json, "BasesRowsRerunReturn"));
+  }
+}
+
+BasesRowsRerunReturn basesRowsRerunReturnFromJson(Object? json) => BasesRowsRerunReturn.fromJsonValue(json);
+
 class BasesRowsRestoreOptions {
   const BasesRowsRestoreOptions({this.console, this.expectedVersion, this.lastWriteWins, this.project});
 
@@ -4560,37 +4942,69 @@ class BasesShowReturn {
 BasesShowReturn basesShowReturnFromJson(Object? json) => BasesShowReturn.fromJsonValue(json);
 
 class BasesSubscribeOptions {
-  const BasesSubscribeOptions({this.console, this.project});
+  const BasesSubscribeOptions({this.agent, this.console, this.events, this.message, this.project, this.props, this.session, this.trigger, this.view});
 
+  final String? agent;
   final String? console;
+  final String? events;
+  final String? message;
   final String? project;
+  final String? props;
+  final String? session;
+  final bool? trigger;
+  final String? view;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
     if (console != null) {
       into["console"] = RaviJson.from(console);
     }
+    if (events != null) {
+      into["events"] = RaviJson.from(events);
+    }
+    if (message != null) {
+      into["message"] = RaviJson.from(message);
+    }
     if (project != null) {
       into["project"] = RaviJson.from(project);
+    }
+    if (props != null) {
+      into["props"] = RaviJson.from(props);
+    }
+    if (session != null) {
+      into["session"] = RaviJson.from(session);
+    }
+    if (trigger != null) {
+      into["trigger"] = RaviJson.from(trigger);
+    }
+    if (view != null) {
+      into["view"] = RaviJson.from(view);
     }
   }
 }
 
 class BasesSubscribeReturn {
-  const BasesSubscribeReturn({required this.consoleUrl, required this.delivery, required this.projectRef, required this.subscription, required this.success});
+  const BasesSubscribeReturn({required this.consoleUrl, required this.delivery, required this.filter, required this.projectRef, required this.subscription, required this.success, this.trigger});
 
   final String consoleUrl;
   final RaviJson delivery;
+  final RaviJson filter;
   final String projectRef;
   final RaviJson subscription;
   final bool success;
+  final RaviJson? trigger;
 
   factory BasesSubscribeReturn.fromJson(Map<String, Object?> json) {
     return BasesSubscribeReturn(
       consoleUrl: raviJsonAsString(json["consoleUrl"]),
       delivery: RaviJson.from(json["delivery"]),
+      filter: RaviJson.from(json["filter"]),
       projectRef: raviJsonAsString(json["projectRef"]),
       subscription: RaviJson.from(json["subscription"]),
       success: raviJsonAsBool(json["success"]),
+      trigger: json["trigger"] == null ? null : RaviJson.from(json["trigger"]),
     );
   }
 
@@ -4850,9 +5264,10 @@ class BasesViewsBindReturn {
 BasesViewsBindReturn basesViewsBindReturnFromJson(Object? json) => BasesViewsBindReturn.fromJsonValue(json);
 
 class BasesViewsCreateOptions {
-  const BasesViewsCreateOptions({this.console, this.name, this.project, this.spec});
+  const BasesViewsCreateOptions({this.console, this.idempotencyKey, this.name, this.project, this.spec});
 
   final String? console;
+  final String? idempotencyKey;
   final String? name;
   final String? project;
   final String? spec;
@@ -4860,6 +5275,9 @@ class BasesViewsCreateOptions {
   void encodeBody(Map<String, RaviJson> into) {
     if (console != null) {
       into["console"] = RaviJson.from(console);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
     }
     if (name != null) {
       into["name"] = RaviJson.from(name);
@@ -4874,10 +5292,11 @@ class BasesViewsCreateOptions {
 }
 
 class BasesViewsCreateReturn {
-  const BasesViewsCreateReturn({required this.baseRef, required this.consoleUrl, required this.projectRef, required this.success, required this.view});
+  const BasesViewsCreateReturn({required this.baseRef, required this.consoleUrl, required this.idempotencyKey, required this.projectRef, required this.success, required this.view});
 
   final String baseRef;
   final String consoleUrl;
+  final String idempotencyKey;
   final String projectRef;
   final bool success;
   final RaviJson view;
@@ -4886,6 +5305,7 @@ class BasesViewsCreateReturn {
     return BasesViewsCreateReturn(
       baseRef: raviJsonAsString(json["baseRef"]),
       consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      idempotencyKey: raviJsonAsString(json["idempotencyKey"]),
       projectRef: raviJsonAsString(json["projectRef"]),
       success: raviJsonAsBool(json["success"]),
       view: RaviJson.from(json["view"]),
@@ -5044,6 +5464,80 @@ class BasesViewsQueryReturn {
 }
 
 BasesViewsQueryReturn basesViewsQueryReturnFromJson(Object? json) => BasesViewsQueryReturn.fromJsonValue(json);
+
+class BasesViewsShareOptions {
+  const BasesViewsShareOptions({this.archive, this.console, this.create, this.execute, this.project, this.site, this.write, this.writeOnly});
+
+  final bool? archive;
+  final String? console;
+  final bool? create;
+  final bool? execute;
+  final String? project;
+  final String? site;
+  final String? write;
+  final bool? writeOnly;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (archive != null) {
+      into["archive"] = RaviJson.from(archive);
+    }
+    if (console != null) {
+      into["console"] = RaviJson.from(console);
+    }
+    if (create != null) {
+      into["create"] = RaviJson.from(create);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (site != null) {
+      into["site"] = RaviJson.from(site);
+    }
+    if (write != null) {
+      into["write"] = RaviJson.from(write);
+    }
+    if (writeOnly != null) {
+      into["writeOnly"] = RaviJson.from(writeOnly);
+    }
+  }
+}
+
+class BasesViewsShareReturn {
+  const BasesViewsShareReturn({required this.baseRef, required this.changed, required this.consoleUrl, required this.disclosure, required this.grants, required this.projectRef, required this.site, required this.success, required this.view});
+
+  final String baseRef;
+  final bool changed;
+  final String consoleUrl;
+  final List<String> disclosure;
+  final RaviJson grants;
+  final String projectRef;
+  final RaviJson site;
+  final bool success;
+  final RaviJson view;
+
+  factory BasesViewsShareReturn.fromJson(Map<String, Object?> json) {
+    return BasesViewsShareReturn(
+      baseRef: raviJsonAsString(json["baseRef"]),
+      changed: raviJsonAsBool(json["changed"]),
+      consoleUrl: raviJsonAsString(json["consoleUrl"]),
+      disclosure: raviJsonAsList(json["disclosure"], raviJsonAsString),
+      grants: RaviJson.from(json["grants"]),
+      projectRef: raviJsonAsString(json["projectRef"]),
+      site: RaviJson.from(json["site"]),
+      success: raviJsonAsBool(json["success"]),
+      view: RaviJson.from(json["view"]),
+    );
+  }
+
+  static BasesViewsShareReturn fromJsonValue(Object? json) {
+    return BasesViewsShareReturn.fromJson(raviJsonObject(json, "BasesViewsShareReturn"));
+  }
+}
+
+BasesViewsShareReturn basesViewsShareReturnFromJson(Object? json) => BasesViewsShareReturn.fromJsonValue(json);
 
 class BasesViewsShowOptions {
   const BasesViewsShowOptions({this.console, this.project});
@@ -6430,7 +6924,7 @@ class ChannelsStartReturn {
 ChannelsStartReturn channelsStartReturnFromJson(Object? json) => ChannelsStartReturn.fromJsonValue(json);
 
 class ChannelsStatusReturn {
-  const ChannelsStatusReturn({required this.channels, this.health, required this.pm2Available, required this.processName, required this.processes, this.runner});
+  const ChannelsStatusReturn({required this.channels, this.health, required this.pm2Available, required this.processName, required this.processes, this.runner, required this.runtime, required this.warnings});
 
   final RaviJson channels;
   final RaviJson? health;
@@ -6438,6 +6932,8 @@ class ChannelsStatusReturn {
   final String processName;
   final List<RaviJson> processes;
   final RaviJson? runner;
+  final RaviJson runtime;
+  final List<String> warnings;
 
   factory ChannelsStatusReturn.fromJson(Map<String, Object?> json) {
     return ChannelsStatusReturn(
@@ -6447,6 +6943,8 @@ class ChannelsStatusReturn {
       processName: raviJsonAsString(json["processName"]),
       processes: raviJsonAsList(json["processes"], RaviJson.from),
       runner: json["runner"] == null ? null : RaviJson.from(json["runner"]),
+      runtime: RaviJson.from(json["runtime"]),
+      warnings: raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -7025,6 +7523,492 @@ class ChatsReadReturn {
 
 ChatsReadReturn chatsReadReturnFromJson(Object? json) => ChatsReadReturn.fromJsonValue(json);
 
+class CloudAgentsApproveOptions {
+  const CloudAgentsApproveOptions({this.execute, this.project});
+
+  final bool? execute;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class CloudAgentsApproveReturn {
+  const CloudAgentsApproveReturn({required this.agent, required this.success});
+
+  final RaviJson agent;
+  final bool success;
+
+  factory CloudAgentsApproveReturn.fromJson(Map<String, Object?> json) {
+    return CloudAgentsApproveReturn(
+      agent: RaviJson.from(json["agent"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudAgentsApproveReturn fromJsonValue(Object? json) {
+    return CloudAgentsApproveReturn.fromJson(raviJsonObject(json, "CloudAgentsApproveReturn"));
+  }
+}
+
+CloudAgentsApproveReturn cloudAgentsApproveReturnFromJson(Object? json) => CloudAgentsApproveReturn.fromJsonValue(json);
+
+class CloudAgentsArchiveOptions {
+  const CloudAgentsArchiveOptions({this.project});
+
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class CloudAgentsArchiveReturn {
+  const CloudAgentsArchiveReturn({required this.agent, required this.archived, required this.id, required this.success});
+
+  final RaviJson agent;
+  final bool archived;
+  final String id;
+  final bool success;
+
+  factory CloudAgentsArchiveReturn.fromJson(Map<String, Object?> json) {
+    return CloudAgentsArchiveReturn(
+      agent: RaviJson.from(json["agent"]),
+      archived: raviJsonAsBool(json["archived"]),
+      id: raviJsonAsString(json["id"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudAgentsArchiveReturn fromJsonValue(Object? json) {
+    return CloudAgentsArchiveReturn.fromJson(raviJsonObject(json, "CloudAgentsArchiveReturn"));
+  }
+}
+
+CloudAgentsArchiveReturn cloudAgentsArchiveReturnFromJson(Object? json) => CloudAgentsArchiveReturn.fromJsonValue(json);
+
+class CloudAgentsCapOptions {
+  const CloudAgentsCapOptions({this.execute, this.project});
+
+  final bool? execute;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class CloudAgentsCapReturn {
+  const CloudAgentsCapReturn({required this.agent, required this.success});
+
+  final RaviJson agent;
+  final bool success;
+
+  factory CloudAgentsCapReturn.fromJson(Map<String, Object?> json) {
+    return CloudAgentsCapReturn(
+      agent: RaviJson.from(json["agent"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudAgentsCapReturn fromJsonValue(Object? json) {
+    return CloudAgentsCapReturn.fromJson(raviJsonObject(json, "CloudAgentsCapReturn"));
+  }
+}
+
+CloudAgentsCapReturn cloudAgentsCapReturnFromJson(Object? json) => CloudAgentsCapReturn.fromJsonValue(json);
+
+class CloudAgentsDeployOptions {
+  const CloudAgentsDeployOptions({this.execute, this.project, this.version});
+
+  final bool? execute;
+  final String? project;
+  final String? version;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (version != null) {
+      into["version"] = RaviJson.from(version);
+    }
+  }
+}
+
+class CloudAgentsDeployReturn {
+  const CloudAgentsDeployReturn({required this.agent, required this.changed, required this.success, required this.warnings});
+
+  final RaviJson agent;
+  final bool changed;
+  final bool success;
+  final List<String> warnings;
+
+  factory CloudAgentsDeployReturn.fromJson(Map<String, Object?> json) {
+    return CloudAgentsDeployReturn(
+      agent: RaviJson.from(json["agent"]),
+      changed: raviJsonAsBool(json["changed"]),
+      success: raviJsonAsBool(json["success"]),
+      warnings: raviJsonAsList(json["warnings"], raviJsonAsString),
+    );
+  }
+
+  static CloudAgentsDeployReturn fromJsonValue(Object? json) {
+    return CloudAgentsDeployReturn.fromJson(raviJsonObject(json, "CloudAgentsDeployReturn"));
+  }
+}
+
+CloudAgentsDeployReturn cloudAgentsDeployReturnFromJson(Object? json) => CloudAgentsDeployReturn.fromJsonValue(json);
+
+class CloudAgentsListOptions {
+  const CloudAgentsListOptions({this.limit, this.offset, this.project});
+
+  final String? limit;
+  final String? offset;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class CloudAgentsListReturn {
+  const CloudAgentsListReturn({required this.agents, required this.pagination, required this.project, required this.success});
+
+  final List<RaviJson> agents;
+  final RaviJson pagination;
+  final String project;
+  final bool success;
+
+  factory CloudAgentsListReturn.fromJson(Map<String, Object?> json) {
+    return CloudAgentsListReturn(
+      agents: raviJsonAsList(json["agents"], RaviJson.from),
+      pagination: RaviJson.from(json["pagination"]),
+      project: raviJsonAsString(json["project"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudAgentsListReturn fromJsonValue(Object? json) {
+    return CloudAgentsListReturn.fromJson(raviJsonObject(json, "CloudAgentsListReturn"));
+  }
+}
+
+CloudAgentsListReturn cloudAgentsListReturnFromJson(Object? json) => CloudAgentsListReturn.fromJsonValue(json);
+
+class CloudAgentsMemoryResetOptions {
+  const CloudAgentsMemoryResetOptions({this.execute, this.project});
+
+  final bool? execute;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class CloudAgentsMemoryResetReturn {
+  const CloudAgentsMemoryResetReturn({required this.agentId, required this.archivedStores, required this.name, required this.success});
+
+  final String agentId;
+  final double archivedStores;
+  final String name;
+  final bool success;
+
+  factory CloudAgentsMemoryResetReturn.fromJson(Map<String, Object?> json) {
+    return CloudAgentsMemoryResetReturn(
+      agentId: raviJsonAsString(json["agentId"]),
+      archivedStores: raviJsonAsDouble(json["archivedStores"]),
+      name: raviJsonAsString(json["name"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudAgentsMemoryResetReturn fromJsonValue(Object? json) {
+    return CloudAgentsMemoryResetReturn.fromJson(raviJsonObject(json, "CloudAgentsMemoryResetReturn"));
+  }
+}
+
+CloudAgentsMemoryResetReturn cloudAgentsMemoryResetReturnFromJson(Object? json) => CloudAgentsMemoryResetReturn.fromJsonValue(json);
+
+class CloudAgentsShowOptions {
+  const CloudAgentsShowOptions({this.project});
+
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class CloudAgentsShowReturn {
+  const CloudAgentsShowReturn({required this.agent, required this.success});
+
+  final RaviJson agent;
+  final bool success;
+
+  factory CloudAgentsShowReturn.fromJson(Map<String, Object?> json) {
+    return CloudAgentsShowReturn(
+      agent: RaviJson.from(json["agent"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudAgentsShowReturn fromJsonValue(Object? json) {
+    return CloudAgentsShowReturn.fromJson(raviJsonObject(json, "CloudAgentsShowReturn"));
+  }
+}
+
+CloudAgentsShowReturn cloudAgentsShowReturnFromJson(Object? json) => CloudAgentsShowReturn.fromJsonValue(json);
+
+class CloudCatalogInstallOptions {
+  const CloudCatalogInstallOptions({this.execute, this.project});
+
+  final bool? execute;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class CloudCatalogInstallReturn {
+  const CloudCatalogInstallReturn({required this.agents, required this.installed, required this.project, required this.success});
+
+  final List<RaviJson> agents;
+  final RaviJson installed;
+  final String project;
+  final bool success;
+
+  factory CloudCatalogInstallReturn.fromJson(Map<String, Object?> json) {
+    return CloudCatalogInstallReturn(
+      agents: raviJsonAsList(json["agents"], RaviJson.from),
+      installed: RaviJson.from(json["installed"]),
+      project: raviJsonAsString(json["project"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudCatalogInstallReturn fromJsonValue(Object? json) {
+    return CloudCatalogInstallReturn.fromJson(raviJsonObject(json, "CloudCatalogInstallReturn"));
+  }
+}
+
+CloudCatalogInstallReturn cloudCatalogInstallReturnFromJson(Object? json) => CloudCatalogInstallReturn.fromJsonValue(json);
+
+class CloudCatalogListOptions {
+  const CloudCatalogListOptions({this.limit, this.offset, this.sector});
+
+  final String? limit;
+  final String? offset;
+  final String? sector;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+    if (sector != null) {
+      into["sector"] = RaviJson.from(sector);
+    }
+  }
+}
+
+class CloudCatalogListReturn {
+  const CloudCatalogListReturn({required this.entries, required this.packs, required this.pagination, required this.success});
+
+  final List<RaviJson> entries;
+  final List<RaviJson> packs;
+  final RaviJson pagination;
+  final bool success;
+
+  factory CloudCatalogListReturn.fromJson(Map<String, Object?> json) {
+    return CloudCatalogListReturn(
+      entries: raviJsonAsList(json["entries"], RaviJson.from),
+      packs: raviJsonAsList(json["packs"], RaviJson.from),
+      pagination: RaviJson.from(json["pagination"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudCatalogListReturn fromJsonValue(Object? json) {
+    return CloudCatalogListReturn.fromJson(raviJsonObject(json, "CloudCatalogListReturn"));
+  }
+}
+
+CloudCatalogListReturn cloudCatalogListReturnFromJson(Object? json) => CloudCatalogListReturn.fromJsonValue(json);
+
+class CloudCatalogPacksInstallOptions {
+  const CloudCatalogPacksInstallOptions({this.execute, this.project});
+
+  final bool? execute;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class CloudCatalogPacksInstallReturn {
+  const CloudCatalogPacksInstallReturn({required this.agents, required this.installed, required this.project, required this.success});
+
+  final List<RaviJson> agents;
+  final RaviJson installed;
+  final String project;
+  final bool success;
+
+  factory CloudCatalogPacksInstallReturn.fromJson(Map<String, Object?> json) {
+    return CloudCatalogPacksInstallReturn(
+      agents: raviJsonAsList(json["agents"], RaviJson.from),
+      installed: RaviJson.from(json["installed"]),
+      project: raviJsonAsString(json["project"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudCatalogPacksInstallReturn fromJsonValue(Object? json) {
+    return CloudCatalogPacksInstallReturn.fromJson(raviJsonObject(json, "CloudCatalogPacksInstallReturn"));
+  }
+}
+
+CloudCatalogPacksInstallReturn cloudCatalogPacksInstallReturnFromJson(Object? json) => CloudCatalogPacksInstallReturn.fromJsonValue(json);
+
+class CloudCreditsShowReturn {
+  const CloudCreditsShowReturn({required this.credits, required this.success});
+
+  final RaviJson credits;
+  final bool success;
+
+  factory CloudCreditsShowReturn.fromJson(Map<String, Object?> json) {
+    return CloudCreditsShowReturn(
+      credits: RaviJson.from(json["credits"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudCreditsShowReturn fromJsonValue(Object? json) {
+    return CloudCreditsShowReturn.fromJson(raviJsonObject(json, "CloudCreditsShowReturn"));
+  }
+}
+
+CloudCreditsShowReturn cloudCreditsShowReturnFromJson(Object? json) => CloudCreditsShowReturn.fromJsonValue(json);
+
+class CloudCreditsTopupOptions {
+  const CloudCreditsTopupOptions({this.execute});
+
+  final bool? execute;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+  }
+}
+
+class CloudCreditsTopupReturn {
+  const CloudCreditsTopupReturn({required this.credits, required this.entry, required this.success});
+
+  final RaviJson credits;
+  final RaviJson entry;
+  final bool success;
+
+  factory CloudCreditsTopupReturn.fromJson(Map<String, Object?> json) {
+    return CloudCreditsTopupReturn(
+      credits: RaviJson.from(json["credits"]),
+      entry: RaviJson.from(json["entry"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudCreditsTopupReturn fromJsonValue(Object? json) {
+    return CloudCreditsTopupReturn.fromJson(raviJsonObject(json, "CloudCreditsTopupReturn"));
+  }
+}
+
+CloudCreditsTopupReturn cloudCreditsTopupReturnFromJson(Object? json) => CloudCreditsTopupReturn.fromJsonValue(json);
+
+class CloudKeyRemoveReturn {
+  const CloudKeyRemoveReturn({required this.credential, required this.success});
+
+  final RaviJson credential;
+  final bool success;
+
+  factory CloudKeyRemoveReturn.fromJson(Map<String, Object?> json) {
+    return CloudKeyRemoveReturn(
+      credential: RaviJson.from(json["credential"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudKeyRemoveReturn fromJsonValue(Object? json) {
+    return CloudKeyRemoveReturn.fromJson(raviJsonObject(json, "CloudKeyRemoveReturn"));
+  }
+}
+
+CloudKeyRemoveReturn cloudKeyRemoveReturnFromJson(Object? json) => CloudKeyRemoveReturn.fromJsonValue(json);
+
+class CloudKeyStatusReturn {
+  const CloudKeyStatusReturn({required this.credential, required this.success});
+
+  final RaviJson credential;
+  final bool success;
+
+  factory CloudKeyStatusReturn.fromJson(Map<String, Object?> json) {
+    return CloudKeyStatusReturn(
+      credential: RaviJson.from(json["credential"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudKeyStatusReturn fromJsonValue(Object? json) {
+    return CloudKeyStatusReturn.fromJson(raviJsonObject(json, "CloudKeyStatusReturn"));
+  }
+}
+
+CloudKeyStatusReturn cloudKeyStatusReturnFromJson(Object? json) => CloudKeyStatusReturn.fromJsonValue(json);
+
 class CloudProjectsCreateOptions {
   const CloudProjectsCreateOptions({this.console, this.defaultPageSite, this.description, this.execute, this.name, this.visibility});
 
@@ -7132,6 +8116,542 @@ class CloudProjectsListReturn {
 }
 
 CloudProjectsListReturn cloudProjectsListReturnFromJson(Object? json) => CloudProjectsListReturn.fromJsonValue(json);
+
+class CloudRunsAnswerOptions {
+  const CloudRunsAnswerOptions({this.execute});
+
+  final bool? execute;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+  }
+}
+
+class CloudRunsAnswerReturn {
+  const CloudRunsAnswerReturn({required this.question, required this.run, required this.success});
+
+  final RaviJson question;
+  final RaviJson run;
+  final bool success;
+
+  factory CloudRunsAnswerReturn.fromJson(Map<String, Object?> json) {
+    return CloudRunsAnswerReturn(
+      question: RaviJson.from(json["question"]),
+      run: RaviJson.from(json["run"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudRunsAnswerReturn fromJsonValue(Object? json) {
+    return CloudRunsAnswerReturn.fromJson(raviJsonObject(json, "CloudRunsAnswerReturn"));
+  }
+}
+
+CloudRunsAnswerReturn cloudRunsAnswerReturnFromJson(Object? json) => CloudRunsAnswerReturn.fromJsonValue(json);
+
+class CloudRunsApproveOptions {
+  const CloudRunsApproveOptions({this.execute});
+
+  final bool? execute;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+  }
+}
+
+class CloudRunsApproveReturn {
+  const CloudRunsApproveReturn({required this.approval, required this.run, required this.success});
+
+  final RaviJson approval;
+  final RaviJson run;
+  final bool success;
+
+  factory CloudRunsApproveReturn.fromJson(Map<String, Object?> json) {
+    return CloudRunsApproveReturn(
+      approval: RaviJson.from(json["approval"]),
+      run: RaviJson.from(json["run"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudRunsApproveReturn fromJsonValue(Object? json) {
+    return CloudRunsApproveReturn.fromJson(raviJsonObject(json, "CloudRunsApproveReturn"));
+  }
+}
+
+CloudRunsApproveReturn cloudRunsApproveReturnFromJson(Object? json) => CloudRunsApproveReturn.fromJsonValue(json);
+
+class CloudRunsDenyOptions {
+  const CloudRunsDenyOptions({this.reason});
+
+  final String? reason;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (reason != null) {
+      into["reason"] = RaviJson.from(reason);
+    }
+  }
+}
+
+class CloudRunsDenyReturn {
+  const CloudRunsDenyReturn({required this.approval, required this.run, required this.success});
+
+  final RaviJson approval;
+  final RaviJson run;
+  final bool success;
+
+  factory CloudRunsDenyReturn.fromJson(Map<String, Object?> json) {
+    return CloudRunsDenyReturn(
+      approval: RaviJson.from(json["approval"]),
+      run: RaviJson.from(json["run"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudRunsDenyReturn fromJsonValue(Object? json) {
+    return CloudRunsDenyReturn.fromJson(raviJsonObject(json, "CloudRunsDenyReturn"));
+  }
+}
+
+CloudRunsDenyReturn cloudRunsDenyReturnFromJson(Object? json) => CloudRunsDenyReturn.fromJsonValue(json);
+
+class CloudRunsListOptions {
+  const CloudRunsListOptions({this.agent, this.cursor, this.limit, this.project, this.status});
+
+  final String? agent;
+  final String? cursor;
+  final String? limit;
+  final String? project;
+  final String? status;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+    if (cursor != null) {
+      into["cursor"] = RaviJson.from(cursor);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (status != null) {
+      into["status"] = RaviJson.from(status);
+    }
+  }
+}
+
+class CloudRunsListReturn {
+  const CloudRunsListReturn({required this.cursor, required this.project, required this.runs, required this.success});
+
+  final RaviJson cursor;
+  final String project;
+  final List<RaviJson> runs;
+  final bool success;
+
+  factory CloudRunsListReturn.fromJson(Map<String, Object?> json) {
+    return CloudRunsListReturn(
+      cursor: RaviJson.from(json["cursor"]),
+      project: raviJsonAsString(json["project"]),
+      runs: raviJsonAsList(json["runs"], RaviJson.from),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudRunsListReturn fromJsonValue(Object? json) {
+    return CloudRunsListReturn.fromJson(raviJsonObject(json, "CloudRunsListReturn"));
+  }
+}
+
+CloudRunsListReturn cloudRunsListReturnFromJson(Object? json) => CloudRunsListReturn.fromJsonValue(json);
+
+class CloudRunsOutputsOptions {
+  const CloudRunsOutputsOptions({this.download});
+
+  final String? download;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (download != null) {
+      into["download"] = RaviJson.from(download);
+    }
+  }
+}
+
+class CloudRunsOutputsReturn {
+  const CloudRunsOutputsReturn({required this.directory, required this.downloaded, required this.outputs, required this.runId, required this.success});
+
+  final RaviJson directory;
+  final List<RaviJson> downloaded;
+  final List<RaviJson> outputs;
+  final String runId;
+  final bool success;
+
+  factory CloudRunsOutputsReturn.fromJson(Map<String, Object?> json) {
+    return CloudRunsOutputsReturn(
+      directory: RaviJson.from(json["directory"]),
+      downloaded: raviJsonAsList(json["downloaded"], RaviJson.from),
+      outputs: raviJsonAsList(json["outputs"], RaviJson.from),
+      runId: raviJsonAsString(json["runId"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudRunsOutputsReturn fromJsonValue(Object? json) {
+    return CloudRunsOutputsReturn.fromJson(raviJsonObject(json, "CloudRunsOutputsReturn"));
+  }
+}
+
+CloudRunsOutputsReturn cloudRunsOutputsReturnFromJson(Object? json) => CloudRunsOutputsReturn.fromJsonValue(json);
+
+class CloudRunsReplyOptions {
+  const CloudRunsReplyOptions({this.execute});
+
+  final bool? execute;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+  }
+}
+
+class CloudRunsReplyReturn {
+  const CloudRunsReplyReturn({required this.run, required this.success});
+
+  final RaviJson run;
+  final bool success;
+
+  factory CloudRunsReplyReturn.fromJson(Map<String, Object?> json) {
+    return CloudRunsReplyReturn(
+      run: RaviJson.from(json["run"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudRunsReplyReturn fromJsonValue(Object? json) {
+    return CloudRunsReplyReturn.fromJson(raviJsonObject(json, "CloudRunsReplyReturn"));
+  }
+}
+
+CloudRunsReplyReturn cloudRunsReplyReturnFromJson(Object? json) => CloudRunsReplyReturn.fromJsonValue(json);
+
+class CloudRunsShowReturn {
+  const CloudRunsShowReturn({required this.run, required this.success});
+
+  final RaviJson run;
+  final bool success;
+
+  factory CloudRunsShowReturn.fromJson(Map<String, Object?> json) {
+    return CloudRunsShowReturn(
+      run: RaviJson.from(json["run"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudRunsShowReturn fromJsonValue(Object? json) {
+    return CloudRunsShowReturn.fromJson(raviJsonObject(json, "CloudRunsShowReturn"));
+  }
+}
+
+CloudRunsShowReturn cloudRunsShowReturnFromJson(Object? json) => CloudRunsShowReturn.fromJsonValue(json);
+
+class CloudRunsStartOptions {
+  const CloudRunsStartOptions({this.bindThread, this.budget, this.execute, this.file, this.idempotencyKey, this.maxIterations, this.noDeliver, this.outcome, this.project, this.repo, this.rowsLimit, this.rowsView});
+
+  final bool? bindThread;
+  final String? budget;
+  final bool? execute;
+  final List<String>? file;
+  final String? idempotencyKey;
+  final String? maxIterations;
+  final bool? noDeliver;
+  final String? outcome;
+  final String? project;
+  final List<String>? repo;
+  final String? rowsLimit;
+  final String? rowsView;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (bindThread != null) {
+      into["bindThread"] = RaviJson.from(bindThread);
+    }
+    if (budget != null) {
+      into["budget"] = RaviJson.from(budget);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (file != null) {
+      into["file"] = RaviJson.from(file);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
+    if (maxIterations != null) {
+      into["maxIterations"] = RaviJson.from(maxIterations);
+    }
+    if (noDeliver != null) {
+      into["noDeliver"] = RaviJson.from(noDeliver);
+    }
+    if (outcome != null) {
+      into["outcome"] = RaviJson.from(outcome);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (repo != null) {
+      into["repo"] = RaviJson.from(repo);
+    }
+    if (rowsLimit != null) {
+      into["rowsLimit"] = RaviJson.from(rowsLimit);
+    }
+    if (rowsView != null) {
+      into["rowsView"] = RaviJson.from(rowsView);
+    }
+  }
+}
+
+class CloudRunsStartReturn {
+  const CloudRunsStartReturn({required this.run, required this.success, this.thread});
+
+  final RaviJson run;
+  final bool success;
+  final RaviJson? thread;
+
+  factory CloudRunsStartReturn.fromJson(Map<String, Object?> json) {
+    return CloudRunsStartReturn(
+      run: RaviJson.from(json["run"]),
+      success: raviJsonAsBool(json["success"]),
+      thread: json["thread"] == null ? null : RaviJson.from(json["thread"]),
+    );
+  }
+
+  static CloudRunsStartReturn fromJsonValue(Object? json) {
+    return CloudRunsStartReturn.fromJson(raviJsonObject(json, "CloudRunsStartReturn"));
+  }
+}
+
+CloudRunsStartReturn cloudRunsStartReturnFromJson(Object? json) => CloudRunsStartReturn.fromJsonValue(json);
+
+class CloudRunsStopReturn {
+  const CloudRunsStopReturn({required this.run, required this.success});
+
+  final RaviJson run;
+  final bool success;
+
+  factory CloudRunsStopReturn.fromJson(Map<String, Object?> json) {
+    return CloudRunsStopReturn(
+      run: RaviJson.from(json["run"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudRunsStopReturn fromJsonValue(Object? json) {
+    return CloudRunsStopReturn.fromJson(raviJsonObject(json, "CloudRunsStopReturn"));
+  }
+}
+
+CloudRunsStopReturn cloudRunsStopReturnFromJson(Object? json) => CloudRunsStopReturn.fromJsonValue(json);
+
+class CloudSchedulesAddOptions {
+  const CloudSchedulesAddOptions({this.budget, this.cron, this.disabled, this.execute, this.noDeliver, this.project, this.prompt, this.timezone});
+
+  final String? budget;
+  final String? cron;
+  final bool? disabled;
+  final bool? execute;
+  final bool? noDeliver;
+  final String? project;
+  final String? prompt;
+  final String? timezone;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (budget != null) {
+      into["budget"] = RaviJson.from(budget);
+    }
+    if (cron != null) {
+      into["cron"] = RaviJson.from(cron);
+    }
+    if (disabled != null) {
+      into["disabled"] = RaviJson.from(disabled);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (noDeliver != null) {
+      into["noDeliver"] = RaviJson.from(noDeliver);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (prompt != null) {
+      into["prompt"] = RaviJson.from(prompt);
+    }
+    if (timezone != null) {
+      into["timezone"] = RaviJson.from(timezone);
+    }
+  }
+}
+
+class CloudSchedulesAddReturn {
+  const CloudSchedulesAddReturn({required this.schedule, required this.success});
+
+  final RaviJson schedule;
+  final bool success;
+
+  factory CloudSchedulesAddReturn.fromJson(Map<String, Object?> json) {
+    return CloudSchedulesAddReturn(
+      schedule: RaviJson.from(json["schedule"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudSchedulesAddReturn fromJsonValue(Object? json) {
+    return CloudSchedulesAddReturn.fromJson(raviJsonObject(json, "CloudSchedulesAddReturn"));
+  }
+}
+
+CloudSchedulesAddReturn cloudSchedulesAddReturnFromJson(Object? json) => CloudSchedulesAddReturn.fromJsonValue(json);
+
+class CloudSchedulesListOptions {
+  const CloudSchedulesListOptions({this.limit, this.offset, this.project});
+
+  final String? limit;
+  final String? offset;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class CloudSchedulesListReturn {
+  const CloudSchedulesListReturn({required this.pagination, required this.project, required this.schedules, required this.success});
+
+  final RaviJson pagination;
+  final String project;
+  final List<RaviJson> schedules;
+  final bool success;
+
+  factory CloudSchedulesListReturn.fromJson(Map<String, Object?> json) {
+    return CloudSchedulesListReturn(
+      pagination: RaviJson.from(json["pagination"]),
+      project: raviJsonAsString(json["project"]),
+      schedules: raviJsonAsList(json["schedules"], RaviJson.from),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudSchedulesListReturn fromJsonValue(Object? json) {
+    return CloudSchedulesListReturn.fromJson(raviJsonObject(json, "CloudSchedulesListReturn"));
+  }
+}
+
+CloudSchedulesListReturn cloudSchedulesListReturnFromJson(Object? json) => CloudSchedulesListReturn.fromJsonValue(json);
+
+class CloudSchedulesRemoveReturn {
+  const CloudSchedulesRemoveReturn({required this.id, required this.removed, required this.success});
+
+  final String id;
+  final bool removed;
+  final bool success;
+
+  factory CloudSchedulesRemoveReturn.fromJson(Map<String, Object?> json) {
+    return CloudSchedulesRemoveReturn(
+      id: raviJsonAsString(json["id"]),
+      removed: raviJsonAsBool(json["removed"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudSchedulesRemoveReturn fromJsonValue(Object? json) {
+    return CloudSchedulesRemoveReturn.fromJson(raviJsonObject(json, "CloudSchedulesRemoveReturn"));
+  }
+}
+
+CloudSchedulesRemoveReturn cloudSchedulesRemoveReturnFromJson(Object? json) => CloudSchedulesRemoveReturn.fromJsonValue(json);
+
+class CloudSchedulesUpdateOptions {
+  const CloudSchedulesUpdateOptions({this.budget, this.cron, this.disable, this.enable, this.execute, this.heartbeat, this.noDeliver, this.project, this.prompt, this.timezone});
+
+  final String? budget;
+  final String? cron;
+  final bool? disable;
+  final bool? enable;
+  final bool? execute;
+  final bool? heartbeat;
+  final bool? noDeliver;
+  final String? project;
+  final String? prompt;
+  final String? timezone;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (budget != null) {
+      into["budget"] = RaviJson.from(budget);
+    }
+    if (cron != null) {
+      into["cron"] = RaviJson.from(cron);
+    }
+    if (disable != null) {
+      into["disable"] = RaviJson.from(disable);
+    }
+    if (enable != null) {
+      into["enable"] = RaviJson.from(enable);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (heartbeat != null) {
+      into["heartbeat"] = RaviJson.from(heartbeat);
+    }
+    if (noDeliver != null) {
+      into["noDeliver"] = RaviJson.from(noDeliver);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (prompt != null) {
+      into["prompt"] = RaviJson.from(prompt);
+    }
+    if (timezone != null) {
+      into["timezone"] = RaviJson.from(timezone);
+    }
+  }
+}
+
+class CloudSchedulesUpdateReturn {
+  const CloudSchedulesUpdateReturn({required this.schedule, required this.success});
+
+  final RaviJson schedule;
+  final bool success;
+
+  factory CloudSchedulesUpdateReturn.fromJson(Map<String, Object?> json) {
+    return CloudSchedulesUpdateReturn(
+      schedule: RaviJson.from(json["schedule"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudSchedulesUpdateReturn fromJsonValue(Object? json) {
+    return CloudSchedulesUpdateReturn.fromJson(raviJsonObject(json, "CloudSchedulesUpdateReturn"));
+  }
+}
+
+CloudSchedulesUpdateReturn cloudSchedulesUpdateReturnFromJson(Object? json) => CloudSchedulesUpdateReturn.fromJsonValue(json);
 
 class CloudScopeClearOptions {
   const CloudScopeClearOptions({this.agent, this.console, this.global, this.session, this.workspace});
@@ -7316,6 +8836,530 @@ class CloudScopeShowReturn {
 }
 
 CloudScopeShowReturn cloudScopeShowReturnFromJson(Object? json) => CloudScopeShowReturn.fromJsonValue(json);
+
+class CloudSecretsListOptions {
+  const CloudSecretsListOptions({this.limit, this.offset, this.project});
+
+  final String? limit;
+  final String? offset;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class CloudSecretsListReturn {
+  const CloudSecretsListReturn({required this.pagination, required this.project, required this.secrets, required this.success});
+
+  final RaviJson pagination;
+  final RaviJson project;
+  final List<RaviJson> secrets;
+  final bool success;
+
+  factory CloudSecretsListReturn.fromJson(Map<String, Object?> json) {
+    return CloudSecretsListReturn(
+      pagination: RaviJson.from(json["pagination"]),
+      project: RaviJson.from(json["project"]),
+      secrets: raviJsonAsList(json["secrets"], RaviJson.from),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudSecretsListReturn fromJsonValue(Object? json) {
+    return CloudSecretsListReturn.fromJson(raviJsonObject(json, "CloudSecretsListReturn"));
+  }
+}
+
+CloudSecretsListReturn cloudSecretsListReturnFromJson(Object? json) => CloudSecretsListReturn.fromJsonValue(json);
+
+class CloudSecretsRemoveOptions {
+  const CloudSecretsRemoveOptions({this.project});
+
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class CloudSecretsRemoveReturn {
+  const CloudSecretsRemoveReturn({required this.id, required this.name, required this.removed, required this.success});
+
+  final String id;
+  final String name;
+  final bool removed;
+  final bool success;
+
+  factory CloudSecretsRemoveReturn.fromJson(Map<String, Object?> json) {
+    return CloudSecretsRemoveReturn(
+      id: raviJsonAsString(json["id"]),
+      name: raviJsonAsString(json["name"]),
+      removed: raviJsonAsBool(json["removed"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudSecretsRemoveReturn fromJsonValue(Object? json) {
+    return CloudSecretsRemoveReturn.fromJson(raviJsonObject(json, "CloudSecretsRemoveReturn"));
+  }
+}
+
+CloudSecretsRemoveReturn cloudSecretsRemoveReturnFromJson(Object? json) => CloudSecretsRemoveReturn.fromJsonValue(json);
+
+class CloudSettingsSetOptions {
+  const CloudSettingsSetOptions({this.billingMode, this.dailyEventRuns, this.execute, this.monthlyCap});
+
+  final String? billingMode;
+  final String? dailyEventRuns;
+  final bool? execute;
+  final String? monthlyCap;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (billingMode != null) {
+      into["billingMode"] = RaviJson.from(billingMode);
+    }
+    if (dailyEventRuns != null) {
+      into["dailyEventRuns"] = RaviJson.from(dailyEventRuns);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (monthlyCap != null) {
+      into["monthlyCap"] = RaviJson.from(monthlyCap);
+    }
+  }
+}
+
+class CloudSettingsSetReturn {
+  const CloudSettingsSetReturn({required this.changes, required this.settings, required this.success});
+
+  final List<String> changes;
+  final RaviJson settings;
+  final bool success;
+
+  factory CloudSettingsSetReturn.fromJson(Map<String, Object?> json) {
+    return CloudSettingsSetReturn(
+      changes: raviJsonAsList(json["changes"], raviJsonAsString),
+      settings: RaviJson.from(json["settings"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudSettingsSetReturn fromJsonValue(Object? json) {
+    return CloudSettingsSetReturn.fromJson(raviJsonObject(json, "CloudSettingsSetReturn"));
+  }
+}
+
+CloudSettingsSetReturn cloudSettingsSetReturnFromJson(Object? json) => CloudSettingsSetReturn.fromJsonValue(json);
+
+class CloudSettingsShowReturn {
+  const CloudSettingsShowReturn({required this.settings, required this.success});
+
+  final RaviJson settings;
+  final bool success;
+
+  factory CloudSettingsShowReturn.fromJson(Map<String, Object?> json) {
+    return CloudSettingsShowReturn(
+      settings: RaviJson.from(json["settings"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudSettingsShowReturn fromJsonValue(Object? json) {
+    return CloudSettingsShowReturn.fromJson(raviJsonObject(json, "CloudSettingsShowReturn"));
+  }
+}
+
+CloudSettingsShowReturn cloudSettingsShowReturnFromJson(Object? json) => CloudSettingsShowReturn.fromJsonValue(json);
+
+class CloudTriggersCreateOptions {
+  const CloudTriggersCreateOptions({this.base, this.batchWindow, this.budget, this.dailyCap, this.dedupeWindow, this.deliverTo, this.disabled, this.events, this.execute, this.mailbox, this.project, this.prompt, this.site, this.source, this.view});
+
+  final String? base;
+  final String? batchWindow;
+  final String? budget;
+  final String? dailyCap;
+  final String? dedupeWindow;
+  final String? deliverTo;
+  final bool? disabled;
+  final List<String>? events;
+  final bool? execute;
+  final String? mailbox;
+  final String? project;
+  final String? prompt;
+  final String? site;
+  final String? source;
+  final String? view;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (base != null) {
+      into["base"] = RaviJson.from(base);
+    }
+    if (batchWindow != null) {
+      into["batchWindow"] = RaviJson.from(batchWindow);
+    }
+    if (budget != null) {
+      into["budget"] = RaviJson.from(budget);
+    }
+    if (dailyCap != null) {
+      into["dailyCap"] = RaviJson.from(dailyCap);
+    }
+    if (dedupeWindow != null) {
+      into["dedupeWindow"] = RaviJson.from(dedupeWindow);
+    }
+    if (deliverTo != null) {
+      into["deliverTo"] = RaviJson.from(deliverTo);
+    }
+    if (disabled != null) {
+      into["disabled"] = RaviJson.from(disabled);
+    }
+    if (events != null) {
+      into["events"] = RaviJson.from(events);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (mailbox != null) {
+      into["mailbox"] = RaviJson.from(mailbox);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (prompt != null) {
+      into["prompt"] = RaviJson.from(prompt);
+    }
+    if (site != null) {
+      into["site"] = RaviJson.from(site);
+    }
+    if (source != null) {
+      into["source"] = RaviJson.from(source);
+    }
+    if (view != null) {
+      into["view"] = RaviJson.from(view);
+    }
+  }
+}
+
+class CloudTriggersCreateReturn {
+  const CloudTriggersCreateReturn({required this.success, required this.trigger});
+
+  final bool success;
+  final RaviJson trigger;
+
+  factory CloudTriggersCreateReturn.fromJson(Map<String, Object?> json) {
+    return CloudTriggersCreateReturn(
+      success: raviJsonAsBool(json["success"]),
+      trigger: RaviJson.from(json["trigger"]),
+    );
+  }
+
+  static CloudTriggersCreateReturn fromJsonValue(Object? json) {
+    return CloudTriggersCreateReturn.fromJson(raviJsonObject(json, "CloudTriggersCreateReturn"));
+  }
+}
+
+CloudTriggersCreateReturn cloudTriggersCreateReturnFromJson(Object? json) => CloudTriggersCreateReturn.fromJsonValue(json);
+
+class CloudTriggersListOptions {
+  const CloudTriggersListOptions({this.limit, this.offset, this.project});
+
+  final String? limit;
+  final String? offset;
+  final String? project;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+  }
+}
+
+class CloudTriggersListReturn {
+  const CloudTriggersListReturn({required this.pagination, required this.project, required this.success, required this.triggers});
+
+  final RaviJson pagination;
+  final String project;
+  final bool success;
+  final List<RaviJson> triggers;
+
+  factory CloudTriggersListReturn.fromJson(Map<String, Object?> json) {
+    return CloudTriggersListReturn(
+      pagination: RaviJson.from(json["pagination"]),
+      project: raviJsonAsString(json["project"]),
+      success: raviJsonAsBool(json["success"]),
+      triggers: raviJsonAsList(json["triggers"], RaviJson.from),
+    );
+  }
+
+  static CloudTriggersListReturn fromJsonValue(Object? json) {
+    return CloudTriggersListReturn.fromJson(raviJsonObject(json, "CloudTriggersListReturn"));
+  }
+}
+
+CloudTriggersListReturn cloudTriggersListReturnFromJson(Object? json) => CloudTriggersListReturn.fromJsonValue(json);
+
+class CloudTriggersRemoveReturn {
+  const CloudTriggersRemoveReturn({required this.id, required this.removed, required this.success});
+
+  final String id;
+  final bool removed;
+  final bool success;
+
+  factory CloudTriggersRemoveReturn.fromJson(Map<String, Object?> json) {
+    return CloudTriggersRemoveReturn(
+      id: raviJsonAsString(json["id"]),
+      removed: raviJsonAsBool(json["removed"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudTriggersRemoveReturn fromJsonValue(Object? json) {
+    return CloudTriggersRemoveReturn.fromJson(raviJsonObject(json, "CloudTriggersRemoveReturn"));
+  }
+}
+
+CloudTriggersRemoveReturn cloudTriggersRemoveReturnFromJson(Object? json) => CloudTriggersRemoveReturn.fromJsonValue(json);
+
+class CloudTriggersTestReturn {
+  const CloudTriggersTestReturn({required this.id, required this.success, required this.test});
+
+  final String id;
+  final bool success;
+  final RaviJson test;
+
+  factory CloudTriggersTestReturn.fromJson(Map<String, Object?> json) {
+    return CloudTriggersTestReturn(
+      id: raviJsonAsString(json["id"]),
+      success: raviJsonAsBool(json["success"]),
+      test: RaviJson.from(json["test"]),
+    );
+  }
+
+  static CloudTriggersTestReturn fromJsonValue(Object? json) {
+    return CloudTriggersTestReturn.fromJson(raviJsonObject(json, "CloudTriggersTestReturn"));
+  }
+}
+
+CloudTriggersTestReturn cloudTriggersTestReturnFromJson(Object? json) => CloudTriggersTestReturn.fromJsonValue(json);
+
+class CloudTriggersUpdateOptions {
+  const CloudTriggersUpdateOptions({this.batchWindow, this.budget, this.dailyCap, this.dedupeWindow, this.deliverTo, this.disable, this.enable, this.events, this.execute, this.project, this.prompt});
+
+  final String? batchWindow;
+  final String? budget;
+  final String? dailyCap;
+  final String? dedupeWindow;
+  final String? deliverTo;
+  final bool? disable;
+  final bool? enable;
+  final List<String>? events;
+  final bool? execute;
+  final String? project;
+  final String? prompt;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (batchWindow != null) {
+      into["batchWindow"] = RaviJson.from(batchWindow);
+    }
+    if (budget != null) {
+      into["budget"] = RaviJson.from(budget);
+    }
+    if (dailyCap != null) {
+      into["dailyCap"] = RaviJson.from(dailyCap);
+    }
+    if (dedupeWindow != null) {
+      into["dedupeWindow"] = RaviJson.from(dedupeWindow);
+    }
+    if (deliverTo != null) {
+      into["deliverTo"] = RaviJson.from(deliverTo);
+    }
+    if (disable != null) {
+      into["disable"] = RaviJson.from(disable);
+    }
+    if (enable != null) {
+      into["enable"] = RaviJson.from(enable);
+    }
+    if (events != null) {
+      into["events"] = RaviJson.from(events);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
+    }
+    if (prompt != null) {
+      into["prompt"] = RaviJson.from(prompt);
+    }
+  }
+}
+
+class CloudTriggersUpdateReturn {
+  const CloudTriggersUpdateReturn({required this.success, required this.trigger});
+
+  final bool success;
+  final RaviJson trigger;
+
+  factory CloudTriggersUpdateReturn.fromJson(Map<String, Object?> json) {
+    return CloudTriggersUpdateReturn(
+      success: raviJsonAsBool(json["success"]),
+      trigger: RaviJson.from(json["trigger"]),
+    );
+  }
+
+  static CloudTriggersUpdateReturn fromJsonValue(Object? json) {
+    return CloudTriggersUpdateReturn.fromJson(raviJsonObject(json, "CloudTriggersUpdateReturn"));
+  }
+}
+
+CloudTriggersUpdateReturn cloudTriggersUpdateReturnFromJson(Object? json) => CloudTriggersUpdateReturn.fromJsonValue(json);
+
+class CloudWebhookRemoveReturn {
+  const CloudWebhookRemoveReturn({required this.success, required this.webhook});
+
+  final bool success;
+  final RaviJson webhook;
+
+  factory CloudWebhookRemoveReturn.fromJson(Map<String, Object?> json) {
+    return CloudWebhookRemoveReturn(
+      success: raviJsonAsBool(json["success"]),
+      webhook: RaviJson.from(json["webhook"]),
+    );
+  }
+
+  static CloudWebhookRemoveReturn fromJsonValue(Object? json) {
+    return CloudWebhookRemoveReturn.fromJson(raviJsonObject(json, "CloudWebhookRemoveReturn"));
+  }
+}
+
+CloudWebhookRemoveReturn cloudWebhookRemoveReturnFromJson(Object? json) => CloudWebhookRemoveReturn.fromJsonValue(json);
+
+class CloudWebhookShowReturn {
+  const CloudWebhookShowReturn({required this.success, required this.webhook});
+
+  final bool success;
+  final RaviJson webhook;
+
+  factory CloudWebhookShowReturn.fromJson(Map<String, Object?> json) {
+    return CloudWebhookShowReturn(
+      success: raviJsonAsBool(json["success"]),
+      webhook: RaviJson.from(json["webhook"]),
+    );
+  }
+
+  static CloudWebhookShowReturn fromJsonValue(Object? json) {
+    return CloudWebhookShowReturn.fromJson(raviJsonObject(json, "CloudWebhookShowReturn"));
+  }
+}
+
+CloudWebhookShowReturn cloudWebhookShowReturnFromJson(Object? json) => CloudWebhookShowReturn.fromJsonValue(json);
+
+class CloudWorkerDisableReturn {
+  const CloudWorkerDisableReturn({required this.changed, required this.enabled, required this.enabledAt, required this.success});
+
+  final bool changed;
+  final bool enabled;
+  final RaviJson enabledAt;
+  final bool success;
+
+  factory CloudWorkerDisableReturn.fromJson(Map<String, Object?> json) {
+    return CloudWorkerDisableReturn(
+      changed: raviJsonAsBool(json["changed"]),
+      enabled: raviJsonAsBool(json["enabled"]),
+      enabledAt: RaviJson.from(json["enabledAt"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static CloudWorkerDisableReturn fromJsonValue(Object? json) {
+    return CloudWorkerDisableReturn.fromJson(raviJsonObject(json, "CloudWorkerDisableReturn"));
+  }
+}
+
+CloudWorkerDisableReturn cloudWorkerDisableReturnFromJson(Object? json) => CloudWorkerDisableReturn.fromJsonValue(json);
+
+class CloudWorkerKeyRemoveReturn {
+  const CloudWorkerKeyRemoveReturn({required this.removed, required this.success, required this.workerId});
+
+  final bool removed;
+  final bool success;
+  final String workerId;
+
+  factory CloudWorkerKeyRemoveReturn.fromJson(Map<String, Object?> json) {
+    return CloudWorkerKeyRemoveReturn(
+      removed: raviJsonAsBool(json["removed"]),
+      success: raviJsonAsBool(json["success"]),
+      workerId: raviJsonAsString(json["workerId"]),
+    );
+  }
+
+  static CloudWorkerKeyRemoveReturn fromJsonValue(Object? json) {
+    return CloudWorkerKeyRemoveReturn.fromJson(raviJsonObject(json, "CloudWorkerKeyRemoveReturn"));
+  }
+}
+
+CloudWorkerKeyRemoveReturn cloudWorkerKeyRemoveReturnFromJson(Object? json) => CloudWorkerKeyRemoveReturn.fromJsonValue(json);
+
+class CloudWorkerListOptions {
+  const CloudWorkerListOptions({this.limit, this.offset});
+
+  final String? limit;
+  final String? offset;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+  }
+}
+
+class CloudWorkerListReturn {
+  const CloudWorkerListReturn({required this.enabled, required this.enabledAt, required this.orphanKeys, required this.pagination, required this.success, required this.workers});
+
+  final bool enabled;
+  final RaviJson enabledAt;
+  final List<String> orphanKeys;
+  final RaviJson pagination;
+  final bool success;
+  final List<RaviJson> workers;
+
+  factory CloudWorkerListReturn.fromJson(Map<String, Object?> json) {
+    return CloudWorkerListReturn(
+      enabled: raviJsonAsBool(json["enabled"]),
+      enabledAt: RaviJson.from(json["enabledAt"]),
+      orphanKeys: raviJsonAsList(json["orphanKeys"], raviJsonAsString),
+      pagination: RaviJson.from(json["pagination"]),
+      success: raviJsonAsBool(json["success"]),
+      workers: raviJsonAsList(json["workers"], RaviJson.from),
+    );
+  }
+
+  static CloudWorkerListReturn fromJsonValue(Object? json) {
+    return CloudWorkerListReturn.fromJson(raviJsonObject(json, "CloudWorkerListReturn"));
+  }
+}
+
+CloudWorkerListReturn cloudWorkerListReturnFromJson(Object? json) => CloudWorkerListReturn.fromJsonValue(json);
 
 class CommandsListOptions {
   const CommandsListOptions({this.agent, this.fields, this.limit, this.offset, this.tag});
@@ -7811,6 +9855,56 @@ typedef ContactsLinkReturn = Map<String, RaviJson>;
 
 ContactsLinkReturn contactsLinkReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
 
+class ContactsLinkAgentOptions {
+  const ContactsLinkAgentOptions({this.channel, this.id, this.instance, this.name, this.reason});
+
+  final String? channel;
+  final String? id;
+  final String? instance;
+  final String? name;
+  final String? reason;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (channel != null) {
+      into["channel"] = RaviJson.from(channel);
+    }
+    if (id != null) {
+      into["id"] = RaviJson.from(id);
+    }
+    if (instance != null) {
+      into["instance"] = RaviJson.from(instance);
+    }
+    if (name != null) {
+      into["name"] = RaviJson.from(name);
+    }
+    if (reason != null) {
+      into["reason"] = RaviJson.from(reason);
+    }
+  }
+}
+
+class ContactsLinkAgentReturn {
+  const ContactsLinkAgentReturn({required this.agent, required this.identity, required this.status});
+
+  final String agent;
+  final RaviJson identity;
+  final String status;
+
+  factory ContactsLinkAgentReturn.fromJson(Map<String, Object?> json) {
+    return ContactsLinkAgentReturn(
+      agent: raviJsonAsString(json["agent"]),
+      identity: RaviJson.from(json["identity"]),
+      status: raviJsonAsString(json["status"]),
+    );
+  }
+
+  static ContactsLinkAgentReturn fromJsonValue(Object? json) {
+    return ContactsLinkAgentReturn.fromJson(raviJsonObject(json, "ContactsLinkAgentReturn"));
+  }
+}
+
+ContactsLinkAgentReturn contactsLinkAgentReturnFromJson(Object? json) => ContactsLinkAgentReturn.fromJsonValue(json);
+
 class ContactsListOptions {
   const ContactsListOptions({this.fields, this.limit, this.offset, this.status});
 
@@ -8130,6 +10224,36 @@ class ContextAuthorizeReturn {
 }
 
 ContextAuthorizeReturn contextAuthorizeReturnFromJson(Object? json) => ContextAuthorizeReturn.fromJsonValue(json);
+
+class ContextBridgeToolHookOptions {
+  const ContextBridgeToolHookOptions({this.payload});
+
+  final String? payload;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (payload != null) {
+      into["payload"] = RaviJson.from(payload);
+    }
+  }
+}
+
+class ContextBridgeToolHookReturn {
+  const ContextBridgeToolHookReturn({this.hookSpecificOutput});
+
+  final RaviJson? hookSpecificOutput;
+
+  factory ContextBridgeToolHookReturn.fromJson(Map<String, Object?> json) {
+    return ContextBridgeToolHookReturn(
+      hookSpecificOutput: json["hookSpecificOutput"] == null ? null : RaviJson.from(json["hookSpecificOutput"]),
+    );
+  }
+
+  static ContextBridgeToolHookReturn fromJsonValue(Object? json) {
+    return ContextBridgeToolHookReturn.fromJson(raviJsonObject(json, "ContextBridgeToolHookReturn"));
+  }
+}
+
+ContextBridgeToolHookReturn contextBridgeToolHookReturnFromJson(Object? json) => ContextBridgeToolHookReturn.fromJsonValue(json);
 
 class ContextCapabilitiesReturn {
   const ContextCapabilitiesReturn({required this.agentId, required this.capabilities, required this.contextId, required this.kind, required this.sessionKey, required this.sessionName});
@@ -9244,6 +11368,88 @@ class CredentialsPoliciesExplainReturn {
 }
 
 CredentialsPoliciesExplainReturn credentialsPoliciesExplainReturnFromJson(Object? json) => CredentialsPoliciesExplainReturn.fromJsonValue(json);
+
+class CredentialsRequestOptions {
+  const CredentialsRequestOptions({this.backend, this.execute, this.label, this.reason, this.scopes, this.user});
+
+  final String? backend;
+  final bool? execute;
+  final String? label;
+  final String? reason;
+  final String? scopes;
+  final String? user;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (backend != null) {
+      into["backend"] = RaviJson.from(backend);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (label != null) {
+      into["label"] = RaviJson.from(label);
+    }
+    if (reason != null) {
+      into["reason"] = RaviJson.from(reason);
+    }
+    if (scopes != null) {
+      into["scopes"] = RaviJson.from(scopes);
+    }
+    if (user != null) {
+      into["user"] = RaviJson.from(user);
+    }
+  }
+}
+
+class CredentialsRequestReturn {
+  const CredentialsRequestReturn({required this.delivery, required this.expiresAt, required this.requestId, required this.target});
+
+  final String delivery;
+  final double expiresAt;
+  final String requestId;
+  final String target;
+
+  factory CredentialsRequestReturn.fromJson(Map<String, Object?> json) {
+    return CredentialsRequestReturn(
+      delivery: raviJsonAsString(json["delivery"]),
+      expiresAt: raviJsonAsDouble(json["expiresAt"]),
+      requestId: raviJsonAsString(json["requestId"]),
+      target: raviJsonAsString(json["target"]),
+    );
+  }
+
+  static CredentialsRequestReturn fromJsonValue(Object? json) {
+    return CredentialsRequestReturn.fromJson(raviJsonObject(json, "CredentialsRequestReturn"));
+  }
+}
+
+CredentialsRequestReturn credentialsRequestReturnFromJson(Object? json) => CredentialsRequestReturn.fromJsonValue(json);
+
+class CredentialsRequestStatusReturn {
+  const CredentialsRequestStatusReturn({required this.activation, this.receipt, required this.requestId, required this.status, required this.target});
+
+  final String activation;
+  final String? receipt;
+  final String requestId;
+  final String status;
+  final String target;
+
+  factory CredentialsRequestStatusReturn.fromJson(Map<String, Object?> json) {
+    return CredentialsRequestStatusReturn(
+      activation: raviJsonAsString(json["activation"]),
+      receipt: json["receipt"] == null ? null : raviJsonAsString(json["receipt"]),
+      requestId: raviJsonAsString(json["requestId"]),
+      status: raviJsonAsString(json["status"]),
+      target: raviJsonAsString(json["target"]),
+    );
+  }
+
+  static CredentialsRequestStatusReturn fromJsonValue(Object? json) {
+    return CredentialsRequestStatusReturn.fromJson(raviJsonObject(json, "CredentialsRequestStatusReturn"));
+  }
+}
+
+CredentialsRequestStatusReturn credentialsRequestStatusReturnFromJson(Object? json) => CredentialsRequestStatusReturn.fromJsonValue(json);
 
 class CrmAccountReturn {
   const CrmAccountReturn({required this.crm, required this.target});
@@ -10994,12 +13200,13 @@ class CronAddOptions {
 }
 
 class CronAddReturn {
-  const CronAddReturn({required this.changedCount, required this.job, required this.status, required this.target});
+  const CronAddReturn({required this.changedCount, required this.job, required this.status, required this.target, this.warnings});
 
   final double changedCount;
   final RaviJson job;
   final String status;
   final RaviJson target;
+  final List<String>? warnings;
 
   factory CronAddReturn.fromJson(Map<String, Object?> json) {
     return CronAddReturn(
@@ -11007,6 +13214,7 @@ class CronAddReturn {
       job: RaviJson.from(json["job"]),
       status: raviJsonAsString(json["status"]),
       target: RaviJson.from(json["target"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -11018,12 +13226,13 @@ class CronAddReturn {
 CronAddReturn cronAddReturnFromJson(Object? json) => CronAddReturn.fromJsonValue(json);
 
 class CronDisableReturn {
-  const CronDisableReturn({required this.changedCount, required this.job, required this.status, required this.target});
+  const CronDisableReturn({required this.changedCount, required this.job, required this.status, required this.target, this.warnings});
 
   final double changedCount;
   final RaviJson job;
   final String status;
   final RaviJson target;
+  final List<String>? warnings;
 
   factory CronDisableReturn.fromJson(Map<String, Object?> json) {
     return CronDisableReturn(
@@ -11031,6 +13240,7 @@ class CronDisableReturn {
       job: RaviJson.from(json["job"]),
       status: raviJsonAsString(json["status"]),
       target: RaviJson.from(json["target"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -11042,12 +13252,13 @@ class CronDisableReturn {
 CronDisableReturn cronDisableReturnFromJson(Object? json) => CronDisableReturn.fromJsonValue(json);
 
 class CronEnableReturn {
-  const CronEnableReturn({required this.changedCount, required this.job, required this.status, required this.target});
+  const CronEnableReturn({required this.changedCount, required this.job, required this.status, required this.target, this.warnings});
 
   final double changedCount;
   final RaviJson job;
   final String status;
   final RaviJson target;
+  final List<String>? warnings;
 
   factory CronEnableReturn.fromJson(Map<String, Object?> json) {
     return CronEnableReturn(
@@ -11055,6 +13266,7 @@ class CronEnableReturn {
       job: RaviJson.from(json["job"]),
       status: raviJsonAsString(json["status"]),
       target: RaviJson.from(json["target"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -11134,12 +13346,13 @@ class CronRmOptions {
 }
 
 class CronRmReturn {
-  const CronRmReturn({required this.changedCount, required this.job, required this.status, required this.target});
+  const CronRmReturn({required this.changedCount, required this.job, required this.status, required this.target, this.warnings});
 
   final double changedCount;
   final RaviJson job;
   final String status;
   final RaviJson target;
+  final List<String>? warnings;
 
   factory CronRmReturn.fromJson(Map<String, Object?> json) {
     return CronRmReturn(
@@ -11147,6 +13360,7 @@ class CronRmReturn {
       job: RaviJson.from(json["job"]),
       status: raviJsonAsString(json["status"]),
       target: RaviJson.from(json["target"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -11170,12 +13384,13 @@ class CronRunOptions {
 }
 
 class CronRunReturn {
-  const CronRunReturn({required this.changedCount, required this.job, required this.status, required this.target});
+  const CronRunReturn({required this.changedCount, required this.job, required this.status, required this.target, this.warnings});
 
   final double changedCount;
   final RaviJson job;
   final String status;
   final RaviJson target;
+  final List<String>? warnings;
 
   factory CronRunReturn.fromJson(Map<String, Object?> json) {
     return CronRunReturn(
@@ -11183,6 +13398,7 @@ class CronRunReturn {
       job: RaviJson.from(json["job"]),
       status: raviJsonAsString(json["status"]),
       target: RaviJson.from(json["target"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -11194,12 +13410,13 @@ class CronRunReturn {
 CronRunReturn cronRunReturnFromJson(Object? json) => CronRunReturn.fromJsonValue(json);
 
 class CronSetReturn {
-  const CronSetReturn({required this.changedCount, required this.job, required this.status, required this.target});
+  const CronSetReturn({required this.changedCount, required this.job, required this.status, required this.target, this.warnings});
 
   final double changedCount;
   final RaviJson job;
   final String status;
   final RaviJson target;
+  final List<String>? warnings;
 
   factory CronSetReturn.fromJson(Map<String, Object?> json) {
     return CronSetReturn(
@@ -11207,6 +13424,7 @@ class CronSetReturn {
       job: RaviJson.from(json["job"]),
       status: raviJsonAsString(json["status"]),
       target: RaviJson.from(json["target"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -11428,7 +13646,7 @@ class DaemonStartReturn {
 DaemonStartReturn daemonStartReturnFromJson(Object? json) => DaemonStartReturn.fromJsonValue(json);
 
 class DaemonStatusReturn {
-  const DaemonStatusReturn({required this.infrastructure, required this.pm2Available, required this.processName, required this.processes, required this.ravi, required this.runtime});
+  const DaemonStatusReturn({required this.infrastructure, required this.pm2Available, required this.processName, required this.processes, required this.ravi, required this.runtime, required this.warnings});
 
   final Map<String, RaviJson> infrastructure;
   final bool pm2Available;
@@ -11436,6 +13654,7 @@ class DaemonStatusReturn {
   final List<Map<String, RaviJson>> processes;
   final Map<String, RaviJson> ravi;
   final RaviJson runtime;
+  final List<String> warnings;
 
   factory DaemonStatusReturn.fromJson(Map<String, Object?> json) {
     return DaemonStatusReturn(
@@ -11445,6 +13664,7 @@ class DaemonStatusReturn {
       processes: raviJsonAsList(json["processes"], raviJsonAsRaviJsonMap),
       ravi: raviJsonAsRaviJsonMap(json["ravi"]),
       runtime: RaviJson.from(json["runtime"]),
+      warnings: raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -11494,6 +13714,254 @@ class DaemonUninstallReturn {
 }
 
 DaemonUninstallReturn daemonUninstallReturnFromJson(Object? json) => DaemonUninstallReturn.fromJsonValue(json);
+
+class DecisionsAnswerOptions {
+  const DecisionsAnswerOptions({this.by, this.execute, this.text});
+
+  final String? by;
+  final bool? execute;
+  final String? text;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (by != null) {
+      into["by"] = RaviJson.from(by);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (text != null) {
+      into["text"] = RaviJson.from(text);
+    }
+  }
+}
+
+class DecisionsAnswerReturn {
+  const DecisionsAnswerReturn({this.created, required this.decision, required this.deliveries});
+
+  final bool? created;
+  final RaviJson decision;
+  final List<RaviJson> deliveries;
+
+  factory DecisionsAnswerReturn.fromJson(Map<String, Object?> json) {
+    return DecisionsAnswerReturn(
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      decision: RaviJson.from(json["decision"]),
+      deliveries: raviJsonAsList(json["deliveries"], RaviJson.from),
+    );
+  }
+
+  static DecisionsAnswerReturn fromJsonValue(Object? json) {
+    return DecisionsAnswerReturn.fromJson(raviJsonObject(json, "DecisionsAnswerReturn"));
+  }
+}
+
+DecisionsAnswerReturn decisionsAnswerReturnFromJson(Object? json) => DecisionsAnswerReturn.fromJsonValue(json);
+
+class DecisionsAskOptions {
+  const DecisionsAskOptions({this.ask, this.blocks, this.execute, this.key, this.owner, this.task, this.thread});
+
+  final String? ask;
+  final bool? blocks;
+  final bool? execute;
+  final String? key;
+  final String? owner;
+  final String? task;
+  final String? thread;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (ask != null) {
+      into["ask"] = RaviJson.from(ask);
+    }
+    if (blocks != null) {
+      into["blocks"] = RaviJson.from(blocks);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (key != null) {
+      into["key"] = RaviJson.from(key);
+    }
+    if (owner != null) {
+      into["owner"] = RaviJson.from(owner);
+    }
+    if (task != null) {
+      into["task"] = RaviJson.from(task);
+    }
+    if (thread != null) {
+      into["thread"] = RaviJson.from(thread);
+    }
+  }
+}
+
+class DecisionsAskReturn {
+  const DecisionsAskReturn({this.created, required this.decision, required this.deliveries});
+
+  final bool? created;
+  final RaviJson decision;
+  final List<RaviJson> deliveries;
+
+  factory DecisionsAskReturn.fromJson(Map<String, Object?> json) {
+    return DecisionsAskReturn(
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      decision: RaviJson.from(json["decision"]),
+      deliveries: raviJsonAsList(json["deliveries"], RaviJson.from),
+    );
+  }
+
+  static DecisionsAskReturn fromJsonValue(Object? json) {
+    return DecisionsAskReturn.fromJson(raviJsonObject(json, "DecisionsAskReturn"));
+  }
+}
+
+DecisionsAskReturn decisionsAskReturnFromJson(Object? json) => DecisionsAskReturn.fromJsonValue(json);
+
+class DecisionsListOptions {
+  const DecisionsListOptions({this.all, this.limit, this.offset, this.task, this.thread});
+
+  final bool? all;
+  final String? limit;
+  final String? offset;
+  final String? task;
+  final String? thread;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (all != null) {
+      into["all"] = RaviJson.from(all);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+    if (task != null) {
+      into["task"] = RaviJson.from(task);
+    }
+    if (thread != null) {
+      into["thread"] = RaviJson.from(thread);
+    }
+  }
+}
+
+class DecisionsListReturn {
+  const DecisionsListReturn({required this.decisions, required this.pagination});
+
+  final List<RaviJson> decisions;
+  final RaviJson pagination;
+
+  factory DecisionsListReturn.fromJson(Map<String, Object?> json) {
+    return DecisionsListReturn(
+      decisions: raviJsonAsList(json["decisions"], RaviJson.from),
+      pagination: RaviJson.from(json["pagination"]),
+    );
+  }
+
+  static DecisionsListReturn fromJsonValue(Object? json) {
+    return DecisionsListReturn.fromJson(raviJsonObject(json, "DecisionsListReturn"));
+  }
+}
+
+DecisionsListReturn decisionsListReturnFromJson(Object? json) => DecisionsListReturn.fromJsonValue(json);
+
+class DecisionsResolveDeliveryOptions {
+  const DecisionsResolveDeliveryOptions({this.evidence, this.execute, this.outcome});
+
+  final String? evidence;
+  final bool? execute;
+  final String? outcome;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (evidence != null) {
+      into["evidence"] = RaviJson.from(evidence);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (outcome != null) {
+      into["outcome"] = RaviJson.from(outcome);
+    }
+  }
+}
+
+class DecisionsResolveDeliveryReturn {
+  const DecisionsResolveDeliveryReturn({this.created, required this.decision, required this.deliveries});
+
+  final bool? created;
+  final RaviJson decision;
+  final List<RaviJson> deliveries;
+
+  factory DecisionsResolveDeliveryReturn.fromJson(Map<String, Object?> json) {
+    return DecisionsResolveDeliveryReturn(
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      decision: RaviJson.from(json["decision"]),
+      deliveries: raviJsonAsList(json["deliveries"], RaviJson.from),
+    );
+  }
+
+  static DecisionsResolveDeliveryReturn fromJsonValue(Object? json) {
+    return DecisionsResolveDeliveryReturn.fromJson(raviJsonObject(json, "DecisionsResolveDeliveryReturn"));
+  }
+}
+
+DecisionsResolveDeliveryReturn decisionsResolveDeliveryReturnFromJson(Object? json) => DecisionsResolveDeliveryReturn.fromJsonValue(json);
+
+class DecisionsRetryOptions {
+  const DecisionsRetryOptions({this.execute});
+
+  final bool? execute;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+  }
+}
+
+class DecisionsRetryReturn {
+  const DecisionsRetryReturn({this.created, required this.decision, required this.deliveries});
+
+  final bool? created;
+  final RaviJson decision;
+  final List<RaviJson> deliveries;
+
+  factory DecisionsRetryReturn.fromJson(Map<String, Object?> json) {
+    return DecisionsRetryReturn(
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      decision: RaviJson.from(json["decision"]),
+      deliveries: raviJsonAsList(json["deliveries"], RaviJson.from),
+    );
+  }
+
+  static DecisionsRetryReturn fromJsonValue(Object? json) {
+    return DecisionsRetryReturn.fromJson(raviJsonObject(json, "DecisionsRetryReturn"));
+  }
+}
+
+DecisionsRetryReturn decisionsRetryReturnFromJson(Object? json) => DecisionsRetryReturn.fromJsonValue(json);
+
+class DecisionsShowReturn {
+  const DecisionsShowReturn({this.created, required this.decision, required this.deliveries, required this.history});
+
+  final bool? created;
+  final RaviJson decision;
+  final List<RaviJson> deliveries;
+  final List<RaviJson> history;
+
+  factory DecisionsShowReturn.fromJson(Map<String, Object?> json) {
+    return DecisionsShowReturn(
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      decision: RaviJson.from(json["decision"]),
+      deliveries: raviJsonAsList(json["deliveries"], RaviJson.from),
+      history: raviJsonAsList(json["history"], RaviJson.from),
+    );
+  }
+
+  static DecisionsShowReturn fromJsonValue(Object? json) {
+    return DecisionsShowReturn.fromJson(raviJsonObject(json, "DecisionsShowReturn"));
+  }
+}
+
+DecisionsShowReturn decisionsShowReturnFromJson(Object? json) => DecisionsShowReturn.fromJsonValue(json);
 
 class DevinAuthCheckReturn {
   const DevinAuthCheckReturn({required this.baseUrl, this.configuredOrgId, required this.ok, required this.self});
@@ -17482,7 +19950,7 @@ class PagesPublishOptions {
 }
 
 class PagesPublishReturn {
-  const PagesPublishReturn({required this.artifact, required this.artifactVersion, required this.authenticated, required this.consoleUrl, required this.localSync, required this.publish, required this.release, required this.routes, required this.site, required this.success, required this.upload, required this.uploadSession, required this.url});
+  const PagesPublishReturn({required this.artifact, required this.artifactVersion, required this.authenticated, required this.consoleUrl, required this.localSync, required this.publish, required this.release, required this.routes, required this.scope, required this.site, required this.success, required this.upload, required this.uploadSession, required this.url});
 
   final RaviJson artifact;
   final RaviJson artifactVersion;
@@ -17492,6 +19960,7 @@ class PagesPublishReturn {
   final RaviJson publish;
   final RaviJson release;
   final List<Map<String, RaviJson>> routes;
+  final RaviJson scope;
   final RaviJson site;
   final bool success;
   final RaviJson upload;
@@ -17508,6 +19977,7 @@ class PagesPublishReturn {
       publish: RaviJson.from(json["publish"]),
       release: RaviJson.from(json["release"]),
       routes: raviJsonAsList(json["routes"], raviJsonAsRaviJsonMap),
+      scope: RaviJson.from(json["scope"]),
       site: RaviJson.from(json["site"]),
       success: raviJsonAsBool(json["success"]),
       upload: RaviJson.from(json["upload"]),
@@ -18404,6 +20874,84 @@ class PermissionsStatusReturn {
 }
 
 PermissionsStatusReturn permissionsStatusReturnFromJson(Object? json) => PermissionsStatusReturn.fromJsonValue(json);
+
+class PrPublishOptions {
+  const PrPublishOptions({this.base, this.bodyFile, this.dryRun, this.execute, this.expectSha, this.replySession, this.repo, this.title});
+
+  final String? base;
+  final String? bodyFile;
+  final bool? dryRun;
+  final bool? execute;
+  final String? expectSha;
+  final String? replySession;
+  final String? repo;
+  final String? title;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (base != null) {
+      into["base"] = RaviJson.from(base);
+    }
+    if (bodyFile != null) {
+      into["bodyFile"] = RaviJson.from(bodyFile);
+    }
+    if (dryRun != null) {
+      into["dryRun"] = RaviJson.from(dryRun);
+    }
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (expectSha != null) {
+      into["expectSha"] = RaviJson.from(expectSha);
+    }
+    if (replySession != null) {
+      into["replySession"] = RaviJson.from(replySession);
+    }
+    if (repo != null) {
+      into["repo"] = RaviJson.from(repo);
+    }
+    if (title != null) {
+      into["title"] = RaviJson.from(title);
+    }
+  }
+}
+
+class PrPublishReturn {
+  const PrPublishReturn({required this.attemptId, required this.base, required this.checks, required this.follow, required this.head, required this.localSha, required this.pr, required this.publicationId, required this.remoteSha, required this.repo, required this.treeSha});
+
+  final String attemptId;
+  final String base;
+  final RaviJson checks;
+  final RaviJson follow;
+  final String head;
+  final String localSha;
+  final RaviJson pr;
+  final String publicationId;
+  final String remoteSha;
+  final String repo;
+  final String treeSha;
+
+  factory PrPublishReturn.fromJson(Map<String, Object?> json) {
+    return PrPublishReturn(
+      attemptId: raviJsonAsString(json["attemptId"]),
+      base: raviJsonAsString(json["base"]),
+      checks: RaviJson.from(json["checks"]),
+      follow: RaviJson.from(json["follow"]),
+      head: raviJsonAsString(json["head"]),
+      localSha: raviJsonAsString(json["localSha"]),
+      pr: RaviJson.from(json["pr"]),
+      publicationId: raviJsonAsString(json["publicationId"]),
+      remoteSha: raviJsonAsString(json["remoteSha"]),
+      repo: raviJsonAsString(json["repo"]),
+      treeSha: raviJsonAsString(json["treeSha"]),
+    );
+  }
+
+  static PrPublishReturn fromJsonValue(Object? json) {
+    return PrPublishReturn.fromJson(raviJsonObject(json, "PrPublishReturn"));
+  }
+}
+
+PrPublishReturn prPublishReturnFromJson(Object? json) => PrPublishReturn.fromJsonValue(json);
 
 class ProjectsCreateOptions {
   const ProjectsCreateOptions({this.console, this.defaultPageSite, this.description, this.execute, this.name, this.visibility});
@@ -19900,15 +22448,23 @@ class RuntimeCredentialsSelectReturn {
 RuntimeCredentialsSelectReturn runtimeCredentialsSelectReturnFromJson(Object? json) => RuntimeCredentialsSelectReturn.fromJsonValue(json);
 
 class RuntimeCredentialsStatusReturn {
-  const RuntimeCredentialsStatusReturn({required this.credential, required this.health});
+  const RuntimeCredentialsStatusReturn({this.credential, this.credentials, this.health, this.pagination, this.providerHealth, this.total});
 
-  final Map<String, RaviJson> credential;
-  final RaviJson health;
+  final Map<String, RaviJson>? credential;
+  final List<Map<String, RaviJson>>? credentials;
+  final RaviJson? health;
+  final RaviJson? pagination;
+  final List<Map<String, RaviJson>>? providerHealth;
+  final double? total;
 
   factory RuntimeCredentialsStatusReturn.fromJson(Map<String, Object?> json) {
     return RuntimeCredentialsStatusReturn(
-      credential: raviJsonAsRaviJsonMap(json["credential"]),
-      health: RaviJson.from(json["health"]),
+      credential: json["credential"] == null ? null : raviJsonAsRaviJsonMap(json["credential"]),
+      credentials: json["credentials"] == null ? null : raviJsonAsList(json["credentials"], raviJsonAsRaviJsonMap),
+      health: json["health"] == null ? null : RaviJson.from(json["health"]),
+      pagination: json["pagination"] == null ? null : RaviJson.from(json["pagination"]),
+      providerHealth: json["providerHealth"] == null ? null : raviJsonAsList(json["providerHealth"], raviJsonAsRaviJsonMap),
+      total: json["total"] == null ? null : raviJsonAsDouble(json["total"]),
     );
   }
 
@@ -19968,7 +22524,7 @@ class RuntimeEnvSetOptions {
 }
 
 class RuntimeEnvSetReturn {
-  const RuntimeEnvSetReturn({required this.action, required this.daemonReloadRequired, required this.key, required this.origin, required this.path, required this.present, required this.processPresent, required this.redacted, required this.secret, required this.value});
+  const RuntimeEnvSetReturn({required this.action, required this.daemonReloadRequired, required this.key, required this.origin, required this.path, required this.present, required this.processPresent, required this.redacted, required this.secret, required this.value, this.warnings});
 
   final String action;
   final bool daemonReloadRequired;
@@ -19980,6 +22536,7 @@ class RuntimeEnvSetReturn {
   final bool redacted;
   final bool secret;
   final RaviJson value;
+  final List<String>? warnings;
 
   factory RuntimeEnvSetReturn.fromJson(Map<String, Object?> json) {
     return RuntimeEnvSetReturn(
@@ -19993,6 +22550,7 @@ class RuntimeEnvSetReturn {
       redacted: raviJsonAsBool(json["redacted"]),
       secret: raviJsonAsBool(json["secret"]),
       value: RaviJson.from(json["value"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -20004,7 +22562,7 @@ class RuntimeEnvSetReturn {
 RuntimeEnvSetReturn runtimeEnvSetReturnFromJson(Object? json) => RuntimeEnvSetReturn.fromJsonValue(json);
 
 class RuntimeEnvUnsetReturn {
-  const RuntimeEnvUnsetReturn({required this.action, required this.daemonReloadRequired, required this.key, required this.origin, required this.path, required this.present, required this.processPresent, required this.redacted, required this.secret, required this.value});
+  const RuntimeEnvUnsetReturn({required this.action, required this.daemonReloadRequired, required this.key, required this.origin, required this.path, required this.present, required this.processPresent, required this.redacted, required this.secret, required this.value, this.warnings});
 
   final String action;
   final bool daemonReloadRequired;
@@ -20016,6 +22574,7 @@ class RuntimeEnvUnsetReturn {
   final bool redacted;
   final bool secret;
   final RaviJson value;
+  final List<String>? warnings;
 
   factory RuntimeEnvUnsetReturn.fromJson(Map<String, Object?> json) {
     return RuntimeEnvUnsetReturn(
@@ -20029,6 +22588,7 @@ class RuntimeEnvUnsetReturn {
       redacted: raviJsonAsBool(json["redacted"]),
       secret: raviJsonAsBool(json["secret"]),
       value: RaviJson.from(json["value"]),
+      warnings: json["warnings"] == null ? null : raviJsonAsList(json["warnings"], raviJsonAsString),
     );
   }
 
@@ -21295,18 +23855,240 @@ class SessionsCloseThreadReturn {
 
 SessionsCloseThreadReturn sessionsCloseThreadReturnFromJson(Object? json) => SessionsCloseThreadReturn.fromJsonValue(json);
 
-class SessionsCreateThreadOptions {
-  const SessionsCreateThreadOptions({this.model, this.session});
+typedef SessionsConversationsAgentsReturn = List<RaviJson>;
 
-  final String? model;
-  final String? session;
+SessionsConversationsAgentsReturn sessionsConversationsAgentsReturnFromJson(Object? json) => raviJsonAsList(json, RaviJson.from);
+
+class SessionsConversationsCancelReturn {
+  const SessionsConversationsCancelReturn({required this.cancelRequested, required this.conversationId, required this.status, required this.turnId});
+
+  final bool cancelRequested;
+  final String conversationId;
+  final String status;
+  final String turnId;
+
+  factory SessionsConversationsCancelReturn.fromJson(Map<String, Object?> json) {
+    return SessionsConversationsCancelReturn(
+      cancelRequested: raviJsonAsBool(json["cancelRequested"]),
+      conversationId: raviJsonAsString(json["conversationId"]),
+      status: raviJsonAsString(json["status"]),
+      turnId: raviJsonAsString(json["turnId"]),
+    );
+  }
+
+  static SessionsConversationsCancelReturn fromJsonValue(Object? json) {
+    return SessionsConversationsCancelReturn.fromJson(raviJsonObject(json, "SessionsConversationsCancelReturn"));
+  }
+}
+
+SessionsConversationsCancelReturn sessionsConversationsCancelReturnFromJson(Object? json) => SessionsConversationsCancelReturn.fromJsonValue(json);
+
+class SessionsConversationsCreateReturn {
+  const SessionsConversationsCreateReturn({required this.conversation, required this.conversationId});
+
+  final RaviJson conversation;
+  final String conversationId;
+
+  factory SessionsConversationsCreateReturn.fromJson(Map<String, Object?> json) {
+    return SessionsConversationsCreateReturn(
+      conversation: RaviJson.from(json["conversation"]),
+      conversationId: raviJsonAsString(json["conversationId"]),
+    );
+  }
+
+  static SessionsConversationsCreateReturn fromJsonValue(Object? json) {
+    return SessionsConversationsCreateReturn.fromJson(raviJsonObject(json, "SessionsConversationsCreateReturn"));
+  }
+}
+
+SessionsConversationsCreateReturn sessionsConversationsCreateReturnFromJson(Object? json) => SessionsConversationsCreateReturn.fromJsonValue(json);
+
+class SessionsConversationsDecideReturn {
+  const SessionsConversationsDecideReturn({required this.approvalId, required this.conversationId, required this.state, required this.version});
+
+  final String approvalId;
+  final String conversationId;
+  final String state;
+  final double version;
+
+  factory SessionsConversationsDecideReturn.fromJson(Map<String, Object?> json) {
+    return SessionsConversationsDecideReturn(
+      approvalId: raviJsonAsString(json["approvalId"]),
+      conversationId: raviJsonAsString(json["conversationId"]),
+      state: raviJsonAsString(json["state"]),
+      version: raviJsonAsDouble(json["version"]),
+    );
+  }
+
+  static SessionsConversationsDecideReturn fromJsonValue(Object? json) {
+    return SessionsConversationsDecideReturn.fromJson(raviJsonObject(json, "SessionsConversationsDecideReturn"));
+  }
+}
+
+SessionsConversationsDecideReturn sessionsConversationsDecideReturnFromJson(Object? json) => SessionsConversationsDecideReturn.fromJsonValue(json);
+
+class SessionsConversationsEventsReturn {
+  const SessionsConversationsEventsReturn({required this.cursor, required this.events});
+
+  final String cursor;
+  final List<RaviJson> events;
+
+  factory SessionsConversationsEventsReturn.fromJson(Map<String, Object?> json) {
+    return SessionsConversationsEventsReturn(
+      cursor: raviJsonAsString(json["cursor"]),
+      events: raviJsonAsList(json["events"], RaviJson.from),
+    );
+  }
+
+  static SessionsConversationsEventsReturn fromJsonValue(Object? json) {
+    return SessionsConversationsEventsReturn.fromJson(raviJsonObject(json, "SessionsConversationsEventsReturn"));
+  }
+}
+
+SessionsConversationsEventsReturn sessionsConversationsEventsReturnFromJson(Object? json) => SessionsConversationsEventsReturn.fromJsonValue(json);
+
+class SessionsConversationsHistoryReturn {
+  const SessionsConversationsHistoryReturn({required this.hasOlder, required this.messages});
+
+  final bool hasOlder;
+  final List<RaviJson> messages;
+
+  factory SessionsConversationsHistoryReturn.fromJson(Map<String, Object?> json) {
+    return SessionsConversationsHistoryReturn(
+      hasOlder: raviJsonAsBool(json["hasOlder"]),
+      messages: raviJsonAsList(json["messages"], RaviJson.from),
+    );
+  }
+
+  static SessionsConversationsHistoryReturn fromJsonValue(Object? json) {
+    return SessionsConversationsHistoryReturn.fromJson(raviJsonObject(json, "SessionsConversationsHistoryReturn"));
+  }
+}
+
+SessionsConversationsHistoryReturn sessionsConversationsHistoryReturnFromJson(Object? json) => SessionsConversationsHistoryReturn.fromJsonValue(json);
+
+class SessionsConversationsListOptions {
+  const SessionsConversationsListOptions({this.limit, this.offset});
+
+  final int? limit;
+  final int? offset;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+  }
+}
+
+typedef SessionsConversationsListReturn = List<RaviJson>;
+
+SessionsConversationsListReturn sessionsConversationsListReturnFromJson(Object? json) => raviJsonAsList(json, RaviJson.from);
+
+class SessionsConversationsOpenReturn {
+  const SessionsConversationsOpenReturn({required this.approvals, required this.conversation, required this.cursor, required this.hasOlder, required this.messages, required this.turn});
+
+  final List<RaviJson> approvals;
+  final RaviJson conversation;
+  final String cursor;
+  final bool hasOlder;
+  final List<RaviJson> messages;
+  final RaviJson turn;
+
+  factory SessionsConversationsOpenReturn.fromJson(Map<String, Object?> json) {
+    return SessionsConversationsOpenReturn(
+      approvals: raviJsonAsList(json["approvals"], RaviJson.from),
+      conversation: RaviJson.from(json["conversation"]),
+      cursor: raviJsonAsString(json["cursor"]),
+      hasOlder: raviJsonAsBool(json["hasOlder"]),
+      messages: raviJsonAsList(json["messages"], RaviJson.from),
+      turn: RaviJson.from(json["turn"]),
+    );
+  }
+
+  static SessionsConversationsOpenReturn fromJsonValue(Object? json) {
+    return SessionsConversationsOpenReturn.fromJson(raviJsonObject(json, "SessionsConversationsOpenReturn"));
+  }
+}
+
+SessionsConversationsOpenReturn sessionsConversationsOpenReturnFromJson(Object? json) => SessionsConversationsOpenReturn.fromJsonValue(json);
+
+typedef SessionsConversationsReceiptReturn = RaviJson;
+
+SessionsConversationsReceiptReturn sessionsConversationsReceiptReturnFromJson(Object? json) => RaviJson.from(json);
+
+class SessionsConversationsRenewReturn {
+  const SessionsConversationsRenewReturn({required this.conversationId, required this.renewed});
+
+  final String conversationId;
+  final bool renewed;
+
+  factory SessionsConversationsRenewReturn.fromJson(Map<String, Object?> json) {
+    return SessionsConversationsRenewReturn(
+      conversationId: raviJsonAsString(json["conversationId"]),
+      renewed: raviJsonAsBool(json["renewed"]),
+    );
+  }
+
+  static SessionsConversationsRenewReturn fromJsonValue(Object? json) {
+    return SessionsConversationsRenewReturn.fromJson(raviJsonObject(json, "SessionsConversationsRenewReturn"));
+  }
+}
+
+SessionsConversationsRenewReturn sessionsConversationsRenewReturnFromJson(Object? json) => SessionsConversationsRenewReturn.fromJsonValue(json);
+
+class SessionsConversationsSendReturn {
+  const SessionsConversationsSendReturn({required this.accepted, required this.conversationId, required this.messageId, required this.turnId, required this.version});
+
+  final bool accepted;
+  final String conversationId;
+  final String messageId;
+  final String turnId;
+  final double version;
+
+  factory SessionsConversationsSendReturn.fromJson(Map<String, Object?> json) {
+    return SessionsConversationsSendReturn(
+      accepted: raviJsonAsBool(json["accepted"]),
+      conversationId: raviJsonAsString(json["conversationId"]),
+      messageId: raviJsonAsString(json["messageId"]),
+      turnId: raviJsonAsString(json["turnId"]),
+      version: raviJsonAsDouble(json["version"]),
+    );
+  }
+
+  static SessionsConversationsSendReturn fromJsonValue(Object? json) {
+    return SessionsConversationsSendReturn.fromJson(raviJsonObject(json, "SessionsConversationsSendReturn"));
+  }
+}
+
+SessionsConversationsSendReturn sessionsConversationsSendReturnFromJson(Object? json) => SessionsConversationsSendReturn.fromJsonValue(json);
+
+class SessionsCreateThreadOptions {
+  const SessionsCreateThreadOptions({this.effort, this.model, this.provider, this.session, this.thinking});
+
+  final String? effort;
+  final String? model;
+  final String? provider;
+  final String? session;
+  final String? thinking;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (effort != null) {
+      into["effort"] = RaviJson.from(effort);
+    }
     if (model != null) {
       into["model"] = RaviJson.from(model);
     }
+    if (provider != null) {
+      into["provider"] = RaviJson.from(provider);
+    }
     if (session != null) {
       into["session"] = RaviJson.from(session);
+    }
+    if (thinking != null) {
+      into["thinking"] = RaviJson.from(thinking);
     }
   }
 }
@@ -22629,6 +25411,64 @@ typedef SessionsSubscriptionsReturn = Map<String, RaviJson>;
 
 SessionsSubscriptionsReturn sessionsSubscriptionsReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
 
+class SessionsThreadConfigureOptions {
+  const SessionsThreadConfigureOptions({this.effort, this.model, this.provider, this.session, this.thinking});
+
+  final String? effort;
+  final String? model;
+  final String? provider;
+  final String? session;
+  final String? thinking;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (effort != null) {
+      into["effort"] = RaviJson.from(effort);
+    }
+    if (model != null) {
+      into["model"] = RaviJson.from(model);
+    }
+    if (provider != null) {
+      into["provider"] = RaviJson.from(provider);
+    }
+    if (session != null) {
+      into["session"] = RaviJson.from(session);
+    }
+    if (thinking != null) {
+      into["thinking"] = RaviJson.from(thinking);
+    }
+  }
+}
+
+class SessionsThreadConfigureReturn {
+  const SessionsThreadConfigureReturn({required this.actionId, required this.after, required this.appliesOn, required this.before, required this.changed, required this.status, required this.thread});
+
+  final String actionId;
+  final RaviJson after;
+  final String appliesOn;
+  final RaviJson before;
+  final bool changed;
+  final String status;
+  final RaviJson thread;
+
+  factory SessionsThreadConfigureReturn.fromJson(Map<String, Object?> json) {
+    return SessionsThreadConfigureReturn(
+      actionId: raviJsonAsString(json["actionId"]),
+      after: RaviJson.from(json["after"]),
+      appliesOn: raviJsonAsString(json["appliesOn"]),
+      before: RaviJson.from(json["before"]),
+      changed: raviJsonAsBool(json["changed"]),
+      status: raviJsonAsString(json["status"]),
+      thread: RaviJson.from(json["thread"]),
+    );
+  }
+
+  static SessionsThreadConfigureReturn fromJsonValue(Object? json) {
+    return SessionsThreadConfigureReturn.fromJson(raviJsonObject(json, "SessionsThreadConfigureReturn"));
+  }
+}
+
+SessionsThreadConfigureReturn sessionsThreadConfigureReturnFromJson(Object? json) => SessionsThreadConfigureReturn.fromJsonValue(json);
+
 class SessionsThreadSendOptions {
   const SessionsThreadSendOptions({this.session});
 
@@ -22771,6 +25611,80 @@ typedef SessionsTraceReturn = Map<String, RaviJson>;
 
 SessionsTraceReturn sessionsTraceReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
 
+class SessionsUpdateOptions {
+  const SessionsUpdateOptions({this.effort, this.model, this.probeTimeout, this.provider, this.skipProbe, this.thinking});
+
+  final String? effort;
+  final String? model;
+  final String? probeTimeout;
+  final String? provider;
+  final bool? skipProbe;
+  final String? thinking;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (effort != null) {
+      into["effort"] = RaviJson.from(effort);
+    }
+    if (model != null) {
+      into["model"] = RaviJson.from(model);
+    }
+    if (probeTimeout != null) {
+      into["probeTimeout"] = RaviJson.from(probeTimeout);
+    }
+    if (provider != null) {
+      into["provider"] = RaviJson.from(provider);
+    }
+    if (skipProbe != null) {
+      into["skipProbe"] = RaviJson.from(skipProbe);
+    }
+    if (thinking != null) {
+      into["thinking"] = RaviJson.from(thinking);
+    }
+  }
+}
+
+class SessionsUpdateReturn {
+  const SessionsUpdateReturn({required this.action, required this.after, required this.appliesOn, required this.before, required this.changed, required this.clearedProviderSession, required this.effective, this.notification, required this.probe, required this.rematerializedToAgentRuntime, required this.rolledBack, required this.session, required this.superseded});
+
+  final String action;
+  final RaviJson after;
+  final String appliesOn;
+  final RaviJson before;
+  final RaviJson changed;
+  final bool clearedProviderSession;
+  final RaviJson effective;
+  final RaviJson? notification;
+  final RaviJson probe;
+  final bool rematerializedToAgentRuntime;
+  final bool rolledBack;
+  final RaviJson session;
+  final bool superseded;
+
+  factory SessionsUpdateReturn.fromJson(Map<String, Object?> json) {
+    return SessionsUpdateReturn(
+      action: raviJsonAsString(json["action"]),
+      after: RaviJson.from(json["after"]),
+      appliesOn: raviJsonAsString(json["appliesOn"]),
+      before: RaviJson.from(json["before"]),
+      changed: RaviJson.from(json["changed"]),
+      clearedProviderSession: raviJsonAsBool(json["clearedProviderSession"]),
+      effective: RaviJson.from(json["effective"]),
+      notification: json["notification"] == null ? null : RaviJson.from(json["notification"]),
+      probe: RaviJson.from(json["probe"]),
+      rematerializedToAgentRuntime: raviJsonAsBool(json["rematerializedToAgentRuntime"]),
+      rolledBack: raviJsonAsBool(json["rolledBack"]),
+      session: RaviJson.from(json["session"]),
+      superseded: raviJsonAsBool(json["superseded"]),
+    );
+  }
+
+  static SessionsUpdateReturn fromJsonValue(Object? json) {
+    return SessionsUpdateReturn.fromJson(raviJsonObject(json, "SessionsUpdateReturn"));
+  }
+}
+
+SessionsUpdateReturn sessionsUpdateReturnFromJson(Object? json) => SessionsUpdateReturn.fromJsonValue(json);
+
 typedef SessionsVisibilityReturn = Map<String, RaviJson>;
 
 SessionsVisibilityReturn sessionsVisibilityReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
@@ -22906,6 +25820,606 @@ class SettingsSetReturn {
 }
 
 SettingsSetReturn settingsSetReturnFromJson(Object? json) => SettingsSetReturn.fromJsonValue(json);
+
+class SignalsAckOptions {
+  const SignalsAckOptions({this.by, this.note});
+
+  final String? by;
+  final String? note;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (by != null) {
+      into["by"] = RaviJson.from(by);
+    }
+    if (note != null) {
+      into["note"] = RaviJson.from(note);
+    }
+  }
+}
+
+class SignalsAckReturn {
+  const SignalsAckReturn({this.changed, this.created, this.reopened, required this.signal, required this.status, this.suppressed, this.updated});
+
+  final bool? changed;
+  final bool? created;
+  final bool? reopened;
+  final RaviJson signal;
+  final String status;
+  final String? suppressed;
+  final bool? updated;
+
+  factory SignalsAckReturn.fromJson(Map<String, Object?> json) {
+    return SignalsAckReturn(
+      changed: json["changed"] == null ? null : raviJsonAsBool(json["changed"]),
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      reopened: json["reopened"] == null ? null : raviJsonAsBool(json["reopened"]),
+      signal: RaviJson.from(json["signal"]),
+      status: raviJsonAsString(json["status"]),
+      suppressed: json["suppressed"] == null ? null : raviJsonAsString(json["suppressed"]),
+      updated: json["updated"] == null ? null : raviJsonAsBool(json["updated"]),
+    );
+  }
+
+  static SignalsAckReturn fromJsonValue(Object? json) {
+    return SignalsAckReturn.fromJson(raviJsonObject(json, "SignalsAckReturn"));
+  }
+}
+
+SignalsAckReturn signalsAckReturnFromJson(Object? json) => SignalsAckReturn.fromJsonValue(json);
+
+class SignalsBudgetReturn {
+  const SignalsBudgetReturn({required this.budget});
+
+  final RaviJson budget;
+
+  factory SignalsBudgetReturn.fromJson(Map<String, Object?> json) {
+    return SignalsBudgetReturn(
+      budget: RaviJson.from(json["budget"]),
+    );
+  }
+
+  static SignalsBudgetReturn fromJsonValue(Object? json) {
+    return SignalsBudgetReturn.fromJson(raviJsonObject(json, "SignalsBudgetReturn"));
+  }
+}
+
+SignalsBudgetReturn signalsBudgetReturnFromJson(Object? json) => SignalsBudgetReturn.fromJsonValue(json);
+
+class SignalsExplainReturn {
+  const SignalsExplainReturn({required this.budget, required this.clearRule, required this.effectiveSeverity, required this.events, required this.keyMute, required this.lastEvaluation, required this.lastOobAt, required this.lastSurfaceAt, required this.ledgerToday, required this.nextSurfaceAt, required this.signal, required this.targetSessions, required this.tick});
+
+  final RaviJson budget;
+  final String clearRule;
+  final String effectiveSeverity;
+  final List<RaviJson> events;
+  final RaviJson keyMute;
+  final RaviJson lastEvaluation;
+  final RaviJson lastOobAt;
+  final RaviJson lastSurfaceAt;
+  final RaviJson ledgerToday;
+  final RaviJson nextSurfaceAt;
+  final RaviJson signal;
+  final List<String> targetSessions;
+  final RaviJson tick;
+
+  factory SignalsExplainReturn.fromJson(Map<String, Object?> json) {
+    return SignalsExplainReturn(
+      budget: RaviJson.from(json["budget"]),
+      clearRule: raviJsonAsString(json["clearRule"]),
+      effectiveSeverity: raviJsonAsString(json["effectiveSeverity"]),
+      events: raviJsonAsList(json["events"], RaviJson.from),
+      keyMute: RaviJson.from(json["keyMute"]),
+      lastEvaluation: RaviJson.from(json["lastEvaluation"]),
+      lastOobAt: RaviJson.from(json["lastOobAt"]),
+      lastSurfaceAt: RaviJson.from(json["lastSurfaceAt"]),
+      ledgerToday: RaviJson.from(json["ledgerToday"]),
+      nextSurfaceAt: RaviJson.from(json["nextSurfaceAt"]),
+      signal: RaviJson.from(json["signal"]),
+      targetSessions: raviJsonAsList(json["targetSessions"], raviJsonAsString),
+      tick: RaviJson.from(json["tick"]),
+    );
+  }
+
+  static SignalsExplainReturn fromJsonValue(Object? json) {
+    return SignalsExplainReturn.fromJson(raviJsonObject(json, "SignalsExplainReturn"));
+  }
+}
+
+SignalsExplainReturn signalsExplainReturnFromJson(Object? json) => SignalsExplainReturn.fromJsonValue(json);
+
+class SignalsListOptions {
+  const SignalsListOptions({this.key, this.limit, this.offset, this.scope, this.state});
+
+  final String? key;
+  final String? limit;
+  final String? offset;
+  final String? scope;
+  final String? state;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (key != null) {
+      into["key"] = RaviJson.from(key);
+    }
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+    if (offset != null) {
+      into["offset"] = RaviJson.from(offset);
+    }
+    if (scope != null) {
+      into["scope"] = RaviJson.from(scope);
+    }
+    if (state != null) {
+      into["state"] = RaviJson.from(state);
+    }
+  }
+}
+
+class SignalsListReturn {
+  const SignalsListReturn({required this.items, required this.total});
+
+  final List<RaviJson> items;
+  final double total;
+
+  factory SignalsListReturn.fromJson(Map<String, Object?> json) {
+    return SignalsListReturn(
+      items: raviJsonAsList(json["items"], RaviJson.from),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static SignalsListReturn fromJsonValue(Object? json) {
+    return SignalsListReturn.fromJson(raviJsonObject(json, "SignalsListReturn"));
+  }
+}
+
+SignalsListReturn signalsListReturnFromJson(Object? json) => SignalsListReturn.fromJsonValue(json);
+
+class SignalsMuteOptions {
+  const SignalsMuteOptions({this.by, this.for_, this.reason});
+
+  final String? by;
+  final String? for_;
+  final String? reason;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (by != null) {
+      into["by"] = RaviJson.from(by);
+    }
+    if (for_ != null) {
+      into["for"] = RaviJson.from(for_);
+    }
+    if (reason != null) {
+      into["reason"] = RaviJson.from(reason);
+    }
+  }
+}
+
+class SignalsMuteReturn {
+  const SignalsMuteReturn({this.changed, this.created, this.reopened, required this.signal, required this.status, this.suppressed, this.updated});
+
+  final bool? changed;
+  final bool? created;
+  final bool? reopened;
+  final RaviJson signal;
+  final String status;
+  final String? suppressed;
+  final bool? updated;
+
+  factory SignalsMuteReturn.fromJson(Map<String, Object?> json) {
+    return SignalsMuteReturn(
+      changed: json["changed"] == null ? null : raviJsonAsBool(json["changed"]),
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      reopened: json["reopened"] == null ? null : raviJsonAsBool(json["reopened"]),
+      signal: RaviJson.from(json["signal"]),
+      status: raviJsonAsString(json["status"]),
+      suppressed: json["suppressed"] == null ? null : raviJsonAsString(json["suppressed"]),
+      updated: json["updated"] == null ? null : raviJsonAsBool(json["updated"]),
+    );
+  }
+
+  static SignalsMuteReturn fromJsonValue(Object? json) {
+    return SignalsMuteReturn.fromJson(raviJsonObject(json, "SignalsMuteReturn"));
+  }
+}
+
+SignalsMuteReturn signalsMuteReturnFromJson(Object? json) => SignalsMuteReturn.fromJsonValue(json);
+
+class SignalsMuteKeyOptions {
+  const SignalsMuteKeyOptions({this.for_, this.reason});
+
+  final String? for_;
+  final String? reason;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (for_ != null) {
+      into["for"] = RaviJson.from(for_);
+    }
+    if (reason != null) {
+      into["reason"] = RaviJson.from(reason);
+    }
+  }
+}
+
+class SignalsMuteKeyReturn {
+  const SignalsMuteKeyReturn({required this.key, required this.mutedUntil, this.reason, required this.status});
+
+  final String key;
+  final double mutedUntil;
+  final String? reason;
+  final String status;
+
+  factory SignalsMuteKeyReturn.fromJson(Map<String, Object?> json) {
+    return SignalsMuteKeyReturn(
+      key: raviJsonAsString(json["key"]),
+      mutedUntil: raviJsonAsDouble(json["mutedUntil"]),
+      reason: json["reason"] == null ? null : raviJsonAsString(json["reason"]),
+      status: raviJsonAsString(json["status"]),
+    );
+  }
+
+  static SignalsMuteKeyReturn fromJsonValue(Object? json) {
+    return SignalsMuteKeyReturn.fromJson(raviJsonObject(json, "SignalsMuteKeyReturn"));
+  }
+}
+
+SignalsMuteKeyReturn signalsMuteKeyReturnFromJson(Object? json) => SignalsMuteKeyReturn.fromJsonValue(json);
+
+class SignalsRaiseOptions {
+  const SignalsRaiseOptions({this.clearDecay, this.clearExpr, this.clearManual, this.clearMetric, this.clearProbe, this.clearProducerResolve, this.cooldown, this.dedupeKey, this.detail, this.escalateAfter, this.evidence, this.grace, this.kind, this.maxSurfaces, this.recheck, this.renotifyAfter, this.reopenAfter, this.scope, this.severity, this.source, this.subject, this.targetSession, this.title, this.ttl});
+
+  final String? clearDecay;
+  final String? clearExpr;
+  final bool? clearManual;
+  final String? clearMetric;
+  final String? clearProbe;
+  final bool? clearProducerResolve;
+  final String? cooldown;
+  final String? dedupeKey;
+  final String? detail;
+  final String? escalateAfter;
+  final String? evidence;
+  final String? grace;
+  final String? kind;
+  final String? maxSurfaces;
+  final String? recheck;
+  final String? renotifyAfter;
+  final String? reopenAfter;
+  final String? scope;
+  final String? severity;
+  final String? source;
+  final String? subject;
+  final String? targetSession;
+  final String? title;
+  final String? ttl;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (clearDecay != null) {
+      into["clearDecay"] = RaviJson.from(clearDecay);
+    }
+    if (clearExpr != null) {
+      into["clearExpr"] = RaviJson.from(clearExpr);
+    }
+    if (clearManual != null) {
+      into["clearManual"] = RaviJson.from(clearManual);
+    }
+    if (clearMetric != null) {
+      into["clearMetric"] = RaviJson.from(clearMetric);
+    }
+    if (clearProbe != null) {
+      into["clearProbe"] = RaviJson.from(clearProbe);
+    }
+    if (clearProducerResolve != null) {
+      into["clearProducerResolve"] = RaviJson.from(clearProducerResolve);
+    }
+    if (cooldown != null) {
+      into["cooldown"] = RaviJson.from(cooldown);
+    }
+    if (dedupeKey != null) {
+      into["dedupeKey"] = RaviJson.from(dedupeKey);
+    }
+    if (detail != null) {
+      into["detail"] = RaviJson.from(detail);
+    }
+    if (escalateAfter != null) {
+      into["escalateAfter"] = RaviJson.from(escalateAfter);
+    }
+    if (evidence != null) {
+      into["evidence"] = RaviJson.from(evidence);
+    }
+    if (grace != null) {
+      into["grace"] = RaviJson.from(grace);
+    }
+    if (kind != null) {
+      into["kind"] = RaviJson.from(kind);
+    }
+    if (maxSurfaces != null) {
+      into["maxSurfaces"] = RaviJson.from(maxSurfaces);
+    }
+    if (recheck != null) {
+      into["recheck"] = RaviJson.from(recheck);
+    }
+    if (renotifyAfter != null) {
+      into["renotifyAfter"] = RaviJson.from(renotifyAfter);
+    }
+    if (reopenAfter != null) {
+      into["reopenAfter"] = RaviJson.from(reopenAfter);
+    }
+    if (scope != null) {
+      into["scope"] = RaviJson.from(scope);
+    }
+    if (severity != null) {
+      into["severity"] = RaviJson.from(severity);
+    }
+    if (source != null) {
+      into["source"] = RaviJson.from(source);
+    }
+    if (subject != null) {
+      into["subject"] = RaviJson.from(subject);
+    }
+    if (targetSession != null) {
+      into["targetSession"] = RaviJson.from(targetSession);
+    }
+    if (title != null) {
+      into["title"] = RaviJson.from(title);
+    }
+    if (ttl != null) {
+      into["ttl"] = RaviJson.from(ttl);
+    }
+  }
+}
+
+class SignalsRaiseReturn {
+  const SignalsRaiseReturn({this.changed, this.created, this.reopened, required this.signal, required this.status, this.suppressed, this.updated});
+
+  final bool? changed;
+  final bool? created;
+  final bool? reopened;
+  final RaviJson signal;
+  final String status;
+  final String? suppressed;
+  final bool? updated;
+
+  factory SignalsRaiseReturn.fromJson(Map<String, Object?> json) {
+    return SignalsRaiseReturn(
+      changed: json["changed"] == null ? null : raviJsonAsBool(json["changed"]),
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      reopened: json["reopened"] == null ? null : raviJsonAsBool(json["reopened"]),
+      signal: RaviJson.from(json["signal"]),
+      status: raviJsonAsString(json["status"]),
+      suppressed: json["suppressed"] == null ? null : raviJsonAsString(json["suppressed"]),
+      updated: json["updated"] == null ? null : raviJsonAsBool(json["updated"]),
+    );
+  }
+
+  static SignalsRaiseReturn fromJsonValue(Object? json) {
+    return SignalsRaiseReturn.fromJson(raviJsonObject(json, "SignalsRaiseReturn"));
+  }
+}
+
+SignalsRaiseReturn signalsRaiseReturnFromJson(Object? json) => SignalsRaiseReturn.fromJsonValue(json);
+
+class SignalsResolveOptions {
+  const SignalsResolveOptions({this.by, this.reason});
+
+  final String? by;
+  final String? reason;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (by != null) {
+      into["by"] = RaviJson.from(by);
+    }
+    if (reason != null) {
+      into["reason"] = RaviJson.from(reason);
+    }
+  }
+}
+
+class SignalsResolveReturn {
+  const SignalsResolveReturn({this.changed, this.created, this.reopened, required this.signal, required this.status, this.suppressed, this.updated});
+
+  final bool? changed;
+  final bool? created;
+  final bool? reopened;
+  final RaviJson signal;
+  final String status;
+  final String? suppressed;
+  final bool? updated;
+
+  factory SignalsResolveReturn.fromJson(Map<String, Object?> json) {
+    return SignalsResolveReturn(
+      changed: json["changed"] == null ? null : raviJsonAsBool(json["changed"]),
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      reopened: json["reopened"] == null ? null : raviJsonAsBool(json["reopened"]),
+      signal: RaviJson.from(json["signal"]),
+      status: raviJsonAsString(json["status"]),
+      suppressed: json["suppressed"] == null ? null : raviJsonAsString(json["suppressed"]),
+      updated: json["updated"] == null ? null : raviJsonAsBool(json["updated"]),
+    );
+  }
+
+  static SignalsResolveReturn fromJsonValue(Object? json) {
+    return SignalsResolveReturn.fromJson(raviJsonObject(json, "SignalsResolveReturn"));
+  }
+}
+
+SignalsResolveReturn signalsResolveReturnFromJson(Object? json) => SignalsResolveReturn.fromJsonValue(json);
+
+class SignalsShowReturn {
+  const SignalsShowReturn({required this.signal});
+
+  final RaviJson signal;
+
+  factory SignalsShowReturn.fromJson(Map<String, Object?> json) {
+    return SignalsShowReturn(
+      signal: RaviJson.from(json["signal"]),
+    );
+  }
+
+  static SignalsShowReturn fromJsonValue(Object? json) {
+    return SignalsShowReturn.fromJson(raviJsonObject(json, "SignalsShowReturn"));
+  }
+}
+
+SignalsShowReturn signalsShowReturnFromJson(Object? json) => SignalsShowReturn.fromJsonValue(json);
+
+class SignalsTickOptions {
+  const SignalsTickOptions({this.execute});
+
+  final bool? execute;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+  }
+}
+
+class SignalsTickReturn {
+  const SignalsTickReturn({required this.candidates, required this.errors, required this.escalated, required this.evaluated, required this.executed, required this.expired, required this.outbox, required this.resolved, required this.skipped, required this.tickState, required this.watchers});
+
+  final List<RaviJson> candidates;
+  final List<RaviJson> errors;
+  final double escalated;
+  final double evaluated;
+  final bool executed;
+  final double expired;
+  final RaviJson outbox;
+  final double resolved;
+  final List<RaviJson> skipped;
+  final RaviJson tickState;
+  final List<RaviJson> watchers;
+
+  factory SignalsTickReturn.fromJson(Map<String, Object?> json) {
+    return SignalsTickReturn(
+      candidates: raviJsonAsList(json["candidates"], RaviJson.from),
+      errors: raviJsonAsList(json["errors"], RaviJson.from),
+      escalated: raviJsonAsDouble(json["escalated"]),
+      evaluated: raviJsonAsDouble(json["evaluated"]),
+      executed: raviJsonAsBool(json["executed"]),
+      expired: raviJsonAsDouble(json["expired"]),
+      outbox: RaviJson.from(json["outbox"]),
+      resolved: raviJsonAsDouble(json["resolved"]),
+      skipped: raviJsonAsList(json["skipped"], RaviJson.from),
+      tickState: RaviJson.from(json["tickState"]),
+      watchers: raviJsonAsList(json["watchers"], RaviJson.from),
+    );
+  }
+
+  static SignalsTickReturn fromJsonValue(Object? json) {
+    return SignalsTickReturn.fromJson(raviJsonObject(json, "SignalsTickReturn"));
+  }
+}
+
+SignalsTickReturn signalsTickReturnFromJson(Object? json) => SignalsTickReturn.fromJsonValue(json);
+
+class SignalsUnmuteReturn {
+  const SignalsUnmuteReturn({this.changed, this.created, this.reopened, required this.signal, required this.status, this.suppressed, this.updated});
+
+  final bool? changed;
+  final bool? created;
+  final bool? reopened;
+  final RaviJson signal;
+  final String status;
+  final String? suppressed;
+  final bool? updated;
+
+  factory SignalsUnmuteReturn.fromJson(Map<String, Object?> json) {
+    return SignalsUnmuteReturn(
+      changed: json["changed"] == null ? null : raviJsonAsBool(json["changed"]),
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      reopened: json["reopened"] == null ? null : raviJsonAsBool(json["reopened"]),
+      signal: RaviJson.from(json["signal"]),
+      status: raviJsonAsString(json["status"]),
+      suppressed: json["suppressed"] == null ? null : raviJsonAsString(json["suppressed"]),
+      updated: json["updated"] == null ? null : raviJsonAsBool(json["updated"]),
+    );
+  }
+
+  static SignalsUnmuteReturn fromJsonValue(Object? json) {
+    return SignalsUnmuteReturn.fromJson(raviJsonObject(json, "SignalsUnmuteReturn"));
+  }
+}
+
+SignalsUnmuteReturn signalsUnmuteReturnFromJson(Object? json) => SignalsUnmuteReturn.fromJsonValue(json);
+
+class SignalsUnmuteKeyReturn {
+  const SignalsUnmuteKeyReturn({required this.key, required this.status});
+
+  final String key;
+  final String status;
+
+  factory SignalsUnmuteKeyReturn.fromJson(Map<String, Object?> json) {
+    return SignalsUnmuteKeyReturn(
+      key: raviJsonAsString(json["key"]),
+      status: raviJsonAsString(json["status"]),
+    );
+  }
+
+  static SignalsUnmuteKeyReturn fromJsonValue(Object? json) {
+    return SignalsUnmuteKeyReturn.fromJson(raviJsonObject(json, "SignalsUnmuteKeyReturn"));
+  }
+}
+
+SignalsUnmuteKeyReturn signalsUnmuteKeyReturnFromJson(Object? json) => SignalsUnmuteKeyReturn.fromJsonValue(json);
+
+class SignalsUpdateOptions {
+  const SignalsUpdateOptions({this.by, this.detail, this.evidence, this.severity, this.title});
+
+  final String? by;
+  final String? detail;
+  final String? evidence;
+  final String? severity;
+  final String? title;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (by != null) {
+      into["by"] = RaviJson.from(by);
+    }
+    if (detail != null) {
+      into["detail"] = RaviJson.from(detail);
+    }
+    if (evidence != null) {
+      into["evidence"] = RaviJson.from(evidence);
+    }
+    if (severity != null) {
+      into["severity"] = RaviJson.from(severity);
+    }
+    if (title != null) {
+      into["title"] = RaviJson.from(title);
+    }
+  }
+}
+
+class SignalsUpdateReturn {
+  const SignalsUpdateReturn({this.changed, this.created, this.reopened, required this.signal, required this.status, this.suppressed, this.updated});
+
+  final bool? changed;
+  final bool? created;
+  final bool? reopened;
+  final RaviJson signal;
+  final String status;
+  final String? suppressed;
+  final bool? updated;
+
+  factory SignalsUpdateReturn.fromJson(Map<String, Object?> json) {
+    return SignalsUpdateReturn(
+      changed: json["changed"] == null ? null : raviJsonAsBool(json["changed"]),
+      created: json["created"] == null ? null : raviJsonAsBool(json["created"]),
+      reopened: json["reopened"] == null ? null : raviJsonAsBool(json["reopened"]),
+      signal: RaviJson.from(json["signal"]),
+      status: raviJsonAsString(json["status"]),
+      suppressed: json["suppressed"] == null ? null : raviJsonAsString(json["suppressed"]),
+      updated: json["updated"] == null ? null : raviJsonAsBool(json["updated"]),
+    );
+  }
+
+  static SignalsUpdateReturn fromJsonValue(Object? json) {
+    return SignalsUpdateReturn.fromJson(raviJsonObject(json, "SignalsUpdateReturn"));
+  }
+}
+
+SignalsUpdateReturn signalsUpdateReturnFromJson(Object? json) => SignalsUpdateReturn.fromJsonValue(json);
 
 class SkillGatesDisableReturn {
   const SkillGatesDisableReturn({required this.rule, required this.success});
@@ -27311,6 +30825,56 @@ class TasksArchiveReturn {
 
 TasksArchiveReturn tasksArchiveReturnFromJson(Object? json) => TasksArchiveReturn.fromJsonValue(json);
 
+class TasksAttentionOptions {
+  const TasksAttentionOptions({this.agent, this.owner, this.task});
+
+  final String? agent;
+  final String? owner;
+  final String? task;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+    if (owner != null) {
+      into["owner"] = RaviJson.from(owner);
+    }
+    if (task != null) {
+      into["task"] = RaviJson.from(task);
+    }
+  }
+}
+
+class TasksAttentionReturn {
+  const TasksAttentionReturn({required this.decisionCount, required this.entries, required this.filters, required this.generatedAt, required this.kind, required this.parkedCount, required this.total});
+
+  final double decisionCount;
+  final List<RaviJson> entries;
+  final RaviJson filters;
+  final double generatedAt;
+  final String kind;
+  final double parkedCount;
+  final double total;
+
+  factory TasksAttentionReturn.fromJson(Map<String, Object?> json) {
+    return TasksAttentionReturn(
+      decisionCount: raviJsonAsDouble(json["decisionCount"]),
+      entries: raviJsonAsList(json["entries"], RaviJson.from),
+      filters: RaviJson.from(json["filters"]),
+      generatedAt: raviJsonAsDouble(json["generatedAt"]),
+      kind: raviJsonAsString(json["kind"]),
+      parkedCount: raviJsonAsDouble(json["parkedCount"]),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static TasksAttentionReturn fromJsonValue(Object? json) {
+    return TasksAttentionReturn.fromJson(raviJsonObject(json, "TasksAttentionReturn"));
+  }
+}
+
+TasksAttentionReturn tasksAttentionReturnFromJson(Object? json) => TasksAttentionReturn.fromJsonValue(json);
+
 class TasksAutomationsAddOptions {
   const TasksAutomationsAddOptions({this.agent, this.checkpoint, this.detached, this.disabled, this.filter, this.freshCheckpoint, this.freshReportEvents, this.freshReportTo, this.freshWorktree, this.input, this.instructions, this.on, this.priority, this.profile, this.reportEvents, this.reportTo, this.session, this.title});
 
@@ -27566,11 +31130,15 @@ class TasksAutomationsShowReturn {
 TasksAutomationsShowReturn tasksAutomationsShowReturnFromJson(Object? json) => TasksAutomationsShowReturn.fromJsonValue(json);
 
 class TasksBlockOptions {
-  const TasksBlockOptions({this.reason});
+  const TasksBlockOptions({this.idempotencyKey, this.reason});
 
+  final String? idempotencyKey;
   final String? reason;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
     if (reason != null) {
       into["reason"] = RaviJson.from(reason);
     }
@@ -27597,6 +31165,18 @@ class TasksBlockReturn {
 
 TasksBlockReturn tasksBlockReturnFromJson(Object? json) => TasksBlockReturn.fromJsonValue(json);
 
+class TasksCommentOptions {
+  const TasksCommentOptions({this.idempotencyKey});
+
+  final String? idempotencyKey;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
+  }
+}
+
 class TasksCommentReturn {
   const TasksCommentReturn({required this.comment, required this.event, required this.task});
 
@@ -27620,13 +31200,14 @@ class TasksCommentReturn {
 TasksCommentReturn tasksCommentReturnFromJson(Object? json) => TasksCommentReturn.fromJsonValue(json);
 
 class TasksCreateOptions {
-  const TasksCreateOptions({this.agent, this.assignee, this.checkpoint, this.dependsOn, this.effort, this.input, this.instructions, this.model, this.parent, this.priority, this.profile, this.reportEvents, this.reportTo, this.session, this.tag, this.thinking, this.worktreeBranch, this.worktreeMode, this.worktreePath});
+  const TasksCreateOptions({this.agent, this.assignee, this.checkpoint, this.dependsOn, this.effort, this.idempotencyKey, this.input, this.instructions, this.model, this.parent, this.priority, this.profile, this.reportEvents, this.reportTo, this.session, this.tag, this.thinking, this.worktreeBranch, this.worktreeMode, this.worktreePath});
 
   final String? agent;
   final String? assignee;
   final String? checkpoint;
   final List<String>? dependsOn;
   final String? effort;
+  final String? idempotencyKey;
   final List<String>? input;
   final String? instructions;
   final String? model;
@@ -27657,6 +31238,9 @@ class TasksCreateOptions {
     }
     if (effort != null) {
       into["effort"] = RaviJson.from(effort);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
     }
     if (input != null) {
       into["input"] = RaviJson.from(input);
@@ -27838,14 +31422,17 @@ class TasksDepsRmReturn {
 TasksDepsRmReturn tasksDepsRmReturnFromJson(Object? json) => TasksDepsRmReturn.fromJsonValue(json);
 
 class TasksDispatchOptions {
-  const TasksDispatchOptions({this.actorSession, this.agent, this.checkpoint, this.effort, this.execute, this.model, this.reportEvents, this.reportTo, this.session, this.thinking});
+  const TasksDispatchOptions({this.actorSession, this.agent, this.budget, this.checkpoint, this.cloud, this.effort, this.execute, this.model, this.project, this.reportEvents, this.reportTo, this.session, this.thinking});
 
   final String? actorSession;
   final String? agent;
+  final String? budget;
   final String? checkpoint;
+  final bool? cloud;
   final String? effort;
   final bool? execute;
   final String? model;
+  final String? project;
   final String? reportEvents;
   final String? reportTo;
   final String? session;
@@ -27858,8 +31445,14 @@ class TasksDispatchOptions {
     if (agent != null) {
       into["agent"] = RaviJson.from(agent);
     }
+    if (budget != null) {
+      into["budget"] = RaviJson.from(budget);
+    }
     if (checkpoint != null) {
       into["checkpoint"] = RaviJson.from(checkpoint);
+    }
+    if (cloud != null) {
+      into["cloud"] = RaviJson.from(cloud);
     }
     if (effort != null) {
       into["effort"] = RaviJson.from(effort);
@@ -27869,6 +31462,9 @@ class TasksDispatchOptions {
     }
     if (model != null) {
       into["model"] = RaviJson.from(model);
+    }
+    if (project != null) {
+      into["project"] = RaviJson.from(project);
     }
     if (reportEvents != null) {
       into["reportEvents"] = RaviJson.from(reportEvents);
@@ -27910,11 +31506,15 @@ class TasksDispatchReturn {
 TasksDispatchReturn tasksDispatchReturnFromJson(Object? json) => TasksDispatchReturn.fromJsonValue(json);
 
 class TasksDoneOptions {
-  const TasksDoneOptions({this.summary});
+  const TasksDoneOptions({this.idempotencyKey, this.summary});
 
+  final String? idempotencyKey;
   final String? summary;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
     if (summary != null) {
       into["summary"] = RaviJson.from(summary);
     }
@@ -27942,11 +31542,15 @@ class TasksDoneReturn {
 TasksDoneReturn tasksDoneReturnFromJson(Object? json) => TasksDoneReturn.fromJsonValue(json);
 
 class TasksFailOptions {
-  const TasksFailOptions({this.reason});
+  const TasksFailOptions({this.idempotencyKey, this.reason});
 
+  final String? idempotencyKey;
   final String? reason;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
     if (reason != null) {
       into["reason"] = RaviJson.from(reason);
     }
@@ -28258,12 +31862,20 @@ class TasksProfilesValidateReturn {
 TasksProfilesValidateReturn tasksProfilesValidateReturnFromJson(Object? json) => TasksProfilesValidateReturn.fromJsonValue(json);
 
 class TasksReportOptions {
-  const TasksReportOptions({this.message, this.progress});
+  const TasksReportOptions({this.checklist, this.idempotencyKey, this.message, this.progress});
 
+  final String? checklist;
+  final String? idempotencyKey;
   final String? message;
   final String? progress;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (checklist != null) {
+      into["checklist"] = RaviJson.from(checklist);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
+    }
     if (message != null) {
       into["message"] = RaviJson.from(message);
     }
@@ -29426,11 +33038,12 @@ class TranscribeFileReturn {
 TranscribeFileReturn transcribeFileReturnFromJson(Object? json) => TranscribeFileReturn.fromJsonValue(json);
 
 class TriggersAddOptions {
-  const TriggersAddOptions({this.account, this.agent, this.cooldown, this.envFile, this.exec, this.filter, this.message, this.onError, this.replySession, this.session, this.shell, this.timeout, this.topic});
+  const TriggersAddOptions({this.account, this.agent, this.cooldown, this.debounce, this.envFile, this.exec, this.filter, this.message, this.onError, this.replySession, this.session, this.shell, this.timeout, this.topic});
 
   final String? account;
   final String? agent;
   final String? cooldown;
+  final String? debounce;
   final String? envFile;
   final String? exec;
   final String? filter;
@@ -29451,6 +33064,9 @@ class TriggersAddOptions {
     }
     if (cooldown != null) {
       into["cooldown"] = RaviJson.from(cooldown);
+    }
+    if (debounce != null) {
+      into["debounce"] = RaviJson.from(debounce);
     }
     if (envFile != null) {
       into["envFile"] = RaviJson.from(envFile);

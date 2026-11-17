@@ -4,6 +4,7 @@ import type {
   RuntimeTurnOriginPrincipal,
   RuntimeTurnOriginMetadata,
   SessionRelayAction,
+  SignalTurnOriginMetadata,
   SessionRelayTurnOriginMetadata,
 } from "./message-types.js";
 
@@ -17,6 +18,7 @@ export interface SessionRelayOriginContext {
   agentId?: string;
   sessionKey?: string;
   sessionName?: string;
+  contextId?: string;
 }
 
 export function buildSessionRelayTurnOrigin(
@@ -26,6 +28,7 @@ export function buildSessionRelayTurnOrigin(
   const agentId = cleanString(context?.agentId);
   const sessionKey = cleanString(context?.sessionKey);
   const sessionName = cleanString(context?.sessionName);
+  const callerContextId = cleanString(context?.contextId);
   const session =
     sessionKey || sessionName
       ? { ...(sessionKey ? { key: sessionKey } : {}), ...(sessionName ? { name: sessionName } : {}) }
@@ -38,6 +41,7 @@ export function buildSessionRelayTurnOrigin(
     action,
     principal: buildRuntimeCallerPrincipal({ agentId, sessionKey, sessionName }),
     ...(session ? { session } : {}),
+    ...(callerContextId ? { callerContextId } : {}),
   };
 }
 
@@ -80,6 +84,7 @@ export function readSpawnedAutomationPrincipal(env: NodeJS.ProcessEnv = process.
 export function buildChannelTurnOrigin(
   action: ChannelTurnAction,
   principal: RuntimeTurnOriginPrincipal,
+  callerContextId?: string,
 ): ChannelTurnOriginMetadata {
   if (!isChannelTurnAction(action)) throw new Error(`Unsupported channel turn action: ${action}`);
   const resolvedPrincipal = resolvePrincipal(principal);
@@ -90,6 +95,18 @@ export function buildChannelTurnOrigin(
     producer: "channel",
     action,
     principal: resolvedPrincipal,
+    ...(cleanString(callerContextId) ? { callerContextId: cleanString(callerContextId) } : {}),
+  };
+}
+
+/** A deterministic signal delivery acts for its own automation, never a chat participant. */
+export function buildSignalTurnOrigin(signalId: string): SignalTurnOriginMetadata {
+  return {
+    protocol: RUNTIME_TURN_ORIGIN_PROTOCOL,
+    schemaVersion: RUNTIME_TURN_ORIGIN_SCHEMA_VERSION,
+    producer: "signals",
+    action: "escalate",
+    principal: { type: "automation", id: `signal:${signalId}` },
   };
 }
 
@@ -111,6 +128,8 @@ export function resolveRuntimeTurnOrigin(value: unknown): RuntimeTurnOriginMetad
 
   const principal = resolvePrincipal(value.principal);
   if (!principal) return null;
+  const callerContextId = cleanString(value.callerContextId);
+  const caller = callerContextId ? { callerContextId } : {};
 
   if (value.producer === "session-relay" && isSessionRelayAction(value.action)) {
     const session = resolveSession(value.session);
@@ -121,6 +140,7 @@ export function resolveRuntimeTurnOrigin(value: unknown): RuntimeTurnOriginMetad
       action: value.action,
       principal,
       ...(session ? { session } : {}),
+      ...caller,
     };
   }
 
@@ -130,6 +150,22 @@ export function resolveRuntimeTurnOrigin(value: unknown): RuntimeTurnOriginMetad
       schemaVersion: RUNTIME_TURN_ORIGIN_SCHEMA_VERSION,
       producer: "channel",
       action: value.action,
+      principal,
+      ...caller,
+    };
+  }
+
+  if (
+    value.producer === "signals" &&
+    value.action === "escalate" &&
+    principal.type === "automation" &&
+    principal.id.startsWith("signal:")
+  ) {
+    return {
+      protocol: RUNTIME_TURN_ORIGIN_PROTOCOL,
+      schemaVersion: RUNTIME_TURN_ORIGIN_SCHEMA_VERSION,
+      producer: "signals",
+      action: "escalate",
       principal,
     };
   }

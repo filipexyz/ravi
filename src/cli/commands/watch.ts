@@ -1,3 +1,4 @@
+import { errorDiagnostic, redactDiagnosticText } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import {
@@ -25,6 +26,7 @@ import { getAgent } from "../../router/config.js";
 import { getAccountForAgent } from "../../router/router-db.js";
 import { parseDurationMs, formatDurationMs } from "../../cron/schedule.js";
 import { dbCreateTrigger, type TriggerInput } from "../../triggers/index.js";
+import { resolveTriggerOwnerForCurrentTurn } from "../../triggers/ownership.js";
 import { nats } from "../../nats.js";
 import {
   createWatch,
@@ -60,11 +62,14 @@ function failWatchNotFound(op: string, watchId: string, asJson?: boolean): never
     watch.resourceRef,
   ]);
   contractFail(op, "WATCH_NOT_FOUND", `Watch not found: ${watchId}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the watch id (see suggestions; list with: ravi watch list --json)",
-      suggestions: suggestSimilar(watchId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the watch id (see suggestions; list with: ravi watch list --json)",
+        suggestions: suggestSimilar(watchId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Watch not found: ${watchId}`, { operation: op }),
   });
 }
 
@@ -372,6 +377,7 @@ export class WatchCommands {
         session: parseSession(session),
         cooldownMs: cooldown ? parseDurationMs(cooldown) : 5000,
         filter: `data.watchId == ${JSON.stringify(watch.id)}`,
+        ownerPrincipal: resolveTriggerOwnerForCurrentTurn(),
       };
       if (execute !== true) {
         // Write brake (Manual v2 7.8): this arms a real automation — every
@@ -458,11 +464,14 @@ export class WatchCommands {
       );
     }
     contractFail("watch run", "LOCAL_RUNNER_NOT_IMPLEMENTED", "Local watch polling runner is not implemented.", {
-      asJson,
-      details: {
-        retryable: false,
-        suggestedAction: "Run the watch through a supported Console placement or wait for local runner support",
+      ...{
+        asJson,
+        details: {
+          retryable: false,
+          suggestedAction: "Run the watch through a supported Console placement or wait for local runner support",
+        },
       },
+      diagnostic: errorDiagnostic("Local watch polling runner is not implemented.", { operation: "watch run" }),
     });
   }
 }
@@ -554,37 +563,55 @@ async function runWatchCommand<T>(
     const expected = expectedErrorToContractError(op, error);
     if (expected) {
       contractFail(op, expected.code, expected.message, {
-        asJson,
-        exitCode: expected.exitCode,
-        details: expected.details,
+        ...{
+          asJson,
+          exitCode: expected.exitCode,
+          details: expected.details,
+        },
+        diagnostic: errorDiagnostic(error, { operation: op }),
       });
     }
     if (isWatchApiError(error)) {
       const details = safeWatchErrorDetails(error.details);
       const hint = actionableHint({ code: error.code, details });
       contractFail(op, error.code, `Watch provider request failed (${error.code}).`, {
-        asJson,
-        details: {
-          ...details,
-          retryable: isRetryableWatchError(error.code),
-          suggestedAction: hint ?? "Inspect the watch provider configuration and retry",
+        ...{
+          asJson,
+          details: {
+            ...details,
+            retryable: isRetryableWatchError(error.code),
+            suggestedAction: hint ?? "Inspect the watch provider configuration and retry",
+          },
         },
+        diagnostic: errorDiagnostic(error, { operation: op }),
       });
     }
     const sqliteCapacity = sqliteCapacityToContractError(op, error);
     if (sqliteCapacity) {
       contractFail(op, sqliteCapacity.code, sqliteCapacity.message, {
-        asJson,
-        exitCode: sqliteCapacity.exitCode,
-        details: sqliteCapacity.details,
+        ...{
+          asJson,
+          exitCode: sqliteCapacity.exitCode,
+          details: sqliteCapacity.details,
+        },
+        diagnostic: errorDiagnostic(error, { operation: op }),
       });
     }
+    const diagnostic = errorDiagnostic(error, { operation: op });
+    // Unexpected provider errors can echo private watch endpoint URLs. Keep
+    // the surrounding reason and nested failures, but not the endpoint itself.
+    diagnostic.cause = redactDiagnosticText(diagnostic.cause, {
+      secrets: diagnostic.cause.match(/\bhttps?:\/\/\S+/gi) ?? [],
+    });
     contractFail(op, "UNHANDLED_ERROR", "Command failed unexpectedly.", {
-      asJson,
-      details: {
-        retryable: false,
-        suggestedAction: "Inspect redacted runtime logs and retry when the underlying cause is resolved",
+      ...{
+        asJson,
+        details: {
+          retryable: false,
+          suggestedAction: "Inspect redacted runtime logs and retry when the underlying cause is resolved",
+        },
       },
+      diagnostic,
     });
   }
 }

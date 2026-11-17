@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Agents Commands - Agent management CLI
  */
@@ -39,7 +40,7 @@ import {
   loadRouterConfig,
   setAgentSpecMode,
 } from "../../router/config.js";
-import { dbGetSetting, DmScopeSchema, type ContextCapability } from "../../router/router-db.js";
+import { dbGetSetting, DmScopeSchema, getDefaultAgentId, type ContextCapability } from "../../router/router-db.js";
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
 import {
   deleteSession,
@@ -49,11 +50,7 @@ import {
   resolveSession,
   type SessionTurnUsageSummary,
 } from "../../router/sessions.js";
-import {
-  createRuntimeProvider,
-  DEFAULT_RUNTIME_PROVIDER_ID,
-  listRegisteredRuntimeProviderIds,
-} from "../../runtime/provider-registry.js";
+import { createRuntimeProvider, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
 import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { resolveEffectiveAgentModel } from "../../runtime/model-preset-resolver.js";
@@ -294,6 +291,11 @@ function sessionLifetimeTokens(session: { inputTokens?: number | null; outputTok
   return (session.inputTokens ?? 0) + (session.outputTokens ?? 0);
 }
 
+/** Turn usage the provider never reported renders `unknown`, never `0` (sessions/turn-output inv. 7). */
+function formatTurnTokenCount(value: number | null): string {
+  return value === null ? "unknown" : formatTokenCount(value);
+}
+
 function formatTokenCount(value: number | null | undefined): string {
   const n = Math.round(value ?? 0);
   return n.toLocaleString("en-US");
@@ -355,7 +357,8 @@ function buildAgentJson(agent: AgentConfig, defaultAgent: string): AgentJsonSumm
 }
 
 function validateAgentModelValue(providerId: string | undefined, model: string): void {
-  const result = validateRuntimeModelSelector(providerId ?? DEFAULT_RUNTIME_PROVIDER_ID, model);
+  const provider = providerId ?? resolveRequestedRuntimeProvider({ agent: {} }).value;
+  const result = validateRuntimeModelSelector(provider, model);
   if (!result.ok) {
     fail(result.error ?? `Invalid model: ${model}`);
   }
@@ -590,11 +593,14 @@ function parseTranscriptEntries(raw: string): {
 function failAgentNotFound(op: string, agentId: string, asJson?: boolean): never {
   const candidates = filterVisibleAgents(getScopeContext(), getAllAgents()).flatMap((agent) => [agent.id, agent.name]);
   contractFail(op, "AGENT_NOT_FOUND", `Agent not found: ${agentId}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
-      suggestions: suggestSimilar(agentId, candidates),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
+        suggestions: suggestSimilar(agentId, candidates),
+      },
     },
+    diagnostic: errorDiagnostic(`Agent not found: ${agentId}`, { operation: op }),
   });
 }
 
@@ -604,9 +610,12 @@ async function showLibraryAgentCommand(value: string, asJson?: boolean) {
   if (!ref) {
     const message = `Not a valid Library ref: ${value.slice(0, 120)}. Use org/<slug> or <project>/<slug> (a-z, 0-9 and -).`;
     contractFail("agents show", "LIBRARY_REF_INVALID", message, {
-      asJson,
-      exitCode: 2,
-      details: { suggestedAction: "Copy the ref from: ravi agents search <words> --json" },
+      ...{
+        asJson,
+        exitCode: 2,
+        details: { suggestedAction: "Copy the ref from: ravi agents search <words> --json" },
+      },
+      diagnostic: errorDiagnostic(message, { operation: "agents show" }),
     });
   }
   return withLibraryContract("agents show", asJson, async () => {
@@ -658,9 +667,14 @@ function setAgentLibraryDescription(agentId: string, value: string, asJson?: boo
       "USAGE_ERROR",
       `The description is longer than ${LIBRARY_AGENT_DESCRIPTION_MAX} characters.`,
       {
-        asJson,
-        exitCode: 2,
-        details: { suggestedAction: `Shorten it to at most ${LIBRARY_AGENT_DESCRIPTION_MAX} characters` },
+        ...{
+          asJson,
+          exitCode: 2,
+          details: { suggestedAction: `Shorten it to at most ${LIBRARY_AGENT_DESCRIPTION_MAX} characters` },
+        },
+        diagnostic: errorDiagnostic(`The description is longer than ${LIBRARY_AGENT_DESCRIPTION_MAX} characters.`, {
+          operation: "agents set",
+        }),
       },
     );
   }
@@ -1140,6 +1154,10 @@ export class AgentsCommands {
 
     let deleted = false;
     try {
+      // Deleting an agent removes all of its authority: revoke its live contexts
+      // (cascading to children) while contexts.agent_id still names it, since the
+      // delete's ON DELETE SET NULL clears that column.
+      if (id !== getDefaultAgentId()) revokeLiveRuntimeContextsForAgent(id, { reason: "agent_deleted" });
       deleted = deleteAgent(id);
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
@@ -1780,11 +1798,17 @@ SOURCES
           "MODEL_BROKER_UNAVAILABLE",
           "No registered runtime provider has verified principal isolation; the required broker selection was not persisted.",
           {
-            asJson,
-            details: {
-              suggestedAction:
-                "Keep the selection as a draft with --required false until a runtime adapter is verified",
+            ...{
+              asJson,
+              details: {
+                suggestedAction:
+                  "Keep the selection as a draft with --required false until a runtime adapter is verified",
+              },
             },
+            diagnostic: errorDiagnostic(
+              "No registered runtime provider has verified principal isolation; the required broker selection was not persisted.",
+              { operation: "agents model-broker" },
+            ),
           },
         );
       }
@@ -2008,11 +2032,13 @@ SOURCES
       console.log(`    Effective context: ${formatTokenCount(contextTokens)}`);
       if (lastTurn) {
         console.log(
-          `    Last turn: context=${formatTokenCount(lastTurn.effectiveContextTokens)} input=${formatTokenCount(
+          `    Last turn: context=${formatTurnTokenCount(lastTurn.effectiveContextTokens)} input=${formatTurnTokenCount(
             lastTurn.inputTokens,
-          )} cache=${formatTokenCount(lastTurn.cacheReadTokens + lastTurn.cacheCreationTokens)} output=${formatTokenCount(
-            lastTurn.outputTokens,
-          )} duration=${formatDurationMs(lastTurn.durationMs)}`,
+          )} cache=${formatTurnTokenCount(
+            lastTurn.cacheReadTokens === null && lastTurn.cacheCreationTokens === null
+              ? null
+              : (lastTurn.cacheReadTokens ?? 0) + (lastTurn.cacheCreationTokens ?? 0),
+          )} output=${formatTurnTokenCount(lastTurn.outputTokens)} duration=${formatDurationMs(lastTurn.durationMs)}`,
         );
       } else {
         console.log("    Last turn: (none)");
@@ -2022,7 +2048,9 @@ SOURCES
           recent.effectiveContextTokensAvg,
         )} maxContext=${formatTokenCount(recent.effectiveContextTokensMax)} avgInput=${formatTokenCount(
           recent.inputTokensAvg,
-        )} cost=${formatCostUsd(recent.costUsdTotal)}`,
+        )} cost=${formatCostUsd(recent.costUsdTotal)}${
+          recent.unknownUsageTurns > 0 ? ` unknownUsage=${recent.unknownUsageTurns}` : ""
+        }`,
       );
       console.log(`    Updated: ${updated}`);
       console.log();

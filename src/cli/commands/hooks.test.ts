@@ -2,6 +2,8 @@ import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 afterAll(() => mock.restore());
 const actualCliContextModule = await import("../context.js");
+const actualScopeModule = await import("../../permissions/scope.js");
+let scopeEnforced = false;
 
 const createdHooks: Array<Record<string, unknown>> = [];
 const updatedHooks: Array<{ id: string; patch: Record<string, unknown> }> = [];
@@ -35,6 +37,14 @@ mock.module("../context.js", () => ({
   fail: (message: string) => {
     throw new Error(message);
   },
+}));
+
+mock.module("../../permissions/scope.js", () => ({
+  ...actualScopeModule,
+  isScopeEnforced: () => scopeEnforced,
+  canAccessSession: (_ctx: unknown, target: string) => target === "task-123-work",
+  canModifySession: (_ctx: unknown, target: string) => target === "task-123-work",
+  canAccessResource: (_ctx: unknown, agentId: string | undefined) => agentId === "dev",
 }));
 
 mock.module("../../cron/schedule.js", () => ({
@@ -176,6 +186,7 @@ describe("HooksCommands", () => {
     deletedHooks.length = 0;
     listedHooks = [];
     hookActionType = "inject_context";
+    scopeEnforced = false;
     runHookByIdMock.mockClear();
   });
 
@@ -263,6 +274,7 @@ describe("HooksCommands agent-first contract", () => {
     deletedHooks.length = 0;
     listedHooks = [];
     hookActionType = "inject_context";
+    scopeEnforced = false;
     runHookByIdMock.mockClear();
   });
 
@@ -335,17 +347,17 @@ describe("HooksCommands agent-first contract", () => {
     expect(runHookByIdMock).toHaveBeenCalledWith("hook-1");
   });
 
-  it.each([
-    "append_history",
-    "comment_task",
-  ])("runs the internal %s hook test without --execute", async (actionType) => {
-    hookActionType = actionType;
-    const commands = new HooksCommands();
+  it.each(["append_history", "comment_task"])(
+    "runs the internal %s hook test without --execute",
+    async (actionType) => {
+      hookActionType = actionType;
+      const commands = new HooksCommands();
 
-    await captureJson(() => commands.test("hook-1", true));
+      await captureJson(() => commands.test("hook-1", true));
 
-    expect(runHookByIdMock).toHaveBeenCalledWith("hook-1");
-  });
+      expect(runHookByIdMock).toHaveBeenCalledWith("hook-1");
+    },
+  );
 
   it("rm on an unknown hook exits 1 with HOOK_NOT_FOUND and suggestions from the local list, before the brake", async () => {
     listedHooks = [
@@ -418,5 +430,64 @@ describe("HooksCommands agent-first contract", () => {
     for (const item of payload.items as Array<Record<string, unknown>>) {
       expect(Object.keys(item).sort()).toEqual(["enabled", "id", "name"]);
     }
+  });
+});
+
+describe("HooksCommands caller scope", () => {
+  beforeEach(() => {
+    createdHooks.length = 0;
+    refreshCalls.length = 0;
+    hookActionType = "inject_context";
+    scopeEnforced = true;
+  });
+
+  const create = (scope: { agent?: string; session?: string; workspace?: string }, targetSession?: string) =>
+    new HooksCommands().create(
+      "mirror",
+      "PostToolUse",
+      "inject_context",
+      undefined,
+      undefined,
+      scope.agent,
+      scope.session,
+      scope.workspace,
+      undefined,
+      "{{toolOutput}}",
+      targetSession,
+    );
+
+  it("refuses hooks that observe other agents, global or workspace scope, or deliver elsewhere", async () => {
+    for (const attempt of [
+      () => create({ agent: "main" }),
+      () => create({ session: "agent:main:main" }),
+      () => create({ workspace: "/tmp/work" }),
+      () => create({ session: "task-123-work" }, "agent:main:main"),
+      () => create({ session: "task-123-work" }, "{{sessionName}}"),
+    ]) {
+      const error = await attempt().then(
+        () => null,
+        (err: unknown) => err,
+      );
+      expect(error).toBeInstanceOf(ContractError);
+      expect((error as ContractErrorInstance).envelope().error.code).toBe("PERMISSION_DENIED");
+    }
+    expect(createdHooks).toEqual([]);
+  });
+
+  it("allows a hook on the caller's own session and agent", async () => {
+    await create({ session: "task-123-work" }, "task-123-work");
+    await create({ agent: "dev" });
+    expect(createdHooks).toHaveLength(2);
+  });
+
+  it("refuses enabling or testing a stored hook outside the caller's scope", async () => {
+    for (const attempt of [() => new HooksCommands().enable("hook-1"), () => new HooksCommands().test("hook-1")]) {
+      const error = await attempt().then(
+        () => null,
+        (err: unknown) => err,
+      );
+      expect((error as ContractErrorInstance).envelope().error.code).toBe("PERMISSION_DENIED");
+    }
+    expect(updatedHooks).toEqual([]);
   });
 });

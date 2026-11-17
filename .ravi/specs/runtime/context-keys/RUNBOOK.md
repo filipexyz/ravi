@@ -10,6 +10,17 @@ ravi context info <context-id> --json
 
 Use `lastUsedAt ?? createdAt` as the operational last-seen timestamp.
 
+For a long-turn authentication failure, compare the rejected context's
+`expiresAt` with the command timestamp and the turn terminal timestamp. Touching
+a context only updates `lastUsedAt`. An active host-owned turn renews before
+expiry after authority revalidation; a completed turn is revoked immediately.
+An expired bearer returns `CONTEXT_EXPIRED` (401), including on open command
+routes; a valid bearer lacking a capability returns `PERMISSION_DENIED` (403).
+Do not widen grants or reset the session to treat credential expiry.
+Narrowed relays (`metadata.relayNarrowing=true`), derived children and bridge
+delegations retain their original bounded lifetime; the active-turn lease does
+not renew them. For these contexts, the next turn must issue fresh authority.
+
 ## Verify Agent Identity Dispatch
 
 1. Send multiple turns to the same Ravi session.
@@ -59,3 +70,20 @@ ravi context list --session <session-key> --kind turn-runtime --json
 
 The next dispatch should create a fresh `turn-runtime` context with
 `authorityMode=agent-identity`.
+
+## Measure Active-Context Lookup
+
+Use synthetic history in an isolated state directory; never copy production
+credentials into a benchmark fixture:
+
+```bash
+RAVI_STATE_DIR="$(mktemp -d)" bun scripts/benchmark-active-contexts.ts
+```
+
+The script creates and removes its own isolated database with 25,000 expired
+contexts and six active records. It captures the current production query,
+compares every returned column with the legacy query, alternates seven runs of
+each, and reports plans, failures, medians, ranges and machine load. The reported
+times cover SQL materialization with a warmed cache, not end-to-end replies.
+Expiry-index candidate lookup should replace the creation-order history scan;
+do not translate its speedup into the same multiplier for the entire runtime.

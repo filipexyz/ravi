@@ -160,16 +160,16 @@ When you are logged in to the Console, the daemon polls the agent inbox every 15
 
 Watch items are also published as `ravi.watch.<connector>.<eventType>`, for example `ravi.watch.console.bug.status` for a bug report you follow.
 
-**Bases row events** have `category: "bases"`. Turn them on per base with `ravi bases subscribe <base>`.
+**Bases events** have `category: "bases"`. Turn them on per base with `ravi bases subscribe <base>` (optionally filtered with `--events`, `--props` and `--view`, and with `--trigger` to create the trigger too).
 
 | Field | Value |
 |---|---|
-| `eventType` | `bases.row.created`, `bases.row.updated`, `bases.row.archived`, `bases.row.restored`, or `bases.rows.bulk_changed` (more than 50 rows in one request). |
-| `payload` | `{ baseId, baseSlug, projectId, rowId, version, schemaVersion, changedPropertyCount, surface }`. `surface` is `console`, `cli`, `page` or `system`. Bulk events have no `rowId`. |
-| `payload.row` | Added locally for `bases.row.*`: `{ rowId, version, values, archivedAt }`, the row as read at delivery (no body). |
+| `eventType` | `bases.row.created`, `bases.row.updated`, `bases.row.archived`, `bases.row.restored`, or `bases.rows.bulk_changed` (more than 50 rows in one request); `bases.approval.requested`, `bases.approval.decided`; `bases.agent.requested`, `bases.agent.backfill`. |
+| `payload` | `{ baseId, baseSlug, projectId, rowId, version, schemaVersion, changedPropertyCount, surface }`. `surface` is `console`, `cli`, `page` or `system`. Bulk events have no `rowId`. Approval events add `propertyId` and `state`; `bases.agent.requested` adds `propertyId` and `inputsHash`; `bases.agent.backfill` is `{ baseId, baseSlug, projectId, propertyId, rowCount, schemaVersion }`. Items of a filtered subscription add `subscriptionId`. |
+| `payload.row` | Added locally for `bases.row.*`, `bases.approval.*` and `bases.agent.requested`: `{ rowId, version, values, archivedAt }`, the row as read at delivery (no body). |
 | `payload.rowEnrichment` | `{ "status": "ok" }`, or `{ "status": "failed", "code": ... }` when the row could not be read. Then there is no `payload.row`. |
-| `actor.type` | `user` for a person in the Console or on a page, `cli` for any CLI or agent of this install. |
-| `dedupeKey` | `bases:row:<rowId>:v<version>:<verb>:<installation>`. |
+| `actor.type` | `user` for a person in the Console or on a page, `cli` for any CLI or agent of this install. `actor.id` is the accountable person. |
+| `dedupeKey` | `bases:row:<rowId>:v<version>:<verb>:<installation>`, plus `:<subscriptionId>` for a filtered subscription. |
 
 ```bash
 ravi triggers add "New ticket" --topic "ravi.console.inbox.item" \

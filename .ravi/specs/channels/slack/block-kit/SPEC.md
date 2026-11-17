@@ -75,6 +75,11 @@ Payloads Socket Mode de `block_actions`, `view_submission`, `view_closed`,
 `block_suggestion`, `shortcut` e `message_action` devem ser ackados e publicados
 como `ravi.inbound.interaction`.
 
+Exceção obrigatória: interações reservadas ao intake de credenciais são
+interceptadas antes deste fluxo, inclusive inválidas ou expiradas. O payload é
+consumido e apagado na entrada; nenhum segredo ou `response_url` passa por evento,
+trigger, trace ou persistência genérica. Ver `credentials/slack-intake`.
+
 O evento canonico deve incluir, quando existir:
 
 - `provider`;

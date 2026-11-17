@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { dbCreateAgent, dbUpdateAgent } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { BasesChartsCommands, BasesCommands, BasesRowsCommands, BasesViewsCommands } from "../cli/commands/bases.js";
+import { getCommandAccessMetadata, getCommandsMetadata, getGroupMetadata } from "../cli/decorators.js";
 import { runtimeBootstrapProvider } from "./runtime-bootstrap-provider.js";
 
 /**
@@ -12,6 +14,18 @@ import { runtimeBootstrapProvider } from "./runtime-bootstrap-provider.js";
  */
 
 type Cap = { permission: string; objectType: string; objectId: string };
+
+// Capability materialization reads stored profiles even for a new agent.
+let stateDir: string | null = null;
+
+beforeEach(async () => {
+  stateDir = await createIsolatedRaviState("ravi-bootstrap-provider-");
+});
+
+afterEach(async () => {
+  await cleanupIsolatedRaviState(stateDir);
+  stateDir = null;
+});
 
 function materialize(type: string, id: string): Cap[] {
   const fn = runtimeBootstrapProvider.materializeCapabilities;
@@ -44,6 +58,42 @@ describe("runtimeBootstrapProvider — least-privilege default", () => {
     expect(has("read_own_contacts", "system", "*")).toBe(true);
   });
 
+  test("lê Bases por views por padrão (B4): exatamente as ações de leitura dos @CommandAccess", () => {
+    const expected = new Set([
+      "bases list",
+      "bases show",
+      "bases.views list",
+      "bases.views show",
+      "bases.views query",
+      "bases.charts list",
+      "bases.charts show",
+      "bases.charts data",
+    ]);
+    const derived: string[] = [];
+    for (const target of [BasesCommands, BasesViewsCommands, BasesChartsCommands, BasesRowsCommands]) {
+      const group = getGroupMetadata(target)?.name;
+      const access = getCommandAccessMetadata(target);
+      for (const command of getCommandsMetadata(target)) {
+        if (!expected.has(`${group} ${command.name}`)) continue;
+        const declared = access.get(command.method);
+        expect(declared?.kind).toBe("read");
+        derived.push(`read:${declared?.resource}:${declared?.action}`);
+      }
+    }
+    expect(derived).toHaveLength(expected.size);
+
+    const caps = materialize("agent", "newbie");
+    const basesCaps = caps
+      .filter((c) => c.objectType === "bases" || c.objectType.startsWith("bases."))
+      .map((c) => `${c.permission}:${c.objectType}:${c.objectId}`)
+      .sort();
+    // Leitura por view, nunca escrita nem leitura direta de linhas.
+    expect(basesCaps).toEqual([...derived].sort());
+    expect(basesCaps.some((cap) => cap.startsWith("mutate:"))).toBe(false);
+    expect(basesCaps).not.toContain("read:bases.rows:query");
+    expect(basesCaps).not.toContain("read:bases:aggregate");
+  });
+
   test("subject não-confiável não recebe capability nenhuma", () => {
     expect(materialize("user", "u1")).toEqual([]);
     expect(materialize("agent", "unknown")).toEqual([]);
@@ -52,17 +102,6 @@ describe("runtimeBootstrapProvider — least-privilege default", () => {
 });
 
 describe("runtimeBootstrapProvider — chat-only ceiling", () => {
-  let stateDir: string | null = null;
-
-  beforeEach(async () => {
-    stateDir = await createIsolatedRaviState("ravi-bootstrap-chat-only-");
-  });
-
-  afterEach(async () => {
-    await cleanupIsolatedRaviState(stateDir);
-    stateDir = null;
-  });
-
   test("suppresses the bootstrap floor when the agent profile is chat-only", () => {
     dbCreateAgent({ id: "reception", cwd: "/tmp/reception" });
     dbUpdateAgent("reception", { defaults: { runtimePermissions: { profile: "chat-only" } } });

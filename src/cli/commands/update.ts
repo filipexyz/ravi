@@ -1,20 +1,25 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import {
+  buildManagedRuntimeIdentity,
   findRaviPackageRoot,
   managedRuntimeBundlePath,
+  managedRuntimeMatchesTarget,
+  managedRuntimeWarnings,
   normalizeRuntimePath,
   readRaviVersion,
-  resolveManagedRuntimeTargetFromBundle,
   resolveManagedRuntimeTargetFromPackageRoot,
   type ManagedRuntimeTarget,
 } from "../../managed-runtime.js";
 import { managedRuntimeSnapshot, runManagedRuntimeRebindSupervisor } from "../../managed-runtime-rebind.js";
 import { CHANNELS_PM2_PROCESS_NAME, getPm2Processes, PM2_PROCESS_NAME, type Pm2Process } from "../../pm2.js";
+import type { ChannelConfig } from "../../router/router-db.js";
 import { getRaviStateDir } from "../../utils/paths.js";
 import { CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
+import { dispatchRemote, resolveContextKeyForRemote, resolveRemoteGatewayConfig } from "../remote-gateway.js";
 
 export type UpdateChannel = "latest" | "next";
 export type InstallationType = "source" | "bun" | "npm" | "unknown";
@@ -25,7 +30,6 @@ export interface RaviUpdateOptions {
   stable?: boolean;
   version?: string;
   expectedIntegrity?: string;
-  restart?: boolean;
   json?: boolean;
 }
 
@@ -129,8 +133,9 @@ class UpdateFailure extends Error {
     message: string,
     readonly code = "UPDATE_FAILED",
     readonly exitCode = 1,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = "UpdateFailure";
   }
 }
@@ -426,9 +431,22 @@ function describeManagedRuntime(processes: Pm2Process[]): Omit<ManagedRuntimeSta
     processes.find((process) => process.name === PM2_PROCESS_NAME) ??
     processes.find((process) => process.name === CHANNELS_PM2_PROCESS_NAME);
   const bundlePath = managedRuntimeBundlePath(member);
-  const target = resolveManagedRuntimeTargetFromBundle(bundlePath);
-  const packageRoot = target?.cwd ?? findRaviPackageRoot(bundlePath);
-  return { managed, bundlePath, cwd: packageRoot, version: target?.version ?? readRaviVersion(packageRoot) };
+  const identity = buildManagedRuntimeIdentity(processes, bundlePath);
+  const runtime = member?.name === PM2_PROCESS_NAME ? identity.daemon : identity.channels;
+  return { managed, bundlePath, cwd: runtime.cwd, version: runtime.runningVersion };
+}
+
+function readManagedProcesses(): Pm2Process[] {
+  try {
+    return getPm2Processes({ strict: true });
+  } catch (cause) {
+    throw new UpdateFailure(
+      "Could not read PM2 runtime status, so Ravi cannot verify runtime reconciliation. Check `pm2 jlist` and retry.",
+      "UPDATE_FAILED",
+      1,
+      { cause },
+    );
+  }
 }
 
 async function verifyRegistryIntegrity(version: string, expectedIntegrity: string): Promise<void> {
@@ -468,8 +486,76 @@ export function resolveUpdatedManagedRuntimeTarget(preferredPackageRoot?: string
   return null;
 }
 
+/**
+ * The rebind restarts `ravi-channels` only when it was already online, so an
+ * update never starts it. Native channels (Slack) queue every reply for that
+ * runner: when any is enabled and the runner was not online, say so.
+ */
+export function nativeChannelRunnerUpdateWarning(
+  previousProcesses: Pm2Process[],
+  listChannels: () => Pick<ChannelConfig, "enabled">[],
+): string | null {
+  let enabled: number;
+  try {
+    enabled = listChannels().filter((channel) => channel.enabled !== false).length;
+  } catch {
+    return null;
+  }
+  if (enabled === 0) return null;
+  const runner = previousProcesses.find((process) => process.name === CHANNELS_PM2_PROCESS_NAME);
+  if (runner?.status === "online") return null;
+  return `${enabled} native channel(s) are enabled but ${CHANNELS_PM2_PROCESS_NAME} is not running, so their replies stay queued; start it with \`ravi channels start\` and check \`ravi doctor --domain channels\`.`;
+}
+
+export async function readNativeChannelRunnerUpdateWarning(previousProcesses: Pm2Process[]): Promise<string | null> {
+  if (previousProcesses.some((process) => process.name === CHANNELS_PM2_PROCESS_NAME && process.status === "online"))
+    return null;
+  try {
+    const contextKey = resolveContextKeyForRemote();
+    if (!contextKey) return null;
+    const config = await resolveRemoteGatewayConfig(process.env, "update", { installedOperator: true });
+    if (!config) return null;
+    const deadline = Date.now() + 2_000;
+    let offset = 0;
+    while (Date.now() < deadline) {
+      const response = await dispatchRemote({
+        config,
+        contextKey,
+        groupSegments: ["channels"],
+        command: "list",
+        body: { json: true, limit: "500", offset: String(offset), fields: "enabled" },
+        timeoutMs: Math.max(1, deadline - Date.now()),
+      });
+      if (!response.ok) return null;
+      const payload: unknown = JSON.parse(response.body);
+      if (!payload || typeof payload !== "object" || !("items" in payload) || !Array.isArray(payload.items))
+        return null;
+      if (
+        payload.items.some(
+          (item: unknown) => item && typeof item === "object" && (!("enabled" in item) || item.enabled !== false),
+        )
+      )
+        return `Native channels are enabled but ${CHANNELS_PM2_PROCESS_NAME} is not running, so their replies stay queued; start it with \`ravi channels start\` and check \`ravi doctor --domain channels\`.`;
+      const pagination = "pagination" in payload ? payload.pagination : null;
+      if (
+        !pagination ||
+        typeof pagination !== "object" ||
+        !("nextOffset" in pagination) ||
+        typeof pagination.nextOffset !== "number" ||
+        !Number.isSafeInteger(pagination.nextOffset) ||
+        pagination.nextOffset <= offset
+      )
+        return null;
+      offset = pagination.nextOffset;
+    }
+    return null;
+  } catch {
+    // no-cause: Optional intake warning must not initialize local state or fail a completed update when the gateway is unavailable.
+    return null;
+  }
+}
+
 async function reconcileManagedRuntime(
-  restart: boolean,
   previousProcesses: Pm2Process[],
   target: ManagedRuntimeTarget,
   reporter: UpdateReporter,
@@ -482,21 +568,21 @@ async function reconcileManagedRuntime(
     return { restarted: false, runtime: { ...current, rebound: false } };
   }
 
-  if (!restart) {
-    reporter.line("Managed runtime reconciliation skipped; running processes were left unchanged.");
-    if (current.bundlePath) {
-      reporter.line(
-        `  daemon still runs Ravi ${current.version ?? "unknown"} from ${current.cwd ?? current.bundlePath}`,
-      );
-    }
-    return { restarted: false, runtime: { ...current, rebound: false } };
-  }
-
   reporter.log(`Rebinding managed runtime to Ravi ${target.version} (${target.cwd})`);
   const reconciled = await runManagedRuntimeRebindSupervisor(target, previousProcesses);
-  if (!reconciled) {
+  // A successfully exited bundle may not implement this supervisor protocol.
+  // Independently verify the live successors before claiming convergence.
+  const currentProcesses = readManagedProcesses();
+  if (
+    !reconciled ||
+    !managedRuntimeMatchesTarget(managedRuntimeSnapshot(previousProcesses), currentProcesses, target)
+  ) {
+    const warnings = managedRuntimeWarnings(buildManagedRuntimeIdentity(currentProcesses, target.bundlePath));
     fail(
-      "Ravi updated, but PM2 did not converge on the updated runtime. Run `ravi daemon status` before resuming traffic.",
+      "Ravi updated, but PM2 did not converge on the updated runtime. " +
+        "Deployment remains blocked. Inspect preparation/interlock evidence and both process identities; " +
+        "do not bypass this result with independent daemon/channels restarts." +
+        (warnings.length ? ` ${warnings.join(" ")}` : ""),
     );
   }
   reporter.ok(`Managed runtime reconciled to Ravi ${target.version} from ${target.cwd}; PM2 startup state saved`);
@@ -504,6 +590,12 @@ async function reconcileManagedRuntime(
     restarted: managedRuntimeSnapshot(previousProcesses).some((process) => process.status === "online"),
     runtime: { managed: true, rebound: true, bundlePath: target.bundlePath, cwd: target.cwd, version: target.version },
   };
+}
+
+function reportManagedRuntimeWarnings(target: ManagedRuntimeTarget, reporter: UpdateReporter): string[] {
+  const warnings = managedRuntimeWarnings(buildManagedRuntimeIdentity(readManagedProcesses(), target.bundlePath));
+  for (const warning of warnings) reporter.warn(`Warning: ${warning}`);
+  return warnings;
 }
 
 async function updateViaBun(packageTag: string, label: string, reporter: UpdateReporter): Promise<boolean> {
@@ -599,7 +691,7 @@ async function performUpdate(options: RaviUpdateOptions, reporter: UpdateReporte
   if (!exactVersion && (options.next || options.stable)) persistUpdateChannel(channel as UpdateChannel);
   if (exactVersion && expectedIntegrity) await verifyRegistryIntegrity(exactVersion, expectedIntegrity);
 
-  const previousProcesses = getPm2Processes();
+  const previousProcesses = readManagedProcesses();
   const installType = detectInstallationType();
   const sourceRoot = installType === "source" ? resolveSourceRoot() : null;
   // A source update rewrites the checkout, so "previous" must be the checkout's
@@ -641,15 +733,16 @@ async function performUpdate(options: RaviUpdateOptions, reporter: UpdateReporte
     });
     reportSourceUpdate(outcome, target, branch, previousVersion, reporter);
 
-    const { restarted, runtime } = await reconcileManagedRuntime(
-      options.restart !== false,
-      previousProcesses,
-      target,
-      reporter,
-    );
+    const { restarted, runtime } = await reconcileManagedRuntime(previousProcesses, target, reporter);
     if (runtime.rebound && outcome.pathCli && !outcome.pathCli.updated) {
       reporter.line("  The daemon now runs from this checkout; `ravi daemon status` from the PATH install reports");
       reporter.line("  drift until that install is updated too.");
+    }
+    outcome.warnings.push(...reportManagedRuntimeWarnings(target, reporter));
+    const runnerWarning = await readNativeChannelRunnerUpdateWarning(previousProcesses);
+    if (runnerWarning) {
+      outcome.warnings.push(runnerWarning);
+      reporter.warn(`Warning: ${runnerWarning}`);
     }
     return {
       success: true,
@@ -718,12 +811,13 @@ async function performUpdate(options: RaviUpdateOptions, reporter: UpdateReporte
     reporter.warn(`Warning: ${warning}`);
   }
 
-  const { restarted, runtime } = await reconcileManagedRuntime(
-    options.restart !== false,
-    previousProcesses,
-    target,
-    reporter,
-  );
+  const { restarted, runtime } = await reconcileManagedRuntime(previousProcesses, target, reporter);
+  warnings.push(...reportManagedRuntimeWarnings(target, reporter));
+  const runnerWarning = await readNativeChannelRunnerUpdateWarning(previousProcesses);
+  if (runnerWarning) {
+    warnings.push(runnerWarning);
+    reporter.warn(`Warning: ${runnerWarning}`);
+  }
   return {
     success: true,
     package: PACKAGE_NAME,
@@ -752,12 +846,15 @@ export async function runUpdate(options: RaviUpdateOptions = {}): Promise<RaviUp
   } catch (error) {
     if (!(error instanceof UpdateFailure)) throw error;
     contractFail("ravi update", error.code, error.message, {
-      asJson: options.json,
-      exitCode: error.exitCode,
-      details: {
-        retryable: error.code === "REGISTRY_UNAVAILABLE" || error.code === "UPDATE_FAILED",
-        suggestedAction: "Verify the requested release and retry.",
+      ...{
+        asJson: options.json,
+        exitCode: error.exitCode,
+        details: {
+          retryable: error.code === "REGISTRY_UNAVAILABLE" || error.code === "UPDATE_FAILED",
+          suggestedAction: "Verify the requested release and retry.",
+        },
       },
+      diagnostic: errorDiagnostic(error, { operation: "ravi update" }),
     });
   }
 }

@@ -105,6 +105,8 @@ export interface CommandRegistryEntry {
   cls: CommandClass;
   args: ArgRegistryEntry[];
   options: OptionRegistryEntry[];
+  /** Inclusive presence requirement over declared, non-rendering options. */
+  requiredAnyOfOptions?: readonly string[];
   returns?: ZodTypeAny;
   /**
    * When true, the command returns a raw `Response` and bypasses JSON
@@ -204,6 +206,18 @@ export function buildRegistry(classes: CommandClass[]): RegistrySnapshot {
 
       const effectiveScope: ScopeType = scopeMap.get(cmdMeta.method) ?? groupMeta.scope ?? "admin";
       const fullName = `${groupMeta.name}.${cmdMeta.name}`;
+      const requiredAnyOfOptions = cmdMeta.requiredAnyOfOptions;
+      if (requiredAnyOfOptions !== undefined) {
+        const optionNames = new Set(options.map((option) => option.name));
+        const argNames = new Set(args.map((arg) => arg.name));
+        if (
+          requiredAnyOfOptions.length === 0 ||
+          new Set(requiredAnyOfOptions).size !== requiredAnyOfOptions.length ||
+          requiredAnyOfOptions.some((name) => !optionNames.has(name) || argNames.has(name))
+        ) {
+          throw new Error(`Invalid requiredAnyOfOptions for ${fullName}: use distinct declared option names`);
+        }
+      }
       const skillGate = resolveCommandSkillGate({
         groupPath: groupMeta.name,
         command: cmdMeta.name,
@@ -222,6 +236,7 @@ export function buildRegistry(classes: CommandClass[]): RegistrySnapshot {
         cls,
         args,
         options,
+        ...(requiredAnyOfOptions ? { requiredAnyOfOptions: [...requiredAnyOfOptions].sort() } : {}),
         ...(returnsMap.get(cmdMeta.method) ? { returns: returnsMap.get(cmdMeta.method)! } : {}),
         ...(binaryReturnsSet.has(cmdMeta.method) ? { binary: true } : {}),
         ...(cliOnlySet.has(cmdMeta.method) ? { cliOnly: true } : {}),

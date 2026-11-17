@@ -14,19 +14,25 @@
 
 ## Foreign Bot Interop
 
-Foreign bots are mention-only by default. To add an alias for a specific chat,
-store it on that Slack channel account (not in the environment):
+Foreign bots follow the same route/channel and root/thread policy as human
+messages after the local-identity, installation-visibility, and origin checks.
+No mention or message-addressing alias setup is required. In an authorized test
+channel, verify:
 
-```bash
-ravi channels set <slack-channel> defaults '{"botMessageAliasesByChat":{"C123":["Ravi"]}}'
-```
-
-Restart the channel runner after changing defaults. Then verify all four cases:
-
-1. `<@local_bot_user_id> status` from the foreign bot is admitted;
-2. `Ravi—status` is admitted only in `C123`;
-3. `oi Ravi`, `Ravinder`, and the same alias in another chat/account are ignored;
-4. a message emitted by the local bot itself is ignored even if it mentions or aliases itself.
+1. Plain text from a foreign bot with no mention or address reaches the expected
+   session and uses the configured root reply mode.
+2. A multiline message keeps its text and line breaks; a reply in an existing
+   Slack thread follows the configured subscription/reply policy, using the
+   thread session and replying in the same thread under the default policy.
+3. `<@local_bot_user_id> status` is admitted under the same policy and carries
+   the addressing marker; a mention of another user does not add that marker.
+4. Ignored channels and missing routes still prevent a turn, with or without a
+   local-bot mention. Replaying the same envelope produces at most one prompt.
+5. A message emitted by the local bot itself is ignored, with or without a
+   self-mention. Incomplete identity or invalid installation/origin proof still
+   fails closed.
+6. An unlinked or conflicting bot actor gains no authority from admission; a
+   consistently linked bot agent retains its `agent:<actorAgentId>` principal.
 
 ## Debug
 
@@ -56,10 +62,11 @@ Restart the channel runner after changing defaults. Then verify all four cases:
   and `ambiguous_instance_alias` are intentional fail-closed results. Link both Slack
   bot/user ids only when they represent the same agent; do not convert a bot identity
   into a contact to grant authority.
-- Alias not matching: confirm it is under the active Slack channel account's
-  `defaults.botMessageAliasesByChat`, keyed by the raw Slack chat id. Aliases are not
-  loaded from env and must start the text as a complete word with a Unicode
-  whitespace/punctuation boundary.
+- Foreign bot without a mention is ignored: inspect the active runner version,
+  local identity/installation/origin checks, then the selected route and normal
+  channel policy. Bot authorship alone must not add an addressing requirement;
+  adding an alias or mention is not required setup. Check root reply mode and
+  thread/session provenance when the message appears in a different context.
 - Known contact treated as unknown / false permission denial:
   1. Compare the `instance_id` the runtime addresses (account slug) against the
      `instanceId` stored on the workspace's platform identities (often the configured UUID)

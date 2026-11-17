@@ -1081,6 +1081,142 @@ describe("Grok Build runtime provider", () => {
     });
   });
 
+  it("respawns and reloads the session when a turn changes effort or the task env", async () => {
+    const transports: FakeGrokAcpTransport[] = [];
+    const env: Record<string, string> = { PATH: "/usr/bin" };
+    const turn = (text: string, effort?: RuntimePromptMessage["runtimeOptions"]): RuntimePromptMessage => ({
+      type: "user",
+      message: { role: "user", content: text },
+      session_id: "session",
+      parent_tool_use_id: null,
+      ...(effort ? { runtimeOptions: effort } : {}),
+    });
+    async function* prompts(): AsyncGenerator<RuntimePromptMessage> {
+      yield turn("same effort", { effort: "high" });
+      yield turn("task effort", { effort: "low" });
+      env.RAVI_TASK_ID = "task-1";
+      yield turn("task env", { effort: "low" });
+      delete env.RAVI_TASK_ID;
+      yield turn("back to default", { effort: "high" });
+    }
+
+    const events = await collectRuntimeEvents(
+      createGrokRuntimeProvider({
+        transportFactory: () => {
+          const transport = new FakeGrokAcpTransport();
+          transport.responseFor = (method) => {
+            if (method === "session/load") {
+              // History replay from the reloaded session must not leak into the next turn.
+              transport.pushEvent(sessionUpdate("agent_message_chunk", { content: { type: "text", text: "old" } }));
+            }
+            return defaultGrokResponse(method);
+          };
+          transports.push(transport);
+          return transport;
+        },
+      }).startSession(createStartRequest("unused", { prompt: prompts(), env })).events,
+    );
+
+    expect(transports.map((transport) => transport.starts[0]?.effort)).toEqual(["high", "low", "low", "high"]);
+    expect(transports.map((transport) => transport.requests.map((request) => request.method))).toEqual([
+      ["initialize", "authenticate", "session/new", "session/prompt"],
+      ["initialize", "authenticate", "session/load", "session/prompt"],
+      ["initialize", "authenticate", "session/load", "session/prompt"],
+      ["initialize", "authenticate", "session/load", "session/prompt"],
+    ]);
+    expect(transports[1]?.requests.find((request) => request.method === "session/load")?.params).toMatchObject({
+      sessionId: "grok-session-1",
+    });
+    expect(transports.slice(0, 3).every((transport) => transport.closed)).toBe(true);
+    expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(4);
+    expect(JSON.stringify(events)).not.toContain('"old"');
+  });
+
+  it("respawns with the turn's model when a task changes it", async () => {
+    const transports: FakeGrokAcpTransport[] = [];
+    const turn = (text: string, model: string): RuntimePromptMessage => ({
+      type: "user",
+      message: { role: "user", content: text },
+      session_id: "session",
+      parent_tool_use_id: null,
+      runtimeOptions: { model, effort: "high" },
+    });
+
+    await collectRuntimeEvents(
+      createGrokRuntimeProvider({
+        transportFactory: () => {
+          const transport = new FakeGrokAcpTransport();
+          transports.push(transport);
+          return transport;
+        },
+      }).startSession(
+        createStartRequest("unused", {
+          prompt: (async function* () {
+            yield turn("agent turn", "grok-4");
+            yield turn("task turn", "grok-code-fast-1");
+          })(),
+        }),
+      ).events,
+    );
+
+    expect(transports.map((transport) => transport.starts[0]?.model)).toEqual(["grok-4", "grok-code-fast-1"]);
+  });
+
+  it("does not prompt when the session is aborted during a respawn", async () => {
+    const transports: FakeGrokAcpTransport[] = [];
+    const abortController = new AbortController();
+    async function* prompts(): AsyncGenerator<RuntimePromptMessage> {
+      yield {
+        type: "user",
+        message: { role: "user", content: "task turn" },
+        session_id: "session",
+        parent_tool_use_id: null,
+        runtimeOptions: { effort: "low" },
+      };
+    }
+
+    await collectRuntimeEvents(
+      createGrokRuntimeProvider({
+        transportFactory: () => {
+          const transport = new FakeGrokAcpTransport();
+          if (transports.length > 0) {
+            transport.responseFor = (method) => {
+              if (method === "session/load") {
+                abortController.abort();
+              }
+              return defaultGrokResponse(method);
+            };
+          }
+          transports.push(transport);
+          return transport;
+        },
+      }).startSession(createStartRequest("unused", { prompt: prompts(), abortController })).events,
+    );
+
+    expect(transports).toHaveLength(2);
+    expect(transports[1]?.requests.map((request) => request.method)).not.toContain("session/prompt");
+  });
+
+  it("keeps the given transport when it cannot respawn", async () => {
+    const transport = new FakeGrokAcpTransport();
+    async function* prompts(): AsyncGenerator<RuntimePromptMessage> {
+      yield {
+        type: "user",
+        message: { role: "user", content: "task effort" },
+        session_id: "session",
+        parent_tool_use_id: null,
+        runtimeOptions: { effort: "low" },
+      };
+    }
+
+    const events = await collectRuntimeEvents(
+      createGrokRuntimeProvider({ transport }).startSession(createStartRequest("unused", { prompt: prompts() })).events,
+    );
+
+    expect(transport.starts).toHaveLength(1);
+    expect(events.at(-1)).toMatchObject({ type: "turn.complete" });
+  });
+
   it("emits a failed terminal event when Grok rejects a prompt", async () => {
     const transport = new FakeGrokAcpTransport();
     transport.responseFor = (method) => {

@@ -119,6 +119,41 @@ for (const mode of ["fts5", "like"] as const) {
       expect(localIndexStats().transcriptRows).toBe(3);
     });
 
+    it("filters folded speakers before limiting ranked candidates", () => {
+      writeTranscript("speaker-limit", [
+        { text: `prazo ${"outro ".repeat(100)}`, speaker: "Ána-María", startSec: 0 },
+        ...Array.from({ length: 40 }, (_, index) => ({
+          text: "prazo prazo prazo",
+          speaker: "Other speaker",
+          startSec: index + 1,
+        })),
+      ]);
+      indexLocalSources();
+
+      const hits = searchLocal({ query: "prazo", who: "ANA maria", limit: 1 });
+      expect(hits.map((hit) => hit.ref)).toEqual(["kt:speaker-limit:0"]);
+      expect(hits[0]?.speaker).toBe("Ána-María");
+      expect(searchLocal({ query: "prazo", who: "missing speaker", limit: 1 })).toEqual([]);
+    });
+
+    it("fills the filtered limit with AND matches before OR matches", () => {
+      writeTranscript("speaker-fallback", [
+        { text: "prazo entrega", speaker: "Target", startSec: 0 },
+        { text: "prazo restante", speaker: "Target", startSec: 1 },
+        ...Array.from({ length: 30 }, (_, index) => ({
+          text: "prazo entrega",
+          speaker: "Other speaker",
+          startSec: index + 2,
+        })),
+      ]);
+      indexLocalSources();
+
+      expect(searchLocal({ query: "prazo entrega", who: "target", limit: 2 }).map((hit) => hit.ref)).toEqual([
+        "kt:speaker-fallback:0",
+        "kt:speaker-fallback:1",
+      ]);
+    });
+
     it("`about` restricts to the contact's DM chats (JID in chat.db, chats.id in participants)", () => {
       const ana = dmChat(ANA_JID, "contact_ana");
       dmChat(BRUNO_JID, "contact_bruno");

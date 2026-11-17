@@ -53,12 +53,15 @@ import type { RuntimeCompatibilityIssue, RuntimeProviderId } from "../../runtime
 import {
   dbGetAgent,
   dbListAgents,
+  dbListChannels,
   dbListInstances,
   dbListRoutes,
   getDb,
   getDefaultAgentId,
   getRaviDbPath,
 } from "../../router/router-db.js";
+import { inspectNativeChannelRuntime, type NativeChannelRuntimeSnapshot } from "../../channels/native-readiness.js";
+import { CHANNELS_PM2_PROCESS_NAME, getPm2Process, isPm2Available } from "../../pm2.js";
 import {
   currentCliOnlyCommands,
   currentWeakPublicReturnCommands,
@@ -76,6 +79,14 @@ import { resolveOwnerDirectTarget } from "../../knowledge/owner.js";
 import { codexKnowledgeParityHolds } from "../../permissions/codex-knowledge-parity.js";
 import { listSubscriptions } from "../../inbox/inbox-db.js";
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
+import {
+  isRiskyNatsExposure,
+  natsExposureLogData,
+  probeNatsExposure,
+  resolveNatsUrl,
+  type NatsExposureReport,
+} from "../../security/nats-exposure.js";
+import { inspectStateDirPermissions } from "../../security/state-dir-permissions.js";
 
 export type DoctorSeverity = "error" | "warn" | "info";
 export type DoctorCheckStatus = "pass" | "fail" | "skip";
@@ -251,16 +262,21 @@ type DoctorDeps = {
   tempDir: () => string;
   statDisk: (path: string) => DiskUsageStat | null;
   probeDir: (path: string) => DiskProbeResult;
+  probeNatsExposure: () => Promise<NatsExposureReport>;
+  inspectStateDirPermissions: typeof inspectStateDirPermissions;
   inspectKnowledgeExposure: typeof inspectKnowledgeExposure;
   knowledgeSettings: typeof knowledgeSettings;
   resolveOwnerDirectTarget: () => ReturnType<typeof resolveOwnerDirectTarget>;
   agentHasNoExec: (agentId: string) => boolean;
   codexKnowledgeParityHolds: typeof codexKnowledgeParityHolds;
   listInboxSubscriptions: (opts?: { enabledOnly?: boolean }) => unknown[];
+  inspectNativeChannelRuntime: () => NativeChannelRuntimeSnapshot;
 };
 
 export interface InspectDoctorOptions {
   domain?: string | null;
+  /** Async NATS probe result; inspectDoctor is synchronous, so runDoctor probes first. */
+  natsExposure?: NatsExposureReport | null;
 }
 
 export interface RunDoctorOptions extends InspectDoctorOptions {
@@ -316,12 +332,19 @@ const DEFAULT_DEPS: DoctorDeps = {
   tempDir: () => tmpdir(),
   statDisk: defaultStatDisk,
   probeDir: defaultProbeDir,
+  probeNatsExposure: () => probeNatsExposure(resolveNatsUrl()),
+  inspectStateDirPermissions,
   inspectKnowledgeExposure,
   knowledgeSettings,
   resolveOwnerDirectTarget: () => resolveOwnerDirectTarget(),
   agentHasNoExec: (agentId: string) => agentHasNoExec(agentId),
   codexKnowledgeParityHolds,
   listInboxSubscriptions: listSubscriptions,
+  inspectNativeChannelRuntime: () =>
+    inspectNativeChannelRuntime({
+      listChannels: dbListChannels,
+      runnerStatus: () => (isPm2Available() ? (getPm2Process(CHANNELS_PM2_PROCESS_NAME)?.status ?? "missing") : null),
+    }),
 };
 
 function defaultStatDisk(path: string): DiskUsageStat | null {
@@ -467,6 +490,8 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
   addCheck(checks, () => buildRuntimeMatchCheck(runtimeTarget));
   addCheck(checks, () => buildDaemonCwdCheck(runtimeTarget));
   addCheck(checks, () => buildStateDirCheck(stateDir, deps));
+  addCheck(checks, () => buildStateDirPermissionsCheck(stateDir, deps));
+  addCheck(checks, () => buildNatsExposureCheck(options.natsExposure ?? null));
   addCheck(checks, () => buildDiskSpaceCheck(stateDir, deps));
   addCheck(checks, () => buildRaviDbCheck(raviDbPath, deps));
   addCheck(checks, () => buildInsightsDbCheck(insightsDbPath, deps));
@@ -577,6 +602,7 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
       return buildInstanceHealthMetadataCheck(instances);
     });
     addCheck(checks, () => buildInboundIdentityResolutionCheck(deps));
+    addCheck(checks, () => buildNativeChannelRuntimeCheck(deps.inspectNativeChannelRuntime()));
     addCheck(checks, () => buildCostPricingCoverageCheck(deps));
     addCheck(checks, () => buildCostCompletenessCheck(deps));
   }
@@ -607,8 +633,13 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
   });
 }
 
-export function runDoctor(options: RunDoctorOptions = {}, overrides: Partial<DoctorDeps> = {}): DoctorReport {
-  const report = inspectDoctor(overrides, { domain: options.domain });
+export async function runDoctor(
+  options: RunDoctorOptions = {},
+  overrides: Partial<DoctorDeps> = {},
+): Promise<DoctorReport> {
+  const deps = { ...DEFAULT_DEPS, ...overrides };
+  const natsExposure = await probeDoctorNatsExposure(deps, options.domain);
+  const report = inspectDoctor(overrides, { domain: options.domain, natsExposure });
   if (options.json) {
     console.log(JSON.stringify(report, null, 2));
   } else {
@@ -619,6 +650,19 @@ export function runDoctor(options: RunDoctorOptions = {}, overrides: Partial<Doc
     process.exitCode = doctorExitCode(report, options.strict === true);
   }
   return report;
+}
+
+async function probeDoctorNatsExposure(
+  deps: DoctorDeps,
+  domain: string | null | undefined,
+): Promise<NatsExposureReport | null> {
+  const normalized = domain?.trim();
+  if (normalized && normalized !== "runtime") return null;
+  try {
+    return await deps.probeNatsExposure();
+  } catch {
+    return null;
+  }
 }
 
 function addCheck(checks: LegacyDoctorCheck[], build: () => LegacyDoctorCheck): void {
@@ -1092,6 +1136,94 @@ function buildStateDirCheck(stateDir: string, deps: DoctorDeps): LegacyDoctorChe
   };
 }
 
+function buildStateDirPermissionsCheck(stateDir: string, deps: DoctorDeps): LegacyDoctorCheck {
+  const inspection = deps.inspectStateDirPermissions(stateDir);
+  const base = {
+    id: "substrate.state-dir-permissions",
+    title: "Ravi state dir permissions",
+  };
+  const data = {
+    path: stateDir,
+    mode: inspection.modeOctal,
+    ownedByCurrentUser: inspection.ownedByCurrentUser,
+    isSymlink: inspection.isSymlink,
+    groupOrOtherAccess: inspection.groupOrOtherAccess,
+  };
+  const details = [`path: ${stateDir}`, `mode: ${inspection.modeOctal ?? "unknown"}`];
+  if (inspection.isSymlink) details.push("state dir is a symlink (mode shown for its target)");
+  if (inspection.ownedByCurrentUser === false) details.push("state dir is owned by another user");
+
+  if (!inspection.supported) {
+    return { ...base, status: "skip", summary: "POSIX permissions are not inspected on this platform", data };
+  }
+  if (!inspection.exists || inspection.error) {
+    return {
+      ...base,
+      status: "skip",
+      summary: inspection.error
+        ? `could not inspect state dir permissions: ${inspection.error}`
+        : "state directory is missing; permissions not inspected",
+      details,
+      data,
+    };
+  }
+  if (inspection.groupOrOtherAccess) {
+    return {
+      ...base,
+      status: "fail",
+      severity: "warn",
+      summary: `state directory is accessible by group/other (${inspection.modeOctal}); credentials and databases may be readable by other local users`,
+      details,
+      fixHint: `chmod 700 ${stateDir} (the daemon tightens it at boot when you own it)`,
+      data,
+    };
+  }
+  return { ...base, status: "ok", summary: `state directory is private (${inspection.modeOctal})`, details, data };
+}
+
+function buildNatsExposureCheck(report: NatsExposureReport | null): LegacyDoctorCheck {
+  const base = {
+    id: "runtime.nats_exposure",
+    domain: "runtime",
+    title: "NATS network exposure",
+  };
+  if (!report) {
+    return { ...base, status: "skip", summary: "NATS exposure was not probed" };
+  }
+
+  const data = { ...natsExposureLogData(report), message: report.message };
+  const details = [
+    `status: ${report.status}`,
+    `nats url: ${report.natsUrl}`,
+    `reachable: ${report.reachableAddresses.length > 0 ? report.reachableAddresses.join(", ") : "none"}`,
+    `host firewall: ${report.firewall}`,
+    ...report.remediation.map((step) => `remediation: ${step}`),
+  ];
+
+  if (isRiskyNatsExposure(report.status)) {
+    return {
+      ...base,
+      status: "fail",
+      severity: "warn",
+      summary: report.message,
+      details,
+      fixHint: report.remediation.join("; "),
+      data,
+    };
+  }
+  if (report.status === "unknown") {
+    return { ...base, status: "skip", summary: report.message, details, data };
+  }
+  return {
+    ...base,
+    status: "ok",
+    summary: report.message,
+    details,
+    ...(report.remediation.length > 0 ? { fixHint: report.remediation.join("; ") } : {}),
+    data,
+  };
+}
+
 const DISK_CRITICAL_FREE_BYTES = 1 * 1024 ** 3; // 1 GiB
 const DISK_WARN_FREE_BYTES = 5 * 1024 ** 3; // 5 GiB
 const DISK_CRITICAL_PERCENT_USED = 97;
@@ -1292,6 +1424,92 @@ function buildRaviDbCheck(dbPath: string, deps: DoctorDeps): LegacyDoctorCheck {
     details: [dbPath],
     fixHint: "restore or initialize ~/.ravi/ravi.db before operating the runtime",
     data: { path: dbPath },
+  };
+}
+
+/**
+ * Native channels (Slack) queue every reply for `ravi-channels`, so a channel
+ * whose broker connection is missing, or a runner that is not online, leaves
+ * replies queued with nothing else in the logs (7984bc41).
+ */
+export function buildNativeChannelRuntimeCheck(snapshot: NativeChannelRuntimeSnapshot): LegacyDoctorCheck {
+  const id = "channels.native_runtime";
+  const title = "Native channel runtime";
+  if (snapshot.channels.length === 0) {
+    return { id, title, status: "ok", summary: "no enabled native channels", data: { channels: 0 } };
+  }
+
+  const details: string[] = [];
+  const problems: string[] = [];
+  for (const channel of snapshot.channels) {
+    if (channel.transport === "hub_gateway_v1") {
+      details.push(`${channel.name}: hub gateway transport (no broker connection needed)`);
+      continue;
+    }
+    const connection = channel.credentialConnection ?? "-";
+    if (channel.issue) {
+      problems.push(channel.name);
+      details.push(`${channel.name}: connection ${connection} ${channel.issue.replaceAll("_", " ")}`);
+    } else if (channel.missingPrerequisites.length > 0) {
+      problems.push(channel.name);
+      details.push(
+        `${channel.name}: ${channel.backend} backend is missing ${channel.missingPrerequisites.join(", ")} in this CLI's environment (the runner's PM2 environment may differ)`,
+      );
+    } else {
+      details.push(`${channel.name}: connection ${connection} active (${channel.backend ?? "unknown"} backend)`);
+    }
+  }
+
+  const runnerOnline = snapshot.runnerStatus === "online";
+  if (snapshot.runnerStatus === null) {
+    details.push(`${CHANNELS_PM2_PROCESS_NAME}: PM2 not available, runner state unknown`);
+  } else {
+    details.push(`${CHANNELS_PM2_PROCESS_NAME}: ${snapshot.runnerStatus}`);
+  }
+  const runnerDown = snapshot.runnerStatus !== null && !runnerOnline;
+
+  const data = {
+    channels: snapshot.channels.length,
+    undeliverable: problems,
+    runnerStatus: snapshot.runnerStatus,
+  };
+  if (problems.length === 0 && snapshot.runnerStatus === null) {
+    return {
+      id,
+      title,
+      status: "skip",
+      severity: "warn",
+      summary: `${snapshot.channels.length} enabled native channel(s) passed the checked prerequisites (an active broker connection, or the hub gateway transport), but ${CHANNELS_PM2_PROCESS_NAME} could not be checked (PM2 not available); live adapter health is in \`ravi channels status\``,
+      details,
+      fixHint: `confirm the runner from a host terminal with \`ravi channels status\``,
+      data,
+    };
+  }
+  if (problems.length === 0 && !runnerDown) {
+    return {
+      id,
+      title,
+      status: "ok",
+      summary: `${snapshot.channels.length} enabled native channel(s) passed the checked prerequisites (an active broker connection, or the hub gateway transport) and ${CHANNELS_PM2_PROCESS_NAME} is online; live adapter health is in \`ravi channels status\``,
+      details,
+      data,
+    };
+  }
+
+  const parts: string[] = [];
+  if (problems.length > 0) parts.push(`${problems.length} native channel(s) cannot start: ${problems.join(", ")}`);
+  if (runnerDown) parts.push(`${CHANNELS_PM2_PROCESS_NAME} is not online`);
+  return {
+    id,
+    title,
+    status: "warn",
+    summary: `${parts.join("; ")}; their replies stay queued and are not delivered`,
+    details,
+    fixHint:
+      problems.length > 0
+        ? "add or enable the broker connection with `ravi credentials add` (keychain needs macOS; elsewhere use vault with VAULT_ADDR and VAULT_TOKEN), then `ravi channels restart`"
+        : "start the runner with `ravi channels start`",
+    data,
   };
 }
 

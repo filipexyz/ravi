@@ -4,6 +4,24 @@ import { toPersistedChannelContext, type ChannelContext } from "./context.js";
 import { publishChannelSessionPrompt } from "./session-prompt.js";
 
 describe("channel session prompt", () => {
+  it("carries the producing turn's context so the new turn can be narrowed to it", async () => {
+    const published: Array<Record<string, unknown>> = [];
+    await publishChannelSessionPrompt(
+      {
+        sessionName: "thread-child",
+        action: "session.bootstrap",
+        principal: { type: "agent", id: "origin-agent" },
+        callerContextId: "ctx_initiator",
+        payload: { prompt: "bootstrap" },
+      },
+      async (_sessionName, payload) => {
+        published.push(payload);
+      },
+    );
+
+    expect(published[0]?._turnOrigin).toMatchObject({ producer: "channel", callerContextId: "ctx_initiator" });
+  });
+
   it("uses one provider-neutral origin contract for every channel surface", async () => {
     const published: Array<{
       sessionName: string;

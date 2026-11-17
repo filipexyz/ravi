@@ -1,5 +1,23 @@
 import { describe, expect, it } from "bun:test";
-import { deriveLocalGitHubEvents, type LocalWatchSnapshot } from "./local-events.js";
+import {
+  deriveLocalGitHubEvents,
+  PULL_REQUEST_COMMENT_EVENT,
+  type LocalCommentObservation,
+  type LocalWatchSnapshot,
+} from "./local-events.js";
+
+function comment(overrides: Partial<LocalCommentObservation> = {}): LocalCommentObservation {
+  return {
+    key: "issue:9",
+    id: 9,
+    number: 1,
+    url: "https://github.com/o/r/pull/1#issuecomment-9",
+    body: "olha o CI",
+    author: "luis",
+    updatedAt: "2026-10-22T19:00:00Z",
+    ...overrides,
+  };
+}
 
 function snapshotWith(input: {
   pullRequests?: Array<{ number: number; title?: string; draft?: boolean; headSha?: string }>;
@@ -183,5 +201,119 @@ describe("local github watch events", () => {
     });
 
     expect(result.events).toEqual([]);
+  });
+
+  it("emits a new PR comment once, with enough payload for the follow filter", () => {
+    const current = snapshotWith({ pullRequests: [{ number: 1 }] });
+    const observed = [comment()];
+
+    const first = deriveLocalGitHubEvents("o/r", {
+      previous: { ...current, comments: {} },
+      current,
+      departed: {},
+      comments: observed,
+    });
+    expect(first.events.map((event) => event.eventType)).toEqual([PULL_REQUEST_COMMENT_EVENT]);
+    // O filtro do follow casa por repository + number (ou pull_request.number).
+    expect(first.events[0]!.payload).toMatchObject({
+      repository: "o/r",
+      number: 1,
+      pull_request: { number: 1 },
+      commentId: 9,
+      author: "luis",
+      url: "https://github.com/o/r/pull/1#issuecomment-9",
+    });
+    // O estado guarda só a identidade: corpo de terceiro não vai pro snapshot.
+    expect(first.snapshot.comments).toEqual({ "issue:9": { updatedAt: "2026-10-22T19:00:00Z" } });
+
+    // Mesmo id de novo (edição/relido) não é comentário novo.
+    const second = deriveLocalGitHubEvents("o/r", {
+      previous: first.snapshot,
+      current,
+      departed: {},
+      comments: [comment({ updatedAt: "2026-10-22T20:00:00Z", body: "editado" })],
+    });
+    expect(second.events).toEqual([]);
+  });
+
+  it("treats a snapshot from before comment reading as baseline, not as a burst", () => {
+    const current = snapshotWith({ pullRequests: [{ number: 1 }] });
+    const legacyPrevious = snapshotWith({ pullRequests: [{ number: 1 }] });
+    delete legacyPrevious.comments;
+
+    const result = deriveLocalGitHubEvents("o/r", {
+      previous: legacyPrevious,
+      current,
+      departed: {},
+      comments: [comment(), comment({ key: "issue:10", id: 10 })],
+    });
+
+    // Sem isso, o primeiro tick depois do deploy despejaria os últimos 100
+    // comentários do repo como se todos tivessem acabado de acontecer.
+    expect(result.events).toEqual([]);
+    expect(Object.keys(result.snapshot.comments ?? {}).sort()).toEqual(["issue:10", "issue:9"]);
+  });
+
+  it("keeps the previous comment state when the tick could not read comments", () => {
+    const current = snapshotWith({ pullRequests: [{ number: 1 }] });
+    const previous: LocalWatchSnapshot = { ...current, comments: { "issue:9": { updatedAt: "x" } } };
+
+    const result = deriveLocalGitHubEvents("o/r", { previous, current, departed: {} });
+
+    expect(result.events).toEqual([]);
+    expect(result.snapshot.comments).toEqual({ "issue:9": { updatedAt: "x" } });
+  });
+
+  it("does not replay a comment that left the recent window and came back", () => {
+    const current = snapshotWith({ pullRequests: [{ number: 1 }] });
+    const baseline = deriveLocalGitHubEvents("o/r", {
+      previous: null,
+      current,
+      departed: {},
+      comments: [comment()],
+    });
+
+    // PR fecha: o comentário sai da janela recente e o próximo snapshot não o vê.
+    const withoutComments = deriveLocalGitHubEvents("o/r", {
+      previous: baseline.snapshot,
+      current,
+      departed: {},
+      comments: [],
+    });
+    expect(Object.keys(withoutComments.snapshot.comments ?? {})).toEqual(["issue:9"]);
+
+    // PR reabre e o mesmo comentário reaparece na janela: não é comentário novo.
+    const reopened = deriveLocalGitHubEvents("o/r", {
+      previous: withoutComments.snapshot,
+      current,
+      departed: {},
+      comments: [comment({ updatedAt: "2026-10-22T21:00:00Z" })],
+    });
+    expect(reopened.events).toEqual([]);
+  });
+
+  it("bounds the comment state by dropping the oldest entries", () => {
+    const current = snapshotWith({ pullRequests: [{ number: 1 }] });
+    const previous: LocalWatchSnapshot = {
+      ...current,
+      comments: Object.fromEntries(
+        Array.from({ length: 520 }, (_, index) => [
+          `issue:${1000 + index}`,
+          { updatedAt: `2026-10-22T00:00:${String(index % 60).padStart(2, "0")}Z` },
+        ]),
+      ),
+    };
+
+    const result = deriveLocalGitHubEvents("o/r", {
+      previous,
+      current,
+      departed: {},
+      comments: [comment({ updatedAt: "2026-10-22T23:00:00Z" })],
+    });
+
+    const keys = Object.keys(result.snapshot.comments ?? {});
+    expect(keys.length).toBe(500);
+    // O recém-visto sobrevive à poda.
+    expect(keys).toContain("issue:9");
   });
 });

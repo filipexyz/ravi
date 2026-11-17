@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../utils/error-diagnostic.js";
 /**
  * Contract helpers shared by the Library commands (`ravi skills`, `ravi
  * agents`, `ravi themes`, `ravi widgets`): the runtime caller, the error
@@ -134,9 +135,12 @@ export function failLibraryPolicy(
   asJson?: boolean,
 ): never {
   contractFail(op, code, message, {
-    asJson,
-    exitCode: CONTRACT_EXIT_POLICY,
-    details: { suggestedAction, issues: libraryContractIssues([], code, message, suggestedAction) },
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_POLICY,
+      details: { suggestedAction, issues: libraryContractIssues([], code, message, suggestedAction) },
+    },
+    diagnostic: errorDiagnostic(message, { operation: op }),
   });
 }
 
@@ -149,9 +153,12 @@ export function failLibraryUsage(
   path: Array<string | number> = [],
 ): never {
   contractFail(op, "USAGE_ERROR", message, {
-    asJson,
-    exitCode: CONTRACT_EXIT_USAGE,
-    details: { suggestedAction, issues: libraryContractIssues(path, "USAGE_ERROR", message, suggestedAction) },
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: { suggestedAction, issues: libraryContractIssues(path, "USAGE_ERROR", message, suggestedAction) },
+    },
+    diagnostic: errorDiagnostic(message, { operation: op }),
   });
 }
 
@@ -202,14 +209,17 @@ export function failDiagnostics(
   const suggestedAction = `Fix the lines above in the ${profile.noun} folder, then run: ravi ${profile.group} check <dir>`;
   const failedContrast = options.contrast?.checks.filter((check) => !check.ok) ?? [];
   const contract = new ContractError(op, code, headline, CONTRACT_EXIT_USAGE, {
-    errors,
-    warnings: diagnostics.length - errors,
-    ...(failedContrast.length > 0 ? { contrast: { ok: false, failed: failedContrast } } : {}),
-    suggestedAction,
-    issues: [
-      ...diagnostics.map(diagnosticIssue),
-      { path: ["suggestedAction"], code: "SUGGESTED_ACTION", message: suggestedAction },
-    ],
+    ...errorDiagnostic(headline, { operation: op }),
+    ...{
+      errors,
+      warnings: diagnostics.length - errors,
+      ...(failedContrast.length > 0 ? { contrast: { ok: false, failed: failedContrast } } : {}),
+      suggestedAction,
+      issues: [
+        ...diagnostics.map(diagnosticIssue),
+        { path: ["suggestedAction"], code: "SUGGESTED_ACTION", message: suggestedAction },
+      ],
+    },
   });
   if (asJson) {
     renderContractError(contract, true);
@@ -251,23 +261,32 @@ export async function withLibraryContract<T>(
     if (error instanceof LibraryCommandError) {
       const suggestedAction = typeof error.details.suggestedAction === "string" ? error.details.suggestedAction : "";
       contractFail(op, error.code, error.message, {
-        asJson,
-        exitCode: error.exitCode,
-        details: {
-          ...error.details,
-          issues: libraryContractIssues([], error.code, error.message, suggestedAction || undefined),
+        ...{
+          asJson,
+          exitCode: error.exitCode,
+          details: {
+            ...error.details,
+            issues: libraryContractIssues([], error.code, error.message, suggestedAction || undefined),
+          },
         },
+        diagnostic: errorDiagnostic(error, { operation: op }),
       });
     }
     if (error instanceof LibraryPackageError) {
       const suggestedAction = `Fix the ${profile?.noun ?? "skill"} folder and run the same command again`;
       contractFail(op, error.code, error.message, {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: {
-          suggestedAction,
-          issues: [...error.issues, { path: ["suggestedAction"], code: "SUGGESTED_ACTION", message: suggestedAction }],
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: {
+            suggestedAction,
+            issues: [
+              ...error.issues,
+              { path: ["suggestedAction"], code: "SUGGESTED_ACTION", message: suggestedAction },
+            ],
+          },
         },
+        diagnostic: errorDiagnostic(error, { operation: op }),
       });
     }
     if (isCloudAuthError(error)) {
@@ -291,26 +310,32 @@ export async function withLibraryContract<T>(
         : (consoleMessage ?? base.message);
       if (!copy && consoleMessage) {
         const contract = new ContractError(op, base.code, conflictMessage, base.exitCode, {
-          ...base.details,
-          ...target,
-          suggestedAction: "Run the same command without --execute to see the current plan",
+          ...errorDiagnostic(error, { operation: op }),
+          ...{
+            ...base.details,
+            ...target,
+            suggestedAction: "Run the same command without --execute to see the current plan",
+          },
         });
         renderContractError(contract, asJson);
         throw contract;
       }
       const contract = copy
         ? new ContractError(op, base.code, conflictMessage, base.exitCode, {
-            ...base.details,
-            // The envelope redacts `reason` as free text; `conflict` carries the code.
-            reason,
-            conflict: reason,
-            ...(typeof error.details?.currentVersion === "number"
-              ? { currentVersion: error.details.currentVersion }
-              : {}),
-            ...(typeof error.details?.baseVersion === "number" ? { baseVersion: error.details.baseVersion } : {}),
-            ...(typeof error.details?.status === "string" ? { proposalStatus: error.details.status } : {}),
-            ...conflictTarget(error.details),
-            suggestedAction: copy.suggestedAction,
+            ...errorDiagnostic(error, { operation: op }),
+            ...{
+              ...base.details,
+              // The envelope redacts `reason` as free text; `conflict` carries the code.
+              reason,
+              conflict: reason,
+              ...(typeof error.details?.currentVersion === "number"
+                ? { currentVersion: error.details.currentVersion }
+                : {}),
+              ...(typeof error.details?.baseVersion === "number" ? { baseVersion: error.details.baseVersion } : {}),
+              ...(typeof error.details?.status === "string" ? { proposalStatus: error.details.status } : {}),
+              ...conflictTarget(error.details),
+              suggestedAction: copy.suggestedAction,
+            },
           })
         : base;
       renderContractError(contract, asJson);
@@ -470,12 +495,15 @@ export function failLibraryRefInvalid(
   const message = `Not a valid Library ref: ${value.slice(0, 120)}. Use org/<slug> or <project>/<slug> (a-z, 0-9 and -).`;
   const suggestedAction = `Copy the ref from: ravi ${profile.group} search <words> --json`;
   contractFail(op, "LIBRARY_REF_INVALID", message, {
-    asJson,
-    exitCode: CONTRACT_EXIT_USAGE,
-    details: {
-      suggestedAction,
-      issues: libraryContractIssues([profile.noun], "LIBRARY_REF_INVALID", message, suggestedAction),
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        suggestedAction,
+        issues: libraryContractIssues([profile.noun], "LIBRARY_REF_INVALID", message, suggestedAction),
+      },
     },
+    diagnostic: errorDiagnostic(message, { operation: op }),
   });
 }
 

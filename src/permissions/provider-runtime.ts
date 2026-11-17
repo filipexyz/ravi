@@ -1,8 +1,10 @@
+import { authorizeContextCapabilities } from "./context-capabilities-provider.js";
 import { randomUUID } from "node:crypto";
 import type { ContextCapability } from "../router/router-db.js";
 import { getContext } from "../cli/context.js";
 import { getConfiguredCapabilityMaterializers, getConfiguredPermissionProviders } from "./provider-registry.js";
 import { AGENT_IDENTITY_AUTHORITY_MODE } from "./agent-identity-permissions-provider.js";
+import { operatorControlProvider } from "./operator-control-provider.js";
 import type {
   CapabilityContextLike,
   PermissionProvider,
@@ -42,8 +44,15 @@ export function authorizePermission(
   request: PermissionProviderRequest,
   options: AuthorizePermissionOptions = {},
 ): PermissionProviderDecision {
+  // Managed bridge contexts enforce the verified Console decision, not a second provider policy chain.
+  if (request.context?.metadata?.bridgeTurnId !== undefined) return authorizeContextCapabilities(request);
   const startedAt = Date.now();
   const runtimeRequest = withRequestId(request);
+  // Operator control is pinned and independent of persisted provider settings.
+  // Recovery must remain available before the daemon can open its databases.
+  if (!options.providers && operatorControlProvider.supports(runtimeRequest)) {
+    return evaluateProviderChain(runtimeRequest, [operatorControlProvider], startedAt);
+  }
   return evaluateProviderChain(runtimeRequest, options.providers ?? getConfiguredPermissionProviders(), startedAt);
 }
 
@@ -59,6 +68,9 @@ export function findApprovalRequirement(
   requests: PermissionProviderRequest[],
   options: AuthorizePermissionOptions = {},
 ): PermissionProviderDecision | null {
+  requests = requests.filter((request) => request.context?.metadata?.bridgeTurnId === undefined);
+  if (!options.providers) requests = requests.filter((request) => !operatorControlProvider.supports(request));
+  if (requests.length === 0) return null;
   const providers = (options.providers ?? getConfiguredPermissionProviders()).filter(
     (provider) => provider.mayRequireApproval === true,
   );

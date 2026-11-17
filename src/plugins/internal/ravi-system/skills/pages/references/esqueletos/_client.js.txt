@@ -43,7 +43,7 @@ const update = (viewId, rowId, values, expectedVersion, idempotencyKey = newKey(
 const create = (viewId, values, idempotencyKey = newKey(), body) =>
   exec("ravi.bases.views.rows.create", { viewId, values, idempotencyKey, ...(body === undefined ? {} : { body }) });
 const MESSAGES = {
-  connector_not_allowlisted: "O host não liberou esta ação. Quem publica: ship com o id na união do --uses.",
+  connector_not_allowlisted: "O host não liberou esta ação. Quem publica: ship desta rota com o id no --uses.",
   version_conflict: "Alguém mudou esta linha antes. Ela foi recarregada; refaça a mudança.",
   connector_rate_limited: "Muitas ações seguidas. Espere alguns segundos.",
   not_found: "Indisponível para você, ou saiu desta lista.",

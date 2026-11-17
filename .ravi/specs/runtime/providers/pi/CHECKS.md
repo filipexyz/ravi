@@ -27,6 +27,12 @@
 - `setModel()` after start sends `set_model` and subsequent prompt metadata uses the new model without a session reset.
 - Resume/cold start reapplies the requested model with `set_model` when `get_state` still reports the previous session-file model.
 - A failed `set_model` RPC throws and is not treated as applied.
+- Every canonical effort maps deterministically at spawn and live controls (`none` -> `off`, `max`/`ultra` -> `xhigh`); explicit thinking off wins. Native capability clamps remain visible in persisted session metadata.
+- A pre-start thinking control is queued for spawn. Resume reapplies the requested thinking level after switching session, and per-turn effort restores it after an intervening live control.
+- A model control queued during startup from a non-reasoning model to a reasoning-capable model reapplies the requested thinking preference before the first prompt, even when the original spawn clamped it to off.
+- A rejected thinking switch sends no prompt for that turn and is retried on the next matching turn.
+- A rejected initial resumed thinking switch emits a recoverable failure, closes its transport, and lets the next turn succeed through a fresh factory transport. The failed prompt reaches neither transport.
+- A live disconnected thinking switch emits a transport-classified failure, invalidates readiness, and resumes the next turn on a fresh transport. Ordinary live RPC rejection keeps the original transport. Strict fake transports reject sends and starts after close; closed queues are not reused.
 - Resume validates cwd and session file before using Pi state.
 - Startup sends `set_steering_mode all` unless `get_state` already reports `steeringMode=all`.
 - A `turn.steer` accepted before provider startup is buffered and flushed to Pi before the first `prompt`.
@@ -35,6 +41,8 @@
 - Persistent "already processing" responses exhaust the busy backoff, then restart the Pi RPC transport when a factory is available and retry the same plain `prompt` once more. If it is still busy, they surface a single `turn.failed` with `failureKind=transport` so the host respawns instead of reusing the stuck process.
 - After `turn.interrupted` / `turn.failed` / abort, leftover queued Pi events are drained and `abort` is sent again. If `get_state` still reports `isStreaming` / `isProcessing` / `isCompacting`, the adapter restarts the transport before the next prompt.
 - Leftover `agent_end` / `turn_end` from the interrupted run MUST NOT complete the next Ravi prompt. The next prompt waits for a fresh `agent_start` / `turn_start` (or a respawned transport) before accepting a terminal.
+- A `turn_end` with `stopReason=error` whose message matches the closed transport list (`Connection error.`, `ECONNRESET`, `ECONNREFUSED`, `socket hang up`, `ETIMEDOUT`, `fetch failed`, `operation was terminated`, `network error`) MUST surface `turn.failed` with `failureKind=transport`; a non-transport message MUST NOT.
+- Recoverable provider transport restarts MUST back off (1s, then 5s, then 15s if a future budget allows more) while keeping the restart budget at two.
 - Interrupt then a subsequent prompt MUST emit `turn.interrupted` for the first turn and a real terminal for the second, never a ~instant fake `turn.complete`.
 
 ## Event Mapping Tests
@@ -62,6 +70,8 @@
 - Pi emits assistant message after interrupt.
 - Session file exists but cwd does not match.
 - Usage is missing on successful agent end.
+- A `ravi_dynamic_tool` input request carries its payload in `placeholder`: the host runs the tool and answers with its result (pi-provider.test).
+- A `ravi_dynamic_tool` request with an unreadable payload gets `{success:false, reason}`, not `cancelled`.
 
 ## E2E Smoke
 
@@ -69,6 +79,7 @@
 - Cold-start burst: send two or more messages quickly; trace should show first `dispatch.cold_start`, then `dispatch.native_steer` for subsequent interactive messages once the Pi handle exists, without Ravi generator concatenating them into one pending prompt.
 - Active-turn burst: send multiple messages while Pi is responding; trace should show repeated `dispatch.native_steer`, and Pi should process them through native steering rather than one Ravi-concatenated prompt.
 - Tool-using prompt emits tool start/end and then completes.
+- A task observer on Pi calls `tasks_show`; the daemon log shows "Answered Pi dynamic tool request" and no "bridge did not answer".
 - Interrupt during text streaming ends as interrupted, not failed.
 - Model switch changes subsequent execution metadata.
 - Restart/resume uses Pi session state only when cwd matches.

@@ -1,3 +1,4 @@
+import { runThreadMutation } from "./schema-fence.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { SQLQueryBindings } from "bun:sqlite";
 import type { MessageTarget } from "../runtime/message-types.js";
@@ -257,9 +258,9 @@ export function createThread(input: CreateThreadInput): ThreadRecord {
   const scope = normalizePointer(input.scope, "global");
   const assignee = normalizePointer(input.currentAssignee, "");
 
-  getDb()
-    .prepare(
-      `
+  runThreadMutation(
+    getDb(),
+    `
       INSERT INTO threads (
         id, slug, title, summary, status,
         owner_type, owner_id, scope_type, scope_id,
@@ -268,26 +269,24 @@ export function createThread(input: CreateThreadInput): ThreadRecord {
         metadata_json, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
-    )
-    .run(
-      id,
-      slug,
-      title,
-      dbText(input.summary),
-      input.status ?? "open",
-      owner.type,
-      owner.id ?? null,
-      scope.type,
-      scope.id ?? null,
-      dbText(input.defaultAgentId),
-      dbText(input.defaultChatId),
-      dbText(input.defaultContactId),
-      assignee.type || null,
-      assignee.id ?? null,
-      stringifyRecord(input.metadata),
-      now,
-      now,
-    );
+    id,
+    slug,
+    title,
+    dbText(input.summary),
+    input.status ?? "open",
+    owner.type,
+    owner.id ?? null,
+    scope.type,
+    scope.id ?? null,
+    dbText(input.defaultAgentId),
+    dbText(input.defaultChatId),
+    dbText(input.defaultContactId),
+    assignee.type || null,
+    assignee.id ?? null,
+    stringifyRecord(input.metadata),
+    now,
+    now,
+  );
 
   const thread = getThreadById(id);
   if (!thread) throw new Error(`Failed to create thread ${id}`);
@@ -381,17 +380,26 @@ export function updateThreadStatus(
   status: ThreadStatus,
   options: { reason?: string; now?: number } = {},
 ): ThreadRecord {
+  if (
+    getDb().query("SELECT 1 FROM thread_links WHERE thread_id=? AND target_type='task' AND role='work'").get(threadId)
+  ) {
+    throw new Error("Task-owned threads change status through the task runtime");
+  }
   const now = options.now ?? Date.now();
   const closedAt = status === "closed" || status === "resolved" ? now : null;
-  getDb()
-    .prepare(
-      `
+  runThreadMutation(
+    getDb(),
+    `
       UPDATE threads
       SET status = ?, closed_reason = ?, closed_at = ?, updated_at = ?
       WHERE id = ?
     `,
-    )
-    .run(status, dbText(options.reason), closedAt, now, threadId);
+    status,
+    dbText(options.reason),
+    closedAt,
+    now,
+    threadId,
+  );
   return requireThreadById(threadId);
 }
 
@@ -400,9 +408,9 @@ export function addThreadEntry(input: AddThreadEntryInput): ThreadEntryRecord {
   const thread = requireThreadById(input.threadId);
   const id = makeId("tre");
   const actor = input.actor ?? { type: "unknown" };
-  getDb()
-    .prepare(
-      `
+  runThreadMutation(
+    getDb(),
+    `
       INSERT INTO thread_entries (
         id, thread_id, kind, body, summary,
         actor_type, actor_id, actor_name, actor_agent_id, actor_session_key, actor_session_name,
@@ -410,35 +418,33 @@ export function addThreadEntry(input: AddThreadEntryInput): ThreadEntryRecord {
         visibility, importance, pinned, source_policy, resolved_at, metadata_json, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
-    )
-    .run(
-      id,
-      thread.id,
-      input.kind,
-      requiredText(input.body, "Thread entry body"),
-      dbText(input.summary),
-      requiredText(actor.type, "Thread actor type"),
-      dbText(actor.id),
-      dbText(actor.name),
-      dbText(actor.agentId),
-      dbText(actor.sessionKey),
-      dbText(actor.sessionName),
-      nullableText(input.sourceType) ?? "manual",
-      dbText(input.sourceId),
-      dbText(input.sourceMessageId),
-      dbText(input.sourceSessionKey),
-      dbText(input.sourceChatId),
-      input.visibility ?? "default",
-      dbText(input.importance),
-      input.pinned ? 1 : 0,
-      dbText(input.sourcePolicy),
-      input.resolvedAt ?? null,
-      stringifyRecord(input.metadata),
-      now,
-      now,
-    );
+    id,
+    thread.id,
+    input.kind,
+    requiredText(input.body, "Thread entry body"),
+    dbText(input.summary),
+    requiredText(actor.type, "Thread actor type"),
+    dbText(actor.id),
+    dbText(actor.name),
+    dbText(actor.agentId),
+    dbText(actor.sessionKey),
+    dbText(actor.sessionName),
+    nullableText(input.sourceType) ?? "manual",
+    dbText(input.sourceId),
+    dbText(input.sourceMessageId),
+    dbText(input.sourceSessionKey),
+    dbText(input.sourceChatId),
+    input.visibility ?? "default",
+    dbText(input.importance),
+    input.pinned ? 1 : 0,
+    dbText(input.sourcePolicy),
+    input.resolvedAt ?? null,
+    stringifyRecord(input.metadata),
+    now,
+    now,
+  );
 
-  getDb().prepare("UPDATE threads SET updated_at = ?, last_entry_at = ? WHERE id = ?").run(now, now, thread.id);
+  runThreadMutation(getDb(), "UPDATE threads SET updated_at = ?, last_entry_at = ? WHERE id = ?", now, now, thread.id);
 
   return requireThreadEntryById(id);
 }
@@ -464,9 +470,9 @@ export function upsertThreadLink(input: UpsertThreadLinkInput): ThreadLinkRecord
   const target = normalizePointer(input.target, "");
   if (!target.type || !target.id) throw new Error("Thread link target must be type:id.");
   const role = nullableText(input.role) ?? "context";
-  getDb()
-    .prepare(
-      `
+  runThreadMutation(
+    getDb(),
+    `
       INSERT INTO thread_links (
         id, thread_id, target_type, target_id, role, label, visibility, metadata_json, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -476,20 +482,18 @@ export function upsertThreadLink(input: UpsertThreadLinkInput): ThreadLinkRecord
         metadata_json = COALESCE(excluded.metadata_json, thread_links.metadata_json),
         updated_at = excluded.updated_at
     `,
-    )
-    .run(
-      makeId("tln"),
-      thread.id,
-      target.type,
-      target.id,
-      role,
-      dbText(input.label),
-      input.visibility ?? "default",
-      stringifyRecord(input.metadata),
-      now,
-      now,
-    );
-  getDb().prepare("UPDATE threads SET updated_at = ? WHERE id = ?").run(now, thread.id);
+    makeId("tln"),
+    thread.id,
+    target.type,
+    target.id,
+    role,
+    dbText(input.label),
+    input.visibility ?? "default",
+    stringifyRecord(input.metadata),
+    now,
+    now,
+  );
+  runThreadMutation(getDb(), "UPDATE threads SET updated_at = ? WHERE id = ?", now, thread.id);
   const row = getDb()
     .prepare("SELECT * FROM thread_links WHERE thread_id = ? AND target_type = ? AND target_id = ? AND role = ?")
     .get(thread.id, target.type, target.id, role) as ThreadLinkRow | undefined;
@@ -608,9 +612,9 @@ export function recordThreadHandoff(input: RecordThreadHandoffInput): ThreadHand
   const id = makeId("thf");
   const entryIds = input.brief.entries.map((entry) => entry.id);
   const linkIds = input.brief.links.map((link) => link.id);
-  getDb()
-    .prepare(
-      `
+  runThreadMutation(
+    getDb(),
+    `
       INSERT INTO thread_handoffs (
         id, thread_id, source_session_key, source_session_name, target_session_key, target_session_name,
         target_agent_id, handoff_kind, source_entry_id, brief_text, brief_json,
@@ -618,46 +622,57 @@ export function recordThreadHandoff(input: RecordThreadHandoffInput): ThreadHand
         status, created_thread, metadata_json, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
-    )
-    .run(
-      id,
-      input.threadId,
-      dbText(input.sourceSessionKey),
-      dbText(input.sourceSessionName),
-      requiredText(input.targetSessionKey, "Target session key"),
-      dbText(input.targetSessionName),
-      dbText(input.targetAgentId),
-      input.handoffKind ?? "session_send",
-      dbText(input.sourceEntryId),
-      input.brief.text,
-      JSON.stringify(input.brief),
-      JSON.stringify(entryIds),
-      JSON.stringify(linkIds),
-      input.brief.snapshotHash,
-      input.brief.snapshotVersion,
-      "queued",
-      input.createdThread ? 1 : 0,
-      stringifyRecord(input.metadata),
-      now,
-      now,
-    );
-  getDb().prepare("UPDATE threads SET updated_at = ?, last_handoff_at = ? WHERE id = ?").run(now, now, input.threadId);
+    id,
+    input.threadId,
+    dbText(input.sourceSessionKey),
+    dbText(input.sourceSessionName),
+    requiredText(input.targetSessionKey, "Target session key"),
+    dbText(input.targetSessionName),
+    dbText(input.targetAgentId),
+    input.handoffKind ?? "session_send",
+    dbText(input.sourceEntryId),
+    input.brief.text,
+    JSON.stringify(input.brief),
+    JSON.stringify(entryIds),
+    JSON.stringify(linkIds),
+    input.brief.snapshotHash,
+    input.brief.snapshotVersion,
+    "queued",
+    input.createdThread ? 1 : 0,
+    stringifyRecord(input.metadata),
+    now,
+    now,
+  );
+  runThreadMutation(
+    getDb(),
+    "UPDATE threads SET updated_at = ?, last_handoff_at = ? WHERE id = ?",
+    now,
+    now,
+    input.threadId,
+  );
   return requireThreadHandoffById(id);
 }
 
 export function markThreadHandoffDelivered(handoffId: string, now = Date.now()): ThreadHandoffRecord {
-  getDb()
-    .prepare("UPDATE thread_handoffs SET status = 'delivered', delivered_at = ?, updated_at = ? WHERE id = ?")
-    .run(now, now, handoffId);
+  runThreadMutation(
+    getDb(),
+    "UPDATE thread_handoffs SET status = 'delivered', delivered_at = ?, updated_at = ? WHERE id = ?",
+    now,
+    now,
+    handoffId,
+  );
   return requireThreadHandoffById(handoffId);
 }
 
 export function markThreadHandoffFailed(handoffId: string, reason: string, now = Date.now()): ThreadHandoffRecord {
-  getDb()
-    .prepare(
-      "UPDATE thread_handoffs SET status = 'failed', failed_at = ?, failure_reason = ?, updated_at = ? WHERE id = ?",
-    )
-    .run(now, reason, now, handoffId);
+  runThreadMutation(
+    getDb(),
+    "UPDATE thread_handoffs SET status = 'failed', failed_at = ?, failure_reason = ?, updated_at = ? WHERE id = ?",
+    now,
+    reason,
+    now,
+    handoffId,
+  );
   return requireThreadHandoffById(handoffId);
 }
 

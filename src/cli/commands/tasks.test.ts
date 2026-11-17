@@ -13,6 +13,22 @@ const unarchiveCalls: Array<Record<string, unknown>> = [];
 const doneCalls: Array<Record<string, unknown>> = [];
 const blockCalls: Array<Record<string, unknown>> = [];
 const failCalls: Array<Record<string, unknown>> = [];
+const decideCalls: Array<Record<string, unknown>> = [];
+const answerDecisionCalls: Array<Record<string, unknown>> = [];
+const attentionCalls: Array<Record<string, unknown>> = [];
+let decideResultExtra: Record<string, unknown> = {};
+let answerDecisionResultExtra: Record<string, unknown> = {};
+let decideThrow: unknown = null;
+let answerDecisionThrow: unknown = null;
+let attentionResult = {
+  kind: "task.decision.attention" as const,
+  generatedAt: 1,
+  total: 0,
+  parkedCount: 0,
+  decisionCount: 0,
+  filters: {},
+  entries: [] as Array<Record<string, unknown>>,
+};
 const listTasksCalls: Array<Record<string, unknown>> = [];
 const dependencyAddCalls: Array<Record<string, unknown>> = [];
 const dependencyRemoveCalls: Array<Record<string, unknown>> = [];
@@ -835,6 +851,63 @@ mock.module("../../tasks/index.js", () => ({
       ],
     };
   },
+  decideTask: (taskId: string, input: Record<string, unknown>) => {
+    decideCalls.push({ taskId, ...input });
+    if (decideThrow) throw decideThrow;
+    return {
+      task: { ...(taskDetailsMock.task as Record<string, unknown>), id: taskId, updatedAt: 9 },
+      decision: {
+        id: "dec-cli-1",
+        taskId,
+        key: input.key,
+        status: "open",
+        ownerType: input.ownerType ?? "unassigned",
+        ownerId: input.ownerId ?? null,
+        ask: input.ask,
+        askedBy: input.actor ?? null,
+        askedAt: 9,
+        answer: null,
+        answeredBy: null,
+        answeredAt: null,
+        blocks: input.blocks === true,
+        createdAt: 9,
+        updatedAt: 9,
+      },
+      event: { id: 9, taskId, type: "task.decision.open", createdAt: 9 },
+      created: true,
+      ...decideResultExtra,
+    };
+  },
+  answerTaskDecision: (taskId: string, input: Record<string, unknown>) => {
+    answerDecisionCalls.push({ taskId, ...input });
+    if (answerDecisionThrow) throw answerDecisionThrow;
+    return {
+      task: { ...(taskDetailsMock.task as Record<string, unknown>), id: taskId, updatedAt: 10 },
+      decision: {
+        id: "dec-cli-1",
+        taskId,
+        key: input.key,
+        status: "answered",
+        ownerType: "human",
+        ownerId: "contact-1",
+        ask: "Which window?",
+        askedBy: "dev-session",
+        askedAt: 9,
+        answer: input.answer,
+        answeredBy: input.actor ?? null,
+        answeredAt: 10,
+        blocks: true,
+        createdAt: 9,
+        updatedAt: 10,
+      },
+      event: { id: 10, taskId, type: "task.decision.answered", createdAt: 10 },
+      ...answerDecisionResultExtra,
+    };
+  },
+  listTaskDecisionAttention: (options: Record<string, unknown> = {}) => {
+    attentionCalls.push(options);
+    return { ...attentionResult, filters: options };
+  },
   blockTask: (taskId: string, input: Record<string, unknown>) => {
     blockCalls.push({ taskId, ...input });
     return {
@@ -996,7 +1069,7 @@ describe("TaskCommands create", () => {
     expect(emittedEvents.map((event) => event.type)).toEqual(["task.created"]);
   });
 
-  it("fails create outside a Ravi session unless a report target is explicit", async () => {
+  it("creates a task without a session, channel or report target and passes the idempotency key", async () => {
     taskActorMock = { actor: "luis" };
     const commands = new TaskCommands();
 
@@ -1019,10 +1092,17 @@ describe("TaskCommands create", () => {
         undefined,
         undefined,
         true,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "create-once",
       ),
-    ).rejects.toThrow("Cannot infer task report target outside a Ravi session");
+    ).resolves.toBeDefined();
 
-    expect(createCalls).toHaveLength(0);
+    expect(createCalls).toHaveLength(1);
+    expect(createCalls[0]?.idempotencyKey).toBe("create-once");
+    expect(createCalls[0]?.reportToSessionName).toBeUndefined();
     expect(dispatchCalls).toHaveLength(0);
   });
 
@@ -1288,6 +1368,9 @@ describe("TaskCommands create", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
+        undefined,
+        undefined,
         true,
       );
     } finally {
@@ -1364,6 +1447,9 @@ describe("TaskCommands create", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
+        undefined,
+        undefined,
         true,
       );
     } finally {
@@ -1430,6 +1516,9 @@ describe("TaskCommands create", () => {
       await commands.dispatch(
         "task-cli-1",
         "dev",
+        undefined,
+        undefined,
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -2741,6 +2830,87 @@ describe("tasks agent-first contract", () => {
     expect(dispatchCalls).toHaveLength(0);
   });
 
+  async function dispatchError(call: (commands: InstanceType<typeof TaskCommands>) => Promise<unknown>) {
+    taskDetailsMock = { task: { id: "task-cli-1", status: "open" }, events: [], comments: [] };
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      await call(new TaskCommands());
+    } catch (error) {
+      return error as InstanceType<typeof ContractError>;
+    } finally {
+      console.log = originalLog;
+    }
+    throw new Error("dispatch did not fail");
+  }
+
+  it("refuses tasks dispatch --cloud to an unknown --report-to before the brake", async () => {
+    const thrown = await dispatchError((commands) =>
+      commands.dispatch(
+        "task-cli-1",
+        "dev",
+        undefined,
+        undefined,
+        "no-such-session-for-cloud-test",
+        undefined,
+        true,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        undefined,
+        undefined,
+        true,
+      ),
+    );
+    expect(thrown).toBeInstanceOf(ContractError);
+    expect(thrown.exitCode).toBe(1);
+    expect(thrown.envelope().error.code).toBe("REPORT_TARGET_NOT_FOUND");
+    expect(dispatchCalls).toHaveLength(0);
+  });
+
+  it("makes flag combinations of tasks dispatch usage errors (exit 2)", async () => {
+    const withLocalFlag = await dispatchError((commands) =>
+      commands.dispatch(
+        "task-cli-1",
+        "dev",
+        "task-cli-work",
+        undefined,
+        undefined,
+        undefined,
+        true,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    );
+    expect(withLocalFlag.exitCode).toBe(2);
+    expect(withLocalFlag.envelope().error.code).toBe("USAGE_ERROR");
+    const budgetWithoutCloud = await dispatchError((commands) =>
+      commands.dispatch(
+        "task-cli-1",
+        "dev",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "3",
+      ),
+    );
+    expect(budgetWithoutCloud.exitCode).toBe(2);
+    expect(budgetWithoutCloud.envelope().error.code).toBe("USAGE_ERROR");
+    expect(dispatchCalls).toHaveLength(0);
+  });
+
   it("blocks tasks deps rm without --execute (dry-run, exit 3, no write)", async () => {
     const commands = new TaskDependencyCommands();
     const originalLog = console.log;
@@ -2797,5 +2967,314 @@ describe("tasks agent-first contract", () => {
     const payload = JSON.parse(logs.join("\n"));
     expect(payload.items).toHaveLength(1);
     expect(Object.keys(payload.items[0]).sort()).toEqual(["id", "title"]);
+  });
+});
+
+describe("TaskCommands decisions", () => {
+  beforeEach(() => {
+    decideCalls.length = 0;
+    answerDecisionCalls.length = 0;
+    attentionCalls.length = 0;
+    emittedEvents.length = 0;
+    decideResultExtra = {};
+    answerDecisionResultExtra = {};
+    decideThrow = null;
+    answerDecisionThrow = null;
+    attentionResult = {
+      kind: "task.decision.attention",
+      generatedAt: 1,
+      total: 0,
+      parkedCount: 0,
+      decisionCount: 0,
+      filters: {},
+      entries: [],
+    };
+    taskActorMock = { actor: "dev-session", agentId: "dev", sessionName: "dev-session" };
+    taskDetailsMock = {
+      task: {
+        id: "task-cli-1",
+        title: "task",
+        instructions: "instructions",
+        status: "in_progress",
+        priority: "high",
+        progress: 40,
+        profileId: "default",
+        checkpointIntervalMs: 300000,
+        assigneeAgentId: "dev",
+        assigneeSessionName: "task-cli-1-work",
+        taskDir: "/tmp/ravi/tasks/task-cli-1",
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      taskProfile: buildMockResolvedProfile("default"),
+      parentTask: null,
+      childTasks: [],
+      activeAssignment: null,
+      assignments: [],
+      events: [],
+      comments: [],
+      decisions: [],
+    };
+    frontmatterMock = {};
+  });
+
+  async function capture<T>(fn: () => T | Promise<T>): Promise<{ result?: T; logs: string[]; error?: unknown }> {
+    const originalLog = console.log;
+    const logs: string[] = [];
+    console.log = (value?: unknown) => {
+      if (typeof value === "string") logs.push(value);
+    };
+    try {
+      return { result: await fn(), logs };
+    } catch (error) {
+      return { logs, error };
+    } finally {
+      console.log = originalLog;
+    }
+  }
+
+  function contractErrorOf(error: unknown): InstanceType<typeof ContractError> {
+    expect(error).toBeInstanceOf(ContractError);
+    return error as InstanceType<typeof ContractError>;
+  }
+
+  it("attention folds open decisions with filters and never mutates", async () => {
+    attentionResult = {
+      kind: "task.decision.attention",
+      generatedAt: 100,
+      total: 1,
+      parkedCount: 1,
+      decisionCount: 2,
+      filters: {},
+      entries: [
+        {
+          taskId: "task-cli-1",
+          taskTitle: "task",
+          taskStatus: "in_progress",
+          taskPriority: "high",
+          assigneeAgentId: "dev",
+          assigneeSessionName: "task-cli-1-work",
+          parked: true,
+          waitingFor: "human",
+          ageSeconds: 3600,
+          decisionCount: 2,
+          decisions: [
+            {
+              id: "dec-1",
+              key: "deploy-window",
+              ask: "Which window?",
+              ownerType: "human",
+              ownerId: "contact-1",
+              askedBy: "dev-session",
+              askedAt: 100,
+              blocks: true,
+              ageSeconds: 3600,
+            },
+            {
+              id: "dec-2",
+              key: "naming",
+              ask: "Name?",
+              ownerType: "unassigned",
+              ownerId: null,
+              askedBy: "dev-session",
+              askedAt: 200,
+              blocks: false,
+              ageSeconds: 3500,
+            },
+          ],
+        },
+      ],
+    };
+    const commands = new TaskCommands();
+    const { result, logs, error } = await capture(() => commands.attention("dev", "human", "task-cli-1", true));
+    expect(error).toBeUndefined();
+    expect(attentionCalls).toEqual([{ agentId: "dev", ownerType: "human", taskId: "task-cli-1" }]);
+    expect(emittedEvents).toHaveLength(0);
+    const payload = JSON.parse(logs.join("\n"));
+    expect(payload.kind).toBe("task.decision.attention");
+    expect(payload.entries[0].parked).toBe(true);
+    expect(payload.entries[0].waitingFor).toBe("human");
+    expect((result as { total: number }).total).toBe(1);
+  });
+
+  it("attention renders a readable fold in text mode", async () => {
+    attentionResult = {
+      kind: "task.decision.attention",
+      generatedAt: 100,
+      total: 1,
+      parkedCount: 1,
+      decisionCount: 1,
+      filters: {},
+      entries: [
+        {
+          taskId: "task-cli-1",
+          taskTitle: "task",
+          taskStatus: "blocked",
+          taskPriority: "high",
+          assigneeAgentId: "dev",
+          assigneeSessionName: "task-cli-1-work",
+          parked: true,
+          waitingFor: "human",
+          ageSeconds: 3600,
+          decisionCount: 1,
+          decisions: [
+            {
+              id: "dec-1",
+              key: "deploy-window",
+              ask: "Which window?",
+              ownerType: "human",
+              ownerId: "contact-1",
+              askedBy: "dev-session",
+              askedAt: 100,
+              blocks: true,
+              ageSeconds: 3600,
+            },
+          ],
+        },
+      ],
+    };
+    const commands = new TaskCommands();
+    const { logs, error } = await capture(() => commands.attention(undefined, undefined, undefined, false));
+    expect(error).toBeUndefined();
+    const text = logs.join("\n");
+    expect(text).toContain("Open decisions: 1 task(s), 1 decision(s), 1 parked");
+    expect(text).toContain("task-cli-1");
+    expect(text).toContain("Waiting on: human");
+    expect(text).toContain("[deploy-window] human:contact-1 (blocks)");
+  });
+
+  it("attention rejects an invalid --owner as a usage error (exit 2)", async () => {
+    const commands = new TaskCommands();
+    const { error } = await capture(() => commands.attention(undefined, "robot", undefined, true));
+    const contractError = contractErrorOf(error);
+    expect(contractError.exitCode).toBe(2);
+    expect(contractError.envelope().error.code).toBe("USAGE_ERROR");
+    expect(attentionCalls).toHaveLength(0);
+  });
+
+  it("show renders decisions open-first without mutating anything", async () => {
+    taskDetailsMock = {
+      task: {
+        id: "task-cli-1",
+        title: "task",
+        instructions: "instructions",
+        status: "in_progress",
+        priority: "high",
+        progress: 40,
+        profileId: "default",
+        checkpointIntervalMs: 300000,
+        assigneeAgentId: "dev",
+        assigneeSessionName: "task-cli-1-work",
+        taskDir: "/tmp/ravi/tasks/task-cli-1",
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      taskProfile: buildMockResolvedProfile("default"),
+      parentTask: null,
+      childTasks: [],
+      activeAssignment: null,
+      assignments: [],
+      events: [],
+      comments: [],
+      decisions: [
+        {
+          id: "dec-open",
+          taskId: "task-cli-1",
+          key: "deploy-window",
+          status: "open",
+          ownerType: "human",
+          ownerId: "contact-1",
+          ask: "Which window?",
+          askedBy: "dev-session",
+          askedAt: Date.now() - 60_000,
+          answer: null,
+          answeredBy: null,
+          answeredAt: null,
+          blocks: true,
+          createdAt: Date.now() - 60_000,
+          updatedAt: Date.now() - 60_000,
+        },
+        {
+          id: "dec-answered",
+          taskId: "task-cli-1",
+          key: "naming",
+          status: "answered",
+          ownerType: "agent",
+          ownerId: "main",
+          ask: "Name?",
+          askedBy: "dev-session",
+          askedAt: Date.now() - 120_000,
+          answer: "Ship as-is",
+          answeredBy: "main-session",
+          answeredAt: Date.now() - 90_000,
+          blocks: false,
+          createdAt: Date.now() - 120_000,
+          updatedAt: Date.now() - 90_000,
+        },
+      ],
+    };
+    const commands = new TaskCommands();
+    const { logs, error } = await capture(() => commands.show("task-cli-1", false));
+    expect(error).toBeUndefined();
+    expect(emittedEvents).toHaveLength(0);
+    expect(decideCalls).toHaveLength(0);
+    expect(answerDecisionCalls).toHaveLength(0);
+    const text = logs.join("\n");
+    expect(text).toContain("Decisions:");
+    expect(text).toContain("OPEN [deploy-window] :: human:contact-1 :: parked");
+    expect(text).toContain("ANSWERED [naming]");
+  });
+
+  it("show returns decisions in JSON without side effects", async () => {
+    taskDetailsMock = {
+      task: {
+        id: "task-cli-1",
+        title: "task",
+        instructions: "instructions",
+        status: "open",
+        priority: "high",
+        progress: 0,
+        profileId: "default",
+        checkpointIntervalMs: 300000,
+        assigneeAgentId: "dev",
+        assigneeSessionName: "task-cli-1-work",
+        taskDir: "/tmp/ravi/tasks/task-cli-1",
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      taskProfile: buildMockResolvedProfile("default"),
+      parentTask: null,
+      childTasks: [],
+      activeAssignment: null,
+      assignments: [],
+      events: [],
+      comments: [],
+      decisions: [
+        {
+          id: "dec-open",
+          taskId: "task-cli-1",
+          key: "deploy-window",
+          status: "open",
+          ownerType: "human",
+          ownerId: "contact-1",
+          ask: "Which window?",
+          askedBy: "dev-session",
+          askedAt: 1,
+          answer: null,
+          answeredBy: null,
+          answeredAt: null,
+          blocks: true,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    };
+    const commands = new TaskCommands();
+    const { logs, error } = await capture(() => commands.show("task-cli-1", true));
+    expect(error).toBeUndefined();
+    const payload = JSON.parse(logs.join("\n"));
+    expect(payload.decisions).toHaveLength(1);
+    expect(payload.decisions[0]).toMatchObject({ key: "deploy-window", status: "open", blocks: true });
+    expect(emittedEvents).toHaveLength(0);
   });
 });

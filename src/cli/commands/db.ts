@@ -1,3 +1,4 @@
+import { openStateDatabase } from "../../db/state-boundary.js";
 /**
  * DB Commands - Inspection of ravi.db state, locks and WAL.
  */
@@ -88,7 +89,7 @@ function probeWriteLock(dbPath: string, timeoutMs: number): LockProbe {
   const start = Date.now();
   let db: Database | null = null;
   try {
-    db = new Database(dbPath);
+    db = openStateDatabase(dbPath);
     db.exec(`PRAGMA busy_timeout = ${Math.max(timeoutMs, 100)}`);
     db.exec("BEGIN IMMEDIATE");
     db.exec("ROLLBACK");
@@ -199,7 +200,7 @@ export class DbCommands {
     const snap = buildSnapshot(dbPath, probeTimeoutMs);
 
     if (checkpoint) {
-      const db = new Database(dbPath);
+      const db = openStateDatabase(dbPath);
       try {
         db.exec("PRAGMA busy_timeout = 5000");
         const result = db.query("PRAGMA wal_checkpoint(PASSIVE)").get() as {

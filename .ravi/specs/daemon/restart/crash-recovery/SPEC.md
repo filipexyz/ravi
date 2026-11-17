@@ -78,6 +78,8 @@ Every attempt MUST carry a durable request blob reference or provider checkpoint
 
 The runtime host MUST create its boot epoch before accepting subscriptions. It MUST heartbeat the boot independently of provider events and renew the boot before its active attempts. Loss or expiry of a boot/attempt fence MUST stop new provider deliveries and abort every active owned attempt in memory. Every lease-authorized persistent mutation MUST re-read the current clock after the write and validate the lease that authorized the write; a renewal MUST NOT validate a stalled write against the newly extended lease.
 
+Observation of provider progress MUST remain separate from ownership heartbeat. A sampled progress watermark MAY live in `runtime_turn_progress`, bound to exact attempt/turn/session/boot identity. It MUST reject stale, replaced, terminal, recovery-claimed or expired owners atomically, including lease expiry during the write. Provider events alone advance the watermark; heartbeat renewal MUST NOT. This observation grants no replay, termination or ownership authority. Independent reconcilers MUST read the same fenced watermark instead of relying on the owner's process memory.
+
 For each provider delivery, the host MUST persist the sanitized adapter request and create the attempt after resolving source/provenance but before the common prompt generator yields to any provider. Failure of either write MUST prevent delivery and retain the pending prompt. Provider adapters MUST remain unaware of the ledger.
 
 Safety evidence is write-ahead and monotonic:
@@ -92,6 +94,14 @@ Safety evidence is write-ahead and monotonic:
 Attempt terminalization MUST be independent of the historical trace's terminal guard. The first terminal path wins, persists before waking the generator or starting a replacement runtime, retains the monotonic safety evidence after the active binding is removed, and uses the same status/timestamp as the canonical terminal trace. Graceful host shutdown MUST abort any remaining attempts before marking the boot `graceful_stopped` and closing the database.
 
 Existing bounded retry and graceful-restart paths MUST consume that durable safety evidence. A physical turn with `started_tool`, `materialized_output`, an `inputMutated` safety marker, or `toolEffectFence=provider_event_only` MUST NOT be stashed or continued by a generic restart prompt. A physical turn already terminal at snapshot time is consumed regardless of its markers. A restart MAY continue a replay-safe current turn, MAY resume only independently queued durable successors, or MUST suppress continuation entirely; these cases are represented explicitly as `continue`, `pending_only`, and `skip` rather than inferred from prose. A caller restart reason/epoch without its expected session snapshot MUST resolve to `skip`; snapshot absence is not evidence that no physical turn existed.
+
+An explicit capacity retry authorized by the host after its replay-safety and
+broker checks is a separate pending attempt, not generic terminal replay. While
+that retry waits, a snapshot MAY retain its exact input cohort as `pending_only`
+with the original budget and absolute next-attempt deadline. The failed physical
+attempt stays terminal. Historical retry state alone MUST NOT grant this
+exception; the live scheduling checkpoint must match the failed input cohort
+and remain free of abort, supersession, tool, output, or input-mutation fences.
 
 Suppressing continuation MUST NOT suppress the restart notice. A `skip` decision (`unsafe_snapshot`, `missing_snapshot`, or `ineligible_snapshot`) MUST still deliver one notice-only session input, marked `_daemonRestartResume.noticeOnly`, that carries the restart reason, says why the interrupted work was not resumed, and tells the agent not to continue or repeat that work on its own. The dispatcher MUST NOT hydrate a snapshot's persisted pending work into a notice-only input. A dedicated task session whose task is no longer active receives neither a resume nor a notice.
 

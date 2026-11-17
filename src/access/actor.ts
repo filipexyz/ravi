@@ -16,18 +16,27 @@
  *   own `ravi sessions send|ask`, routines the owner owns): no `actor`, the
  *   session user acts. The owner speaking in a group or in a shared session
  *   is still the owner asking, so it is the operator too.
- * - A resolved contact who is not the owner (a direct chat or a group):
+ * - A resolved contact who is not the owner (a direct chat or a group), or
+ *   the contact who owns the cron job this turn runs:
  *   `actor: { contactId }`, so Console acts for that person, never for the
  *   operator.
  * - Anything else (an unresolved speaker, an agent relaying for another
- *   session, a routine someone else owns, a turn that already ended): refused
- *   here, and nothing is sent. A turn that cannot be attributed never falls
- *   back to the operator's authority.
+ *   session, a routine with no person as owner, a turn that already ended): refused
+ *   here, with that reason, and nothing is sent. A turn that cannot be
+ *   attributed never falls back to the operator's authority.
+ *
+ * A turn a trigger fired is refused too, except for a caller that asks for
+ * trigger owners (`triggerRoutines`, Bases only): there it acts as whoever
+ * owns the trigger, the operator or a contact, when it runs in the trigger's
+ * own session and its answer is posted to no chat. A trigger no person owns,
+ * one that runs in any other session, or one that answers into a chat is
+ * refused with that reason.
  */
 
 import { dbGetAgent } from "../router/router-db.js";
 import type { ConnectorTurn, ConnectorTurnDeps, ConnectorTurnResult } from "../link/connector-turn.js";
 import { resolveTurnForActiveLogin } from "../pages/read.js";
+import { turnRefusalMessageWithNext, type TurnRefusalReason } from "../cloud-auth/turn-refusal.js";
 import type { PagesClientDeps } from "../pages/client.js";
 
 export type AccessActorDecision =
@@ -40,12 +49,21 @@ export type AccessActorDecision =
       kind: "contact";
       contactId: string;
       agent?: AccessAgent;
+      /** A routine run acting for the contact who owns it. */
+      routine?: AccessRoutine;
     }
   | {
       kind: "refused";
       message: string;
       actorPrincipal: string;
+      /** Why: a routine someone else owns, another agent's relay, an ended turn, or unknown (absent). */
+      reason?: TurnRefusalReason;
     };
+
+export interface AccessRoutine {
+  kind: "cron" | "trigger";
+  id: string;
+}
 
 export interface AccessAgent {
   id: string;
@@ -57,6 +75,11 @@ export interface AccessActorDeps {
   readCredentials?: PagesClientDeps["readCredentials"];
   /** Overrides the classification (tests). */
   actor?: AccessActorDecision;
+  /**
+   * Let a turn a trigger fired act as the trigger's owner. Bases sets it;
+   * every other caller keeps refusing trigger turns.
+   */
+  triggerRoutines?: boolean;
   /** An agent's display name (default: the agents table). */
   getAgentName?: (agentId: string) => string | null | undefined;
 }
@@ -77,8 +100,13 @@ export function accessActorFromTurn(result: ConnectorTurnResult, deps: AccessAct
     if (turn.speaker.kind === "contact" && turn.speaker.contactId) {
       return { kind: "contact", contactId: turn.speaker.contactId, ...agentOf(turn, deps) };
     }
-    if (turn.speaker.kind === "agent") return refused(turn.actorPrincipal);
+    if (turn.speaker.kind === "agent") return refused(turn.actorPrincipal, { kind: "agent_relay" });
     return { kind: "operator", ...agentOf(turn, deps) };
+  }
+  const requester = result.delegatedRequester;
+  if (requester?.speaker.kind === "owner") return { kind: "operator", ...agentOf(requester, deps) };
+  if (requester?.speaker.kind === "contact" && requester.speaker.contactId) {
+    return { kind: "contact", contactId: requester.speaker.contactId, ...agentOf(requester, deps) };
   }
   // The operator's own relay, refused by the connector rule only for where
   // the session posts its answer.
@@ -94,7 +122,69 @@ export function accessActorFromTurn(result: ConnectorTurnResult, deps: AccessAct
   if (candidate?.speaker.kind === "contact" && candidate.speaker.contactId) {
     return { kind: "contact", contactId: candidate.speaker.contactId, ...agentOf(candidate, deps) };
   }
-  return refused(result.actorPrincipal);
+  // A trigger turn, for a caller that honors trigger owners: it acts as the
+  // operator when the owner does, as the contact who owns it through their
+  // own `ravi link`, and for nobody otherwise. Even then only in the
+  // trigger's own session and when its answer is posted to no chat, so what
+  // Bases returns is never read inside, or posted into, a conversation.
+  if (deps.triggerRoutines && result.triggerOwner) {
+    const { id, ownerPrincipal, actsAsOperator, ownSession, answersToOwner } = result.triggerOwner;
+    const contactId = actsAsOperator ? null : contactIdOfPrincipal(ownerPrincipal);
+    if (!actsAsOperator && !contactId) {
+      return refused(result.actorPrincipal, {
+        kind: "routine_not_operator_owned",
+        routine: "trigger",
+        jobId: id,
+        ownerPrincipal,
+      });
+    }
+    // In a session that is not the trigger's own, other conversations share
+    // what the turn reads: the owner's authority is not lent there.
+    if (!ownSession) {
+      return refused(result.actorPrincipal, { kind: "routine_shared_session", routine: "trigger", jobId: id });
+    }
+    if (!answersToOwner) {
+      return refused(result.actorPrincipal, { kind: "routine_answers_elsewhere", routine: "trigger", jobId: id });
+    }
+    return contactId ? { kind: "contact", contactId, routine: { kind: "trigger", id } } : { kind: "operator" };
+  }
+  // A cron job a contact created runs as that person: Console acts for them
+  // through their own `ravi link` (and refuses without one), never as the
+  // operator. Any other owner (an unknown or an agent) is refused.
+  const routineContact = routineOwnerContactId(result);
+  if (routineContact) {
+    const routine = routineOf(result);
+    return { kind: "contact", contactId: routineContact, ...(routine ? { routine } : {}) };
+  }
+  return refused(result.actorPrincipal, refusalReason(result));
+}
+
+function routineOwnerContactId(result: Extract<ConnectorTurnResult, { ok: false }>): string | null {
+  return contactIdOfPrincipal(result.routineOwner?.ownerPrincipal);
+}
+
+function contactIdOfPrincipal(principal: string | undefined): string | null {
+  if (!principal?.startsWith("contact:")) return null;
+  const contactId = principal.slice("contact:".length).trim();
+  return contactId || null;
+}
+
+function routineOf(result: Extract<ConnectorTurnResult, { ok: false }>): AccessRoutine | undefined {
+  return result.routineOwner ? { kind: result.routineOwner.kind, id: result.routineOwner.id } : undefined;
+}
+
+function refusalReason(result: Extract<ConnectorTurnResult, { ok: false }>): TurnRefusalReason {
+  if (result.routineOwner) {
+    return {
+      kind: "routine_not_operator_owned",
+      routine: result.routineOwner.kind,
+      jobId: result.routineOwner.id,
+      ownerPrincipal: result.routineOwner.ownerPrincipal,
+    };
+  }
+  if (result.ended) return { kind: "ended" };
+  if (result.actorPrincipal.startsWith("agent:")) return { kind: "agent_relay" };
+  return { kind: "unknown" };
 }
 
 /** `{ actor: { contactId } }` for a contact, nothing for the operator. */
@@ -126,11 +216,6 @@ function readAgentName(agentId: string, deps: AccessActorDeps): string | null {
   }
 }
 
-function refused(actorPrincipal: string): AccessActorDecision {
-  return {
-    kind: "refused",
-    actorPrincipal,
-    message:
-      "Ravi could not tell who is asking in this turn, so it will not share, invite or ask for access on anyone's behalf. Ask the person to send the request from their own chat, or the operator to run it in the terminal.",
-  };
+function refused(actorPrincipal: string, reason: TurnRefusalReason): AccessActorDecision {
+  return { kind: "refused", actorPrincipal, reason, message: turnRefusalMessageWithNext(reason, "access") };
 }

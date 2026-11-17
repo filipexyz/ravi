@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
@@ -49,22 +50,28 @@ function specIdCandidates(): string[] {
 
 function failSpecNotFound(op: string, id: string, asJson?: boolean): never {
   contractFail(op, "SPEC_NOT_FOUND", `Spec not found: ${id}`, {
-    asJson,
-    details: {
-      suggestedAction: "Check the spec id (see suggestions) or run `ravi specs list`",
-      suggestions: suggestSimilar(id, specIdCandidates()),
+    ...{
+      asJson,
+      details: {
+        suggestedAction: "Check the spec id (see suggestions) or run `ravi specs list`",
+        suggestions: suggestSimilar(id, specIdCandidates()),
+      },
     },
+    diagnostic: errorDiagnostic(`Spec not found: ${id}`, { operation: op }),
   });
 }
 
 function failSpecsUsage(op: string, message: string, acceptedValues: readonly string[], asJson?: boolean): never {
   contractFail(op, "USAGE_ERROR", message, {
-    asJson,
-    exitCode: CONTRACT_EXIT_USAGE,
-    details: {
-      suggestedAction: `Re-run '${op}' with one of: ${acceptedValues.join(", ")}`,
-      acceptedValues: [...acceptedValues],
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        suggestedAction: `Re-run '${op}' with one of: ${acceptedValues.join(", ")}`,
+        acceptedValues: [...acceptedValues],
+      },
     },
+    diagnostic: errorDiagnostic(message, { operation: op }),
   });
 }
 

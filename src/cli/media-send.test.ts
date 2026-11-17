@@ -10,7 +10,7 @@ mock.module("../config-store.js", () => ({
 }));
 
 import { runWithContext } from "./context.js";
-import { MediaSendAuthError } from "./media-send-auth.js";
+import { mapMediaSendFailure, MediaSendAuthError } from "./media-send-auth.js";
 
 const { sendMediaWithOmniCli, resolveMediaSendTarget } = await import("./media-send.js");
 
@@ -205,6 +205,46 @@ exit 1
         },
       }),
     ).rejects.toBeInstanceOf(MediaSendAuthError);
+  });
+
+  it("media_send_preserves_nested_omni_provider_cause_without_instance_token", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-media-send-"));
+    tempDirs.push(dir);
+    const omniPath = join(dir, "omni");
+    writeFileSync(
+      omniPath,
+      `#!/bin/sh
+printf '%s\\n' '{"success":false,"error":{"code":"unsupported_media_type","status":415,"message":"Omni rejected upload: unsupported media format","cause":"Decoder rejected the file signature; token=MEDIA_INSTANCE_SECRET"}}' >&2
+exit 1
+`,
+    );
+    chmodSync(omniPath, 0o755);
+    const mediaPath = join(dir, "sample.png");
+    writeFileSync(mediaPath, "image");
+    process.env.PATH = `${dir}:${ORIGINAL_PATH}`;
+    process.env.OMNI_API_URL = "http://omni.runtime.test:8882";
+    process.env.OMNI_API_KEY = "runtime-primary-key";
+    let caught: unknown;
+    try {
+      await sendMediaWithOmniCli({
+        filePath: mediaPath,
+        target: { channel: "whatsapp-baileys", accountId: "acct-media", chatId: "5511999999999" },
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    const failure = mapMediaSendFailure(caught);
+    expect(failure.code).toBe("MEDIA_SEND_FAILED");
+    expect(failure.cause).toContain("Omni rejected upload: unsupported media format");
+    expect(failure.cause).toContain("Decoder rejected the file signature");
+    expect(failure.context).toMatchObject({
+      operation: "media send",
+      provider: "omni",
+      code: "unsupported_media_type",
+      status: 415,
+    });
+    expect(JSON.stringify(failure)).not.toContain("MEDIA_INSTANCE_SECRET");
   });
 
   it("uses native Slack delivery when the source channel is Slack", async () => {

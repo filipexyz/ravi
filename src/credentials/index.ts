@@ -7,6 +7,11 @@ export {
   type SecretWriteInput,
 } from "./backends.js";
 export {
+  CredentialBrokerError,
+  isCredentialBrokerError,
+  type CredentialBrokerErrorCode,
+} from "./errors.js";
+export {
   execCredentialBroker,
   explainCredentialPolicy,
   publicCredentialConnection,

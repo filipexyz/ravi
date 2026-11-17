@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * React Commands - Emoji reactions
  */
@@ -71,10 +72,15 @@ export class ReactCommands {
         "NO_CHANNEL_CONTEXT",
         "No channel context available — cannot determine where to send reaction",
         {
-          asJson,
-          details: {
-            suggestedAction: "Run from a routed channel session; reactions always target the current chat",
+          ...{
+            asJson,
+            details: {
+              suggestedAction: "Run from a routed channel session; reactions always target the current chat",
+            },
           },
+          diagnostic: errorDiagnostic("No channel context available — cannot determine where to send reaction", {
+            operation: "react send",
+          }),
         },
       );
     }
@@ -100,15 +106,18 @@ export class ReactCommands {
       if (!known) {
         const recent = dbListChatMessages(ledgerChat.id, 30);
         contractFail("react send", "MESSAGE_NOT_FOUND", `Message not found in current chat: ${messageId}`, {
-          asJson,
-          details: {
-            suggestedAction:
-              "Use a [mid:ID] from a visible message in this chat (or inspect: ravi sessions actions --json)",
-            suggestions: suggestSimilar(
-              messageId,
-              recent.map((message) => message.providerMessageId),
-            ),
+          ...{
+            asJson,
+            details: {
+              suggestedAction:
+                "Use a [mid:ID] from a visible message in this chat (or inspect: ravi sessions actions --json)",
+              suggestions: suggestSimilar(
+                messageId,
+                recent.map((message) => message.providerMessageId),
+              ),
+            },
           },
+          diagnostic: errorDiagnostic(`Message not found in current chat: ${messageId}`, { operation: "react send" }),
         });
       }
     }
@@ -129,10 +138,15 @@ export class ReactCommands {
           "INVALID_TARGET",
           "invalid_target: Slack reactions require a canonical chat target",
           {
-            asJson,
-            details: {
-              suggestedAction: "Run from a Slack-routed session whose source carries canonicalChatId",
+            ...{
+              asJson,
+              details: {
+                suggestedAction: "Run from a Slack-routed session whose source carries canonicalChatId",
+              },
             },
+            diagnostic: errorDiagnostic("invalid_target: Slack reactions require a canonical chat target", {
+              operation: "react send",
+            }),
           },
         );
       }

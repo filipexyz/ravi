@@ -39,11 +39,11 @@ export function ensureLinkedDmRoute(
 
   const config = (deps.getConfig ?? (() => configStore.getConfig()))();
   const matched = matchRoute(config, { phone: pattern, channel: state.channel, accountId: state.accountId });
-  if (matched) {
-    const dmPolicy = matched.route?.policy ?? config.instances?.[state.accountId]?.dmPolicy ?? "open";
-    if (dmPolicy === "closed") return "dm_closed";
-    if (dmPolicy !== "pairing" || getContact(pattern)?.status === "allowed") return "reaches_agent";
-  }
+  // The instance's DM policy holds whether or not a route matched: closed DMs
+  // stay closed even on an instance with no default agent.
+  const dmPolicy = matched?.route?.policy ?? config.instances?.[state.accountId]?.dmPolicy ?? "open";
+  if (dmPolicy === "closed") return "dm_closed";
+  if (matched && (dmPolicy !== "pairing" || getContact(pattern)?.status === "allowed")) return "reaches_agent";
 
   try {
     dbCreateRoute({

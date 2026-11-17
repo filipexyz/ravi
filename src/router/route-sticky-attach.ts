@@ -103,6 +103,18 @@ export function chatRouteIdentities(chat: ChatRecord): string[] {
   } else {
     addIdentity(values, chat.normalizedChatId);
   }
+  // Native channels (Slack) store the bare channel id, while their routes
+  // match `group:<id>`; without this a route change never released them.
+  const platformChatId = chat.platformChatId.trim();
+  if (
+    (chat.chatType === "group" || chat.chatType === "channel" || chat.chatType === "room") &&
+    platformChatId &&
+    !platformChatId.includes("@") &&
+    !platformChatId.includes("#") &&
+    !platformChatId.toLowerCase().startsWith("group:")
+  ) {
+    addIdentity(values, `group:${platformChatId}`);
+  }
   return [...values];
 }
 

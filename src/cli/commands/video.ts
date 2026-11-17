@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Video Commands — Analyze videos via subtitles or Gemini
  */
@@ -5,6 +6,7 @@
 import "reflect-metadata";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { getCallerCwd, resolveCallerPath } from "../caller-cwd.js";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
 import { analyzeVideo, type VideoAnalyzeStrategy } from "../../video/gemini.js";
@@ -22,12 +24,15 @@ function parseStrategy(value: string | undefined, asJson?: boolean): VideoAnalyz
   if (!value) return "auto";
   if (value === "auto" || value === "subtitles" || value === "gemini") return value;
   contractFail("video analyze", "USAGE_ERROR", "Invalid video analysis strategy.", {
-    asJson,
-    exitCode: CONTRACT_EXIT_USAGE,
-    details: {
-      suggestedAction: "Use --strategy auto, subtitles, or gemini",
-      acceptedValues: ["auto", "subtitles", "gemini"],
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        suggestedAction: "Use --strategy auto, subtitles, or gemini",
+        acceptedValues: ["auto", "subtitles", "gemini"],
+      },
     },
+    diagnostic: errorDiagnostic("Invalid video analysis strategy.", { operation: "video analyze" }),
   });
 }
 
@@ -73,7 +78,7 @@ export class VideoCommands {
     // Determine output path
     const slug = slugify(result.title);
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    const filename = output || join(process.cwd(), `${slug}-${timestamp}.md`);
+    const filename = resolveCallerPath(output || join(getCallerCwd(), `${slug}-${timestamp}.md`), "write");
 
     writeFileSync(filename, result.markdown);
 

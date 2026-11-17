@@ -156,6 +156,17 @@ The context MUST be short-lived. A user-initiated invocation context SHOULD expi
 Agent identity contexts snapshot provider-owned state at turn start. Snapshots
 are audit artifacts, not a second source of truth:
 
+- Long active turns MAY renew the validity of their issued snapshot only while
+  the host still owns that physical turn, before the credential expires, and
+  after rematerializing the same actor/compartment/turn constraints. Renewal
+  MUST NOT add capabilities; a reduced or no-longer-eligible authority MUST
+  revoke the context and descendants. Existing immediate revocation paths
+  remain authoritative between renewal checks. Completion/abort MUST stop
+  renewal and revoke the captured turn key without touching the next turn.
+  Historical caller snapshots marked `relayNarrowing` MUST keep their original
+  expiry until individual grant revocation can be revalidated through their
+  full lineage; they MUST NOT receive active-turn renewal.
+
 - A grant created after a denial MUST take effect by the next turn of the
   affected session without daemon restart or manual context surgery.
 - A revocation MUST stop authorizing by the next authority check (existing

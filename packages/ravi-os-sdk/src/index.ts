@@ -59,6 +59,8 @@ export {
   type RaviContractErrorBody,
   type RaviContractErrorPayload,
   type RaviContractOutcome,
+  type RaviDiagnosticActor,
+  type RaviDiagnosticContext,
   type RaviGatewayErrorBody,
   isRaviContractErrorBody,
 } from "./errors.js";

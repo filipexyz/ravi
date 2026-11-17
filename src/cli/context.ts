@@ -18,6 +18,8 @@ import { CliExpectedError } from "./expected-error.js";
 export interface ToolContext {
   /** Execution surface for commands that have transport-specific interaction constraints. */
   transport?: "tool" | "gateway";
+  /** Resolution provenance; a default credential is not an explicit runtime invocation. */
+  contextOrigin?: "default-credential";
   /** Current runtime context ID */
   contextId?: string;
   /** Resolved context registry record */
@@ -89,9 +91,11 @@ export function getContext(options: { localOnly?: boolean } = {}): ToolContext |
   //  1. RAVI_CONTEXT_KEY env var (already handled by getRuntimeContextFromEnv)
   //  2. ~/.ravi/credentials.json `default` entry
   //  3. Legacy RAVI_AGENT_ID / RAVI_SESSION_* fallback (TODO: remove once sdk/auth fully lands)
-  const resolvedContext = getRuntimeContextFromEnv(env) ?? resolveDefaultCredential();
+  const runtimeContext = getRuntimeContextFromEnv(env);
+  const resolvedContext = runtimeContext ?? resolveDefaultCredential();
   if (resolvedContext) {
     const ctx: ToolContext = {
+      ...(runtimeContext ? {} : { contextOrigin: "default-credential" as const }),
       contextId: resolvedContext.contextId,
       context: resolvedContext,
       sessionKey: resolvedContext.sessionKey ?? env.RAVI_SESSION_KEY,

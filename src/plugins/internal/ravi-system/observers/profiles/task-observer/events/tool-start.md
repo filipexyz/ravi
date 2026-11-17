@@ -1,1 +1,0 @@
-- Tool started: {{event.preview}} · {{event.toolInput}} ({{event.id}})

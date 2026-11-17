@@ -166,7 +166,8 @@ describe("ravi connectors mode", () => {
     expect(stored()).toBe("person_asking");
   });
 
-  it("sends the owner who asks in a group to their own chat, and changes nothing", async () => {    writeAgentConnectorMode("main", "google", "shared");
+  it("sends the owner who asks in a group to their own chat, and changes nothing", async () => {
+    writeAgentConnectorMode("main", "google", "shared");
     writeCloudCredentials({
       version: 1,
       consoleUrl: "https://console.example",

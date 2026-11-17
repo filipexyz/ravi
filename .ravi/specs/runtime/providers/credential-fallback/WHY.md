@@ -108,3 +108,7 @@ Claude remote spawn currently forwards only a tiny set of auth env vars to SSH/N
 ## Why Pi Needs Extra Care
 
 Pi currently gets a full process env and also owns provider-native tools. Injecting API keys into the Pi process may expose those keys to tool commands or artifacts unless Pi provides a separate provider-secret path. The spec deliberately blocks automatic Pi secret injection for unrestricted tool sessions until that boundary is verified.
+
+## Capacity is independent from credential rotation
+
+The existing host retry path depended on retryableByCredential. Provider-wide overload deliberately does not authorize credential rotation, so a transient capacity failure ended the user turn. Codex also reduced app-server error envelopes to strings, losing the fields needed to distinguish transient admission failures. Preserve that data and reuse current-turn replay with bounded waiting. An affirmative pre-execution rejection proof closes the provider-event-only observation gap without weakening fences after effects.

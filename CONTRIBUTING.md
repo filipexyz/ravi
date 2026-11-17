@@ -8,11 +8,65 @@ This guide covers building Ravi from source, running the checks CI runs, and sen
 - After CI passes on a push to `dev`, the "Version And Publish" workflow bumps the version, tags it and publishes the package to npm as `ravi.bot@next` (when the push changed publishable files). Pushes to `main` publish `ravi.bot@latest`.
 - The version bump is a CI commit (`chore(version): bump to <version> [skip ci]`). Do not edit `version` in `package.json` yourself.
 
+### npm trusted publishing setup (package owner)
+
+Both release workflows use GitHub-hosted runners, Node 24 and pinned npm 11.21.1.
+The publish job has `id-token: write`. Bun still installs and builds dependencies;
+`npm publish` publishes both `ravi.bot` and `@ravi-os/sdk` with provenance.
+The SDK manifest identifies this repository and its package directory for provenance.
+
+**Manual prerequisite — Luís, or an npm maintainer who can change each package's
+settings, must configure both packages on npmjs.com.** This is separate from
+merging a workflow change; no secret or package policy is changed by the PR.
+
+1. Open **Packages → ravi.bot → Settings → Trusted publishing → Add trusted publisher → GitHub Actions**.
+   Set **Organization or user** to `filipexyz`, **Repository** to `ravi`, and
+   **Workflow filename** to `version.yml` (filename only). Leave **Environment name**
+   empty; this workflow does not use a GitHub environment.
+2. Enable **Allow npm publish** and **Allow npm dist-tag**. New configurations allow
+   staged publishing by default; this workflow requires direct publication and
+   dist-tag management as separate allowed actions.
+3. Repeat for **Packages → @ravi-os/sdk → Settings → Trusted publishing** with the
+   same owner/repository, filename **`sdk-release.yml`**, no environment, and both
+   allowed actions enabled.
+4. Arrange the first authorized release within **2 days** of creating each
+   configuration. npm expires configurations that have not completed a successful
+   first publish in that window. An expired configuration must be recreated.
+
+OIDC supports `npm dist-tag` starting with npm 11.21.0 (or 12.2.0 on npm 12),
+provided **Allow npm dist-tag** is enabled. That is why these workflows pin a
+newer version than the 11.5.1 minimum for publishing. The existing-version branch
+uses the same OIDC-first authentication as a new publish; it does not require a
+permanent token exception.
+
+During migration, the existing `NPM_TOKEN` secret remains an optional fallback,
+passed only to the publish step as `NODE_AUTH_TOKEN` through setup-node's npmrc.
+npm attempts OIDC first even when that token is present. Each job announces
+whether fallback is available; `--loglevel verbose` exposes npm's `oidc`
+diagnostic: `Successfully retrieved and set token` means OIDC was established;
+an exchange failure leaves the configured token as fallback. No token value is
+printed. If the token is absent, the job still attempts OIDC. Authentication and
+2FA errors (including `EOTP`) fail the job; fallback does not bypass npm's token
+policy. If OIDC exchange succeeds but the operation is denied, npm fails
+that operation rather than retrying it with the static token.
+
+After configuration, verify **each package** from its own authorized release:
+OIDC exchange succeeds in the logs, publication/provenance succeeds, and
+`npm view ravi.bot dist-tags --json` or `npm view @ravi-os/sdk dist-tags --json`
+points the intended tag to the released version. `npm whoami` does not validate
+trusted publishing. Only after that verification should a separately authorized
+cleanup remove the static token or change publishing policies. Do not dispatch a
+release merely to validate a workflow PR.
+
+References: [npm trusted publishers](https://docs.npmjs.com/trusted-publishers/),
+[OIDC dist-tags](https://docs.npmjs.com/trusted-publishers/#managing-dist-tags-with-trusted-publishing),
+[setup-node trusted publishing](https://github.com/actions/setup-node/blob/main/docs/advanced-usage.md#publishing-to-npm-with-trusted-publisher-oidc).
+
 ## Prerequisites
 
 - [Bun](https://bun.sh) (CI uses 1.3.11). Use Bun for every package operation: `bun install`, `bun add`, `bun remove`.
 - git.
-- To run the daemon from your checkout: PM2 and a NATS server with JetStream, as set up in [Install Ravi](https://docs.ravi.bot/start/install).
+- For isolated foreground development: a dedicated development machine/container and a separate NATS server with JetStream. Installed services use PM2, as described in [Install Ravi](https://docs.ravi.bot/start/install).
 - Optional: a Swift toolchain for `bun run test:swift-sdk`, which CI also runs.
 
 ## Set up
@@ -22,20 +76,19 @@ git clone https://github.com/filipexyz/ravi.git
 cd ravi
 bun install        # dependencies; the prepare script points git at .githooks/
 bun run build
-bun link           # puts this checkout's ravi in ~/.bun/bin
 ```
 
 `bin/ravi` runs `dist/bundle/index.js`. In a source checkout it first rebuilds the bundle (`build:cli` and `gen:plugins`) whenever anything in `src/` or `package.json` is newer, and it refuses to run if that build fails. `RAVI_ALLOW_STALE_BUNDLE=1` skips the check. Inside the repo, prefer `./bin/ravi`, so you know which code you are running (see "CLI Runtime Hierarchy" in AGENTS.md).
 
-Other ways to run code from the checkout:
+Source commands must select isolated state. On a dedicated development machine/container without live credentials, use a foreground daemon with its own state and broker:
 
 ```bash
-bun src/cli/index.ts agents list    # the CLI straight from source, no bundle
-./bin/ravi daemon start             # registers this checkout's bundle as the PM2 process "ravi"
-./bin/ravi daemon dev               # rebuilds on every src/ change; apply with ravi daemon restart -m "<reason>"
+RAVI_STATE_DIR="$(mktemp -d)" bun src/cli/index.ts agents list --help
+# Development broker on :4322 must use its own JetStream storage, not the live server.
+RAVI_STATE_DIR="$(mktemp -d)" NATS_URL="nats://127.0.0.1:4322" bun src/cli/index.ts daemon run
 ```
 
-To try commands without touching a real install, give them a throwaway home: `HOME=$(mktemp -d) ./bin/ravi <group> <command> --help`.
+Stop the foreground process with Ctrl-C. Do not use checkout `daemon start`, `daemon restart`, `daemon dev` or `channels restart` for this flow: lifecycle commands address shared PM2 process names and may replace installed services. An isolated `RAVI_STATE_DIR` does not isolate PM2, broker consumers or external credentials. Do not link the checkout over the installed `ravi` command or invoke the auto-building wrapper on a production host.
 
 ## Build
 
@@ -45,14 +98,9 @@ bun run build
 
 `build` runs `gen:commands` first (the `prebuild` script writes the barrel `src/cli/commands/index.ts`), then bundles the CLI into `dist/bundle/` (`build:cli`) and the TUI into `dist/tui/` (`build:tui`), then writes the packaged skills and plugins to `dist/bundle/internal-plugins.json` (`gen:plugins`). The barrel file is tracked in git: when adding a command file changes it, commit it. The automatic rebuild in `bin/ravi` skips `gen:commands`, so after adding a command file run `bun run gen:commands` or `bun run build`.
 
-The daemon (`ravi`) and the channel runner (`ravi-channels`) run the built bundle. After changing `src/`, rebuild and restart what you changed. A restart re-registers the process with the bundle of the CLI you invoke, so use `./bin/ravi` to run this checkout:
+For foreground development, rebuild as needed and relaunch only the isolated process described above. The channel runner requires schemas prepared by a daemon of the same release, with the same state and credentials database paths.
 
-```bash
-./bin/ravi daemon restart -m "<reason>"   # -m is required; -b builds first
-./bin/ravi channels restart -b            # Slack and other native channels; -b uses this repo's bundle
-```
-
-`channels restart` refuses a bundle that differs from the one the live daemon runs, so restart the daemon first.
+Installed PM2 services are a separate operational flow. Their lifecycle must use the installed CLI that matches the live daemon bundle, after checking its package and process identity. Never restart them through a source checkout: restart re-registers the invoked CLI bundle, so a checkout can replace the live service before its real-state guard refuses access. Changes in this repository do not authorize a deployment or restart.
 
 Configuration changed through the CLI (agents, instances, routes, triggers, cron) is picked up without a restart.
 
@@ -68,6 +116,8 @@ bun run lint:fix      # apply Biome fixes in src/
 - `bun run test` runs a curated list of suites and then checks generated code against the live command registry: the TypeScript SDK, `docs/openapi.json`, `openapi.json`, and the Swift and Dart SDKs. A plain `bun test` with no path runs every test file, which is not what CI runs.
 - Other entry points: `bun run test:cli-commands`, `bun run test:sdk`, `bun run test:agent-contract`, `bun run test:swift-sdk` (needs Swift), and `bun run test:live` (sets `RAVI_LIVE_TESTS=1` and calls real providers).
 - Tests that touch Ravi's SQLite state must isolate it with `createIsolatedRaviState()` and `cleanupIsolatedRaviState()` from `src/test/ravi-state.ts`, which point `RAVI_STATE_DIR` at a temporary directory.
+- A launcher-level `RAVI_STATE_DIR` must survive fixture cleanup: later tests may open storage after the fixture closes. Run source checks with an explicit temporary state directory; on a production host also block production SQLite opens before imports. An environment override alone is not a storage access guard. `src/test/ravi-state.test.ts` covers restoration of the outer sandbox.
+- Run the session-dispatcher regression with `bun test --timeout 20000 --preload ./src/test/isolated-runtime-preload.ts src/runtime/session-dispatcher.test.ts`. This dedicated test process creates the outer sandbox, blocks SQLite opens under the operator's `~/.ravi` (including path aliases), and fails even when a recovery path catches the blocked-open exception. `test:runtime-host` uses this command; the preload is not a runtime storage policy.
 - `src/cli/execute-consumers.test.ts` checks exact command strings in `README.md`, `AGENTS.md`, skills and docs. If you change whether a command needs `--execute`, update that test and the files it checks.
 
 ## Git hooks
@@ -81,7 +131,58 @@ The pre-push checks clear both runtime identity and Git's repository-local
 environment variables. Test fixtures that initialize their own repositories must
 not inherit the pushing checkout's `GIT_DIR`, index or worktree paths.
 
-Never bypass the hooks with `--no-verify`.
+Never bypass the hooks with `--no-verify`, per-command `git -c core.hooksPath=/dev/null push`, or shared hook settings. Per-command bypass is still bypass even when persistent config and hook files remain unchanged.
+
+### Real state and caller identity
+
+There is one real state directory, not a "production environment" opt-in. Only the installed runtime registered in PM2 may initialize/migrate real state. Identity is checked through the code location, actual process/parent PID and live registration; inherited env labels or argv alone are insufficient. No new launcher flag is required.
+
+CLI/build/test/worktree execution must select an isolated `RAVI_STATE_DIR` on the command. Missing state selection refuses before SQLite opens the real default; explicitly selecting real state does not authorize a worktree. Use the installed daemon gateway for real state. Fixture cleanup restores its enclosing state selection.
+
+If a legitimate runtime is refused after rollout, restore the previous known-good installed package and existing launchers, recover service, then inspect package location/process registration. No environment setup order or DB rollback is introduced. See `.ravi/specs/quality/state-boundary/RUNBOOK.md`.
+
+### Sanctioned publication on the production host
+
+The production host must not run the full build/suite required by pre-push.
+For that host's explicitly sanctioned Git Data API path, keep pre-commit active,
+run focused tests, upload the Git objects and branch via the API, and verify
+the remote tree and commit SHA against the local commit. Do not use `git push`
+with disabled hooks. Record the literal upload commands and checks left to CI
+in the PR description.
+
+Publish from the committed worktree with the installed `ravi`, in one of two ways.
+A Ravi session publishes through the installed daemon gateway with the session
+identity the gateway already accepted, and CI follows that session:
+
+```bash
+ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md
+ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md --execute
+```
+
+The operator's own terminal publishes as the local operator and names the session
+whose chat receives the CI follow. The flag names a destination; it grants nothing:
+
+```bash
+ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md --reply-session <session>
+ravi pr publish --repo filipexyz/ravi --base dev --title "Fix description" --body-file /tmp/pr-body.md --reply-session <session> --execute
+```
+
+A `ravi` run from a checkout or a worktree cannot open real state and cannot
+publish. Do not point it at real state or add credentials to get around that.
+
+The command previews by default, preserves the exact local commit/tree and
+history, creates or reuses the ready PR and verifies the CI follow. It does not
+run local tests: record focused validation honestly before publishing. This command does
+not invoke git push/pre-push; disclose that and the checks left to CI. Repeat
+the command to reconcile a partial result. A thread publisher hands CI to its
+durable parent; never close the only recipient while its checks are pending.
+
+Independent review belongs in the PR description. Quality Gate is the required
+merge check; the retired Review Gate must not be reinstated by this workflow.
+
+From a terminal, `PUBLICATION_SESSION_REQUIRED` means `--reply-session` is missing
+or names a session with no chat destination, and `STATE_SCHEMA_NOT_READY` means the
+installed daemon has not prepared state for this release: `ravi daemon restart -m "prepare state"`.
 
 ## Adding or changing a CLI command
 
@@ -185,9 +286,11 @@ bun run check:docs          # lint:docs + docs:check-links (also: make docs-chec
 
 ## Pull requests
 
-- Keep each pull request to one change. Run `bun run test` and `make quality` before pushing; the pre-push hook runs the same build, typecheck and test steps.
+- Keep each pull request to one change. On development machines, run `bun run test` and `make quality` before pushing. On production hosts, use the focused publication path above and require the complete checks in PR CI.
 - Fill in every section of [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md): the objective, the problem, the solution, the practical impact, what does not change, how you validated it, the risks and how to roll it back. Follow-ups are optional. The "PR Description" check fails when a required section is missing, has less than 20 characters of content, or still contains template comments, `TODO`/`TBD` or an empty `-` bullet. Name the commands and tests you actually ran under Validation.
 - CI runs `bun run build`, `bun run typecheck`, `bun run test` and the Swift SDK tests, then a quality gate on the pull request diff:
   - **Specs:** every changed spec needs valid frontmatter and its `WHY.md`, `RUNBOOK.md` and `CHECKS.md`, and `CHECKS.md` needs verifiable list items.
   - **Coverage:** a change under `src/channels/`, `src/omni/`, `src/router/`, `src/runtime/`, `src/jobs/`, `src/watch/`, `src/hooks/`, `src/session-trace/`, `src/triggers/`, `src/approval/`, `src/apps/` or `src/devin/` must include one of that area's focused test files (listed in `src/ci/quality-gate.ts`) in the same diff. Diffs that only touch docs, Markdown or `.ravi/` are exempt.
 - Run the gate locally against `dev` with `git fetch origin dev && GITHUB_BASE_REF=dev bun src/ci/run-quality-gate.ts`.
+
+The daemon is the sole owner of real-state schemas. It initializes runtime stores before serving; channels checks per-store, exact-release readiness before connecting to NATS and never migrates. Stop the old channels runner before a schema upgrade, initialize the daemon, then start channels from the same release. Starting channels first fails with `STATE_SCHEMA_NOT_READY`, without database creation or automatic repair.

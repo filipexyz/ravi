@@ -80,7 +80,7 @@ Ousadia: revisor pelo manual de estilo → construído
 Não dá hoje: comentário que acorda → coluna pedido_correcao
 ```
 
-Regras que pesam aqui: 2 (outro projeto, sem união), 4, 5, 7.
+Regras que pesam aqui: 1 (leitores de fora noutro projeto), 4, 5, 7.
 
 ## TIM-7 · Almoxarifado: o celular bipa, a máquina calcula
 
@@ -91,7 +91,7 @@ FICHA almox
 Pessoas: membros=almoxarifes, comprador | de fora=—
 CAPTAR: formulário /bipar com getUserMedia + BarcodeDetector; abertura por `ravi bases rows import`
 GUARDAR: itens (minimo, saldo, situacao), movimentos (sku, qtd, processado), contagens
-MOSTRAR: gráfico por corredor; /contagem no mesmo host, ship com a união do --uses
+MOSTRAR: gráfico por corredor; /contagem no mesmo host, cada ship com os ids da própria rota
 REAGIR: `ravi bases subscribe movimentos` + trigger --shell, actor.type == "user", --cooldown 5s; drena processado eq false
 AGIR: recalcula do zero, grava com --expected-version, repete em VERSION_CONFLICT; chave cont:<lote>:<sku-normalizado>
 RELATAR: cron 6h, rupturas ao comprador; cron 7h, divergências
@@ -111,7 +111,7 @@ FICHA catraca
 Pessoas: membros=recepcionistas, dono | de fora=alunos
 CAPTAR: /quiosque lê o QR e grava pelo formulário (operador = $viewer.raviUserId)
 GUARDAR: alunos (codigo, plano_ate), checkins (resultado, hora, avisado)
-MOSTRAR: /quiosque e /painel private, mesma união do --uses; lotação em snapshot público
+MOSTRAR: /quiosque e /painel private no mesmo host, cada ship com os seus ids; lotação em snapshot público
 REAGIR: barrados: `ravi bases subscribe checkins` + trigger --shell, surface == "page", --cooldown 5s; varre com `ravi cron add --every 5m`
 AGIR: `ravi whatsapp dm send <tel> "<campos tipados>" --account <conta> --execute`; a API confere aud, exp e jti (`ravi pages assertion audiences set --site <host> --aud catraca --origin <url> --execute`)
 RELATAR: QR do mês por `ravi media send --to <chat> --account <conta>`

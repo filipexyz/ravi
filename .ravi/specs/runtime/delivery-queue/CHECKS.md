@@ -22,6 +22,16 @@
 
 ## Interrupt Safety
 
+- Slack DM X with default output Y MUST finish before Y's thread notification
+  can run, including after tool completion and with an immediate barrier.
+- A different chat, thread, account, or source-less prompt MUST leave the active
+  source/reply target and pending queue intact; no continuation is synthesized.
+- A later same-surface prompt MUST NOT bypass an earlier different surface.
+
+- The shared post-turn selection preserves normal yielded-ID removal,
+  unexpected-interruption retention and superseded-ID removal exactly. An
+  unrelated successor cannot authorize deferring the original request's
+  logical interruption, and no safety flag is reset to allow replay.
 - `after_response` / `followup` never calls provider interrupt during text generation.
 - `after_task` never calls provider interrupt during text generation or active task work.
 - `after_tool` / `steer` waits for startup, compaction, and tool barriers before interrupting.
@@ -29,6 +39,10 @@
 - A fatal in-process tool failure (SIGKILL / exit 137) terminalizes the turn, releases `after_tool`, wakes the generator, and drains queued atoms FIFO without a daemon restart. Ordinary tool errors stay non-terminal so the provider can continue.
 - A pending provider callback write blocks every interrupt lane, including `immediate_interrupt`.
 - `immediate_interrupt` still respects startup, compaction, and unsafe tool barriers.
+- An inform, send, ask, task comment or checkpoint reminder that reaches a live task turn is queued under its barrier and never restarts or interrupts the runtime, whatever its task binding, effort or thinking (`src/runtime/session-dispatcher.test.ts`, "task-bound live sessions").
+- A second task dispatched to a session whose task turn is still running waits for that turn to end on the same runtime.
+- Entering and leaving a task on one live runtime changes the turn's `RAVI_TASK_*` env, model and effort per turn (`src/bot.runtime-guards.fixture.ts`); Codex switches the model through `turn/start` and Pi through `set_model` (`codex-provider.test.ts`, `pi-provider.test.ts`).
+- Grok respawns its ACP process and reloads the same session (`session/load`, history replay drained) when a turn changes model, effort or `RAVI_TASK_*` (`src/runtime/grok-provider.test.ts`).
 
 - A transport-only scheduled followup ahead of a canonical human message from
   the same chat does not prevent the human message from interrupting.
@@ -38,7 +52,12 @@
 ## Queue Integrity
 
 - Pending prompt atoms keep source, context, pending id, barrier, queue time, task barrier metadata, and launch metadata.
-- Same-lane prompt atoms are delivered FIFO.
+- Same-priority, same-lane prompt atoms are delivered FIFO.
+- `delivery-queue.test.ts` hands human input to the generator next after 64 progress reports, both after terminal completion and an intentional interrupt; all four questions survive.
+- The same test drains all 64 reports in four bounded batches, retaining each full message and pending id exactly once.
+- Different caller contexts, principals, reply surfaces, completion events and replay attempts end progress batching.
+- Oversized blockers remain intact; arrivals during a batch remain pending after that batch is acknowledged.
+- `thread-lifecycle.test.ts` verifies new progress defaults to `after_response`.
 - A leading compatible burst from the same human channel authority may be folded chronologically under the newest channel envelope.
 - Different actors, chats, threads, authority envelopes, commands, and replay attempts are never folded together; incompatible atoms in the same releasable lane retain FIFO order.
 - Bypassing a blocked prompt atom is traceable.

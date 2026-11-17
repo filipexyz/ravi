@@ -100,6 +100,16 @@ describe("session CLI surface", () => {
     expect(readThisTurnAssistantText(messages, 2)?.text).not.toContain("previous");
   });
 
+  it("never returns commentary rows as the turn's answer", () => {
+    const messages = [
+      { id: 1, role: "user", content: "fix it" },
+      { id: 2, role: "assistant", content: "Reading the repo.", utterance_class: "commentary" },
+      { id: 3, role: "assistant", content: "Fixed.", utterance_class: "final" },
+    ];
+    expect(readThisTurnAssistantText(messages, 1)).toEqual({ text: "Fixed." });
+    expect(readThisTurnAssistantText(messages.slice(0, 2), 1)).toBeNull();
+  });
+
   it("waits when persist lags after turn.complete", async () => {
     const prior = [
       { id: 1, role: "user", content: "old" },

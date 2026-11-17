@@ -1,5 +1,8 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { Readable } from "node:stream";
+import { join } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import type { Pm2Process } from "../../pm2.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { buildRegistry } from "../registry-snapshot.js";
 import { buildRouteTable } from "../../sdk/gateway/route-table.js";
@@ -17,6 +20,7 @@ mock.module("../context.js", () => ({
 }));
 
 const { RuntimeEnvCommands } = await import("./runtime-env.js");
+const noManagedProcesses = { processes: (): Pm2Process[] => [], cliBundle: (): string | undefined => undefined };
 
 function captureConsole<T>(fn: () => T): { output: string; result: T } {
   const originalLog = console.log;
@@ -25,7 +29,8 @@ function captureConsole<T>(fn: () => T): { output: string; result: T } {
     if (typeof value === "string") logs.push(value);
   };
   try {
-    return { output: logs.join("\n"), result: fn() };
+    const result = fn();
+    return { output: logs.join("\n"), result };
   } finally {
     console.log = originalLog;
   }
@@ -38,7 +43,8 @@ async function captureConsoleAsync<T>(fn: () => Promise<T>): Promise<{ output: s
     if (typeof value === "string") logs.push(value);
   };
   try {
-    return { output: logs.join("\n"), result: await fn() };
+    const result = await fn();
+    return { output: logs.join("\n"), result };
   } finally {
     console.log = originalLog;
   }
@@ -60,7 +66,7 @@ describe("RuntimeEnvCommands", () => {
   });
 
   it("sets and gets a secret key without echoing the value", async () => {
-    const commands = new RuntimeEnvCommands();
+    const commands = new RuntimeEnvCommands(noManagedProcesses);
     const token = "sk-ant-oat01-cli-secret";
     const set = await captureConsoleAsync(() => commands.set("CLAUDE_CODE_OAUTH_TOKEN", token, false, true));
     expect(set.output).not.toContain(token);
@@ -72,7 +78,7 @@ describe("RuntimeEnvCommands", () => {
   });
 
   it("reads --stdin without a TTY and fails closed on unknown keys", async () => {
-    const commands = new RuntimeEnvCommands();
+    const commands = new RuntimeEnvCommands(noManagedProcesses);
     const token = "sk-ant-oat01-stdin-secret";
     const stdin = Readable.from([token]);
     (stdin as unknown as { isTTY: boolean }).isTTY = false;
@@ -98,7 +104,7 @@ describe("RuntimeEnvCommands", () => {
   });
 
   it("unsets keys and registers gateway routes", async () => {
-    const commands = new RuntimeEnvCommands();
+    const commands = new RuntimeEnvCommands(noManagedProcesses);
     await captureConsoleAsync(() => commands.set("GROK_DISABLE_AUTOUPDATER", "1", false, true));
     const unset = captureConsole(() => commands.unset("GROK_DISABLE_AUTOUPDATER", true));
     expect(unset.result).toMatchObject({ action: "unset", present: false, key: "GROK_DISABLE_AUTOUPDATER" });
@@ -109,5 +115,54 @@ describe("RuntimeEnvCommands", () => {
       "/api/v1/runtime/env/set",
       "/api/v1/runtime/env/unset",
     ]);
+  });
+
+  it("warns in JSON and text when an env write leaves live siblings behind, without disclosing the value", async () => {
+    const cwd = join(process.env.RAVI_STATE_DIR!, "runtime");
+    const bundlePath = join(cwd, "dist", "bundle", "index.js");
+    mkdirSync(join(bundlePath, ".."), { recursive: true });
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ name: "ravi.bot", version: "3.1.0" }));
+    writeFileSync(bundlePath, "// fixture\n");
+    const processes = ["ravi", "ravi-channels"].map(
+      (name, index): Pm2Process => ({
+        name,
+        pm_id: index,
+        pid: 700_001 + index,
+        status: "online",
+        cpu: 0,
+        memory: 0,
+        execPath: name === "ravi" ? bundlePath : process.execPath,
+        cwd,
+        args: name === "ravi" ? ["daemon", "run"] : [bundlePath, "channels", "run"],
+        createdAt: 1,
+        startedAt: 1,
+      }),
+    );
+    const commands = new RuntimeEnvCommands({ processes: () => processes, cliBundle: () => bundlePath });
+    const token = "sk-ant-oat01-env-warning-secret";
+    const result = await captureConsoleAsync(() => commands.set("CLAUDE_CODE_OAUTH_TOKEN", token, false, true));
+    expect(result.output).not.toContain(token);
+    expect(
+      result.result.warnings.some((warning) => warning.includes("ravi daemon restart") && warning.includes("env")),
+    ).toBe(true);
+    expect(
+      result.result.warnings.some(
+        (warning) =>
+          warning.includes("ravi-channels") && warning.includes("ravi channels restart") && warning.includes("env"),
+      ),
+    ).toBe(true);
+    expect(JSON.parse(result.output).warnings).toEqual(result.result.warnings);
+
+    const originalWarn = console.warn;
+    const warnings: string[] = [];
+    console.warn = (message?: unknown) => warnings.push(String(message));
+    try {
+      const unset = captureConsole(() => commands.unset("CLAUDE_CODE_OAUTH_TOKEN"));
+      expect(unset.result.warnings).not.toHaveLength(0);
+      expect(warnings.join("\n")).toContain("ravi channels restart");
+      expect(warnings.join("\n")).not.toContain(token);
+    } finally {
+      console.warn = originalWarn;
+    }
   });
 });

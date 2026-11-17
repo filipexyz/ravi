@@ -131,13 +131,21 @@ describe("agents install|update|publish from the CLI", () => {
     const cwd = join(workDir, "plain");
     await quietAsync(() => runWithContext({}, () => commands.install("org/plain", undefined, cwd, true)));
     writeFileSync(join(cwd, "AGENTS.md"), "mine\n");
-    agents.skills = [fakeAgentDefinition({ slug: "plain", version: 2, instructions: "theirs\n" })];
+    agents.skills = [
+      fakeAgentDefinition({
+        slug: "plain",
+        version: 2,
+        instructions: "theirs\nhttps://example.test/setup?key=PRIVATE_LIBRARY_DIFF_KEY\n",
+      }),
+    ];
     const error = await contractError(() =>
       runWithContext({}, () => commands.update("plain", undefined, undefined, true)),
     );
     expect(error.code).toBe("LIBRARY_AGENT_EDITED_LOCALLY");
     expect(error.exitCode).toBe(2);
     expect(String(error.details.diff)).toContain("+ theirs");
+    expect(String(error.details.diff)).toContain("[redacted:url-query]");
+    expect(JSON.stringify(error.envelope())).not.toContain("PRIVATE_LIBRARY_DIFF_KEY");
   });
 
   it("publish is braked", async () => {

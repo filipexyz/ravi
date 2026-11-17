@@ -7,7 +7,7 @@
  * and Read-only access to a temp transcript file.
  */
 
-import { existsSync, readFileSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -122,10 +122,11 @@ Foque em:
       includeTools: options.includeTools ?? false,
     });
 
-    // Write full transcript to temp file
-    const sanitizedSessionId = sessionId.replace(/[^a-zA-Z0-9_:-]/g, "_");
-    const transcriptTmpPath = join(tmpdir(), `ravi-memory-${sanitizedSessionId}-${Date.now()}.md`);
-    writeFileSync(transcriptTmpPath, formattedTranscript, "utf-8");
+    // Write full transcript to a private temp file
+    const { dir: transcriptTmpDir, path: transcriptTmpPath } = writePrivateTranscriptCopy(
+      sessionId,
+      formattedTranscript,
+    );
     const lineCount = formattedTranscript.split("\n").length;
 
     log.info("Wrote transcript to temp file", {
@@ -338,7 +339,7 @@ REGRAS:
       } finally {
         // Cleanup temp transcript file
         try {
-          unlinkSync(transcriptTmpPath);
+          rmSync(transcriptTmpDir, { recursive: true, force: true });
           log.debug("Cleaned up transcript temp file", { path: transcriptTmpPath });
         } catch {
           // Ignore cleanup errors
@@ -349,4 +350,22 @@ REGRAS:
     log.info("PreCompact hook returning (extraction scheduled)", { sessionId });
     return {};
   };
+}
+
+/**
+ * The transcript copy the memory extractor reads holds the whole conversation,
+ * so it goes in a fresh 0700 directory as a 0600 file created exclusively,
+ * never as a umask-default file in the shared tmpdir.
+ */
+export function writePrivateTranscriptCopy(sessionId: string, content: string): { dir: string; path: string } {
+  const sanitizedSessionId = sessionId.replace(/[^a-zA-Z0-9_:-]/g, "_");
+  const dir = mkdtempSync(join(tmpdir(), "ravi-memory-"));
+  const path = join(dir, `${sanitizedSessionId}.md`);
+  try {
+    writeFileSync(path, content, { encoding: "utf-8", mode: 0o600, flag: "wx" });
+  } catch (error) {
+    rmSync(dir, { recursive: true, force: true });
+    throw error;
+  }
+  return { dir, path };
 }

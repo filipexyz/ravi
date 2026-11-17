@@ -223,6 +223,15 @@ Console credits the write to that person through this installation's
 - The operator's own turns, routines the operator owns, turns Ravi cannot
   attribute and calls outside a runtime turn MUST send no header: Console
   then acts as the `ravi login` user.
+- A turn another turn produced (a session relay, a Slack thread bootstrap,
+  report or return) whose producing turn acted for a contact MUST send that
+  contact, read from the daemon's record of the producing context
+  (`relayCallerContactId`). Verified work handoffs preserve a human runtime
+  actor under `contacts/identity-graph/message-session-attribution`; the
+  forwarding agent remains producer provenance. Notifications keep their
+  agent actor and existing local refusals. A contact's request MUST NOT gain
+  the operator's account by being relayed; a requester verified as the
+  operator follows the ordinary operator classification.
 - `/api/cli/auth/**` and `/api/cli/me` MUST NOT carry it.
 - A failure to classify the turn MUST NOT fail the call; it sends no header.
 
@@ -270,6 +279,27 @@ specifies them.
 ## Error Contract
 
 The CLI SHOULD map server errors into stable local messages and exit codes.
+
+CloudAuthError message text is not a public diagnostic: it may contain the
+Console or auth provider's response body. The public message and cause MUST
+use the local catalog or the existing typed local projections (connector-turn
+copy, TurnRefusalError, link flow, sanitized PAYLOAD_INVALID and Pages domain
+setup). Discarded opaque text MUST be marked as [redacted:provider.body],
+without echoing body content, PII or arbitrary remote details.
+
+The diagnostic context MUST retain the operation, provider console, the cloud
+code and a valid HTTP status when supplied. A nested ContractError MAY retain
+its already normalized cause and allowlisted context. Nested CloudAuthErrors
+MUST be normalized through this same catalog boundary with a finite depth and
+cycle guard. Untyped network/fetch causes have no public provenance in this
+contract and MUST use the opaque marker; this projection does not claim to
+preserve their full internal cause chain.
+
+Only the local TurnRefusalError class authorizes refusalReason, jobId and
+ownerPrincipal controls. A remote ACTOR_UNKNOWN with lookalike details MUST
+keep the local catalog copy and MUST NOT introduce those controls or text
+through cause. PAYLOAD_INVALID path redaction MUST apply equally to message,
+cause and validation issues.
 
 Recognized auth/publish errors include:
 

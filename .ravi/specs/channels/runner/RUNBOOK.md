@@ -46,3 +46,16 @@ On shutdown the runner must:
 3. Requeue or finish in-flight outbound jobs.
 4. Release scoped platform locks.
 5. Release runner process lock.
+
+## Package and environment drift
+
+1. Run `ravi daemon status --json` or `ravi channels status --json`.
+2. Compare `runtime.*.runningVersion` with `diskVersion`, and inspect
+   `codeStale`, `envStale`, `identityVerified` and `warnings`. A healthy
+   transport can still run obsolete code. Null runningVersion is unknown.
+3. For each named process, run the printed explicit command when intake may
+   restart: daemon first with `ravi daemon restart -m "reconcile installed runtime"`,
+   then `ravi channels restart`. Do not restart automatically from monitoring.
+4. Recheck status; alignment must be based on the new process receipts.
+5. External package-manager writes cannot emit Ravi command warnings; the
+   next status read detects those file changes. `ravi update` warns immediately.

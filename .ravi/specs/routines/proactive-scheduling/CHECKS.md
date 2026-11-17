@@ -28,7 +28,7 @@ Verify:
 - Sentinel agents do not receive the section.
 - The prompt contains the six-item decision checklist.
 - The prompt distinguishes cron, session followups, shell cron, and routines/specs.
-- The prompt includes `ravi cron show <id>` verification instruction.
+- The prompt includes `ravi cron show <id>` verification instruction, including "Runs as".
 
 ## Decision Checklist Verification
 

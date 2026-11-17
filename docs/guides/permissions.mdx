@@ -16,7 +16,7 @@ This page describes `ravi.bot@next`. In `@latest` (3.260927.5) there is no `expl
 - Each agent has a **ceiling**: a runtime profile plus an optional list of explicit capabilities.
 - Each turn gets its own authority, computed from the ceiling, who sent the message and which chat it came from.
 - When a turn lacks a capability, Ravi can ask a trusted person in the chat to **approve** it for that turn (on the Pi and Grok providers; see [Approvals](#approvals)).
-- Some shell commands are **always blocked**, whatever the profile.
+- Named-executable access uses a restricted shell syntax; arbitrary shell forms require effective `execute:executable:*` authority.
 - Every denial is published on `ravi.audit.denied`.
 
 If you only want the owner setup (agent at `full-access`, yourself as owner contact), follow [Make yourself the owner](/start/owner). This page explains what those steps do.
@@ -87,11 +87,12 @@ A `bootstrap` agent holds:
 
 - every tool the provider offers (`use:tool:*`, `use:toolgroup:*`), including file read and write tools;
 - the CLI groups `sessions`, `tasks`, `specs`, `skills`, `self` and `doctor`;
+- Bases reads through views and charts: `ravi bases list|show`, `ravi bases views list|show|query` and `ravi bases charts list|show|data` (`read:bases:list`, `read:bases.views:query`, `read:bases.charts:data` and the like). The Console still decides what each view shows, and in a turn written by someone else it reads as that person through their `ravi link`; without a link it refuses reads too (`ACTOR_NOT_LINKED`). Direct row reads (`ravi bases rows query`, `ravi bases aggregate`) and every Bases write need an explicit capability, such as `mutate:bases.rows:add`; `ravi bases rows approve|reject` is in no default;
 - the executables `bun`, `cat`, `date`, `find`, `git`, `head`, `ls`, `nl`, `pwd`, `ravi`, `rg`, `sed`, `sort`, `tail`, `uniq`, `wc` and `xargs`;
 - `read_own_contacts:system:*`.
 
 <Warning>
-The bootstrap floor is a convenience floor, not a sandbox. `bun -e` runs any code, and `find -exec` and `xargs` run other programs; the Bash check only sees `bun`, `find` and `xargs`. The provider's file read and write tools are allowed too. For agents that talk to untrusted people, use `chat-only` or `explicit-only`.
+The bootstrap floor is a convenience floor, not a sandbox. The Bash check refuses `bun -e`, a shell or interpreter started by `find -exec` or `xargs`, and `git` options that run a program, but `bun <file>` and git hooks still run whatever the file tools wrote. The provider's file read and write tools are allowed too. For agents that talk to untrusted people, use `chat-only` or `explicit-only`.
 </Warning>
 
 ## What a turn may do
@@ -207,23 +208,30 @@ All `ravi permissions` subcommands accept `--json`.
 When a turn needs a capability it does not hold, Ravi can post an approval request in the chat the turn came from. Only agents on the Pi and Grok providers ask. On Claude and Codex, a shell command outside the ceiling is refused at once, and on every provider a `ravi` command group outside it is refused without asking.
 
 - **Who can approve:** a contact (or agent) that the clicker's or reactor's identity is linked to, and whose global capabilities include the requested capability or `admin:system:*`. An owner tagged `permission-owner` can approve anything. Chat-scoped grants do not make anyone an approver. Clicks or reactions from anyone else are ignored.
-- **Slack:** use the **Approve** or **Reject** button. Reactions and replies are ignored.
+- **Slack:** the card goes privately to the people who can approve (an ephemeral message in the chat, or their DM with the app when they are not in it), and they use its **Approve** or **Reject** button. When nobody linked to the workspace can approve, no card is sent and the request is refused at once. Reactions and replies are ignored.
 - **WhatsApp and other channels:** react with 👍 or ❤️ to approve. Any other reaction, or a reply to the request message, rejects it.
 - **Timeout:** after 5 minutes without a decision, the request is denied.
 - **Scope:** an approved capability lasts for that turn only. For recurring access, use `ravi permissions allow` or `resolve`.
-- **Shell commands:** approving one does not make it run today; it is still refused. To let the agent run an executable, add it to the agent's ceiling.
+- **Shell commands:** an approved executable runs for the rest of that turn. To let the agent run it every time, add it to the agent's ceiling.
 - **No approvals in the terminal.** A turn started with `ravi sessions send` has no chat to ask in, so the request is denied at once. Terminal turns work with the agent's ceiling only. A `chat-only` agent's tool requests are denied without asking.
 
 ## The Bash check
 
-Before every Bash command, Ravi checks it against the turn's capabilities. These are always blocked, under every profile, and cannot be approved:
+Before every Bash command, Ravi checks the effective authority of its context. An existing `execute:executable:*` capability authorizes arbitrary shell forms; it does not grant a missing tool, change the caller's identity, or remove Ravi command/session authorization. A narrowed child or contact overlay cannot borrow a broader agent profile.
+
+Contexts limited to named executables are checked command by command. Ravi reads every command the shell would run, including the ones inside `$(...)`, backticks, `<(...)` and an unquoted here-document, and each one needs its own grant. A quoted here-document (`<<'EOF'`) is text, not commands. These stay refused even when the executable is approved:
 
 - shells and string execution: `bash`, `sh`, `zsh`, `dash`, `ksh`, `csh`, `fish`, `tcsh`, `eval`, `exec`, `source`, `.`;
-- command substitution (`$(...)`, backticks), process substitution and here-documents;
+- a shell or interpreter started by a launcher: `xargs`, `find -exec`, `env`, `timeout`, `nice`, `nohup`, and anything run by `parallel` or `watch`;
+- a binary outside the trusted directories, or one that is really a shell under another name: Ravi checks the real path, so a copy of `sh` named `git` is refused;
+- changing which program runs: `PATH`, `LD_*`/`DYLD_*`, pager and editor variables, and `git -c`, `git rebase -x` and similar options;
 - piping into a shell, or into `python`, `python3`, `node`, `perl` or `ruby` as the last command (code read from stdin);
-- inline code: `python -c`, `python3 -c`, `node -e`, `perl -e`, `ruby -e`, `php -r`.
+- inline code: `python -c`, `python3 -c`, `node -e`, `bun -e`, `perl -e`, `ruby -e`, `php -r`;
+- a command Ravi cannot analyze, reported as `unknown_parse`. Split it into simpler commands.
 
-Below `full-access`, two more rules apply: redirecting output to a file needs `use:tool:Write` (the bootstrap floor includes it), and commands that set `RAVI_*` environment variables are refused.
+Without arbitrary execution, redirecting output to a file needs `use:tool:Write` and provider configuration has an additional protection. Environment identity checks remain separate: only effective `admin:system:*` permits overriding `RAVI_*` variables. Executable access is not a filesystem or network sandbox.
+
+Syntax-policy refusals are reported as `shell_syntax` with a stable rule, rather than a missing permission for the first word of the command. They do not create a grant request for an executable that would still be blocked by that policy.
 
 ## Denials and audit
 

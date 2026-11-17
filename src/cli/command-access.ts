@@ -1,4 +1,5 @@
 import { getContext } from "./context.js";
+import { currentConsoleInvocation, authorizeConsoleCommand } from "../sdk/gateway/console-context.js";
 import type { CommandAccessOptions, ScopeType } from "./decorators.js";
 import {
   authorizePermission,
@@ -14,6 +15,7 @@ import {
   type AuthorizationCapability,
 } from "../permissions/authorization-guidance.js";
 import { RAVI_CONTEXT_KEY_ENV } from "../runtime/context-registry.js";
+import { isRuntimeContextLive } from "../runtime/context-liveness.js";
 import type {
   CapabilityContextLike,
   PermissionProviderCliCommandOperation,
@@ -24,6 +26,7 @@ import type {
 export type CliCommandAccessSource = "cli" | "tool" | "gateway";
 
 export interface CliCommandAccessInput {
+  canonicalName?: string;
   group: string;
   command: string;
   access?: CommandAccessOptions;
@@ -31,11 +34,30 @@ export interface CliCommandAccessInput {
   source: CliCommandAccessSource;
 }
 
+/**
+ * Why the authority itself, not a missing grant, refused the command. A runtime
+ * context revoked or expired mid-call (a turn that closed under a long-running
+ * command) is not a grant problem: a new grant cannot fix it, rerunning from a
+ * live turn does.
+ */
+export const RUNTIME_CONTEXT_INACTIVE = "runtime_context_inactive";
+
+export interface CliCommandAccessDenialDetails {
+  stage: "command_access";
+  capability?: string;
+  /** Present when the authority was refused for a reason other than a missing grant. */
+  reason?: typeof RUNTIME_CONTEXT_INACTIVE;
+  contextId?: string;
+  [key: string]: unknown;
+}
+
 export interface CliCommandAccessResult {
   allowed: boolean;
   errorMessage: string;
   decision?: PermissionProviderDecision;
   attempted: PermissionProviderDecision[];
+  /** Structured denial details shared by CLI, tool and gateway surfaces. */
+  denialDetails?: CliCommandAccessDenialDetails;
 }
 
 export interface CliCommandAuthorizationInput extends CliCommandAccessInput {
@@ -68,25 +90,36 @@ export function enforceCliCommandAuthorization(input: CliCommandAuthorizationInp
     errorMessage: boundary.errorMessage,
     decision: accessResult.decision,
     attempted: accessResult.attempted,
+    denialDetails: commandAccessDenialDetails(input),
   };
 }
 
 export function enforceCliCommandAccess(input: CliCommandAccessInput): CliCommandAccessResult {
+  const invocation = currentConsoleInvocation();
+  if (invocation) return authorizeConsoleCommand(invocation, input);
   if (!input.access) {
     return {
       allowed: false,
       errorMessage: `Permission denied: command ${formatCommand(input)} is missing @CommandAccess metadata`,
       attempted: [],
+      denialDetails: commandAccessDenialDetails(input),
     };
   }
   const inputWithAccess: CliCommandAccessInput & { access: CommandAccessOptions } = { ...input, access: input.access };
 
   const authority = resolveCommandAccessAuthority(input.source, inputWithAccess.access);
   if (!authority.allowed) {
+    if (authority.inactiveContext) recordInactiveContextDenial(inputWithAccess, authority.inactiveContext);
     return {
       allowed: false,
       errorMessage: authority.errorMessage,
       attempted: [],
+      denialDetails: {
+        ...commandAccessDenialDetails(input),
+        ...(authority.inactiveContext
+          ? { reason: RUNTIME_CONTEXT_INACTIVE, contextId: authority.inactiveContext.contextId }
+          : {}),
+      },
     };
   }
 
@@ -129,6 +162,21 @@ export function enforceCliCommandAccess(input: CliCommandAccessInput): CliComman
     errorMessage,
     decision: last,
     attempted,
+    denialDetails: commandAccessDenialDetails(input),
+  };
+}
+
+/** Structured denial shared by every surface so `details` stays identical. */
+function commandAccessDenialDetails(input: CliCommandAccessInput): CliCommandAccessDenialDetails {
+  if (!input.access) return { stage: "command_access" };
+  return {
+    stage: "command_access",
+    capability: canonicalCommandAccessCapability({
+      group: input.group,
+      command: input.command,
+      access: input.access,
+      input: input.input,
+    }),
   };
 }
 
@@ -145,12 +193,22 @@ function buildCommandAccessApprovalMessage(
   return [
     `Approval required: ${authorityLabel} cannot execute ${formatCommand(input)} (${input.access.kind} ${input.access.resource}.${input.access.action}, risk ${input.access.risk})`,
     `${decision.providerId}@${decision.providerVersion} (${decision.reasonCode}) requires human approval for ${decision.permission}:${decision.objectType}:${decision.objectId}.`,
-    APPROVAL_REQUIRED_HINT,
+    approvalRequiredHint(input.access),
   ].join("\n");
 }
 
 const APPROVAL_REQUIRED_HINT =
-  "The CLI cannot request approval inline; ask the authority to reissue the scope without requiresApproval, or have the operator run it.";
+  "The CLI cannot request approval inline; ask the authority to reissue the scope without requiresApproval";
+
+function approvalRequiredHint(access: CommandAccessOptions): string {
+  if (access.localOperator !== false) return `${APPROVAL_REQUIRED_HINT}, or have the operator run it.`;
+  return [
+    `${APPROVAL_REQUIRED_HINT}, then retry with an authorized runtime context through the gateway/agent.`,
+    access.notes,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
 
 function buildCommandAccessDenialMessage(
   input: CliCommandAccessInput & { access: CommandAccessOptions },
@@ -167,6 +225,17 @@ export function listCliCommandAccessCandidates(
   input: CliCommandAccessInput & { access: CommandAccessOptions },
 ): AuthorizationCapability[] {
   return commandAccessCandidates(input);
+}
+
+/** Canonical capability the command access check asks for (the same one the denial message names). */
+export function canonicalCommandAccessCapability(input: {
+  group: string;
+  command: string;
+  access: CommandAccessOptions;
+  input?: Record<string, unknown>;
+}): string {
+  const capability = commandAccessCapability(input);
+  return `${capability.permission}:${capability.objectType}:${capability.objectId}`;
 }
 
 export function buildCliCommandOperation(input: CliCommandAccessInput): PermissionProviderCliCommandOperation {
@@ -189,10 +258,17 @@ function resolveCommandAccessAuthority(
   access: CommandAccessOptions,
 ):
   | { allowed: true; label: string; request: Pick<PermissionProviderRequest, "context" | "subject" | "localOperator"> }
-  | { allowed: false; errorMessage: string } {
+  | { allowed: false; errorMessage: string; inactiveContext?: NonNullable<ReturnType<typeof getContext>>["context"] } {
   const ctx = getContext();
   const hasContextKey = Boolean(process.env[RAVI_CONTEXT_KEY_ENV]?.trim());
   const useRuntimeContext = source !== "cli" || hasContextKey;
+  if (useRuntimeContext && ctx?.context && !isRuntimeContextLive(ctx.context)) {
+    return {
+      allowed: false,
+      errorMessage: `Permission denied: runtime context ${ctx.context.contextId} is revoked or expired`,
+      inactiveContext: ctx.context,
+    };
+  }
   if (useRuntimeContext && ctx?.context) {
     const agentId = ctx.agentId ?? ctx.context.agentId;
     const context: CapabilityContextLike = {
@@ -218,7 +294,9 @@ function resolveCommandAccessAuthority(
   if (access.localOperator === false) {
     return {
       allowed: false,
-      errorMessage: "Permission denied: local operator is not allowed for this command",
+      errorMessage: ["Permission denied: local operator is not allowed for this command", access.notes]
+        .filter(Boolean)
+        .join(". "),
     };
   }
 
@@ -271,9 +349,10 @@ function commandAccessCandidates(input: CliCommandAccessInput & { access: Comman
   return dedupeCandidates([...semanticCandidates, ...concreteResourceCandidates, ...legacyCandidates]);
 }
 
-function commandAccessConcreteResourceCandidates(
-  input: CliCommandAccessInput & { access: CommandAccessOptions },
-): Array<{
+function commandAccessConcreteResourceCandidates(input: {
+  access: CommandAccessOptions;
+  input?: Record<string, unknown>;
+}): Array<{
   permission: string;
   objectType: string;
   objectId: string;
@@ -319,6 +398,54 @@ function dedupeCandidates(
   return result;
 }
 
+/**
+ * A revoked or expired context used to leave no audit row, so a long command
+ * killed by its own turn ending looked as if nothing had been denied.
+ */
+function recordInactiveContextDenial(
+  input: CliCommandAccessInput & { access: CommandAccessOptions },
+  context: NonNullable<ReturnType<typeof getContext>>["context"],
+): void {
+  if (!context) return;
+  // Take the parts, never split the joined string: a concrete resource id may itself contain ":".
+  const { permission, objectType, objectId } = commandAccessCapability(input);
+  const capability = `${permission}:${objectType}:${objectId}`;
+  const command = `${input.group} ${input.command}`;
+  const reason = `runtime context ${context.contextId} is revoked or expired`;
+  const provenance = buildAuditContextProvenance({
+    contextId: context.contextId,
+    kind: context.kind,
+    agentId: context.agentId,
+    sessionKey: context.sessionKey,
+    sessionName: context.sessionName,
+    capabilities: context.capabilities,
+    metadata: context.metadata,
+  });
+  recordAndEmitPermissionDenial({
+    subjectType: "agent",
+    subjectId: context.agentId ?? undefined,
+    agentId: context.agentId,
+    sessionKey: context.sessionKey,
+    sessionName: context.sessionName,
+    contextId: context.contextId,
+    relation: permission,
+    objectType,
+    objectId,
+    reason,
+    command,
+    detail: { reason: RUNTIME_CONTEXT_INACTIVE, ...(provenance ? { context: provenance } : {}) },
+    audit: {
+      type: "scope",
+      agentId: context.agentId ?? "unknown",
+      denied: capability,
+      reason,
+      command,
+      blockType: "cli_command_access_context_inactive",
+      ...(provenance ? { context: provenance } : {}),
+    },
+  });
+}
+
 function recordCliCommandAccessDenial(
   input: CliCommandAccessInput & { access: CommandAccessOptions },
   authority: Extract<ReturnType<typeof resolveCommandAccessAuthority>, { allowed: true }>,
@@ -353,7 +480,7 @@ function recordCliCommandAccessDenial(
         reasonCode: requested.reasonCode,
         canonicalCapability: grantGuidance.canonicalCapability,
         candidateCapabilities: grantGuidance.candidateCapabilities,
-        message: APPROVAL_REQUIRED_HINT,
+        message: approvalRequiredHint(input.access),
       }
     : grantGuidance;
 
@@ -401,7 +528,7 @@ function recordCliCommandAccessDenial(
         ? {
             canonicalCapability: grantGuidance.canonicalCapability,
             candidateCapabilities: grantGuidance.candidateCapabilities,
-            recommendedPath: APPROVAL_REQUIRED_HINT,
+            recommendedPath: approvalRequiredHint(input.access),
           }
         : {
             canonicalCapability: grantGuidance.canonicalCapability,
@@ -429,9 +556,12 @@ function buildCommandAccessGuidance(
   });
 }
 
-function commandAccessCapability(
-  input: CliCommandAccessInput & { access: CommandAccessOptions },
-): AuthorizationCapability {
+function commandAccessCapability(input: {
+  group: string;
+  command: string;
+  access: CommandAccessOptions;
+  input?: Record<string, unknown>;
+}): AuthorizationCapability {
   if (input.access.requireConcreteResource) {
     const [concrete] = commandAccessConcreteResourceCandidates(input);
     if (concrete) return concrete;

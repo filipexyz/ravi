@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { CrashRecoveryStore, RuntimeBootEpochRecord, RuntimeTurnAttemptRecord } from "./crash-recovery-store.js";
 import { CrashRecoveryLedgerConflictError } from "./crash-recovery-store.js";
 import {
+  DEFAULT_CRASH_RECOVERY_LEASE_MS,
   RuntimeCrashRecoveryCoordinator,
   RuntimeCrashRecoveryOwnershipLostError,
   type RuntimeCrashRecoveryCoordinatorOptions,
@@ -255,6 +256,9 @@ function createHarness(overrides: Partial<RuntimeCrashRecoveryCoordinatorOptions
     instanceId: "test-instance",
     pid: 42,
     bootEpoch: "boot-test",
+    // Most cases below use absolute times built around a 30s fence; the
+    // production default is asserted separately in the stall test.
+    leaseMs: 30_000,
     store,
     now: () => currentTime,
     setInterval: timers.setInterval,
@@ -279,6 +283,7 @@ describe("RuntimeCrashRecoveryCoordinator", () => {
   it("does not start the host when boot persistence returns after the new lease expires", () => {
     const ownershipNotifications: RuntimeCrashRecoveryOwnershipLostError[] = [];
     const { coordinator, store, setNow } = createHarness({
+      leaseMs: 30_000,
       onOwnershipLost: (error) => ownershipNotifications.push(error),
     });
     store.afterOperation = (operation) => {
@@ -293,8 +298,27 @@ describe("RuntimeCrashRecoveryCoordinator", () => {
     expect(ownershipNotifications).toHaveLength(1);
   });
 
+  it("holds the default boot lease through a 90s event-loop stall", () => {
+    const { coordinator, store, setNow } = createHarness({ leaseMs: DEFAULT_CRASH_RECOVERY_LEASE_MS });
+
+    expect(DEFAULT_CRASH_RECOVERY_LEASE_MS).toBe(120_000);
+
+    coordinator.start();
+    // 2026-10-20: a contended write stalled the loop ~93s on production. The
+    // heartbeat still owned the row, but the 30s lease had already elapsed.
+    setNow(91_000);
+
+    expect(() => coordinator.heartbeatNow()).not.toThrow();
+
+    expect(coordinator.acceptingDeliveries).toBe(true);
+    expect(inputOf<"heartbeatBootEpoch">(store.calls[1]!)).toMatchObject({
+      heartbeatAt: 91_000,
+      leaseExpiresAt: 91_000 + DEFAULT_CRASH_RECOVERY_LEASE_MS,
+    });
+  });
+
   it("creates one active boot, unrefs its timer, and renews boot before active attempts", () => {
-    const { coordinator, store, timers, setNow } = createHarness();
+    const { coordinator, store, timers, setNow } = createHarness({ leaseMs: 30_000 });
 
     const boot = coordinator.start();
     expect(boot.status).toBe("active");
@@ -333,7 +357,7 @@ describe("RuntimeCrashRecoveryCoordinator", () => {
   });
 
   it("rechecks the clock after each attempt heartbeat before renewing another attempt", () => {
-    const { coordinator, store, setNow } = createHarness();
+    const { coordinator, store, setNow } = createHarness({ leaseMs: 30_000 });
     coordinator.start();
     setNow(2_000);
     coordinator.startTurnAttempt(turnAttemptInput("attempt-heartbeat-a"));
@@ -354,7 +378,7 @@ describe("RuntimeCrashRecoveryCoordinator", () => {
   });
 
   it("bounds a newly started attempt by the current boot lease", () => {
-    const { coordinator, store, setNow } = createHarness();
+    const { coordinator, store, setNow } = createHarness({ leaseMs: 30_000 });
     coordinator.start();
     setNow(30_000);
 

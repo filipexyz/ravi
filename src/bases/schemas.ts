@@ -46,12 +46,27 @@ export const baseSelectOptionSchema = z.object({
   archived: z.boolean().optional(),
 });
 
+/** Who may decide an `approval` property: a minimum project role or one user. */
+export const baseApprovalPrincipalSchema = z.object({
+  kind: z.string(),
+  minRole: z.string().optional(),
+  userId: z.string().optional(),
+});
+
 export const basePropertyConfigSchema = z.object({
   options: z.array(baseSelectOptionSchema).optional(),
   format: z.string().optional(),
   currency: z.string().optional(),
   precision: z.number().optional(),
   includeTime: z.boolean().optional(),
+  /** `approval`: who decides, and the property keys whose change resets a decision. */
+  approvers: z.array(baseApprovalPrincipalSchema).optional(),
+  resetOn: z.array(z.string()).optional(),
+  /** `agent`: what the agent fills, from which inputs, as which type, and by which agent (a label). */
+  instructions: z.string().optional(),
+  inputs: z.array(z.string()).optional(),
+  output: z.string().optional(),
+  agent: z.string().nullable().optional(),
 });
 
 export const basePropertySchema = z.object({
@@ -75,6 +90,8 @@ export const baseViewCapabilitiesSchema = z.object({
   create: z.boolean(),
   archive: z.boolean(),
   manage: z.boolean(),
+  /** Approval column keys the caller may decide (newer Consoles). */
+  approve: z.array(z.string()).optional(),
 });
 
 export const baseViewColumnSchema = z.object({
@@ -190,6 +207,8 @@ export const baseLedgerEntrySchema = z.object({
   lastWriteWins: z.boolean(),
   /** Null through a view that does not project the time columns. */
   createdAt: z.string().nullable(),
+  /** The agent that made the write next to the accountable person, asserted by its installation. */
+  agent: z.object({ id: z.string(), installationId: z.string().nullable() }).nullable().optional(),
 });
 
 export const baseRowHistoryResponseSchema = z.object({
@@ -237,6 +256,10 @@ export const baseSubscriptionSchema = z.object({
   status: z.string(),
   createdAt: z.string(),
   revokedAt: z.string().nullable(),
+  /** Filter of the subscription; absent on Consoles without filtered subscriptions. */
+  viewId: z.string().nullable().optional(),
+  properties: z.array(z.string()).optional(),
+  events: z.array(z.string()).optional(),
 });
 
 export const baseChartDataResponseSchema = z.object({
@@ -279,6 +302,8 @@ export interface BaseApiErrorDetails {
   fieldErrors?: Record<string, string>;
   current?: BaseRow;
   schemaVersion?: number;
+  /** Current inputs hash of an agent cell on `agent_stale`. */
+  inputsHash?: string;
 }
 
 /** True when a view object is the full manager shape (columns are keys). */

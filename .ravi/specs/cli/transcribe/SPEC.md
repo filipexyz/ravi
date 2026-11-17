@@ -15,6 +15,7 @@ tags:
 applies_to:
   - src/cli/commands/transcribe.ts
   - src/transcribe/service.ts
+  - src/transcribe/openai.ts
   - src/cli/agent-contract.ts
 owners:
   - ravi-dev
@@ -41,6 +42,26 @@ cost limit or reliable preflight estimate, so the command runs immediately.
    (`retryable: true`).
 5. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry dispatcher.
+6. Provider wrappers MUST retain the original throwable and nested cause
+   internally, adding typed operation/provider/model context and known
+   credential values for deferred redaction. They MUST NOT sanitize the error
+   into a replacement string at the throw site.
+7. The CLI failure constructor requires explicit cause/context. Diagnostic
+   ingress follows the global field allowlist: normalized code/message/cause
+   plus status/provider/model/operation/actor/file/syscall/provider code in
+   typed context. Arbitrary provider properties, headers, cookies, query,
+   body/PII and stack MUST NOT enter the diagnostic envelope.
+8. At egress, the shared versioned finite-pattern redactor replaces sensitive
+   field contents with markers such as `[redacted:url-query]` while retaining
+   the safe original reason and code. Both text and JSON output carry that
+   diagnosis and available file/provider/model/status. Paths with credentials
+   are normalized; ordinary diagnostic path components remain actionable.
+   The same rule applies to logs and trace artifacts, including debug output:
+   no raw stack or payload is permitted as a private diagnostic shortcut.
+9. APIError normalization MUST extract declared provider reason/code fields
+   rather than re-export a body embedded in `message`. Focused transcription
+   tests complement the global 14-row/nine-sink corpus; they do not establish
+   that every inbound-audio consumer or live chat route was exercised.
 
 ## Write classification (brake decision per op)
 

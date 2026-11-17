@@ -1,9 +1,11 @@
 import { configStore } from "../../config-store.js";
+import type { CredentialBrokerAuthority } from "../../credentials/broker.js";
 import type { ChannelConfig } from "../../router/router-db.js";
 import { findNativeChannelAccount } from "../account-resolution.js";
 import type { SlackBlockKitBlock } from "./block-kit.js";
 import { SlackWebApiClient } from "./client.js";
 import { resolveSlackCredentialConfigFromEnv, type SlackCredentialResolver } from "./credentials.js";
+import { postSlackMarkdown, updateSlackMarkdown } from "./markdown-delivery.js";
 import { markdownToSlackMrkdwn } from "./mrkdwn.js";
 
 export interface SlackTextSendInput {
@@ -27,8 +29,11 @@ export interface SlackTextUpdateInput {
 export interface SlackTextSendDependencies {
   readonly channels?: Record<string, ChannelConfig>;
   readonly resolveSecret?: SlackCredentialResolver;
+  readonly authority?: CredentialBrokerAuthority;
   readonly fetchImpl?: typeof fetch;
   readonly apiBaseUrl?: string;
+  /** Synchronous accounting for captured errors, including recovered fallbacks. */
+  readonly onFailure?: () => void;
 }
 
 export interface SlackNativeTextDelivery {
@@ -51,19 +56,32 @@ export async function sendSlackText(
   input: SlackTextSendInput,
   dependencies: SlackTextSendDependencies = {},
 ): Promise<SlackNativeTextDelivery> {
-  const text = markdownToSlackMrkdwn(input.text).trim();
-  if (!text) {
+  if (!input.text.trim()) {
     throw new Error("Slack text is required");
   }
 
   const client = await createSlackTextClient(input.accountId, "chat.postMessage", dependencies);
-  const result = await client.postMessage({
+  const destination = {
     channel: input.chatId,
-    text,
     ...(input.threadId ? { threadTs: input.threadId } : {}),
-    ...(input.blocks ? { blocks: input.blocks } : {}),
-    ...(input.unfurlLinks === false ? { unfurlLinks: false, unfurlMedia: false } : {}),
-  });
+    ...(input.unfurlLinks === false ? { unfurlLinks: false } : {}),
+  };
+  // Caller-built blocks go as they are; plain Markdown is laid out as Block Kit.
+  const result = input.blocks
+    ? await client.postMessage({
+        ...destination,
+        text: markdownToSlackMrkdwn(input.text).trim(),
+        blocks: input.blocks,
+        ...(input.unfurlLinks === false ? { unfurlMedia: false } : {}),
+      })
+    : (
+        await postSlackMarkdown(client, {
+          ...destination,
+          markdown: input.text,
+          allowDocuments: input.unfurlLinks !== false,
+          onFailure: dependencies.onFailure,
+        })
+      ).first;
 
   return {
     transport: "slack-native",
@@ -79,8 +97,7 @@ export async function updateSlackText(
   input: SlackTextUpdateInput,
   dependencies: SlackTextSendDependencies = {},
 ): Promise<SlackNativeTextDelivery> {
-  const text = markdownToSlackMrkdwn(input.text).trim();
-  if (!text) {
+  if (!input.text.trim()) {
     throw new Error("Slack text is required");
   }
   const messageId = input.messageId.trim();
@@ -89,12 +106,14 @@ export async function updateSlackText(
   }
 
   const client = await createSlackTextClient(input.accountId, "chat.update", dependencies);
-  const result = await client.updateMessage({
-    channel: input.chatId,
-    ts: messageId,
-    text,
-    ...(input.blocks ? { blocks: input.blocks } : {}),
-  });
+  const result = input.blocks
+    ? await client.updateMessage({
+        channel: input.chatId,
+        ts: messageId,
+        text: markdownToSlackMrkdwn(input.text).trim(),
+        blocks: input.blocks,
+      })
+    : await updateSlackMarkdown(client, { channel: input.chatId, ts: messageId, markdown: input.text });
 
   return {
     transport: "slack-native",
@@ -104,6 +123,75 @@ export async function updateSlackText(
     messageId: result.messageId,
     raw: result.raw,
   };
+}
+
+export interface SlackPrivateCardInput {
+  readonly accountId: string;
+  readonly chatId: string;
+  readonly threadId?: string;
+  readonly userIds: readonly string[];
+  readonly text: string;
+  readonly blocks: readonly SlackBlockKitBlock[];
+}
+
+export interface SlackPrivateCardDelivery {
+  readonly userId: string;
+  /** `ephemeral`: only that person sees it, in `chatId`. `dm`: in their DM with the app. */
+  readonly kind: "ephemeral" | "dm";
+  readonly chatId: string;
+  readonly messageId: string;
+}
+
+export interface SlackPrivateCardResult {
+  readonly deliveries: SlackPrivateCardDelivery[];
+  readonly failures: Array<{ readonly userId: string; readonly error: string }>;
+}
+
+/**
+ * Sends one card privately to each person: an ephemeral message in the chat
+ * (thread included) when Slack accepts it, otherwise a message in their DM with
+ * the app. Nobody else sees the card.
+ */
+export async function sendSlackPrivateCards(
+  input: SlackPrivateCardInput,
+  dependencies: SlackTextSendDependencies = {},
+): Promise<SlackPrivateCardResult> {
+  const text = markdownToSlackMrkdwn(input.text).trim();
+  if (!text) {
+    throw new Error("Slack text is required");
+  }
+  const client = await createSlackTextClient(input.accountId, "chat.postEphemeral", dependencies);
+  const deliveries: SlackPrivateCardDelivery[] = [];
+  const failures: Array<{ userId: string; error: string }> = [];
+  for (const userId of input.userIds) {
+    let ephemeralError: string | undefined;
+    try {
+      const ephemeral = await client.postEphemeral({
+        channel: input.chatId,
+        user: userId,
+        text,
+        blocks: input.blocks,
+        ...(input.threadId ? { threadTs: input.threadId } : {}),
+      });
+      deliveries.push({ userId, kind: "ephemeral", chatId: input.chatId, messageId: ephemeral.messageId });
+      continue;
+    } catch (error) {
+      dependencies.onFailure?.();
+      // Usually `user_not_in_channel` / `channel_not_found`: the person cannot
+      // see the chat. Any refusal still leaves their DM, which stays private.
+      ephemeralError = error instanceof Error ? error.message : String(error);
+    }
+    try {
+      // Posting to a user id lands in that person's DM with the app.
+      const direct = await client.postMessage({ channel: userId, text, blocks: input.blocks });
+      deliveries.push({ userId, kind: "dm", chatId: direct.channel, messageId: direct.messageId });
+    } catch (error) {
+      dependencies.onFailure?.();
+      const dmError = error instanceof Error ? error.message : String(error);
+      failures.push({ userId, error: ephemeralError ? `${ephemeralError}; DM: ${dmError}` : dmError });
+    }
+  }
+  return { deliveries, failures };
 }
 
 /**
@@ -128,7 +216,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 async function createSlackTextClient(
   accountId: string,
-  action: "chat.postMessage" | "chat.update" | "users.info",
+  action: "chat.postMessage" | "chat.postEphemeral" | "chat.update" | "users.info",
   dependencies: SlackTextSendDependencies,
 ): Promise<SlackWebApiClient> {
   const channels = dependencies.channels ?? configStore.getConfig().channels ?? {};
@@ -142,6 +230,7 @@ async function createSlackTextClient(
     channel,
     channels,
     resolveSecret: dependencies.resolveSecret,
+    authority: dependencies.authority,
   });
   if (!credentials) {
     throw new Error(`Slack credentials not configured for channel "${channel.name}".`);

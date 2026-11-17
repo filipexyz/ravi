@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline";
 import { ZodError } from "zod";
 import { nats } from "../nats.js";
+import { cliOnlyCommandError, requiresRemoteGateway } from "../cli/remote-gateway.js";
 import {
   TASK_STREAM_CAPABILITIES,
   TASK_STREAM_SCOPE,
@@ -66,6 +67,8 @@ function buildCursor(seq: number): string {
 }
 
 export async function runCliStreamServer(options: StreamServerOptions): Promise<void> {
+  // Every NATS subject is readable here; a runtime context never gets this stream.
+  if (requiresRemoteGateway(process.env)) throw cliOnlyCommandError("stream");
   const startedAt = new Date();
   const source = options.source ?? "ravi.stream";
   const scope = options.scope;

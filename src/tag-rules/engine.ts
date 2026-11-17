@@ -1,5 +1,6 @@
 import { addContactTag, getContactById, removeContactTag, type Contact } from "../contacts.js";
 import { nats } from "../nats.js";
+import { isPermissionPolicyTag } from "../permissions/permission-tags.js";
 import { dbDeleteTagBinding } from "../tags/tag-db.js";
 import { attachTagSlugsToAsset, canonicalTagSlugsForAsset } from "../tags/helpers.js";
 import { tryNormalizeTagSlug } from "../tags/tag-db.js";
@@ -42,6 +43,19 @@ function appliedTags(action: ApplyAction): { added: string[]; removed: string[] 
   const remove = action.removeTag ?? [];
   const removed = Array.isArray(remove) ? remove : [remove];
   return { added, removed };
+}
+
+/** Tag rules never write provider-owned permission tags; those come only from `ravi permissions allow`. */
+function withoutPermissionTags(
+  slugs: string[],
+  action: "add" | "remove",
+  skipped: Array<{ reason: string; detail?: Record<string, unknown> }>,
+): string[] {
+  return slugs.filter((slug) => {
+    if (!isPermissionPolicyTag(slug)) return true;
+    skipped.push({ reason: "permission-tag-forbidden", detail: { tag: slug, action } });
+    return false;
+  });
 }
 
 function normalizeSlugs(slugs: string[]): string[] {
@@ -97,8 +111,8 @@ export function applyContactRule(options: ApplyRuleOptions): ApplyRuleResult {
       continue;
     }
     const { added, removed } = appliedTags(action);
-    const normalizedAdded = normalizeSlugs(added);
-    const normalizedRemoved = normalizeSlugs(removed);
+    const normalizedAdded = withoutPermissionTags(normalizeSlugs(added), "add", skipped);
+    const normalizedRemoved = withoutPermissionTags(normalizeSlugs(removed), "remove", skipped);
 
     const guardedAdded: string[] = [];
     for (const slug of normalizedAdded) {
@@ -226,8 +240,8 @@ export function applyChatRule(options: ApplyChatRuleOptions): ApplyRuleResult {
       continue;
     }
     const { added, removed } = appliedTags(action);
-    const normalizedAdded = normalizeSlugs(added);
-    const normalizedRemoved = normalizeSlugs(removed);
+    const normalizedAdded = withoutPermissionTags(normalizeSlugs(added), "add", skipped);
+    const normalizedRemoved = withoutPermissionTags(normalizeSlugs(removed), "remove", skipped);
 
     const guardedAdded: string[] = [];
     for (const slug of normalizedAdded) {

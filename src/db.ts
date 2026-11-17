@@ -1,7 +1,11 @@
-import { Database, type SQLQueryBindings } from "bun:sqlite";
+import { configureStateJournalMode, initializeStateSchema } from "./db/schema-owner.js";
+import { assertDatabaseTargetAllowed, openStateDatabase } from "./db/state-boundary.js";
+import { isBridgeSessionRef } from "./bridge/isolation.js";
+import { type Database, type SQLQueryBindings } from "bun:sqlite";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
 import { getRaviStateDir } from "./utils/paths.js";
+import type { UtteranceClass } from "./runtime/utterance-class.js";
 
 let db: Database | null = null;
 let dbPath: string | null = null;
@@ -14,8 +18,9 @@ export function getChatDbPath(env: NodeJS.ProcessEnv = process.env): string {
   return resolveDbPath(env);
 }
 
-function getDb(): Database {
+export function getDb(): Database {
   const nextDbPath = resolveDbPath();
+  assertDatabaseTargetAllowed(nextDbPath);
   if (db !== null && dbPath === nextDbPath) {
     return db;
   }
@@ -25,13 +30,26 @@ function getDb(): Database {
 
   mkdirSync(getRaviStateDir(), { recursive: true });
 
-  db = new Database(nextDbPath);
+  const opened = openStateDatabase(nextDbPath);
+  try {
+    // WAL mode for concurrent read/write access (CLI + daemon)
+    configureStateJournalMode(opened);
+    opened.exec("PRAGMA busy_timeout = 5000");
+    initializeStateSchema(opened, "chat", () => initializeChatSchema(opened));
+  } catch (error) {
+    try {
+      opened.close();
+    } catch {
+      // no-cause: Cleanup must not replace the setup error rethrown below; the handle was never cached.
+    }
+    throw error;
+  }
+  db = opened;
   dbPath = nextDbPath;
+  return db;
+}
 
-  // WAL mode for concurrent read/write access (CLI + daemon)
-  db.exec("PRAGMA journal_mode = WAL");
-  db.exec("PRAGMA busy_timeout = 5000");
-
+function initializeChatSchema(db: Database): void {
   // Initialize schema
   db.exec(`
     CREATE TABLE IF NOT EXISTS messages (
@@ -54,14 +72,25 @@ function getDb(): Database {
   // Migration: add sdk_session_id column if missing (existing DBs)
   try {
     db.exec("ALTER TABLE messages ADD COLUMN sdk_session_id TEXT");
-  } catch {
-    // column already exists
+  } catch (error) {
+    if (!(error instanceof Error) || !/duplicate column name/i.test(error.message)) throw error;
   }
-  for (const column of ["agent_id", "channel", "account_id", "chat_id", "source_message_id", "command_json"]) {
+  for (const column of [
+    "agent_id",
+    "channel",
+    "account_id",
+    "chat_id",
+    "source_message_id",
+    "command_json",
+    // sessions/turn-output: `final` or `commentary` for assistant rows (NULL = final, legacy).
+    "utterance_class",
+    // The trace turn that produced an assistant row; same-turn replay dedupes on it.
+    "turn_id",
+  ]) {
     try {
       db.exec(`ALTER TABLE messages ADD COLUMN ${column} TEXT`);
-    } catch {
-      // column already exists
+    } catch (error) {
+      if (!(error instanceof Error) || !/duplicate column name/i.test(error.message)) throw error;
     }
   }
 
@@ -70,8 +99,7 @@ function getDb(): Database {
   db.exec("CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_messages_agent_chat ON messages(agent_id, chat_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_messages_source_message ON messages(source_message_id)");
-
-  return db;
+  db.exec("CREATE INDEX IF NOT EXISTS idx_messages_turn ON messages(session_id, turn_id)");
 }
 
 export interface Message {
@@ -87,6 +115,9 @@ export interface Message {
   chat_id?: string | null;
   source_message_id?: string | null;
   command_json?: string | null;
+  /** Assistant rows: `final` or `commentary` (sessions/turn-output). NULL is a legacy final row. */
+  utterance_class?: UtteranceClass | null;
+  turn_id?: string | null;
   created_at: string;
 }
 
@@ -97,16 +128,32 @@ export interface SaveMessageMetadata {
   chatId?: string | null;
   sourceMessageId?: string | null;
   commands?: unknown[] | null;
+  utteranceClass?: UtteranceClass | null;
+  /** With a turn id, an exact replay of the same utterance in the same turn writes no second row. */
+  turnId?: string | null;
 }
 
+/**
+ * Persist one history row. Returns false when the row was an exact same-turn
+ * replay (same session, turn, role, class and content), or belongs to the private
+ * bridge journal, and nothing was written;
+ * a new utterance that merely resembles an older one is always written.
+ */
 export function saveMessage(
   sessionId: string,
   role: "user" | "assistant",
   content: string,
   providerSessionId?: string | null,
   metadata: SaveMessageMetadata = {},
-): void {
-  getDb()
+): boolean {
+  // The human journal is authoritative; never copy private conversations into
+  // the ordinary chat/knowledge store, whose readers lack Console delegation.
+  if (isBridgeSessionRef(sessionId)) return false;
+  const database = getDb();
+  const turnId = metadata.turnId?.trim() || null;
+  const utteranceClass = role === "assistant" ? (metadata.utteranceClass ?? "final") : null;
+  // One SQLite write statement makes the exact-replay check atomic across processes.
+  const result = database
     .prepare(
       `INSERT INTO messages (
         session_id,
@@ -118,8 +165,15 @@ export function saveMessage(
         account_id,
         chat_id,
         source_message_id,
-        command_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        command_json,
+        utterance_class,
+        turn_id
+      ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        WHERE ? IS NULL OR NOT EXISTS (
+          SELECT 1 FROM messages
+          WHERE session_id = ? AND turn_id = ? AND role = ?
+            AND COALESCE(utterance_class, 'final') = ? AND content = ?
+        )`,
     )
     .run(
       sessionId,
@@ -132,7 +186,16 @@ export function saveMessage(
       metadata.chatId ?? null,
       metadata.sourceMessageId ?? null,
       metadata.commands && metadata.commands.length > 0 ? JSON.stringify(metadata.commands) : null,
+      utteranceClass,
+      turnId,
+      turnId,
+      sessionId,
+      turnId,
+      role,
+      utteranceClass ?? "final",
+      content,
     );
+  return result.changes > 0;
 }
 
 /**

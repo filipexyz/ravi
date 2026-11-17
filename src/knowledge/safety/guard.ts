@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 // The command gate every `ravi knowledge` command runs first (contract §11.2):
 // the exposure gate (§11.3), then the turn classifier (§11.1). Both refusals
 // are exit 3 with one English line in `issues[]` the agent acts on.
@@ -28,9 +29,15 @@ export function assertKnowledgeAllowed(
         "Knowledge answers only the operator's own turns: the terminal, the operator's direct chat and the operator's routines.",
         CONTRACT_EXIT_POLICY,
         {
-          retryable: false,
-          refusal: verdict.reason,
-          issues: [KNOWLEDGE_ISSUE_TEXT.KNOWLEDGE_TURN_NOT_OPERATOR as string],
+          ...errorDiagnostic(
+            "Knowledge answers only the operator's own turns: the terminal, the operator's direct chat and the operator's routines.",
+            { operation: op },
+          ),
+          ...{
+            retryable: false,
+            refusal: verdict.reason,
+            issues: [KNOWLEDGE_ISSUE_TEXT.KNOWLEDGE_TURN_NOT_OPERATOR as string],
+          },
         },
       ),
       asJson,
@@ -61,13 +68,19 @@ function exposureError(op: string, report: KnowledgeExposureReport): ContractErr
     "Knowledge is off while an agent people outside the org can reach is able to read files or run code.",
     CONTRACT_EXIT_POLICY,
     {
-      retryable: false,
-      offenders: report.offenders.length,
-      issues: [
-        "Tell the operator to run `ravi doctor` and make these agents chat-only (`ravi agents permissions <id> chat-only`) or close their outside routes; do not retry until then.",
-        ...listed.map((offender) => `${offender.agentId} (${offender.profile}): ${offender.reasons.join("; ")}`),
-        ...(more > 0 ? [`and ${more} more agent(s)`] : []),
-      ],
+      ...errorDiagnostic(
+        "Knowledge is off while an agent people outside the org can reach is able to read files or run code.",
+        { operation: op },
+      ),
+      ...{
+        retryable: false,
+        offenders: report.offenders.length,
+        issues: [
+          "Tell the operator to run `ravi doctor` and make these agents chat-only (`ravi agents permissions <id> chat-only`) or close their outside routes; do not retry until then.",
+          ...listed.map((offender) => `${offender.agentId} (${offender.profile}): ${offender.reasons.join("; ")}`),
+          ...(more > 0 ? [`and ${more} more agent(s)`] : []),
+        ],
+      },
     },
   );
 }

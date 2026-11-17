@@ -1,4 +1,5 @@
 import { canWithCapabilities } from "./capability-snapshot.js";
+import { bridgeCapabilityAllowed, bridgeContextCapabilities } from "../bridge/authority.js";
 import type { PermissionProvider, PermissionProviderDecision, PermissionProviderRequest } from "./provider-types.js";
 
 export const contextCapabilitiesProvider: PermissionProvider = {
@@ -14,17 +15,19 @@ export const contextCapabilitiesProvider: PermissionProvider = {
 };
 
 export function authorizeContextCapabilities(request: PermissionProviderRequest): PermissionProviderDecision {
-  const capabilities = request.context?.capabilities ?? request.capabilities ?? [];
+  const capabilities = request.context ? bridgeContextCapabilities(request.context) : (request.capabilities ?? []);
   const requiresExactResource =
     request.operation?.kind === "cli-command" && request.operation.access.requireConcreteResource === true;
-  const allowed = requiresExactResource
-    ? capabilities.some(
-        (capability) =>
-          capability.permission === request.permission &&
-          capability.objectType === request.objectType &&
-          capability.objectId === request.objectId,
-      )
-    : canWithCapabilities(capabilities, request.permission, request.objectType, request.objectId);
+  const allowed =
+    bridgeCapabilityAllowed(request.context?.metadata, request.permission, request.objectType, request.objectId) &&
+    (requiresExactResource
+      ? capabilities.some(
+          (capability) =>
+            capability.permission === request.permission &&
+            capability.objectType === request.objectType &&
+            capability.objectId === request.objectId,
+        )
+      : canWithCapabilities(capabilities, request.permission, request.objectType, request.objectId));
 
   return {
     decision: allowed ? "allow" : "deny",

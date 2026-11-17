@@ -1,4 +1,5 @@
-import { getSession } from "../router/index.js";
+import { getSession, type SessionEntry } from "../router/index.js";
+import { isTriggerOwnSessionKey } from "../triggers/authority.js";
 import { resolveStoredRuntimeProvider } from "./host-session.js";
 import type { RuntimeProviderId } from "./types.js";
 
@@ -10,6 +11,8 @@ export interface RuntimeSessionContinuityOptions {
   storedProviderSessionId?: string;
   canResumeStoredSession: boolean;
   defaultRuntimeProviderId: RuntimeProviderId;
+  hasSessionHistory?: boolean;
+  isParentSessionCompatible?: (session: SessionEntry) => boolean;
 }
 
 export interface RuntimeSessionContinuity {
@@ -34,17 +37,29 @@ function resolveRuntimeForkSession(
   options: RuntimeSessionContinuityOptions,
   resumableStoredProviderSessionId: string | undefined,
 ): string | undefined {
-  if (resumableStoredProviderSessionId || !options.supportsSessionFork || !options.dbSessionKey.includes(":thread:")) {
+  if (
+    resumableStoredProviderSessionId ||
+    options.storedProviderSessionId ||
+    options.hasSessionHistory ||
+    !options.supportsSessionFork ||
+    !options.dbSessionKey.includes(":thread:")
+  ) {
     return undefined;
   }
 
   const parentKey = options.dbSessionKey.replace(/:thread:.*$/, "");
+  // A trigger's own session holds what its owner's turns read, and only that
+  // trigger's fires run there: a thread opened from it starts on its own.
+  if (isTriggerOwnSessionKey(parentKey)) return undefined;
   const parentSession = getSession(parentKey);
   const parentProviderSessionId =
     parentSession?.runtimeSessionDisplayId ?? parentSession?.providerSessionId ?? parentSession?.sdkSessionId;
   const parentRuntimeProvider = parentSession ? resolveStoredRuntimeProvider(parentSession) : undefined;
 
-  return parentProviderSessionId && parentRuntimeProvider === options.runtimeProviderId
+  return parentProviderSessionId &&
+    parentRuntimeProvider === options.runtimeProviderId &&
+    parentSession &&
+    (options.isParentSessionCompatible?.(parentSession) ?? true)
     ? parentProviderSessionId
     : undefined;
 }

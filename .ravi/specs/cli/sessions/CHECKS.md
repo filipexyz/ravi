@@ -15,6 +15,9 @@
 - Runtime `follow-up`, `rollback` and `fork` without `--execute` MUST exit 3
   before any runtime request; their execute paths MUST forward the option.
 - Runtime `interrupt` and `steer` MUST remain immediate.
+- `sessions-runtime.test.ts` MUST verify failed runtime replies in JSON and text
+  through the gateway: exact normalized cause and provider survive; query/cookie
+  credentials and arbitrary reply payloads do not.
 - With `--execute`, `sessions delete` MUST report `changed: true` and the
   session MUST stop resolving.
 - `sessions prune` keeps its native dry-run payload (candidates, exit 0) — the
@@ -24,3 +27,6 @@
   `--execute` (asserted literally in `sessions.test.ts`).
 - `bun test src/cli/commands/sessions.test.ts` SHOULD pass after any change to
   the sessions contract surface.
+
+- `src/sdk/gateway/console.test.ts` invokes an existing session control through
+  verified ownership, denies a second owner and rejects sibling propagation.

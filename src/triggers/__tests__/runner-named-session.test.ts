@@ -3,8 +3,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dbCreateAgent } from "../../router/router-db.js";
-import { getOrCreateSession, listSessions, updateSessionSource } from "../../router/sessions.js";
+import { deleteSession, getOrCreateSession, listSessions, updateSessionSource } from "../../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import type { WatchRecord } from "../../watch/types.js";
 import type { SessionTarget } from "../types.js";
 
 afterAll(() => mock.restore());
@@ -85,7 +86,7 @@ mock.module("../../omni/session-stream.js", () => ({
 }));
 
 const { TriggerRunner } = await import("../runner.js");
-const { dbCreateTrigger, dbGetTrigger } = await import("../triggers-db.js");
+const { dbCreateTrigger, dbGetTrigger, dbUpdateTrigger } = await import("../triggers-db.js");
 
 let stateDir: string | null = null;
 let markerDir: string | null = null;
@@ -140,6 +141,159 @@ afterEach(async () => {
   markerDir = null;
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
+});
+
+describe("thread follow handoff delivery", () => {
+  it.each(["after publication", "during publication"])(
+    "delivers API-published CI to the parent after child closure and pruning %s",
+    async (timing) => {
+      const { publishGhPr, verifyPublicationFollow } = await import("../../hooks/gh-pr-publish.js");
+      const { registerInboundSlackThread, closeSlackThreadLifecycle, getSlackThreadLifecycle } = await import(
+        "../../channels/slack/thread-lifecycle-store.js"
+      );
+      const parent = getOrCreateSession("api-parent", "trigger-test-agent", "/tmp/trigger-test-agent-real", {
+        name: "api-parent",
+      });
+      const child = getOrCreateSession("api-parent:thread:1.2", "trigger-test-agent", "/tmp/trigger-test-agent-real", {
+        name: "api-child",
+      });
+      const source = { channel: "slack", accountId: "slack-account", chatId: "C123" };
+      updateSessionSource(parent.sessionKey, source);
+      const record = registerInboundSlackThread({
+        parentSessionKey: parent.sessionKey,
+        parentSessionName: parent.name!,
+        childSessionKey: child.sessionKey,
+        childSessionName: child.name!,
+        accountId: source.accountId,
+        instanceId: "slack-instance",
+        platformChatId: source.chatId,
+        threadCanonicalChatId: "api-thread-chat",
+        providerThreadId: "1.2",
+      });
+      const closeAndPrune = () => {
+        expect(closeSlackThreadLifecycle({ childSessionKey: child.sessionKey }).changed).toBe(true);
+        expect(deleteSession(child.sessionKey)).toBe(true);
+      };
+      const pr = {
+        number: 9,
+        node_id: "PR_9",
+        html_url: "https://github.com/o/r/pull/9",
+        state: "open",
+        draft: false,
+        head: { ref: "fix/publish", sha: "a".repeat(40), repo: { full_name: "o/r" } },
+        base: { ref: "dev", repo: { full_name: "o/r" } },
+      };
+      const watches: WatchRecord[] = [];
+      const result = await publishGhPr(
+        {
+          repo: "o/r",
+          head: pr.head.ref,
+          base: pr.base.ref,
+          sha: pr.head.sha,
+          title: "Fix",
+          body: "Fix follow",
+          context: {
+            agentId: "trigger-test-agent",
+            sessionName: child.name!,
+            sessionKey: child.sessionKey,
+            source: { ...source, threadId: "1.2" },
+          },
+        },
+        {
+          request: (endpoint, method) => {
+            if (endpoint.includes("/git/ref/")) return { object: { sha: pr.head.sha } };
+            if (endpoint.includes("/pulls?")) return [];
+            if (endpoint === "repos/o/r/pulls" && method === "POST") {
+              if (timing === "during publication") closeAndPrune();
+              return pr;
+            }
+            if (endpoint === "repos/o/r/pulls/9" && method === "GET") return pr;
+            throw new Error(`Unexpected publication request: ${method} ${endpoint}`);
+          },
+          follow: {
+            listWatches: () => ({ items: watches }) as never,
+            createWatch: async (input) => {
+              const watch = { ...input, id: `api-${input.placement ?? "console"}`, status: "active" } as WatchRecord;
+              watches.push(watch);
+              return { watch, createdRemote: false };
+            },
+            emitTriggersRefresh: async () => {},
+          },
+          verifyFollow: (input, follow, number) =>
+            verifyPublicationFollow(input, follow, number, {
+              watch: (id) => watches.find((watch) => watch.id === id) ?? null,
+              runtime: async () => {}, // Transport is mocked; actual TriggerRunner delivery is asserted below.
+            }),
+        },
+      );
+      expect(result.ready).toBe(true);
+      const trigger = dbGetTrigger(result.follow.triggerId!)!;
+      expect(trigger).toMatchObject({ replySession: "api-parent", replySource: source, enabled: true });
+      expect(trigger.replySource?.threadId).toBeUndefined();
+      if (timing === "after publication") closeAndPrune();
+      await startRunner();
+      emit(trigger.topic, { payload: { repository: "o/r", number: 9, conclusion: "success" } });
+      await waitFor(() => publishCalls.length === 1);
+      expect(publishCalls[0]).toMatchObject({
+        sessionName: "api-parent",
+        payload: { source, _triggerId: trigger.id },
+      });
+      expect(dbGetTrigger(trigger.id)?.fireCount).toBe(1);
+      expect(getSlackThreadLifecycle(record.requestId)?.status).toBe("closed");
+      expect(listSessions().some((session) => session.sessionKey === child.sessionKey)).toBe(false);
+    },
+  );
+
+  it("refuses close, then delivers a CI event to the parent after repoint and close", async () => {
+    const { registerInboundSlackThread, closeSlackThreadLifecycle, getSlackThreadLifecycle } = await import(
+      "../../channels/slack/thread-lifecycle-store.js"
+    );
+    const parent = getOrCreateSession("parent-key", "trigger-test-agent", "/tmp/trigger-test-agent-real", {
+      name: "parent",
+    });
+    const child = getOrCreateSession("parent-key:thread:1.2", "trigger-test-agent", "/tmp/trigger-test-agent-real", {
+      name: "child",
+    });
+    updateSessionSource(parent.sessionKey, { channel: "slack", accountId: "slack-account", chatId: "C123" });
+    const record = registerInboundSlackThread({
+      parentSessionKey: parent.sessionKey,
+      parentSessionName: parent.name!,
+      childSessionKey: child.sessionKey,
+      childSessionName: child.name!,
+      accountId: "slack-account",
+      instanceId: "slack-instance",
+      platformChatId: "C123",
+      threadCanonicalChatId: "thread-chat",
+      providerThreadId: "1.2",
+    });
+    const topic = "ravi.watch.github.ci";
+    const trigger = dbCreateTrigger({
+      name: "gh-follow:o/r#7",
+      topic,
+      message: "CI completed",
+      session: "main",
+      agentId: "trigger-test-agent",
+      replySession: "child",
+      cooldownMs: 0,
+    });
+    await startRunner();
+    expect(() => closeSlackThreadLifecycle({ childSessionKey: child.sessionKey })).toThrow(
+      "Thread still receives active triggers",
+    );
+    dbUpdateTrigger(trigger.id, { replySession: "parent" });
+    // The CLI emits this after triggers set; exercise the live reload too.
+    emit("ravi.triggers.refresh", {});
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    closeSlackThreadLifecycle({ childSessionKey: child.sessionKey });
+    emit(topic, { payload: { repository: "o/r", number: 7, conclusion: "success" } });
+    await waitFor(() => publishCalls.length === 1);
+    expect(publishCalls[0]).toMatchObject({
+      sessionName: "parent",
+      payload: { source: { channel: "slack", accountId: "slack-account", chatId: "C123" }, _triggerId: trigger.id },
+    });
+    expect(dbGetTrigger(trigger.id)?.fireCount).toBe(1);
+    expect(getSlackThreadLifecycle(record.requestId)?.status).toBe("closed");
+  });
 });
 
 describe("TriggerRunner named sessions", () => {

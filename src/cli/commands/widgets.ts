@@ -1,3 +1,4 @@
+import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 /**
  * Widgets Commands - widget templates in the Console Library.
  *
@@ -353,7 +354,7 @@ export class WidgetsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const op = "widgets init";
-    const target = resolveCallerPath(dir ?? "");
+    const target = resolveCallerPath(dir ?? "", "write");
     const widgetSlug = (slug?.trim() || basename(target)).toLowerCase();
     if (!isLibrarySlug(widgetSlug)) {
       failLibraryUsage(
@@ -367,12 +368,15 @@ export class WidgetsCommands {
     if (isReservedPresentationSlug("widget", widgetSlug)) {
       const message = `"${widgetSlug}" is reserved: the Library's widget routes use it.`;
       contractFail(op, "LIBRARY_SLUG_RESERVED", message, {
-        asJson,
-        exitCode: CONTRACT_EXIT_USAGE,
-        details: {
-          suggestedAction: "Pick another slug with --slug",
-          issues: libraryContractIssues(["slug"], "LIBRARY_SLUG_RESERVED", message, "Pick another slug with --slug"),
+        ...{
+          asJson,
+          exitCode: CONTRACT_EXIT_USAGE,
+          details: {
+            suggestedAction: "Pick another slug with --slug",
+            issues: libraryContractIssues(["slug"], "LIBRARY_SLUG_RESERVED", message, "Pick another slug with --slug"),
+          },
         },
+        diagnostic: errorDiagnostic(message, { operation: op }),
       });
     }
     const view = fromView?.trim();
@@ -483,7 +487,7 @@ export class WidgetsCommands {
         ["theme"],
       );
     }
-    const target = out?.trim() ? resolveCallerPath(out.trim()) : join(folder, "preview.html");
+    const target = resolveCallerPath(out?.trim() ? out.trim() : join(folder, "preview.html"), "write");
     return withPresentationContract(op, WIDGET, asJson, async () => {
       const outcome = await previewWidget({
         dir: folder,

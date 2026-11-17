@@ -10,6 +10,7 @@ type RequestReplyCall = {
 
 let requestReplyCalls: RequestReplyCall[] = [];
 let requestReplyResult: Record<string, unknown> = {};
+let requestReplyError: Error | null = null;
 let resolvedSession: Record<string, unknown> | null = null;
 let scopeEnforced = false;
 let canAccess = true;
@@ -36,6 +37,7 @@ mock.module("../context.js", () => ({
 mock.module("../../utils/request-reply.js", () => ({
   requestReply: mock(async (topic: string, data: Record<string, unknown>, timeoutMs?: number) => {
     requestReplyCalls.push({ topic, data, timeoutMs });
+    if (requestReplyError) throw requestReplyError;
     return requestReplyResult;
   }),
 }));
@@ -48,31 +50,37 @@ mock.module("../../permissions/scope.js", () => ({
   getScopeContext: () => ({ agentId: "dev" }),
   isScopeEnforced: () => scopeEnforced,
   canAccessSession: () => canAccess,
+  canAccessResource: () => true,
   canModifySession: () => canModify,
 }));
 
 const { SessionRuntimeCommands } = await import("./sessions-runtime.js");
 const { ContractError } = await import("../agent-contract.js");
+const { contractErrorResponse } = await import("../../sdk/gateway/errors.js");
 type SessionRuntimeCommandsInstance = InstanceType<typeof SessionRuntimeCommands>;
 
 async function captureLogs<T>(run: () => Promise<T>): Promise<{ result: T; output: string }> {
   const lines: string[] = [];
   const originalLog = console.log;
+  const originalError = console.error;
   console.log = (...args: unknown[]) => {
     lines.push(args.map((arg) => String(arg)).join(" "));
   };
+  console.error = console.log;
 
   try {
     const result = await run();
     return { result, output: lines.join("\n") };
   } finally {
     console.log = originalLog;
+    console.error = originalError;
   }
 }
 
 describe("SessionRuntimeCommands", () => {
   beforeEach(() => {
     requestReplyCalls = [];
+    requestReplyError = null;
     requestReplyResult = {
       result: {
         ok: true,
@@ -187,7 +195,7 @@ describe("SessionRuntimeCommands", () => {
 
     await expect(
       commands.followUp("missing", "faz isso depois", undefined, undefined, undefined, true),
-    ).rejects.toThrow("Session not found: missing");
+    ).rejects.toThrow("Session not found, or not visible to this context.");
     expect(requestReplyCalls).toHaveLength(0);
   });
 
@@ -280,7 +288,9 @@ describe("SessionRuntimeCommands", () => {
     canModify = false;
     const commands = new SessionRuntimeCommands();
 
-    await expect(commands.rollback("dev-main", "1")).rejects.toThrow("Session not found: dev-main");
+    await expect(commands.rollback("dev-main", "1")).rejects.toThrow(
+      "Session not found, or not visible to this context.",
+    );
     expect(requestReplyCalls).toHaveLength(0);
   });
 
@@ -299,5 +309,179 @@ describe("SessionRuntimeCommands", () => {
 
     expect(requestReplyCalls).toHaveLength(1);
     expect(requestReplyCalls[0]?.data).toMatchObject({ request: { operation: "turn.interrupt" } });
+  });
+
+  async function captureError(run: () => Promise<unknown>): Promise<InstanceType<typeof ContractError>> {
+    const originalLog = console.log;
+    const originalError = console.error;
+    console.log = () => {};
+    console.error = () => {};
+    try {
+      await run();
+    } catch (error) {
+      return error as InstanceType<typeof ContractError>;
+    } finally {
+      console.log = originalLog;
+      console.error = originalError;
+    }
+    throw new Error("expected the command to fail");
+  }
+
+  it("cannot control private bridge sessions through ordinary admin or wildcard access", async () => {
+    resolvedSession = {
+      ...resolvedSession,
+      sessionKey: "agent:dev:console:00000000-0000-4000-8000-000000000001",
+      name: "legacy-alias",
+    };
+    for (const enforced of [false, true]) {
+      scopeEnforced = enforced;
+      const error = await captureError(() => new SessionRuntimeCommands().steer("legacy-alias", "injected"));
+      expect(error.code).toBe("SESSION_NOT_FOUND");
+      expect(error.envelope().error.cause).toBe("Session not found, or not visible to this context.");
+      expect(JSON.stringify(error.envelope())).not.toContain("legacy-alias");
+      expect(JSON.stringify(error.envelope())).not.toContain(resolvedSession?.sessionKey);
+    }
+    expect(requestReplyCalls).toEqual([]);
+  });
+
+  it("turns a disabled steer into a typed contract error instead of COMMAND_FAILED", async () => {
+    requestReplyResult = {
+      result: {
+        ok: false,
+        operation: "turn.steer",
+        code: "RUNTIME_CONTROL_DISABLED",
+        retryable: false,
+        disabledReason: "durable_input_journal_unavailable",
+        error: "Runtime control 'turn.steer' is disabled: durable prompt input journaling is not available yet.",
+        state: { provider: "codex", activeTurn: true, turnId: "turn_1" },
+      },
+    };
+
+    const error = await captureError(() => new SessionRuntimeCommands().steer("dev-main", "corrige isso"));
+
+    expect(error).toBeInstanceOf(ContractError);
+    expect(error.op).toBe("sessions runtime steer");
+    expect(error.code).toBe("RUNTIME_CONTROL_DISABLED");
+    expect(error.exitCode).toBe(1);
+    expect(error.message).toContain("is disabled");
+    expect(error.envelope().error).toMatchObject({
+      retryable: false,
+      operation: "turn.steer",
+      activeTurn: true,
+      turnId: "turn_1",
+      disabledReason: "durable_input_journal_unavailable",
+      suggestedAction: expect.stringContaining("sessions send"),
+    });
+  });
+
+  it.each([true, false])("normalizes runtime control failures before output and gateway (json=%s)", async (asJson) => {
+    const expectedCause =
+      "Runtime turn rejected by provider; https://provider.example.test/control?[redacted:url-query]\nCookie: [redacted:cookie]";
+    requestReplyResult = {
+      result: {
+        ok: false,
+        operation: "turn.steer",
+        code: "RUNTIME_CONTROL_DISABLED",
+        error:
+          "Runtime turn rejected by provider; https://provider.example.test/control?key=RUNTIME_QUERY_SECRET\nCookie: session=RUNTIME_COOKIE_SECRET; refresh=RUNTIME_COOKIE_TAIL",
+        state: { provider: "codex", activeTurn: true },
+        data: { private: "RUNTIME_PRIVATE_PAYLOAD" },
+      },
+    };
+
+    const { result: error, output } = await captureLogs(async () => {
+      try {
+        await new SessionRuntimeCommands().steer("dev-main", "x", undefined, undefined, undefined, asJson);
+      } catch (caught) {
+        return caught as InstanceType<typeof ContractError>;
+      }
+      throw new Error("expected the runtime control to fail");
+    });
+
+    expect(error).toBeInstanceOf(ContractError);
+    expect(error.envelope()).toMatchObject({
+      success: false,
+      op: "sessions runtime steer",
+      error: {
+        code: "RUNTIME_CONTROL_DISABLED",
+        message: expectedCause,
+        cause: expectedCause,
+        context: { operation: "sessions runtime steer", provider: "codex" },
+      },
+    });
+    if (asJson) expect(JSON.parse(output)).toEqual(error.envelope());
+    else expect(output).toContain(expectedCause);
+
+    const response = contractErrorResponse(error);
+    expect(response.status).toBe(422);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      success: false,
+      error: { code: "RUNTIME_CONTROL_DISABLED", cause: expectedCause, context: error.details.context },
+    });
+    for (const secret of [
+      "RUNTIME_QUERY_SECRET",
+      "RUNTIME_COOKIE_SECRET",
+      "RUNTIME_COOKIE_TAIL",
+      "RUNTIME_PRIVATE_PAYLOAD",
+    ]) {
+      expect(output).not.toContain(secret);
+      expect(JSON.stringify(error.envelope())).not.toContain(secret);
+      expect(JSON.stringify(body)).not.toContain(secret);
+    }
+  });
+
+  it("maps a reply timeout to RUNTIME_CONTROL_TIMEOUT without raw text, retryable only for reads", async () => {
+    requestReplyError = new Error("Request timeout (15000ms) on ravi.session.runtime.control");
+
+    const read = await captureError(() => new SessionRuntimeCommands().read("dev-main"));
+    const interrupt = await captureError(() => new SessionRuntimeCommands().interrupt("dev-main"));
+
+    expect(read).toBeInstanceOf(ContractError);
+    expect(read.code).toBe("RUNTIME_CONTROL_TIMEOUT");
+    expect(read.envelope().error.retryable).toBe(true);
+    expect(interrupt.code).toBe("RUNTIME_CONTROL_TIMEOUT");
+    expect(interrupt.envelope().error.retryable).toBe(false);
+    expect(read.message).not.toContain("ravi.session.runtime.control");
+  });
+
+  it("preserves the normalized reply rejection beneath RUNTIME_CONTROL_UNAVAILABLE", async () => {
+    requestReplyError = new Error("NATS connection closed; token=PRIVATE_DAEMON_TOKEN");
+
+    const error = await captureError(() => new SessionRuntimeCommands().read("dev-main"));
+
+    expect(error).toBeInstanceOf(ContractError);
+    expect(error.code).toBe("RUNTIME_CONTROL_UNAVAILABLE");
+    expect(error.envelope().error.cause).toBe("NATS connection closed; token=[redacted:token]");
+    expect(error.envelope().error.context).toMatchObject({ operation: "sessions runtime read" });
+    expect(JSON.stringify(error.envelope())).not.toContain("PRIVATE_DAEMON_TOKEN");
+  });
+
+  it("does not mark a daemon error reply retryable for a mutating control", async () => {
+    requestReplyError = new Error("PRIVATE_DAEMON_TEXT");
+
+    const error = await captureError(() =>
+      new SessionRuntimeCommands().rollback("dev-main", "1", undefined, false, true),
+    );
+
+    expect(error.code).toBe("RUNTIME_CONTROL_UNAVAILABLE");
+    expect(error.envelope().error.retryable).toBe(false);
+  });
+
+  it("answers a missing session and a session without modify access with the same typed code", async () => {
+    resolvedSession = null;
+    const missing = await captureError(() => new SessionRuntimeCommands().steer("other", "x"));
+
+    resolvedSession = { sessionKey: "agent:dev:main", name: "other", agentId: "dev" };
+    scopeEnforced = true;
+    canModify = false;
+    const hidden = await captureError(() => new SessionRuntimeCommands().steer("other", "x"));
+
+    expect(missing.code).toBe("SESSION_NOT_FOUND");
+    expect(hidden.code).toBe("SESSION_NOT_FOUND");
+    expect(hidden.envelope()).toEqual(missing.envelope());
+    expect(JSON.stringify(hidden.envelope())).not.toContain("other");
+    expect(JSON.stringify(hidden.envelope())).not.toContain("agent:dev:main");
+    expect(requestReplyCalls).toHaveLength(0);
   });
 });

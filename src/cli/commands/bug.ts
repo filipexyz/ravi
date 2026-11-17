@@ -10,6 +10,7 @@ import {
   commentBugReport,
   getBugReportStatus,
   listBugReports,
+  requireBugId,
   submitBugReport,
   type BugReportClientDeps,
   type BugReportCommentResult,
@@ -67,8 +68,8 @@ HITL OBRIGATÓRIO
 EXAMPLES
   ravi bug report --json
   ravi bug report --dossier-json '{"schemaVersion":"${BUG_REPORT_SCHEMA_ID}","title":"CLI crash","summary":"...","severity":"high"}' --execute --json
-  ravi bug comment bug_123 --text "Root cause is X" --execute --json
-  ravi bug status bug_123 --json
+  ravi bug comment 3f1c2a4e-8b7d-4e2a-9c61-5d0b7a8e9f12 --text "Root cause is X" --execute --json
+  ravi bug status 3f1c2a4e-8b7d-4e2a-9c61-5d0b7a8e9f12 --json
   ravi bug list --json --limit 20
 
 ON ERROR
@@ -97,7 +98,7 @@ FONTES
 const BUG_STATUS_HELP = `
 USE          Look up one of your Console bug reports by id.
 NÃO USE      ✗ guessing another user's id — this surface is "my reports"
-EXAMPLES     ravi bug status bug_123 --json
+EXAMPLES     ravi bug status 3f1c2a4e-8b7d-4e2a-9c61-5d0b7a8e9f12 --json
 ON ERROR     AUTH_REQUIRED → ravi login    not found → Console 404 / SERVER_UNAVAILABLE
 SEE ALSO     ravi bug comment <id> --json
              ravi bug list --json
@@ -137,14 +138,14 @@ HITL OBRIGATÓRIO
   Ask the user if they want to append to this bug. Only --execute after they say yes.
 
 EXAMPLES
-  ravi bug comment bug_123 --json
-  ravi bug comment bug_123 --text "Root cause is the idle-stdin TTY probe" --execute --json
-  ravi bug comment bug_123 --text "Adding stack" --evidence-file ./stack.txt --execute --json
-  ravi bug comment bug_123 --dossier-json '{"schemaVersion":"${BUG_COMMENT_SCHEMA_ID}","text":"More logs","evidence":{"notes":["reproduced on bun 1.3"]}}' --execute --json
+  ravi bug comment 3f1c2a4e-8b7d-4e2a-9c61-5d0b7a8e9f12 --json
+  ravi bug comment 3f1c2a4e-8b7d-4e2a-9c61-5d0b7a8e9f12 --text "Root cause is the idle-stdin TTY probe" --execute --json
+  ravi bug comment 3f1c2a4e-8b7d-4e2a-9c61-5d0b7a8e9f12 --text "Adding stack" --evidence-file ./stack.txt --execute --json
+  ravi bug comment 3f1c2a4e-8b7d-4e2a-9c61-5d0b7a8e9f12 --dossier-json '{"schemaVersion":"${BUG_COMMENT_SCHEMA_ID}","text":"More logs","evidence":{"notes":["reproduced on bun 1.3"]}}' --execute --json
 
 ON ERROR
   WRITE_REQUIRES_EXECUTE (exit 3) → sanitize, confirm, add --execute
-  PAYLOAD_INVALID (exit 2) → missing id / missing text+evidence / broken JSON / report dossier passed as comment
+  PAYLOAD_INVALID (exit 2) → missing or short id (use the full UUID from ravi bug list) / missing text+evidence / broken JSON / report dossier passed as comment
   AUTH_REQUIRED (exit 1) → ravi login   (dry-run never needs this)
   SERVER_UNAVAILABLE (exit 1) → Console missing POST /api/cli/bugs/<id>/comments; keep this id, do not file a second report
 
@@ -504,10 +505,7 @@ function assembleComment(input: {
   dossierFile?: string;
   requireComplete: boolean;
 }): { bugId: string; comment?: BugCommentDossier; evidenceFilePresent: boolean } {
-  const bugId = input.id.trim();
-  if (!bugId) {
-    throw new CloudAuthError("PAYLOAD_INVALID", "Missing bug id.");
-  }
+  const bugId = requireBugId(input.id);
   if (input.dossierJson?.trim() && input.dossierFile?.trim()) {
     throw new CloudAuthError("PAYLOAD_INVALID", "Use only one of --dossier-json or --dossier-file.");
   }

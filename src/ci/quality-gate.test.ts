@@ -277,6 +277,47 @@ describe("runCoverageGate", () => {
     const result = runCoverageGate(["src/omni/consumer.ts", "src/omni/consumer-context.test.ts"], cwd);
 
     expect(result.ok).toBe(true);
+    expect(result.exempted).toBeUndefined();
+  });
+
+  it("fails a revert-shaped diff when no revert signal is given", () => {
+    // A revert deletes the feature and its focused tests; the deleted tests are
+    // invisible to `git diff --diff-filter=ACMR`, so only source shows up here.
+    const result = runCoverageGate(["src/runtime/index.ts"]);
+
+    expect(result.ok).toBe(false);
+    expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]!.message).toContain("no focused test in the diff");
+    expect(result.exempted).toBeUndefined();
+  });
+
+  it("exempts a revert-shaped diff when revert:true is passed explicitly", () => {
+    const result = runCoverageGate(["src/runtime/index.ts"], undefined, { revert: true });
+
+    expect(result.ok).toBe(true);
+    expect(result.errors).toEqual([]);
+    expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+    expect(result.exempted).toBeDefined();
+    expect(result.exempted!.kind).toBe("revert");
+    expect(result.exempted!.reason).toContain("revert");
+    expect(result.exempted!.reason).toContain("src/runtime/");
+  });
+
+  it("does not mark an exemption when the diff already covers the runtime path", () => {
+    const result = runCoverageGate(["src/runtime/index.ts", "src/runtime/index.test.ts"], undefined, { revert: true });
+
+    expect(result.ok).toBe(true);
+    expect(result.errors).toEqual([]);
+    expect(result.exempted).toBeUndefined();
+  });
+
+  it("propagates the revert exemption through runQualityGate", () => {
+    const result = runQualityGate(["src/runtime/index.ts"], undefined, { revert: true });
+
+    expect(result.ok).toBe(true);
+    expect(result.coverage.ok).toBe(true);
+    expect(result.coverage.exempted?.kind).toBe("revert");
   });
 
   it("accepts canonical chat schema coverage for router persistence changes", () => {
@@ -325,6 +366,11 @@ describe("runCoverageGate", () => {
     expect(result.triggeredPrefixes).toEqual(["src/router/", "src/runtime/"]);
   });
 
+  it("requires and recognizes focused shutdown failure coverage", () => {
+    expect(runCoverageGate(["src/runtime/shutdown.ts"]).ok).toBe(false);
+    expect(runCoverageGate(["src/runtime/shutdown.ts", "src/runtime/shutdown.test.ts"]).ok).toBe(true);
+  });
+
   it("accepts channel backend coverage across channel, router, and runtime changes", () => {
     const result = runCoverageGate([
       "src/channels/backend.ts",
@@ -360,6 +406,15 @@ describe("runCoverageGate", () => {
 
     expect(result.ok).toBe(true);
     expect(result.triggeredPrefixes).toEqual(["src/channels/"]);
+  });
+
+  it("accepts focused Slack thread health regressions for attention retry changes", () => {
+    const source = ["src/channels/slack/thread-lifecycle.ts", "src/channels/slack/thread-turn-health-store.ts"];
+
+    expect(runCoverageGate(source).ok).toBe(false);
+    const covered = runCoverageGate([...source, "src/channels/slack/thread-turn-health.test.ts"]);
+    expect(covered.ok).toBe(true);
+    expect(covered.triggeredPrefixes).toEqual(["src/channels/"]);
   });
 
   it("requires a focused native channel test in the diff", () => {
@@ -598,9 +653,16 @@ describe("runCoverageGate", () => {
     const covered = runCoverageGate(["src/apps/router.ts", "src/apps/router.test.ts"]);
 
     expect(uncovered.ok).toBe(false);
-    expect(uncovered.triggeredPrefixes).toEqual(["src/apps/"]);
+    expect(uncovered.triggeredPrefixes).toEqual(["src/apps/", "src/apps/router.ts"]);
     expect(uncovered.errors[0]!.message).toContain("src/apps/router.test.ts");
     expect(covered.ok).toBe(true);
+  });
+
+  it("recognizes the YouTube credential boundary test without weakening router coverage", () => {
+    const youtubeTest = "src/apps/youtube/credential-authority.test.ts";
+    expect(runCoverageGate(["src/apps/youtube/client.ts", youtubeTest]).ok).toBe(true);
+    expect(runCoverageGate(["src/apps/youtube/client.ts"]).ok).toBe(false);
+    expect(runCoverageGate(["src/apps/router.ts", youtubeTest]).ok).toBe(false);
   });
 });
 

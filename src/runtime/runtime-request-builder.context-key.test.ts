@@ -76,6 +76,7 @@ function emptyRuntimeSession(): RuntimeSessionHandle {
 
 function streamingSession(prompt: string): RuntimeHostStreamingSession {
   return {
+    sessionKey: SESSION_KEY,
     agentId: AGENT_ID,
     queryHandle: emptyRuntimeSession(),
     starting: false,
@@ -118,6 +119,42 @@ describe("runtime request first-turn context key", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("rejects persisted incompatible configuration before issuing runtime authority", async () => {
+    const sessionCwd = stateDir!;
+    await expect(
+      buildRuntimeStartRequest({
+        runId: "run-invalid-model",
+        sessionName: SESSION_NAME,
+        prompt: { prompt: "work", source },
+        session: session(sessionCwd),
+        agent: { ...agent(sessionCwd), provider: "claude", model: "deepseek/deepseek-flash" },
+        runtimeProviderId: "claude",
+        runtimeProvider: {
+          id: "claude",
+          getCapabilities: () => capabilities,
+          startSession: () => emptyRuntimeSession(),
+        },
+        runtimeCapabilities: capabilities,
+        sessionCwd,
+        dbSessionKey: SESSION_KEY,
+        model: "deepseek/deepseek-flash",
+        runtimeResolution: {
+          options: { model: "deepseek/deepseek-flash" },
+          sources: { model: "agent_default", effort: null, thinking: null },
+          hasTaskRuntimeContext: false,
+        },
+        storedRuntimeSessionParams: undefined,
+        canResumeStoredSession: false,
+        resolvedSource: source,
+        streamingSession: streamingSession("work"),
+        stashedMessages: new Map(),
+        defaultRuntimeProviderId: "claude",
+        crashRecovery: crashRecovery(),
+      }),
+    ).rejects.toThrow("does not belong");
+    expect(dbListContexts({ sessionKey: SESSION_KEY, kind: "turn-runtime", includeInactive: true })).toHaveLength(0);
   });
 
   it("does not revoke the published key when the first turn starts after request build", async () => {
@@ -175,6 +212,8 @@ describe("runtime request first-turn context key", () => {
 
     streaming.pendingMessages.push(createQueuedRuntimeUserMessage({ prompt: "second turn", source }));
     streaming.onTurnComplete?.();
+    // Terminal settlement revokes immediately, even while the generator is suspended at yield.
+    expect(resolveRuntimeContext(publishedKey, { touch: false })).toBeNull();
     await expect(runtimeRequest.prompt.next()).resolves.toMatchObject({ done: false });
 
     expect(runtimeEnv.RAVI_CONTEXT_KEY).not.toBe(publishedKey);
@@ -184,6 +223,7 @@ describe("runtime request first-turn context key", () => {
 
     streaming.done = true;
     streaming.onTurnComplete?.();
+    expect(resolveRuntimeContext(runtimeEnv.RAVI_CONTEXT_KEY, { touch: false })).toBeNull();
     await runtimeRequest.prompt.return(undefined);
   });
 });
@@ -257,5 +297,74 @@ describe("runtime request Building Solutions prompt", () => {
     dbUpsertSkillGrant({ agentId: AGENT_ID, skillName: "ravi-system-solucoes" });
 
     expect(await buildSystemPromptAppend(source)).not.toContain("Building Solutions");
+  });
+});
+
+describe("runtime request host tools", () => {
+  let stateDir: string | null = null;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-runtime-request-host-tools-");
+    getOrCreateSession(SESSION_KEY, AGENT_ID, stateDir);
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("attaches the granted host tools and the Pi allowlist for observation turns", async () => {
+    const sessionCwd = stateDir!;
+    const hostCapabilities: RuntimeCapabilities = { ...capabilities, dynamicTools: { mode: "host" } };
+    const runtimeProvider: SessionRuntimeProvider = {
+      id: PROVIDER_ID,
+      getCapabilities: () => hostCapabilities,
+      startSession: () => emptyRuntimeSession(),
+    };
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-host-tools",
+      sessionName: SESSION_NAME,
+      prompt: {
+        prompt: "observe the worker turn",
+        source,
+        _observation: {
+          sourceSessionKey: SESSION_KEY,
+          sourceSessionName: "worker",
+          bindingId: "binding-host-tools",
+          ruleId: "rule-host-tools",
+          role: "task-observer",
+          mode: "report",
+          permissionGrants: ["use:tool:tasks_show", "read:tasks:show"],
+          eventIds: ["event-host-tools"],
+          deliveryId: "delivery-host-tools",
+        },
+      },
+      session: session(sessionCwd),
+      agent: agent(sessionCwd),
+      runtimeProviderId: PROVIDER_ID,
+      runtimeProvider,
+      runtimeCapabilities: hostCapabilities,
+      sessionCwd,
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default", effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: source,
+      streamingSession: streamingSession("observe the worker turn"),
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+      crashRecovery: crashRecovery(),
+    });
+
+    const dynamicNames = (runtimeRequest.dynamicTools ?? []).map((tool) => tool.name);
+    expect(dynamicNames).toContain("tasks_show");
+    expect(dynamicNames).not.toContain("agents_list");
+    expect(runtimeRequest.allowedTools).toEqual(["tasks_show"]);
+    expect(typeof runtimeRequest.handleRuntimeToolCall).toBe("function");
   });
 });

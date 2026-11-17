@@ -28,6 +28,8 @@ afterEach(async () => {
 function slackContext(): ContextRecord {
   const capabilities: ContextCapability[] = [
     { permission: "execute", objectType: "group", objectId: "slack", source: "test" },
+    // The daemon reads the payload file for the caller, so the caller needs Read.
+    { permission: "use", objectType: "tool", objectId: "Read", source: "test" },
   ];
   return {
     contextId: "ctx_slack_blocks",

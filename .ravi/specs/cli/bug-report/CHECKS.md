@@ -48,6 +48,11 @@
   `ravi.bug_report/v1` create dossier passed as the comment MUST exit 2
   with `PAYLOAD_INVALID` even without `--execute` when the supplied
   input is already unsendable.
+- `bug comment <short-id>` (an 8-char prefix or any non-UUID) MUST exit 2
+  with `PAYLOAD_INVALID` naming the id and `ravi bug list`, in the dry-run
+  too and without any network call; an uppercase UUID MUST be sent
+  lowercase. A Console 404 that carries `error.code` (unknown bug) MUST keep
+  its own message instead of the "no comment route" fallback.
 - The default system prompt MUST tell the agent to ask the user before
   filing and to use `ravi bug report` (not `ravi feedback`) after a yes.
   It MUST also tell the agent to append follow-up evidence with

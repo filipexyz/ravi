@@ -17,14 +17,18 @@
    Bases path, is a regression: check `contractDryRun` ordering in
    `src/cli/commands/bases.ts` and `statusToErrorCode` in
    `src/cloud-auth/client.ts`.
-8. Row events missing: `ravi bases subscriptions <base> --json`, then
-   `ravi inbox status`; events arrive on `ravi.console.inbox.item` with
-   `category: "bases"`.
+8. Row events missing: `ravi bases subscriptions <base> --json` (check the
+   filter column: `--events`, `--props` and `--view` narrow what arrives),
+   then `ravi inbox status`; events arrive on `ravi.console.inbox.item` with
+   `category: "bases"`. A trigger made with `subscribe --trigger` from an
+   agent turn is disabled until `ravi triggers enable <id>`
+   (`ravi triggers show <id>`).
 9. A generated page shows an error (the `error` field of the exec response):
-   - `connector_not_allowlisted`: the id is missing from the host's active
-     release. `grep -o 'ravi\.bases\.[a-z.]*' page.html | sort -u`, then
-     ship again with `--uses` listing those ids (and the ids of the other
-     data pages on the same host).
+   - `connector_not_allowlisted`: no active route of the host declares the
+     id. `grep -o 'ravi\.bases\.[a-z.]*' page.html | sort -u`, then ship
+     that route again with `--uses` listing those ids. Other routes keep
+     their own ids. A route last published with `pages publish` or
+     `artifacts publish` declares none: re-ship it with `pages ship`.
    - `not_found` on `views.describe` or `charts.data`: the view does not
      grant `{kind: "page_viewer", siteId}` for this site, the view or chart
      was archived (pages never manage, so archived reads as missing), or the

@@ -2,6 +2,9 @@
 
 ## Required Tests
 
+- SSH and NATS spawn factories strip both SDK encodings of local plugin paths
+  and setting sources, preserving following model/effort/output arguments;
+  verify with `bun test src/remote-spawn.test.ts src/remote-spawn-nats.test.ts`.
 - Stream delta maps to `text.delta`.
 - Assistant text maps to `assistant.message`.
 - Assistant tool-use maps to `tool.started`.
@@ -16,7 +19,9 @@
 - Resume session id is read from `RuntimeSessionState.params`.
 - Fork is passed only when requested by session continuity.
 - A real POSIX shell preserves a single auth token and multiple forwarded auth,
-  context and gateway values, including shell metacharacters and newlines.
+  context and gateway values read from stdin, including shell metacharacters,
+  backslashes and literal `\\n` sequences; a value with a real newline is
+  refused, and no forwarded value appears in the ssh argv or the ssh child env.
 - A loopback SSH agent receives the enabled daemon HTTP gateway URL; an
   unrelated remote host does not receive an inferred loopback URL.
 - An explicit gateway URL takes precedence, invalid HTTP ports do not create a
@@ -24,6 +29,29 @@
 - Gateway derivation follows the listener's configuration precedence: an
   explicitly empty HTTP port disables fallback to the webhook port, and HTTP
   and webhook host values are trimmed before selecting the IPv6 loopback URL.
+
+## Model Compatibility Acceptance
+
+- `bun test src/runtime/claude-provider.test.ts src/runtime/model-catalog.test.ts`
+  covers unchanged selectors for `fable`, `claude-mythos-5`, and
+  `claude-fable-5-2`, as well as unknown ids, future versions and names that
+  contain `sonnet`, `opus` or `haiku`. Surrounding whitespace is trimmed.
+- Missing and blank names select the provider default; unknown ids pass through
+  even when a local display catalog exists. Incompatible-runtime cases retain
+  their existing fallback and validation behavior.
+- `bun test src/tui/components/ModelPicker.test.ts` renders the actual picker
+  with configured ids outside its display catalog, verifies the selected id
+  and next-runtime preview, then confirms unchanged or selects a different
+  catalog row. Missing/blank models retain the default behavior.
+- The same tests cover the `off`/`normal`/`verbose` adaptive thinking contract
+  for Fable 5, 5-1, 5-2, future versions, the short `fable` alias, and Mythos.
+  Sonnet and lookalikes such as `claude-fableish-5` and `my-fable-model` still
+  receive disabled thinking for `off`.
+- With the updated installed SDK, create a Ravi session using
+  `--provider claude --model claude-fable-5-2`, send a unique response marker,
+  and verify the returned text plus the session's successful terminal turn.
+  Record the SDK version and tested commit in the PR; unit tests are not this
+  real-session acceptance proof.
 
 ## Regression Cases
 

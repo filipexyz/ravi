@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync } from "node:fs";
+import { runWithContext } from "../cli/context.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ConsoleApiClient } from "../cloud-auth/client.js";
@@ -371,3 +372,105 @@ function makeCredentials(): CloudCredentials {
     updatedAt: "2026-05-09T00:00:00.000Z",
   };
 }
+
+describe("Page download provider-settings boundary", () => {
+  let stateDir: string | null = null;
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-page-settings-");
+  });
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  function download(paths: string[], out: string, format: "files" | "zip" = "files", hostExecution = false) {
+    const fetchFile = mock(async () => new Response("hello"));
+    const client = makeClient(async () => ({
+      ...consoleResponse(),
+      files: paths.map((path) => ({
+        path,
+        contentType: "text/plain",
+        sizeBytes: 5,
+        sha256: null,
+        url: "https://files.example/content",
+      })),
+    }));
+    const capabilities = [{ permission: "use", objectType: "tool", objectId: "Write" }];
+    if (hostExecution) capabilities.push({ permission: "execute", objectType: "executable", objectId: "*" });
+    const promise = runWithContext(
+      {
+        agentId: "page-reader",
+        cwd: stateDir!,
+        context: {
+          contextId: "test-page-reader",
+          contextKey: "test-page-key",
+          kind: "test-runtime",
+          agentId: "page-reader",
+          capabilities,
+          createdAt: 0,
+        },
+      },
+      () =>
+        readPage(
+          { url: "https://acme.ravi.page/", format, out },
+          {
+            client,
+            readCredentials: () => makeCredentials(),
+            publicOnly: true,
+            fetchFile,
+          },
+        ),
+    );
+    return { promise, fetchFile };
+  }
+
+  for (const path of [
+    ".claude/settings.json",
+    ".codex/config.toml",
+    ".mcp.json",
+    ".pi/settings.json",
+    "assets/.codex/config.toml",
+    ".CoDeX/config.toml",
+    ".MCP.JSON",
+  ]) {
+    it(`refuses ${path} before fetching or writing even an earlier safe file`, async () => {
+      const out = join(stateDir!, "download");
+      const { promise, fetchFile } = download(["index.html", path], out);
+      await expect(promise).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+      expect(fetchFile).not.toHaveBeenCalled();
+      expect(existsSync(out)).toBe(false);
+    });
+  }
+
+  it("follows an output-directory symlink before authorizing child settings", async () => {
+    mkdirSync(join(stateDir!, ".codex"));
+    symlinkSync(".codex", join(stateDir!, "ordinary"));
+    const { promise, fetchFile } = download(["config.toml"], join(stateDir!, "ordinary"));
+    await expect(promise).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    expect(fetchFile).not.toHaveBeenCalled();
+    expect(existsSync(join(stateDir!, ".codex/config.toml"))).toBe(false);
+  });
+
+  it("keeps ordinary assets and literal filenames intact for a restricted writer", async () => {
+    const out = join(stateDir!, "safe");
+    await download(["index.html", "assets/styles.css", "notes.txt "], out).promise;
+    expect(readFileSync(join(out, "assets/styles.css"), "utf8")).toBe("hello");
+    expect(readFileSync(join(out, "notes.txt "), "utf8")).toBe("hello");
+  });
+
+  it("allows settings only for an already host-authorized writer", async () => {
+    const out = join(stateDir!, "authorized");
+    await download([".codex/config.toml"], out, "files", true).promise;
+    expect(readFileSync(join(out, ".codex/config.toml"), "utf8")).toBe("hello");
+  });
+
+  it("treats ZIP members as data but authorizes the ZIP destination", async () => {
+    const out = join(stateDir!, "bundle.zip");
+    await download([".codex/config.toml"], out, "zip").promise;
+    expect(existsSync(out)).toBe(true);
+    expect(existsSync(join(stateDir!, ".codex"))).toBe(false);
+    const { promise, fetchFile } = download(["index.html"], join(stateDir!, ".mcp.json"), "zip");
+    await expect(promise).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    expect(fetchFile).not.toHaveBeenCalled();
+  });
+});

@@ -1086,6 +1086,39 @@ export type AgentsPublishInput = {
 /** Return shape for `agents.publish`. */
 export type AgentsPublishReturn = {
   agent: string;
+  cloud: ({
+    budgetUsd?: number;
+    effort?: string;
+    environment?: {
+      allowedHosts?: string[];
+      networking?: string;
+      packages?: {
+        apt?: string[];
+        npm?: string[];
+        pip?: string[];
+      };
+    };
+    mcp?: {
+      ravi?: boolean;
+      servers?: Array<{
+        name: string;
+        url: string;
+      }>;
+    };
+    model?: string;
+    repositories?: Array<{
+      branch?: string;
+      repo: string;
+    }>;
+    schedule?: {
+      cron: string;
+      timezone?: string;
+    };
+    tools?: {
+      webSearch?: boolean;
+      writes?: string;
+    };
+  }) | null;
   contentHash: string;
   item: ({
     archived: boolean;
@@ -2838,6 +2871,7 @@ export type BasesChartsArchiveReturn = {
 export type BasesChartsCreateInput = {
   base: string;
   console?: string;
+  idempotencyKey?: string;
   name?: string;
   project?: string;
   spec?: string;
@@ -2861,6 +2895,7 @@ export type BasesChartsCreateReturn = {
     viewId: string;
   };
   consoleUrl: string;
+  idempotencyKey: string;
   projectRef: string;
   success: true;
 };
@@ -2893,9 +2928,17 @@ export type BasesChartsDataReturn = {
   data: Array<Record<string, string | number | boolean | null>>;
   fields: Record<string, {
     config: {
+      agent?: string | null;
+      approvers?: Array<{
+        kind: string;
+        minRole?: string;
+        userId?: string;
+      }>;
       currency?: string;
       format?: string;
       includeTime?: boolean;
+      inputs?: string[];
+      instructions?: string;
       options?: Array<{
         archived?: boolean;
         color: string;
@@ -2903,7 +2946,9 @@ export type BasesChartsDataReturn = {
         id: string;
         name: string;
       }>;
+      output?: string;
       precision?: number;
+      resetOn?: string[];
     };
     key: string;
     name: string;
@@ -3040,6 +3085,7 @@ export type BasesCreateInput = {
   console?: string;
   description?: string;
   icon?: string;
+  idempotencyKey?: string;
   name: string;
   project?: string;
   schema?: string;
@@ -3082,9 +3128,17 @@ export type BasesCreateReturn = {
     projectId: string;
     properties: Array<{
       config: {
+        agent?: string | null;
+        approvers?: Array<{
+          kind: string;
+          minRole?: string;
+          userId?: string;
+        }>;
         currency?: string;
         format?: string;
         includeTime?: boolean;
+        inputs?: string[];
+        instructions?: string;
         options?: Array<{
           archived?: boolean;
           color: string;
@@ -3092,7 +3146,9 @@ export type BasesCreateReturn = {
           id: string;
           name: string;
         }>;
+        output?: string;
         precision?: number;
+        resetOn?: string[];
       };
       deletedAt: string | null;
       description: string | null;
@@ -3115,6 +3171,7 @@ export type BasesCreateReturn = {
       baseId: string;
       capabilities: {
         aggregateOnly: boolean;
+        approve?: string[];
         archive: boolean;
         create: boolean;
         manage: boolean;
@@ -3144,6 +3201,7 @@ export type BasesCreateReturn = {
       baseId: string;
       capabilities: {
         aggregateOnly: boolean;
+        approve?: string[];
         archive: boolean;
         create: boolean;
         manage: boolean;
@@ -3152,9 +3210,17 @@ export type BasesCreateReturn = {
       };
       columns: Array<{
         config: {
+          agent?: string | null;
+          approvers?: Array<{
+            kind: string;
+            minRole?: string;
+            userId?: string;
+          }>;
           currency?: string;
           format?: string;
           includeTime?: boolean;
+          inputs?: string[];
+          instructions?: string;
           options?: Array<{
             archived?: boolean;
             color: string;
@@ -3162,7 +3228,9 @@ export type BasesCreateReturn = {
             id: string;
             name: string;
           }>;
+          output?: string;
           precision?: number;
+          resetOn?: string[];
         };
         key: string;
         name: string;
@@ -3178,6 +3246,7 @@ export type BasesCreateReturn = {
     })>;
   };
   consoleUrl: string;
+  idempotencyKey: string;
   projectRef: string;
   success: true;
 };
@@ -3253,17 +3322,24 @@ export type BasesListReturn = {
 
 /** Input shape for `bases.props.add`. */
 export type BasesPropsAddInput = {
+  agent?: string;
+  approvers?: string;
   base: string;
   config?: string;
   console?: string;
   description?: string;
   expectedSchemaVersion?: string;
+  idempotencyKey?: string;
+  inputs?: string;
+  instructions?: string;
   key?: string;
   name: string;
   options?: string;
+  output?: string;
   position?: string;
   project?: string;
   required?: boolean;
+  resetOn?: string;
   type?: string;
 };
 
@@ -3291,12 +3367,21 @@ export type BasesPropsAddReturn = {
     version: number;
   };
   consoleUrl: string;
+  idempotencyKey: string;
   projectRef: string;
   property: {
     config: {
+      agent?: string | null;
+      approvers?: Array<{
+        kind: string;
+        minRole?: string;
+        userId?: string;
+      }>;
       currency?: string;
       format?: string;
       includeTime?: boolean;
+      inputs?: string[];
+      instructions?: string;
       options?: Array<{
         archived?: boolean;
         color: string;
@@ -3304,7 +3389,9 @@ export type BasesPropsAddReturn = {
         id: string;
         name: string;
       }>;
+      output?: string;
       precision?: number;
+      resetOn?: string[];
     };
     deletedAt: string | null;
     description: string | null;
@@ -3372,9 +3459,17 @@ export type BasesPropsDeleteReturn = {
   projectRef: string;
   property: {
     config: {
+      agent?: string | null;
+      approvers?: Array<{
+        kind: string;
+        minRole?: string;
+        userId?: string;
+      }>;
       currency?: string;
       format?: string;
       includeTime?: boolean;
+      inputs?: string[];
+      instructions?: string;
       options?: Array<{
         archived?: boolean;
         color: string;
@@ -3382,7 +3477,9 @@ export type BasesPropsDeleteReturn = {
         id: string;
         name: string;
       }>;
+      output?: string;
       precision?: number;
+      resetOn?: string[];
     };
     deletedAt: string | null;
     description: string | null;
@@ -3430,9 +3527,17 @@ export type BasesPropsListReturn = {
   consoleUrl: string;
   items: Array<{
     config?: {
+      agent?: string | null;
+      approvers?: Array<{
+        kind: string;
+        minRole?: string;
+        userId?: string;
+      }>;
       currency?: string;
       format?: string;
       includeTime?: boolean;
+      inputs?: string[];
+      instructions?: string;
       options?: Array<{
         archived?: boolean;
         color: string;
@@ -3440,7 +3545,9 @@ export type BasesPropsListReturn = {
         id: string;
         name: string;
       }>;
+      output?: string;
       precision?: number;
+      resetOn?: string[];
     };
     deletedAt?: string | null;
     description?: string | null;
@@ -3463,9 +3570,17 @@ export type BasesPropsListReturn = {
   projectRef: string;
   properties: Array<{
     config?: {
+      agent?: string | null;
+      approvers?: Array<{
+        kind: string;
+        minRole?: string;
+        userId?: string;
+      }>;
       currency?: string;
       format?: string;
       includeTime?: boolean;
+      inputs?: string[];
+      instructions?: string;
       options?: Array<{
         archived?: boolean;
         color: string;
@@ -3473,7 +3588,9 @@ export type BasesPropsListReturn = {
         id: string;
         name: string;
       }>;
+      output?: string;
       precision?: number;
+      resetOn?: string[];
     };
     deletedAt?: string | null;
     description?: string | null;
@@ -3525,9 +3642,17 @@ export type BasesPropsRestoreReturn = {
   projectRef: string;
   property: {
     config: {
+      agent?: string | null;
+      approvers?: Array<{
+        kind: string;
+        minRole?: string;
+        userId?: string;
+      }>;
       currency?: string;
       format?: string;
       includeTime?: boolean;
+      inputs?: string[];
+      instructions?: string;
       options?: Array<{
         archived?: boolean;
         color: string;
@@ -3535,7 +3660,9 @@ export type BasesPropsRestoreReturn = {
         id: string;
         name: string;
       }>;
+      output?: string;
       precision?: number;
+      resetOn?: string[];
     };
     deletedAt: string | null;
     description: string | null;
@@ -3611,9 +3738,17 @@ export type BasesPropsUpdateReturn = {
   projectRef: string;
   property: {
     config: {
+      agent?: string | null;
+      approvers?: Array<{
+        kind: string;
+        minRole?: string;
+        userId?: string;
+      }>;
       currency?: string;
       format?: string;
       includeTime?: boolean;
+      inputs?: string[];
+      instructions?: string;
       options?: Array<{
         archived?: boolean;
         color: string;
@@ -3621,7 +3756,9 @@ export type BasesPropsUpdateReturn = {
         id: string;
         name: string;
       }>;
+      output?: string;
       precision?: number;
+      resetOn?: string[];
     };
     deletedAt: string | null;
     description: string | null;
@@ -3726,6 +3863,45 @@ export type BasesRowsAddReturn = {
   warnings?: string[];
 };
 
+/** Input shape for `bases.rows.approve`. */
+export type BasesRowsApproveInput = {
+  base: string;
+  console?: string;
+  execute?: boolean;
+  expectedVersion?: string;
+  idempotencyKey?: string;
+  note?: string;
+  project?: string;
+  prop: string;
+  row: string;
+  view?: string;
+};
+
+/** Return shape for `bases.rows.approve`. */
+export type BasesRowsApproveReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  idempotencyKey: string;
+  idempotentReplay: boolean;
+  projectRef: string;
+  property: string;
+  row: {
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  };
+  state: "pending" | "approved" | "rejected";
+  success: true;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+};
+
 /** Input shape for `bases.rows.archive`. */
 export type BasesRowsArchiveInput = {
   base: string;
@@ -3788,6 +3964,44 @@ export type BasesRowsExportReturn = {
   viewId: string | null;
 };
 
+/** Input shape for `bases.rows.fill`. */
+export type BasesRowsFillInput = {
+  base: string;
+  console?: string;
+  error?: string;
+  idempotencyKey?: string;
+  inputsHash?: string;
+  project?: string;
+  prop: string;
+  row: string;
+  value?: string;
+};
+
+/** Return shape for `bases.rows.fill`. */
+export type BasesRowsFillReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  idempotencyKey: string;
+  idempotentReplay: boolean;
+  projectRef: string;
+  property: string;
+  row: {
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  };
+  success: true;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+  warnings?: string[];
+};
+
 /** Input shape for `bases.rows.get`. */
 export type BasesRowsGetInput = {
   base: string;
@@ -3839,6 +4053,10 @@ export type BasesRowsHistoryReturn = {
     actorId: string | null;
     actorType: string | null;
     after: Record<string, unknown>;
+    agent?: ({
+      id: string;
+      installationId: string | null;
+    }) | null;
     before: Record<string, unknown>;
     bodyChanged: boolean;
     changedKeys: string[];
@@ -3975,6 +4193,115 @@ export type BasesRowsQueryReturn = {
   viewId: string | null;
 };
 
+/** Input shape for `bases.rows.reject`. */
+export type BasesRowsRejectInput = {
+  base: string;
+  console?: string;
+  execute?: boolean;
+  expectedVersion?: string;
+  idempotencyKey?: string;
+  note?: string;
+  project?: string;
+  prop: string;
+  row: string;
+  view?: string;
+};
+
+/** Return shape for `bases.rows.reject`. */
+export type BasesRowsRejectReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  idempotencyKey: string;
+  idempotentReplay: boolean;
+  projectRef: string;
+  property: string;
+  row: {
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  };
+  state: "pending" | "approved" | "rejected";
+  success: true;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+};
+
+/** Input shape for `bases.rows.request-approval`. */
+export type BasesRowsRequestApprovalInput = {
+  base: string;
+  console?: string;
+  expectedVersion?: string;
+  idempotencyKey?: string;
+  note?: string;
+  project?: string;
+  prop: string;
+  row: string;
+  view?: string;
+};
+
+/** Return shape for `bases.rows.request-approval`. */
+export type BasesRowsRequestApprovalReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  idempotencyKey: string;
+  idempotentReplay: boolean;
+  projectRef: string;
+  property: string;
+  row: {
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  };
+  state: "pending" | "approved" | "rejected";
+  success: true;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+};
+
+/** Input shape for `bases.rows.rerun`. */
+export type BasesRowsRerunInput = {
+  base: string;
+  console?: string;
+  project?: string;
+  prop: string;
+  row: string;
+};
+
+/** Return shape for `bases.rows.rerun`. */
+export type BasesRowsRerunReturn = {
+  baseRef: string;
+  consoleUrl: string;
+  idempotentReplay: boolean;
+  projectRef: string;
+  property: string;
+  row: {
+    archivedAt?: string | null;
+    body?: string | null;
+    rowId: string;
+    values: Record<string, unknown>;
+    version: number;
+  };
+  success: true;
+  users: Record<string, {
+    avatarUrl: string | null;
+    displayName: string | null;
+    id: string;
+  }>;
+  viewId: string | null;
+};
+
 /** Input shape for `bases.rows.restore`. */
 export type BasesRowsRestoreInput = {
   base: string;
@@ -4089,9 +4416,17 @@ export type BasesShowReturn = {
     projectId: string;
     properties: Array<{
       config: {
+        agent?: string | null;
+        approvers?: Array<{
+          kind: string;
+          minRole?: string;
+          userId?: string;
+        }>;
         currency?: string;
         format?: string;
         includeTime?: boolean;
+        inputs?: string[];
+        instructions?: string;
         options?: Array<{
           archived?: boolean;
           color: string;
@@ -4099,7 +4434,9 @@ export type BasesShowReturn = {
           id: string;
           name: string;
         }>;
+        output?: string;
         precision?: number;
+        resetOn?: string[];
       };
       deletedAt: string | null;
       description: string | null;
@@ -4122,6 +4459,7 @@ export type BasesShowReturn = {
       baseId: string;
       capabilities: {
         aggregateOnly: boolean;
+        approve?: string[];
         archive: boolean;
         create: boolean;
         manage: boolean;
@@ -4151,6 +4489,7 @@ export type BasesShowReturn = {
       baseId: string;
       capabilities: {
         aggregateOnly: boolean;
+        approve?: string[];
         archive: boolean;
         create: boolean;
         manage: boolean;
@@ -4159,9 +4498,17 @@ export type BasesShowReturn = {
       };
       columns: Array<{
         config: {
+          agent?: string | null;
+          approvers?: Array<{
+            kind: string;
+            minRole?: string;
+            userId?: string;
+          }>;
           currency?: string;
           format?: string;
           includeTime?: boolean;
+          inputs?: string[];
+          instructions?: string;
           options?: Array<{
             archived?: boolean;
             color: string;
@@ -4169,7 +4516,9 @@ export type BasesShowReturn = {
             id: string;
             name: string;
           }>;
+          output?: string;
           precision?: number;
+          resetOn?: string[];
         };
         key: string;
         name: string;
@@ -4191,9 +4540,16 @@ export type BasesShowReturn = {
 
 /** Input shape for `bases.subscribe`. */
 export type BasesSubscribeInput = {
+  agent?: string;
   base: string;
   console?: string;
+  events?: string;
+  message?: string;
   project?: string;
+  props?: string;
+  session?: string;
+  trigger?: boolean;
+  view?: string;
 };
 
 /** Return shape for `bases.subscribe`. */
@@ -4203,18 +4559,41 @@ export type BasesSubscribeReturn = {
     category: string;
     natsSubject: string;
   };
+  filter: {
+    events: string[];
+    properties: string[];
+    viewId: string | null;
+  };
   projectRef: string;
   subscription: {
     baseId: string;
     createdAt: string;
+    events?: string[];
     id: string;
     installationName: string | null;
     localInstallationId: string;
+    properties?: string[];
     revokedAt: string | null;
     status: string;
     userId: string;
+    viewId?: string | null;
   };
   success: true;
+  trigger?: {
+    agentId: string;
+    created: boolean;
+    draft: boolean;
+    enableCommand: string | null;
+    enabled: boolean;
+    filter: string;
+    id: string;
+    name: string;
+    ownerPrincipal: string;
+    ownsSession: boolean;
+    runsAsOperator: boolean;
+    session: string;
+    topic: string;
+  };
 };
 
 /** Input shape for `bases.subscriptions`. */
@@ -4232,12 +4611,15 @@ export type BasesSubscriptionsReturn = {
   subscriptions: Array<{
     baseId: string;
     createdAt: string;
+    events?: string[];
     id: string;
     installationName: string | null;
     localInstallationId: string;
+    properties?: string[];
     revokedAt: string | null;
     status: string;
     userId: string;
+    viewId?: string | null;
   }>;
   success: true;
 };
@@ -4257,12 +4639,15 @@ export type BasesUnsubscribeReturn = {
   subscription: {
     baseId: string;
     createdAt: string;
+    events?: string[];
     id: string;
     installationName: string | null;
     localInstallationId: string;
+    properties?: string[];
     revokedAt: string | null;
     status: string;
     userId: string;
+    viewId?: string | null;
   };
   success: true;
 };
@@ -4329,6 +4714,7 @@ export type BasesViewsArchiveReturn = {
     baseId: string;
     capabilities: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4379,6 +4765,7 @@ export type BasesViewsBindReturn = {
     baseId: string;
     capabilities: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4412,6 +4799,7 @@ export type BasesViewsBindReturn = {
 export type BasesViewsCreateInput = {
   base: string;
   console?: string;
+  idempotencyKey?: string;
   name?: string;
   project?: string;
   spec?: string;
@@ -4421,6 +4809,7 @@ export type BasesViewsCreateInput = {
 export type BasesViewsCreateReturn = {
   baseRef: string;
   consoleUrl: string;
+  idempotencyKey: string;
   projectRef: string;
   success: true;
   view: {
@@ -4428,6 +4817,7 @@ export type BasesViewsCreateReturn = {
     baseId: string;
     capabilities: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4475,6 +4865,7 @@ export type BasesViewsListReturn = {
     baseId?: string;
     capabilities?: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4504,6 +4895,7 @@ export type BasesViewsListReturn = {
     baseId?: string;
     capabilities?: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4512,9 +4904,17 @@ export type BasesViewsListReturn = {
     };
     columns?: Array<{
       config: {
+        agent?: string | null;
+        approvers?: Array<{
+          kind: string;
+          minRole?: string;
+          userId?: string;
+        }>;
         currency?: string;
         format?: string;
         includeTime?: boolean;
+        inputs?: string[];
+        instructions?: string;
         options?: Array<{
           archived?: boolean;
           color: string;
@@ -4522,7 +4922,9 @@ export type BasesViewsListReturn = {
           id: string;
           name: string;
         }>;
+        output?: string;
         precision?: number;
+        resetOn?: string[];
       };
       key: string;
       name: string;
@@ -4553,6 +4955,7 @@ export type BasesViewsListReturn = {
     baseId?: string;
     capabilities?: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4582,6 +4985,7 @@ export type BasesViewsListReturn = {
     baseId?: string;
     capabilities?: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4590,9 +4994,17 @@ export type BasesViewsListReturn = {
     };
     columns?: Array<{
       config: {
+        agent?: string | null;
+        approvers?: Array<{
+          kind: string;
+          minRole?: string;
+          userId?: string;
+        }>;
         currency?: string;
         format?: string;
         includeTime?: boolean;
+        inputs?: string[];
+        instructions?: string;
         options?: Array<{
           archived?: boolean;
           color: string;
@@ -4600,7 +5012,9 @@ export type BasesViewsListReturn = {
           id: string;
           name: string;
         }>;
+        output?: string;
         precision?: number;
+        resetOn?: string[];
       };
       key: string;
       name: string;
@@ -4663,6 +5077,74 @@ export type BasesViewsQueryReturn = {
   viewId: string | null;
 };
 
+/** Input shape for `bases.views.share`. */
+export type BasesViewsShareInput = {
+  archive?: boolean;
+  base: string;
+  console?: string;
+  create?: boolean;
+  execute?: boolean;
+  project?: string;
+  site?: string;
+  view: string;
+  write?: string;
+  writeOnly?: boolean;
+};
+
+/** Return shape for `bases.views.share`. */
+export type BasesViewsShareReturn = {
+  baseRef: string;
+  changed: boolean;
+  consoleUrl: string;
+  disclosure: string[];
+  grants: {
+    archive: boolean;
+    create: boolean;
+    read: boolean;
+    writeColumns: string[];
+  };
+  projectRef: string;
+  site: {
+    hostname: string | null;
+    id: string;
+    isDefault: boolean;
+    slug: string | null;
+  };
+  success: true;
+  view: {
+    access: Record<string, unknown>;
+    baseId: string;
+    capabilities: {
+      aggregateOnly: boolean;
+      approve?: string[];
+      archive: boolean;
+      create: boolean;
+      manage: boolean;
+      read: boolean;
+      writeColumns: string[];
+    };
+    columns: string[];
+    createdAt: string;
+    description: string | null;
+    id: string;
+    invalidReason: string | null;
+    layout: Record<string, unknown>;
+    name: string;
+    position: number;
+    query: {
+      filter: unknown | null;
+      sort: Array<{
+        dir: string;
+        prop: string;
+      }>;
+    };
+    status: string;
+    updatedAt: string;
+    valid: boolean;
+    version: number;
+  };
+};
+
 /** Input shape for `bases.views.show`. */
 export type BasesViewsShowInput = {
   base: string;
@@ -4681,6 +5163,7 @@ export type BasesViewsShowReturn = {
     baseId: string;
     capabilities: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -4689,9 +5172,17 @@ export type BasesViewsShowReturn = {
     };
     columns: Array<{
       config: {
+        agent?: string | null;
+        approvers?: Array<{
+          kind: string;
+          minRole?: string;
+          userId?: string;
+        }>;
         currency?: string;
         format?: string;
         includeTime?: boolean;
+        inputs?: string[];
+        instructions?: string;
         options?: Array<{
           archived?: boolean;
           color: string;
@@ -4699,7 +5190,9 @@ export type BasesViewsShowReturn = {
           id: string;
           name: string;
         }>;
+        output?: string;
         precision?: number;
+        resetOn?: string[];
       };
       key: string;
       name: string;
@@ -4717,6 +5210,7 @@ export type BasesViewsShowReturn = {
       baseId: string;
       capabilities: {
         aggregateOnly: boolean;
+        approve?: string[];
         archive: boolean;
         create: boolean;
         manage: boolean;
@@ -4768,6 +5262,7 @@ export type BasesViewsUpdateReturn = {
     baseId: string;
     capabilities: {
       aggregateOnly: boolean;
+      approve?: string[];
       archive: boolean;
       create: boolean;
       manage: boolean;
@@ -5847,6 +6342,7 @@ export type ChannelsBackendRuntimeReadbackReturn = {
       causationId?: string;
       correlationId: string;
       ingressRequestId: string;
+      traceTurnId?: string;
     };
     eventId: string;
     kind: "turn.terminal_output";
@@ -5973,15 +6469,27 @@ export type ChannelsRestartReturn = {
   };
   status?: {
     channels: {
+      bundlePath: string | null;
+      codeStale: boolean;
       cpu: number | null;
+      cwd: string | null;
+      diskVersion: string | null;
+      envStale: boolean;
+      identityVerified: boolean;
       managed: boolean;
+      matchesCli: boolean | null;
       memoryBytes: number | null;
       memoryMb: number | null;
       name: string;
+      online: boolean;
       pid: number | null;
       pmId: number | null;
       running: boolean;
+      runningVersion: string | null;
+      stale: boolean;
+      startedAt: number | null;
       status: string;
+      warnings: string[];
     };
     health?: {
       checkedAt: number;
@@ -6006,6 +6514,7 @@ export type ChannelsRestartReturn = {
       adapters: Array<{
         channelId: string;
         connectedAt?: number;
+        detail?: string;
         id: string;
         lastPongAt?: number;
         reason?: string;
@@ -6041,6 +6550,51 @@ export type ChannelsRestartReturn = {
       schemaVersion: 1;
       startedAt: number | null;
     }) | null;
+    runtime: {
+      alignment: "aligned" | "drifted" | "unknown" | "not_running";
+      channels: {
+        bundlePath: string | null;
+        codeStale: boolean;
+        cwd: string | null;
+        diskVersion: string | null;
+        envStale: boolean;
+        identityVerified: boolean;
+        managed: boolean;
+        matchesCli: boolean | null;
+        name: string;
+        online: boolean;
+        pid: number | null;
+        runningVersion: string | null;
+        stale: boolean;
+        startedAt: number | null;
+        status: string;
+        warnings: string[];
+      };
+      cli: {
+        bundlePath: string | null;
+        cwd: string | null;
+        version: string | null;
+      };
+      daemon: {
+        bundlePath: string | null;
+        codeStale: boolean;
+        cwd: string | null;
+        diskVersion: string | null;
+        envStale: boolean;
+        identityVerified: boolean;
+        managed: boolean;
+        matchesCli: boolean | null;
+        name: string;
+        online: boolean;
+        pid: number | null;
+        runningVersion: string | null;
+        stale: boolean;
+        startedAt: number | null;
+        status: string;
+        warnings: string[];
+      };
+    };
+    warnings: string[];
   };
   target?: {
     bundlePath: string;
@@ -6107,15 +6661,27 @@ export type ChannelsStartReturn = {
   };
   status?: {
     channels: {
+      bundlePath: string | null;
+      codeStale: boolean;
       cpu: number | null;
+      cwd: string | null;
+      diskVersion: string | null;
+      envStale: boolean;
+      identityVerified: boolean;
       managed: boolean;
+      matchesCli: boolean | null;
       memoryBytes: number | null;
       memoryMb: number | null;
       name: string;
+      online: boolean;
       pid: number | null;
       pmId: number | null;
       running: boolean;
+      runningVersion: string | null;
+      stale: boolean;
+      startedAt: number | null;
       status: string;
+      warnings: string[];
     };
     health?: {
       checkedAt: number;
@@ -6140,6 +6706,7 @@ export type ChannelsStartReturn = {
       adapters: Array<{
         channelId: string;
         connectedAt?: number;
+        detail?: string;
         id: string;
         lastPongAt?: number;
         reason?: string;
@@ -6175,6 +6742,51 @@ export type ChannelsStartReturn = {
       schemaVersion: 1;
       startedAt: number | null;
     }) | null;
+    runtime: {
+      alignment: "aligned" | "drifted" | "unknown" | "not_running";
+      channels: {
+        bundlePath: string | null;
+        codeStale: boolean;
+        cwd: string | null;
+        diskVersion: string | null;
+        envStale: boolean;
+        identityVerified: boolean;
+        managed: boolean;
+        matchesCli: boolean | null;
+        name: string;
+        online: boolean;
+        pid: number | null;
+        runningVersion: string | null;
+        stale: boolean;
+        startedAt: number | null;
+        status: string;
+        warnings: string[];
+      };
+      cli: {
+        bundlePath: string | null;
+        cwd: string | null;
+        version: string | null;
+      };
+      daemon: {
+        bundlePath: string | null;
+        codeStale: boolean;
+        cwd: string | null;
+        diskVersion: string | null;
+        envStale: boolean;
+        identityVerified: boolean;
+        managed: boolean;
+        matchesCli: boolean | null;
+        name: string;
+        online: boolean;
+        pid: number | null;
+        runningVersion: string | null;
+        stale: boolean;
+        startedAt: number | null;
+        status: string;
+        warnings: string[];
+      };
+    };
+    warnings: string[];
   };
   target?: {
     bundlePath: string;
@@ -6189,15 +6801,27 @@ export type ChannelsStatusInput = Record<string, never>;
 /** Return shape for `channels.status`. */
 export type ChannelsStatusReturn = {
   channels: {
+    bundlePath: string | null;
+    codeStale: boolean;
     cpu: number | null;
+    cwd: string | null;
+    diskVersion: string | null;
+    envStale: boolean;
+    identityVerified: boolean;
     managed: boolean;
+    matchesCli: boolean | null;
     memoryBytes: number | null;
     memoryMb: number | null;
     name: string;
+    online: boolean;
     pid: number | null;
     pmId: number | null;
     running: boolean;
+    runningVersion: string | null;
+    stale: boolean;
+    startedAt: number | null;
     status: string;
+    warnings: string[];
   };
   health?: {
     checkedAt: number;
@@ -6222,6 +6846,7 @@ export type ChannelsStatusReturn = {
     adapters: Array<{
       channelId: string;
       connectedAt?: number;
+      detail?: string;
       id: string;
       lastPongAt?: number;
       reason?: string;
@@ -6257,6 +6882,51 @@ export type ChannelsStatusReturn = {
     schemaVersion: 1;
     startedAt: number | null;
   }) | null;
+  runtime: {
+    alignment: "aligned" | "drifted" | "unknown" | "not_running";
+    channels: {
+      bundlePath: string | null;
+      codeStale: boolean;
+      cwd: string | null;
+      diskVersion: string | null;
+      envStale: boolean;
+      identityVerified: boolean;
+      managed: boolean;
+      matchesCli: boolean | null;
+      name: string;
+      online: boolean;
+      pid: number | null;
+      runningVersion: string | null;
+      stale: boolean;
+      startedAt: number | null;
+      status: string;
+      warnings: string[];
+    };
+    cli: {
+      bundlePath: string | null;
+      cwd: string | null;
+      version: string | null;
+    };
+    daemon: {
+      bundlePath: string | null;
+      codeStale: boolean;
+      cwd: string | null;
+      diskVersion: string | null;
+      envStale: boolean;
+      identityVerified: boolean;
+      managed: boolean;
+      matchesCli: boolean | null;
+      name: string;
+      online: boolean;
+      pid: number | null;
+      runningVersion: string | null;
+      stale: boolean;
+      startedAt: number | null;
+      status: string;
+      warnings: string[];
+    };
+  };
+  warnings: string[];
 };
 
 /** Input shape for `channels.stop`. */
@@ -6275,15 +6945,27 @@ export type ChannelsStopReturn = {
   };
   status?: {
     channels: {
+      bundlePath: string | null;
+      codeStale: boolean;
       cpu: number | null;
+      cwd: string | null;
+      diskVersion: string | null;
+      envStale: boolean;
+      identityVerified: boolean;
       managed: boolean;
+      matchesCli: boolean | null;
       memoryBytes: number | null;
       memoryMb: number | null;
       name: string;
+      online: boolean;
       pid: number | null;
       pmId: number | null;
       running: boolean;
+      runningVersion: string | null;
+      stale: boolean;
+      startedAt: number | null;
       status: string;
+      warnings: string[];
     };
     health?: {
       checkedAt: number;
@@ -6308,6 +6990,7 @@ export type ChannelsStopReturn = {
       adapters: Array<{
         channelId: string;
         connectedAt?: number;
+        detail?: string;
         id: string;
         lastPongAt?: number;
         reason?: string;
@@ -6343,6 +7026,51 @@ export type ChannelsStopReturn = {
       schemaVersion: 1;
       startedAt: number | null;
     }) | null;
+    runtime: {
+      alignment: "aligned" | "drifted" | "unknown" | "not_running";
+      channels: {
+        bundlePath: string | null;
+        codeStale: boolean;
+        cwd: string | null;
+        diskVersion: string | null;
+        envStale: boolean;
+        identityVerified: boolean;
+        managed: boolean;
+        matchesCli: boolean | null;
+        name: string;
+        online: boolean;
+        pid: number | null;
+        runningVersion: string | null;
+        stale: boolean;
+        startedAt: number | null;
+        status: string;
+        warnings: string[];
+      };
+      cli: {
+        bundlePath: string | null;
+        cwd: string | null;
+        version: string | null;
+      };
+      daemon: {
+        bundlePath: string | null;
+        codeStale: boolean;
+        cwd: string | null;
+        diskVersion: string | null;
+        envStale: boolean;
+        identityVerified: boolean;
+        managed: boolean;
+        matchesCli: boolean | null;
+        name: string;
+        online: boolean;
+        pid: number | null;
+        runningVersion: string | null;
+        stale: boolean;
+        startedAt: number | null;
+        status: string;
+        warnings: string[];
+      };
+    };
+    warnings: string[];
   };
   target?: {
     bundlePath: string;
@@ -6879,6 +7607,774 @@ export type ChatsReadReturn = {
   total: number;
 };
 
+/** Input shape for `cloud.agents.approve`. */
+export type CloudAgentsApproveInput = {
+  agent: string;
+  execute?: boolean;
+  project?: string;
+};
+
+/** Return shape for `cloud.agents.approve`. */
+export type CloudAgentsApproveReturn = {
+  agent: {
+    cap?: ({
+      monthSpentUsd: number;
+      monthlyCapUsd: number | null;
+      pausedAt: string | null;
+      pausedReason: string | null;
+    }) | null;
+    catalogEntryId?: string | null;
+    config: {
+      askHuman?: boolean;
+      budgetUsd: number;
+      mcpServers: string[];
+      memory?: ("agent" | "person") | null;
+      networking: string;
+      office?: string[];
+      outcome?: ({
+        maxIterations: number;
+        rubric: string;
+      }) | null;
+      placement?: "cloud" | "installation";
+      provider?: "anthropic" | "ravi";
+      raviMcp: boolean;
+      repositories: string[];
+      schedule: ({
+        cron: string;
+        timezone: string;
+      }) | null;
+      secrets?: string[];
+      webFetch?: boolean;
+      webSearch: boolean;
+      workflows?: boolean;
+      writes: string;
+    };
+    deployedAt: string | null;
+    deployedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    lastError: string | null;
+    library: {
+      itemId: string;
+      scope: string;
+      slug: string;
+      version: number | null;
+    };
+    manifest?: ({
+      approved: boolean;
+      approvedAt: string | null;
+      hash: string | null;
+      value: ({
+        allowedHosts: string[];
+        askHuman: boolean;
+        mcpServers: string[];
+        memory: ("agent" | "person") | null;
+        model: string;
+        networking: "limited" | "unrestricted";
+        office: string[];
+        placement: "cloud" | "installation";
+        provider: "anthropic" | "ravi";
+        raviOps: string[];
+        repositories: string[];
+        secrets: string[];
+        web: {
+          allowedDomains: string[];
+          blockedDomains: string[];
+          fetch: boolean;
+          search: boolean;
+        };
+        workflows: boolean;
+        writes: "ask" | "auto";
+      }) | null;
+    }) | null;
+    model: string | null;
+    name: string;
+    placementInstallationId?: string | null;
+    projectId: string;
+    provider: string;
+    status: string;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.agents.archive`. */
+export type CloudAgentsArchiveInput = {
+  agent: string;
+  project?: string;
+};
+
+/** Return shape for `cloud.agents.archive`. */
+export type CloudAgentsArchiveReturn = {
+  agent: ({
+    config: {
+      budgetUsd: number;
+      mcpServers: string[];
+      networking: string;
+      raviMcp: boolean;
+      repositories: string[];
+      schedule: ({
+        cron: string;
+        timezone: string;
+      }) | null;
+      webSearch: boolean;
+      writes: string;
+    };
+    deployedAt: string | null;
+    deployedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    lastError: string | null;
+    library: {
+      itemId: string;
+      scope: string;
+      slug: string;
+      version: number | null;
+    };
+    model: string | null;
+    name: string;
+    projectId: string;
+    provider: string;
+    status: string;
+  }) | null;
+  archived: true;
+  id: string;
+  success: true;
+};
+
+/** Input shape for `cloud.agents.cap`. */
+export type CloudAgentsCapInput = {
+  agent: string;
+  execute?: boolean;
+  project?: string;
+  usd: string;
+};
+
+/** Return shape for `cloud.agents.cap`. */
+export type CloudAgentsCapReturn = {
+  agent: {
+    cap?: ({
+      monthSpentUsd: number;
+      monthlyCapUsd: number | null;
+      pausedAt: string | null;
+      pausedReason: string | null;
+    }) | null;
+    catalogEntryId?: string | null;
+    config: {
+      askHuman?: boolean;
+      budgetUsd: number;
+      mcpServers: string[];
+      memory?: ("agent" | "person") | null;
+      networking: string;
+      office?: string[];
+      outcome?: ({
+        maxIterations: number;
+        rubric: string;
+      }) | null;
+      placement?: "cloud" | "installation";
+      provider?: "anthropic" | "ravi";
+      raviMcp: boolean;
+      repositories: string[];
+      schedule: ({
+        cron: string;
+        timezone: string;
+      }) | null;
+      secrets?: string[];
+      webFetch?: boolean;
+      webSearch: boolean;
+      workflows?: boolean;
+      writes: string;
+    };
+    deployedAt: string | null;
+    deployedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    lastError: string | null;
+    library: {
+      itemId: string;
+      scope: string;
+      slug: string;
+      version: number | null;
+    };
+    manifest?: ({
+      approved: boolean;
+      approvedAt: string | null;
+      hash: string | null;
+      value: ({
+        allowedHosts: string[];
+        askHuman: boolean;
+        mcpServers: string[];
+        memory: ("agent" | "person") | null;
+        model: string;
+        networking: "limited" | "unrestricted";
+        office: string[];
+        placement: "cloud" | "installation";
+        provider: "anthropic" | "ravi";
+        raviOps: string[];
+        repositories: string[];
+        secrets: string[];
+        web: {
+          allowedDomains: string[];
+          blockedDomains: string[];
+          fetch: boolean;
+          search: boolean;
+        };
+        workflows: boolean;
+        writes: "ask" | "auto";
+      }) | null;
+    }) | null;
+    model: string | null;
+    name: string;
+    placementInstallationId?: string | null;
+    projectId: string;
+    provider: string;
+    status: string;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.agents.deploy`. */
+export type CloudAgentsDeployInput = {
+  agent: string;
+  execute?: boolean;
+  project?: string;
+  version?: string;
+};
+
+/** Return shape for `cloud.agents.deploy`. */
+export type CloudAgentsDeployReturn = {
+  agent: {
+    config: {
+      budgetUsd: number;
+      mcpServers: string[];
+      networking: string;
+      raviMcp: boolean;
+      repositories: string[];
+      schedule: ({
+        cron: string;
+        timezone: string;
+      }) | null;
+      webSearch: boolean;
+      writes: string;
+    };
+    deployedAt: string | null;
+    deployedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    lastError: string | null;
+    library: {
+      itemId: string;
+      scope: string;
+      slug: string;
+      version: number | null;
+    };
+    model: string | null;
+    name: string;
+    projectId: string;
+    provider: string;
+    status: string;
+  };
+  changed: boolean;
+  success: true;
+  warnings: string[];
+};
+
+/** Input shape for `cloud.agents.list`. */
+export type CloudAgentsListInput = {
+  limit?: string;
+  offset?: string;
+  project?: string;
+};
+
+/** Return shape for `cloud.agents.list`. */
+export type CloudAgentsListReturn = {
+  agents: Array<{
+    config: {
+      budgetUsd: number;
+      mcpServers: string[];
+      networking: string;
+      raviMcp: boolean;
+      repositories: string[];
+      schedule: ({
+        cron: string;
+        timezone: string;
+      }) | null;
+      webSearch: boolean;
+      writes: string;
+    };
+    deployedAt: string | null;
+    deployedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    lastError: string | null;
+    library: {
+      itemId: string;
+      scope: string;
+      slug: string;
+      version: number | null;
+    };
+    model: string | null;
+    name: string;
+    projectId: string;
+    provider: string;
+    status: string;
+  }>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  project: string;
+  success: true;
+};
+
+/** Input shape for `cloud.agents.memory-reset`. */
+export type CloudAgentsMemoryResetInput = {
+  agent: string;
+  execute?: boolean;
+  project?: string;
+};
+
+/** Return shape for `cloud.agents.memory-reset`. */
+export type CloudAgentsMemoryResetReturn = {
+  agentId: string;
+  archivedStores: number;
+  name: string;
+  success: true;
+};
+
+/** Input shape for `cloud.agents.show`. */
+export type CloudAgentsShowInput = {
+  agent: string;
+  project?: string;
+};
+
+/** Return shape for `cloud.agents.show`. */
+export type CloudAgentsShowReturn = {
+  agent: {
+    config: {
+      budgetUsd: number;
+      mcpServers: string[];
+      networking: string;
+      raviMcp: boolean;
+      repositories: string[];
+      schedule: ({
+        cron: string;
+        timezone: string;
+      }) | null;
+      webSearch: boolean;
+      writes: string;
+    };
+    deployedAt: string | null;
+    deployedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    lastError: string | null;
+    library: {
+      itemId: string;
+      scope: string;
+      slug: string;
+      version: number | null;
+    };
+    model: string | null;
+    name: string;
+    projectId: string;
+    provider: string;
+    status: string;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.catalog.install`. */
+export type CloudCatalogInstallInput = {
+  entry: string;
+  execute?: boolean;
+  project?: string;
+};
+
+/** Return shape for `cloud.catalog.install`. */
+export type CloudCatalogInstallReturn = {
+  agents: Array<{
+    cap?: ({
+      monthSpentUsd: number;
+      monthlyCapUsd: number | null;
+      pausedAt: string | null;
+      pausedReason: string | null;
+    }) | null;
+    catalogEntryId?: string | null;
+    config: {
+      askHuman?: boolean;
+      budgetUsd: number;
+      mcpServers: string[];
+      memory?: ("agent" | "person") | null;
+      networking: string;
+      office?: string[];
+      outcome?: ({
+        maxIterations: number;
+        rubric: string;
+      }) | null;
+      placement?: "cloud" | "installation";
+      provider?: "anthropic" | "ravi";
+      raviMcp: boolean;
+      repositories: string[];
+      schedule: ({
+        cron: string;
+        timezone: string;
+      }) | null;
+      secrets?: string[];
+      webFetch?: boolean;
+      webSearch: boolean;
+      workflows?: boolean;
+      writes: string;
+    };
+    deployedAt: string | null;
+    deployedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    lastError: string | null;
+    library: {
+      itemId: string;
+      scope: string;
+      slug: string;
+      version: number | null;
+    };
+    manifest?: ({
+      approved: boolean;
+      approvedAt: string | null;
+      hash: string | null;
+      value: ({
+        allowedHosts: string[];
+        askHuman: boolean;
+        mcpServers: string[];
+        memory: ("agent" | "person") | null;
+        model: string;
+        networking: "limited" | "unrestricted";
+        office: string[];
+        placement: "cloud" | "installation";
+        provider: "anthropic" | "ravi";
+        raviOps: string[];
+        repositories: string[];
+        secrets: string[];
+        web: {
+          allowedDomains: string[];
+          blockedDomains: string[];
+          fetch: boolean;
+          search: boolean;
+        };
+        workflows: boolean;
+        writes: "ask" | "auto";
+      }) | null;
+    }) | null;
+    model: string | null;
+    name: string;
+    placementInstallationId?: string | null;
+    projectId: string;
+    provider: string;
+    status: string;
+  }>;
+  installed: {
+    id: string;
+    kind: "entry" | "pack";
+    name: string;
+  };
+  project: string;
+  success: true;
+};
+
+/** Input shape for `cloud.catalog.list`. */
+export type CloudCatalogListInput = {
+  limit?: string;
+  offset?: string;
+  sector?: string;
+};
+
+/** Return shape for `cloud.catalog.list`. */
+export type CloudCatalogListReturn = {
+  entries: Array<{
+    id: string;
+    installed: boolean;
+    manifest: ({
+      allowedHosts: string[];
+      askHuman: boolean;
+      mcpServers: string[];
+      memory: ("agent" | "person") | null;
+      model: string;
+      networking: "limited" | "unrestricted";
+      office: string[];
+      placement: "cloud" | "installation";
+      provider: "anthropic" | "ravi";
+      raviOps: string[];
+      repositories: string[];
+      secrets: string[];
+      web: {
+        allowedDomains: string[];
+        blockedDomains: string[];
+        fetch: boolean;
+        search: boolean;
+      };
+      workflows: boolean;
+      writes: "ask" | "auto";
+    }) | null;
+    manifestHash: string | null;
+    name: string;
+    publisher: {
+      id: string;
+      name: string | null;
+    };
+    sector: string | null;
+    slug: string;
+    status: "listed" | "unlisted";
+    summary: string;
+  }>;
+  packs: Array<{
+    entries: Array<{
+      id: string;
+      name: string;
+      slug: string;
+    }>;
+    id: string;
+    name: string;
+    publisher: {
+      id: string;
+      name: string | null;
+    };
+    revenueShareBps: number;
+    sector: string | null;
+    slug: string;
+    status: "listed" | "unlisted";
+    summary: string;
+  }>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.catalog.packs.install`. */
+export type CloudCatalogPacksInstallInput = {
+  execute?: boolean;
+  pack: string;
+  project?: string;
+};
+
+/** Return shape for `cloud.catalog.packs.install`. */
+export type CloudCatalogPacksInstallReturn = {
+  agents: Array<{
+    cap?: ({
+      monthSpentUsd: number;
+      monthlyCapUsd: number | null;
+      pausedAt: string | null;
+      pausedReason: string | null;
+    }) | null;
+    catalogEntryId?: string | null;
+    config: {
+      askHuman?: boolean;
+      budgetUsd: number;
+      mcpServers: string[];
+      memory?: ("agent" | "person") | null;
+      networking: string;
+      office?: string[];
+      outcome?: ({
+        maxIterations: number;
+        rubric: string;
+      }) | null;
+      placement?: "cloud" | "installation";
+      provider?: "anthropic" | "ravi";
+      raviMcp: boolean;
+      repositories: string[];
+      schedule: ({
+        cron: string;
+        timezone: string;
+      }) | null;
+      secrets?: string[];
+      webFetch?: boolean;
+      webSearch: boolean;
+      workflows?: boolean;
+      writes: string;
+    };
+    deployedAt: string | null;
+    deployedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    lastError: string | null;
+    library: {
+      itemId: string;
+      scope: string;
+      slug: string;
+      version: number | null;
+    };
+    manifest?: ({
+      approved: boolean;
+      approvedAt: string | null;
+      hash: string | null;
+      value: ({
+        allowedHosts: string[];
+        askHuman: boolean;
+        mcpServers: string[];
+        memory: ("agent" | "person") | null;
+        model: string;
+        networking: "limited" | "unrestricted";
+        office: string[];
+        placement: "cloud" | "installation";
+        provider: "anthropic" | "ravi";
+        raviOps: string[];
+        repositories: string[];
+        secrets: string[];
+        web: {
+          allowedDomains: string[];
+          blockedDomains: string[];
+          fetch: boolean;
+          search: boolean;
+        };
+        workflows: boolean;
+        writes: "ask" | "auto";
+      }) | null;
+    }) | null;
+    model: string | null;
+    name: string;
+    placementInstallationId?: string | null;
+    projectId: string;
+    provider: string;
+    status: string;
+  }>;
+  installed: {
+    id: string;
+    kind: "entry" | "pack";
+    name: string;
+  };
+  project: string;
+  success: true;
+};
+
+/** Input shape for `cloud.credits.show`. */
+export type CloudCreditsShowInput = Record<string, never>;
+
+/** Return shape for `cloud.credits.show`. */
+export type CloudCreditsShowReturn = {
+  credits: {
+    balanceBrl: number;
+    entries: Array<{
+      amountBrl: number;
+      createdAt: string | null;
+      fxRate: string | null;
+      id: string;
+      kind: "topup" | "run" | "adjustment" | "refund";
+      paymentUrl: string | null;
+      pixCopyPaste: string | null;
+      postedAt: string | null;
+      runId: string | null;
+      status: "pending" | "posted" | "void";
+      usd: number | null;
+    }>;
+    fxRate: string | null;
+    mode: "byok" | "credits";
+    monthSpentBrl: number;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.credits.topup`. */
+export type CloudCreditsTopupInput = {
+  amount: string;
+  execute?: boolean;
+};
+
+/** Return shape for `cloud.credits.topup`. */
+export type CloudCreditsTopupReturn = {
+  credits: ({
+    balanceBrl: number;
+    entries: Array<{
+      amountBrl: number;
+      createdAt: string | null;
+      fxRate: string | null;
+      id: string;
+      kind: "topup" | "run" | "adjustment" | "refund";
+      paymentUrl: string | null;
+      pixCopyPaste: string | null;
+      postedAt: string | null;
+      runId: string | null;
+      status: "pending" | "posted" | "void";
+      usd: number | null;
+    }>;
+    fxRate: string | null;
+    mode: "byok" | "credits";
+    monthSpentBrl: number;
+  }) | null;
+  entry: {
+    amountBrl: number;
+    createdAt: string | null;
+    fxRate: string | null;
+    id: string;
+    kind: "topup" | "run" | "adjustment" | "refund";
+    paymentUrl: string | null;
+    pixCopyPaste: string | null;
+    postedAt: string | null;
+    runId: string | null;
+    status: "pending" | "posted" | "void";
+    usd: number | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.key.remove`. */
+export type CloudKeyRemoveInput = Record<string, never>;
+
+/** Return shape for `cloud.key.remove`. */
+export type CloudKeyRemoveReturn = {
+  credential: {
+    configured: boolean;
+    keyHint: string | null;
+    monthCostUsd: number;
+    monthlyAlertUsd: number | null;
+    provider: string;
+    status: string;
+    verifiedAt: string | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.key.status`. */
+export type CloudKeyStatusInput = Record<string, never>;
+
+/** Return shape for `cloud.key.status`. */
+export type CloudKeyStatusReturn = {
+  credential: {
+    configured: boolean;
+    keyHint: string | null;
+    monthCostUsd: number;
+    monthlyAlertUsd: number | null;
+    provider: string;
+    status: string;
+    verifiedAt: string | null;
+  };
+  success: true;
+};
+
 /** Input shape for `cloud.projects.create`. */
 export type CloudProjectsCreateInput = {
   console?: string;
@@ -6922,6 +8418,1144 @@ export type CloudProjectsListReturn = {
   projects: Array<Record<string, unknown>>;
   success: true;
   total: number;
+};
+
+/** Input shape for `cloud.runs.answer`. */
+export type CloudRunsAnswerInput = {
+  execute?: boolean;
+  question: string;
+  run: string;
+  text: string;
+};
+
+/** Return shape for `cloud.runs.answer`. */
+export type CloudRunsAnswerReturn = {
+  question: {
+    answer: string | null;
+    answeredAt: string | null;
+    answeredBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    askedAt: string | null;
+    id: string;
+    options: string[];
+    question: string;
+    status: "pending" | "answered" | "expired";
+  };
+  run: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    billingMode?: "byok" | "credits";
+    budgetUsd: number | null;
+    chargedBrl?: number | null;
+    costBrl?: number | null;
+    costUsd: number;
+    deliveredAt?: string | null;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    files?: Array<{
+      fileId: string;
+      name: string;
+      size: number;
+    }>;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      delivery: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outcome?: ({
+      feedback: string | null;
+      iterations: number;
+      lastResult: string | null;
+      maxIterations: number;
+      rubric: string;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    questions?: Array<{
+      answer: string | null;
+      answeredAt: string | null;
+      answeredBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      askedAt: string | null;
+      id: string;
+      options: string[];
+      question: string;
+      status: "pending" | "answered" | "expired";
+    }>;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    threadKey?: string | null;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    triggerId?: string | null;
+    url: string | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.runs.approve`. */
+export type CloudRunsApproveInput = {
+  approval: string;
+  execute?: boolean;
+  run: string;
+};
+
+/** Return shape for `cloud.runs.approve`. */
+export type CloudRunsApproveReturn = {
+  approval: {
+    decidedAt: string | null;
+    decidedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    inputPreview: string | null;
+    requestedAt: string | null;
+    server: string | null;
+    status: string;
+    tool: string;
+  };
+  run: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    billingMode?: "byok" | "credits";
+    budgetUsd: number | null;
+    chargedBrl?: number | null;
+    costBrl?: number | null;
+    costUsd: number;
+    deliveredAt?: string | null;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    files?: Array<{
+      fileId: string;
+      name: string;
+      size: number;
+    }>;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      delivery: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outcome?: ({
+      feedback: string | null;
+      iterations: number;
+      lastResult: string | null;
+      maxIterations: number;
+      rubric: string;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    questions?: Array<{
+      answer: string | null;
+      answeredAt: string | null;
+      answeredBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      askedAt: string | null;
+      id: string;
+      options: string[];
+      question: string;
+      status: "pending" | "answered" | "expired";
+    }>;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    threadKey?: string | null;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    triggerId?: string | null;
+    url: string | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.runs.deny`. */
+export type CloudRunsDenyInput = {
+  approval: string;
+  reason?: string;
+  run: string;
+};
+
+/** Return shape for `cloud.runs.deny`. */
+export type CloudRunsDenyReturn = {
+  approval: {
+    decidedAt: string | null;
+    decidedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    id: string;
+    inputPreview: string | null;
+    requestedAt: string | null;
+    server: string | null;
+    status: string;
+    tool: string;
+  };
+  run: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    billingMode?: "byok" | "credits";
+    budgetUsd: number | null;
+    chargedBrl?: number | null;
+    costBrl?: number | null;
+    costUsd: number;
+    deliveredAt?: string | null;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    files?: Array<{
+      fileId: string;
+      name: string;
+      size: number;
+    }>;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      delivery: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outcome?: ({
+      feedback: string | null;
+      iterations: number;
+      lastResult: string | null;
+      maxIterations: number;
+      rubric: string;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    questions?: Array<{
+      answer: string | null;
+      answeredAt: string | null;
+      answeredBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      askedAt: string | null;
+      id: string;
+      options: string[];
+      question: string;
+      status: "pending" | "answered" | "expired";
+    }>;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    threadKey?: string | null;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    triggerId?: string | null;
+    url: string | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.runs.list`. */
+export type CloudRunsListInput = {
+  agent?: string;
+  cursor?: string;
+  limit?: string;
+  project?: string;
+  status?: string;
+};
+
+/** Return shape for `cloud.runs.list`. */
+export type CloudRunsListReturn = {
+  cursor: string | null;
+  project: string;
+  runs: Array<{
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    billingMode?: "byok" | "credits";
+    budgetUsd: number | null;
+    chargedBrl?: number | null;
+    costBrl?: number | null;
+    costUsd: number;
+    deliveredAt?: string | null;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    files?: Array<{
+      fileId: string;
+      name: string;
+      size: number;
+    }>;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      delivery: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outcome?: ({
+      feedback: string | null;
+      iterations: number;
+      lastResult: string | null;
+      maxIterations: number;
+      rubric: string;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    questions?: Array<{
+      answer: string | null;
+      answeredAt: string | null;
+      answeredBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      askedAt: string | null;
+      id: string;
+      options: string[];
+      question: string;
+      status: "pending" | "answered" | "expired";
+    }>;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    threadKey?: string | null;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    triggerId?: string | null;
+    url: string | null;
+  }>;
+  success: true;
+};
+
+/** Input shape for `cloud.runs.outputs`. */
+export type CloudRunsOutputsInput = {
+  download?: string;
+  run: string;
+};
+
+/** Return shape for `cloud.runs.outputs`. */
+export type CloudRunsOutputsReturn = {
+  directory: string | null;
+  downloaded: Array<{
+    bytes: number;
+    id: string;
+    name: string;
+    path: string;
+  }>;
+  outputs: Array<{
+    id: string;
+    name: string;
+    size: number;
+  }>;
+  runId: string;
+  success: true;
+};
+
+/** Input shape for `cloud.runs.reply`. */
+export type CloudRunsReplyInput = {
+  execute?: boolean;
+  run: string;
+  text: string;
+};
+
+/** Return shape for `cloud.runs.reply`. */
+export type CloudRunsReplyReturn = {
+  run: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    billingMode?: "byok" | "credits";
+    budgetUsd: number | null;
+    chargedBrl?: number | null;
+    costBrl?: number | null;
+    costUsd: number;
+    deliveredAt?: string | null;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    files?: Array<{
+      fileId: string;
+      name: string;
+      size: number;
+    }>;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      delivery: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outcome?: ({
+      feedback: string | null;
+      iterations: number;
+      lastResult: string | null;
+      maxIterations: number;
+      rubric: string;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    questions?: Array<{
+      answer: string | null;
+      answeredAt: string | null;
+      answeredBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      askedAt: string | null;
+      id: string;
+      options: string[];
+      question: string;
+      status: "pending" | "answered" | "expired";
+    }>;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    threadKey?: string | null;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    triggerId?: string | null;
+    url: string | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.runs.show`. */
+export type CloudRunsShowInput = {
+  run: string;
+};
+
+/** Return shape for `cloud.runs.show`. */
+export type CloudRunsShowReturn = {
+  run: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    billingMode?: "byok" | "credits";
+    budgetUsd: number | null;
+    chargedBrl?: number | null;
+    costBrl?: number | null;
+    costUsd: number;
+    deliveredAt?: string | null;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    files?: Array<{
+      fileId: string;
+      name: string;
+      size: number;
+    }>;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      delivery: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outcome?: ({
+      feedback: string | null;
+      iterations: number;
+      lastResult: string | null;
+      maxIterations: number;
+      rubric: string;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    questions?: Array<{
+      answer: string | null;
+      answeredAt: string | null;
+      answeredBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      askedAt: string | null;
+      id: string;
+      options: string[];
+      question: string;
+      status: "pending" | "answered" | "expired";
+    }>;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    threadKey?: string | null;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    triggerId?: string | null;
+    url: string | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.runs.start`. */
+export type CloudRunsStartInput = {
+  agent: string;
+  bindThread?: boolean;
+  budget?: string;
+  execute?: boolean;
+  file?: string[];
+  idempotencyKey?: string;
+  maxIterations?: string;
+  noDeliver?: boolean;
+  outcome?: string;
+  project?: string;
+  prompt: string;
+  repo?: string[];
+  rowsLimit?: string;
+  rowsView?: string;
+};
+
+/** Return shape for `cloud.runs.start`. */
+export type CloudRunsStartReturn = {
+  run: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    billingMode?: "byok" | "credits";
+    budgetUsd: number | null;
+    chargedBrl?: number | null;
+    costBrl?: number | null;
+    costUsd: number;
+    deliveredAt?: string | null;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    files?: Array<{
+      fileId: string;
+      name: string;
+      size: number;
+    }>;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      delivery: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outcome?: ({
+      feedback: string | null;
+      iterations: number;
+      lastResult: string | null;
+      maxIterations: number;
+      rubric: string;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    questions?: Array<{
+      answer: string | null;
+      answeredAt: string | null;
+      answeredBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      askedAt: string | null;
+      id: string;
+      options: string[];
+      question: string;
+      status: "pending" | "answered" | "expired";
+    }>;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    threadKey?: string | null;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    triggerId?: string | null;
+    url: string | null;
+  };
+  success: true;
+  thread?: {
+    cardMessageId: string | null;
+    channel: "slack" | "whatsapp";
+    threadKey: string;
+  };
+};
+
+/** Input shape for `cloud.runs.stop`. */
+export type CloudRunsStopInput = {
+  run: string;
+};
+
+/** Return shape for `cloud.runs.stop`. */
+export type CloudRunsStopReturn = {
+  run: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    approvals: Array<{
+      decidedAt: string | null;
+      decidedBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      id: string;
+      inputPreview: string | null;
+      requestedAt: string | null;
+      server: string | null;
+      status: string;
+      tool: string;
+    }>;
+    billingMode?: "byok" | "credits";
+    budgetUsd: number | null;
+    chargedBrl?: number | null;
+    costBrl?: number | null;
+    costUsd: number;
+    deliveredAt?: string | null;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
+    endedAt: string | null;
+    error: ({
+      code: string;
+      message: string;
+    }) | null;
+    files?: Array<{
+      fileId: string;
+      name: string;
+      size: number;
+    }>;
+    id: string;
+    origin: ({
+      deliveredAt: string | null;
+      delivery: string | null;
+      installationId: string | null;
+      kind: string;
+      sessionName: string | null;
+      taskId: string | null;
+    }) | null;
+    outcome?: ({
+      feedback: string | null;
+      iterations: number;
+      lastResult: string | null;
+      maxIterations: number;
+      rubric: string;
+    }) | null;
+    outputs: Array<{
+      id: string;
+      name: string;
+      size: number;
+    }>;
+    projectId: string;
+    prompt: string;
+    questions?: Array<{
+      answer: string | null;
+      answeredAt: string | null;
+      answeredBy: ({
+        id: string;
+        name: string | null;
+      }) | null;
+      askedAt: string | null;
+      id: string;
+      options: string[];
+      question: string;
+      status: "pending" | "answered" | "expired";
+    }>;
+    result: string | null;
+    runningSeconds: number;
+    startedAt: string | null;
+    status: string;
+    threadKey?: string | null;
+    tokens: {
+      cacheRead: number;
+      cacheWrite: number;
+      input: number;
+      output: number;
+    };
+    trigger: string;
+    triggerId?: string | null;
+    url: string | null;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.schedules.add`. */
+export type CloudSchedulesAddInput = {
+  agent: string;
+  budget?: string;
+  cron?: string;
+  disabled?: boolean;
+  execute?: boolean;
+  noDeliver?: boolean;
+  project?: string;
+  prompt?: string;
+  timezone?: string;
+};
+
+/** Return shape for `cloud.schedules.add`. */
+export type CloudSchedulesAddReturn = {
+  schedule: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    budgetUsd: number | null;
+    cron: string;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
+    enabled: boolean;
+    id: string;
+    lastRunAt: string | null;
+    lastRunId: string | null;
+    nextRunAt: string | null;
+    prompt: string | null;
+    timezone: string;
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.schedules.list`. */
+export type CloudSchedulesListInput = {
+  limit?: string;
+  offset?: string;
+  project?: string;
+};
+
+/** Return shape for `cloud.schedules.list`. */
+export type CloudSchedulesListReturn = {
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  project: string;
+  schedules: Array<{
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    budgetUsd: number | null;
+    cron: string;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
+    enabled: boolean;
+    id: string;
+    lastRunAt: string | null;
+    lastRunId: string | null;
+    nextRunAt: string | null;
+    prompt: string | null;
+    timezone: string;
+  }>;
+  success: true;
+};
+
+/** Input shape for `cloud.schedules.remove`. */
+export type CloudSchedulesRemoveInput = {
+  id: string;
+};
+
+/** Return shape for `cloud.schedules.remove`. */
+export type CloudSchedulesRemoveReturn = {
+  id: string;
+  removed: true;
+  success: true;
+};
+
+/** Input shape for `cloud.schedules.update`. */
+export type CloudSchedulesUpdateInput = {
+  budget?: string;
+  cron?: string;
+  disable?: boolean;
+  enable?: boolean;
+  execute?: boolean;
+  heartbeat?: boolean;
+  id: string;
+  noDeliver?: boolean;
+  project?: string;
+  prompt?: string;
+  timezone?: string;
+};
+
+/** Return shape for `cloud.schedules.update`. */
+export type CloudSchedulesUpdateReturn = {
+  schedule: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    budgetUsd: number | null;
+    cron: string;
+    delivery?: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
+    enabled: boolean;
+    id: string;
+    lastRunAt: string | null;
+    lastRunId: string | null;
+    nextRunAt: string | null;
+    prompt: string | null;
+    timezone: string;
+  };
+  success: true;
 };
 
 /** Input shape for `cloud.scope.clear`. */
@@ -7061,6 +9695,419 @@ export type CloudScopeShowReturn = {
     source: "explicit" | "runtime_context" | "local_project_mapping" | "session_default" | "agent_default" | "workspace_default" | "global_default" | "cloud_credentials" | "env_compat" | "single_remote_project";
   };
   success: true;
+};
+
+/** Input shape for `cloud.secrets.list`. */
+export type CloudSecretsListInput = {
+  limit?: string;
+  offset?: string;
+  project?: string;
+};
+
+/** Return shape for `cloud.secrets.list`. */
+export type CloudSecretsListReturn = {
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  project: string | null;
+  secrets: Array<{
+    allowedHosts: string[];
+    id: string;
+    lastUsedAt: string | null;
+    name: string;
+    projectId: string | null;
+    updatedAt: string | null;
+    updatedBy: ({
+      id: string;
+      name: string | null;
+    }) | null;
+    valueHint: string | null;
+  }>;
+  success: true;
+};
+
+/** Input shape for `cloud.secrets.remove`. */
+export type CloudSecretsRemoveInput = {
+  project?: string;
+  secret: string;
+};
+
+/** Return shape for `cloud.secrets.remove`. */
+export type CloudSecretsRemoveReturn = {
+  id: string;
+  name: string;
+  removed: true;
+  success: true;
+};
+
+/** Input shape for `cloud.settings.set`. */
+export type CloudSettingsSetInput = {
+  billingMode?: string;
+  dailyEventRuns?: string;
+  execute?: boolean;
+  monthlyCap?: string;
+};
+
+/** Return shape for `cloud.settings.set`. */
+export type CloudSettingsSetReturn = {
+  changes: string[];
+  settings: {
+    billingMode: "byok" | "credits";
+    dailyEventRunsCap: number;
+    gatewayAvailable: boolean;
+    monthSpentUsd: number;
+    monthlyCapUsd: number | null;
+    pausedAt: string | null;
+    pausedReason: string | null;
+    webhook: {
+      configured: boolean;
+      lastEventAt: string | null;
+      url: string | null;
+    };
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.settings.show`. */
+export type CloudSettingsShowInput = Record<string, never>;
+
+/** Return shape for `cloud.settings.show`. */
+export type CloudSettingsShowReturn = {
+  settings: {
+    billingMode: "byok" | "credits";
+    dailyEventRunsCap: number;
+    gatewayAvailable: boolean;
+    monthSpentUsd: number;
+    monthlyCapUsd: number | null;
+    pausedAt: string | null;
+    pausedReason: string | null;
+    webhook: {
+      configured: boolean;
+      lastEventAt: string | null;
+      url: string | null;
+    };
+  };
+  success: true;
+};
+
+/** Input shape for `cloud.triggers.create`. */
+export type CloudTriggersCreateInput = {
+  agent: string;
+  base?: string;
+  batchWindow?: string;
+  budget?: string;
+  dailyCap?: string;
+  dedupeWindow?: string;
+  deliverTo?: string;
+  disabled?: boolean;
+  events?: string[];
+  execute?: boolean;
+  mailbox?: string;
+  project?: string;
+  prompt?: string;
+  site?: string;
+  source?: string;
+  view?: string;
+};
+
+/** Return shape for `cloud.triggers.create`. */
+export type CloudTriggersCreateReturn = {
+  success: true;
+  trigger: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    batchWindowSeconds: number;
+    budgetUsd: number | null;
+    dailyCap: number;
+    dedupeWindowSeconds: number;
+    delivery: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
+    enabled: boolean;
+    filter: {
+      baseId?: string;
+      events?: string[];
+      mailboxId?: string;
+      siteId?: string;
+      viewId?: string;
+    };
+    firedToday: number;
+    id: string;
+    lastFiredAt: string | null;
+    lastRunId: string | null;
+    pausedReason: string | null;
+    pendingEvents: number;
+    projectId: string;
+    prompt: string;
+    source: "bases" | "mail" | "meetings" | "pages_comments";
+  };
+};
+
+/** Input shape for `cloud.triggers.list`. */
+export type CloudTriggersListInput = {
+  limit?: string;
+  offset?: string;
+  project?: string;
+};
+
+/** Return shape for `cloud.triggers.list`. */
+export type CloudTriggersListReturn = {
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  project: string;
+  success: true;
+  triggers: Array<{
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    batchWindowSeconds: number;
+    budgetUsd: number | null;
+    dailyCap: number;
+    dedupeWindowSeconds: number;
+    delivery: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
+    enabled: boolean;
+    filter: {
+      baseId?: string;
+      events?: string[];
+      mailboxId?: string;
+      siteId?: string;
+      viewId?: string;
+    };
+    firedToday: number;
+    id: string;
+    lastFiredAt: string | null;
+    lastRunId: string | null;
+    pausedReason: string | null;
+    pendingEvents: number;
+    projectId: string;
+    prompt: string;
+    source: "bases" | "mail" | "meetings" | "pages_comments";
+  }>;
+};
+
+/** Input shape for `cloud.triggers.remove`. */
+export type CloudTriggersRemoveInput = {
+  id: string;
+};
+
+/** Return shape for `cloud.triggers.remove`. */
+export type CloudTriggersRemoveReturn = {
+  id: string;
+  removed: true;
+  success: true;
+};
+
+/** Input shape for `cloud.triggers.test`. */
+export type CloudTriggersTestInput = {
+  id: string;
+};
+
+/** Return shape for `cloud.triggers.test`. */
+export type CloudTriggersTestReturn = {
+  id: string;
+  success: true;
+  test: {
+    blockedBy: string | null;
+    eventCount: number;
+    prompt: string | null;
+    sample: boolean;
+  };
+};
+
+/** Input shape for `cloud.triggers.update`. */
+export type CloudTriggersUpdateInput = {
+  batchWindow?: string;
+  budget?: string;
+  dailyCap?: string;
+  dedupeWindow?: string;
+  deliverTo?: string;
+  disable?: boolean;
+  enable?: boolean;
+  events?: string[];
+  execute?: boolean;
+  id: string;
+  project?: string;
+  prompt?: string;
+};
+
+/** Return shape for `cloud.triggers.update`. */
+export type CloudTriggersUpdateReturn = {
+  success: true;
+  trigger: {
+    actor: {
+      id: string;
+      name: string | null;
+    };
+    agentId: string;
+    agentName: string;
+    batchWindowSeconds: number;
+    budgetUsd: number | null;
+    dailyCap: number;
+    dedupeWindowSeconds: number;
+    delivery: ({
+      chat?: ({
+        channel: string;
+        chatId: string;
+        instanceId?: string | null;
+        threadId?: string | null;
+      }) | null;
+      installationId?: string;
+      kind: "session" | "page_room" | "none";
+      roomId?: string;
+      sessionName?: string;
+      siteId?: string;
+    }) | null;
+    enabled: boolean;
+    filter: {
+      baseId?: string;
+      events?: string[];
+      mailboxId?: string;
+      siteId?: string;
+      viewId?: string;
+    };
+    firedToday: number;
+    id: string;
+    lastFiredAt: string | null;
+    lastRunId: string | null;
+    pausedReason: string | null;
+    pendingEvents: number;
+    projectId: string;
+    prompt: string;
+    source: "bases" | "mail" | "meetings" | "pages_comments";
+  };
+};
+
+/** Input shape for `cloud.webhook.remove`. */
+export type CloudWebhookRemoveInput = Record<string, never>;
+
+/** Return shape for `cloud.webhook.remove`. */
+export type CloudWebhookRemoveReturn = {
+  success: true;
+  webhook: {
+    configured: boolean;
+    lastEventAt: string | null;
+    url: string | null;
+  };
+};
+
+/** Input shape for `cloud.webhook.show`. */
+export type CloudWebhookShowInput = Record<string, never>;
+
+/** Return shape for `cloud.webhook.show`. */
+export type CloudWebhookShowReturn = {
+  success: true;
+  webhook: {
+    configured: boolean;
+    lastEventAt: string | null;
+    url: string | null;
+  };
+};
+
+/** Input shape for `cloud.worker.disable`. */
+export type CloudWorkerDisableInput = Record<string, never>;
+
+/** Return shape for `cloud.worker.disable`. */
+export type CloudWorkerDisableReturn = {
+  changed: boolean;
+  enabled: boolean;
+  enabledAt: string | null;
+  success: true;
+};
+
+/** Input shape for `cloud.worker.key.remove`. */
+export type CloudWorkerKeyRemoveInput = {
+  workerId: string;
+};
+
+/** Return shape for `cloud.worker.key.remove`. */
+export type CloudWorkerKeyRemoveReturn = {
+  removed: boolean;
+  success: true;
+  workerId: string;
+};
+
+/** Input shape for `cloud.worker.list`. */
+export type CloudWorkerListInput = {
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `cloud.worker.list`. */
+export type CloudWorkerListReturn = {
+  enabled: boolean;
+  enabledAt: string | null;
+  orphanKeys: string[];
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  success: true;
+  workers: Array<{
+    agentId: string;
+    agentName: string;
+    id: string;
+    installationId: string;
+    lastError: string | null;
+    lastSeenAt: string | null;
+    local: ({
+      error: string | null;
+      restartAt: string | null;
+      state: "running" | "waiting_key" | "backoff";
+    }) | null;
+    localKey: boolean;
+    projectId: string;
+    providerEnvironmentId: string;
+    status: "waiting_key" | "online" | "offline" | "disabled";
+    thisMachine: boolean;
+    workdir: string;
+  }>;
 };
 
 /** Input shape for `commands.list`. */
@@ -7441,6 +10488,30 @@ export type ContactsLinkInput = {
 /** Return shape for `contacts.link`. */
 export type ContactsLinkReturn = Record<string, unknown>;
 
+/** Input shape for `contacts.link-agent`. */
+export type ContactsLinkAgentInput = {
+  agent: string;
+  channel?: string;
+  id?: string;
+  instance?: string;
+  name?: string;
+  reason?: string;
+};
+
+/** Return shape for `contacts.link-agent`. */
+export type ContactsLinkAgentReturn = {
+  agent: string;
+  identity: {
+    channel: string;
+    id: string;
+    instanceId: string;
+    ownerId: string | null;
+    ownerType: string | null;
+    platformUserId: string;
+  };
+  status: "linked";
+};
+
 /** Input shape for `contacts.list`. */
 export type ContactsListInput = {
   fields?: string;
@@ -7624,6 +10695,20 @@ export type ContextAuthorizeReturn = {
   objectType: string;
   permission: string;
   reason: string | null;
+};
+
+/** Input shape for `context.bridge-tool-hook`. */
+export type ContextBridgeToolHookInput = {
+  payload?: string;
+};
+
+/** Return shape for `context.bridge-tool-hook`. */
+export type ContextBridgeToolHookReturn = {
+  hookSpecificOutput?: {
+    hookEventName: "PreToolUse";
+    permissionDecision: "deny";
+    permissionDecisionReason: string;
+  };
 };
 
 /** Input shape for `context.capabilities`. */
@@ -8450,7 +11535,7 @@ export type CredentialsConnectionsDisableInput = {
 /** Return shape for `credentials.connections.disable`. */
 export type CredentialsConnectionsDisableReturn = {
   connection: ({
-    backend: "keychain" | "vault";
+    backend: "file" | "keychain" | "vault";
     connection: string;
     createdAt: number;
     id: string;
@@ -8472,7 +11557,7 @@ export type CredentialsConnectionsEnableInput = {
 /** Return shape for `credentials.connections.enable`. */
 export type CredentialsConnectionsEnableReturn = {
   connection: ({
-    backend: "keychain" | "vault";
+    backend: "file" | "keychain" | "vault";
     connection: string;
     createdAt: number;
     id: string;
@@ -8498,7 +11583,7 @@ export type CredentialsConnectionsListInput = {
 /** Return shape for `credentials.connections.list`. */
 export type CredentialsConnectionsListReturn = {
   items: Array<{
-    backend: "keychain" | "vault";
+    backend: "file" | "keychain" | "vault";
     connection: string;
     createdAt: number;
     id: string;
@@ -8530,7 +11615,7 @@ export type CredentialsConnectionsShowInput = {
 /** Return shape for `credentials.connections.show`. */
 export type CredentialsConnectionsShowReturn = {
   connection: {
-    backend: "keychain" | "vault";
+    backend: "file" | "keychain" | "vault";
     connection: string;
     createdAt: number;
     id: string;
@@ -8560,6 +11645,40 @@ export type CredentialsPoliciesExplainReturn = {
   connection: string;
   provider: string;
   requiredCapabilities: string[];
+};
+
+/** Input shape for `credentials.request`. */
+export type CredentialsRequestInput = {
+  backend?: string;
+  execute?: boolean;
+  label?: string;
+  reason?: string;
+  scopes?: string;
+  target: string;
+  user?: string;
+};
+
+/** Return shape for `credentials.request`. */
+export type CredentialsRequestReturn = {
+  delivery: "ephemeral";
+  expiresAt: number;
+  requestId: string;
+  target: string;
+};
+
+/** Input shape for `credentials.request-status`. */
+export type CredentialsRequestStatusInput = {
+  requestId: string;
+  target: string;
+};
+
+/** Return shape for `credentials.request-status`. */
+export type CredentialsRequestStatusReturn = {
+  activation: "not_requested";
+  receipt?: string;
+  requestId: string;
+  status: string;
+  target: string;
 };
 
 /** Input shape for `crm.account`. */
@@ -9394,6 +12513,7 @@ export type CronAddReturn = {
     type: string;
     [k: string]: unknown;
   };
+  warnings?: string[];
   [k: string]: unknown;
 };
 
@@ -9411,6 +12531,7 @@ export type CronDisableReturn = {
     type: string;
     [k: string]: unknown;
   };
+  warnings?: string[];
   [k: string]: unknown;
 };
 
@@ -9428,6 +12549,7 @@ export type CronEnableReturn = {
     type: string;
     [k: string]: unknown;
   };
+  warnings?: string[];
   [k: string]: unknown;
 };
 
@@ -9474,6 +12596,7 @@ export type CronRmReturn = {
     type: string;
     [k: string]: unknown;
   };
+  warnings?: string[];
   [k: string]: unknown;
 };
 
@@ -9492,6 +12615,7 @@ export type CronRunReturn = {
     type: string;
     [k: string]: unknown;
   };
+  warnings?: string[];
   [k: string]: unknown;
 };
 
@@ -9511,6 +12635,7 @@ export type CronSetReturn = {
     type: string;
     [k: string]: unknown;
   };
+  warnings?: string[];
   [k: string]: unknown;
 };
 
@@ -9615,14 +12740,21 @@ export type DaemonStatusReturn = {
     alignment: "aligned" | "drifted" | "unknown" | "not_running";
     channels: {
       bundlePath: string | null;
+      codeStale: boolean;
       cwd: string | null;
+      diskVersion: string | null;
+      envStale: boolean;
+      identityVerified: boolean;
       managed: boolean;
       matchesCli: boolean | null;
       name: string;
       online: boolean;
       pid: number | null;
+      runningVersion: string | null;
+      stale: boolean;
+      startedAt: number | null;
       status: string;
-      version: string | null;
+      warnings: string[];
     };
     cli: {
       bundlePath: string | null;
@@ -9631,16 +12763,24 @@ export type DaemonStatusReturn = {
     };
     daemon: {
       bundlePath: string | null;
+      codeStale: boolean;
       cwd: string | null;
+      diskVersion: string | null;
+      envStale: boolean;
+      identityVerified: boolean;
       managed: boolean;
       matchesCli: boolean | null;
       name: string;
       online: boolean;
       pid: number | null;
+      runningVersion: string | null;
+      stale: boolean;
+      startedAt: number | null;
       status: string;
-      version: string | null;
+      warnings: string[];
     };
   };
+  warnings: string[];
   [k: string]: unknown;
 };
 
@@ -9662,6 +12802,291 @@ export type DaemonUninstallReturn = {
   action: string;
   changed: boolean;
   [k: string]: unknown;
+};
+
+/** Input shape for `decisions.answer`. */
+export type DecisionsAnswerInput = {
+  by?: string;
+  execute?: boolean;
+  id: string;
+  text?: string;
+};
+
+/** Return shape for `decisions.answer`. */
+export type DecisionsAnswerReturn = {
+  created?: boolean;
+  decision: {
+    answer: string | null;
+    answeredAt: number | null;
+    answeredBy: string | null;
+    ask: string;
+    askedAt: number;
+    askedBy: string | null;
+    blocks: boolean;
+    createdAt: number;
+    id: string;
+    key: string;
+    origin: {
+      chatId: string | null;
+      id: string;
+      sessionKey: string | null;
+      type: "task" | "thread";
+    };
+    ownerId: string | null;
+    ownerType: "human" | "agent" | "unassigned";
+    revision: number;
+    status: "open" | "answered" | "superseded";
+    updatedAt: number;
+  };
+  deliveries: Array<{
+    attempts: number;
+    decisionId: string;
+    deliveredAt: number | null;
+    id: string;
+    kind: "question" | "answer";
+    lastError: string | null;
+    nextAttemptAt: number;
+    revision: number;
+    status: "pending" | "publishing" | "published" | "accepting" | "delivered" | "failed" | "uncertain" | "superseded";
+  }>;
+};
+
+/** Input shape for `decisions.ask`. */
+export type DecisionsAskInput = {
+  ask?: string;
+  blocks?: boolean;
+  execute?: boolean;
+  key?: string;
+  owner?: string;
+  task?: string;
+  thread?: string;
+};
+
+/** Return shape for `decisions.ask`. */
+export type DecisionsAskReturn = {
+  created?: boolean;
+  decision: {
+    answer: string | null;
+    answeredAt: number | null;
+    answeredBy: string | null;
+    ask: string;
+    askedAt: number;
+    askedBy: string | null;
+    blocks: boolean;
+    createdAt: number;
+    id: string;
+    key: string;
+    origin: {
+      chatId: string | null;
+      id: string;
+      sessionKey: string | null;
+      type: "task" | "thread";
+    };
+    ownerId: string | null;
+    ownerType: "human" | "agent" | "unassigned";
+    revision: number;
+    status: "open" | "answered" | "superseded";
+    updatedAt: number;
+  };
+  deliveries: Array<{
+    attempts: number;
+    decisionId: string;
+    deliveredAt: number | null;
+    id: string;
+    kind: "question" | "answer";
+    lastError: string | null;
+    nextAttemptAt: number;
+    revision: number;
+    status: "pending" | "publishing" | "published" | "accepting" | "delivered" | "failed" | "uncertain" | "superseded";
+  }>;
+};
+
+/** Input shape for `decisions.list`. */
+export type DecisionsListInput = {
+  all?: boolean;
+  limit?: string;
+  offset?: string;
+  task?: string;
+  thread?: string;
+};
+
+/** Return shape for `decisions.list`. */
+export type DecisionsListReturn = {
+  decisions: Array<{
+    answer: string | null;
+    answeredAt: number | null;
+    answeredBy: string | null;
+    ask: string;
+    askedAt: number;
+    askedBy: string | null;
+    blocks: boolean;
+    createdAt: number;
+    id: string;
+    key: string;
+    origin: {
+      chatId: string | null;
+      id: string;
+      sessionKey: string | null;
+      type: "task" | "thread";
+    };
+    ownerId: string | null;
+    ownerType: "human" | "agent" | "unassigned";
+    revision: number;
+    status: "open" | "answered" | "superseded";
+    updatedAt: number;
+  }>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+};
+
+/** Input shape for `decisions.resolve-delivery`. */
+export type DecisionsResolveDeliveryInput = {
+  evidence?: string;
+  execute?: boolean;
+  id: string;
+  outcome?: string;
+};
+
+/** Return shape for `decisions.resolve-delivery`. */
+export type DecisionsResolveDeliveryReturn = {
+  created?: boolean;
+  decision: {
+    answer: string | null;
+    answeredAt: number | null;
+    answeredBy: string | null;
+    ask: string;
+    askedAt: number;
+    askedBy: string | null;
+    blocks: boolean;
+    createdAt: number;
+    id: string;
+    key: string;
+    origin: {
+      chatId: string | null;
+      id: string;
+      sessionKey: string | null;
+      type: "task" | "thread";
+    };
+    ownerId: string | null;
+    ownerType: "human" | "agent" | "unassigned";
+    revision: number;
+    status: "open" | "answered" | "superseded";
+    updatedAt: number;
+  };
+  deliveries: Array<{
+    attempts: number;
+    decisionId: string;
+    deliveredAt: number | null;
+    id: string;
+    kind: "question" | "answer";
+    lastError: string | null;
+    nextAttemptAt: number;
+    revision: number;
+    status: "pending" | "publishing" | "published" | "accepting" | "delivered" | "failed" | "uncertain" | "superseded";
+  }>;
+};
+
+/** Input shape for `decisions.retry`. */
+export type DecisionsRetryInput = {
+  execute?: boolean;
+  id: string;
+};
+
+/** Return shape for `decisions.retry`. */
+export type DecisionsRetryReturn = {
+  created?: boolean;
+  decision: {
+    answer: string | null;
+    answeredAt: number | null;
+    answeredBy: string | null;
+    ask: string;
+    askedAt: number;
+    askedBy: string | null;
+    blocks: boolean;
+    createdAt: number;
+    id: string;
+    key: string;
+    origin: {
+      chatId: string | null;
+      id: string;
+      sessionKey: string | null;
+      type: "task" | "thread";
+    };
+    ownerId: string | null;
+    ownerType: "human" | "agent" | "unassigned";
+    revision: number;
+    status: "open" | "answered" | "superseded";
+    updatedAt: number;
+  };
+  deliveries: Array<{
+    attempts: number;
+    decisionId: string;
+    deliveredAt: number | null;
+    id: string;
+    kind: "question" | "answer";
+    lastError: string | null;
+    nextAttemptAt: number;
+    revision: number;
+    status: "pending" | "publishing" | "published" | "accepting" | "delivered" | "failed" | "uncertain" | "superseded";
+  }>;
+};
+
+/** Input shape for `decisions.show`. */
+export type DecisionsShowInput = {
+  id: string;
+};
+
+/** Return shape for `decisions.show`. */
+export type DecisionsShowReturn = {
+  created?: boolean;
+  decision: {
+    answer: string | null;
+    answeredAt: number | null;
+    answeredBy: string | null;
+    ask: string;
+    askedAt: number;
+    askedBy: string | null;
+    blocks: boolean;
+    createdAt: number;
+    id: string;
+    key: string;
+    origin: {
+      chatId: string | null;
+      id: string;
+      sessionKey: string | null;
+      type: "task" | "thread";
+    };
+    ownerId: string | null;
+    ownerType: "human" | "agent" | "unassigned";
+    revision: number;
+    status: "open" | "answered" | "superseded";
+    updatedAt: number;
+  };
+  deliveries: Array<{
+    attempts: number;
+    decisionId: string;
+    deliveredAt: number | null;
+    id: string;
+    kind: "question" | "answer";
+    lastError: string | null;
+    nextAttemptAt: number;
+    revision: number;
+    status: "pending" | "publishing" | "published" | "accepting" | "delivered" | "failed" | "uncertain" | "superseded";
+  }>;
+  history: Array<{
+    actor: string | null;
+    createdAt: number;
+    id: number;
+    snapshot: string;
+    type: string;
+  }>;
 };
 
 /** Input shape for `devin.auth.check`. */
@@ -13884,6 +17309,21 @@ export type PagesPublishReturn = {
   publish: unknown;
   release: unknown;
   routes: Array<Record<string, unknown>>;
+  scope: {
+    consoleUrl: string;
+    organization?: ({
+      id?: string | null;
+      name?: string | null;
+      slug?: string | null;
+    }) | null;
+    project?: ({
+      id?: string | null;
+      name?: string | null;
+      ref: string;
+      slug?: string | null;
+    }) | null;
+    source: string;
+  };
   site: unknown;
   success: true;
   upload: {
@@ -14594,6 +18034,47 @@ export type PermissionsStatusReturn = {
   status: "provider-runtime";
 };
 
+/** Input shape for `pr.publish`. */
+export type PrPublishInput = {
+  base?: string;
+  bodyFile?: string;
+  dryRun?: boolean;
+  execute?: boolean;
+  expectSha?: string;
+  replySession?: string;
+  repo?: string;
+  title?: string;
+};
+
+/** Return shape for `pr.publish`. */
+export type PrPublishReturn = {
+  attemptId: string;
+  base: string;
+  checks: {
+    count: number;
+    state: "pending" | "success" | "failure";
+  };
+  follow: {
+    ciWatchId: string;
+    replySession: string;
+    triggerId: string;
+    verifiedAt: string;
+    watchId: string;
+  };
+  head: string;
+  localSha: string;
+  pr: {
+    number: number;
+    ready: true;
+    reused: boolean;
+    url: string;
+  };
+  publicationId: string;
+  remoteSha: string;
+  repo: string;
+  treeSha: string;
+};
+
 /** Input shape for `projects.create`. */
 export type ProjectsCreateInput = {
   console?: string;
@@ -15296,8 +18777,21 @@ export type RuntimeCredentialsStatusInput = {
 
 /** Return shape for `runtime.credentials.status`. */
 export type RuntimeCredentialsStatusReturn = {
-  credential: Record<string, unknown>;
-  health: (Record<string, unknown>) | null;
+  credential?: Record<string, unknown>;
+  credentials?: Array<Record<string, unknown>>;
+  health?: (Record<string, unknown>) | null;
+  pagination?: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  providerHealth?: Array<Record<string, unknown>>;
+  total?: number;
   [k: string]: unknown;
 };
 
@@ -15337,6 +18831,7 @@ export type RuntimeEnvSetReturn = {
   redacted: boolean;
   secret: boolean;
   value: string | null;
+  warnings?: string[];
 };
 
 /** Input shape for `runtime.env.unset`. */
@@ -15356,6 +18851,7 @@ export type RuntimeEnvUnsetReturn = {
   redacted: boolean;
   secret: boolean;
   value: string | null;
+  warnings?: string[];
 };
 
 /** Input shape for `runtime.presets.create`. */
@@ -15638,6 +19134,7 @@ export type RuntimeProvidersClaudeConfigureReturn = {
     redacted: boolean;
     secret: boolean;
     value: string | null;
+    warnings?: string[];
   };
 };
 
@@ -16303,19 +19800,338 @@ export type SessionsCloseThreadReturn = {
   status: "closed";
 };
 
+/** Input shape for `sessions.conversations.agents`. */
+export type SessionsConversationsAgentsInput = {
+  createdAt: number;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.agents`. */
+export type SessionsConversationsAgentsReturn = Array<{
+  id: string;
+  name: string;
+}>;
+
+/** Input shape for `sessions.conversations.cancel`. */
+export type SessionsConversationsCancelInput = {
+  conversationId: string;
+  createdAt: number;
+  projectId: string;
+  requestId: string;
+  turnId: string;
+};
+
+/** Return shape for `sessions.conversations.cancel`. */
+export type SessionsConversationsCancelReturn = {
+  cancelRequested: boolean;
+  conversationId: string;
+  status: "queued" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled" | "authorization_expired" | "interrupted_unknown";
+  turnId: string;
+};
+
+/** Input shape for `sessions.conversations.create`. */
+export type SessionsConversationsCreateInput = {
+  agentId: string;
+  createdAt: number;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.create`. */
+export type SessionsConversationsCreateReturn = {
+  conversation: {
+    agentId: string;
+    id: string;
+    title: string;
+    updatedAt: number;
+    version: number;
+  };
+  conversationId: string;
+};
+
+/** Input shape for `sessions.conversations.decide`. */
+export type SessionsConversationsDecideInput = {
+  actionDigest: string;
+  approvalId: string;
+  conversationId: string;
+  createdAt: number;
+  decision: "approve" | "reject";
+  expectedVersion: number;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.decide`. */
+export type SessionsConversationsDecideReturn = {
+  approvalId: string;
+  conversationId: string;
+  state: "approved" | "rejected";
+  version: number;
+};
+
+/** Input shape for `sessions.conversations.events`. */
+export type SessionsConversationsEventsInput = {
+  conversationId: string;
+  createdAt: number;
+  cursor: string | null;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.events`. */
+export type SessionsConversationsEventsReturn = {
+  cursor: string;
+  events: Array<({
+    createdAt: number;
+    data: {
+      createdAt: number;
+      id: string;
+      role: "user" | "assistant";
+      text: string;
+      turnId: string;
+    };
+    sequence: number;
+    type: "message.accepted";
+  }) | ({
+    createdAt: number;
+    data: {
+      createdAt: number;
+      id: string;
+      role: "user" | "assistant";
+      text: string;
+      turnId: string;
+    };
+    sequence: number;
+    type: "message.finalized";
+  }) | ({
+    createdAt: number;
+    data: {
+      cancelRequested: boolean;
+      id: string;
+      status: "queued" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled" | "authorization_expired" | "interrupted_unknown";
+    };
+    sequence: number;
+    type: "turn.state";
+  }) | ({
+    createdAt: number;
+    data: {
+      status: string;
+      turnId: string;
+    };
+    sequence: number;
+    type: "turn.activity";
+  }) | ({
+    createdAt: number;
+    data: {
+      turnId: string;
+    };
+    sequence: number;
+    type: "cancel.requested";
+  }) | ({
+    createdAt: number;
+    data: {
+      actionDigest: string;
+      capability: {
+        objectId: string;
+        objectType: string;
+        permission: string;
+      };
+      description: string;
+      expiresAt: number;
+      id: string;
+      state: "pending" | "approved" | "rejected" | "expired" | "invalidated";
+      turnId: string;
+      version: number;
+    };
+    sequence: number;
+    type: "approval.opened";
+  }) | ({
+    createdAt: number;
+    data: {
+      id: string;
+      state: "approved" | "rejected" | "expired" | "invalidated";
+      version?: number;
+    };
+    sequence: number;
+    type: "approval.state";
+  })>;
+};
+
+/** Input shape for `sessions.conversations.history`. */
+export type SessionsConversationsHistoryInput = {
+  before: string | null;
+  conversationId: string;
+  createdAt: number;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.history`. */
+export type SessionsConversationsHistoryReturn = {
+  hasOlder: boolean;
+  messages: Array<{
+    createdAt: number;
+    id: string;
+    role: "user" | "assistant";
+    text: string;
+    turnId: string;
+  }>;
+};
+
+/** Input shape for `sessions.conversations.list`. */
+export type SessionsConversationsListInput = {
+  createdAt: number;
+  limit?: number;
+  offset?: number;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.list`. */
+export type SessionsConversationsListReturn = Array<{
+  agentId: string;
+  id: string;
+  title: string;
+  updatedAt: number;
+  version: number;
+}>;
+
+/** Input shape for `sessions.conversations.open`. */
+export type SessionsConversationsOpenInput = {
+  conversationId: string;
+  createdAt: number;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.open`. */
+export type SessionsConversationsOpenReturn = {
+  approvals: Array<{
+    actionDigest: string;
+    capability: {
+      objectId: string;
+      objectType: string;
+      permission: string;
+    };
+    description: string;
+    expiresAt: number;
+    id: string;
+    state: "pending" | "approved" | "rejected" | "expired" | "invalidated";
+    turnId: string;
+    version: number;
+  }>;
+  conversation: {
+    agentId: string;
+    id: string;
+    title: string;
+    updatedAt: number;
+    version: number;
+  };
+  cursor: string;
+  hasOlder: boolean;
+  messages: Array<{
+    createdAt: number;
+    id: string;
+    role: "user" | "assistant";
+    text: string;
+    turnId: string;
+  }>;
+  turn: ({
+    cancelRequested: boolean;
+    id: string;
+    status: "queued" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled" | "authorization_expired" | "interrupted_unknown";
+  }) | null;
+};
+
+/** Input shape for `sessions.conversations.receipt`. */
+export type SessionsConversationsReceiptInput = {
+  createdAt: number;
+  projectId: string;
+  requestId: string;
+  targetRequestId: string;
+};
+
+/** Return shape for `sessions.conversations.receipt`. */
+export type SessionsConversationsReceiptReturn = ({
+  conversation: {
+    agentId: string;
+    id: string;
+    title: string;
+    updatedAt: number;
+    version: number;
+  };
+  conversationId: string;
+}) | ({
+  accepted: true;
+  conversationId: string;
+  messageId: string;
+  turnId: string;
+  version: number;
+}) | ({
+  cancelRequested: boolean;
+  conversationId: string;
+  status: "queued" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled" | "authorization_expired" | "interrupted_unknown";
+  turnId: string;
+}) | ({
+  approvalId: string;
+  conversationId: string;
+  state: "approved" | "rejected";
+  version: number;
+});
+
+/** Input shape for `sessions.conversations.renew`. */
+export type SessionsConversationsRenewInput = {
+  conversationId: string;
+  createdAt: number;
+  projectId: string;
+  requestId: string;
+};
+
+/** Return shape for `sessions.conversations.renew`. */
+export type SessionsConversationsRenewReturn = {
+  conversationId: string;
+  renewed: boolean;
+};
+
+/** Input shape for `sessions.conversations.send`. */
+export type SessionsConversationsSendInput = {
+  conversationId: string;
+  createdAt: number;
+  expectedVersion: number;
+  projectId: string;
+  requestId: string;
+  text: string;
+};
+
+/** Return shape for `sessions.conversations.send`. */
+export type SessionsConversationsSendReturn = {
+  accepted: true;
+  conversationId: string;
+  messageId: string;
+  turnId: string;
+  version: number;
+};
+
 /** Input shape for `sessions.create-thread`. */
 export type SessionsCreateThreadInput = {
+  effort?: string;
   message: string;
   model?: string;
+  provider?: string;
   session?: string;
+  thinking?: string;
 };
 
 /** Return shape for `sessions.create-thread`. */
 export type SessionsCreateThreadReturn = {
   actionId: "thread.create";
   child: {
+    effortOverride: string | null;
     modelOverride: string | null;
+    providerOverride: string | null;
     status: "pending_root_delivery";
+    thinkingLevel: string | null;
   };
   executionMode: "durable";
   idempotencyKey: string;
@@ -17327,6 +21143,102 @@ export type SessionsSubscriptionsInput = {
 /** Return shape for `sessions.subscriptions`. */
 export type SessionsSubscriptionsReturn = Record<string, unknown>;
 
+/** Input shape for `sessions.thread-configure`. */
+export type SessionsThreadConfigureInput = ({
+  effort: string;
+  model?: string;
+  provider?: string;
+  session?: string;
+  thinking?: string;
+  thread: string;
+}) | ({
+  effort?: string;
+  model: string;
+  provider?: string;
+  session?: string;
+  thinking?: string;
+  thread: string;
+}) | ({
+  effort?: string;
+  model?: string;
+  provider: string;
+  session?: string;
+  thinking?: string;
+  thread: string;
+}) | ({
+  effort?: string;
+  model?: string;
+  provider?: string;
+  session?: string;
+  thinking: string;
+  thread: string;
+});
+
+/** Return shape for `sessions.thread-configure`. */
+export type SessionsThreadConfigureReturn = {
+  actionId: "thread.configure";
+  after: {
+    effort: string | null;
+    model: string | null;
+    provider: string | null;
+    thinking: string | null;
+  };
+  appliesOn: "next-turn";
+  before: {
+    effort: string | null;
+    model: string | null;
+    provider: string | null;
+    thinking: string | null;
+  };
+  changed: boolean;
+  status: "configured";
+  thread: {
+    childSessionKey: string | null;
+    childSessionMissing: boolean;
+    childSessionName: string | null;
+    closedAt: number | null;
+    createdAt: number;
+    link: string | null;
+    openDecisionCount: number;
+    parentReturn: {
+      pending: boolean;
+      requested: boolean;
+    };
+    pendingAnswerCount: number;
+    requestId: string;
+    runtime: {
+      effort: string;
+      effortSource: string;
+      model: string | null;
+      modelSource: string | null;
+      provider: string;
+      providerSource: string;
+      requested: {
+        effort: string | null;
+        model: string | null;
+        provider: string | null;
+        thinking: string | null;
+      };
+      thinking: string | null;
+      thinkingSource: string | null;
+    };
+    slackThreadTs: string | null;
+    source: "action" | "inbound";
+    status: "queued" | "root_delivered" | "starting" | "open" | "closed" | "failed";
+    title: string | null;
+    turnHealth?: ({
+      checkedAt: number;
+      lastSignalAt: number | null;
+      reason: ("no_signal" | "no_reply" | "owner_lost" | "failed") | null;
+      since: number;
+      state: "idle" | "running" | "interrupted" | "attention" | "closed";
+      turnId: string | null;
+    }) | null;
+    uncertainAnswerCount: number;
+    updatedAt: number;
+  };
+};
+
 /** Input shape for `sessions.thread-send`. */
 export type SessionsThreadSendInput = {
   message: string;
@@ -17343,19 +21255,47 @@ export type SessionsThreadSendReturn = {
   status: "published";
   thread: {
     childSessionKey: string | null;
+    childSessionMissing: boolean;
     childSessionName: string | null;
     closedAt: number | null;
     createdAt: number;
     link: string | null;
+    openDecisionCount: number;
     parentReturn: {
       pending: boolean;
       requested: boolean;
     };
+    pendingAnswerCount: number;
     requestId: string;
+    runtime: {
+      effort: string;
+      effortSource: string;
+      model: string | null;
+      modelSource: string | null;
+      provider: string;
+      providerSource: string;
+      requested: {
+        effort: string | null;
+        model: string | null;
+        provider: string | null;
+        thinking: string | null;
+      };
+      thinking: string | null;
+      thinkingSource: string | null;
+    };
     slackThreadTs: string | null;
     source: "action" | "inbound";
     status: "queued" | "root_delivered" | "starting" | "open" | "closed" | "failed";
     title: string | null;
+    turnHealth?: ({
+      checkedAt: number;
+      lastSignalAt: number | null;
+      reason: ("no_signal" | "no_reply" | "owner_lost" | "failed") | null;
+      since: number;
+      state: "idle" | "running" | "interrupted" | "attention" | "closed";
+      turnId: string | null;
+    }) | null;
+    uncertainAnswerCount: number;
     updatedAt: number;
   };
 };
@@ -17375,19 +21315,47 @@ export type SessionsThreadsReturn = {
   };
   threads: Array<{
     childSessionKey: string | null;
+    childSessionMissing: boolean;
     childSessionName: string | null;
     closedAt: number | null;
     createdAt: number;
     link: string | null;
+    openDecisionCount: number;
     parentReturn: {
       pending: boolean;
       requested: boolean;
     };
+    pendingAnswerCount: number;
     requestId: string;
+    runtime: {
+      effort: string;
+      effortSource: string;
+      model: string | null;
+      modelSource: string | null;
+      provider: string;
+      providerSource: string;
+      requested: {
+        effort: string | null;
+        model: string | null;
+        provider: string | null;
+        thinking: string | null;
+      };
+      thinking: string | null;
+      thinkingSource: string | null;
+    };
     slackThreadTs: string | null;
     source: "action" | "inbound";
     status: "queued" | "root_delivered" | "starting" | "open" | "closed" | "failed";
     title: string | null;
+    turnHealth?: ({
+      checkedAt: number;
+      lastSignalAt: number | null;
+      reason: ("no_signal" | "no_reply" | "owner_lost" | "failed") | null;
+      since: number;
+      state: "idle" | "running" | "interrupted" | "attention" | "closed";
+      turnId: string | null;
+    }) | null;
+    uncertainAnswerCount: number;
     updatedAt: number;
   }>;
 };
@@ -17412,6 +21380,72 @@ export type SessionsTraceInput = {
 
 /** Return shape for `sessions.trace`. */
 export type SessionsTraceReturn = Record<string, unknown>;
+
+/** Input shape for `sessions.update`. */
+export type SessionsUpdateInput = {
+  effort?: string;
+  model?: string;
+  nameOrKey: string;
+  probeTimeout?: string;
+  provider?: string;
+  skipProbe?: boolean;
+  thinking?: string;
+};
+
+/** Return shape for `sessions.update`. */
+export type SessionsUpdateReturn = {
+  action: "update";
+  after: {
+    effortOverride: string | null;
+    modelOverride: string | null;
+    runtimeProviderOverride: string | null;
+    thinkingLevel: string | null;
+  };
+  appliesOn: "next-turn-runtime-restart";
+  before: {
+    effortOverride: string | null;
+    modelOverride: string | null;
+    runtimeProviderOverride: string | null;
+    thinkingLevel: string | null;
+  };
+  changed: {
+    effort: boolean;
+    model: boolean;
+    provider: boolean;
+    thinking: boolean;
+  };
+  clearedProviderSession: boolean;
+  effective: {
+    effort: string | null;
+    model: string | null;
+    provider: string;
+    thinking: string | null;
+  };
+  notification?: {
+    delivered: boolean;
+    error: string | null;
+    topic: string;
+  };
+  probe: ({
+    credentialId?: string;
+    credentialLabel?: string;
+    durationMs: number;
+    effort?: string;
+    error?: string;
+    model: string;
+    ok: boolean;
+    provider: string;
+    thinking?: string;
+    timedOut?: boolean;
+  }) | null;
+  rematerializedToAgentRuntime: boolean;
+  rolledBack: boolean;
+  session: {
+    sessionKey: string;
+    sessionName: string | null;
+  };
+  superseded: boolean;
+};
 
 /** Input shape for `sessions.visibility`. */
 export type SessionsVisibilityInput = {
@@ -17559,6 +21593,895 @@ export type SettingsSetReturn = {
     type: string;
     [k: string]: unknown;
   };
+};
+
+/** Input shape for `signals.ack`. */
+export type SignalsAckInput = {
+  by?: string;
+  idOrKey: string;
+  note?: string;
+};
+
+/** Return shape for `signals.ack`. */
+export type SignalsAckReturn = {
+  changed?: boolean;
+  created?: boolean;
+  reopened?: boolean;
+  signal: {
+    acknowledgedAt?: number | null;
+    acknowledgedBy?: string | null;
+    clearSince?: number | null;
+    clearWhen: ({
+      expr: string;
+      grace_ms: number;
+      probe: string;
+      recheck_ms: number;
+      type: "probe";
+    }) | ({
+      field: string;
+      op: string;
+      recheck_ms: number;
+      type: "metric";
+      value: number;
+    }) | ({
+      ttl_ms: number;
+      type: "producer_resolve";
+    }) | ({
+      after_ms: number;
+      type: "decay";
+    }) | ({
+      owner?: string;
+      type: "manual";
+    });
+    closeReason?: string | null;
+    closedAt?: number | null;
+    cooldownMs: number;
+    createdAt: number;
+    dedupeKey?: string;
+    detail?: string;
+    escalateAfterMs?: number | null;
+    escalationCount: number;
+    evidence?: Record<string, unknown>;
+    id: string;
+    key: string;
+    kind: string;
+    lastEvalAt?: number | null;
+    lastEvalError?: string | null;
+    lastSeenAt: number;
+    maxSurfaces: number;
+    muteReason?: string;
+    mutedUntil?: number | null;
+    openedAt: number;
+    previousState?: string;
+    producerClass: string;
+    producerId: string;
+    producerType: string;
+    renotifyAfterMs: number;
+    reopenAfterMs: number;
+    schemaVersion: number;
+    scopeId: string;
+    scopeType: string;
+    severity: string;
+    state: string;
+    subjectId?: string;
+    subjectType?: string;
+    surfaceCount: number;
+    surfacedAt?: number | null;
+    targetSessions?: string[];
+    title: string;
+    ttlMs: number;
+    updatedAt: number;
+    version: number;
+  };
+  status: string;
+  suppressed?: string;
+  updated?: boolean;
+};
+
+/** Input shape for `signals.budget`. */
+export type SignalsBudgetInput = Record<string, never>;
+
+/** Return shape for `signals.budget`. */
+export type SignalsBudgetReturn = {
+  budget: {
+    day: string;
+    held: number;
+    limit: number;
+    oobLimit: number;
+    oobUsed: number;
+    used: number;
+  };
+};
+
+/** Input shape for `signals.explain`. */
+export type SignalsExplainInput = {
+  idOrKey: string;
+};
+
+/** Return shape for `signals.explain`. */
+export type SignalsExplainReturn = {
+  budget: {
+    day: string;
+    held: number;
+    limit: number;
+    oobLimit: number;
+    oobUsed: number;
+    used: number;
+  };
+  clearRule: string;
+  effectiveSeverity: string;
+  events: Array<{
+    actorId?: string;
+    actorType?: string;
+    createdAt: number;
+    fromState?: string;
+    id: number;
+    message?: string;
+    payload?: Record<string, unknown>;
+    signalId: string;
+    toState?: string;
+    type: string;
+    version?: number;
+  }>;
+  keyMute: ({
+    mutedUntil: number;
+    reason?: string;
+  }) | null;
+  lastEvaluation: {
+    at: number | null;
+    cleared: boolean | null;
+    error: string | null;
+    fields?: Record<string, unknown>;
+    status: string;
+  };
+  lastOobAt: number | null;
+  lastSurfaceAt: number | null;
+  ledgerToday: {
+    failed: number;
+    pending: number;
+    sent: number;
+  };
+  nextSurfaceAt: number | null;
+  signal: {
+    acknowledgedAt?: number | null;
+    acknowledgedBy?: string | null;
+    clearSince?: number | null;
+    clearWhen: ({
+      expr: string;
+      grace_ms: number;
+      probe: string;
+      recheck_ms: number;
+      type: "probe";
+    }) | ({
+      field: string;
+      op: string;
+      recheck_ms: number;
+      type: "metric";
+      value: number;
+    }) | ({
+      ttl_ms: number;
+      type: "producer_resolve";
+    }) | ({
+      after_ms: number;
+      type: "decay";
+    }) | ({
+      owner?: string;
+      type: "manual";
+    });
+    closeReason?: string | null;
+    closedAt?: number | null;
+    cooldownMs: number;
+    createdAt: number;
+    dedupeKey?: string;
+    detail?: string;
+    escalateAfterMs?: number | null;
+    escalationCount: number;
+    evidence?: Record<string, unknown>;
+    id: string;
+    key: string;
+    kind: string;
+    lastEvalAt?: number | null;
+    lastEvalError?: string | null;
+    lastSeenAt: number;
+    maxSurfaces: number;
+    muteReason?: string;
+    mutedUntil?: number | null;
+    openedAt: number;
+    previousState?: string;
+    producerClass: string;
+    producerId: string;
+    producerType: string;
+    renotifyAfterMs: number;
+    reopenAfterMs: number;
+    schemaVersion: number;
+    scopeId: string;
+    scopeType: string;
+    severity: string;
+    state: string;
+    subjectId?: string;
+    subjectType?: string;
+    surfaceCount: number;
+    surfacedAt?: number | null;
+    targetSessions?: string[];
+    title: string;
+    ttlMs: number;
+    updatedAt: number;
+    version: number;
+  };
+  targetSessions: string[];
+  tick: {
+    lastSuccessfulTickAt: number | null;
+    staleAfterMs: number;
+    staleAfterSource: string;
+  };
+};
+
+/** Input shape for `signals.list`. */
+export type SignalsListInput = {
+  key?: string;
+  limit?: string;
+  offset?: string;
+  scope?: string;
+  state?: string;
+};
+
+/** Return shape for `signals.list`. */
+export type SignalsListReturn = {
+  items: Array<{
+    acknowledgedAt?: number | null;
+    acknowledgedBy?: string | null;
+    clearSince?: number | null;
+    clearWhen: ({
+      expr: string;
+      grace_ms: number;
+      probe: string;
+      recheck_ms: number;
+      type: "probe";
+    }) | ({
+      field: string;
+      op: string;
+      recheck_ms: number;
+      type: "metric";
+      value: number;
+    }) | ({
+      ttl_ms: number;
+      type: "producer_resolve";
+    }) | ({
+      after_ms: number;
+      type: "decay";
+    }) | ({
+      owner?: string;
+      type: "manual";
+    });
+    closeReason?: string | null;
+    closedAt?: number | null;
+    cooldownMs: number;
+    createdAt: number;
+    dedupeKey?: string;
+    detail?: string;
+    escalateAfterMs?: number | null;
+    escalationCount: number;
+    evidence?: Record<string, unknown>;
+    id: string;
+    key: string;
+    kind: string;
+    lastEvalAt?: number | null;
+    lastEvalError?: string | null;
+    lastSeenAt: number;
+    maxSurfaces: number;
+    muteReason?: string;
+    mutedUntil?: number | null;
+    openedAt: number;
+    previousState?: string;
+    producerClass: string;
+    producerId: string;
+    producerType: string;
+    renotifyAfterMs: number;
+    reopenAfterMs: number;
+    schemaVersion: number;
+    scopeId: string;
+    scopeType: string;
+    severity: string;
+    state: string;
+    subjectId?: string;
+    subjectType?: string;
+    surfaceCount: number;
+    surfacedAt?: number | null;
+    targetSessions?: string[];
+    title: string;
+    ttlMs: number;
+    updatedAt: number;
+    version: number;
+  }>;
+  total: number;
+};
+
+/** Input shape for `signals.mute`. */
+export type SignalsMuteInput = {
+  by?: string;
+  for?: string;
+  idOrKey: string;
+  reason?: string;
+};
+
+/** Return shape for `signals.mute`. */
+export type SignalsMuteReturn = {
+  changed?: boolean;
+  created?: boolean;
+  reopened?: boolean;
+  signal: {
+    acknowledgedAt?: number | null;
+    acknowledgedBy?: string | null;
+    clearSince?: number | null;
+    clearWhen: ({
+      expr: string;
+      grace_ms: number;
+      probe: string;
+      recheck_ms: number;
+      type: "probe";
+    }) | ({
+      field: string;
+      op: string;
+      recheck_ms: number;
+      type: "metric";
+      value: number;
+    }) | ({
+      ttl_ms: number;
+      type: "producer_resolve";
+    }) | ({
+      after_ms: number;
+      type: "decay";
+    }) | ({
+      owner?: string;
+      type: "manual";
+    });
+    closeReason?: string | null;
+    closedAt?: number | null;
+    cooldownMs: number;
+    createdAt: number;
+    dedupeKey?: string;
+    detail?: string;
+    escalateAfterMs?: number | null;
+    escalationCount: number;
+    evidence?: Record<string, unknown>;
+    id: string;
+    key: string;
+    kind: string;
+    lastEvalAt?: number | null;
+    lastEvalError?: string | null;
+    lastSeenAt: number;
+    maxSurfaces: number;
+    muteReason?: string;
+    mutedUntil?: number | null;
+    openedAt: number;
+    previousState?: string;
+    producerClass: string;
+    producerId: string;
+    producerType: string;
+    renotifyAfterMs: number;
+    reopenAfterMs: number;
+    schemaVersion: number;
+    scopeId: string;
+    scopeType: string;
+    severity: string;
+    state: string;
+    subjectId?: string;
+    subjectType?: string;
+    surfaceCount: number;
+    surfacedAt?: number | null;
+    targetSessions?: string[];
+    title: string;
+    ttlMs: number;
+    updatedAt: number;
+    version: number;
+  };
+  status: string;
+  suppressed?: string;
+  updated?: boolean;
+};
+
+/** Input shape for `signals.mute-key`. */
+export type SignalsMuteKeyInput = {
+  for?: string;
+  key: string;
+  reason?: string;
+};
+
+/** Return shape for `signals.mute-key`. */
+export type SignalsMuteKeyReturn = {
+  key: string;
+  mutedUntil: number;
+  reason?: string;
+  status: string;
+};
+
+/** Input shape for `signals.raise`. */
+export type SignalsRaiseInput = {
+  clearDecay?: string;
+  clearExpr?: string;
+  clearManual?: boolean;
+  clearMetric?: string;
+  clearProbe?: string;
+  clearProducerResolve?: boolean;
+  cooldown?: string;
+  dedupeKey?: string;
+  detail?: string;
+  escalateAfter?: string;
+  evidence?: string;
+  grace?: string;
+  key: string;
+  kind?: string;
+  maxSurfaces?: string;
+  recheck?: string;
+  renotifyAfter?: string;
+  reopenAfter?: string;
+  scope?: string;
+  severity?: string;
+  source?: string;
+  subject?: string;
+  targetSession?: string;
+  title?: string;
+  ttl?: string;
+};
+
+/** Return shape for `signals.raise`. */
+export type SignalsRaiseReturn = {
+  changed?: boolean;
+  created?: boolean;
+  reopened?: boolean;
+  signal: {
+    acknowledgedAt?: number | null;
+    acknowledgedBy?: string | null;
+    clearSince?: number | null;
+    clearWhen: ({
+      expr: string;
+      grace_ms: number;
+      probe: string;
+      recheck_ms: number;
+      type: "probe";
+    }) | ({
+      field: string;
+      op: string;
+      recheck_ms: number;
+      type: "metric";
+      value: number;
+    }) | ({
+      ttl_ms: number;
+      type: "producer_resolve";
+    }) | ({
+      after_ms: number;
+      type: "decay";
+    }) | ({
+      owner?: string;
+      type: "manual";
+    });
+    closeReason?: string | null;
+    closedAt?: number | null;
+    cooldownMs: number;
+    createdAt: number;
+    dedupeKey?: string;
+    detail?: string;
+    escalateAfterMs?: number | null;
+    escalationCount: number;
+    evidence?: Record<string, unknown>;
+    id: string;
+    key: string;
+    kind: string;
+    lastEvalAt?: number | null;
+    lastEvalError?: string | null;
+    lastSeenAt: number;
+    maxSurfaces: number;
+    muteReason?: string;
+    mutedUntil?: number | null;
+    openedAt: number;
+    previousState?: string;
+    producerClass: string;
+    producerId: string;
+    producerType: string;
+    renotifyAfterMs: number;
+    reopenAfterMs: number;
+    schemaVersion: number;
+    scopeId: string;
+    scopeType: string;
+    severity: string;
+    state: string;
+    subjectId?: string;
+    subjectType?: string;
+    surfaceCount: number;
+    surfacedAt?: number | null;
+    targetSessions?: string[];
+    title: string;
+    ttlMs: number;
+    updatedAt: number;
+    version: number;
+  };
+  status: string;
+  suppressed?: string;
+  updated?: boolean;
+};
+
+/** Input shape for `signals.resolve`. */
+export type SignalsResolveInput = {
+  by?: string;
+  idOrKey: string;
+  reason?: string;
+};
+
+/** Return shape for `signals.resolve`. */
+export type SignalsResolveReturn = {
+  changed?: boolean;
+  created?: boolean;
+  reopened?: boolean;
+  signal: {
+    acknowledgedAt?: number | null;
+    acknowledgedBy?: string | null;
+    clearSince?: number | null;
+    clearWhen: ({
+      expr: string;
+      grace_ms: number;
+      probe: string;
+      recheck_ms: number;
+      type: "probe";
+    }) | ({
+      field: string;
+      op: string;
+      recheck_ms: number;
+      type: "metric";
+      value: number;
+    }) | ({
+      ttl_ms: number;
+      type: "producer_resolve";
+    }) | ({
+      after_ms: number;
+      type: "decay";
+    }) | ({
+      owner?: string;
+      type: "manual";
+    });
+    closeReason?: string | null;
+    closedAt?: number | null;
+    cooldownMs: number;
+    createdAt: number;
+    dedupeKey?: string;
+    detail?: string;
+    escalateAfterMs?: number | null;
+    escalationCount: number;
+    evidence?: Record<string, unknown>;
+    id: string;
+    key: string;
+    kind: string;
+    lastEvalAt?: number | null;
+    lastEvalError?: string | null;
+    lastSeenAt: number;
+    maxSurfaces: number;
+    muteReason?: string;
+    mutedUntil?: number | null;
+    openedAt: number;
+    previousState?: string;
+    producerClass: string;
+    producerId: string;
+    producerType: string;
+    renotifyAfterMs: number;
+    reopenAfterMs: number;
+    schemaVersion: number;
+    scopeId: string;
+    scopeType: string;
+    severity: string;
+    state: string;
+    subjectId?: string;
+    subjectType?: string;
+    surfaceCount: number;
+    surfacedAt?: number | null;
+    targetSessions?: string[];
+    title: string;
+    ttlMs: number;
+    updatedAt: number;
+    version: number;
+  };
+  status: string;
+  suppressed?: string;
+  updated?: boolean;
+};
+
+/** Input shape for `signals.show`. */
+export type SignalsShowInput = {
+  idOrKey: string;
+};
+
+/** Return shape for `signals.show`. */
+export type SignalsShowReturn = {
+  signal: {
+    acknowledgedAt?: number | null;
+    acknowledgedBy?: string | null;
+    clearSince?: number | null;
+    clearWhen: ({
+      expr: string;
+      grace_ms: number;
+      probe: string;
+      recheck_ms: number;
+      type: "probe";
+    }) | ({
+      field: string;
+      op: string;
+      recheck_ms: number;
+      type: "metric";
+      value: number;
+    }) | ({
+      ttl_ms: number;
+      type: "producer_resolve";
+    }) | ({
+      after_ms: number;
+      type: "decay";
+    }) | ({
+      owner?: string;
+      type: "manual";
+    });
+    closeReason?: string | null;
+    closedAt?: number | null;
+    cooldownMs: number;
+    createdAt: number;
+    dedupeKey?: string;
+    detail?: string;
+    escalateAfterMs?: number | null;
+    escalationCount: number;
+    evidence?: Record<string, unknown>;
+    id: string;
+    key: string;
+    kind: string;
+    lastEvalAt?: number | null;
+    lastEvalError?: string | null;
+    lastSeenAt: number;
+    maxSurfaces: number;
+    muteReason?: string;
+    mutedUntil?: number | null;
+    openedAt: number;
+    previousState?: string;
+    producerClass: string;
+    producerId: string;
+    producerType: string;
+    renotifyAfterMs: number;
+    reopenAfterMs: number;
+    schemaVersion: number;
+    scopeId: string;
+    scopeType: string;
+    severity: string;
+    state: string;
+    subjectId?: string;
+    subjectType?: string;
+    surfaceCount: number;
+    surfacedAt?: number | null;
+    targetSessions?: string[];
+    title: string;
+    ttlMs: number;
+    updatedAt: number;
+    version: number;
+  };
+};
+
+/** Input shape for `signals.tick`. */
+export type SignalsTickInput = {
+  execute?: boolean;
+};
+
+/** Return shape for `signals.tick`. */
+export type SignalsTickReturn = {
+  candidates: Array<{
+    id: string;
+    route: string;
+    sessionName: string;
+    severity: string;
+  }>;
+  errors: Array<{
+    error: string;
+    id: string;
+  }>;
+  escalated: number;
+  evaluated: number;
+  executed: boolean;
+  expired: number;
+  outbox: {
+    failed: number;
+    retried: number;
+    sent: number;
+  };
+  resolved: number;
+  skipped: Array<{
+    id: string;
+    reason: string;
+    sessionName: string;
+  }>;
+  tickState: {
+    lastSuccessfulTickAt: number | null;
+    lastTickAt: number | null;
+    lastTickError: string | null;
+    staleAfterMs: number;
+    staleAfterSource: string;
+    tickIntervalMs: number;
+  };
+  watchers: Array<{
+    error?: string;
+    id: string;
+    raised: boolean;
+    resolved: boolean;
+  }>;
+};
+
+/** Input shape for `signals.unmute`. */
+export type SignalsUnmuteInput = {
+  idOrKey: string;
+};
+
+/** Return shape for `signals.unmute`. */
+export type SignalsUnmuteReturn = {
+  changed?: boolean;
+  created?: boolean;
+  reopened?: boolean;
+  signal: {
+    acknowledgedAt?: number | null;
+    acknowledgedBy?: string | null;
+    clearSince?: number | null;
+    clearWhen: ({
+      expr: string;
+      grace_ms: number;
+      probe: string;
+      recheck_ms: number;
+      type: "probe";
+    }) | ({
+      field: string;
+      op: string;
+      recheck_ms: number;
+      type: "metric";
+      value: number;
+    }) | ({
+      ttl_ms: number;
+      type: "producer_resolve";
+    }) | ({
+      after_ms: number;
+      type: "decay";
+    }) | ({
+      owner?: string;
+      type: "manual";
+    });
+    closeReason?: string | null;
+    closedAt?: number | null;
+    cooldownMs: number;
+    createdAt: number;
+    dedupeKey?: string;
+    detail?: string;
+    escalateAfterMs?: number | null;
+    escalationCount: number;
+    evidence?: Record<string, unknown>;
+    id: string;
+    key: string;
+    kind: string;
+    lastEvalAt?: number | null;
+    lastEvalError?: string | null;
+    lastSeenAt: number;
+    maxSurfaces: number;
+    muteReason?: string;
+    mutedUntil?: number | null;
+    openedAt: number;
+    previousState?: string;
+    producerClass: string;
+    producerId: string;
+    producerType: string;
+    renotifyAfterMs: number;
+    reopenAfterMs: number;
+    schemaVersion: number;
+    scopeId: string;
+    scopeType: string;
+    severity: string;
+    state: string;
+    subjectId?: string;
+    subjectType?: string;
+    surfaceCount: number;
+    surfacedAt?: number | null;
+    targetSessions?: string[];
+    title: string;
+    ttlMs: number;
+    updatedAt: number;
+    version: number;
+  };
+  status: string;
+  suppressed?: string;
+  updated?: boolean;
+};
+
+/** Input shape for `signals.unmute-key`. */
+export type SignalsUnmuteKeyInput = {
+  key: string;
+};
+
+/** Return shape for `signals.unmute-key`. */
+export type SignalsUnmuteKeyReturn = {
+  key: string;
+  status: string;
+};
+
+/** Input shape for `signals.update`. */
+export type SignalsUpdateInput = {
+  by?: string;
+  detail?: string;
+  evidence?: string;
+  idOrKey: string;
+  severity?: string;
+  title?: string;
+};
+
+/** Return shape for `signals.update`. */
+export type SignalsUpdateReturn = {
+  changed?: boolean;
+  created?: boolean;
+  reopened?: boolean;
+  signal: {
+    acknowledgedAt?: number | null;
+    acknowledgedBy?: string | null;
+    clearSince?: number | null;
+    clearWhen: ({
+      expr: string;
+      grace_ms: number;
+      probe: string;
+      recheck_ms: number;
+      type: "probe";
+    }) | ({
+      field: string;
+      op: string;
+      recheck_ms: number;
+      type: "metric";
+      value: number;
+    }) | ({
+      ttl_ms: number;
+      type: "producer_resolve";
+    }) | ({
+      after_ms: number;
+      type: "decay";
+    }) | ({
+      owner?: string;
+      type: "manual";
+    });
+    closeReason?: string | null;
+    closedAt?: number | null;
+    cooldownMs: number;
+    createdAt: number;
+    dedupeKey?: string;
+    detail?: string;
+    escalateAfterMs?: number | null;
+    escalationCount: number;
+    evidence?: Record<string, unknown>;
+    id: string;
+    key: string;
+    kind: string;
+    lastEvalAt?: number | null;
+    lastEvalError?: string | null;
+    lastSeenAt: number;
+    maxSurfaces: number;
+    muteReason?: string;
+    mutedUntil?: number | null;
+    openedAt: number;
+    previousState?: string;
+    producerClass: string;
+    producerId: string;
+    producerType: string;
+    renotifyAfterMs: number;
+    reopenAfterMs: number;
+    schemaVersion: number;
+    scopeId: string;
+    scopeType: string;
+    severity: string;
+    state: string;
+    subjectId?: string;
+    subjectType?: string;
+    surfaceCount: number;
+    surfacedAt?: number | null;
+    targetSessions?: string[];
+    title: string;
+    ttlMs: number;
+    updatedAt: number;
+    version: number;
+  };
+  status: string;
+  suppressed?: string;
+  updated?: boolean;
 };
 
 /** Input shape for `skill-gates.disable`. */
@@ -19976,6 +24899,50 @@ export type TasksArchiveReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `tasks.attention`. */
+export type TasksAttentionInput = {
+  agent?: string;
+  owner?: string;
+  task?: string;
+};
+
+/** Return shape for `tasks.attention`. */
+export type TasksAttentionReturn = {
+  decisionCount: number;
+  entries: Array<{
+    ageSeconds: number;
+    assigneeAgentId: string | null;
+    assigneeSessionName: string | null;
+    decisionCount: number;
+    decisions: Array<{
+      ageSeconds: number;
+      ask: string;
+      askedAt: number;
+      askedBy: string | null;
+      blocks: boolean;
+      id: string;
+      key: string;
+      ownerId: string | null;
+      ownerType: "human" | "agent" | "unassigned";
+    }>;
+    parked: boolean;
+    taskId: string;
+    taskPriority: string;
+    taskStatus: string;
+    taskTitle: string;
+    waitingFor: "human" | "agent" | "unassigned";
+  }>;
+  filters: {
+    agentId?: string;
+    ownerType?: "human" | "agent" | "unassigned";
+    taskId?: string;
+  };
+  generatedAt: number;
+  kind: "task.decision.attention";
+  parkedCount: number;
+  total: number;
+};
+
 /** Input shape for `tasks.automations.add`. */
 export type TasksAutomationsAddInput = {
   agent?: string;
@@ -20107,6 +25074,7 @@ export type TasksAutomationsShowReturn = {
 
 /** Input shape for `tasks.block`. */
 export type TasksBlockInput = {
+  idempotencyKey?: string;
   reason?: string;
   taskId: string;
 };
@@ -20121,6 +25089,7 @@ export type TasksBlockReturn = {
 /** Input shape for `tasks.comment`. */
 export type TasksCommentInput = {
   body: string;
+  idempotencyKey?: string;
   taskId: string;
 };
 
@@ -20139,6 +25108,7 @@ export type TasksCreateInput = {
   checkpoint?: string;
   dependsOn?: string[];
   effort?: string;
+  idempotencyKey?: string;
   input?: string[];
   instructions?: string;
   model?: string;
@@ -20230,10 +25200,13 @@ export type TasksDepsRmReturn = {
 export type TasksDispatchInput = {
   actorSession?: string;
   agent?: string;
+  budget?: string;
   checkpoint?: string;
+  cloud?: boolean;
   effort?: string;
   execute?: boolean;
   model?: string;
+  project?: string;
   reportEvents?: string;
   reportTo?: string;
   session?: string;
@@ -20252,6 +25225,7 @@ export type TasksDispatchReturn = {
 
 /** Input shape for `tasks.done`. */
 export type TasksDoneInput = {
+  idempotencyKey?: string;
   summary?: string;
   taskId: string;
 };
@@ -20265,6 +25239,7 @@ export type TasksDoneReturn = {
 
 /** Input shape for `tasks.fail`. */
 export type TasksFailInput = {
+  idempotencyKey?: string;
   reason?: string;
   taskId: string;
 };
@@ -20394,6 +25369,8 @@ export type TasksProfilesValidateReturn = {
 
 /** Input shape for `tasks.report`. */
 export type TasksReportInput = {
+  checklist?: string;
+  idempotencyKey?: string;
   message?: string;
   progress?: string;
   taskId: string;
@@ -21324,6 +26301,7 @@ export type TriggersAddInput = {
   account?: string;
   agent?: string;
   cooldown?: string;
+  debounce?: string;
   envFile?: string;
   exec?: string;
   filter?: string;

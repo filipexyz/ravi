@@ -27,22 +27,33 @@ type WorkObjectOperation = keyof typeof WORK_OBJECT_NATS_SUBJECTS;
 
 export function startWorkObjectNatsService(): WorkObjectNatsServiceHandle {
   let running = true;
-  const stream = subscribe(...ALL_WORK_OBJECT_NATS_SUBJECTS, { queue: "ravi-work-objects" });
+  const controller = new AbortController();
+  const failures: Error[] = [];
+  const stream = subscribe(...ALL_WORK_OBJECT_NATS_SUBJECTS, { queue: "ravi-work-objects", signal: controller.signal });
 
   const loop = (async () => {
     for await (const message of stream) {
       if (!running) break;
       await handleWorkObjectNatsMessage(message.topic, message.data).catch((error) => {
+        failures.push(new Error("Work Object request delivery failed", { cause: error }));
         log.error("Work Object NATS request failed", { topic: message.topic, error });
       });
     }
-  })();
+  })().catch((cause) => {
+    failures.push(new Error("Work Object subscription loop failed", { cause }));
+  });
 
   return {
     async stop() {
       running = false;
-      await stream.return?.(undefined);
-      await loop.catch(() => {});
+      controller.abort();
+      try {
+        await stream.return?.(undefined);
+      } catch (cause) {
+        failures.push(new Error("Work Object subscription close failed", { cause }));
+      }
+      await loop;
+      if (failures.length) throw new AggregateError(failures, "Work Object shutdown failed", { cause: failures[0] });
     },
   };
 }
