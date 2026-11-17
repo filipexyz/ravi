@@ -428,7 +428,8 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     blocking: ["new", "creating", "claimed", "running", "resuming"],
     unverified: true,
     anyDatabase: true,
-    owner: "Devin session sync (not verified): sessions being created or running block",
+    // Writer (tag devin/store.ts l.419-441): an upsert of the status the Devin API reports.
+    owner: `Devin sessions (devin/store.ts l.419-441, status mirrored from the Devin API): ${REMOTE_EXIT}`,
   },
   // Writer (tag automations.ts l.474-581): claimed, then finalized as skipped, spawned or failed in
   // the same flow. A `claimed` row outlives only a process that died between the two.
@@ -607,16 +608,23 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     anyDatabase: true,
     owner: "calendar reminders (no writer in the tag outside tests): any row blocks",
   },
+  // Writer (tag cloud-agents/chat-db.ts l.369-386, same in dev): a click claims the row `deciding`
+  // with decided_at; the open-approval query of both releases treats a claim older than
+  // CLOUD_CHAT_APPROVAL_CLAIM_TTL_MS (2 min, l.278) as open again. A claim of a stopped process is
+  // therefore an approval that waits for a person; blocking on it would block for good.
   {
     table: "cloud_chat_approvals",
     column: "status",
     terminal: ["approved", "denied", "closed"],
-    pending: ["pending"],
-    restReasons: { pending: "waits for a person's decision; nothing runs until then" },
+    pending: ["pending", "deciding"],
+    restReasons: {
+      pending: "waits for a person's decision; nothing runs until then",
+      deciding:
+        "a click's claim; its process stopped, and the open-approval query reopens the approval 2 min after decided_at (chat-db.ts l.369), so it waits for a person",
+    },
     inFlight: [],
-    blocking: ["deciding"],
     anyDatabase: true,
-    owner: "cloud chat approvals: a decision in progress blocks",
+    owner: "cloud chat approvals (chat-db.ts l.369-386): open approvals wait for a person",
   },
   // A clean legacy stop keeps `running` by design (tag session-adapter-bus.ts l.801, daemon.ts
   // l.323-324). The successor's startDaemon (HEAD daemon.ts l.593) starts the adapter bus, whose

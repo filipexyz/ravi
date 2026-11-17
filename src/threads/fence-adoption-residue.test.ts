@@ -116,6 +116,9 @@ describe("legacy durable residue", () => {
     db.exec("CREATE TABLE call_tool_runs (id TEXT, status TEXT NOT NULL)");
     // Tag tool-bridge.ts l.400-429: a policy refusal is written blocked, reported, and never written again.
     db.exec("INSERT INTO call_tool_runs VALUES ('t1', 'blocked'), ('t2', 'completed')");
+    // Tag chat-db.ts l.369: a click's claim of a stopped process is reopened after 2 min; it waits for a person.
+    db.exec("CREATE TABLE cloud_chat_approvals (approval_id TEXT, status TEXT NOT NULL)");
+    db.exec("INSERT INTO cloud_chat_approvals VALUES ('a1', 'deciding'), ('a2', 'approved')");
     db.exec("CREATE TABLE reaction_actions (id TEXT, completed_at INTEGER NOT NULL)");
     db.exec("INSERT INTO reaction_actions VALUES ('done', 5), ('open', 0)");
     db.exec(
@@ -132,6 +135,7 @@ describe("legacy durable residue", () => {
     expect(residue.unknown).toHaveLength(1);
     expect(residue.unknown[0]).toStartWith("ravi.db:reaction_actions.completed_at: 1 row(s) where completed_at = 0: ");
     expect(bySource["ravi.db:call_tool_runs.status"]).toMatchObject({ pending: 0, inFlight: 0 });
+    expect(bySource["ravi.db:cloud_chat_approvals.status"]).toMatchObject({ pending: 1, inFlight: 0 });
     expect(bySource["ravi.db:daemon_restart_session_snapshots.pending_message_count"]).toMatchObject({ pending: 1 });
   });
 

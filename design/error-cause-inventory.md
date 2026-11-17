@@ -2149,8 +2149,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | threads | src/threads/bootstrap-authorization.ts | 37 | no-cause | Async authorization is rejected synchronously; consume only its later rejection. | src/threads/bootstrap-authorization.ts:da98c87013b5e1f81516236b |
 | threads | src/threads/fence-adoption-live.ts | 100 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption-live.ts:177b3e9a3efc65ca20a49767 |
 | threads | src/threads/fence-adoption-live.ts | 144 | no-cause | An unreachable broker is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-live.ts:5c21be34e03e3285ebdafccb |
-| threads | src/threads/fence-adoption-residue.ts | 842 | no-cause | An unreadable table is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-residue.ts:cac882736cd99cb83e8b2a23 |
-| threads | src/threads/fence-adoption-residue.ts | 908 | no-cause | An unreadable broker source is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-residue.ts:89497d605f16912495e5e8b1 |
+| threads | src/threads/fence-adoption-residue.ts | 850 | no-cause | An unreadable table is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-residue.ts:cac882736cd99cb83e8b2a23 |
+| threads | src/threads/fence-adoption-residue.ts | 916 | no-cause | An unreadable broker source is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-residue.ts:89497d605f16912495e5e8b1 |
 | threads | src/threads/fence-adoption.ts | 143 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:6b81ec65f8a6464f04d53849 |
 | threads | src/threads/fence-adoption.ts | 208 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:46490b12ec7da2fe894e8d92 |
 | threads | src/threads/fence-adoption.ts | 250 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:975cec06d3d595eeb4638f36 |
