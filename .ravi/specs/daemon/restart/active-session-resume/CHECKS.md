@@ -13,6 +13,8 @@
 - Idempotency: rerun boot resume hook for same restart epoch, expect no duplicate session event.
 - Fenced resume: restart while a session's current turn is unsafe to replay (tool started or output emitted) with no durable successors, expect one restart notice with the restart reason, no "Continue de onde parou", and a delivery record with kind `notice`.
 - Failed publish: when publishing the restart event fails, expect no delivery record for that session.
+- First boot: start the daemon on an empty state dir (no `restart-reason.txt`, no main session), expect no restart event, no session created and the log line `First boot: no restart reason`. With an existing main session and no reason file, expect the synthesized `supervised_restart` notice as before.
+- State dir: with `RAVI_STATE_DIR` set, expect `restart-reason.txt` only there (daemon stop, `ravi daemon restart` and the detached worker), never under `$HOME/.ravi`.
 - Caller preservation: session that invoked `ravi daemon restart` still receives its restart notice according to `daemon/restart/context-preservation`.
 
 ## Suggested Tests

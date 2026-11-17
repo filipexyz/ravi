@@ -591,6 +591,8 @@ export class DaemonCommands {
       cleanEnv.RAVI_BUNDLE = target.bundlePath;
       cleanEnv.RAVI_DAEMON_CWD = target.cwd;
       cleanEnv[DAEMON_RESTART_HANDOFF_ENV] = "1";
+      // The caller wrote restart-reason.txt in its state dir; the worker must read and rewrite the same file.
+      if (process.env.RAVI_STATE_DIR) cleanEnv.RAVI_STATE_DIR = process.env.RAVI_STATE_DIR;
 
       const logPath = daemonRestartLogPath();
       appendDaemonRestartLog(
