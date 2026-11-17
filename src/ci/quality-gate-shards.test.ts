@@ -8,7 +8,13 @@ type WorkflowJob = {
   if?: string;
   needs?: string | string[];
   strategy?: { matrix?: { shard?: number[] } };
-  steps?: Array<{ name?: string; run?: string; env?: Record<string, string> }>;
+  steps?: Array<{
+    name?: string;
+    run?: string;
+    uses?: string;
+    with?: Record<string, unknown>;
+    env?: Record<string, string>;
+  }>;
 };
 
 const root = resolve(import.meta.dir, "../..");
@@ -43,6 +49,9 @@ it("`bun run test` is exactly the union of the CI shards", () => {
 it("CI runs every shard exactly once", () => {
   const tests = workflow.jobs.tests!;
   expect(tests.strategy?.matrix?.shard).toEqual(shardScripts.map((_, i) => i + 1));
+  // The unsharded job had full history; tests that read git tags need it too.
+  const checkout = tests.steps!.find((step) => step.uses?.startsWith("actions/checkout@"));
+  expect(checkout?.with?.["fetch-depth"]).toBe(0);
   const runs = tests.steps!.filter((step) => step.run?.includes("bun run test:shard"));
   expect(runs.map((step) => step.run!.trim())).toEqual(["bun run test:shard-${{ matrix.shard }}"]);
   // The sharded job must not also run the unsharded chain.

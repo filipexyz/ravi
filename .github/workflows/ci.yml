@@ -163,7 +163,11 @@ jobs:
         shard: [1, 2, 3, 4]
 
     steps:
+      # Full history and tags: the fence adoption tests read legacy tags
+      # (e.g. v3.261113.2) and fail with LEGACY_TAG_MISSING in a shallow clone.
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
         with:
