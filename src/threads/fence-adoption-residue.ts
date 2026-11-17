@@ -21,7 +21,11 @@ export type ResidueRule = {
   owner: string;
 };
 
-/** Closed status sets copied from the CHECK constraints of v3.261113.2 (src/router/router-db.ts). */
+/**
+ * Status sets of v3.261113.2: CHECK constraints where the schema has them
+ * (src/router/router-db.ts, jobs, mail/calendar outbox, cloud deliveries) and the
+ * writers where the column is free text (decisions, signals).
+ */
 export const LEGACY_ROUTER_RESIDUE_RULES: readonly Omit<ResidueRule, "database">[] = [
   {
     table: "runtime_prompt_queue",
@@ -87,7 +91,78 @@ export const LEGACY_ROUTER_RESIDUE_RULES: readonly Omit<ResidueRule, "database">
     inFlight: ["leased"],
     owner: "sync outbox dispatcher",
   },
+  // src/decisions/delivery.ts: 'failed' and 'published' are claimed again; an expired
+  // 'accepting' claim becomes 'uncertain', which only an explicit resolution settles.
+  {
+    table: "decision_deliveries",
+    column: "status",
+    terminal: ["delivered", "superseded"],
+    pending: ["pending", "failed", "published"],
+    inFlight: ["publishing", "accepting", "uncertain"],
+    owner: "decision delivery worker; uncertain answers by explicit resolution",
+  },
+  // src/signals/signal-db.ts: claims are tokens on 'pending' rows with an expiry.
+  {
+    table: "signal_outbox",
+    column: "status",
+    terminal: ["sent", "failed"],
+    pending: ["pending"],
+    inFlight: [],
+    owner: "signal outbox dispatcher",
+  },
+  // src/jobs/runner.ts reconciles orphaned running jobs when it starts.
+  {
+    table: "jobs",
+    column: "status",
+    terminal: ["succeeded", "failed", "killed"],
+    pending: ["pending"],
+    inFlight: ["running"],
+    owner: "job runner orphan reconciliation",
+  },
+  // No dispatcher in the legacy daemon leases these rows, so 'leased' and 'sending'
+  // have no owner that resumes them here: they stay outside the rule and block.
+  {
+    table: "mail_outbox",
+    column: "status",
+    terminal: ["sent", "acked", "failed", "dead"],
+    pending: ["pending"],
+    inFlight: [],
+    owner: "mail outbox (explicit retry)",
+  },
+  {
+    table: "calendar_outbox",
+    column: "status",
+    terminal: ["sent", "acked", "failed", "dead"],
+    pending: ["pending"],
+    inFlight: [],
+    owner: "calendar outbox (explicit retry)",
+  },
+  {
+    table: "cloud_delivery_items",
+    column: "state",
+    terminal: ["done", "skipped", "failed"],
+    pending: ["pending"],
+    inFlight: [],
+    owner: "cloud delivery worker",
+  },
 ];
+
+/**
+ * Tables of v3.261113.2 that hold no unit of accepted work: they record a delivery
+ * that already happened or trace a unit another table owns. Listed in the evidence.
+ */
+export const LEGACY_RESIDUE_EXCLUSIONS: readonly { table: string; reason: string }[] = [
+  { table: "session_turns", reason: "trace of turns; the unit of work is runtime_turn_attempts" },
+  { table: "daemon_restart_resume_deliveries", reason: "log of resumes already delivered (delivered_at NOT NULL)" },
+  { table: "approval_request_deliveries", reason: "log of approval messages already sent" },
+  { table: "observer_delivery_events", reason: "log of observer events already delivered" },
+  { table: "inbox_items", reason: "human inbox, not runtime work in flight" },
+];
+
+/** Every rule above lives in the router database (ravi.db) at v3.261113.2. */
+export function legacyResidueRules(routerDatabasePath: string): ResidueRule[] {
+  return LEGACY_ROUTER_RESIDUE_RULES.map((rule) => ({ ...rule, database: routerDatabasePath }));
+}
 
 const identifier = /^[a-z_][a-z0-9_]*$/;
 

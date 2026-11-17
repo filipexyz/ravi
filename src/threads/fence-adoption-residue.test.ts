@@ -6,7 +6,9 @@ import { Database } from "bun:sqlite";
 import {
   collectJetStreamResidue,
   collectSqliteResidue,
+  LEGACY_RESIDUE_EXCLUSIONS,
   LEGACY_ROUTER_RESIDUE_RULES,
+  legacyResidueRules,
   mergeResidue,
   type ResidueRule,
 } from "./fence-adoption-residue.js";
@@ -58,6 +60,26 @@ describe("legacy durable residue", () => {
     const path = join(directory, "ravi.db");
     new Database(path).close();
     expect(collectSqliteResidue([queueRule(path)]).sources[0]).toMatchObject({ detail: { table: "absent" } });
+  });
+
+  it("legacy rules cover the outboxes: uncertain decisions are durable, an unowned mail lease blocks", () => {
+    const path = join(root(), "ravi.db");
+    const db = new Database(path);
+    db.exec("CREATE TABLE decision_deliveries (id TEXT, status TEXT NOT NULL)");
+    db.exec("CREATE TABLE mail_outbox (id TEXT, status TEXT NOT NULL)");
+    db.exec("CREATE TABLE jobs (id TEXT, status TEXT NOT NULL)");
+    for (const status of ["delivered", "uncertain", "published", "accepting"])
+      db.query("INSERT INTO decision_deliveries VALUES (?, ?)").run(status, status);
+    db.exec("INSERT INTO mail_outbox VALUES ('m1', 'sent'), ('m2', 'leased')");
+    db.exec("INSERT INTO jobs VALUES ('j1', 'running'), ('j2', 'succeeded')");
+    db.close();
+    const residue = collectSqliteResidue(legacyResidueRules(path));
+    expect(residue.unknown).toEqual(["mail_outbox.status=leased (1)"]);
+    const byTable = Object.fromEntries(residue.sources.map((entry) => [entry.source, entry]));
+    expect(byTable["decision_deliveries.status"]).toMatchObject({ pending: 1, inFlight: 2 });
+    expect(byTable["jobs.status"]).toMatchObject({ pending: 0, inFlight: 1 });
+    expect(byTable["runtime_prompt_queue.status"]).toMatchObject({ detail: { table: "absent" } });
+    expect(LEGACY_RESIDUE_EXCLUSIONS.map((entry) => entry.table)).toContain("session_turns");
   });
 
   it("an unreadable database is unknown, and the probe never creates or changes a file", () => {
