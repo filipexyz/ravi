@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildPm2Env } from "../pm2.js";
 import {
@@ -103,5 +104,63 @@ describe("RAVI_STATE_DIR across the restart handoff", () => {
     const booted: NodeJS.ProcessEnv = { RAVI_STATE_DIR: "state" };
     anchorStateDirEnv(booted, daemonCwd);
     expect(resolveHandoffStateDir(booted, "/anywhere/else")).toBe(join(daemonCwd, "state"));
+  });
+});
+
+describe("daemon boot pins RAVI_STATE_DIR after the .env loader", () => {
+  // Runs the real loader and the statement that follows it, without importing daemon.ts and starting services.
+  const daemonSource = readFileSync(new URL("../daemon.ts", import.meta.url), "utf8");
+  const loaderStart = daemonSource.indexOf("function loadEnvFile()");
+  const callMarker = "\nloadEnvFile();\n";
+  const callIndex = daemonSource.indexOf(callMarker, loaderStart);
+  const anchorStatement = "anchorStateDirEnv(process.env, process.cwd());";
+  const anchorIndex = daemonSource.indexOf(anchorStatement, callIndex);
+
+  it("the source pins once before the loader and again right after it", () => {
+    expect(loaderStart).toBeGreaterThan(0);
+    expect(callIndex).toBeGreaterThan(loaderStart);
+    expect(daemonSource.slice(0, loaderStart)).toContain(anchorStatement);
+    const between = daemonSource.slice(callIndex + callMarker.length, anchorIndex);
+    expect(between.split("\n").every((line) => line.trim() === "" || line.trim().startsWith("//"))).toBe(true);
+  });
+
+  function boot(env: Record<string, string>, dotEnv: string | null): Record<string, string> {
+    const body = `${daemonSource.slice(loaderStart, callIndex)}\nloadEnvFile();\n${anchorStatement}`;
+    const run = new Function(
+      "process",
+      "join",
+      "getRaviStateDir",
+      "existsSync",
+      "readFileSync",
+      "log",
+      "anchorStateDirEnv",
+      body,
+    );
+    const fixture = { env: { ...env }, cwd: () => "/ws/daemon" };
+    // First pin, as the module does before the loader.
+    anchorStateDirEnv(fixture.env, fixture.cwd());
+    run(
+      fixture,
+      join,
+      () => "/ws/daemon/state",
+      () => dotEnv !== null,
+      () => dotEnv ?? "",
+      { info() {} },
+      anchorStateDirEnv,
+    );
+    return fixture.env;
+  }
+
+  it("a relative RAVI_STATE_DIR from the state dir .env ends absolute against the daemon cwd", () => {
+    const env = boot({ RAVI_STATE_DIR: "state" }, "RAVI_STATE_DIR=other\nFOO=bar\n");
+    expect(env.RAVI_STATE_DIR).toBe(join("/ws/daemon", "other"));
+    expect(env.FOO).toBe("bar");
+  });
+
+  it("absolute, empty and missing values come out unchanged", () => {
+    expect(boot({ RAVI_STATE_DIR: "state" }, "RAVI_STATE_DIR=/srv/ravi-a\n").RAVI_STATE_DIR).toBe("/srv/ravi-a");
+    expect(boot({ RAVI_STATE_DIR: "state" }, null).RAVI_STATE_DIR).toBe(join("/ws/daemon", "state"));
+    expect(boot({}, "FOO=bar\n").RAVI_STATE_DIR).toBeUndefined();
+    expect(boot({}, "RAVI_STATE_DIR=\n").RAVI_STATE_DIR).toBe("");
   });
 });

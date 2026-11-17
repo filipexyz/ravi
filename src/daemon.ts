@@ -133,6 +133,8 @@ function loadEnvFile() {
 }
 
 loadEnvFile();
+// The state dir .env can carry a relative RAVI_STATE_DIR and the loader overwrites the pinned value: pin the final environment again.
+anchorStateDirEnv(process.env, process.cwd());
 
 const RESTART_REASON_FILE = getRestartReasonPath();
 const RESTART_RESUME_WINDOW_MS = 60 * 60 * 1000;
