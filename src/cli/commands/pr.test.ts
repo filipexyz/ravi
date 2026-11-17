@@ -247,9 +247,22 @@ describe("pr publish CLI contract", () => {
         runWithContext({ ...authenticated, context: { ...authenticated.context!, ...ended } }, () =>
           command().publish("o/r", "dev", "Test", "/does-not-exist/body.md", undefined, undefined, false, true, true),
         ),
-      ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+      ).rejects.toMatchObject({
+        code: "RUNTIME_CONTEXT_INACTIVE",
+        details: { suggestedAction: expect.stringContaining("same --expect-sha") },
+      });
     }
     expect(f.calls).toHaveLength(0);
+  });
+  it("keeps a missing grant as PERMISSION_DENIED, apart from an ended context", async () => {
+    const denied = await invoke(true, false, false).catch((error) => error);
+    expect(denied).toMatchObject({ code: "PERMISSION_DENIED" });
+    const authenticated = context();
+    const ended = await runWithContext({ ...authenticated, context: { ...authenticated.context!, revokedAt: 1 } }, () =>
+      command().publish("o/r", "dev", "Test", "/does-not-exist/body.md", undefined, undefined, false, true, true),
+    ).catch((error) => error);
+    expect(ended).toMatchObject({ code: "RUNTIME_CONTEXT_INACTIVE" });
+    expect(ended.message).not.toMatch(/missing grant|cannot publish the selected PR/);
   });
   it("defaults to a typed exit-3 preview with no HTTP writes, journal, PR or follow", async () => {
     for (const dryRun of [false, true]) {
