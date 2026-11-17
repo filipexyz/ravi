@@ -18,6 +18,19 @@ Validates:
 - The probe MUST settle its credential attempt and report terminal provider errors verbatim
 - A concurrent update landing during the probe MUST supersede this one: failed probe restores nothing (`superseded: true`, the newer values survive), successful probe skips continuity clear/rematerialization, and no model-changed notification is emitted for a superseded update
 - The conditional restore MUST be a single statement gated on revision + all four persisted values (`restoreSessionRuntimeConfigIfOwned`)
+- When the restore throws, the stored configuration MUST be read back and the revision MUST stay authoritative: values equal to `before` under a revision this update did not write MUST report `superseded: true` (both for a newer update that wrote them and for this restore committing before it threw)
+
+## Failure Envelope
+
+```bash
+bun test src/cli/agent-contract.test.ts src/cli/commands/sessions-update-failure.test.ts
+```
+
+Validates:
+
+- `error.runtimeUpdate` MUST carry only flags, a redacted `rollbackError` and the four override ids; an id outside the accepted format MUST turn that snapshot into `null` while the flags stay in the envelope, and the raw id MUST NOT appear anywhere in it
+- With the unproven configuration still stored, `suggestedAction` MUST start with `Check first: ravi sessions info <session> --json` and carry the probe-free restore command; with a non-representable previous id it MUST carry no restore command
+- A stored state equal to `before` under a moved revision MUST say nothing is left to restore from this update and MUST NOT claim that a newer update owns the session
 
 ## Write-path Enforcement
 

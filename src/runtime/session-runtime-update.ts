@@ -480,12 +480,12 @@ export async function applySessionRuntimeUpdate(
         // The UPDATE threw, possibly before it checked ownership: only the
         // stored revision and values say whose configuration this is. A newer
         // update that landed during the probe must not be reported as ours.
-        // A restore that threw AFTER committing leaves the previous values stored
-        // under a higher revision: that is the restored state, not a newer update.
+        // The revision stays authoritative: values equal to `before` do not say
+        // who wrote them (this update's own restore that threw after committing,
+        // or a newer update that wrote the same values), so a higher revision
+        // is always reported as superseded. The caller words that ambiguity.
         const stored = snapshotOf(observed);
-        superseded = sameSnapshot(stored, before)
-          ? false
-          : (observed.runtimeProviderConfigRevision ?? 0) !== ownedRevision || !sameSnapshot(stored, written);
+        superseded = (observed.runtimeProviderConfigRevision ?? 0) !== ownedRevision || !sameSnapshot(stored, written);
         after = stored;
       } else {
         // The UPDATE threw and the store could not be read: neither whose

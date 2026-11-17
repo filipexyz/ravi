@@ -218,14 +218,17 @@ describe("sessions update RUNTIME_PROBE_FAILED envelope", () => {
 
     expect(error.runtimeUpdate).toMatchObject({
       rolledBack: false,
-      superseded: false,
+      // The revision moved, so the update is superseded as far as the data can say.
+      superseded: true,
       storedStateKnown: true,
       before: BEFORE,
       stored: BEFORE,
     });
-    // Not "a newer update owns it": the stored values are the previous ones.
+    // Not "a newer update owns it": the values are the previous ones, written either
+    // by this restore before it failed or by a newer update, and the text says so.
     expect(String(error.message)).not.toContain("a newer update owns");
     expect(String(error.message)).toContain("already equals the previous runtime config");
+    expect(String(error.message)).toContain("either that restore committed before failing or a newer update");
     expect(String(error.suggestedAction)).toContain("Nothing to restore");
     expect(String(error.suggestedAction)).not.toContain("--skip-probe");
     expect(resolveSession(SESSION_KEY)).toMatchObject({ modelOverride: "haiku", effortOverride: "high" });

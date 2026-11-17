@@ -114,6 +114,28 @@ It does NOT own:
   finalization (continuity clear, rematerialization) is gated by the same
   ownership condition. A superseded update reports `superseded: true`, restores
   nothing, destroys nothing, and announces nothing.
+- A failed probe whose restore also fails exits `RUNTIME_PROBE_FAILED` and
+  carries the recovery state in the typed envelope control
+  `error.runtimeUpdate`: `rolledBack`, `superseded` (null when unknown),
+  `storedStateKnown`, `before`, `stored` (null when unknown) and a redacted
+  `rollbackError`. Only flags and the four override ids pass. An id outside the
+  accepted id format (a legacy value) is never copied: the control keeps its
+  flags and reports that snapshot as `null`.
+- After a failed restore the command reads the stored configuration back and
+  the revision stays authoritative for ownership. Values equal to `before` under
+  a revision this update did not write are reported as superseded, because the
+  data cannot tell this update's own restore that committed before throwing from
+  a newer update that wrote the same values; the text says both and that nothing
+  is left to restore from this update.
+- The recovery instruction is conditional, never blind: when the unproven
+  configuration is still stored, `suggestedAction` says to inspect first
+  (`ravi sessions info <session> --json`) and restore only if the session still
+  shows this update's values, with the exact command built from `before` and
+  `--skip-probe`. No command is built when a changed axis' previous id is not
+  representable; the instruction then says so and points at `sessions info`.
+  `--provider clear` with `--skip-probe` can rematerialize to the agent provider
+  when the session's native provider was stale, so the command is not a byte-for-
+  byte copy of the previous state.
 
 ## Known windows
 

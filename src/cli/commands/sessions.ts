@@ -4422,13 +4422,16 @@ export class SessionCommands {
         suggestedAction = restoreCommand
           ? `Inspect first: ${inspect}. A newer update may own the session, so restore only if it still shows this update's values: ${restoreCommand}`
           : `Inspect first: ${inspect}. A newer update may own the session, and the previous values cannot be written as a command (${UNREPRESENTABLE_PREVIOUS_VALUE}); restore by hand only if the session still shows this update's values`;
+      } else if (result.superseded && sameRuntimeSnapshot(result.after, result.before)) {
+        // The values equal the previous ones under a revision this update did not
+        // write. That is either this restore committing and then throwing, or a
+        // newer update that wrote the same values: the data cannot tell which, and
+        // neither case has anything left to restore from this update.
+        outcome = `the restore reported an error (${restoreError}), and the stored configuration already equals the previous runtime config for ${label} — either that restore committed before failing or a newer update wrote the same values`;
+        suggestedAction = `Nothing to restore from this update: confirm with ${inspect}, then pick a model/provider this installation can run and retry ravi sessions update`;
       } else if (result.superseded) {
         outcome = `the restore FAILED (${restoreError}), but the stored configuration is no longer this update's — a newer update owns ${label} now`;
         suggestedAction = `Nothing to restore from this update: inspect ${inspect}; the newer update governs the session`;
-      } else if (sameRuntimeSnapshot(result.after, result.before)) {
-        // The restore threw after committing: the previous values are stored.
-        outcome = `the restore reported an error (${restoreError}), but the stored configuration already equals the previous runtime config for ${label}`;
-        suggestedAction = `Nothing to restore: confirm with ${inspect}, then pick a model/provider this installation can run and retry ravi sessions update`;
       } else {
         outcome = `the restore FAILED (${restoreError}), so the unproven configuration is STILL persisted for ${label}`;
         suggestedAction = restoreCommand
