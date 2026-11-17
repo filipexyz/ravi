@@ -241,7 +241,12 @@ export async function executePublication(
             sha: plan.localSha,
           });
       } catch (error) {
-        if (error instanceof ContractError && ["PUBLICATION_AUDIT_FAILED", "PERMISSION_DENIED"].includes(error.code))
+        // An authority failure on the ref write must not be followed by a read made with the ended context,
+        // nor by a "ref confirmed" journal row for a write the publisher was no longer allowed to make.
+        if (
+          error instanceof ContractError &&
+          ["PUBLICATION_AUDIT_FAILED", "PERMISSION_DENIED", "RUNTIME_CONTEXT_INACTIVE"].includes(error.code)
+        )
           throw error;
         if ((await readRef(request, plan.repo, plan.head)) !== plan.localSha) throw error;
         journal.record("ref", "confirmed", { sha: plan.localSha });

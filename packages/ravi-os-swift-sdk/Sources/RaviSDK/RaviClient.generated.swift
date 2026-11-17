@@ -5994,6 +5994,13 @@ public struct SessionsNamespace: Sendable {
     return try await transport.call(groupSegments: ["sessions"], command: "trace", body: requestBody, as: SessionsTraceReturn.self)
   }
 
+  public func update(_ nameOrKey: String, _ options: SessionsUpdateOptions = .init()) async throws -> SessionsUpdateReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions"], command: "update", body: requestBody, as: SessionsUpdateReturn.self)
+  }
+
   public func visibility(_ nameOrKey: String) async throws -> SessionsVisibilityReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)

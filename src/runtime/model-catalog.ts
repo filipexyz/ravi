@@ -235,6 +235,102 @@ export function modelProviderMismatch(
   return null;
 }
 
+export interface RuntimeModelCatalogCheck {
+  /** This installation has an authoritative model list for the provider. */
+  authoritative: boolean;
+  exists: boolean;
+  validIds: string[];
+  /** Model families this provider is known to route (claude/grok only). */
+  knownFamilies: string[];
+}
+
+/**
+ * Model families Anthropic routes that this installation does not list as
+ * selectable options (Fable and Mythos share the same underlying model; the
+ * Mythos ids resolve provider-side). Family recognition only — never an id
+ * list: a version the local catalog has not heard of still passes through.
+ */
+const CLAUDE_FAMILY_SIBLINGS = ["mythos"];
+
+/**
+ * The family is the first alphabetic token of the name, skipping the "claude"
+ * vendor prefix ("claude-3-5-sonnet-20240620" → sonnet, "grok-4-fast" → grok,
+ * "fable-9-9" → fable). Suffix tokens (latest, fast) never count as families.
+ */
+function modelFamilyOf(value: string): string | null {
+  for (const token of value.toLowerCase().split(/[^a-z]+/)) {
+    if (!token) continue;
+    if (token === "claude") continue;
+    return token;
+  }
+  return null;
+}
+
+function knownModelFamilies(provider: RuntimeProviderId, ids: string[]): Set<string> {
+  const families = new Set<string>();
+  for (const id of ids) {
+    const family = modelFamilyOf(id);
+    if (family) families.add(family);
+  }
+  if (provider === "claude") {
+    for (const sibling of CLAUDE_FAMILY_SIBLINGS) families.add(sibling);
+  }
+  return families;
+}
+
+/**
+ * Catalog check for an explicit model selection — fail fast WITHOUT becoming
+ * a closed catalog.
+ *
+ * Write paths refuse what can never work: an empty value, or a family this
+ * provider does not route (the cross-vendor rules in `modelProviderMismatch`
+ * cover the other vendors' shapes). A KNOWN family with an UNKNOWN version
+ * (claude-fable-9, claude-mythos-6, claude-sonnet-7) passes through intact:
+ * the provider owns model resolution and fallback, and a version it refuses
+ * surfaces in the liveness probe with rollback — the right mechanism for
+ * that failure. The local list recognizes families and names the listed
+ * models in refusals; it must never forbid a new version of a family that
+ * exists (origin: 2026-11-13 `fable-5-2` incident, where the opposite
+ * failure — accepting a value and dying masked on the first turn — was
+ * fixed by the probe, not by freezing the catalog).
+ *
+ * Providers with an open model space (Pi selectors, Codex without its models
+ * cache) stay permissive; the Codex cache is this installation's real account
+ * list, so unknown slugs there are refused.
+ */
+export function checkRuntimeModelInCatalog(
+  provider: RuntimeProviderId,
+  model: string | null | undefined,
+  options: RuntimeModelCatalogOptions = {},
+): RuntimeModelCatalogCheck {
+  const open: RuntimeModelCatalogCheck = { authoritative: false, exists: true, validIds: [], knownFamilies: [] };
+  const value = model?.trim();
+  if (!value) return open;
+
+  if (provider === "claude" || provider === "grok") {
+    const ids = listRuntimeModels(provider, options).map((entry) => entry.id);
+    const families = knownModelFamilies(provider, ids);
+    const knownFamilies = [...families].sort();
+    const normalized = normalizeRuntimeModel(provider, value) ?? value;
+    const listed = ids.some((id) => id.toLowerCase() === normalized.toLowerCase());
+    const family = modelFamilyOf(value);
+    const familyRecognized = family !== null && families.has(family);
+    return { authoritative: true, exists: listed || familyRecognized, validIds: ids, knownFamilies };
+  }
+
+  if (provider === "codex") {
+    // Existence uses every cached slug: a hidden/legacy model still runs, it
+    // is only absent from selection menus. Suggestions prefer listed models.
+    const slugs = readCodexModelSlugs(options.codexCachePath);
+    if (slugs.length === 0) return open;
+    const listed = readCodexModelOptions(options.codexCachePath).map((entry) => entry.id);
+    const exists = slugs.some((slug) => slug.toLowerCase() === value.toLowerCase());
+    return { authoritative: true, exists, validIds: listed.length > 0 ? listed : slugs, knownFamilies: [] };
+  }
+
+  return open;
+}
+
 function normalizeRuntimeModel(_provider: RuntimeProviderId, model: string | null | undefined): string | null {
   const value = model?.trim();
   if (!value) {
@@ -244,8 +340,41 @@ function normalizeRuntimeModel(_provider: RuntimeProviderId, model: string | nul
   return value;
 }
 
-function readCodexModelOptions(cachePath = join(homedir(), ".codex", "models_cache.json")): RuntimeModelOption[] {
-  if (!existsSync(cachePath)) {
+/**
+ * Default location of the Codex models cache for this installation.
+ *
+ * `RAVI_CODEX_MODELS_CACHE` pins it explicitly. Under `bun test`
+ * (NODE_ENV=test) there is no default: the developer machine's ~/.codex must
+ * not leak into tests, which pass `codexCachePath` when they want a cache.
+ * `CODEX_HOME` is honored because profile-bound Codex sessions run with it.
+ */
+function defaultCodexCachePath(): string | null {
+  const explicit = process.env.RAVI_CODEX_MODELS_CACHE?.trim();
+  if (explicit) return explicit;
+  if (process.env.NODE_ENV === "test") return null;
+  const codexHome = process.env.CODEX_HOME?.trim();
+  return join(codexHome || join(homedir(), ".codex"), "models_cache.json");
+}
+
+function readCodexModelSlugs(cachePath = defaultCodexCachePath()): string[] {
+  if (!cachePath || !existsSync(cachePath)) {
+    return [];
+  }
+
+  try {
+    const raw = readFileSync(cachePath, "utf8");
+    const parsed = JSON.parse(raw) as CodexModelCache;
+    return (parsed.models ?? [])
+      .map((entry) => entry.slug?.trim())
+      .filter((slug): slug is string => Boolean(slug && slug.length > 0));
+  } catch {
+    // no-cause: An unreadable or malformed models cache means there is no authoritative codex list, so enforcement stays permissive instead of failing writes.
+    return [];
+  }
+}
+
+function readCodexModelOptions(cachePath = defaultCodexCachePath()): RuntimeModelOption[] {
+  if (!cachePath || !existsSync(cachePath)) {
     return [];
   }
 

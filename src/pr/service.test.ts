@@ -434,6 +434,32 @@ describe("verified Git Data API publication", () => {
     expect(f.db.query("SELECT name FROM sqlite_master WHERE type='table'").all()).toHaveLength(0);
   });
 
+  it("rethrows an ended context on the ref write without reading the ref back or journaling it confirmed", async () => {
+    f = publicationFixture();
+    const prepared = await preparePublication(f.input(), f.request);
+    await expect(
+      executePublication(prepared, f.request, {
+        ...f.options,
+        // Live for the preflight and every object write, ended right before the ref write.
+        authorize: () => {
+          if (mutations().length >= prepared.plan.objectCount)
+            throw new ContractError("pr publish", "RUNTIME_CONTEXT_INACTIVE", "context no longer live", 1, {
+              ...errorDiagnostic("context no longer live", { operation: "pr publish" }),
+            });
+        },
+      }),
+    ).rejects.toMatchObject({ code: "RUNTIME_CONTEXT_INACTIVE" });
+    expect(mutations().some((call) => call.endpoint.includes("/git/refs"))).toBe(false);
+    // After the last object write only the pre-write ref read happens; the refused write is not read back
+    // ("verified") with a dead context, which would be a second read.
+    const lastMutation = f.calls.map((call) => call.method !== "GET").lastIndexOf(true);
+    expect(f.calls.slice(lastMutation + 1).filter((call) => call.endpoint.includes("/git/ref"))).toHaveLength(1);
+    const confirmed = f.db
+      .query("SELECT phase FROM pr_publication_events WHERE phase = 'ref' AND state = 'confirmed'")
+      .all();
+    expect(confirmed).toHaveLength(0);
+  });
+
   it("does not trust Git replacement refs", async () => {
     f = publicationFixture();
     f.git(["replace", f.sha(), f.git(["rev-parse", "dev"]).toString().trim()]);

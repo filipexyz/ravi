@@ -20,6 +20,9 @@
   for the follow with `STATE_SCHEMA_NOT_READY` and the command that prepares
   it; it is never reported as a missing session, and refusing does not create
   the store.
+- `bun test src/cli/commands/pr.test.ts` covers an expired or revoked session
+  context returning `RUNTIME_CONTEXT_INACTIVE` (never `PERMISSION_DENIED`) while
+  a missing grant stays `PERMISSION_DENIED`.
 - `bun test src/cli/commands/pr-process.test.ts` runs the real CLI as a
   process and verifies that a terminal refusal is printed once, as the JSON
   envelope on stdout or as text on stderr, with its exit code.

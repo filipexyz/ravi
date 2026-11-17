@@ -98,6 +98,19 @@ ravi sessions set-provider <name> <provider|clear>
 # Definir thinking level
 ravi sessions set-thinking <name> <level>
 
+# Atualizar provider/model/effort/thinking de uma vez, com prova de vida e rollback.
+# Antes de gravar, recusa valor inválido de provider/effort/thinking e modelo de uma família
+# que o provider não roda (ex.: modelo gpt com provider claude), nomeando os válidos.
+# A validação de modelo é por família, não por versão: versão desconhecida de família conhecida
+# (ex.: um sonnet que ainda não existe) é gravada, e quem decide é a prova de vida.
+# Depois aplica, roda um turno real de prova e, se a prova falhar ou lançar, restaura o estado anterior.
+ravi sessions update <name> --provider claude --model sonnet --effort ultra --thinking off
+# Ressalva: Pi aceita qualquer id de modelo, e Codex sem o cache de modelos não confere o id exato.
+# Nesses dois casos só a prova de vida protege; não use --skip-probe.
+# Eixos são opcionais ('clear' limpa o override); --skip-probe aplica sem prova (sem rollback);
+# --probe-timeout <s> limita a prova inteira: credencial, turno e encerramento (default 120s;
+# provider que ignora a interrupção ganha no máximo mais 5s para parar e 5s para fechar). Erro de uso sai com exit 2 e USAGE_ERROR, também em --json.
+
 # Resetar sessão (limpa conversa, mantém config; sem --execute é dry-run, exit 3)
 ravi sessions reset <name> --execute
 
