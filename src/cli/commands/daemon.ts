@@ -1,5 +1,6 @@
 import { assertRuntimeMaintenanceInactive, assertRuntimeReplacementPrepared } from "../../runtime-maintenance.js";
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
+import { getRestartReasonPath } from "../../runtime/restart-reason.js";
 import { readDaemonSchemaPhase } from "../../db/daemon-schema-owner.js";
 /**
  * Daemon Commands - Manage ravi via PM2
@@ -70,7 +71,7 @@ import {
 
 const RAVI_DIR = join(homedir(), ".ravi");
 const ENV_FILE = join(RAVI_DIR, ".env");
-const RESTART_REASON_FILE = join(RAVI_DIR, "restart-reason.txt");
+const RESTART_REASON_FILE = getRestartReasonPath();
 type RestartReasonFile = {
   reason?: string;
   sessionName?: string;
@@ -145,7 +146,7 @@ function writeRestartReason(
   sessionName?: string,
   options: { preserveExistingSession?: boolean } = {},
 ): void {
-  mkdirSync(RAVI_DIR, { recursive: true });
+  mkdirSync(dirname(RESTART_REASON_FILE), { recursive: true });
   const existing = options.preserveExistingSession ? readRestartReason() : null;
   const existingSession = existing?.sessionName;
   const targetSession = sessionName ?? existingSession;

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { Database } from "bun:sqlite";
+import { getRestartReasonPath } from "../runtime/restart-reason.js";
 import { type DurableResidue, type DurableResidueSource, openStateReadOnly } from "./fence-adoption.js";
 
 /**
@@ -900,7 +900,7 @@ export function collectSqliteResidue(rules: readonly ResidueRule[]): DurableResi
 }
 
 /** Where both releases keep the restart reason (tag daemon.ts l.131, this release l.134). */
-export const RESTART_REASON_FILE = join(homedir(), ".ravi", "restart-reason.txt");
+export const RESTART_REASON_FILE = getRestartReasonPath();
 /** The successor resumes a stop's sessions only this long after the stop (daemon.ts l.135, l.686). */
 export const RESTART_RESUME_WINDOW_MS = 60 * 60 * 1000;
 /**
