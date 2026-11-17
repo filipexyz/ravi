@@ -2210,6 +2210,8 @@ function formatWaitTimeoutError(sessionName: string): string {
   return `Timed out waiting for response from ${sessionName} after ${seconds}s`;
 }
 
+const SESSION_UPDATE_USAGE_HINT = "Fix the value named in the message; see: ravi sessions update --help";
+
 function failSessionUsage(op: string, message: string, suggestedAction: string, asJson?: boolean): never {
   contractFail(op, "USAGE_ERROR", message, {
     ...{
@@ -4298,8 +4300,7 @@ export class SessionCommands {
       });
     } catch (error) {
       if (error instanceof SessionRuntimeUpdateError) {
-        fail(error.message);
-        return;
+        failSessionUsage("sessions update", error.message, SESSION_UPDATE_USAGE_HINT, asJson);
       }
       throw error;
     }
@@ -4308,8 +4309,12 @@ export class SessionCommands {
     if (probeTimeout !== undefined) {
       const seconds = Number.parseInt(probeTimeout, 10);
       if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 600) {
-        fail(`Invalid --probe-timeout: ${probeTimeout}. Use a number of seconds between 1 and 600.`);
-        return;
+        failSessionUsage(
+          "sessions update",
+          `Invalid --probe-timeout: ${probeTimeout}. Use a number of seconds between 1 and 600.`,
+          "Pass --probe-timeout as whole seconds between 1 and 600, or omit it for the default",
+          asJson,
+        );
       }
       probeTimeoutMs = seconds * 1000;
     }
@@ -4332,8 +4337,7 @@ export class SessionCommands {
       });
     } catch (error) {
       if (error instanceof SessionRuntimeUpdateError) {
-        fail(error.message);
-        return;
+        failSessionUsage("sessions update", error.message, SESSION_UPDATE_USAGE_HINT, asJson);
       }
       throw error;
     }

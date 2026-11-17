@@ -43,6 +43,9 @@ import { rematerializeSessionToAgentRuntime } from "./agent-session-runtime-sync
 import { probeRuntimeTurn, type RuntimeProbeRequest, type RuntimeProbeResult } from "./runtime-probe.js";
 import { resolveEffectiveSessionRuntime } from "./runtime-selection.js";
 import type { RuntimeProviderId, RuntimeThinking } from "./types.js";
+import { logger } from "../utils/logger.js";
+
+const log = logger.child("session-runtime-update");
 
 export const SESSION_RUNTIME_THINKING_LEVELS = ["off", "normal", "verbose"] as const;
 
@@ -298,53 +301,87 @@ export async function applySessionRuntimeUpdate(
   // provider setter bumps the persisted runtime-config revision on its own;
   // every other combination bumps it explicitly, so one atomic update is
   // exactly one revision step and concurrent updates always see each other.
-  if (touched.provider) deps.updateProviderOverride(session.sessionKey, toProviderOverride(axes.provider?.set ?? null));
-  if (touched.model) deps.updateModelOverride(session.sessionKey, axes.model?.set ?? null);
-  if (touched.effort) deps.updateEffortOverride(session.sessionKey, toEffortOverride(axes.effort?.set ?? null));
-  if (touched.thinking) deps.updateThinkingLevel(session.sessionKey, axes.thinking?.set ?? null);
-  if (!touched.provider) deps.bumpConfigRevision(session.sessionKey);
+  //
+  // The four axis writes are separate statements, not one transaction, so a
+  // setter that throws midway leaves a partial, unproven configuration. Any
+  // throw between the first write and the probe verdict restores the previous
+  // configuration (still conditional on ownership) and rethrows the original
+  // error: an update that could not be proven must not stay persisted.
+  let persistedSession: SessionEntry;
+  let written: SessionRuntimeSnapshot;
+  let ownedRevision: number;
+  try {
+    if (touched.provider)
+      deps.updateProviderOverride(session.sessionKey, toProviderOverride(axes.provider?.set ?? null));
+    if (touched.model) deps.updateModelOverride(session.sessionKey, axes.model?.set ?? null);
+    if (touched.effort) deps.updateEffortOverride(session.sessionKey, toEffortOverride(axes.effort?.set ?? null));
+    if (touched.thinking) deps.updateThinkingLevel(session.sessionKey, axes.thinking?.set ?? null);
+    if (!touched.provider) deps.bumpConfigRevision(session.sessionKey);
 
-  const persisted = deps.readSession(session.sessionKey);
-  const persistedSession: SessionEntry = persisted ?? ({ ...session, ...hypothetical } as SessionEntry);
-  // Ownership of this update: the persisted revision right after the apply,
-  // plus the four persisted values it wrote. Rollback and destructive
-  // finalization only act while both still hold.
-  const written = snapshotOf(persistedSession);
-  const ownedRevision = persistedSession.runtimeProviderConfigRevision ?? 0;
-  const effectiveSelection = resolveEffectiveSessionRuntime({
-    session: {
-      agentId: persistedSession.agentId,
-      runtimeProviderOverride: persistedSession.runtimeProviderOverride,
-      // The probe must prove the runtime the next turn will launch with: when
-      // the provider changed, the stale last-used provider no longer wins.
-      runtimeProvider: touched.provider ? undefined : persistedSession.runtimeProvider,
-      modelOverride: persistedSession.modelOverride,
-      effortOverride: persistedSession.effortOverride,
-      thinkingLevel: persistedSession.thinkingLevel,
-    },
-    agent,
-  });
-  const effective: SessionRuntimeEffectiveSelection = {
-    provider: effectiveSelection.provider.value,
-    model: effectiveSelection.model.value,
-    effort: effectiveSelection.effort.value ?? null,
-    thinking: effectiveSelection.thinking.value ?? null,
-  };
+    const persisted = deps.readSession(session.sessionKey);
+    persistedSession = persisted ?? ({ ...session, ...hypothetical } as SessionEntry);
+    // Ownership of this update: the persisted revision right after the apply,
+    // plus the four persisted values it wrote. Rollback and destructive
+    // finalization only act while both still hold.
+    written = snapshotOf(persistedSession);
+    ownedRevision = persistedSession.runtimeProviderConfigRevision ?? 0;
+  } catch (error) {
+    restoreAfterInterruptedApply(deps, session.sessionKey, axes, touched, before);
+    throw error;
+  }
 
+  let effective: SessionRuntimeEffectiveSelection;
   let probeResult: RuntimeProbeResult | null = null;
-  if (probeEnabled) {
-    const probeModel = effective.model ?? getDefaultModelForProvider(effective.provider as RuntimeProviderId);
-    probeResult = await deps.probe({
-      provider: effective.provider as RuntimeProviderId,
-      model: probeModel,
-      ...(effective.effort ? { effort: effective.effort as RuntimeEffort } : {}),
-      ...(effective.thinking ? { thinking: effective.thinking as RuntimeThinking } : {}),
-      agentId: session.agentId,
-      sessionKey: session.sessionKey,
-      sessionName: session.name ?? undefined,
-      ...(options.probeTimeoutMs ? { timeoutMs: options.probeTimeoutMs } : {}),
+  try {
+    const effectiveSelection = resolveEffectiveSessionRuntime({
+      session: {
+        agentId: persistedSession.agentId,
+        runtimeProviderOverride: persistedSession.runtimeProviderOverride,
+        // The probe must prove the runtime the next turn will launch with: when
+        // the provider changed, the stale last-used provider no longer wins.
+        runtimeProvider: touched.provider ? undefined : persistedSession.runtimeProvider,
+        modelOverride: persistedSession.modelOverride,
+        effortOverride: persistedSession.effortOverride,
+        thinkingLevel: persistedSession.thinkingLevel,
+      },
+      agent,
     });
+    effective = {
+      provider: effectiveSelection.provider.value,
+      model: effectiveSelection.model.value,
+      effort: effectiveSelection.effort.value ?? null,
+      thinking: effectiveSelection.thinking.value ?? null,
+    };
 
+    if (probeEnabled) {
+      const probeModel = effective.model ?? getDefaultModelForProvider(effective.provider as RuntimeProviderId);
+      probeResult = await deps.probe({
+        provider: effective.provider as RuntimeProviderId,
+        model: probeModel,
+        ...(effective.effort ? { effort: effective.effort as RuntimeEffort } : {}),
+        ...(effective.thinking ? { thinking: effective.thinking as RuntimeThinking } : {}),
+        agentId: session.agentId,
+        sessionKey: session.sessionKey,
+        sessionName: session.name ?? undefined,
+        ...(options.probeTimeoutMs ? { timeoutMs: options.probeTimeoutMs } : {}),
+      });
+    }
+  } catch (error) {
+    // The probe (or the resolution feeding it) threw instead of returning a
+    // verdict: the written configuration is unproven. Same conditional restore
+    // as a failed probe; a concurrent update that landed meanwhile is kept.
+    try {
+      deps.restoreIfOwned(session.sessionKey, ownedRevision, written, before);
+    } catch (restoreError) {
+      log.warn("Could not restore the runtime configuration after the probe threw", {
+        sessionKey: session.sessionKey,
+        error: restoreError instanceof Error ? restoreError.message : String(restoreError),
+      });
+    }
+    throw error;
+  }
+
+  if (probeResult) {
     if (!probeResult.ok) {
       // Conditional rollback: restore only while this update still owns the
       // persisted configuration. A concurrent update that landed during the
@@ -408,6 +445,52 @@ export async function applySessionRuntimeUpdate(
     clearedProviderSession,
     rematerializedToAgentRuntime,
   };
+}
+
+/**
+ * Undo an apply that threw before its ownership (revision + written values)
+ * could be read. The persisted state may be partial, so it is restored only
+ * when every axis is explained by this update alone: untouched axes still hold
+ * the previous value, touched axes hold either the previous or the intended
+ * value. Anything else means a concurrent update landed, and it is left alone.
+ * Never throws: the caller rethrows the original error.
+ */
+function restoreAfterInterruptedApply(
+  deps: SessionRuntimeUpdateDeps,
+  sessionKey: string,
+  axes: SessionRuntimeUpdateAxes,
+  touched: { provider: boolean; model: boolean; effort: boolean; thinking: boolean },
+  before: SessionRuntimeSnapshot,
+): void {
+  try {
+    const persisted = deps.readSession(sessionKey);
+    if (!persisted) return;
+    const current = snapshotOf(persisted);
+    const explained = (value: string | null, previous: string | null, isTouched: boolean, intended: string | null) =>
+      value === previous || (isTouched && value === intended);
+    const ours =
+      explained(
+        current.runtimeProviderOverride,
+        before.runtimeProviderOverride,
+        touched.provider,
+        axes.provider?.set ?? null,
+      ) &&
+      explained(current.modelOverride, before.modelOverride, touched.model, axes.model?.set ?? null) &&
+      explained(current.effortOverride, before.effortOverride, touched.effort, axes.effort?.set ?? null) &&
+      explained(current.thinkingLevel, before.thinkingLevel, touched.thinking, axes.thinking?.set ?? null);
+    if (!ours) {
+      log.warn("Runtime configuration changed concurrently during an interrupted update; not restoring", {
+        sessionKey,
+      });
+      return;
+    }
+    deps.restoreIfOwned(sessionKey, persisted.runtimeProviderConfigRevision ?? 0, current, before);
+  } catch (restoreError) {
+    log.warn("Could not restore the runtime configuration after an interrupted update", {
+      sessionKey,
+      error: restoreError instanceof Error ? restoreError.message : String(restoreError),
+    });
+  }
 }
 
 function toProviderOverride(value: string | null): SessionEntry["runtimeProviderOverride"] | null {

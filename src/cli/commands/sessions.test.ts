@@ -3552,6 +3552,91 @@ describe("SessionCommands rename and display labels", () => {
   });
 });
 
+describe("SessionCommands update usage errors", () => {
+  beforeEach(() => {
+    listedSessions = [];
+    orphanThread = null;
+    routerConfig = { agents: {} };
+    natsEmits.length = 0;
+    resolvedSession = {
+      sessionKey: "agent:main:runtime-update",
+      name: "runtime-update",
+      agentId: "main",
+      runtimeProviderOverride: "claude",
+      modelOverride: "sonnet",
+    };
+  });
+
+  async function captureUsageFailure(run: () => Promise<unknown>): Promise<{ thrown: unknown; stdout: string }> {
+    let thrown: unknown;
+    const stdout = await captureLogsAsync(async () => {
+      try {
+        await run();
+      } catch (error) {
+        thrown = error;
+      }
+    });
+    return { thrown, stdout };
+  }
+
+  interface UsageCase {
+    label: string;
+    message: string;
+    provider?: string;
+    effort?: string;
+    thinking?: string;
+    probeTimeout?: string;
+  }
+  const usageCases: UsageCase[] = [
+    { label: "an unknown provider", provider: "zeus", message: "Unknown runtime provider: 'zeus'" },
+    { label: "an invalid thinking level", thinking: "loud", message: "Invalid thinking level: 'loud'" },
+    { label: "an invalid --probe-timeout", effort: "low", probeTimeout: "0", message: "Invalid --probe-timeout: 0" },
+    { label: "an update with no axis", message: "Nothing to update" },
+  ];
+
+  it.each(usageCases)("fails $label with the USAGE_ERROR envelope on stdout in --json", async (testCase) => {
+    const { message } = testCase;
+    const { thrown, stdout } = await captureUsageFailure(() =>
+      new SessionCommands().update(
+        "runtime-update",
+        testCase.provider,
+        undefined,
+        testCase.effort,
+        testCase.thinking,
+        undefined,
+        testCase.probeTimeout,
+        true,
+      ),
+    );
+
+    expect(thrown).toMatchObject({ name: "ContractError", code: "USAGE_ERROR", exitCode: 2 });
+    const envelope = JSON.parse(stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.op).toBe("sessions update");
+    expect(envelope.error.code).toBe("USAGE_ERROR");
+    expect(envelope.error.message).toContain(message);
+    expect(typeof envelope.error.suggestedAction).toBe("string");
+    // Refused before any write.
+    expect(resolvedSession?.runtimeProviderOverride).toBe("claude");
+    expect(resolvedSession?.modelOverride).toBe("sonnet");
+    expect(natsEmits).toHaveLength(0);
+  });
+
+  it("keeps the same exit taxonomy without --json and prints no JSON on stdout", async () => {
+    const originalError = console.error;
+    console.error = () => {};
+    try {
+      const { thrown, stdout } = await captureUsageFailure(() =>
+        new SessionCommands().update("runtime-update", "zeus", undefined, undefined, undefined, undefined, undefined),
+      );
+      expect(thrown).toMatchObject({ name: "ContractError", code: "USAGE_ERROR", exitCode: 2 });
+      expect(stdout).toBe("");
+    } finally {
+      console.error = originalError;
+    }
+  });
+});
+
 describe("SessionCommands set-model", () => {
   beforeEach(() => {
     listedSessions = [];

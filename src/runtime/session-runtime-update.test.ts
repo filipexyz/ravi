@@ -312,6 +312,164 @@ describe("applySessionRuntimeUpdate", () => {
     expect(result.after).toEqual(result.before);
   });
 
+  it("restores the previous configuration and rethrows when the probe throws", async () => {
+    const session = baseSession({ effortOverride: "high" } as Partial<SessionEntry>);
+    const boom = new Error("ENOSPC: no space left on device, mkdtemp");
+    const harness = makeHarness({
+      initial: session,
+      probe: () => {
+        throw boom;
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      await applySessionRuntimeUpdate({
+        session,
+        agent: null,
+        axes: { provider: { set: "claude" }, model: { set: "opus" }, effort: { set: "low" } },
+        deps: harness.deps,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    // The original error reaches the caller untouched.
+    expect(thrown).toBe(boom);
+    expect(harness.calls).toEqual([
+      "set:provider=claude",
+      "set:model=opus",
+      "set:effort=low",
+      "restoreIfOwned:restored",
+    ]);
+    // The unproven configuration is not left in the store.
+    const after = harness.record();
+    expect(after.runtimeProviderOverride ?? null).toBeNull();
+    expect(after.modelOverride).toBe("deepseek/deepseek-flash");
+    expect(after.effortOverride).toBe("high");
+  });
+
+  it("restores the previous configuration when a setter throws midway through the apply", async () => {
+    const session = baseSession({ effortOverride: "high" } as Partial<SessionEntry>);
+    const harness = makeHarness({ initial: session });
+    const boom = new Error("SQLITE_BUSY: database is locked");
+
+    let thrown: unknown;
+    try {
+      await applySessionRuntimeUpdate({
+        session,
+        agent: null,
+        axes: { provider: { set: "claude" }, model: { set: "opus" }, effort: { set: "low" } },
+        deps: {
+          ...harness.deps,
+          updateEffortOverride: () => {
+            throw boom;
+          },
+        },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(boom);
+    // Provider and model were written, effort was not: the partial state is undone.
+    expect(harness.calls).toEqual(["set:provider=claude", "set:model=opus", "restoreIfOwned:restored"]);
+    expect(harness.probeRequests).toHaveLength(0);
+    const after = harness.record();
+    expect(after.runtimeProviderOverride ?? null).toBeNull();
+    expect(after.modelOverride).toBe("deepseek/deepseek-flash");
+    expect(after.effortOverride).toBe("high");
+  });
+
+  it("does not restore over a concurrent update when a setter throws midway", async () => {
+    const session = baseSession();
+    const harness = makeHarness({ initial: session });
+    const boom = new Error("SQLITE_BUSY: database is locked");
+
+    let thrown: unknown;
+    try {
+      await applySessionRuntimeUpdate({
+        session,
+        agent: null,
+        axes: { provider: { set: "claude" }, model: { set: "sonnet" } },
+        deps: {
+          ...harness.deps,
+          updateModelOverride: () => {
+            // Update B lands between A's provider write and A's failing model write.
+            harness.concurrentUpdate({ runtimeProviderOverride: "codex", modelOverride: "gpt-6-astra" });
+            throw boom;
+          },
+        },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(boom);
+    expect(harness.calls).not.toContain("restoreIfOwned:restored");
+    const after = harness.record();
+    expect(after.runtimeProviderOverride).toBe("codex");
+    expect(after.modelOverride).toBe("gpt-6-astra");
+  });
+
+  it("keeps a concurrent update and rethrows when the probe throws after being superseded", async () => {
+    const session = baseSession();
+    const boom = new Error("transport exploded");
+    const harness = makeHarness({
+      initial: session,
+      probe: () => {
+        harness.concurrentUpdate({ runtimeProviderOverride: "claude", modelOverride: "opus" });
+        throw boom;
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      await applySessionRuntimeUpdate({
+        session,
+        agent: null,
+        axes: { provider: { set: "claude" }, model: { set: "sonnet" } },
+        deps: harness.deps,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(boom);
+    expect(harness.calls).toContain("restoreIfOwned:superseded");
+    expect(harness.record().modelOverride).toBe("opus");
+  });
+
+  it("rethrows the original error even when the restore itself fails", async () => {
+    const session = baseSession();
+    const boom = new Error("probe crashed");
+    const harness = makeHarness({
+      initial: session,
+      probe: () => {
+        throw boom;
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      await applySessionRuntimeUpdate({
+        session,
+        agent: null,
+        axes: { effort: { set: "low" } },
+        deps: {
+          ...harness.deps,
+          restoreIfOwned: () => {
+            throw new Error("SQLITE_IOERR: disk I/O error");
+          },
+        },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(boom);
+  });
+
   it("leaves a concurrent update in place when its own probe fails (lost-update guard)", async () => {
     const session = baseSession();
     const harness = makeHarness({

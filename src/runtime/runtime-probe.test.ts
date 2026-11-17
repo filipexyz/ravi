@@ -125,6 +125,149 @@ describe("probeRuntimeTurn", () => {
     expect(started).toBe(false);
   });
 
+  it("returns a failed probe instead of rejecting when the scratch directory cannot be created", async () => {
+    let started = false;
+    const provider = fakeProvider(async function* () {
+      started = true;
+      yield { type: "turn.complete", usage: {} } as unknown as RuntimeEvent;
+    });
+
+    const result = await probeRuntimeTurn({
+      provider: "claude",
+      model: "sonnet",
+      createProvider: () => provider,
+      resolveCredential: async () => NO_POOL,
+      createScratchDir: () => {
+        throw new Error("ENOSPC: no space left on device, mkdtemp");
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("ENOSPC");
+    expect(started).toBe(false);
+  });
+
+  it("keeps the settled result when the scratch directory cannot be removed", async () => {
+    const provider = fakeProvider(async function* () {
+      yield { type: "turn.complete", usage: {} } as unknown as RuntimeEvent;
+    });
+
+    const result = await probeRuntimeTurn({
+      provider: "claude",
+      model: "sonnet",
+      createProvider: () => provider,
+      resolveCredential: async () => NO_POOL,
+      removeScratchDir: () => {
+        throw new Error("EBUSY: resource busy or locked, rm");
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.error).toBeUndefined();
+  });
+
+  it("bounds credential resolution with the probe timeout", async () => {
+    let started = false;
+    const provider = fakeProvider(async function* () {
+      started = true;
+      yield { type: "turn.complete", usage: {} } as unknown as RuntimeEvent;
+    });
+
+    const startedAt = Date.now();
+    const result = await probeRuntimeTurn({
+      provider: "claude",
+      model: "sonnet",
+      timeoutMs: 50,
+      createProvider: () => provider,
+      // A refresh hook that never returns.
+      resolveCredential: () => new Promise(() => {}),
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.timedOut).toBe(true);
+    expect(result.error).toContain("resolving the runtime credential");
+    expect(started).toBe(false);
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+  });
+
+  it("charges credential resolution against the same deadline as the turn", async () => {
+    const provider = fakeProvider(async function* (request) {
+      await new Promise<void>((resolve) => {
+        request.abortController.signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+      yield { type: "turn.interrupted" } as unknown as RuntimeEvent;
+    });
+
+    const startedAt = Date.now();
+    const result = await probeRuntimeTurn({
+      provider: "claude",
+      model: "sonnet",
+      timeoutMs: 300,
+      createProvider: () => provider,
+      resolveCredential: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        return NO_POOL;
+      },
+    });
+
+    // 200ms of resolution left ~100ms for the turn: the probe ends near 300ms,
+    // not at 200ms + a fresh 300ms window.
+    expect(result.ok).toBe(false);
+    expect(result.timedOut).toBe(true);
+    expect(Date.now() - startedAt).toBeLessThan(450);
+  });
+
+  it("does not let a stalled close hold the settled result past the teardown grace", async () => {
+    const provider: SessionRuntimeProvider = {
+      id: "fake",
+      getCapabilities: () => {
+        throw new Error("not used by the probe");
+      },
+      startSession: () => ({
+        provider: "fake",
+        events: (async function* () {
+          yield { type: "turn.complete", usage: {} } as unknown as RuntimeEvent;
+        })(),
+        interrupt: async () => {},
+        // A transport that never finishes closing.
+        close: () => new Promise<void>(() => {}),
+      }),
+    };
+
+    const startedAt = Date.now();
+    const result = await probeRuntimeTurn({
+      provider: "claude",
+      model: "sonnet",
+      timeoutMs: 50,
+      createProvider: () => provider,
+      resolveCredential: async () => NO_POOL,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+  });
+
+  it("times out a provider stream that ignores the interrupt and the abort", async () => {
+    const provider = fakeProvider(async function* () {
+      await new Promise<void>(() => {});
+      yield { type: "turn.complete", usage: {} } as unknown as RuntimeEvent;
+    });
+
+    const startedAt = Date.now();
+    const result = await probeRuntimeTurn({
+      provider: "claude",
+      model: "sonnet",
+      timeoutMs: 50,
+      createProvider: () => provider,
+      resolveCredential: async () => NO_POOL,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.timedOut).toBe(true);
+    expect(result.error).toContain("timed out");
+    expect(Date.now() - startedAt).toBeLessThan(2_000);
+  });
+
   it("fails when the provider is unknown", async () => {
     const result = await probeRuntimeTurn({
       provider: "nope",

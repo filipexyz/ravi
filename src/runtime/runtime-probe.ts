@@ -37,6 +37,42 @@ const log = logger.child("runtime-probe");
 
 export const DEFAULT_RUNTIME_PROBE_TIMEOUT_MS = 120_000;
 
+/**
+ * Upper bound for the teardown wait (`handle.close`) and for a provider stream
+ * that ignores the abort. Teardown gets `min(this, timeoutMs)`, so the probe
+ * always returns within `timeoutMs` plus this grace.
+ */
+export const RUNTIME_PROBE_TEARDOWN_GRACE_MS = 5_000;
+
+/** A probe stage did not finish inside the probe deadline. */
+class RuntimeProbeDeadlineError extends Error {
+  constructor(stage: string) {
+    super(`Probe deadline reached while ${stage}.`);
+    this.name = "RuntimeProbeDeadlineError";
+  }
+}
+
+/**
+ * Stops WAITING for `work` after `ms`. The refresh hook, provider setup and
+ * `close()` contracts accept no abort signal, so the underlying work is not
+ * cancelled: it is only no longer allowed to keep the probe pending.
+ */
+function raceProbeDeadline<T>(work: Promise<T>, ms: number, stage: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new RuntimeProbeDeadlineError(stage)), Math.max(0, ms));
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 const PROBE_PROMPT = "Reply with the single word OK.";
 const PROBE_SYSTEM_PROMPT =
   "This is an automated runtime liveness probe. Reply with the single word OK and nothing else.";
@@ -56,6 +92,10 @@ export interface RuntimeProbeRequest {
   createProvider?: (providerId: RuntimeProviderId) => SessionRuntimeProvider;
   /** Test seam: replaces managed credential resolution. */
   resolveCredential?: typeof resolveRuntimeCredentialAttemptBinding;
+  /** Test seam: replaces the scratch working directory creation. */
+  createScratchDir?: () => string;
+  /** Test seam: replaces the scratch working directory removal. */
+  removeScratchDir?: (dir: string) => void;
 }
 
 export interface RuntimeProbeResult {
@@ -115,9 +155,17 @@ export async function probeRuntimeTurn(request: RuntimeProbeRequest): Promise<Ru
 
   const baseEnv = request.env ?? process.env;
   const resolveCredential = request.resolveCredential ?? resolveRuntimeCredentialAttemptBinding;
+  // One deadline for the whole probe, armed BEFORE credential resolution: a
+  // refresh hook that never returns must not keep the caller (and the rollback
+  // that depends on this result) pending past --probe-timeout.
+  const deadlineAt = startedAt + timeoutMs;
+  const remainingMs = (): number => Math.max(0, deadlineAt - Date.now());
+  const teardownGraceMs = Math.min(RUNTIME_PROBE_TEARDOWN_GRACE_MS, timeoutMs);
+  const timeoutMessage = `Probe timed out after ${timeoutMs}ms without completing a turn.`;
+
   let credentialResolution: Awaited<ReturnType<typeof resolveRuntimeCredentialAttemptBinding>>;
-  try {
-    credentialResolution = await resolveCredential({
+  const pendingCredential = Promise.resolve().then(() =>
+    resolveCredential({
       runtimeProvider: request.provider,
       model: request.model,
       agentId: request.agentId,
@@ -125,8 +173,39 @@ export async function probeRuntimeTurn(request: RuntimeProbeRequest): Promise<Ru
       sessionName: request.sessionName,
       runId: `probe_${randomUUID()}`,
       env: baseEnv,
-    });
+    }),
+  );
+  try {
+    credentialResolution = await raceProbeDeadline(
+      pendingCredential,
+      remainingMs(),
+      "resolving the runtime credential",
+    );
   } catch (error) {
+    // no-cause: The deadline branch reports the probe's own timeout sentinel, whose only content is the stage already named in the message; every other error is forwarded by message below.
+    if (error instanceof RuntimeProbeDeadlineError) {
+      // The resolution keeps running (no abort signal). If it reserves an
+      // attempt after the probe gave up, release it instead of leaking it.
+      void pendingCredential.then(
+        (late) => {
+          try {
+            completeRuntimeCredentialAttempt(late.attemptBinding?.attemptId, {
+              status: "abandoned",
+              metadata: { reason: "runtime-probe", error: "credential resolution outlived the probe deadline" },
+            });
+          } catch (settleError) {
+            log.warn("Could not release late probe credential attempt", {
+              attemptId: late.attemptBinding?.attemptId,
+              error: settleError instanceof Error ? settleError.message : String(settleError),
+            });
+          }
+        },
+        () => {
+          // no-cause: The probe already reported the credential-resolution timeout; a late rejection of the abandoned resolution has no caller left to inform.
+        },
+      );
+      return fail(`Probe timed out after ${timeoutMs}ms while resolving the runtime credential.`, { timedOut: true });
+    }
     return fail(error instanceof Error ? error.message : String(error));
   }
   const binding = credentialResolution.attemptBinding;
@@ -140,16 +219,27 @@ export async function probeRuntimeTurn(request: RuntimeProbeRequest): Promise<Ru
     base.credentialLabel = binding.label;
   }
 
-  const cwd = mkdtempSync(join(tmpdir(), "ravi-runtime-probe-"));
+  let cwd: string | null = null;
   const abortController = new AbortController();
   let timedOut = false;
   let settled: RuntimeProbeResult | null = null;
 
   try {
-    const bootstrap = await provider.prepareSession?.({
-      agentId: request.agentId ?? "runtime-probe",
-      cwd,
-    });
+    // Inside the try: a scratch-dir failure (full or read-only tmp) is a probe
+    // failure the caller can roll back on, not a rejection that skips the
+    // credential settlement below.
+    const scratchDir = (request.createScratchDir ?? (() => mkdtempSync(join(tmpdir(), "ravi-runtime-probe-"))))();
+    cwd = scratchDir;
+    const bootstrap = await raceProbeDeadline(
+      Promise.resolve().then(() =>
+        provider.prepareSession?.({
+          agentId: request.agentId ?? "runtime-probe",
+          cwd: scratchDir,
+        }),
+      ),
+      remainingMs(),
+      "preparing the provider session",
+    );
     const runtimeEnv: Record<string, string> = {
       ...stringEnv(baseEnv),
       ...(bootstrap?.env ?? {}),
@@ -168,7 +258,7 @@ export async function probeRuntimeTurn(request: RuntimeProbeRequest): Promise<Ru
       model: request.model,
       ...(request.effort ? { effort: request.effort } : {}),
       ...(request.thinking ? { thinking: request.thinking } : {}),
-      cwd,
+      cwd: scratchDir,
       abortController,
       systemPromptAppend: PROBE_SYSTEM_PROMPT,
       env: runtimeEnv,
@@ -184,57 +274,81 @@ export async function probeRuntimeTurn(request: RuntimeProbeRequest): Promise<Ru
         // no-cause: The probe result already reports the timeout; a failed interrupt must not replace it and the abort below still tears the turn down.
       });
       abortController.abort();
-    }, timeoutMs);
+    }, remainingMs());
 
-    try {
+    const consumeTurn = async (): Promise<RuntimeProbeResult | null> => {
       for await (const event of handle.events) {
         if (event.type === "turn.complete") {
-          settled = { ...base, ok: true, durationMs: Date.now() - startedAt };
-          break;
+          return { ...base, ok: true, durationMs: Date.now() - startedAt };
         }
         if (event.type === "turn.failed") {
-          settled = fail(event.error);
-          break;
+          return fail(event.error);
         }
         if (event.type === "turn.interrupted") {
-          settled = fail(
-            timedOut
-              ? `Probe timed out after ${timeoutMs}ms without completing a turn.`
-              : "Probe turn was interrupted.",
-            { timedOut },
-          );
-          break;
+          return fail(timedOut ? timeoutMessage : "Probe turn was interrupted.", { timedOut });
         }
       }
-    } catch (error) {
-      settled = fail(
-        timedOut
-          ? `Probe timed out after ${timeoutMs}ms without completing a turn.`
-          : error instanceof Error
-            ? error.message
-            : String(error),
-        { timedOut },
+      return null;
+    };
+
+    try {
+      // The timer above asks the provider to stop at the deadline; the race
+      // covers a stream that ignores both the interrupt and the abort.
+      settled = await raceProbeDeadline(
+        consumeTurn(),
+        remainingMs() + teardownGraceMs,
+        "waiting for the provider turn",
       );
+    } catch (error) {
+      if (error instanceof RuntimeProbeDeadlineError) timedOut = true;
+      settled = fail(timedOut ? timeoutMessage : error instanceof Error ? error.message : String(error), { timedOut });
     } finally {
       clearTimeout(timer);
       abortController.abort();
-      await handle.close?.().catch(() => {
-        // no-cause: Teardown of an already-settled probe; a close failure must not replace the recorded probe outcome.
-      });
+      const close = handle.close?.bind(handle);
+      if (close) {
+        // Bounded teardown: Grok and Pi await their transports on close, and a
+        // stalled transport must not hold the settled result back.
+        await raceProbeDeadline(
+          Promise.resolve().then(() => close()),
+          teardownGraceMs,
+          "closing the provider session",
+        ).catch((error) => {
+          // no-cause: Teardown of an already-settled probe; a close failure or a close that outlives its grace must not replace the recorded probe outcome.
+          if (error instanceof RuntimeProbeDeadlineError) {
+            log.warn("Probe provider session close outlived its grace; continuing without it", {
+              provider: request.provider,
+              graceMs: teardownGraceMs,
+            });
+          }
+        });
+      }
     }
   } catch (error) {
-    settled = fail(error instanceof Error ? error.message : String(error));
+    // no-cause: The deadline branch reports the probe's own timeout sentinel as the timeout result; every other error is forwarded by message below.
+    if (error instanceof RuntimeProbeDeadlineError) {
+      timedOut = true;
+      settled = fail(timeoutMessage, { timedOut });
+    } else {
+      settled = fail(error instanceof Error ? error.message : String(error));
+    }
   } finally {
-    rmSync(cwd, { recursive: true, force: true });
+    if (cwd) {
+      try {
+        (request.removeScratchDir ?? ((dir: string) => rmSync(dir, { recursive: true, force: true })))(cwd);
+      } catch (error) {
+        // Scratch cleanup must never skip the credential settlement below nor
+        // turn a settled probe into a rejection.
+        log.warn("Could not remove probe scratch directory", {
+          cwd,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
 
   if (!settled) {
-    settled = fail(
-      timedOut
-        ? `Probe timed out after ${timeoutMs}ms without completing a turn.`
-        : "Provider stream ended without a terminal turn event.",
-      { timedOut },
-    );
+    settled = fail(timedOut ? timeoutMessage : "Provider stream ended without a terminal turn event.", { timedOut });
   }
 
   try {
