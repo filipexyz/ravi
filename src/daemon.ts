@@ -93,7 +93,7 @@ import {
   type NatsExposureReport,
 } from "./security/nats-exposure.js";
 import { tightenStateDirPermissions } from "./security/state-dir-permissions.js";
-import { getRestartReasonPath, resolveBootRestartReason } from "./runtime/restart-reason.js";
+import { anchorStateDirEnv, getRestartReasonPath, resolveBootRestartReason } from "./runtime/restart-reason.js";
 import { getRaviStateDir } from "./utils/paths.js";
 
 import { recordManagedRuntimeBoot } from "./runtime-process-identity.js";
@@ -129,6 +129,8 @@ function loadEnvFile() {
   log.info("Loaded environment from ~/.ravi/.env");
 }
 
+// Pin a relative RAVI_STATE_DIR to this process cwd before anything reads it or starts a child.
+anchorStateDirEnv(process.env, process.cwd());
 loadEnvFile();
 
 const RESTART_REASON_FILE = getRestartReasonPath();
