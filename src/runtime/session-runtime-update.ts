@@ -17,9 +17,14 @@
  *
  * The axis writes land as one SQLite transaction (`applyAtomically`): a write
  * that throws rolls the whole apply back, so a partial configuration is never
- * persisted. A restore that itself fails after a failed probe is reported on
- * the result (`rollbackError`), never swallowed and never in place of the probe
- * verdict.
+ * persisted. When the probe returns a failure and the restore itself throws,
+ * the probe verdict is kept and the result reports the restore error
+ * (`rollbackError`) together with whose configuration is stored: the restore is
+ * a conditional UPDATE that may have thrown before checking ownership, so the
+ * stored configuration is read back (a read that fails too leaves it unknown,
+ * `storedStateKnown: false`) instead of being assumed. When the probe THROWS
+ * instead of returning a verdict, the original error is rethrown unchanged and
+ * a failed restore is only logged; the caller has no result to carry it.
  *
  * Concurrency: every apply bumps the session's persisted runtime-config
  * revision, and both the rollback and the destructive finalization are
@@ -92,18 +97,28 @@ export interface SessionRuntimeUpdateResult {
   probe: RuntimeProbeResult | null;
   rolledBack: boolean;
   /**
-   * The probe failed and the restore itself threw, so the unproven
-   * configuration is still persisted. Carries the restore error; null whenever
-   * the restore ran (it either restored, or found a newer update and left it
-   * alone).
+   * The probe failed and the restore itself threw. Carries the restore error;
+   * null whenever the restore ran (it either restored, or found a newer update
+   * and left it alone). The error says nothing about what is stored: that is
+   * `superseded` and `storedStateKnown`, read back after the failure.
    */
   rollbackError: string | null;
   /**
    * A concurrent update replaced this configuration while the probe ran. The
    * newer configuration was left untouched: no rollback, no destructive
    * finalization, and the caller must not announce this update as current.
+   * When `storedStateKnown` is false and the restore threw, this is `false`
+   * only because nothing could prove otherwise.
    */
   superseded: boolean;
+  /**
+   * False when the stored configuration could not be read after a failed
+   * probe, so `after` is NOT a reading (it is what this update wrote) and, if
+   * the restore threw, nobody knows whether the unproven configuration or a
+   * newer one is stored. Inspect before restoring anything. Always true when
+   * the probe passed.
+   */
+  storedStateKnown: boolean;
   clearedProviderSession: boolean;
   rematerializedToAgentRuntime: boolean;
 }
@@ -179,6 +194,32 @@ function snapshotOf(
     effortOverride: session.effortOverride ?? null,
     thinkingLevel: session.thinkingLevel ?? null,
   };
+}
+
+function sameSnapshot(left: SessionRuntimeSnapshot, right: SessionRuntimeSnapshot): boolean {
+  return (
+    left.runtimeProviderOverride === right.runtimeProviderOverride &&
+    left.modelOverride === right.modelOverride &&
+    left.effortOverride === right.effortOverride &&
+    left.thinkingLevel === right.thinkingLevel
+  );
+}
+
+/**
+ * Read the stored session for a failure report. A read that throws (or finds
+ * no row) is not an answer: null means "could not be read", and the caller
+ * reports the stored state as unknown rather than assuming one.
+ */
+function readStoredSession(deps: SessionRuntimeUpdateDeps, sessionKey: string): SessionEntry | null {
+  try {
+    return deps.readSession(sessionKey);
+  } catch (readError) {
+    log.warn("Could not read the runtime configuration after the probe failed", {
+      sessionKey,
+      error: readError instanceof Error ? readError.message : String(readError),
+    });
+    return null;
+  }
 }
 
 /**
@@ -416,20 +457,52 @@ export async function applySessionRuntimeUpdate(
           error: rollbackError,
         });
       }
-      // After a failed restore the store is not trusted for another read: the
-      // unproven configuration this update wrote is what stays persisted.
-      const after = rollbackError === null ? deps.readSession(session.sessionKey) : null;
+      // Whose configuration is stored now? Read it back, protected: a read that
+      // throws is no answer and must not replace the probe verdict either.
+      const observed = readStoredSession(deps, session.sessionKey);
+      let after: SessionRuntimeSnapshot;
+      let superseded: boolean;
+      let storedStateKnown = true;
+      if (restored) {
+        // The conditional UPDATE matched: the previous configuration is stored.
+        after = observed ? snapshotOf(observed) : before;
+        superseded = false;
+      } else if (rollbackError === null) {
+        // The UPDATE ran and did not match: a newer update owns the session.
+        superseded = true;
+        if (observed) {
+          after = snapshotOf(observed);
+        } else {
+          after = written;
+          storedStateKnown = false;
+        }
+      } else if (observed) {
+        // The UPDATE threw, possibly before it checked ownership: only the
+        // stored revision and values say whose configuration this is. A newer
+        // update that landed during the probe must not be reported as ours.
+        const stored = snapshotOf(observed);
+        superseded = (observed.runtimeProviderConfigRevision ?? 0) !== ownedRevision || !sameSnapshot(stored, written);
+        after = stored;
+      } else {
+        // The UPDATE threw and the store could not be read: neither whose
+        // configuration is stored nor which one is known. `after` is only the
+        // last thing this update wrote, and `superseded` only the absence of proof.
+        superseded = false;
+        after = written;
+        storedStateKnown = false;
+      }
       return {
         sessionKey: session.sessionKey,
         sessionName: session.name ?? null,
         changed: touched,
         before,
-        after: after ? snapshotOf(after) : restored ? before : written,
+        after,
         effective,
         probe: probeResult,
         rolledBack: restored,
         rollbackError,
-        superseded: rollbackError === null && !restored,
+        superseded,
+        storedStateKnown,
         clearedProviderSession: false,
         rematerializedToAgentRuntime: false,
       };
@@ -475,6 +548,7 @@ export async function applySessionRuntimeUpdate(
     rolledBack: false,
     rollbackError: null,
     superseded,
+    storedStateKnown: true,
     clearedProviderSession,
     rematerializedToAgentRuntime,
   };

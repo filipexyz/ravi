@@ -1,5 +1,5 @@
-import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { openStateDatabase } from "../db/state-boundary.js";
 import { getRaviDbPath } from "../router/router-db.js";
 import {
   getOrCreateSession,
@@ -366,13 +366,166 @@ describe("applySessionRuntimeUpdate", () => {
     // The probe's failure is not replaced by the restore's error...
     expect(result.probe?.ok).toBe(false);
     expect(result.probe?.error).toContain("model_not_found: opus-9");
-    // ...and the result says the unproven configuration is still stored: not
-    // rolled back, and not "superseded" (nobody else replaced it).
+    // ...and the result says the unproven configuration is still stored: read
+    // back after the failure, not rolled back, and not "superseded" (the stored
+    // revision and values are still the ones this update wrote).
     expect(result.rolledBack).toBe(false);
     expect(result.superseded).toBe(false);
+    expect(result.storedStateKnown).toBe(true);
     expect(result.rollbackError).toContain("SQLITE_IOERR");
     expect(result.after.effortOverride).toBe("low");
     expect(harness.record().effortOverride).toBe("low");
+  });
+
+  const failingProbe = (request: RuntimeProbeRequest): RuntimeProbeResult => ({
+    ok: false,
+    provider: request.provider,
+    model: request.model,
+    durationMs: 7,
+    error: "model_not_found: opus-9",
+  });
+
+  it("reports a concurrent update, not this update's values, when the restore throws after one landed", async () => {
+    const session = baseSession({ effortOverride: "high" } as Partial<SessionEntry>);
+    const harness = makeHarness({
+      initial: session,
+      probe: (request) => {
+        // Update B commits while A's probe runs.
+        harness.concurrentUpdate({
+          runtimeProviderOverride: "claude",
+          modelOverride: "opus",
+          effortOverride: "medium",
+        });
+        return failingProbe(request);
+      },
+    });
+
+    const result = await applySessionRuntimeUpdate({
+      session,
+      agent: null,
+      axes: { provider: { set: "claude" }, model: { set: "sonnet" }, effort: { set: "low" } },
+      // A's conditional restore then throws before it can check ownership.
+      deps: {
+        ...harness.deps,
+        restoreIfOwned: () => {
+          throw new Error("SQLITE_IOERR: disk I/O error");
+        },
+      },
+    });
+
+    expect(result.probe?.error).toContain("model_not_found: opus-9");
+    expect(result.rollbackError).toContain("SQLITE_IOERR");
+    expect(result.rolledBack).toBe(false);
+    // B owns the session now: that is what is reported, not A's obsolete values.
+    expect(result.superseded).toBe(true);
+    expect(result.storedStateKnown).toBe(true);
+    expect(result.after.modelOverride).toBe("opus");
+    expect(result.after.effortOverride).toBe("medium");
+    expect(harness.record().modelOverride).toBe("opus");
+  });
+
+  it("reports the stored state as unknown when the restore throws and the stored configuration cannot be read", async () => {
+    const session = baseSession({ effortOverride: "high" } as Partial<SessionEntry>);
+    let probed = false;
+    const harness = makeHarness({
+      initial: session,
+      probe: (request) => {
+        probed = true;
+        return failingProbe(request);
+      },
+    });
+
+    const result = await applySessionRuntimeUpdate({
+      session,
+      agent: null,
+      axes: { effort: { set: "low" } },
+      deps: {
+        ...harness.deps,
+        restoreIfOwned: () => {
+          throw new Error("SQLITE_IOERR: disk I/O error");
+        },
+        readSession: (key) => {
+          if (probed) throw new Error("SQLITE_IOERR: disk I/O error (read)");
+          return harness.deps.readSession!(key);
+        },
+      },
+    });
+
+    // The probe verdict survives both failures.
+    expect(result.probe?.error).toContain("model_not_found: opus-9");
+    expect(result.rollbackError).toContain("SQLITE_IOERR");
+    expect(result.rolledBack).toBe(false);
+    // Neither whose configuration is stored nor which one is known: `after` is only
+    // what this update wrote, and `superseded` is false only for lack of proof.
+    expect(result.storedStateKnown).toBe(false);
+    expect(result.superseded).toBe(false);
+    expect(result.after.effortOverride).toBe("low");
+  });
+
+  it("keeps the superseded verdict when the conditional restore found a newer update and the read-back fails", async () => {
+    const session = baseSession();
+    let probed = false;
+    const harness = makeHarness({
+      initial: session,
+      probe: (request) => {
+        probed = true;
+        harness.concurrentUpdate({ runtimeProviderOverride: "claude", modelOverride: "opus" });
+        return failingProbe(request);
+      },
+    });
+
+    const result = await applySessionRuntimeUpdate({
+      session,
+      agent: null,
+      axes: { provider: { set: "claude" }, model: { set: "sonnet" } },
+      deps: {
+        ...harness.deps,
+        readSession: (key) => {
+          if (probed) throw new Error("SQLITE_IOERR: disk I/O error (read)");
+          return harness.deps.readSession!(key);
+        },
+      },
+    });
+
+    // restoreIfOwned ran and did not match: a newer update owns the session, whatever it holds.
+    expect(result.probe?.error).toContain("model_not_found: opus-9");
+    expect(result.rollbackError).toBeNull();
+    expect(result.rolledBack).toBe(false);
+    expect(result.superseded).toBe(true);
+    expect(result.storedStateKnown).toBe(false);
+  });
+
+  it("keeps the probe verdict and the restored state when the read-back after a good restore fails", async () => {
+    const session = baseSession({ effortOverride: "high" } as Partial<SessionEntry>);
+    let probed = false;
+    const harness = makeHarness({
+      initial: session,
+      probe: (request) => {
+        probed = true;
+        return failingProbe(request);
+      },
+    });
+
+    const result = await applySessionRuntimeUpdate({
+      session,
+      agent: null,
+      axes: { effort: { set: "low" } },
+      deps: {
+        ...harness.deps,
+        readSession: (key) => {
+          if (probed) throw new Error("SQLITE_IOERR: disk I/O error (read)");
+          return harness.deps.readSession!(key);
+        },
+      },
+    });
+
+    expect(result.probe?.error).toContain("model_not_found: opus-9");
+    expect(result.rolledBack).toBe(true);
+    expect(result.rollbackError).toBeNull();
+    expect(result.superseded).toBe(false);
+    // The conditional UPDATE matched, so the previous configuration is known to be stored.
+    expect(result.storedStateKnown).toBe(true);
+    expect(result.after).toEqual(result.before);
   });
 
   it("restores the previous configuration and rethrows when the probe throws", async () => {
@@ -684,7 +837,8 @@ describe("applySessionRuntimeUpdate against the real session store", () => {
 
   it("keeps a writer on another connection out until the apply has committed", async () => {
     const session = seedSession("agent:main:atomic-interleave");
-    const other = new Database(getRaviDbPath());
+    // The house handle: it authorizes the target (isolated state here) like any other writer.
+    const other = openStateDatabase(getRaviDbPath());
     other.exec("PRAGMA busy_timeout = 0");
     const intrude = (value: string) =>
       other.prepare("UPDATE sessions SET model_override = ? WHERE session_key = ?").run(value, session.sessionKey);

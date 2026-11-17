@@ -265,6 +265,58 @@ function projectHttpControlUrl(value: unknown, key: string): string | undefined 
   return typeof sanitized === "string" ? redactDiagnosticText(sanitized).slice(0, 2048) : undefined;
 }
 
+const RUNTIME_UPDATE_SNAPSHOT_KEYS = [
+  "runtimeProviderOverride",
+  "modelOverride",
+  "effortOverride",
+  "thinkingLevel",
+] as const;
+
+/** One runtime-config axis value: a provider, model, effort or thinking id, or null for "no override". */
+function projectRuntimeUpdateAxisValue(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  if (typeof value !== "string" || value.length > 200) return undefined;
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:/+-]*$/.test(value) || redactDiagnosticText(value) !== value) return undefined;
+  return value;
+}
+
+/** The four override axes of a session, each an id or null. Anything else drops the whole snapshot. */
+function projectRuntimeUpdateSnapshot(value: unknown): Record<string, string | null> | null | undefined {
+  if (value === null) return null;
+  const projected: Record<string, string | null> = {};
+  for (const key of RUNTIME_UPDATE_SNAPSHOT_KEYS) {
+    const axis = projectRuntimeUpdateAxisValue(safeDiagnosticField(value, key));
+    if (axis === undefined) return undefined;
+    projected[key] = axis;
+  }
+  return projected;
+}
+
+/**
+ * What a failed `sessions update` left stored, so recovery can work from the
+ * envelope alone: flags and the four override ids (never the probe payload, the
+ * session key or free-form provider text). A restore error is redacted text.
+ */
+function projectRuntimeUpdateControl(value: unknown): Record<string, unknown> | undefined {
+  const rolledBack = safeDiagnosticField(value, "rolledBack");
+  const superseded = safeDiagnosticField(value, "superseded");
+  const storedStateKnown = safeDiagnosticField(value, "storedStateKnown");
+  const before = projectRuntimeUpdateSnapshot(safeDiagnosticField(value, "before"));
+  const stored = projectRuntimeUpdateSnapshot(safeDiagnosticField(value, "stored"));
+  if (typeof rolledBack !== "boolean" || typeof storedStateKnown !== "boolean") return undefined;
+  if (before === undefined || before === null || stored === undefined) return undefined;
+  if (superseded !== null && typeof superseded !== "boolean") return undefined;
+  const rollbackError = safeDiagnosticField(value, "rollbackError");
+  return {
+    rolledBack,
+    superseded,
+    storedStateKnown,
+    before,
+    stored,
+    ...(typeof rollbackError === "string" ? { rollbackError: redactDiagnosticText(rollbackError).slice(0, 400) } : {}),
+  };
+}
+
 /** Domain controls describe the next action, never the underlying provider payload. */
 function projectOperationalControls(details: unknown): Record<string, unknown> {
   const controls: Record<string, unknown> = {};
@@ -298,6 +350,8 @@ function projectOperationalControls(details: unknown): Record<string, unknown> {
   }
   const objectType = read("objectType");
   if (objectType === "blob" || objectType === "tree" || objectType === "commit") controls.objectType = objectType;
+  const runtimeUpdate = projectRuntimeUpdateControl(read("runtimeUpdate"));
+  if (runtimeUpdate) controls.runtimeUpdate = runtimeUpdate;
   const candidates = projectCandidateControls(read("candidates"));
   if (candidates) controls.candidates = candidates;
   const drift = projectDriftControls(read("drift"));
