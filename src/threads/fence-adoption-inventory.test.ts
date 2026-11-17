@@ -103,7 +103,7 @@ describe("legacy residue inventory of v3.261113.2", () => {
     expect(index).not.toBeNull();
     const active = index![1]!.split(",").map((value) => value.trim().replace(/^'|'$/g, ""));
     const turns = LEGACY_BRIDGE_RESIDUE_RULES.find((rule) => rule.table === "turns");
-    expect([...(turns?.blocking ?? [])].sort()).toEqual(active.sort());
+    expect([...(turns?.inFlight ?? [])].sort()).toEqual(active.sort());
   });
 
   it("every computed table name of the tag is resolved", () => {

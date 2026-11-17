@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import {
@@ -10,7 +10,11 @@ import {
   LEGACY_ROUTER_RESIDUE_RULES,
   legacyResidueRules,
   mergeResidue,
+  RESTART_REASON_FILE,
+  RESTART_RESUME_WINDOW_MS,
   type ResidueRule,
+  readRestartEpoch,
+  restartSnapshotResidue,
 } from "./fence-adoption-residue.js";
 
 const roots: string[] = [];
@@ -82,7 +86,7 @@ describe("legacy durable residue", () => {
     expect(LEGACY_RESIDUE_EXCLUSIONS.map((entry) => entry.table)).toContain("session_turns");
   });
 
-  it("adapters left running, answered library requests and restart snapshots do not block; a dead handoff does", () => {
+  it("adapters left running and answered library requests do not block; a dead handoff does", () => {
     const path = join(root(), "ravi.db");
     const db = new Database(path);
     db.exec("CREATE TABLE session_adapters (adapter_id TEXT, status TEXT NOT NULL)");
@@ -93,10 +97,6 @@ describe("legacy durable residue", () => {
     );
     db.exec("CREATE TABLE thread_handoffs (id TEXT, status TEXT NOT NULL)");
     db.exec("INSERT INTO thread_handoffs VALUES ('h1', 'delivered'), ('h2', 'queued')");
-    db.exec(
-      "CREATE TABLE daemon_restart_session_snapshots (restart_epoch TEXT, session_key TEXT, stopped_at INTEGER NOT NULL, pending_message_count INTEGER NOT NULL)",
-    );
-    db.exec("INSERT INTO daemon_restart_session_snapshots VALUES ('e1', 's1', 100, 2), ('e1', 's2', 100, 0)");
     db.exec("CREATE TABLE reaction_actions (id TEXT, completed_at INTEGER NOT NULL)");
     db.exec("INSERT INTO reaction_actions VALUES ('x', 5)");
     db.close();
@@ -105,12 +105,10 @@ describe("legacy durable residue", () => {
     expect(residue.unknown).toEqual(["ravi.db:thread_handoffs.status=queued (1): resumption not verified"]);
     expect(bySource["ravi.db:session_adapters.status"]).toMatchObject({ pending: 0, inFlight: 1 });
     expect(bySource["ravi.db:library_agent_requests.status"]).toMatchObject({ pending: 1, inFlight: 1 });
-    // Counted in the evidence: one session snapshot with pending messages.
-    expect(bySource["ravi.db:daemon_restart_session_snapshots.pending_message_count"]).toMatchObject({ pending: 1 });
     expect(bySource["ravi.db:reaction_actions.completed_at"]).toMatchObject({ pending: 0, inFlight: 0 });
   });
 
-  it("a refused call tool is final, an unfinished reaction blocks, only the latest restart epoch counts", () => {
+  it("a refused call tool is final, a stale approval claim waits, an unfinished reaction blocks", () => {
     const path = join(root(), "ravi.db");
     const db = new Database(path);
     db.exec("CREATE TABLE call_tool_runs (id TEXT, status TEXT NOT NULL)");
@@ -121,13 +119,6 @@ describe("legacy durable residue", () => {
     db.exec("INSERT INTO cloud_chat_approvals VALUES ('a1', 'deciding'), ('a2', 'approved')");
     db.exec("CREATE TABLE reaction_actions (id TEXT, completed_at INTEGER NOT NULL)");
     db.exec("INSERT INTO reaction_actions VALUES ('done', 5), ('open', 0)");
-    db.exec(
-      "CREATE TABLE daemon_restart_session_snapshots (restart_epoch TEXT, session_key TEXT, stopped_at INTEGER NOT NULL, pending_message_count INTEGER NOT NULL)",
-    );
-    // An older stop left two sessions with pending messages; the latest stop left one. Only the latest is resumed.
-    db.exec(
-      "INSERT INTO daemon_restart_session_snapshots VALUES ('old', 's1', 100, 3), ('old', 's2', 100, 1), ('new', 's1', 200, 2), ('new', 's3', 200, 0)",
-    );
     db.close();
     const residue = collectSqliteResidue(legacyResidueRules(path));
     const bySource = Object.fromEntries(residue.sources.map((source) => [source.source, source]));
@@ -136,7 +127,81 @@ describe("legacy durable residue", () => {
     expect(residue.unknown[0]).toStartWith("ravi.db:reaction_actions.completed_at: 1 row(s) where completed_at = 0: ");
     expect(bySource["ravi.db:call_tool_runs.status"]).toMatchObject({ pending: 0, inFlight: 0 });
     expect(bySource["ravi.db:cloud_chat_approvals.status"]).toMatchObject({ pending: 1, inFlight: 0 });
-    expect(bySource["ravi.db:daemon_restart_session_snapshots.pending_message_count"]).toMatchObject({ pending: 1 });
+  });
+
+  it("seventh review, B1: Slack turns in flight and threads being created are carried; a dead admission blocks", () => {
+    const path = join(root(), "ravi.db");
+    const db = new Database(path);
+    db.exec("CREATE TABLE slack_thread_turn_health (request_id TEXT, state TEXT NOT NULL)");
+    // Every Slack thread with a turn in flight at the stop: recomputed by the gateway reconciliation.
+    db.exec("INSERT INTO slack_thread_turn_health VALUES ('r1', 'running'), ('r2', 'idle')");
+    db.exec("CREATE TABLE slack_thread_lifecycle (request_id TEXT, status TEXT NOT NULL)");
+    db.exec(
+      "INSERT INTO slack_thread_lifecycle VALUES ('a', 'queued'), ('b', 'root_delivered'), ('c', 'starting'), ('d', 'open')",
+    );
+    db.exec("CREATE TABLE slack_thread_attention_notices (event_id TEXT, admission_status TEXT NOT NULL)");
+    db.exec(
+      "INSERT INTO slack_thread_attention_notices VALUES ('n1', 'pending'), ('n2', 'refused'), ('n3', 'accepting'), ('n4', 'admitted')",
+    );
+    db.close();
+    const residue = collectSqliteResidue(legacyResidueRules(path));
+    const bySource = Object.fromEntries(residue.sources.map((source) => [source.source, source]));
+    expect(residue.unknown).toHaveLength(1);
+    expect(residue.unknown[0]).toStartWith("ravi.db:slack_thread_attention_notices.admission_status=accepting (1): ");
+    expect(
+      String(
+        (bySource["ravi.db:slack_thread_attention_notices.admission_status"]?.detail as { owner?: string } | undefined)
+          ?.owner,
+      ),
+    ).toContain("the RUNBOOK settle step for this table");
+    expect(bySource["ravi.db:slack_thread_turn_health.state"]).toMatchObject({ pending: 0, inFlight: 1 });
+    expect(bySource["ravi.db:slack_thread_lifecycle.status"]).toMatchObject({ pending: 0, inFlight: 3 });
+    expect(bySource["ravi.db:slack_thread_attention_notices.admission_status"]).toMatchObject({
+      pending: 2,
+      inFlight: 0,
+    });
+  });
+
+  it("seventh review, B2: remote mirrors and derived states do not block; a call the stop caught points at the call settle step", () => {
+    const path = join(root(), "ravi.db");
+    const db = new Database(path);
+    for (const table of ["devin_sessions", "cloud_thread_runs", "workflow_runs", "workflow_node_runs", "call_runs"])
+      db.exec(`CREATE TABLE ${table} (id TEXT, status TEXT NOT NULL)`);
+    db.exec("INSERT INTO devin_sessions VALUES ('d1', 'running'), ('d2', 'creating'), ('d3', 'exit')");
+    db.exec("INSERT INTO cloud_thread_runs VALUES ('c1', 'running'), ('c2', 'starting')");
+    db.exec("INSERT INTO workflow_runs VALUES ('w1', 'running'), ('w2', 'ready')");
+    db.exec("INSERT INTO workflow_node_runs VALUES ('n1', 'running')");
+    db.exec("INSERT INTO call_runs VALUES ('k1', 'in_progress')");
+    db.close();
+    const residue = collectSqliteResidue(legacyResidueRules(path));
+    const bySource = Object.fromEntries(residue.sources.map((source) => [source.source, source]));
+    expect(residue.unknown).toEqual(["ravi.db:call_runs.status=in_progress (1): resumption not verified"]);
+    expect(String((bySource["ravi.db:call_runs.status"]?.detail as { owner?: string } | undefined)?.owner)).toContain(
+      "the RUNBOOK settle step for calls",
+    );
+    expect(bySource["ravi.db:devin_sessions.status"]).toMatchObject({ pending: 2, inFlight: 0 });
+    expect(bySource["ravi.db:cloud_thread_runs.status"]).toMatchObject({ pending: 0, inFlight: 2 });
+    expect(bySource["ravi.db:workflow_runs.status"]).toMatchObject({ pending: 0, inFlight: 2 });
+    expect(bySource["ravi.db:workflow_node_runs.status"]).toMatchObject({ pending: 0, inFlight: 1 });
+  });
+
+  it("seventh review, B3: a credential attempt the stop leaves started is a record, not a block", () => {
+    const path = join(root(), "ravi.db");
+    const db = new Database(path);
+    db.exec("CREATE TABLE runtime_credential_attempts (id TEXT, status TEXT NOT NULL, completed_at INTEGER)");
+    // The legacy stop does not wait for the turn's finally (tag bot.ts l.192, l.212-223).
+    db.exec(
+      "INSERT INTO runtime_credential_attempts VALUES ('a1', 'started', NULL), ('a2', 'reserved', NULL), ('a3', 'abandoned', 9)",
+    );
+    db.close();
+    const residue = collectSqliteResidue(legacyResidueRules(path));
+    expect(residue.unknown).toEqual([]);
+    expect(
+      residue.sources.find((source) => source.source === "ravi.db:runtime_credential_attempts.status"),
+    ).toMatchObject({
+      pending: 2,
+      inFlight: 0,
+    });
   });
 
   it("a cleanly closed WAL database (no -wal/-shm) is read without creating any file", () => {
@@ -207,5 +272,82 @@ describe("legacy broker residue", () => {
     expect(broker.unknown).toEqual(["jetstream:BROKEN: unreadable (timeout)"]);
     const merged = mergeResidue(broker, { sources: [{ source: "a", pending: 1, inFlight: 0 }], unknown: [] });
     expect(merged).toEqual({ sources: [{ source: "a", pending: 1, inFlight: 0 }], unknown: broker.unknown });
+  });
+});
+
+describe("restart snapshots (CodeRabbit r4595928941)", () => {
+  const T = 1_800_000_000_000;
+  function legacyRestartState(epoch: string | null) {
+    const directory = root();
+    const databasePath = join(directory, "ravi.db");
+    const db = new Database(databasePath);
+    db.exec("CREATE TABLE sessions (session_key TEXT PRIMARY KEY, ephemeral INTEGER DEFAULT 0, expires_at INTEGER)");
+    db.exec(
+      "CREATE TABLE daemon_restart_session_snapshots (restart_epoch TEXT NOT NULL, session_key TEXT NOT NULL, session_name TEXT NOT NULL, non_idle INTEGER NOT NULL DEFAULT 0, stopped_at INTEGER NOT NULL, pending_message_count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (restart_epoch, session_key))",
+    );
+    db.exec(
+      "CREATE TABLE daemon_restart_resume_deliveries (restart_epoch TEXT NOT NULL, session_key TEXT NOT NULL, delivered_at INTEGER NOT NULL, PRIMARY KEY (restart_epoch, session_key))",
+    );
+    db.exec("INSERT INTO sessions VALUES ('s1', 0, NULL), ('s2', 0, NULL), ('s4', 1, 1)");
+    // An older epoch with pending messages, history: never the stop's own.
+    db.exec(`INSERT INTO daemon_restart_session_snapshots VALUES ('old', 's1', 'one', 1, ${T - 86_400_000}, 3)`);
+    // The stop's epoch: one session to resume, one already delivered, one whose session is gone,
+    // one expired ephemeral session.
+    db.exec(
+      `INSERT INTO daemon_restart_session_snapshots VALUES ('stop', 's1', 'one', 1, ${T}, 2), ('stop', 's2', 'two', 1, ${T}, 1), ('stop', 's3', 'three', 1, ${T}, 4), ('stop', 's4', 'four', 1, ${T}, 1)`,
+    );
+    db.exec(`INSERT INTO daemon_restart_resume_deliveries VALUES ('stop', 's2', ${T + 1})`);
+    db.close();
+    const restartReasonPath = join(directory, "restart-reason.txt");
+    if (epoch)
+      writeFileSync(
+        restartReasonPath,
+        JSON.stringify({ reason: "supervised_restart", restartEpoch: epoch, createdAt: T }),
+      );
+    return { databasePath, restartReasonPath };
+  }
+
+  it("the stop's epoch is carried inside the window and blocks past it, with the successor's eligibility", () => {
+    const state = legacyRestartState("stop");
+    const inside = restartSnapshotResidue({ ...state, now: T + 5 * 60_000 });
+    expect(inside.unknown).toEqual([]);
+    // s1 only: s2 was delivered, s3 has no session, s4 is an expired ephemeral session.
+    expect(inside.sources[0]).toMatchObject({
+      inFlight: 1,
+      detail: { epoch: "stop", sessions: 1, pendingMessages: 2 },
+    });
+    // The successor's read 51 minutes after the stop: less than the 10-minute margin is left.
+    const late = restartSnapshotResidue({ ...state, now: T + 51 * 60_000 });
+    expect(late.unknown).toHaveLength(1);
+    expect(late.unknown[0]).toContain("are past the 60-minute resume window less 10 min of margin");
+    expect(late.sources[0]).toMatchObject({ inFlight: 0 });
+  });
+
+  it("without an epoch the successor resumes nothing: recent snapshots block, old ones are history", () => {
+    const state = legacyRestartState(null);
+    expect(readRestartEpoch(state.restartReasonPath)).toBeNull();
+    const recent = restartSnapshotResidue({ ...state, now: T + 60_000 });
+    expect(recent.unknown).toHaveLength(1);
+    expect(recent.unknown[0]).toContain("restart-reason.txt names no epoch");
+    const later = restartSnapshotResidue({ ...state, now: T + RESTART_RESUME_WINDOW_MS + 60_000 });
+    expect(later.unknown).toEqual([]);
+    writeFileSync(state.restartReasonPath, "plain text reason");
+    expect(readRestartEpoch(state.restartReasonPath)).toBeNull();
+  });
+
+  it("the reason file, the window and the eligibility match this release's daemon and router", () => {
+    const daemon = readFileSync(join(import.meta.dir, "..", "daemon.ts"), "utf8");
+    expect(daemon).toContain('const RESTART_REASON_FILE = join(homedir(), ".ravi", "restart-reason.txt");');
+    expect(daemon).toContain("const RESTART_RESUME_WINDOW_MS = 60 * 60 * 1000;");
+    expect(RESTART_REASON_FILE).toBe(join(homedir(), ".ravi", "restart-reason.txt"));
+    const router = readFileSync(join(import.meta.dir, "..", "router", "router-db.ts"), "utf8");
+    for (const fragment of [
+      "JOIN sessions live_sessions ON live_sessions.session_key = snapshots.session_key",
+      "AND snapshots.non_idle = 1",
+      "AND snapshots.stopped_at >= ?",
+      "(live_sessions.ephemeral = 0 OR live_sessions.expires_at IS NULL OR live_sessions.expires_at > ?)",
+      "WHERE delivered.restart_epoch = snapshots.restart_epoch",
+    ])
+      expect(router).toContain(fragment);
   });
 });

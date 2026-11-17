@@ -14,6 +14,7 @@ import {
   successorOutcome,
 } from "./fence-adoption.js";
 import {
+  adoptionDryRun,
   adoptThreadFenceAtEntry,
   legacyStateDatabasePaths,
   liveResidue,
@@ -94,12 +95,15 @@ function legacyState() {
       online[name] = false;
     },
     residue: () =>
-      liveResidue(databasePath, (use) =>
-        use({
-          streamMessages: async (stream) =>
-            stream === "SESSION_PROMPTS" ? 0 : stream === "CHANNEL_OUTBOUND" ? 2 : null,
-          consumerPending: async () => ({ pending: 0, ackPending: 0 }),
-        }),
+      liveResidue(
+        databasePath,
+        (use) =>
+          use({
+            streamMessages: async (stream) =>
+              stream === "SESSION_PROMPTS" ? 0 : stream === "CHANNEL_OUTBOUND" ? 2 : null,
+            consumerPending: async () => ({ pending: 0, ackPending: 0 }),
+          }),
+        join(stateDir, "restart-reason.txt"),
       ),
     wait: async () => {},
     exitChecks: 3,
@@ -135,44 +139,45 @@ describe("fence adoption glue on the real v3.261113.2 schema", () => {
     );
   });
 
-  it("owned residue is carried, unverified non-terminal rows block, bridge turns follow the active index", () => {
+  it("bridge turns follow the active index and are closed or started by the successor's bridge", () => {
     const { databasePath } = legacyState();
     const bridge = new Database(legacyBridgeDatabasePath(databasePath));
     bridge.exec(
-      "INSERT INTO turns (id, conversation_id, status, lease_until, authority, created_at) VALUES ('t1', 'c1', 'completed', 0, 'x', 0), ('t2', 'c2', 'running', 0, 'x', 0)",
+      "INSERT INTO turns (id, conversation_id, status, lease_until, authority, created_at) VALUES ('t1', 'c1', 'completed', 0, 'x', 0), ('t2', 'c2', 'running', 0, 'x', 0), ('t3', 'c3', 'awaiting_approval', 0, 'x', 0)",
     );
     bridge.close();
     const residue = collectSqliteResidue(
       legacyResidueRules(databasePath, legacyBridgeDatabasePath(databasePath), legacyStateDatabasePaths(databasePath)),
     );
-    expect(residue.unknown).toEqual(["turns.status=running (1): resumption not verified"]);
+    expect(residue.unknown).toEqual([]);
+    expect(residue.sources.find((source) => source.source === "turns.status")).toMatchObject({ inFlight: 2 });
   });
 
-  it("the adopt preview lists a queued handoff read only, while the legacy runs and before any stop", () => {
-    const { stateDir, databasePath, host } = legacyState();
-    const db = new Database(databasePath);
-    // What sessions send --thread of the tag leaves when its process dies between the insert and the send.
-    db.exec(
-      "INSERT INTO thread_handoffs (id, thread_id, target_session_key, brief_text, created_at, updated_at) VALUES ('h1', 'th1', 'agent:x', 'brief', 1, 1)",
-    );
-    db.close();
-    const before = readdirSync(stateDir).sort();
-    const stopped: string[] = [];
-    const watched: AdoptionHost = {
-      ...host,
-      stop: async (name) => {
-        stopped.push(name);
-      },
-    };
-    const preview = previewLiveSqliteResidue(watched.databasePath);
-    expect(preview.unknown).toEqual(["ravi.db:thread_handoffs.status=queued (1): resumption not verified"]);
-    const source = preview.sources.find((entry) => entry.source === "ravi.db:thread_handoffs.status");
-    expect(String((source?.detail as { owner?: string } | undefined)?.owner)).toContain(
-      "the adopt preview lists it before any stop",
-    );
-    // Nothing stopped, no maintenance record, no new file.
-    expect(stopped).toEqual([]);
-    expect(readdirSync(stateDir).sort()).toEqual(before);
+  it("the adopt preview lists a queued handoff read only, with the legacy writer's connection open", () => {
+    const { stateDir, databasePath, host, bundlePath } = legacyState();
+    // The legacy runtime's connection stays open during the preview (WAL with -wal/-shm present).
+    const writer = new Database(databasePath);
+    try {
+      writer.exec("PRAGMA journal_mode = WAL");
+      // What sessions send --thread of the tag leaves when its process dies between the insert and the send.
+      writer.exec(
+        "INSERT INTO thread_handoffs (id, thread_id, target_session_key, brief_text, created_at, updated_at) VALUES ('h1', 'th1', 'agent:x', 'brief', 1, 1)",
+      );
+      const before = readdirSync(stateDir).sort();
+      const preview = previewLiveSqliteResidue(databasePath);
+      expect(preview.unknown).toEqual(["ravi.db:thread_handoffs.status=queued (1): resumption not verified"]);
+      const source = preview.sources.find((entry) => entry.source === "ravi.db:thread_handoffs.status");
+      expect(String((source?.detail as { owner?: string } | undefined)?.owner)).toContain(
+        "the RUNBOOK settle step for this table",
+      );
+      // The CLI's dry-run payload: the plan plus this preview; nothing is taken or written.
+      const dryRun = adoptionDryRun(host, bundlePath);
+      expect(dryRun.residuePreview.unknown).toEqual(preview.unknown);
+      expect(dryRun.predecessors.map((entry) => entry.name).sort()).toEqual(["ravi", "ravi-channels"]);
+      expect(readdirSync(stateDir).sort()).toEqual(before);
+    } finally {
+      writer.close();
+    }
   });
 
   it("entry admission, then the production fence (prepareRegisteredThreadFence) on the legacy schema", async () => {
@@ -197,7 +202,12 @@ describe("fence adoption glue on the real v3.261113.2 schema", () => {
     );
     expect(admitDaemonEntry(f.stateDir, entry)).toBe("successor");
     expect(successorOutcome(f.stateDir, f.databasePath)).toBe("pending");
-    adoptThreadFenceAtEntry(f.stateDir, { registry: f.registry, bundleDigest: digestOf, pid: process.pid });
+    adoptThreadFenceAtEntry(f.stateDir, {
+      registry: f.registry,
+      bundleDigest: digestOf,
+      pid: process.pid,
+      restartReasonPath: join(f.stateDir, "restart-reason.txt"),
+    });
     expect(databaseHasThreadFence(f.databasePath)).toBe(true);
     expect(successorOutcome(f.stateDir, f.databasePath)).toBe("adopted");
     expect(admitDaemonEntry(f.stateDir, entry)).toBe("normal");
@@ -228,7 +238,12 @@ describe("fence adoption glue on the real v3.261113.2 schema", () => {
     };
     expect(admitDaemonEntry(f.stateDir, entry)).toBe("successor");
     expect(() =>
-      adoptThreadFenceAtEntry(f.stateDir, { registry: f.registry, bundleDigest: digestOf, pid: process.pid }),
+      adoptThreadFenceAtEntry(f.stateDir, {
+        registry: f.registry,
+        bundleDigest: digestOf,
+        pid: process.pid,
+        restartReasonPath: join(f.stateDir, "restart-reason.txt"),
+      }),
     ).toThrow();
     expect(databaseHasThreadFence(f.databasePath)).toBe(false);
   });

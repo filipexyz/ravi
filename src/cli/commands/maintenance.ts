@@ -5,7 +5,6 @@ import { runPm2 } from "../../pm2.js";
 import {
   type AdoptionHost,
   describeThreadFenceMaintenance,
-  planThreadFenceAdoption,
   prepareThreadFenceAdoption,
   readThreadFenceAdoption,
   recoverThreadFenceAdoption,
@@ -13,12 +12,12 @@ import {
   successorOutcome,
 } from "../../threads/fence-adoption.js";
 import {
+  adoptionDryRun,
   liveBootIdentity,
   liveBundleDigest,
   liveRegistrations,
   liveResidue,
   liveStop,
-  previewLiveSqliteResidue,
 } from "../../threads/fence-adoption-live.js";
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { getRaviStateDir } from "../../utils/paths.js";
@@ -170,11 +169,8 @@ export class MaintenanceCommands {
       const stateDir = getRaviStateDir();
       const host = liveHost(stateDir);
       const target = targetBundlePath();
-      const plan = planThreadFenceAdoption(host, target);
-      // Read only, before any stop: residue that no process will settle shows up here, while
-      // 3.261113.2 still runs and the operator can clear it (RUNBOOK, "Before the window").
-      if (!execute)
-        contractDryRun(ADOPT, { ...plan, residuePreview: previewLiveSqliteResidue(host.databasePath) }, { asJson });
+      // Read only, before any stop: the plan and the residue preview (RUNBOOK, "Before the window").
+      if (!execute) contractDryRun(ADOPT, adoptionDryRun(host, target), { asJson });
       const adoption = await prepareThreadFenceAdoption(host, target);
       const successor = await startSuccessorAndWait(stateDir);
       if (!successor.adopted) successorFailure(ADOPT, asJson, adoption.maintenanceId, successor.detail);

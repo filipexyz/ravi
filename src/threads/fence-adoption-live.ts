@@ -8,10 +8,13 @@ import type { MaintenanceProcess } from "../runtime-maintenance.js";
 import { readRuntimeBootReceipt, runtimeBundleFingerprint } from "../runtime-process-identity.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import {
+  type AdoptionHost,
   adoptThreadFenceAsSuccessor,
   type DurableResidue,
   type ManagedRegistration,
+  planThreadFenceAdoption,
   type ThreadFenceAdoption,
+  type ThreadFenceAdoptionPlan,
 } from "./fence-adoption.js";
 import {
   collectJetStreamResidue,
@@ -21,6 +24,8 @@ import {
   legacyBridgeDatabasePath,
   legacyResidueRules,
   mergeResidue,
+  RESTART_REASON_FILE,
+  restartSnapshotResidue,
 } from "./fence-adoption-residue.js";
 import { prepareRegisteredThreadFence } from "./schema-fence.js";
 
@@ -117,15 +122,26 @@ export async function withLiveJetStreamReader<T>(
 
 /**
  * Preview for `thread-fence-adopt` without --execute, while 3.261113.2 still runs: the same SQLite
- * rules, read only, before any stop. Advisory: work in flight now is normal and drains with the
- * stop; a row that only a dead process could settle (a queued handoff, an applying grant) is
- * already here and will block the window, so the operator clears it first (RUNBOOK). The broker is
- * not read: its residue is what the stop itself drains.
+ * rules, read only, before any stop. Advisory: rows in flight now are carried or recomputed by the
+ * successor; a blocking row (`resumption not verified`) is already here and will block the window,
+ * so the operator can settle it before (RUNBOOK). Not read: the broker, whose residue is what the
+ * stop drains, and the restart snapshots, whose epoch only the stop creates.
  */
 export function previewLiveSqliteResidue(databasePath: string): DurableResidue {
   return collectSqliteResidue(
     legacyResidueRules(databasePath, legacyBridgeDatabasePath(databasePath), legacyStateDatabasePaths(databasePath)),
   );
+}
+
+/** What `thread-fence-adopt` without --execute returns: the read-only plan and the residue preview. */
+export function adoptionDryRun(
+  host: AdoptionHost,
+  targetBundlePath: string,
+): ThreadFenceAdoptionPlan & { residuePreview: DurableResidue } {
+  return {
+    ...planThreadFenceAdoption(host, targetBundlePath),
+    residuePreview: previewLiveSqliteResidue(host.databasePath),
+  };
 }
 
 /** Read only after both predecessors exited: router database, broker, and the excluded tables. */
@@ -134,9 +150,13 @@ export async function liveResidue(
   withReader: (
     use: (reader: JetStreamResidueReader) => Promise<DurableResidue>,
   ) => Promise<DurableResidue> = withLiveJetStreamReader,
+  restartReasonPath = RESTART_REASON_FILE,
 ): Promise<DurableResidue> {
-  const sqlite = collectSqliteResidue(
-    legacyResidueRules(databasePath, legacyBridgeDatabasePath(databasePath), legacyStateDatabasePaths(databasePath)),
+  const sqlite = mergeResidue(
+    collectSqliteResidue(
+      legacyResidueRules(databasePath, legacyBridgeDatabasePath(databasePath), legacyStateDatabasePaths(databasePath)),
+    ),
+    restartSnapshotResidue({ databasePath, restartReasonPath }),
   );
   let broker: DurableResidue;
   try {
@@ -171,6 +191,7 @@ export function adoptThreadFenceAtEntry(
     registry: () => ManagedRegistration[];
     bundleDigest: (path: string) => string | null;
     pid: number;
+    restartReasonPath?: string;
   } = { registry: liveRegistrations, bundleDigest: liveBundleDigest, pid: process.pid },
 ): ThreadFenceAdoption {
   const databasePath = join(stateDir, "ravi.db");
@@ -180,13 +201,18 @@ export function adoptThreadFenceAtEntry(
     bundleDigest: host.bundleDigest,
     self: { pid: host.pid },
     // The successor re-derives the SQLite residue itself instead of trusting the coordinator's record.
+    // The restart snapshots are re-read with the successor's own clock: past the resume window the
+    // adoption is refused instead of claiming sessions nobody will resume (CodeRabbit r4595928941).
     residue: () =>
-      collectSqliteResidue(
-        legacyResidueRules(
-          databasePath,
-          legacyBridgeDatabasePath(databasePath),
-          legacyStateDatabasePaths(databasePath),
+      mergeResidue(
+        collectSqliteResidue(
+          legacyResidueRules(
+            databasePath,
+            legacyBridgeDatabasePath(databasePath),
+            legacyStateDatabasePaths(databasePath),
+          ),
         ),
+        restartSnapshotResidue({ databasePath, restartReasonPath: host.restartReasonPath ?? RESTART_REASON_FILE }),
       ),
     open: () => {
       const database = openStateDatabase(databasePath);
