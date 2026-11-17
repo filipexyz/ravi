@@ -99,13 +99,29 @@ ravi sessions set-provider <name> <provider|clear>
 ravi sessions set-thinking <name> <level>
 
 # Atualizar provider/model/effort/thinking de uma vez, com prova de vida e rollback.
-# Antes de gravar, recusa valor inválido de provider/effort/thinking e modelo de uma família
-# que o provider não roda (ex.: modelo gpt com provider claude), nomeando os válidos.
-# A validação de modelo é por família, não por versão: versão desconhecida de família conhecida
-# (ex.: um sonnet que ainda não existe) é gravada, e quem decide é a prova de vida.
-# Depois aplica, roda um turno real de prova e, se a prova falhar ou lançar, restaura o estado anterior.
+# Antes de gravar, recusa valor inválido de provider/effort/thinking e modelo que o provider não
+# roda, nomeando os válidos. A validação de modelo depende do provider:
+# - todos: formato do id (sem espaço; só letras, dígitos e . _ : / -) e família contra o provider
+#   (ex.: modelo gpt com provider claude);
+# - claude/grok: por família, não por versão; versão desconhecida de família conhecida
+#   (ex.: um sonnet que ainda não existe) é gravada, e quem decide é a prova de vida;
+# - codex: com o cache de modelos da conta, exige o slug exato do cache; sem o cache, não confere o id;
+# - pi: depois do formato e da família, confere só a forma do seletor (provider/modelo; um id de
+#   provider sozinho é recusado). Não há catálogo de ids: qualquer modelo bem formado é gravado.
+# Depois aplica (as gravações dos eixos entram numa transação só: ou todas ou nenhuma), roda um turno
+# real de prova e, se a prova falhar ou lançar, restaura o estado anterior.
+# Prova que RETORNA falha e restauração que também falha: sai RUNTIME_PROBE_FAILED, e a causa da
+# restauração e o que está gravado vêm em error.runtimeUpdate (rollbackError, superseded,
+# storedStateKnown, before = valores anteriores, stored = o que está gravado agora). A restauração
+# é um UPDATE condicional que pode falhar antes de checar a posse, então o CLI relê o gravado:
+# ainda é a configuração não provada (suggestedAction traz o comando exato, com --skip-probe, para
+# a restauração explícita não cair de novo na prova que falhou), já é a de uma atualização mais nova
+# (nada a restaurar) ou não deu para ler (storedStateKnown=false: rode ravi sessions info <name> --json
+# antes de qualquer coisa, porque uma atualização concorrente pode ser dona da sessão).
+# Prova que LANÇA exceção: o erro original sai intacto e uma restauração que falha só vai para o log
+# do daemon, sem RUNTIME_PROBE_FAILED nem error.runtimeUpdate; confira ravi sessions info <name> --json.
 ravi sessions update <name> --provider claude --model sonnet --effort ultra --thinking off
-# Ressalva: Pi aceita qualquer id de modelo, e Codex sem o cache de modelos não confere o id exato.
+# Ressalva: no Pi o id do modelo não é conferido, e Codex sem o cache de modelos também não.
 # Nesses dois casos só a prova de vida protege; não use --skip-probe.
 # Eixos são opcionais ('clear' limpa o override); --skip-probe aplica sem prova (sem rollback);
 # --probe-timeout <s> limita a prova inteira: credencial, turno e encerramento (default 120s;

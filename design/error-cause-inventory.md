@@ -729,37 +729,37 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | sessions | src/cli/commands/sessions.ts | 1718 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:944b8d05da2c45f2902502be |
 | sessions | src/cli/commands/sessions.ts | 1787 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:9dc7e9fc81738f9628adf86d |
 | sessions | src/cli/commands/sessions.ts | 2029 | triaged-follow-up | rejection-without-binding | src/cli/commands/sessions.ts:bb33fd9f96a52411ee3d735f |
-| sessions | src/cli/commands/sessions.ts | 2371 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:f343a742bb44614542f84ca1 |
-| sessions | src/cli/commands/sessions.ts | 2583 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:c7638ec53a5c9a8ad225e727 |
-| sessions | src/cli/commands/sessions.ts | 3771 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:3bfa3728d97be3491c0172b7 |
-| sessions | src/cli/commands/sessions.ts | 3841 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:95b05645e384bb96dc3bd4e2 |
-| sessions | src/cli/commands/sessions.ts | 4058 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d5a5efa4664214cbad54803c |
-| sessions | src/cli/commands/sessions.ts | 4301 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:c8b2e26f2fd6043b99b88199 |
-| sessions | src/cli/commands/sessions.ts | 4338 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:c8b2e26f2fd6043b99b88199 |
-| sessions | src/cli/commands/sessions.ts | 4388 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:7cbb8863ac4b02b21e00dc0b |
-| sessions | src/cli/commands/sessions.ts | 4496 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:d63c46469103c28624519dca |
-| sessions | src/cli/commands/sessions.ts | 4591 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:538560357ab207bdd65b1b5f |
-| sessions | src/cli/commands/sessions.ts | 4764 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:eeaab4efe83b93bf9e263261 |
-| sessions | src/cli/commands/sessions.ts | 5239 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d27d338c459f4e729b585416 |
-| sessions | src/cli/commands/sessions.ts | 5287 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d27d338c459f4e729b585416 |
-| sessions | src/cli/commands/sessions.ts | 5314 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d27d338c459f4e729b585416 |
-| sessions | src/cli/commands/sessions.ts | 6153 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:52a0c574f7b7344469c6a183 |
-| sessions | src/cli/commands/sessions.ts | 6334 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:d8e2f06f3f8858398d8ab837 |
-| sessions | src/cli/commands/sessions.ts | 6377 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:a51b74cdb16e7eb2a1e16296 |
-| sessions | src/cli/commands/sessions.ts | 6428 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:8a239e4836d6ce42cbc48d7b |
-| sessions | src/cli/commands/sessions.ts | 6515 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:4e8213d901784dd4628928f7 |
-| sessions | src/cli/commands/sessions.ts | 6528 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:4e8213d901784dd4628928f7 |
-| sessions | src/cli/commands/sessions.ts | 6553 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:4e8213d901784dd4628928f7 |
-| sessions | src/cli/commands/sessions.ts | 6572 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:e295b972934a27cbc6026898 |
-| sessions | src/cli/commands/sessions.ts | 6692 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:403eb918999b13c4d738cbad |
-| sessions | src/cli/commands/sessions.ts | 6783 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d21b2d11d3d254c02b35c1c5 |
-| sessions | src/cli/commands/sessions.ts | 7157 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:fdf35d6359ee1a68febf9e0b |
-| sessions | src/cli/commands/sessions.ts | 7309 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:3ff0843b67b1cc10bb3733d5 |
-| sessions | src/cli/commands/sessions.ts | 7375 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:9abb1fd8ad15058eab3e60b1 |
-| sessions | src/cli/commands/sessions.ts | 7443 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:fd080b4571635a55133ac393 |
-| sessions | src/cli/commands/sessions.ts | 7922 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:e74ef6f25c50455ddaa2c778 |
-| sessions | src/cli/commands/sessions.ts | 8143 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:af6b2d0d05a12aa7fc99bc15 |
-| sessions | src/cli/commands/sessions.ts | 8188 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:a7884c195162ae8d081804b5 |
+| sessions | src/cli/commands/sessions.ts | 2397 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:f343a742bb44614542f84ca1 |
+| sessions | src/cli/commands/sessions.ts | 2609 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:c7638ec53a5c9a8ad225e727 |
+| sessions | src/cli/commands/sessions.ts | 3797 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:3bfa3728d97be3491c0172b7 |
+| sessions | src/cli/commands/sessions.ts | 3867 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:95b05645e384bb96dc3bd4e2 |
+| sessions | src/cli/commands/sessions.ts | 4084 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d5a5efa4664214cbad54803c |
+| sessions | src/cli/commands/sessions.ts | 4327 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:c8b2e26f2fd6043b99b88199 |
+| sessions | src/cli/commands/sessions.ts | 4364 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:c8b2e26f2fd6043b99b88199 |
+| sessions | src/cli/commands/sessions.ts | 4440 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:7cbb8863ac4b02b21e00dc0b |
+| sessions | src/cli/commands/sessions.ts | 4548 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:d63c46469103c28624519dca |
+| sessions | src/cli/commands/sessions.ts | 4643 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:538560357ab207bdd65b1b5f |
+| sessions | src/cli/commands/sessions.ts | 4816 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:eeaab4efe83b93bf9e263261 |
+| sessions | src/cli/commands/sessions.ts | 5291 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d27d338c459f4e729b585416 |
+| sessions | src/cli/commands/sessions.ts | 5339 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d27d338c459f4e729b585416 |
+| sessions | src/cli/commands/sessions.ts | 5366 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d27d338c459f4e729b585416 |
+| sessions | src/cli/commands/sessions.ts | 6205 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:52a0c574f7b7344469c6a183 |
+| sessions | src/cli/commands/sessions.ts | 6386 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:d8e2f06f3f8858398d8ab837 |
+| sessions | src/cli/commands/sessions.ts | 6429 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:a51b74cdb16e7eb2a1e16296 |
+| sessions | src/cli/commands/sessions.ts | 6480 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:8a239e4836d6ce42cbc48d7b |
+| sessions | src/cli/commands/sessions.ts | 6567 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:4e8213d901784dd4628928f7 |
+| sessions | src/cli/commands/sessions.ts | 6580 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:4e8213d901784dd4628928f7 |
+| sessions | src/cli/commands/sessions.ts | 6605 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:4e8213d901784dd4628928f7 |
+| sessions | src/cli/commands/sessions.ts | 6624 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:e295b972934a27cbc6026898 |
+| sessions | src/cli/commands/sessions.ts | 6744 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:403eb918999b13c4d738cbad |
+| sessions | src/cli/commands/sessions.ts | 6835 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d21b2d11d3d254c02b35c1c5 |
+| sessions | src/cli/commands/sessions.ts | 7209 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:fdf35d6359ee1a68febf9e0b |
+| sessions | src/cli/commands/sessions.ts | 7361 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:3ff0843b67b1cc10bb3733d5 |
+| sessions | src/cli/commands/sessions.ts | 7427 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:9abb1fd8ad15058eab3e60b1 |
+| sessions | src/cli/commands/sessions.ts | 7495 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:fd080b4571635a55133ac393 |
+| sessions | src/cli/commands/sessions.ts | 7974 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:e74ef6f25c50455ddaa2c778 |
+| sessions | src/cli/commands/sessions.ts | 8195 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:af6b2d0d05a12aa7fc99bc15 |
+| sessions | src/cli/commands/sessions.ts | 8240 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:a7884c195162ae8d081804b5 |
 | cli | src/cli/commands/settings.ts | 87 | triaged-follow-up | rejection-without-binding | src/cli/commands/settings.ts:97fc7d03957d443943127257 |
 | cli | src/cli/commands/settings.ts | 144 | triaged-follow-up | catch-without-binding | src/cli/commands/settings.ts:40d8a2afa100fcde48567ace |
 | cli | src/cli/commands/settings.ts | 572 | fixed | binding retained / no recognized error surface | src/cli/commands/settings.ts:66966335acd020bf544ec079 |
@@ -1706,9 +1706,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | router | src/router/router-db.ts | 10539 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:eb6c608285aac837be753ebb |
 | router | src/router/router-db.ts | 11860 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:f5c7494ddf693b7a4aa5bf9e |
 | router | src/router/router-db.ts | 11863 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:015f3a21ffe76e22671668bf |
-| sessions | src/router/sessions.ts | 918 | fixed | binding retained / no recognized error surface | src/router/sessions.ts:7d1bb7744cf9f62680b55377 |
-| sessions | src/router/sessions.ts | 932 | triaged-follow-up | catch-without-binding | src/router/sessions.ts:4cea4fc40c424fe5e35e394b |
-| sessions | src/router/sessions.ts | 1554 | fixed | binding retained / no recognized error surface | src/router/sessions.ts:c6829bbd0def352b36c4b5d7 |
+| sessions | src/router/sessions.ts | 934 | fixed | binding retained / no recognized error surface | src/router/sessions.ts:7d1bb7744cf9f62680b55377 |
+| sessions | src/router/sessions.ts | 948 | triaged-follow-up | catch-without-binding | src/router/sessions.ts:4cea4fc40c424fe5e35e394b |
+| sessions | src/router/sessions.ts | 1570 | fixed | binding retained / no recognized error surface | src/router/sessions.ts:c6829bbd0def352b36c4b5d7 |
 | runtime-maintenance.ts | src/runtime-maintenance.ts | 52 | fixed | binding retained / no recognized error surface | src/runtime-maintenance.ts:ec83c4ff086c8ad1270aba4d |
 | runtime-maintenance.ts | src/runtime-maintenance.ts | 109 | fixed | binding retained / no recognized error surface | src/runtime-maintenance.ts:ce4fa75e77f0dbab1968ce07 |
 | runtime-maintenance.ts | src/runtime-maintenance.ts | 221 | fixed | binding retained / no recognized error surface | src/runtime-maintenance.ts:6c564ca1acc0777e38688763 |
@@ -1947,15 +1947,15 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/ravi-rules.ts | 289 | triaged-follow-up | catch-without-binding | src/runtime/ravi-rules.ts:d1548e705d2c1cc203c2b699 |
 | runtime-chat | src/runtime/runtime-defaults.ts | 47 | triaged-follow-up | catch-without-binding | src/runtime/runtime-defaults.ts:19599e9fe08de7d2a93a5188 |
 | runtime-chat | src/runtime/runtime-defaults.ts | 88 | triaged-follow-up | catch-without-binding | src/runtime/runtime-defaults.ts:8cdcd933953e255901103de8 |
-| runtime-chat | src/runtime/runtime-probe.ts | 152 | fixed | binding retained / no recognized error surface | src/runtime/runtime-probe.ts:08c59af4134df02f4a00727c |
-| runtime-chat | src/runtime/runtime-probe.ts | 184 | no-cause | The deadline branch reports the probe's own timeout sentinel, whose only content is the stage already named in the message; every other error is forwarded by message below. | src/runtime/runtime-probe.ts:76d7d91145aebbeb8040cef8 |
-| runtime-chat | src/runtime/runtime-probe.ts | 196 | fixed | binding retained / no recognized error surface | src/runtime/runtime-probe.ts:899cecea88f47a5d9af523b7 |
-| runtime-chat | src/runtime/runtime-probe.ts | 273 | no-cause | The probe result already reports the timeout; a failed interrupt must not replace it and the abort below still tears the turn down. | src/runtime/runtime-probe.ts:8796ea59c022c1f5f8547cb8 |
-| runtime-chat | src/runtime/runtime-probe.ts | 302 | fixed | binding retained / no recognized error surface | src/runtime/runtime-probe.ts:a3f273c41b40645011513a3c |
-| runtime-chat | src/runtime/runtime-probe.ts | 316 | no-cause | Teardown of an already-settled probe; a close failure or a close that outlives its grace must not replace the recorded probe outcome. | src/runtime/runtime-probe.ts:edd247697d9f5424811990d6 |
-| runtime-chat | src/runtime/runtime-probe.ts | 327 | no-cause | The deadline branch reports the probe's own timeout sentinel as the timeout result; every other error is forwarded by message below. | src/runtime/runtime-probe.ts:ab916f7af2f5ea7faba96b03 |
-| runtime-chat | src/runtime/runtime-probe.ts | 339 | fixed | binding retained / no recognized error surface | src/runtime/runtime-probe.ts:9c10d7c6eae4d8d26a44d8a3 |
-| runtime-chat | src/runtime/runtime-probe.ts | 359 | fixed | binding retained / no recognized error surface | src/runtime/runtime-probe.ts:2b99b59f89a84989b0bf1201 |
+| runtime-chat | src/runtime/runtime-probe.ts | 153 | fixed | binding retained / no recognized error surface | src/runtime/runtime-probe.ts:08c59af4134df02f4a00727c |
+| runtime-chat | src/runtime/runtime-probe.ts | 185 | no-cause | The deadline branch reports the probe's own timeout sentinel, whose only content is the stage already named in the message; every other error is forwarded by message below. | src/runtime/runtime-probe.ts:76d7d91145aebbeb8040cef8 |
+| runtime-chat | src/runtime/runtime-probe.ts | 197 | fixed | binding retained / no recognized error surface | src/runtime/runtime-probe.ts:899cecea88f47a5d9af523b7 |
+| runtime-chat | src/runtime/runtime-probe.ts | 274 | no-cause | The probe result already reports the timeout; a failed interrupt must not replace it and the abort below still tears the turn down. | src/runtime/runtime-probe.ts:8796ea59c022c1f5f8547cb8 |
+| runtime-chat | src/runtime/runtime-probe.ts | 303 | fixed | binding retained / no recognized error surface | src/runtime/runtime-probe.ts:a3f273c41b40645011513a3c |
+| runtime-chat | src/runtime/runtime-probe.ts | 317 | no-cause | Teardown of an already-settled probe; a close failure or a close that outlives its grace must not replace the recorded probe outcome. | src/runtime/runtime-probe.ts:edd247697d9f5424811990d6 |
+| runtime-chat | src/runtime/runtime-probe.ts | 328 | no-cause | The deadline branch reports the probe's own timeout sentinel as the timeout result; every other error is forwarded by message below. | src/runtime/runtime-probe.ts:ab916f7af2f5ea7faba96b03 |
+| runtime-chat | src/runtime/runtime-probe.ts | 340 | fixed | binding retained / no recognized error surface | src/runtime/runtime-probe.ts:9c10d7c6eae4d8d26a44d8a3 |
+| runtime-chat | src/runtime/runtime-probe.ts | 360 | fixed | binding retained / no recognized error surface | src/runtime/runtime-probe.ts:2b99b59f89a84989b0bf1201 |
 | runtime-chat | src/runtime/runtime-recovery-alert.ts | 70 | fixed | binding retained / no recognized error surface | src/runtime/runtime-recovery-alert.ts:1af4a0589a1041ffeccf4ee1 |
 | runtime-chat | src/runtime/runtime-recovery-alert.ts | 102 | fixed | binding retained / no recognized error surface | src/runtime/runtime-recovery-alert.ts:93f2b3d2b18f3fa43b75229f |
 | runtime-chat | src/runtime/runtime-request-builder.ts | 230 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:028234050a59a66edab09af2 |
@@ -2010,11 +2010,11 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | sessions | src/runtime/session-launcher.ts | 496 | fixed | binding retained / no recognized error surface | src/runtime/session-launcher.ts:cfe26fe9d131f1e4b1465217 |
 | sessions | src/runtime/session-launcher.ts | 499 | triaged-follow-up | rejection-without-binding | src/runtime/session-launcher.ts:b2b5af4abe30227be3718ff2 |
 | sessions | src/runtime/session-launcher.ts | 602 | fixed | binding retained / no recognized error surface | src/runtime/session-launcher.ts:3e7c2dad6b1ba1f2356f8941 |
-| sessions | src/runtime/session-runtime-update.ts | 218 | fixed | binding retained / no recognized error surface | src/runtime/session-runtime-update.ts:88df7f1a517a5e0a90090812 |
-| sessions | src/runtime/session-runtime-update.ts | 328 | fixed | binding retained / no recognized error surface | src/runtime/session-runtime-update.ts:2338e248b42834aa36243d6b |
-| sessions | src/runtime/session-runtime-update.ts | 369 | fixed | binding retained / no recognized error surface | src/runtime/session-runtime-update.ts:71653b2d0a565b4ececb4880 |
-| sessions | src/runtime/session-runtime-update.ts | 375 | fixed | binding retained / no recognized error surface | src/runtime/session-runtime-update.ts:db186c2a884db415cfc64e16 |
-| sessions | src/runtime/session-runtime-update.ts | 488 | fixed | binding retained / no recognized error surface | src/runtime/session-runtime-update.ts:044168e42d5342c4195a4d98 |
+| sessions | src/runtime/session-runtime-update.ts | 216 | fixed | binding retained / no recognized error surface | src/runtime/session-runtime-update.ts:9cca334e19bffa9390b98302 |
+| sessions | src/runtime/session-runtime-update.ts | 276 | fixed | binding retained / no recognized error surface | src/runtime/session-runtime-update.ts:88df7f1a517a5e0a90090812 |
+| sessions | src/runtime/session-runtime-update.ts | 425 | fixed | binding retained / no recognized error surface | src/runtime/session-runtime-update.ts:71653b2d0a565b4ececb4880 |
+| sessions | src/runtime/session-runtime-update.ts | 431 | fixed | binding retained / no recognized error surface | src/runtime/session-runtime-update.ts:db186c2a884db415cfc64e16 |
+| sessions | src/runtime/session-runtime-update.ts | 453 | fixed | binding retained / no recognized error surface | src/runtime/session-runtime-update.ts:a4dd7d3828763b4f94ddf6cb |
 | runtime-chat | src/runtime/shutdown.ts | 25 | fixed | binding retained / no recognized error surface | src/runtime/shutdown.ts:02461196fe5b57351af7b6c9 |
 | runtime-chat | src/runtime/shutdown.ts | 30 | fixed | binding retained / no recognized error surface | src/runtime/shutdown.ts:371613cb573611bfb60368fb |
 | runtime-chat | src/runtime/skill-capability-implication.ts | 165 | triaged-follow-up | catch-without-binding | src/runtime/skill-capability-implication.ts:d61f50225f71f32f4e07e451 |

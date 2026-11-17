@@ -2212,6 +2212,32 @@ function formatWaitTimeoutError(sessionName: string): string {
 
 const SESSION_UPDATE_USAGE_HINT = "Fix the value named in the message; see: ravi sessions update --help";
 
+/**
+ * The command that puts the changed axes back to their previous values. It skips
+ * the probe on purpose: this is an explicit restoration, and re-probing could
+ * fail again for the same reason and roll the session back onto the
+ * configuration that was left unproven. `clear` stands for an axis that had no
+ * override. The ids are provider/model/effort/thinking values, safe unquoted.
+ */
+function sessionRuntimeRestoreCommand(
+  label: string,
+  changed: { provider: boolean; model: boolean; effort: boolean; thinking: boolean },
+  before: {
+    runtimeProviderOverride: string | null;
+    modelOverride: string | null;
+    effortOverride: string | null;
+    thinkingLevel: string | null;
+  },
+): string {
+  const axes = [
+    changed.provider ? `--provider ${before.runtimeProviderOverride ?? "clear"}` : null,
+    changed.model ? `--model ${before.modelOverride ?? "clear"}` : null,
+    changed.effort ? `--effort ${before.effortOverride ?? "clear"}` : null,
+    changed.thinking ? `--thinking ${before.thinkingLevel ?? "clear"}` : null,
+  ].filter((flag): flag is string => flag !== null);
+  return `ravi sessions update ${label} ${axes.join(" ")} --skip-probe`;
+}
+
 function failSessionUsage(op: string, message: string, suggestedAction: string, asJson?: boolean): never {
   contractFail(op, "USAGE_ERROR", message, {
     ...{
@@ -4344,9 +4370,30 @@ export class SessionCommands {
 
     if (result.probe && !result.probe.ok) {
       const probeError = result.probe.error ?? "probe failed";
-      const outcome = result.rolledBack
-        ? `restored the previous runtime config for ${label}`
-        : `a concurrent runtime update replaced this configuration during the probe, so nothing was restored — the newer update owns ${label} now`;
+      const inspect = `ravi sessions info ${label} --json`;
+      const restoreCommand = sessionRuntimeRestoreCommand(label, result.changed, result.before);
+      const restoreError = result.rollbackError ?? "no error text";
+      let outcome: string;
+      let suggestedAction: string;
+      if (result.rolledBack) {
+        outcome = `restored the previous runtime config for ${label}`;
+        suggestedAction =
+          "Pick a model/provider this installation can run (see the probe error), then retry ravi sessions update";
+      } else if (!result.rollbackError) {
+        // The conditional restore ran and found a newer update: that is known
+        // even when its values could not be read back.
+        outcome = `a concurrent runtime update replaced this configuration during the probe, so nothing was restored — the newer update owns ${label} now`;
+        suggestedAction = `Inspect the session's current runtime (${inspect}) before retrying; a newer update already changed it`;
+      } else if (!result.storedStateKnown) {
+        outcome = `the restore FAILED (${restoreError}) and the stored configuration could not be read afterwards, so it is unknown whether the unproven configuration or a newer update is stored for ${label}`;
+        suggestedAction = `Inspect first: ${inspect}. A newer update may own the session, so restore only if it still shows this update's values: ${restoreCommand}`;
+      } else if (result.superseded) {
+        outcome = `the restore FAILED (${restoreError}), but the stored configuration is no longer this update's — a newer update owns ${label} now`;
+        suggestedAction = `Nothing to restore from this update: inspect ${inspect}; the newer update governs the session`;
+      } else {
+        outcome = `the restore FAILED (${restoreError}), so the unproven configuration is STILL persisted for ${label}`;
+        suggestedAction = `Restore the previous values without probing again: ${restoreCommand}; then check ${inspect}`;
+      }
       contractFail(
         "sessions update",
         "RUNTIME_PROBE_FAILED",
@@ -4358,12 +4405,17 @@ export class SessionCommands {
               session: { sessionKey: result.sessionKey, sessionName: result.sessionName },
               effective: result.effective,
               probe: result.probe,
-              rolledBack: result.rolledBack,
-              superseded: result.superseded,
-              restored: result.after,
-              suggestedAction: result.rolledBack
-                ? "Pick a model/provider this installation can run (see the probe error), then retry ravi sessions update"
-                : "Inspect the session's current runtime (ravi sessions show) before retrying; a newer update already changed it",
+              // Reaches the envelope through a typed projection (agent-contract
+              // `runtimeUpdate`): flags and the four override ids, nothing else.
+              runtimeUpdate: {
+                rolledBack: result.rolledBack,
+                superseded: result.storedStateKnown || result.superseded ? result.superseded : null,
+                storedStateKnown: result.storedStateKnown,
+                ...(result.rollbackError ? { rollbackError: result.rollbackError } : {}),
+                before: result.before,
+                stored: result.storedStateKnown ? result.after : null,
+              },
+              suggestedAction,
             },
           },
           diagnostic: errorDiagnostic(probeError, { operation: "sessions update" }),

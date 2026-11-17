@@ -576,6 +576,95 @@ describe("diagnostic identifier egress", () => {
     expect(JSON.stringify(error.envelope())).not.toContain("PRIVATE_");
   });
 
+  it("keeps the runtime update recovery state in the envelope and nothing else under it", () => {
+    const before = {
+      runtimeProviderOverride: null,
+      modelOverride: "deepseek/deepseek-flash",
+      effortOverride: "high",
+      thinkingLevel: null,
+    };
+    const stored = {
+      runtimeProviderOverride: "claude",
+      modelOverride: "sonnet",
+      effortOverride: "low",
+      thinkingLevel: null,
+    };
+    const error = new ContractError("sessions update", "RUNTIME_PROBE_FAILED", "Probe failed.", 1, {
+      ...errorDiagnostic(new Error("Probe failed.")),
+      runtimeUpdate: {
+        rolledBack: false,
+        superseded: false,
+        storedStateKnown: true,
+        rollbackError: "SQLITE_IOERR: disk I/O error https://example.test?key=PRIVATE_RESTORE",
+        before: { ...before, body: "PRIVATE_BEFORE_BODY" },
+        stored,
+        sessionKey: "agent:main:PRIVATE_SESSION_KEY",
+        probe: { error: "PRIVATE_PROBE_PAYLOAD" },
+      },
+    });
+
+    const runtimeUpdate = error.envelope().error.runtimeUpdate as Record<string, unknown>;
+    expect(runtimeUpdate).toEqual({
+      rolledBack: false,
+      superseded: false,
+      storedStateKnown: true,
+      before,
+      stored,
+      rollbackError: expect.stringContaining("SQLITE_IOERR"),
+    });
+    expect(JSON.stringify(error.envelope())).not.toContain("PRIVATE_");
+  });
+
+  it("keeps an unknown stored state as nulls instead of inventing one", () => {
+    const before = {
+      runtimeProviderOverride: "codex",
+      modelOverride: null,
+      effortOverride: null,
+      thinkingLevel: "off",
+    };
+    const error = new ContractError("sessions update", "RUNTIME_PROBE_FAILED", "Probe failed.", 1, {
+      ...errorDiagnostic(new Error("Probe failed.")),
+      runtimeUpdate: { rolledBack: false, superseded: null, storedStateKnown: false, before, stored: null },
+    });
+
+    expect(error.envelope().error.runtimeUpdate).toEqual({
+      rolledBack: false,
+      superseded: null,
+      storedStateKnown: false,
+      before,
+      stored: null,
+    });
+  });
+
+  it("drops the runtime update control when its shape is not the contract", () => {
+    const four = { runtimeProviderOverride: null, modelOverride: "sonnet", effortOverride: null, thinkingLevel: null };
+    for (const runtimeUpdate of [
+      { rolledBack: "no", superseded: false, storedStateKnown: true, before: four, stored: four },
+      { rolledBack: false, superseded: false, storedStateKnown: true, before: null, stored: four },
+      {
+        rolledBack: false,
+        superseded: false,
+        storedStateKnown: true,
+        before: { ...four, modelOverride: "two words" },
+        stored: four,
+      },
+      {
+        rolledBack: false,
+        superseded: false,
+        storedStateKnown: true,
+        before: four,
+        stored: { ...four, modelOverride: 7 },
+      },
+      { rolledBack: false, superseded: "maybe", storedStateKnown: true, before: four, stored: four },
+    ]) {
+      const error = new ContractError("sessions update", "RUNTIME_PROBE_FAILED", "Probe failed.", 1, {
+        ...errorDiagnostic(new Error("Probe failed.")),
+        runtimeUpdate,
+      });
+      expect(Object.hasOwn(error.envelope().error, "runtimeUpdate")).toBe(false);
+    }
+  });
+
   it("rejects invalid control types and redacts permitted text", () => {
     const error = new ContractError("demo", "CONFLICT", "Conflict.", 1, {
       ...errorDiagnostic(new Error("Conflict.")),
