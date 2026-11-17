@@ -35,6 +35,7 @@ Restart should also preserve work continuity for other sessions that were active
 - Daemon boot MUST NOT emit restart resume events to idle sessions or to sessions whose eligible activity is older than 1 hour.
 - Restart resume events MUST be delivered as session inputs, not direct channel sends.
 - `restart-reason.txt` MUST live in the Ravi state directory (`RAVI_STATE_DIR`, `~/.ravi` by default), for the daemon, the operator CLI and the detached restart worker alike.
+- A relative `RAVI_STATE_DIR` MUST be pinned to an absolute path at daemon boot, so every child inherits one directory. A handoff that still inherits a relative value (a daemon that predates the pin) MUST anchor it at the restart target's cwd, where the daemon resolves it, never at the caller's cwd; the caller's reason file, the worker and the successor MUST then use that same directory.
 - A boot with no `restart-reason.txt` MUST announce a synthesized `supervised_restart` only when the default agent's main session exists; on a first boot (no reason file, no main session) it MUST emit no restart event.
 
 ## Validation
