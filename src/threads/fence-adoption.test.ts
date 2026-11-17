@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -127,6 +127,42 @@ function fixture(options: { residue?: DurableResidue; bootIdentity?: (name: stri
 
 function audit(path: string): { reason: string; evidence?: unknown[] } {
   return JSON.parse(readFileSync(`${path}.thread-bootstrap.jsonl`, "utf8").trim().split("\n").at(-1)!);
+}
+
+/** Another process (a recovery, a coordinator) holding the coordinator lease; the kernel lock is per process. */
+async function holdCoordinatorLeaseElsewhere(stateDir: string): Promise<{ stop(): Promise<void> }> {
+  const lockModule = join(import.meta.dir, "..", "db", "schema-lock.ts");
+  const lockPath = join(stateDir, "runtime-maintenance", "coordinator.lock");
+  const script = `(async () => {
+    const { acquireSchemaFileLock } = await import(${JSON.stringify(lockModule)});
+    acquireSchemaFileLock(${JSON.stringify(lockPath)}, 0);
+    console.log("held");
+    setInterval(() => {}, 1000);
+  })();`;
+  const child = spawn(process.execPath, ["--no-env-file", "-e", script], {
+    stdio: ["ignore", "pipe", "pipe"],
+    env: { PATH: process.env.PATH },
+    cwd: tmpdir(),
+  });
+  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  await new Promise<void>((resolve, reject) => {
+    let output = "";
+    let errors = "";
+    child.stdout!.on("data", (chunk: Buffer) => {
+      output += chunk.toString();
+      if (output.includes("held")) resolve();
+    });
+    child.stderr!.on("data", (chunk: Buffer) => {
+      errors += chunk.toString();
+    });
+    child.once("exit", () => reject(new Error(`lease holder exited: ${errors}`)));
+  });
+  return {
+    stop: async () => {
+      child.kill();
+      await exited;
+    },
+  };
 }
 
 describe("thread fence adoption of a legacy database", () => {
@@ -324,6 +360,67 @@ describe("thread fence adoption of a legacy database", () => {
       "released",
     );
     expect(successorOutcome(f.stateDir, f.databasePath)).toBe("adopted");
+  });
+
+  it("admission and recovery share one boundary: while another process holds it, neither claims nor archives", async () => {
+    const f = fixture();
+    await prepareThreadFenceAdoption(f.host, f.bundlePath);
+    f.startSuccessor();
+    const self = { pid: process.pid, startedAt: 2_000 };
+    const holder = await holdCoordinatorLeaseElsewhere(f.stateDir);
+    try {
+      // A recovery is acting: the successor start waits for it, then refuses, and writes nothing.
+      expect(() =>
+        admitDaemonStart({
+          stateDir: f.stateDir,
+          ownBundlePath: f.bundlePath,
+          bundleDigest: digestOf,
+          self,
+          leaseTimeoutMs: 0,
+        }),
+      ).toThrow("an adoption coordinator or recovery is running");
+      expect(readThreadFenceAdoption(f.stateDir)).toMatchObject({ phase: "authorized" });
+      expect(existsSync(join(f.stateDir, "runtime-maintenance", "successor"))).toBe(false);
+      // And a second recovery cannot act on the same records either.
+      expect(() =>
+        recoverThreadFenceAdoption({ stateDir: f.stateDir, databasePath: f.databasePath, mode: "abandon" }),
+      ).toThrow("another adoption coordinator or recovery is running");
+    } finally {
+      await holder.stop();
+    }
+    expect(admitDaemonStart({ stateDir: f.stateDir, ownBundlePath: f.bundlePath, bundleDigest: digestOf, self })).toBe(
+      "successor",
+    );
+    // Once claimed, a recovery sees the live successor and has no mode to apply.
+    expect(() =>
+      recoverThreadFenceAdoption({ stateDir: f.stateDir, databasePath: f.databasePath, mode: "abandon" }),
+    ).toThrow("abandon does not apply");
+    expect(readThreadFenceAdoption(f.stateDir)).toMatchObject({ phase: "adopting" });
+    // The successor's adoption also waits for the boundary.
+    const second = await holdCoordinatorLeaseElsewhere(f.stateDir);
+    try {
+      expect(() =>
+        adoptThreadFenceAsSuccessor({
+          stateDir: f.stateDir,
+          registry: f.registry,
+          bundleDigest: digestOf,
+          self,
+          open: f.open,
+          leaseTimeoutMs: 0,
+        }),
+      ).toThrow("another adoption coordinator or recovery is running");
+      expect(databaseHasThreadFence(f.databasePath)).toBe(false);
+    } finally {
+      await second.stop();
+    }
+    adoptThreadFenceAsSuccessor({
+      stateDir: f.stateDir,
+      registry: f.registry,
+      bundleDigest: digestOf,
+      self,
+      open: f.open,
+    });
+    expect(databaseHasThreadFence(f.databasePath)).toBe(true);
   });
 
   it("the successor is re-admitted only with the same pid AND start time", async () => {

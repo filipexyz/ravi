@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "1ce8d6b1ceae25e9"
+    "version": "f2e3e43161394f60"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -164761,6 +164761,10 @@
     {
       "description": "Use local-first Ravi mail",
       "name": "mail"
+    },
+    {
+      "description": "One-time runtime maintenance run by the operator on real state",
+      "name": "maintenance"
     },
     {
       "description": "Media sending",

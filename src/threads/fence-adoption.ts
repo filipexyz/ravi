@@ -198,11 +198,13 @@ function samePath(a: string, b: string): boolean {
 /**
  * The coordinator, a resumed preparation and every recovery hold this OS lock
  * (released by the kernel when the process dies), so recovery never races a
- * coordinator that is still stopping processes.
+ * coordinator that is still stopping processes. Successor admission and the
+ * successor's adoption take the same lease, so a recovery never acts on a
+ * record a successor is claiming or adopting at that moment.
  */
-function acquireCoordinatorLease(stateDir: string): { release(): void } {
+function acquireCoordinatorLease(stateDir: string, timeoutMs = 0): { release(): void } {
   try {
-    return acquireSchemaFileLock(coordinatorLockPath(stateDir), 0);
+    return acquireSchemaFileLock(coordinatorLockPath(stateDir), timeoutMs);
   } catch (cause) {
     if (cause instanceof SchemaLockBusyError)
       throw new Error("THREAD_FENCE_ADOPTION_BLOCKED: another adoption coordinator or recovery is running", { cause });
@@ -510,13 +512,42 @@ export function admitDaemonStart(input: {
   ownBundlePath: string;
   bundleDigest: (path: string) => string | null;
   self: { pid: number; startedAt: number };
+  /** How long to wait for a running coordinator or recovery; then the start is refused. */
+  leaseTimeoutMs?: number;
 }): "normal" | "successor" {
-  const interlock = pathExists(interlockPath(input.stateDir));
-  const record = readRuntimeMaintenance(input.stateDir);
-  if (!interlock && !record) return "normal";
+  if (!pathExists(interlockPath(input.stateDir)) && !readRuntimeMaintenance(input.stateDir)) return "normal";
   const refuse = (detail: string): never => {
     throw new Error(`RUNTIME_MAINTENANCE_ACTIVE: both runtime starts are blocked; ${detail}`);
   };
+  let lease: { release(): void };
+  try {
+    lease = acquireCoordinatorLease(input.stateDir, input.leaseTimeoutMs ?? 5_000);
+  } catch (cause) {
+    throw new Error(
+      "RUNTIME_MAINTENANCE_ACTIVE: both runtime starts are blocked; an adoption coordinator or recovery is running",
+      { cause },
+    );
+  }
+  try {
+    return admitUnderLease(input, refuse);
+  } finally {
+    lease.release();
+  }
+}
+
+/** The state check and the claim happen under the coordinator lease, never interleaved with a recovery. */
+function admitUnderLease(
+  input: {
+    stateDir: string;
+    ownBundlePath: string;
+    bundleDigest: (path: string) => string | null;
+    self: { pid: number; startedAt: number };
+  },
+  refuse: (detail: string) => never,
+): "normal" | "successor" {
+  const record = readRuntimeMaintenance(input.stateDir);
+  // A recovery may have released everything while this start waited for the lease.
+  if (!pathExists(interlockPath(input.stateDir)) && !record) return "normal";
   const adoption = readThreadFenceAdoption(input.stateDir);
   if (!adoption || !record || record.id !== adoption.maintenanceId) return refuse("explicit recovery is required");
   if (
@@ -563,14 +594,29 @@ function releaseInterlock(stateDir: string, maintenanceId: string): void {
  * database identity, launcher state, bundle digest and, when `residue` is given,
  * the SQLite residue itself; the broker residue stays the coordinator's record.
  */
-export function adoptThreadFenceAsSuccessor(input: {
+type SuccessorAdoptionInput = {
   stateDir: string;
   registry: () => ManagedRegistration[];
   bundleDigest: (path: string) => string | null;
   self: { pid: number };
   open: () => void;
   residue?: () => DurableResidue;
-}): ThreadFenceAdoption {
+  /** How long to wait for a running recovery; then the successor stops without touching the database. */
+  leaseTimeoutMs?: number;
+};
+
+export function adoptThreadFenceAsSuccessor(input: SuccessorAdoptionInput): ThreadFenceAdoption {
+  // Held from the state check to the release of the interlock: a recovery cannot
+  // archive the records of a successor that is installing the fence.
+  const lease = acquireCoordinatorLease(input.stateDir, input.leaseTimeoutMs ?? 5_000);
+  try {
+    return adoptUnderLease(input);
+  } finally {
+    lease.release();
+  }
+}
+
+function adoptUnderLease(input: SuccessorAdoptionInput): ThreadFenceAdoption {
   const adoption = readThreadFenceAdoption(input.stateDir);
   if (!adoption || adoption.phase !== "adopting" || adoption.successor?.pid !== input.self.pid)
     blocked("this process is not the admitted successor");
