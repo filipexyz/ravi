@@ -5,6 +5,7 @@ import { chmodSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:
 import { join } from "node:path";
 import { preparePublication, executePublication } from "./service.js";
 import { publicationFixture } from "./test-fixture.js";
+import { prError, projectPublicationDetails } from "./contracts.js";
 import { GithubError, type GithubRequest } from "./github.js";
 import { parseCommit, LocalGit } from "./git.js";
 import { ContractError } from "../cli/agent-contract.js";
@@ -245,6 +246,130 @@ describe("verified Git Data API publication", () => {
     await publish();
     expect(f.pr()?.draft).toBe(false);
     expect(f.calls.filter((call) => call.endpoint.endsWith("/pulls") && call.method === "POST")).toHaveLength(1);
+  });
+
+  /** The budget runs out the way it does in production: the subprocess of the next upload is killed. */
+  const budgetEndsAtTree = (): GithubRequest => {
+    let expired = false;
+    return async (endpoint, method, body) => {
+      if (!expired && method === "POST" && endpoint.endsWith("/git/trees")) {
+        expired = true;
+        throw prError("PUBLICATION_TIMEOUT", "Publication exceeded its time or response-size budget.", {
+          retryable: true,
+        });
+      }
+      return await f.request(endpoint, method, body);
+    };
+  };
+
+  it("timeout_error_reports_bytes_and_phase", async () => {
+    f = publicationFixture();
+    const request = budgetEndsAtTree();
+    const prepared = await preparePublication(f.input(), request);
+    const blob = prepared.objects.find((object) => object.type === "blob")!;
+    expect(prepared.plan.objectCount).toBe(3);
+
+    const error = await executePublication(prepared, request, f.options).catch((caught) => caught);
+    expect(error).toMatchObject({
+      code: "PUBLICATION_TIMEOUT",
+      details: {
+        retryable: true,
+        timeout: {
+          phase: "objects",
+          budgetMs: 181_000,
+          objectsUploaded: 1,
+          objectCount: 3,
+          bytesUploaded: blob.bytes,
+          uploadBytes: prepared.plan.uploadBytes,
+        },
+        partial: { phase: "objects", refPublished: false, uncertain: true },
+      },
+    });
+    expect(blob.bytes).toBeGreaterThan(0);
+    expect(error.message).toContain("181s budget in phase objects");
+    expect(error.message).toContain("after uploading 1 of 3 objects");
+    expect(error.message).toContain("RAVI_PR_PUBLISH_TIMEOUT_MS");
+    // What a gateway caller receives: the allowlist keeps the progress, not just the code.
+    expect(projectPublicationDetails(error.details)).toMatchObject({ timeout: error.details.timeout });
+    expect(mutations().some((call) => call.endpoint.includes("/git/refs"))).toBe(false);
+  });
+
+  it("retry_after_timeout_skips_existing_objects", async () => {
+    f = publicationFixture();
+    const first = await preparePublication(f.input(), f.request);
+    const blob = first.objects.find((object) => object.type === "blob")!;
+    await expect(executePublication(first, budgetEndsAtTree(), f.options)).rejects.toMatchObject({
+      code: "PUBLICATION_TIMEOUT",
+    });
+    expect(f.pr()).toBeNull();
+
+    f.calls.length = 0;
+    const retry = await preparePublication(f.input(), f.request);
+    // The blob the first attempt delivered is neither planned nor counted against the new budget.
+    expect(retry.plan.localSha).toBe(first.plan.localSha);
+    expect(retry.objects.map((object) => object.sha)).not.toContain(blob.sha);
+    expect(retry.plan.objectCount).toBe(first.plan.objectCount - 1);
+    expect(retry.plan.uploadBytes).toBe(first.plan.uploadBytes - blob.bytes);
+
+    const result = await executePublication(retry, f.request, f.options);
+    expect(result.remoteSha).toBe(first.plan.localSha);
+    expect(mutations().filter((call) => call.endpoint.endsWith("/git/blobs"))).toHaveLength(0);
+    expect(mutations().filter((call) => /\/git\/(trees|commits)$/.test(call.endpoint))).toHaveLength(2);
+    expect(f.calls.filter((call) => call.endpoint.endsWith("/pulls") && call.method === "POST")).toHaveLength(1);
+  });
+
+  it("timeout_after_preflight_reports_measured_totals", async () => {
+    f = publicationFixture();
+    const prepared = await preparePublication(f.input(), f.request);
+    f.calls.length = 0;
+    // The deadline ends after the preflight, e.g. during the health probe: the first authorization sees it.
+    const expired = {
+      ...f.options,
+      authorize: () => {
+        throw prError("PUBLICATION_TIMEOUT", "Publication time budget expired.", { retryable: true });
+      },
+    };
+    const error = await executePublication(prepared, f.request, expired).catch((caught) => caught);
+    expect(error).toMatchObject({
+      code: "PUBLICATION_TIMEOUT",
+      details: {
+        retryable: true,
+        timeout: {
+          phase: "preflight",
+          budgetMs: 181_000,
+          objectsUploaded: 0,
+          objectCount: prepared.plan.objectCount,
+          bytesUploaded: 0,
+          uploadBytes: prepared.plan.uploadBytes,
+        },
+      },
+    });
+    expect(error.message).toContain("181s budget in phase preflight, after uploading 0 of 3 objects");
+    expect(mutations()).toHaveLength(0);
+  });
+
+  it("request_timeout_is_not_reported_as_budget_expiry", async () => {
+    f = publicationFixture();
+    let stopped = false;
+    // One upload passes its own subprocess limit while the publication deadline is still far away.
+    const slowTree: GithubRequest = async (endpoint, method, body) => {
+      if (!stopped && method === "POST" && endpoint.endsWith("/git/trees")) {
+        stopped = true;
+        throw prError("PUBLICATION_REQUEST_TIMEOUT", "One gh request exceeded its own 20s limit.", {
+          retryable: true,
+        });
+      }
+      return await f.request(endpoint, method, body);
+    };
+    const prepared = await preparePublication(f.input(), slowTree);
+    const error = await executePublication(prepared, slowTree, f.options).catch((caught) => caught);
+    expect(error).toMatchObject({
+      code: "PUBLICATION_REQUEST_TIMEOUT",
+      details: { retryable: true, partial: { phase: "objects", refPublished: false } },
+    });
+    expect(error.details.timeout).toBeUndefined();
+    expect(error.message).not.toContain("budget in phase");
+    expect(error.message).not.toContain("raises the budget");
   });
 
   it("recovers successful ref and PR mutations whose responses were lost", async () => {
