@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { closeRouterDb, dbUpsertChat, getDb } from "./router-db.js";
 import {
+  applySessionRuntimeConfigAtomically,
   attachChatToSession,
   bumpSessionRuntimeProviderConfigRevision,
   clearProviderSession,
@@ -377,6 +378,38 @@ describe("sessions store", () => {
       runtimeProviderOverride: undefined,
       runtimeProviderConfigRevision: 0,
     });
+  });
+
+  it("applies the runtime-config axis writes as one transaction", () => {
+    const session = getOrCreateSession("agent:dev:atomic-axes", "dev", "/tmp/dev");
+    const key = session.sessionKey;
+
+    // Success: every write lands and the callback's value comes back.
+    const value = applySessionRuntimeConfigAtomically(() => {
+      updateSessionRuntimeProviderOverride(key, "claude");
+      updateSessionModelOverride(key, "sonnet");
+      updateSessionEffortOverride(key, "low");
+      return "applied";
+    });
+    expect(value).toBe("applied");
+    const applied = {
+      runtimeProviderOverride: "claude",
+      modelOverride: "sonnet",
+      effortOverride: "low",
+      runtimeProviderConfigRevision: 1,
+    };
+    expect(getSession(key)).toMatchObject(applied);
+
+    // Failure: a throw after earlier writes takes every one of them back, the
+    // revision bump included, and the original error reaches the caller.
+    expect(() =>
+      applySessionRuntimeConfigAtomically(() => {
+        updateSessionRuntimeProviderOverride(key, "codex");
+        updateSessionModelOverride(key, "gpt-6-astra");
+        throw new Error("boom midway");
+      }),
+    ).toThrow("boom midway");
+    expect(getSession(key)).toMatchObject(applied);
   });
 
   it("bumps the provider configuration revision without changing native or override state", () => {

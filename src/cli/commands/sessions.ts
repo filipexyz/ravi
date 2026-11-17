@@ -4346,7 +4346,9 @@ export class SessionCommands {
       const probeError = result.probe.error ?? "probe failed";
       const outcome = result.rolledBack
         ? `restored the previous runtime config for ${label}`
-        : `a concurrent runtime update replaced this configuration during the probe, so nothing was restored — the newer update owns ${label} now`;
+        : result.rollbackError
+          ? `the restore FAILED (${result.rollbackError}), so the unproven configuration is STILL persisted for ${label}`
+          : `a concurrent runtime update replaced this configuration during the probe, so nothing was restored — the newer update owns ${label} now`;
       contractFail(
         "sessions update",
         "RUNTIME_PROBE_FAILED",
@@ -4359,11 +4361,15 @@ export class SessionCommands {
               effective: result.effective,
               probe: result.probe,
               rolledBack: result.rolledBack,
+              rollbackError: result.rollbackError,
               superseded: result.superseded,
+              before: result.before,
               restored: result.after,
               suggestedAction: result.rolledBack
                 ? "Pick a model/provider this installation can run (see the probe error), then retry ravi sessions update"
-                : "Inspect the session's current runtime (ravi sessions show) before retrying; a newer update already changed it",
+                : result.rollbackError
+                  ? "The unproven configuration is still persisted: run ravi sessions update again with the previous values (details.before), then check ravi sessions show"
+                  : "Inspect the session's current runtime (ravi sessions show) before retrying; a newer update already changed it",
             },
           },
           diagnostic: errorDiagnostic(probeError, { operation: "sessions update" }),

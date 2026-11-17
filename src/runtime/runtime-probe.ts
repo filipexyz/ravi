@@ -38,9 +38,10 @@ const log = logger.child("runtime-probe");
 export const DEFAULT_RUNTIME_PROBE_TIMEOUT_MS = 120_000;
 
 /**
- * Upper bound for the teardown wait (`handle.close`) and for a provider stream
- * that ignores the abort. Teardown gets `min(this, timeoutMs)`, so the probe
- * always returns within `timeoutMs` plus this grace.
+ * Upper bound for each of the two waits past the probe deadline: a provider
+ * stream that ignores the abort, and then the teardown (`handle.close`). Each
+ * gets `min(this, timeoutMs)`, so in the worst case the probe returns within
+ * `timeoutMs` plus TWICE this grace (stream wait, then close wait).
  */
 export const RUNTIME_PROBE_TEARDOWN_GRACE_MS = 5_000;
 

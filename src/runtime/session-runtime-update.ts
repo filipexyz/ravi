@@ -15,6 +15,12 @@
  * changed, rematerializing agent defaults after a clear) is deferred until the
  * probe passed: rollback never has to reconstruct destroyed state.
  *
+ * The axis writes land as one SQLite transaction (`applyAtomically`): a write
+ * that throws rolls the whole apply back, so a partial configuration is never
+ * persisted. A restore that itself fails after a failed probe is reported on
+ * the result (`rollbackError`), never swallowed and never in place of the probe
+ * verdict.
+ *
  * Concurrency: every apply bumps the session's persisted runtime-config
  * revision, and both the rollback and the destructive finalization are
  * conditional on still owning (revision + all four persisted values) what this
@@ -24,6 +30,7 @@
  */
 
 import {
+  applySessionRuntimeConfigAtomically,
   bumpSessionRuntimeProviderConfigRevision,
   clearProviderSessionIfRuntimeConfigOwned,
   resolveSession,
@@ -85,6 +92,13 @@ export interface SessionRuntimeUpdateResult {
   probe: RuntimeProbeResult | null;
   rolledBack: boolean;
   /**
+   * The probe failed and the restore itself threw, so the unproven
+   * configuration is still persisted. Carries the restore error; null whenever
+   * the restore ran (it either restored, or found a newer update and left it
+   * alone).
+   */
+  rollbackError: string | null;
+  /**
    * A concurrent update replaced this configuration while the probe ran. The
    * newer configuration was left untouched: no rollback, no destructive
    * finalization, and the caller must not announce this update as current.
@@ -112,6 +126,8 @@ export class SessionRuntimeUpdateError extends Error {
 }
 
 export interface SessionRuntimeUpdateDeps {
+  /** Runs the synchronous axis writes as one transaction: all land or none does. */
+  applyAtomically: typeof applySessionRuntimeConfigAtomically;
   updateProviderOverride: typeof updateSessionRuntimeProviderOverride;
   updateModelOverride: typeof updateSessionModelOverride;
   updateEffortOverride: typeof updateSessionEffortOverride;
@@ -128,6 +144,7 @@ export interface SessionRuntimeUpdateDeps {
 
 function defaultDeps(): SessionRuntimeUpdateDeps {
   return {
+    applyAtomically: applySessionRuntimeConfigAtomically,
     updateProviderOverride: updateSessionRuntimeProviderOverride,
     updateModelOverride: updateSessionModelOverride,
     updateEffortOverride: updateSessionEffortOverride,
@@ -302,15 +319,13 @@ export async function applySessionRuntimeUpdate(
   // every other combination bumps it explicitly, so one atomic update is
   // exactly one revision step and concurrent updates always see each other.
   //
-  // The four axis writes are separate statements, not one transaction, so a
-  // setter that throws midway leaves a partial, unproven configuration. Any
-  // throw between the first write and the probe verdict restores the previous
-  // configuration (still conditional on ownership) and rethrows the original
-  // error: an update that could not be proven must not stay persisted.
-  let persistedSession: SessionEntry;
-  let written: SessionRuntimeSnapshot;
-  let ownedRevision: number;
-  try {
+  // The axis writes, the revision bump and the read that captures ownership
+  // run as ONE transaction: a setter that throws midway rolls back the writes
+  // before it, so no partial, unproven configuration is ever persisted, and no
+  // other writer can land between two of the statements. The original error
+  // reaches the caller unchanged. Nothing here has to guess, from persisted
+  // values, whether a half-applied state is this update's to undo.
+  const { persistedSession, written, ownedRevision } = deps.applyAtomically(() => {
     if (touched.provider)
       deps.updateProviderOverride(session.sessionKey, toProviderOverride(axes.provider?.set ?? null));
     if (touched.model) deps.updateModelOverride(session.sessionKey, axes.model?.set ?? null);
@@ -319,16 +334,16 @@ export async function applySessionRuntimeUpdate(
     if (!touched.provider) deps.bumpConfigRevision(session.sessionKey);
 
     const persisted = deps.readSession(session.sessionKey);
-    persistedSession = persisted ?? ({ ...session, ...hypothetical } as SessionEntry);
-    // Ownership of this update: the persisted revision right after the apply,
-    // plus the four persisted values it wrote. Rollback and destructive
-    // finalization only act while both still hold.
-    written = snapshotOf(persistedSession);
-    ownedRevision = persistedSession.runtimeProviderConfigRevision ?? 0;
-  } catch (error) {
-    restoreAfterInterruptedApply(deps, session.sessionKey, axes, touched, before);
-    throw error;
-  }
+    const persistedEntry = persisted ?? ({ ...session, ...hypothetical } as SessionEntry);
+    return {
+      persistedSession: persistedEntry,
+      // Ownership of this update: the persisted revision right after the apply,
+      // plus the four persisted values it wrote. Rollback and destructive
+      // finalization only act while both still hold.
+      written: snapshotOf(persistedEntry),
+      ownedRevision: persistedEntry.runtimeProviderConfigRevision ?? 0,
+    };
+  });
 
   let effective: SessionRuntimeEffectiveSelection;
   let probeResult: RuntimeProbeResult | null = null;
@@ -386,8 +401,24 @@ export async function applySessionRuntimeUpdate(
       // Conditional rollback: restore only while this update still owns the
       // persisted configuration. A concurrent update that landed during the
       // probe wins; overwriting it with this update's past would lose it.
-      const restored = deps.restoreIfOwned(session.sessionKey, ownedRevision, written, before);
-      const after = deps.readSession(session.sessionKey);
+      //
+      // The restore can itself throw (disk I/O, lock). That must not replace
+      // the probe verdict: the caller still gets the probe's failure, plus the
+      // fact that the unproven configuration is STILL persisted.
+      let restored = false;
+      let rollbackError: string | null = null;
+      try {
+        restored = deps.restoreIfOwned(session.sessionKey, ownedRevision, written, before);
+      } catch (restoreError) {
+        rollbackError = restoreError instanceof Error ? restoreError.message : String(restoreError);
+        log.warn("Could not restore the runtime configuration after the probe failed", {
+          sessionKey: session.sessionKey,
+          error: rollbackError,
+        });
+      }
+      // After a failed restore the store is not trusted for another read: the
+      // unproven configuration this update wrote is what stays persisted.
+      const after = rollbackError === null ? deps.readSession(session.sessionKey) : null;
       return {
         sessionKey: session.sessionKey,
         sessionName: session.name ?? null,
@@ -397,7 +428,8 @@ export async function applySessionRuntimeUpdate(
         effective,
         probe: probeResult,
         rolledBack: restored,
-        superseded: !restored,
+        rollbackError,
+        superseded: rollbackError === null && !restored,
         clearedProviderSession: false,
         rematerializedToAgentRuntime: false,
       };
@@ -441,56 +473,11 @@ export async function applySessionRuntimeUpdate(
     effective,
     probe: probeResult,
     rolledBack: false,
+    rollbackError: null,
     superseded,
     clearedProviderSession,
     rematerializedToAgentRuntime,
   };
-}
-
-/**
- * Undo an apply that threw before its ownership (revision + written values)
- * could be read. The persisted state may be partial, so it is restored only
- * when every axis is explained by this update alone: untouched axes still hold
- * the previous value, touched axes hold either the previous or the intended
- * value. Anything else means a concurrent update landed, and it is left alone.
- * Never throws: the caller rethrows the original error.
- */
-function restoreAfterInterruptedApply(
-  deps: SessionRuntimeUpdateDeps,
-  sessionKey: string,
-  axes: SessionRuntimeUpdateAxes,
-  touched: { provider: boolean; model: boolean; effort: boolean; thinking: boolean },
-  before: SessionRuntimeSnapshot,
-): void {
-  try {
-    const persisted = deps.readSession(sessionKey);
-    if (!persisted) return;
-    const current = snapshotOf(persisted);
-    const explained = (value: string | null, previous: string | null, isTouched: boolean, intended: string | null) =>
-      value === previous || (isTouched && value === intended);
-    const ours =
-      explained(
-        current.runtimeProviderOverride,
-        before.runtimeProviderOverride,
-        touched.provider,
-        axes.provider?.set ?? null,
-      ) &&
-      explained(current.modelOverride, before.modelOverride, touched.model, axes.model?.set ?? null) &&
-      explained(current.effortOverride, before.effortOverride, touched.effort, axes.effort?.set ?? null) &&
-      explained(current.thinkingLevel, before.thinkingLevel, touched.thinking, axes.thinking?.set ?? null);
-    if (!ours) {
-      log.warn("Runtime configuration changed concurrently during an interrupted update; not restoring", {
-        sessionKey,
-      });
-      return;
-    }
-    deps.restoreIfOwned(sessionKey, persisted.runtimeProviderConfigRevision ?? 0, current, before);
-  } catch (restoreError) {
-    log.warn("Could not restore the runtime configuration after an interrupted update", {
-      sessionKey,
-      error: restoreError instanceof Error ? restoreError.message : String(restoreError),
-    });
-  }
 }
 
 function toProviderOverride(value: string | null): SessionEntry["runtimeProviderOverride"] | null {

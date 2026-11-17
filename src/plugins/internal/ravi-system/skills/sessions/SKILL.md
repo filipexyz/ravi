@@ -99,13 +99,21 @@ ravi sessions set-provider <name> <provider|clear>
 ravi sessions set-thinking <name> <level>
 
 # Atualizar provider/model/effort/thinking de uma vez, com prova de vida e rollback.
-# Antes de gravar, recusa valor inválido de provider/effort/thinking e modelo de uma família
-# que o provider não roda (ex.: modelo gpt com provider claude), nomeando os válidos.
-# A validação de modelo é por família, não por versão: versão desconhecida de família conhecida
-# (ex.: um sonnet que ainda não existe) é gravada, e quem decide é a prova de vida.
-# Depois aplica, roda um turno real de prova e, se a prova falhar ou lançar, restaura o estado anterior.
+# Antes de gravar, recusa valor inválido de provider/effort/thinking e modelo que o provider não
+# roda, nomeando os válidos. A validação de modelo depende do provider:
+# - todos: formato do id (sem espaço; só letras, dígitos e . _ : / -) e família contra o provider
+#   (ex.: modelo gpt com provider claude);
+# - claude/grok: por família, não por versão; versão desconhecida de família conhecida
+#   (ex.: um sonnet que ainda não existe) é gravada, e quem decide é a prova de vida;
+# - codex: com o cache de modelos da conta, exige o slug exato do cache; sem o cache, não confere o id;
+# - pi: depois do formato e da família, confere só a forma do seletor (provider/modelo; um id de
+#   provider sozinho é recusado). Não há catálogo de ids: qualquer modelo bem formado é gravado.
+# Depois aplica (as gravações dos eixos entram numa transação só: ou todas ou nenhuma), roda um turno
+# real de prova e, se a prova falhar ou lançar, restaura o estado anterior. Se a própria restauração
+# falhar, RUNTIME_PROBE_FAILED diz que a configuração não provada continua gravada
+# (details.rollbackError; details.before traz os valores anteriores para refazer à mão).
 ravi sessions update <name> --provider claude --model sonnet --effort ultra --thinking off
-# Ressalva: Pi aceita qualquer id de modelo, e Codex sem o cache de modelos não confere o id exato.
+# Ressalva: no Pi o id do modelo não é conferido, e Codex sem o cache de modelos também não.
 # Nesses dois casos só a prova de vida protege; não use --skip-probe.
 # Eixos são opcionais ('clear' limpa o override); --skip-probe aplica sem prova (sem rollback);
 # --probe-timeout <s> limita a prova inteira: credencial, turno e encerramento (default 120s;

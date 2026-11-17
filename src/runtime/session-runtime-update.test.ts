@@ -1,5 +1,14 @@
-import { describe, expect, it } from "bun:test";
+import { Database } from "bun:sqlite";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { getRaviDbPath } from "../router/router-db.js";
+import {
+  getOrCreateSession,
+  resolveSession,
+  updateSessionEffortOverride,
+  updateSessionModelOverride,
+} from "../router/sessions.js";
 import type { AgentConfig, SessionEntry } from "../router/types.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeProbeRequest, RuntimeProbeResult } from "./runtime-probe.js";
 import {
   applySessionRuntimeUpdate,
@@ -76,6 +85,22 @@ function makeHarness(options: {
       calls.push("concurrent-update");
     },
     deps: {
+      // Models the SQLite transaction the real store gives the apply: a throw
+      // anywhere inside undoes every write made since the start. The real
+      // transaction is exercised against SQLite in the "real session store"
+      // describe below.
+      applyAtomically: (write) => {
+        const savedValues = { ...values };
+        const savedRevision = revision;
+        try {
+          return write();
+        } catch (error) {
+          Object.assign(values, savedValues);
+          revision = savedRevision;
+          calls.push("applyAtomically:rolled-back");
+          throw error;
+        }
+      },
       updateProviderOverride: (_key, value) => {
         values.runtimeProviderOverride = value ?? null;
         // Mirror the real store: the provider setter bumps the config revision.
@@ -293,6 +318,7 @@ describe("applySessionRuntimeUpdate", () => {
     });
 
     expect(result.rolledBack).toBe(true);
+    expect(result.rollbackError).toBeNull();
     expect(result.superseded).toBe(false);
     expect(result.probe?.ok).toBe(false);
     expect(result.probe?.error).toContain("Not logged in");
@@ -310,6 +336,43 @@ describe("applySessionRuntimeUpdate", () => {
     expect(after.modelOverride).toBe("deepseek/deepseek-flash");
     expect(after.effortOverride).toBe("high");
     expect(result.after).toEqual(result.before);
+  });
+
+  it("keeps the probe verdict and reports the failed restore when the restore throws after a failed probe", async () => {
+    const session = baseSession({ effortOverride: "high" } as Partial<SessionEntry>);
+    const harness = makeHarness({
+      initial: session,
+      probe: (request) => ({
+        ok: false,
+        provider: request.provider,
+        model: request.model,
+        durationMs: 7,
+        error: "model_not_found: opus-9",
+      }),
+    });
+
+    const result = await applySessionRuntimeUpdate({
+      session,
+      agent: null,
+      axes: { effort: { set: "low" } },
+      deps: {
+        ...harness.deps,
+        restoreIfOwned: () => {
+          throw new Error("SQLITE_IOERR: disk I/O error");
+        },
+      },
+    });
+
+    // The probe's failure is not replaced by the restore's error...
+    expect(result.probe?.ok).toBe(false);
+    expect(result.probe?.error).toContain("model_not_found: opus-9");
+    // ...and the result says the unproven configuration is still stored: not
+    // rolled back, and not "superseded" (nobody else replaced it).
+    expect(result.rolledBack).toBe(false);
+    expect(result.superseded).toBe(false);
+    expect(result.rollbackError).toContain("SQLITE_IOERR");
+    expect(result.after.effortOverride).toBe("low");
+    expect(harness.record().effortOverride).toBe("low");
   });
 
   it("restores the previous configuration and rethrows when the probe throws", async () => {
@@ -349,7 +412,7 @@ describe("applySessionRuntimeUpdate", () => {
     expect(after.effortOverride).toBe("high");
   });
 
-  it("restores the previous configuration when a setter throws midway through the apply", async () => {
+  it("rolls the whole apply back and rethrows when a setter throws midway", async () => {
     const session = baseSession({ effortOverride: "high" } as Partial<SessionEntry>);
     const harness = makeHarness({ initial: session });
     const boom = new Error("SQLITE_BUSY: database is locked");
@@ -372,16 +435,18 @@ describe("applySessionRuntimeUpdate", () => {
     }
 
     expect(thrown).toBe(boom);
-    // Provider and model were written, effort was not: the partial state is undone.
-    expect(harness.calls).toEqual(["set:provider=claude", "set:model=opus", "restoreIfOwned:restored"]);
+    // Provider and model were written, effort was not: the transaction undoes the
+    // partial state itself. No value-comparison restore runs afterwards.
+    expect(harness.calls).toEqual(["set:provider=claude", "set:model=opus", "applyAtomically:rolled-back"]);
     expect(harness.probeRequests).toHaveLength(0);
     const after = harness.record();
     expect(after.runtimeProviderOverride ?? null).toBeNull();
     expect(after.modelOverride).toBe("deepseek/deepseek-flash");
     expect(after.effortOverride).toBe("high");
+    expect(after.runtimeProviderConfigRevision ?? 0).toBe(0);
   });
 
-  it("does not restore over a concurrent update when a setter throws midway", async () => {
+  it("never restores over a concurrent writer that stored the intended values after the failed apply", async () => {
     const session = baseSession();
     const harness = makeHarness({ initial: session });
     const boom = new Error("SQLITE_BUSY: database is locked");
@@ -395,9 +460,17 @@ describe("applySessionRuntimeUpdate", () => {
         deps: {
           ...harness.deps,
           updateModelOverride: () => {
-            // Update B lands between A's provider write and A's failing model write.
-            harness.concurrentUpdate({ runtimeProviderOverride: "codex", modelOverride: "gpt-6-astra" });
             throw boom;
+          },
+          // The other writer waits for the transaction and lands right after the
+          // rollback, storing exactly the values this update intended.
+          applyAtomically: (write) => {
+            try {
+              return harness.deps.applyAtomically!(write);
+            } catch (error) {
+              harness.concurrentUpdate({ runtimeProviderOverride: "claude", modelOverride: "sonnet" });
+              throw error;
+            }
           },
         },
       });
@@ -406,10 +479,11 @@ describe("applySessionRuntimeUpdate", () => {
     }
 
     expect(thrown).toBe(boom);
-    expect(harness.calls).not.toContain("restoreIfOwned:restored");
+    // The old recovery inferred ownership from equal values and would restore here.
+    expect(harness.calls.some((call) => call.startsWith("restoreIfOwned"))).toBe(false);
     const after = harness.record();
-    expect(after.runtimeProviderOverride).toBe("codex");
-    expect(after.modelOverride).toBe("gpt-6-astra");
+    expect(after.runtimeProviderOverride).toBe("claude");
+    expect(after.modelOverride).toBe("sonnet");
   });
 
   it("keeps a concurrent update and rethrows when the probe throws after being superseded", async () => {
@@ -559,5 +633,93 @@ describe("applySessionRuntimeUpdate", () => {
     expect(result.rematerializedToAgentRuntime).toBe(false);
     expect(harness.calls).toContain("rematerialize");
     expect(result.effective.provider).toBe("pi");
+  });
+});
+
+describe("applySessionRuntimeUpdate against the real session store", () => {
+  let stateDir: string | null = null;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-runtime-update-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  function seedSession(sessionKey: string): SessionEntry {
+    getOrCreateSession(sessionKey, "main", "/tmp/main");
+    updateSessionModelOverride(sessionKey, "deepseek/deepseek-flash");
+    updateSessionEffortOverride(sessionKey, "high");
+    return resolveSession(sessionKey) as SessionEntry;
+  }
+
+  it("leaves the stored configuration untouched when a later write throws", async () => {
+    const session = seedSession("agent:main:atomic-rollback");
+    const revisionBefore = session.runtimeProviderConfigRevision ?? 0;
+    const boom = new Error("SQLITE_IOERR: disk I/O error");
+
+    await expect(
+      applySessionRuntimeUpdate({
+        session,
+        agent: null,
+        axes: { provider: { set: "claude" }, model: { set: "sonnet" }, effort: { set: "low" } },
+        probe: false,
+        deps: {
+          updateEffortOverride: () => {
+            throw boom;
+          },
+        },
+      }),
+    ).rejects.toBe(boom);
+
+    // The provider and model writes landed before the throw; the transaction took them back.
+    const stored = resolveSession(session.sessionKey);
+    expect(stored?.runtimeProviderOverride ?? null).toBeNull();
+    expect(stored?.modelOverride).toBe("deepseek/deepseek-flash");
+    expect(stored?.effortOverride).toBe("high");
+    expect(stored?.runtimeProviderConfigRevision ?? 0).toBe(revisionBefore);
+  });
+
+  it("keeps a writer on another connection out until the apply has committed", async () => {
+    const session = seedSession("agent:main:atomic-interleave");
+    const other = new Database(getRaviDbPath());
+    other.exec("PRAGMA busy_timeout = 0");
+    const intrude = (value: string) =>
+      other.prepare("UPDATE sessions SET model_override = ? WHERE session_key = ?").run(value, session.sessionKey);
+    let intruderError: unknown = null;
+    try {
+      const result = await applySessionRuntimeUpdate({
+        session,
+        agent: null,
+        axes: { provider: { set: "claude" }, model: { set: "sonnet" }, effort: { set: "low" } },
+        probe: false,
+        deps: {
+          updateEffortOverride: (key, value) => {
+            updateSessionEffortOverride(key, value);
+            // Mid-apply: every write above is already issued but not committed.
+            try {
+              intrude("intruder");
+            } catch (error) {
+              intruderError = error;
+            }
+          },
+        },
+      });
+
+      expect(result.after).toMatchObject({
+        runtimeProviderOverride: "claude",
+        modelOverride: "sonnet",
+        effortOverride: "low",
+      });
+      // Once the apply has committed, the other connection can write again.
+      intrude("after-commit");
+      expect(resolveSession(session.sessionKey)?.modelOverride).toBe("after-commit");
+    } finally {
+      other.close();
+    }
+    expect(intruderError).toBeInstanceOf(Error);
+    expect((intruderError as Error).message).toMatch(/locked|busy/i);
   });
 });

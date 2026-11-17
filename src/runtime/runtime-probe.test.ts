@@ -1,4 +1,7 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { getDb } from "../router/router-db.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { createRuntimeCredential } from "./credential-store.js";
 import { probeRuntimeTurn, type RuntimeProbeRequest } from "./runtime-probe.js";
 import type { RuntimeEvent, RuntimeStartRequest, SessionRuntimeProvider } from "./types.js";
 
@@ -268,6 +271,44 @@ describe("probeRuntimeTurn", () => {
     expect(Date.now() - startedAt).toBeLessThan(2_000);
   });
 
+  it("bounds a provider whose stream and close() both hang, within the timeout plus two graces", async () => {
+    const provider: SessionRuntimeProvider = {
+      id: "fake",
+      getCapabilities: () => {
+        throw new Error("not used by the probe");
+      },
+      startSession: () => ({
+        provider: "fake",
+        // Ignores the interrupt and the abort...
+        events: (async function* () {
+          await new Promise<void>(() => {});
+          yield { type: "turn.complete", usage: {} } as unknown as RuntimeEvent;
+        })(),
+        interrupt: async () => {},
+        // ...and its transport never finishes closing either.
+        close: () => new Promise<void>(() => {}),
+      }),
+    };
+
+    const startedAt = Date.now();
+    const result = await probeRuntimeTurn({
+      provider: "claude",
+      model: "sonnet",
+      timeoutMs: 100,
+      createProvider: () => provider,
+      resolveCredential: async () => NO_POOL,
+    });
+    const elapsedMs = Date.now() - startedAt;
+
+    expect(result.ok).toBe(false);
+    expect(result.timedOut).toBe(true);
+    expect(result.error).toContain("timed out");
+    // Both waits ran in sequence: the deadline plus the stream grace (100 + 100), then the
+    // close grace (100). A probe that waited on either forever would never get here.
+    expect(elapsedMs).toBeGreaterThanOrEqual(250);
+    expect(elapsedMs).toBeLessThan(2_000);
+  });
+
   it("fails when the provider is unknown", async () => {
     const result = await probeRuntimeTurn({
       provider: "nope",
@@ -297,5 +338,69 @@ describe("probeRuntimeTurn", () => {
 
     expect(result.ok).toBe(false);
     expect(result.error).toContain("without a terminal turn event");
+  });
+});
+
+describe("probeRuntimeTurn with a managed credential pool", () => {
+  let stateDir: string | null = null;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-runtime-probe-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("settles the reserved credential attempt as failed when the scratch directory cannot be created", async () => {
+    createRuntimeCredential({
+      id: "rcred_probe",
+      label: "Probe credential",
+      runtimeProvider: "codex",
+      priority: 10,
+      bindings: [
+        {
+          sourceKind: "env",
+          targetKind: "env",
+          targetName: "OPENAI_API_KEY",
+          secretRef: "env:RAVI_TEST_PROBE_KEY",
+          sourceHint: "RAVI_TEST_PROBE_KEY",
+          sensitive: true,
+          remoteForward: false,
+        },
+      ],
+    });
+    let started = false;
+    const provider = fakeProvider(async function* () {
+      started = true;
+      yield { type: "turn.complete", usage: {} } as unknown as RuntimeEvent;
+    });
+
+    // The real resolver: it reserves an attempt row for the selected credential before the probe
+    // goes on to create its scratch directory.
+    const result = await probeRuntimeTurn({
+      provider: "codex",
+      model: "gpt-5",
+      env: { RAVI_TEST_PROBE_KEY: "sk-test_probe_secret_value" },
+      createProvider: () => provider,
+      createScratchDir: () => {
+        throw new Error("ENOSPC: no space left on device, mkdtemp");
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("ENOSPC");
+    expect(result.credentialId).toBe("rcred_probe");
+    expect(started).toBe(false);
+    const attempt = getDb()
+      .prepare(
+        "SELECT status, completed_at AS completedAt, metadata_json AS metadata FROM runtime_credential_attempts WHERE credential_id = ?",
+      )
+      .get("rcred_probe") as { status: string; completedAt: number | null; metadata: string | null } | null;
+    // Not left reserved: the attempt is settled with the probe failure as its reason.
+    expect(attempt?.status).toBe("failed");
+    expect(attempt?.completedAt).not.toBeNull();
+    expect(attempt?.metadata).toContain("ENOSPC");
   });
 });

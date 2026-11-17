@@ -685,6 +685,22 @@ function runtimeConfigOwnershipParams(
 }
 
 /**
+ * Run the axis writes of one atomic runtime update as a single SQLite
+ * transaction. The writes (and the read that captures their ownership) all
+ * land or none does: a setter that throws midway rolls back the statements
+ * before it, and no other writer can slot a statement between them — a writer
+ * from another process waits for the commit or the rollback. That removes the
+ * need to infer, from persisted values, whether a half-applied configuration is
+ * "ours" before undoing it (CodeRabbit finding on #829).
+ *
+ * `write` must be synchronous: a transaction cannot span an await. The error it
+ * throws, if any, is rethrown unchanged after the rollback.
+ */
+export function applySessionRuntimeConfigAtomically<T>(write: () => T): T {
+  return getDb().transaction(write)();
+}
+
+/**
  * Conditionally restore the four runtime-config axes after a failed probe.
  *
  * The restore applies only while the caller still owns the configuration: the
