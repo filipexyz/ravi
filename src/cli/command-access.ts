@@ -407,8 +407,9 @@ function recordInactiveContextDenial(
   context: NonNullable<ReturnType<typeof getContext>>["context"],
 ): void {
   if (!context) return;
-  const capability = canonicalCommandAccessCapability(input);
-  const [permission = "", objectType = "", objectId = ""] = capability.split(":");
+  // Take the parts, never split the joined string: a concrete resource id may itself contain ":".
+  const { permission, objectType, objectId } = commandAccessCapability(input);
+  const capability = `${permission}:${objectType}:${objectId}`;
   const command = `${input.group} ${input.command}`;
   const reason = `runtime context ${context.contextId} is revoked or expired`;
   const provenance = buildAuditContextProvenance({

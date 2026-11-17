@@ -591,6 +591,43 @@ describe("CLI command access enforcement", () => {
     ]);
   });
 
+  it("tags a revoked context apart from a missing grant and audits the whole concrete resource id", async () => {
+    delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    const record = { ...context([]), revokedAt: 1 };
+    const colonAccess: CommandAccessOptions = {
+      kind: "read",
+      resource: "env.vars",
+      action: "show",
+      risk: "low",
+      resourceId: "name",
+      requireConcreteResource: true,
+      input: ["name"],
+    };
+    const result = runWithContext({ agentId: "dev", context: record }, () =>
+      enforceCliCommandAccess({
+        group: "env_vars",
+        command: "show",
+        access: colonAccess,
+        input: { name: "env:OPENAI_API_KEY" },
+        source: "tool",
+      }),
+    );
+    expect(result.allowed).toBe(false);
+    expect(result.denialDetails).toMatchObject({
+      stage: "command_access",
+      reason: "runtime_context_inactive",
+      contextId: "ctx_command_access_test",
+    });
+    expect(listPermissionDenials({ subjectType: "agent", subjectId: "dev", resolved: false })).toContainEqual(
+      expect.objectContaining({ relation: "read", objectType: "env.vars", objectId: "env:OPENAI_API_KEY" }),
+    );
+    await flushPermissionAuditEvents();
+    expect(auditEvents.at(-1)?.data).toMatchObject({
+      denied: "read:env.vars:env:OPENAI_API_KEY",
+      blockType: "cli_command_access_context_inactive",
+    });
+  });
+
   it("requires the canonical concrete resource when configured and rejects semantic or legacy fallbacks", () => {
     const strictAccess: CommandAccessOptions = {
       kind: "read",
