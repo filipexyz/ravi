@@ -114,16 +114,22 @@ ravi sessions set-thinking <name> <level>
 # restauração e o que está gravado vêm em error.runtimeUpdate (rollbackError, superseded,
 # storedStateKnown, before = valores anteriores, stored = o que está gravado agora). A restauração
 # é um UPDATE condicional que pode falhar antes de checar a posse, então o CLI relê o gravado:
-# ainda é a configuração não provada (suggestedAction traz o comando exato, com --skip-probe, para
-# a restauração explícita não cair de novo na prova que falhou), já é a de uma atualização mais nova
-# (nada a restaurar) ou não deu para ler (storedStateKnown=false: rode ravi sessions info <name> --json
-# antes de qualquer coisa, porque uma atualização concorrente pode ser dona da sessão).
+# ainda é a configuração não provada (suggestedAction manda conferir antes com ravi sessions info
+# <name> --json e só então restaurar, com o comando exato e --skip-probe, para a restauração explícita
+# não cair de novo na prova que falhou; uma atualização concorrente pode ter entrado depois da releitura),
+# já é a de uma atualização mais nova (nada a restaurar), já são os valores anteriores (a restauração
+# lançou depois de gravar: nada a restaurar) ou não deu para ler (storedStateKnown=false: rode
+# ravi sessions info <name> --json antes de qualquer coisa). Se um valor anterior não é representável
+# (id legado fora do formato aceito), o envelope mantém as flags com before/stored = null e o
+# suggestedAction não traz comando: inspecione com ravi sessions info e restaure à mão.
 # Prova que LANÇA exceção: o erro original sai intacto e uma restauração que falha só vai para o log
 # do daemon, sem RUNTIME_PROBE_FAILED nem error.runtimeUpdate; confira ravi sessions info <name> --json.
 ravi sessions update <name> --provider claude --model sonnet --effort ultra --thinking off
 # Ressalva: no Pi o id do modelo não é conferido, e Codex sem o cache de modelos também não.
 # Nesses dois casos só a prova de vida protege; não use --skip-probe.
-# Eixos são opcionais ('clear' limpa o override); --skip-probe aplica sem prova (sem rollback);
+# Eixos são opcionais ('clear' limpa o override); --skip-probe aplica sem prova (sem rollback).
+# Limite: '--provider clear' com --skip-probe pode rematerializar a sessão para o provider do agent
+# quando o provider nativo dela estava velho; não é cópia exata do estado anterior.
 # --probe-timeout <s> limita a prova inteira: credencial, turno e encerramento (default 120s;
 # provider que ignora a interrupção ganha no máximo mais 5s para parar e 5s para fechar). Erro de uso sai com exit 2 e USAGE_ERROR, também em --json.
 

@@ -272,15 +272,18 @@ const RUNTIME_UPDATE_SNAPSHOT_KEYS = [
   "thinkingLevel",
 ] as const;
 
-/** One runtime-config axis value: a provider, model, effort or thinking id, or null for "no override". */
-function projectRuntimeUpdateAxisValue(value: unknown): string | null | undefined {
+/**
+ * One runtime-config axis value: a provider, model, effort or thinking id, or null for "no override".
+ * Exported so a recovery command is only ever built from ids this projection would also accept.
+ */
+export function projectRuntimeUpdateAxisValue(value: unknown): string | null | undefined {
   if (value === null) return null;
   if (typeof value !== "string" || value.length > 200) return undefined;
   if (!/^[A-Za-z0-9][A-Za-z0-9._:/+-]*$/.test(value) || redactDiagnosticText(value) !== value) return undefined;
   return value;
 }
 
-/** The four override axes of a session, each an id or null. Anything else drops the whole snapshot. */
+/** The four override axes of a session, each an id or null. Anything else drops the whole snapshot (reported as null). */
 function projectRuntimeUpdateSnapshot(value: unknown): Record<string, string | null> | null | undefined {
   if (value === null) return null;
   const projected: Record<string, string | null> = {};
@@ -304,15 +307,16 @@ function projectRuntimeUpdateControl(value: unknown): Record<string, unknown> | 
   const before = projectRuntimeUpdateSnapshot(safeDiagnosticField(value, "before"));
   const stored = projectRuntimeUpdateSnapshot(safeDiagnosticField(value, "stored"));
   if (typeof rolledBack !== "boolean" || typeof storedStateKnown !== "boolean") return undefined;
-  if (before === undefined || before === null || stored === undefined) return undefined;
   if (superseded !== null && typeof superseded !== "boolean") return undefined;
   const rollbackError = safeDiagnosticField(value, "rollbackError");
   return {
     rolledBack,
     superseded,
     storedStateKnown,
-    before,
-    stored,
+    // A snapshot with an id outside the accepted format (a legacy value) is
+    // reported as null: the flags still reach the envelope, the raw id never does.
+    before: before ?? null,
+    stored: stored ?? null,
     ...(typeof rollbackError === "string" ? { rollbackError: redactDiagnosticText(rollbackError).slice(0, 400) } : {}),
   };
 }

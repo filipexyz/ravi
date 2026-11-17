@@ -16,7 +16,14 @@ import {
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { Group, Command, CommandAccess, CliOnly, Arg, Option } from "../decorators.js";
-import { CONTRACT_EXIT_USAGE, ContractError, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
+import {
+  CONTRACT_EXIT_USAGE,
+  ContractError,
+  contractDryRun,
+  contractFail,
+  pickFields,
+  projectRuntimeUpdateAxisValue,
+} from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { isTriggerOwnSessionKey, triggerOfSessionKey } from "../../triggers/authority.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
@@ -2217,7 +2224,9 @@ const SESSION_UPDATE_USAGE_HINT = "Fix the value named in the message; see: ravi
  * the probe on purpose: this is an explicit restoration, and re-probing could
  * fail again for the same reason and roll the session back onto the
  * configuration that was left unproven. `clear` stands for an axis that had no
- * override. The ids are provider/model/effort/thinking values, safe unquoted.
+ * override. Returns null when a changed axis' previous id is not representable
+ * (a legacy value outside the format the envelope accepts): such an id could be
+ * refused by the validator or expand as a shell glob, so no command is built.
  */
 function sessionRuntimeRestoreCommand(
   label: string,
@@ -2228,14 +2237,38 @@ function sessionRuntimeRestoreCommand(
     effortOverride: string | null;
     thinkingLevel: string | null;
   },
-): string {
-  const axes = [
-    changed.provider ? `--provider ${before.runtimeProviderOverride ?? "clear"}` : null,
-    changed.model ? `--model ${before.modelOverride ?? "clear"}` : null,
-    changed.effort ? `--effort ${before.effortOverride ?? "clear"}` : null,
-    changed.thinking ? `--thinking ${before.thinkingLevel ?? "clear"}` : null,
-  ].filter((flag): flag is string => flag !== null);
+): string | null {
+  const flags: Array<[boolean, string, string | null]> = [
+    [changed.provider, "--provider", before.runtimeProviderOverride],
+    [changed.model, "--model", before.modelOverride],
+    [changed.effort, "--effort", before.effortOverride],
+    [changed.thinking, "--thinking", before.thinkingLevel],
+  ];
+  const axes: string[] = [];
+  for (const [isChanged, flag, value] of flags) {
+    if (!isChanged) continue;
+    if (projectRuntimeUpdateAxisValue(value) === undefined) return null;
+    axes.push(`${flag} ${value ?? "clear"}`);
+  }
   return `ravi sessions update ${label} ${axes.join(" ")} --skip-probe`;
+}
+
+const UNREPRESENTABLE_PREVIOUS_VALUE = "a previous value is outside the accepted id format";
+
+interface RuntimeSnapshotShape {
+  runtimeProviderOverride: string | null;
+  modelOverride: string | null;
+  effortOverride: string | null;
+  thinkingLevel: string | null;
+}
+
+function sameRuntimeSnapshot(left: RuntimeSnapshotShape, right: RuntimeSnapshotShape): boolean {
+  return (
+    left.runtimeProviderOverride === right.runtimeProviderOverride &&
+    left.modelOverride === right.modelOverride &&
+    left.effortOverride === right.effortOverride &&
+    left.thinkingLevel === right.thinkingLevel
+  );
 }
 
 function failSessionUsage(op: string, message: string, suggestedAction: string, asJson?: boolean): never {
@@ -4386,13 +4419,21 @@ export class SessionCommands {
         suggestedAction = `Inspect the session's current runtime (${inspect}) before retrying; a newer update already changed it`;
       } else if (!result.storedStateKnown) {
         outcome = `the restore FAILED (${restoreError}) and the stored configuration could not be read afterwards, so it is unknown whether the unproven configuration or a newer update is stored for ${label}`;
-        suggestedAction = `Inspect first: ${inspect}. A newer update may own the session, so restore only if it still shows this update's values: ${restoreCommand}`;
+        suggestedAction = restoreCommand
+          ? `Inspect first: ${inspect}. A newer update may own the session, so restore only if it still shows this update's values: ${restoreCommand}`
+          : `Inspect first: ${inspect}. A newer update may own the session, and the previous values cannot be written as a command (${UNREPRESENTABLE_PREVIOUS_VALUE}); restore by hand only if the session still shows this update's values`;
       } else if (result.superseded) {
         outcome = `the restore FAILED (${restoreError}), but the stored configuration is no longer this update's — a newer update owns ${label} now`;
         suggestedAction = `Nothing to restore from this update: inspect ${inspect}; the newer update governs the session`;
+      } else if (sameRuntimeSnapshot(result.after, result.before)) {
+        // The restore threw after committing: the previous values are stored.
+        outcome = `the restore reported an error (${restoreError}), but the stored configuration already equals the previous runtime config for ${label}`;
+        suggestedAction = `Nothing to restore: confirm with ${inspect}, then pick a model/provider this installation can run and retry ravi sessions update`;
       } else {
         outcome = `the restore FAILED (${restoreError}), so the unproven configuration is STILL persisted for ${label}`;
-        suggestedAction = `Restore the previous values without probing again: ${restoreCommand}; then check ${inspect}`;
+        suggestedAction = restoreCommand
+          ? `Check first: ${inspect}. If it still shows this update's values (a newer update may have landed since this report), restore the previous values without probing again: ${restoreCommand}`
+          : `Check first: ${inspect}. The previous values cannot be written as a command (${UNREPRESENTABLE_PREVIOUS_VALUE}); if the session still shows this update's values, restore them by hand`;
       }
       contractFail(
         "sessions update",

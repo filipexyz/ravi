@@ -424,6 +424,34 @@ describe("applySessionRuntimeUpdate", () => {
     expect(harness.record().modelOverride).toBe("opus");
   });
 
+  it("reports the previous values as restored, not a newer update, when the restore throws after committing", async () => {
+    const session = baseSession({ effortOverride: "high" } as Partial<SessionEntry>);
+    const harness = makeHarness({ initial: session, probe: failingProbe });
+
+    const result = await applySessionRuntimeUpdate({
+      session,
+      agent: null,
+      axes: { provider: { set: "claude" }, model: { set: "sonnet" }, effort: { set: "low" } },
+      deps: {
+        ...harness.deps,
+        // The conditional UPDATE commits (previous values stored, revision up) and
+        // the call still fails afterwards.
+        restoreIfOwned: (...args) => {
+          harness.deps.restoreIfOwned?.(...args);
+          throw new Error("SQLITE_IOERR: disk I/O error after commit");
+        },
+      },
+    });
+
+    expect(harness.calls).toContain("restoreIfOwned:restored");
+    expect(result.rollbackError).toContain("SQLITE_IOERR");
+    expect(result.rolledBack).toBe(false);
+    expect(result.storedStateKnown).toBe(true);
+    // The stored values are the previous ones: that is not a newer update.
+    expect(result.superseded).toBe(false);
+    expect(result.after).toEqual(result.before);
+  });
+
   it("reports the stored state as unknown when the restore throws and the stored configuration cannot be read", async () => {
     const session = baseSession({ effortOverride: "high" } as Partial<SessionEntry>);
     let probed = false;
