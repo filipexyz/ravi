@@ -194,6 +194,9 @@ jobs:
         with:
           bun-version: "1.3.11"
 
+      - name: Isolate Ravi state
+        run: echo "RAVI_STATE_DIR=$RUNNER_TEMP/ravi-ci-state" >> "$GITHUB_ENV"
+
       - name: Set up Swift
         uses: swift-actions/setup-swift@7ca6abe6b3b0e8b5421b88be48feee39cbf52c6a # v2.4.0
         with:

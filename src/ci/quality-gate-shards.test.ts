@@ -62,6 +62,18 @@ it("CI runs every shard exactly once", () => {
   }
 });
 
+it("every gated job that runs bun isolates Ravi state before its first bun command", () => {
+  for (const [id, job] of Object.entries(workflow.jobs)) {
+    if (NOT_GATED.includes(id) || id === "quality-gate") continue;
+    const steps = job.steps ?? [];
+    const firstBun = steps.findIndex((step) => /\bbun\b/.test(step.run ?? ""));
+    if (firstBun < 0) continue;
+    const isolation = steps.findIndex((step) => step.name === "Isolate Ravi state");
+    expect(isolation, id).toBeGreaterThanOrEqual(0);
+    expect(isolation, id).toBeLessThan(firstBun);
+  }
+});
+
 it("Quality Gate fails unless every gated job succeeded", () => {
   const gate = workflow.jobs["quality-gate"]!;
   // Required status checks match the job's display name.
