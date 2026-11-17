@@ -766,7 +766,7 @@ describe("update command helpers", () => {
         pm2Process("ravi", old.bundlePath, old.root, { pid: 10, createdAt: 1 }),
         pm2Process("ravi-channels", old.bundlePath, old.root, { pid: 20, createdAt: 1 }),
       ];
-      const calls: string[] = [];
+      const started: string[] = [];
       let clock = 0;
       let intentBeforeChannelsDelete: unknown = "unset";
       const ok = await rebindManagedRuntimeProcesses(
@@ -787,12 +787,12 @@ describe("update command helpers", () => {
           },
           readyTimeoutMs: 2_000,
           run: async (_command, args) => {
-            calls.push(args.slice(0, 2).join(" "));
             if (args[0] === "delete") {
               if (args[1] === "2") intentBeforeChannelsDelete = readChannelsStoppedForUpgrade(stateDir);
               processes = processes.filter((process) => String(process.pm_id) !== args[1]);
             } else if (args[0] === "start") {
               const name = args[args.indexOf("--name") + 1] as "ravi" | "ravi-channels";
+              started.push(name);
               processes.push(pm2Process(name, runtime.bundlePath, runtime.root, { pid: 11, createdAt: 2 }));
             }
             return { success: true, output: "" };
@@ -803,9 +803,7 @@ describe("update command helpers", () => {
       // Recorded before the runner's registration was deleted, and the update never started a runner itself.
       expect(intentBeforeChannelsDelete).toMatchObject({ by: "update" });
       expect(processes.some((process) => process.name === "ravi-channels")).toBe(false);
-      expect(calls.some((call) => call.startsWith("start") && call.includes(process.execPath.split("/").pop()!))).toBe(
-        false,
-      );
+      expect(started).toEqual(["ravi"]);
 
       // PM2 starts the daemon again; this time it adopts, and once ready it consumes the intent.
       new Database(join(stateDir, "ravi.db")).exec("CREATE TABLE thread_schema_fence (id INTEGER)");
