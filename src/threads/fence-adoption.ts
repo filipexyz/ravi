@@ -240,9 +240,16 @@ export function databaseHasThreadFence(path: string): boolean {
 }
 
 export function readThreadFenceAdoption(stateDir: string): ThreadFenceAdoption | null {
-  const path = adoptionPath(stateDir);
-  if (!pathExists(path)) return null;
-  const value = JSON.parse(readFileSync(path, "utf8")) as ThreadFenceAdoption;
+  // One read, no existence check first: the successor may move the record to
+  // history at any moment, and a vanished record means "no adoption record".
+  let raw: string;
+  try {
+    raw = readFileSync(adoptionPath(stateDir), "utf8");
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw new Error("THREAD_FENCE_ADOPTION_UNVERIFIABLE", { cause });
+  }
+  const value = JSON.parse(raw) as ThreadFenceAdoption;
   if (
     value?.protocol !== THREAD_FENCE_ADOPTION_PROTOCOL ||
     typeof value.maintenanceId !== "string" ||

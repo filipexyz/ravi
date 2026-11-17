@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { Database } from "bun:sqlite";
 import { type DurableResidue, type DurableResidueSource, openStateReadOnly } from "./fence-adoption.js";
 
@@ -19,6 +20,10 @@ export type ResidueRule = {
   inFlight: readonly string[];
   /** Who resumes pending/in-flight rows in the successor. */
   owner: string;
+  /** Known non-terminal statuses whose resumption was not verified: they block, with their own label. */
+  blocking?: readonly string[];
+  /** The schema itself defines the active set (a partial index); every other status is terminal. */
+  terminalComplement?: boolean;
 };
 
 /**
@@ -99,15 +104,19 @@ export const LEGACY_ROUTER_RESIDUE_RULES: readonly Omit<ResidueRule, "database">
     inFlight: [],
     owner: "sync inbox applier",
   },
-  // The next three are closed by their CHECK constraints, but who resumes a
-  // non-terminal row in the successor was not verified: those rows block.
+  // The next three are closed by their CHECK constraints, and nothing reconciles
+  // their non-terminal rows at boot, in the tag or in the successor: only the
+  // owning flow moves them (claim owner in outbound-receipts.ts l.251-332, the
+  // turn in router-db.ts ~l.7595-7640, settleCronRun in cron/run-db.ts l.47-54).
+  // Those rows block; see the stale-row criterion pending in the PR.
   {
     table: "channel_outbound_receipts",
     column: "state",
     terminal: ["complete", "suppressed"],
     pending: [],
     inFlight: [],
-    owner: "channel outbound (non-terminal receipts block)",
+    blocking: ["claimed", "sent", "persisted"],
+    owner: "channel outbound claim owner (non-terminal receipts block)",
   },
   {
     table: "channel_backend_runtime_state",
@@ -115,6 +124,7 @@ export const LEGACY_ROUTER_RESIDUE_RULES: readonly Omit<ResidueRule, "database">
     terminal: ["completed", "failed", "interrupted"],
     pending: [],
     inFlight: [],
+    blocking: ["accepted", "running", "waiting_approval"],
     owner: "channel backend runtime (non-terminal turns block)",
   },
   {
@@ -123,7 +133,45 @@ export const LEGACY_ROUTER_RESIDUE_RULES: readonly Omit<ResidueRule, "database">
     terminal: ["ok", "error"],
     pending: [],
     inFlight: [],
-    owner: "cron scheduler (unfinished runs block)",
+    blocking: ["pending"],
+    owner: "cron run settled by its own session outcome (unfinished runs block)",
+  },
+  // src/channels/outbound-publish-outbox.ts: pending jobs are selected for publication again (l.270).
+  {
+    table: "channel_outbound_publish_jobs",
+    column: "status",
+    terminal: ["published", "suppressed"],
+    pending: ["pending"],
+    inFlight: [],
+    owner: "outbound publish outbox",
+  },
+  // src/cloud-agents/task-watcher.ts polls every run with state != 'acknowledged' (l.238, l.260).
+  {
+    table: "cloud_agent_task_runs",
+    column: "state",
+    terminal: ["acknowledged"],
+    pending: [],
+    inFlight: ["active", "delivered"],
+    owner: "cloud task watcher (open runs)",
+  },
+  // Pending claims are retried by the watcher (task-runs-db.ts l.412); a started dispatch
+  // is accounted for by its run in cloud_agent_task_runs.
+  {
+    table: "cloud_agent_task_dispatches",
+    column: "state",
+    terminal: ["started", "failed", "abandoned"],
+    pending: ["pending"],
+    inFlight: [],
+    owner: "cloud task watcher (pending claims)",
+  },
+  // src/session-followups/db.ts claims pending rows and leased rows whose lease expired (l.392-393).
+  {
+    table: "session_followup_runs",
+    column: "status",
+    terminal: ["sent", "skipped", "failed", "dead"],
+    pending: ["pending"],
+    inFlight: ["leased"],
+    owner: "session followup dispatcher (expired leases are claimed again)",
   },
   // src/decisions/delivery.ts: 'failed' and 'published' are claimed again; an expired
   // 'accepting' claim becomes 'uncertain', which only an explicit resolution settles.
@@ -191,11 +239,50 @@ export const LEGACY_RESIDUE_EXCLUSIONS: readonly { table: string; reason: string
   { table: "approval_request_deliveries", reason: "log of approval messages already sent" },
   { table: "observer_delivery_events", reason: "log of observer events already delivered" },
   { table: "inbox_items", reason: "human inbox, not runtime work in flight" },
+  {
+    table: "bridge.db gateway_receipts",
+    reason: "idempotency cache of gateway operations already answered (status is the HTTP result, body the reply)",
+  },
+  { table: "bridge.db receipts", reason: "idempotency cache of bridge requests already answered" },
+  { table: "bridge.db replays", reason: "replay-protection ids with expiry, no work" },
+  { table: "bridge.db delegation_heads", reason: "delegation revisions, configuration" },
+  { table: "bridge.db conversations, messages, events, audit", reason: "conversation history and audit log" },
+  {
+    table: "bridge.db approvals",
+    reason: "decision records; an open approval belongs to an awaiting_approval turn, which blocks",
+  },
 ];
 
-/** Every rule above lives in the router database (ravi.db) at v3.261113.2. */
-export function legacyResidueRules(routerDatabasePath: string): ResidueRule[] {
-  return LEGACY_ROUTER_RESIDUE_RULES.map((rule) => ({ ...rule, database: routerDatabasePath }));
+/** human-bridge/bridge.db of v3.261113.2 (src/bridge/store.ts), a separate database. */
+export const LEGACY_BRIDGE_RESIDUE_RULES: readonly Omit<ResidueRule, "database">[] = [
+  // turns.status is free text; the schema's own partial index `active_turn` in
+  // src/bridge/store.ts (status IN ('queued','running','awaiting_approval')) defines what is active.
+  // Who resumes an active turn after a stop was not verified: active turns block.
+  {
+    table: "turns",
+    column: "status",
+    terminal: [],
+    pending: [],
+    inFlight: [],
+    blocking: ["queued", "running", "awaiting_approval"],
+    terminalComplement: true,
+    owner: "human bridge (active turns block)",
+  },
+];
+
+/** `human-bridge/bridge.db` next to the router database, as src/bridge/store.ts places it. */
+export function legacyBridgeDatabasePath(routerDatabasePath: string): string {
+  return join(dirname(routerDatabasePath), "human-bridge", "bridge.db");
+}
+
+/** Router rules read `ravi.db`; bridge rules read `human-bridge/bridge.db` (absent database: no work). */
+export function legacyResidueRules(routerDatabasePath: string, bridgeDatabasePath?: string): ResidueRule[] {
+  return [
+    ...LEGACY_ROUTER_RESIDUE_RULES.map((rule) => ({ ...rule, database: routerDatabasePath })),
+    ...(bridgeDatabasePath
+      ? LEGACY_BRIDGE_RESIDUE_RULES.map((rule) => ({ ...rule, database: bridgeDatabasePath }))
+      : []),
+  ];
 }
 
 const identifier = /^[a-z_][a-z0-9_]*$/;
@@ -241,7 +328,9 @@ export function collectSqliteResidue(rules: readonly ResidueRule[]): DurableResi
           if (rule.terminal.includes(status)) continue;
           if (rule.pending.includes(status)) pending += row.count;
           else if (rule.inFlight.includes(status)) inFlight += row.count;
-          else unknown.push(`${label}=${status} (${row.count})`);
+          else if (rule.blocking?.includes(status))
+            unknown.push(`${label}=${status} (${row.count}): resumption not verified`);
+          else if (!rule.terminalComplement) unknown.push(`${label}=${status} (${row.count})`);
         }
         sources.push({ source: label, pending, inFlight, detail: { owner: rule.owner, counts } });
       } catch (cause) {

@@ -151,7 +151,13 @@ export class MaintenanceCommands {
     description:
       "Adopt a database written by a pre-fence release: stop channels and daemon, prove residue, start the successor",
   })
-  @CommandAccess({ kind: "mutate", resource: "daemon", action: "thread-fence-adopt", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "daemon",
+    action: "thread-fence-adopt",
+    risk: "high",
+    requiresConfirmation: true,
+  })
   @Returns(threadFenceAdoptReturnSchema)
   @CliOnly()
   async adopt(
@@ -185,7 +191,13 @@ export class MaintenanceCommands {
     description:
       "Explicit recovery of a stopped or interrupted thread fence adoption: release, retry or abandon (preview shows the state)",
   })
-  @CommandAccess({ kind: "mutate", resource: "daemon", action: "thread-fence-recover", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "daemon",
+    action: "thread-fence-recover",
+    risk: "high",
+    requiresConfirmation: true,
+  })
   @Returns(threadFenceRecoverReturnSchema)
   @CliOnly()
   async recover(

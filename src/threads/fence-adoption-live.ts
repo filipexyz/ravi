@@ -17,6 +17,7 @@ import {
   collectSqliteResidue,
   type JetStreamResidueReader,
   LEGACY_RESIDUE_EXCLUSIONS,
+  legacyBridgeDatabasePath,
   legacyResidueRules,
   mergeResidue,
 } from "./fence-adoption-residue.js";
@@ -115,7 +116,7 @@ export async function liveResidue(
     use: (reader: JetStreamResidueReader) => Promise<DurableResidue>,
   ) => Promise<DurableResidue> = withLiveJetStreamReader,
 ): Promise<DurableResidue> {
-  const sqlite = collectSqliteResidue(legacyResidueRules(databasePath));
+  const sqlite = collectSqliteResidue(legacyResidueRules(databasePath, legacyBridgeDatabasePath(databasePath)));
   let broker: DurableResidue;
   try {
     broker = await withReader((reader) => collectJetStreamResidue(reader));
@@ -158,7 +159,7 @@ export function adoptThreadFenceAtEntry(
     bundleDigest: host.bundleDigest,
     self: { pid: host.pid },
     // The successor re-derives the SQLite residue itself instead of trusting the coordinator's record.
-    residue: () => collectSqliteResidue(legacyResidueRules(databasePath)),
+    residue: () => collectSqliteResidue(legacyResidueRules(databasePath, legacyBridgeDatabasePath(databasePath))),
     open: () => {
       const database = openStateDatabase(databasePath);
       try {

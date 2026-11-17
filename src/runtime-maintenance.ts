@@ -76,9 +76,15 @@ export function persistRuntimeMaintenance(record: RuntimeMaintenance, stateDir: 
 }
 
 export function readRuntimeMaintenance(stateDir = getRaviStateDir()): RuntimeMaintenance | null {
-  const path = recordPath(stateDir);
-  if (!interlockPathExists(path)) return null;
-  const value = JSON.parse(readFileSync(path, "utf8")) as RuntimeMaintenance;
+  // One read: a successor may move the record to history between a check and a read.
+  let raw: string;
+  try {
+    raw = readFileSync(recordPath(stateDir), "utf8");
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw new Error("RUNTIME_MAINTENANCE_UNVERIFIABLE", { cause });
+  }
+  const value = JSON.parse(raw) as RuntimeMaintenance;
   if (
     value.protocol !== "ravi.runtime-maintenance/v1" ||
     !value.id ||

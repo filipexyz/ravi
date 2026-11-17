@@ -122,6 +122,9 @@ Residue that blocks: a status outside the rule of its table, an unreadable table
 | Interlock with a maintenance record and no adoption record, or with no record at all | same | `abandon` |
 | Successor failed before the fence (`blocked`) | both runtimes | `retry` authorizes one new successor and starts it; `abandon` |
 | Fence installed, interlock or records left behind (crash in the release) | channels | `release` |
+| No mode applies, successor alive or its exit unknown (including the command's 180 s timeout) | both runtimes, or channels | Wait: the successor finishes or blocks by itself, and the preview then lists a mode. If it hangs, `ravi daemon logs`; stop it through PM2 (`pm2 stop ravi`) and preview again: with its exit proven, `retry` or `abandon` apply (or `release`, if it installed the fence). |
+| No mode applies, records of different maintenances | both runtimes | Not produced by these commands: stop and inspect `runtime-maintenance/` by hand with the maintainers; never delete or edit a record to make a mode appear. |
+| The preview fails because `adoption.json` or `active.json` is corrupt (`*_CORRUPT`) | both runtimes | Same: keep the files as evidence, stop, and escalate; no command recovers from a record it cannot read. |
 
 After `release`: the fence exists; start whatever is stopped with `ravi daemon start` and `ravi channels start` (the adopt command starts channels only after the interlock is really gone).
 

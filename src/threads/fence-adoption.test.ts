@@ -271,6 +271,36 @@ describe("thread fence adoption of a legacy database", () => {
     expect(() => assertRuntimeMaintenanceInactive(f.stateDir)).not.toThrow();
   });
 
+  it("an interlock left without any record (coordinator killed before its first record) exits by abandon only", () => {
+    const f = fixture();
+    mkdirSync(join(f.stateDir, "runtime-maintenance", "interlock"), { recursive: true });
+    expect(() => assertRuntimeMaintenanceInactive(f.stateDir)).toThrow("RUNTIME_MAINTENANCE_ACTIVE");
+    expect(() => planThreadFenceAdoption(f.host, f.bundlePath)).toThrow("RUNTIME_MAINTENANCE_ACTIVE");
+    const state = describeThreadFenceMaintenance({ stateDir: f.stateDir, databasePath: f.databasePath });
+    expect(state).toMatchObject({
+      interlock: true,
+      maintenance: null,
+      adoption: null,
+      fenced: false,
+      modes: ["abandon"],
+      diagnosis: "an interlock without any record",
+    });
+    expect(() =>
+      recoverThreadFenceAdoption({ stateDir: f.stateDir, databasePath: f.databasePath, mode: "retry" }),
+    ).toThrow("retry does not apply");
+    expect(recoverThreadFenceAdoption({ stateDir: f.stateDir, databasePath: f.databasePath, mode: "abandon" })).toBe(
+      "abandoned",
+    );
+    expect(() => assertRuntimeMaintenanceInactive(f.stateDir)).not.toThrow();
+  });
+
+  it("a record moved to history between two reads reads as absent, not as an error", () => {
+    const f = fixture();
+    expect(readThreadFenceAdoption(f.stateDir)).toBeNull();
+    expect(readRuntimeMaintenance(f.stateDir)).toBeNull();
+    expect(successorOutcome(f.stateDir, f.databasePath)).toBe("failed");
+  });
+
   it("an interlock orphaned after the fence was installed is released, and only then the outcome is adopted", async () => {
     const f = fixture();
     await prepareThreadFenceAdoption(f.host, f.bundlePath);
