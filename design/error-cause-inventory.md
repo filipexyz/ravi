@@ -1061,13 +1061,13 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cron | src/cron/schedule.ts | 63 | triaged-follow-up | catch-without-binding | src/cron/schedule.ts:613ff03ae8445d303ad9e180 |
 | cron | src/cron/shell-executor.ts | 92 | triaged-follow-up | catch-without-binding | src/cron/shell-executor.ts:ff2a0e370bcdc34b2a46f47b |
 | daemon-stdin.ts | src/daemon-stdin.ts | 85 | fixed | binding retained / no recognized error surface | src/daemon-stdin.ts:104aad77ace9bdf6c29d6ffe |
-| daemon.ts | src/daemon.ts | 174 | triaged-follow-up | catch-without-binding | src/daemon.ts:6a6d5215ab5b491af6675ecb |
-| daemon.ts | src/daemon.ts | 202 | fixed | binding retained / no recognized error surface | src/daemon.ts:576a91f345e15339b36e31f9 |
-| daemon.ts | src/daemon.ts | 393 | fixed | binding retained / no recognized error surface | src/daemon.ts:6a6063a6dd8032b5bb3de6a4 |
-| daemon.ts | src/daemon.ts | 474 | fixed | binding retained / no recognized error surface | src/daemon.ts:b98bdbdba8a5abbffc229407 |
-| daemon.ts | src/daemon.ts | 554 | fixed | binding retained / no recognized error surface | src/daemon.ts:f446de9260ad91ce35f5cecf |
-| daemon.ts | src/daemon.ts | 613 | fixed | binding retained / no recognized error surface | src/daemon.ts:79e726c5a32cef1f0391aeeb |
-| daemon.ts | src/daemon.ts | 630 | fixed | binding retained / no recognized error surface | src/daemon.ts:e2bfe439088180f31ae2be58 |
+| daemon.ts | src/daemon.ts | 175 | triaged-follow-up | catch-without-binding | src/daemon.ts:6a6d5215ab5b491af6675ecb |
+| daemon.ts | src/daemon.ts | 203 | fixed | binding retained / no recognized error surface | src/daemon.ts:576a91f345e15339b36e31f9 |
+| daemon.ts | src/daemon.ts | 394 | fixed | binding retained / no recognized error surface | src/daemon.ts:6a6063a6dd8032b5bb3de6a4 |
+| daemon.ts | src/daemon.ts | 475 | fixed | binding retained / no recognized error surface | src/daemon.ts:b98bdbdba8a5abbffc229407 |
+| daemon.ts | src/daemon.ts | 555 | fixed | binding retained / no recognized error surface | src/daemon.ts:f446de9260ad91ce35f5cecf |
+| daemon.ts | src/daemon.ts | 614 | fixed | binding retained / no recognized error surface | src/daemon.ts:79e726c5a32cef1f0391aeeb |
+| daemon.ts | src/daemon.ts | 631 | fixed | binding retained / no recognized error surface | src/daemon.ts:e2bfe439088180f31ae2be58 |
 | db.ts | src/db.ts | 39 | fixed | binding retained / no recognized error surface | src/db.ts:7f23ae314cd2b9a1d018a35f |
 | db.ts | src/db.ts | 42 | no-cause | Cleanup must not replace the setup error rethrown below; the handle was never cached. | src/db.ts:c6978c968e80ffb42dda9b1d |
 | db.ts | src/db.ts | 75 | fixed | binding retained / no recognized error surface | src/db.ts:13575d5157ef86794a5ca555 |

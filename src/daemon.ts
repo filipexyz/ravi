@@ -101,6 +101,9 @@ import { acquireDaemonSchemaOwnership, markDaemonSchemaReady } from "./db/daemon
 
 const log = logger.child("daemon");
 
+// Pin a relative RAVI_STATE_DIR to this process cwd before anything reads it or starts a child.
+anchorStateDirEnv(process.env, process.cwd());
+
 // Load environment from ~/.ravi/.env
 function loadEnvFile() {
   const envFile = join(getRaviStateDir(), ".env");
@@ -129,8 +132,6 @@ function loadEnvFile() {
   log.info("Loaded environment from ~/.ravi/.env");
 }
 
-// Pin a relative RAVI_STATE_DIR to this process cwd before anything reads it or starts a child.
-anchorStateDirEnv(process.env, process.cwd());
 loadEnvFile();
 
 const RESTART_REASON_FILE = getRestartReasonPath();
