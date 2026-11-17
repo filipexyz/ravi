@@ -1,4 +1,4 @@
-import { assertRuntimeMaintenanceInactive } from "../runtime-maintenance.js";
+import { admitDaemonEntry, assertRuntimeMaintenanceInactive } from "../runtime-maintenance.js";
 /**
  * Load environment from ~/.ravi/.env
  * This file must be imported FIRST before any other modules.
@@ -46,5 +46,14 @@ if (existsSync(envFile)) {
 
 // Before command authorization/config reads can lazily initialize a database.
 // A replacement stays PM2-supervised here without opening SQLite or NATS.
-if (isDaemon || isChannelRunner) assertRuntimeMaintenanceInactive();
+if (isChannelRunner) assertRuntimeMaintenanceInactive();
+// Under a thread fence adoption only the authorized successor bundle is admitted.
+const daemonAdmission = isDaemon ? admitDaemonEntry() : "normal";
 if (isDaemon) acquireDaemonSchemaOwnership();
+// The successor installs the fence before the command graph can open a store,
+// then releases the interlock; startDaemon's own guard sees ordinary state.
+if (daemonAdmission === "successor") {
+  const { adoptThreadFenceAtEntry } =
+    require("../threads/fence-adoption-live.js") as typeof import("../threads/fence-adoption-live.js");
+  adoptThreadFenceAtEntry();
+}

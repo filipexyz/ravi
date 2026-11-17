@@ -55,7 +55,7 @@ function interlockPathExists(path: string): boolean {
   }
 }
 
-function persist(record: RuntimeMaintenance, stateDir: string): void {
+export function persistRuntimeMaintenance(record: RuntimeMaintenance, stateDir: string): void {
   const directory = join(stateDir, "runtime-maintenance");
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const temporary = join(directory, `${record.id}.${process.pid}.tmp`);
@@ -76,9 +76,15 @@ function persist(record: RuntimeMaintenance, stateDir: string): void {
 }
 
 export function readRuntimeMaintenance(stateDir = getRaviStateDir()): RuntimeMaintenance | null {
-  const path = recordPath(stateDir);
-  if (!interlockPathExists(path)) return null;
-  const value = JSON.parse(readFileSync(path, "utf8")) as RuntimeMaintenance;
+  // One read: a successor may move the record to history between a check and a read.
+  let raw: string;
+  try {
+    raw = readFileSync(recordPath(stateDir), "utf8");
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw new Error("RUNTIME_MAINTENANCE_UNVERIFIABLE", { cause });
+  }
+  const value = JSON.parse(raw) as RuntimeMaintenance;
   if (
     value.protocol !== "ravi.runtime-maintenance/v1" ||
     !value.id ||
@@ -98,6 +104,51 @@ export function assertRuntimeMaintenanceInactive(stateDir = getRaviStateDir()): 
   if (interlockPathExists(join(directory, "interlock")) || readRuntimeMaintenance(stateDir)) {
     throw new Error("RUNTIME_MAINTENANCE_ACTIVE: both runtime starts are blocked; explicit recovery is required");
   }
+}
+
+/**
+ * Daemon entry. Without maintenance this is an ordinary start. Under a thread
+ * fence adoption only the authorized successor bundle, supervised by PM2 as
+ * `ravi`, is admitted, once; every other start stays blocked.
+ */
+export function admitDaemonEntry(
+  stateDir = getRaviStateDir(),
+  host?: {
+    managed: () => { pid: number; startedAt?: number } | null;
+    ownBundlePath: () => string;
+    bundleDigest: (path: string) => string | null;
+    pid: number;
+  },
+): "normal" | "successor" {
+  const directory = join(stateDir, "runtime-maintenance");
+  if (!interlockPathExists(join(directory, "interlock")) && !readRuntimeMaintenance(stateDir)) return "normal";
+  const { admitDaemonStart } = require("./threads/fence-adoption.js") as typeof import("./threads/fence-adoption.js");
+  const live =
+    host ??
+    (() => {
+      const { liveBundleDigest } =
+        require("./threads/fence-adoption-live.js") as typeof import("./threads/fence-adoption-live.js");
+      const { runtimeBootBundlePath } =
+        require("./runtime-process-identity.js") as typeof import("./runtime-process-identity.js");
+      const { getPm2Process } = require("./pm2.js") as typeof import("./pm2.js");
+      return {
+        managed: () => getPm2Process("ravi"),
+        ownBundlePath: () => runtimeBootBundlePath(),
+        bundleDigest: liveBundleDigest,
+        pid: process.pid,
+      };
+    })();
+  const managed = live.managed();
+  if (managed?.pid !== live.pid || !managed.startedAt)
+    throw new Error(
+      "RUNTIME_MAINTENANCE_ACTIVE: both runtime starts are blocked; only a PM2-supervised successor may adopt",
+    );
+  return admitDaemonStart({
+    stateDir,
+    ownBundlePath: live.ownBundlePath(),
+    bundleDigest: live.bundleDigest,
+    self: { pid: live.pid, startedAt: managed.startedAt },
+  });
 }
 
 /** EPERM/unknown and reused PIDs fail closed; only ESRCH proves absence. */
@@ -168,7 +219,7 @@ export async function prepareRuntimeMaintenance(input: {
     completion: [],
     exitedPids: [],
   };
-  persist(record, stateDir);
+  persistRuntimeMaintenance(record, stateDir);
   const assertUnchanged = () => {
     const current = input.list();
     if (current.some((entry) => !record.predecessors.some((before) => sameProcess(before, entry)))) {
@@ -188,11 +239,11 @@ export async function prepareRuntimeMaintenance(input: {
         throw new Error("RUNTIME_MAINTENANCE_COMPLETION_UNPROVEN");
       }
       record.completion.push({ ...proof, process: { ...proof.process } });
-      persist(record, stateDir);
+      persistRuntimeMaintenance(record, stateDir);
     }
     assertUnchanged();
     record.phase = "stopping";
-    persist(record, stateDir);
+    persistRuntimeMaintenance(record, stateDir);
     const exitState = input.exitState ?? processExitState;
     for (const name of ["ravi-channels", "ravi"] as const) {
       const predecessor = record.predecessors.find((entry) => entry.name === name)!;
@@ -209,19 +260,19 @@ export async function prepareRuntimeMaintenance(input: {
       }
       if (!exited) throw new Error("RUNTIME_MAINTENANCE_PROCESS_EXIT_UNPROVEN");
       record.exitedPids.push(predecessor.pid);
-      persist(record, stateDir);
+      persistRuntimeMaintenance(record, stateDir);
     }
     assertUnchanged();
     if (record.predecessors.some((entry) => exitState(entry.pid) !== "exited")) {
       throw new Error("RUNTIME_MAINTENANCE_PROCESS_EXIT_UNPROVEN");
     }
     record.phase = "stopped";
-    persist(record, stateDir);
+    persistRuntimeMaintenance(record, stateDir);
     return record;
   } catch (cause) {
     record.phase = "blocked";
     record.failure = cause instanceof Error ? cause.message : String(cause);
-    persist(record, stateDir);
+    persistRuntimeMaintenance(record, stateDir);
     throw cause;
   }
 }

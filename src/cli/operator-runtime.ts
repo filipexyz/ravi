@@ -19,6 +19,9 @@ const RECOVERY_COMMANDS = new Set([
   "channels restart",
   "channels status",
   "channels logs",
+  // Both runtimes are stopped by design while these run.
+  "maintenance thread-fence-adopt",
+  "maintenance thread-fence-recover",
 ]);
 
 /**
