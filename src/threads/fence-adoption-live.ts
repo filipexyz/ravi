@@ -151,12 +151,13 @@ export async function liveResidue(
     use: (reader: JetStreamResidueReader) => Promise<DurableResidue>,
   ) => Promise<DurableResidue> = withLiveJetStreamReader,
   restartReasonPath = RESTART_REASON_FILE,
+  daemonStartedAt?: number,
 ): Promise<DurableResidue> {
   const sqlite = mergeResidue(
     collectSqliteResidue(
       legacyResidueRules(databasePath, legacyBridgeDatabasePath(databasePath), legacyStateDatabasePaths(databasePath)),
     ),
-    restartSnapshotResidue({ databasePath, restartReasonPath }),
+    restartSnapshotResidue({ databasePath, restartReasonPath, stoppedProcessStartedAt: daemonStartedAt }),
   );
   let broker: DurableResidue;
   try {
@@ -203,7 +204,7 @@ export function adoptThreadFenceAtEntry(
     // The successor re-derives the SQLite residue itself instead of trusting the coordinator's record.
     // The restart snapshots are re-read with the successor's own clock: past the resume window the
     // adoption is refused instead of claiming sessions nobody will resume (CodeRabbit r4595928941).
-    residue: () =>
+    residue: (adoption) =>
       mergeResidue(
         collectSqliteResidue(
           legacyResidueRules(
@@ -212,7 +213,11 @@ export function adoptThreadFenceAtEntry(
             legacyStateDatabasePaths(databasePath),
           ),
         ),
-        restartSnapshotResidue({ databasePath, restartReasonPath: host.restartReasonPath ?? RESTART_REASON_FILE }),
+        restartSnapshotResidue({
+          databasePath,
+          restartReasonPath: host.restartReasonPath ?? RESTART_REASON_FILE,
+          stoppedProcessStartedAt: adoption.predecessors.find((entry) => entry.name === "ravi")?.startedAt,
+        }),
       ),
     open: () => {
       const database = openStateDatabase(databasePath);

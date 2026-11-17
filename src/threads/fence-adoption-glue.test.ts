@@ -180,6 +180,35 @@ describe("fence adoption glue on the real v3.261113.2 schema", () => {
     }
   });
 
+  it("RUNBOOK: the resend of restart snapshots saves first, records deliveries, retries, confirms the successor, and only then sends", () => {
+    const runbook = readFileSync(
+      join(import.meta.dir, "..", "..", ".ravi", "specs", "quality", "state-boundary", "RUNBOOK.md"),
+      "utf8",
+    );
+    const start = runbook.indexOf("When the snapshots block, the exit is these five steps, in this order:");
+    const end = runbook.indexOf("**PM2's kill timeout.**", start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const recipe = runbook.slice(start, end);
+    const at = (marker: string) => {
+      const index = recipe.indexOf(marker);
+      expect(index).toBeGreaterThan(-1);
+      return index;
+    };
+    const save = at("(a) Save what will be sent again, read only, before any write.");
+    const listing = at("LEFT JOIN json_each(COALESCE(s.pending_messages_json, '[]')) m");
+    const deliveries = at("INSERT INTO daemon_restart_resume_deliveries");
+    const retry = at("ravi maintenance thread-fence-recover --mode retry --execute");
+    const confirm = at("(d) Confirm the successor is up and taking prompts before anything is sent");
+    const send = at("ravi sessions send <session_name>");
+    // A prompt sent before the successor consumes is lost and its delivery row would lie (eighth review).
+    expect(save < listing && listing < deliveries && deliveries < retry && retry < confirm && confirm < send).toBe(
+      true,
+    );
+    expect(recipe.slice(0, send)).not.toContain("sessions send");
+    expect(recipe).not.toContain("s, json_each(");
+  });
+
   it("entry admission, then the production fence (prepareRegisteredThreadFence) on the legacy schema", async () => {
     const f = legacyState();
     const legacy = new Database(f.databasePath);

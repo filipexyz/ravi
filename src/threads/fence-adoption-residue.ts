@@ -311,7 +311,8 @@ export const LEGACY_RESIDUE_EXCLUSIONS: readonly { table: string; reason: string
   { table: "state_schema_versions", reason: "bridge.db: schema bookkeeping" },
   {
     table: "approvals",
-    reason: "bridge.db: decision records; an open approval belongs to an awaiting_approval turn, which blocks",
+    reason:
+      "bridge.db: decision records; an open approval belongs to an awaiting_approval turn, which the successor's bridge closes as interrupted_unknown, invalidating the approval (bridge/service.ts l.31-38, store.ts l.120-135)",
   },
   // Configuration, entity lifecycle and logs with a status column: no unit of accepted runtime
   // work lives in them; the unit that does (outbox, run, delivery) has its own rule.
@@ -926,12 +927,17 @@ export function readRestartEpoch(path: string): string | null {
 
 /**
  * Sessions the legacy stop left for the successor's restart resume (tag daemon.ts l.249-272 writes
- * the epoch to restart-reason.txt first, then bot.ts l.179-185 snapshots every non-idle session).
+ * the epoch to restart-reason.txt first and synchronously; bot.ts l.179-185 then snapshots every
+ * non-idle session, inside bot.stop, after an await).
  * The successor resumes only the epoch named in that file, only rows it finds eligible, and only
  * within 60 minutes of the stop (router-db.ts l.7123-7152, daemon.ts l.660-700). This applies the
  * same eligibility: within the window, minus the margin, the sessions are in flight with that
  * owner; past it they are unknown, because nobody would resume them. Without a readable epoch the
- * successor starts a new one and resumes nothing, so recent undelivered snapshots are unknown too.
+ * successor starts a new one and resumes nothing: every undelivered snapshot written by this stop is
+ * unknown, whatever its age. This stop's snapshots are those at or after the start of the daemon
+ * process the adoption stopped (`stoppedProcessStartedAt`, from the adoption record): a process
+ * writes snapshots only when it stops. Without that time (no adoption record yet) the last 60 minutes
+ * stand in for it.
  */
 export function restartSnapshotResidue(input: {
   databasePath: string;
@@ -939,6 +945,8 @@ export function restartSnapshotResidue(input: {
   now?: number;
   windowMs?: number;
   marginMs?: number;
+  /** startedAt of the daemon process this adoption stopped (adoption.predecessors, name "ravi"). */
+  stoppedProcessStartedAt?: number;
 }): DurableResidue {
   const label = "daemon_restart_session_snapshots";
   const now = input.now ?? Date.now();
@@ -983,7 +991,7 @@ export function restartSnapshotResidue(input: {
               `SELECT COUNT(*) AS sessions, COALESCE(SUM(s.pending_message_count), 0) AS messages,
                  MIN(s.stopped_at) AS stoppedAt ${eligible} AND s.stopped_at >= ?`,
             )
-            .get(now, now - windowMs)
+            .get(now, input.stoppedProcessStartedAt ?? now - windowMs)
     ) as { sessions: number; messages: number; stoppedAt: number | null };
     const detail = { epoch, sessions: row.sessions, pendingMessages: row.messages, stoppedAt: row.stoppedAt };
     if (row.sessions === 0) return { sources: [{ source: label, pending: 0, inFlight: 0, detail }], unknown: [] };
@@ -991,7 +999,7 @@ export function restartSnapshotResidue(input: {
       return {
         sources: [{ source: label, pending: 0, inFlight: 0, detail }],
         unknown: [
-          `${label}: ${row.sessions} session(s) stopped in the last 60 min and not resumed, but restart-reason.txt names no epoch: the successor would start a new epoch and resume none of them`,
+          `${label}: ${row.sessions} session(s) ${input.stoppedProcessStartedAt === undefined ? "stopped in the last 60 min" : "snapshotted by this adoption's stop"} and not resumed, but restart-reason.txt names no epoch: the successor would start a new epoch and resume none of them`,
         ],
       };
     const stoppedAt = row.stoppedAt ?? 0;

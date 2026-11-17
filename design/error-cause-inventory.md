@@ -2148,18 +2148,18 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | tasks | src/tasks/task-doc.ts | 48 | triaged-follow-up | catch-without-binding | src/tasks/task-doc.ts:83de56d8333a9356b7c1b3b2 |
 | threads | src/threads/bootstrap-authorization.ts | 37 | no-cause | Async authorization is rejected synchronously; consume only its later rejection. | src/threads/bootstrap-authorization.ts:da98c87013b5e1f81516236b |
 | threads | src/threads/fence-adoption-live.ts | 105 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption-live.ts:177b3e9a3efc65ca20a49767 |
-| threads | src/threads/fence-adoption-live.ts | 164 | no-cause | An unreachable broker is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-live.ts:5c21be34e03e3285ebdafccb |
-| threads | src/threads/fence-adoption-residue.ts | 890 | no-cause | An unreadable table is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-residue.ts:cac882736cd99cb83e8b2a23 |
-| threads | src/threads/fence-adoption-residue.ts | 921 | no-cause | Text that is not JSON gets a new epoch from the daemon (daemon.ts readRestartReasonInfo), which resumes nothing. | src/threads/fence-adoption-residue.ts:20b43f386a6e653b2ea9220e |
-| threads | src/threads/fence-adoption-residue.ts | 1019 | no-cause | An unreadable table is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-residue.ts:eaa27b65ff9ca78bebc79e75 |
-| threads | src/threads/fence-adoption-residue.ts | 1085 | no-cause | An unreadable broker source is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-residue.ts:89497d605f16912495e5e8b1 |
-| threads | src/threads/fence-adoption.ts | 143 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:6b81ec65f8a6464f04d53849 |
-| threads | src/threads/fence-adoption.ts | 208 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:46490b12ec7da2fe894e8d92 |
-| threads | src/threads/fence-adoption.ts | 250 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:975cec06d3d595eeb4638f36 |
-| threads | src/threads/fence-adoption.ts | 495 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:9002795c5ddd572258b60b5d |
-| threads | src/threads/fence-adoption.ts | 525 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:2f5d1660ccd56647a225a4bf |
-| threads | src/threads/fence-adoption.ts | 568 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:1717d0ee26afd3c2b9cfd199 |
-| threads | src/threads/fence-adoption.ts | 675 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:5833d0aae00cbee7a837f56f |
+| threads | src/threads/fence-adoption-live.ts | 165 | no-cause | An unreachable broker is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-live.ts:5c21be34e03e3285ebdafccb |
+| threads | src/threads/fence-adoption-residue.ts | 891 | no-cause | An unreadable table is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-residue.ts:cac882736cd99cb83e8b2a23 |
+| threads | src/threads/fence-adoption-residue.ts | 922 | no-cause | Text that is not JSON gets a new epoch from the daemon (daemon.ts readRestartReasonInfo), which resumes nothing. | src/threads/fence-adoption-residue.ts:20b43f386a6e653b2ea9220e |
+| threads | src/threads/fence-adoption-residue.ts | 1027 | no-cause | An unreadable table is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-residue.ts:eaa27b65ff9ca78bebc79e75 |
+| threads | src/threads/fence-adoption-residue.ts | 1093 | no-cause | An unreadable broker source is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-residue.ts:89497d605f16912495e5e8b1 |
+| threads | src/threads/fence-adoption.ts | 144 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:6b81ec65f8a6464f04d53849 |
+| threads | src/threads/fence-adoption.ts | 209 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:46490b12ec7da2fe894e8d92 |
+| threads | src/threads/fence-adoption.ts | 251 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:975cec06d3d595eeb4638f36 |
+| threads | src/threads/fence-adoption.ts | 498 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:9002795c5ddd572258b60b5d |
+| threads | src/threads/fence-adoption.ts | 528 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:2f5d1660ccd56647a225a4bf |
+| threads | src/threads/fence-adoption.ts | 571 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:1717d0ee26afd3c2b9cfd199 |
+| threads | src/threads/fence-adoption.ts | 678 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:5833d0aae00cbee7a837f56f |
 | threads | src/threads/schema-fence.ts | 67 | no-cause | Async proof is refused synchronously below; this observer only prevents a later unhandled rejection. | src/threads/schema-fence.ts:3cd6d17c849e233f229d1834 |
 | threads | src/threads/schema-fence.ts | 115 | fixed | binding retained / no recognized error surface | src/threads/schema-fence.ts:7ba88450199085a5324898fb |
 | threads | src/threads/schema-fence.ts | 280 | fixed | binding retained / no recognized error surface | src/threads/schema-fence.ts:1dbf6764b424627533b44e61 |

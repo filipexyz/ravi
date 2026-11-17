@@ -359,14 +359,22 @@ describe("restart snapshots (CodeRabbit r4595928941)", () => {
     expect(late.sources[0]).toMatchObject({ inFlight: 0 });
   });
 
-  it("without an epoch the successor resumes nothing: recent snapshots block, old ones are history", () => {
+  it("without an epoch the successor resumes nothing: this stop's snapshots block whatever their age, older ones are history", () => {
     const state = legacyRestartState(null);
     expect(readRestartEpoch(state.restartReasonPath)).toBeNull();
-    const recent = restartSnapshotResidue({ ...state, now: T + 60_000 });
-    expect(recent.unknown).toHaveLength(1);
-    expect(recent.unknown[0]).toContain("restart-reason.txt names no epoch");
-    const later = restartSnapshotResidue({ ...state, now: T + RESTART_RESUME_WINDOW_MS + 60_000 });
-    expect(later.unknown).toEqual([]);
+    // The stopped daemon started an hour before the stop: its snapshots are those at or after that.
+    const stoppedProcessStartedAt = T - 3_600_000;
+    for (const now of [T + 60_000, T + 5 * RESTART_RESUME_WINDOW_MS]) {
+      const residue = restartSnapshotResidue({ ...state, now, stoppedProcessStartedAt });
+      expect(residue.unknown).toHaveLength(1);
+      expect(residue.unknown[0]).toContain("snapshotted by this adoption's stop");
+      expect(residue.unknown[0]).toContain("restart-reason.txt names no epoch");
+    }
+    // The epoch of a day before belongs to an earlier process: history, never this stop's.
+    expect(restartSnapshotResidue({ ...state, now: T + 60_000, stoppedProcessStartedAt: T + 1 }).unknown).toEqual([]);
+    // Without the adoption record (no stopped process known) the last 60 minutes stand in for it.
+    expect(restartSnapshotResidue({ ...state, now: T + 60_000 }).unknown).toHaveLength(1);
+    expect(restartSnapshotResidue({ ...state, now: T + RESTART_RESUME_WINDOW_MS + 60_000 }).unknown).toEqual([]);
     writeFileSync(state.restartReasonPath, "plain text reason");
     expect(readRestartEpoch(state.restartReasonPath)).toBeNull();
   });

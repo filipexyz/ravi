@@ -62,7 +62,7 @@ function liveHost(stateDir: string): AdoptionHost {
     bootIdentity: (registration) => liveBootIdentity(registration, stateDir),
     bundleDigest: liveBundleDigest,
     stop: liveStop,
-    residue: () => liveResidue(databasePath),
+    residue: (context) => liveResidue(databasePath, undefined, undefined, context?.daemonStartedAt),
   };
 }
 

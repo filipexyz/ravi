@@ -112,7 +112,8 @@ export interface AdoptionHost {
   bundleDigest(path: string): string | null;
   stop(name: Name): Promise<void>;
   /** Read only after BOTH predecessors physically exited. */
-  residue(): Promise<DurableResidue>;
+  /** Read after both exits; `daemonStartedAt` is the start of the stopped daemon process (its snapshots are newer). */
+  residue(context?: { daemonStartedAt?: number }): Promise<DurableResidue>;
   exitState?: (pid: number) => "exited" | "present" | "unknown";
   wait?: () => Promise<void>;
   exitChecks?: number;
@@ -442,7 +443,9 @@ async function drivePreparation(
       blocked("a process is running the target bundle during maintenance");
     if (host.bundleDigest(target) !== adoption.targetBundleSha256)
       blocked("the target bundle changed during maintenance");
-    const residue = await host.residue();
+    const residue = await host.residue({
+      daemonStartedAt: adoption.predecessors.find((entry) => entry.name === "ravi")?.startedAt,
+    });
     if (!residue || !Array.isArray(residue.sources) || !Array.isArray(residue.unknown))
       blocked("durable residue could not be read");
     if (residue.unknown.length > 0)
@@ -600,7 +603,7 @@ type SuccessorAdoptionInput = {
   bundleDigest: (path: string) => string | null;
   self: { pid: number };
   open: () => void;
-  residue?: () => DurableResidue;
+  residue?: (adoption: ThreadFenceAdoption) => DurableResidue;
   /** How long to wait for a running recovery; then the successor stops without touching the database. */
   leaseTimeoutMs?: number;
 };
@@ -649,7 +652,7 @@ function adoptUnderLease(input: SuccessorAdoptionInput): ThreadFenceAdoption {
           }
           if (input.bundleDigest(adoption.targetBundlePath) !== adoption.targetBundleSha256)
             blocked("the authorized bundle changed");
-          const residue = input.residue?.();
+          const residue = input.residue?.(adoption);
           if (residue && residue.unknown.length > 0)
             blocked(`accepted work with unknown outcome at adoption: ${residue.unknown.slice(0, 5).join(", ")}`);
           return {
