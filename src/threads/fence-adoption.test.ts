@@ -552,3 +552,72 @@ describe("thread fence adoption of a legacy database", () => {
     expect(() => planThreadFenceAdoption(f.host, f.bundlePath)).toThrow("already has the thread fence");
   });
 });
+
+describe("daemon entry settles adoption leftovers by itself (heal)", () => {
+  const admit = (
+    f: ReturnType<typeof fixture>,
+    self = { pid: process.pid, startedAt: 2_000 },
+    ownBundlePath?: string,
+  ) =>
+    admitDaemonStart({
+      stateDir: f.stateDir,
+      ownBundlePath: ownBundlePath ?? f.bundlePath,
+      bundleDigest: digestOf,
+      self,
+      heal: true,
+    });
+
+  it("a preparation that stopped before authorizing a successor is abandoned: the start is ordinary", async () => {
+    const f = fixture({ residue: { sources: [], unknown: ["outbox:7f3a"] } });
+    await expect(prepareThreadFenceAdoption(f.host, f.bundlePath)).rejects.toThrow("unknown outcome");
+    expect(admit(f)).toBe("normal");
+    expect(() => assertRuntimeMaintenanceInactive(f.stateDir)).not.toThrow();
+    expect(databaseHasThreadFence(f.databasePath)).toBe(false);
+  });
+
+  it("an interlock orphaned after the fence was installed is released", async () => {
+    const f = fixture();
+    await prepareThreadFenceAdoption(f.host, f.bundlePath);
+    const db = openStateDatabase(f.databasePath);
+    handles.push(db);
+    // The fence exists, the successor is gone: only the release is left.
+    db.exec("CREATE TABLE thread_schema_fence (id INTEGER PRIMARY KEY)");
+    expect(admit(f, { pid: exitedPid(), startedAt: 3_000 })).toBe("normal");
+    expect(() => assertRuntimeMaintenanceInactive(f.stateDir)).not.toThrow();
+  });
+
+  it("an authorized successor of this very bundle is still claimed, not abandoned", async () => {
+    const f = fixture();
+    await prepareThreadFenceAdoption(f.host, f.bundlePath);
+    expect(admit(f)).toBe("successor");
+    expect(readThreadFenceAdoption(f.stateDir)).toMatchObject({ phase: "adopting" });
+  });
+
+  it("an authorization for another bundle is abandoned, so the boot adoption re-derives it", async () => {
+    const f = fixture();
+    await prepareThreadFenceAdoption(f.host, f.bundlePath);
+    const other = join(f.stateDir, "bundle", "other.js");
+    writeFileSync(other, "// a later release\n");
+    expect(admit(f, undefined, other)).toBe("normal");
+    expect(() => assertRuntimeMaintenanceInactive(f.stateDir)).not.toThrow();
+  });
+
+  it("a successor that may still be adopting is never healed away", async () => {
+    const f = fixture();
+    await prepareThreadFenceAdoption(f.host, f.bundlePath);
+    // Claimed by a live process (this test runner) with another start time.
+    expect(admit(f, { pid: process.pid, startedAt: 2_000 })).toBe("successor");
+    expect(() => admit(f, { pid: exitedPid(), startedAt: 9_000 })).toThrow("RUNTIME_MAINTENANCE_ACTIVE");
+    expect(readThreadFenceAdoption(f.stateDir)).toMatchObject({ phase: "adopting" });
+  });
+
+  it("a successor that died before installing the fence is abandoned", async () => {
+    const f = fixture();
+    await prepareThreadFenceAdoption(f.host, f.bundlePath);
+    const dead = { pid: exitedPid(), startedAt: 2_500 };
+    expect(admit(f, dead)).toBe("successor");
+    expect(admit(f, { pid: process.pid, startedAt: 4_000 })).toBe("normal");
+    expect(() => assertRuntimeMaintenanceInactive(f.stateDir)).not.toThrow();
+    expect(databaseHasThreadFence(f.databasePath)).toBe(false);
+  });
+});

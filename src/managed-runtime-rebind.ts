@@ -1,4 +1,4 @@
-import { assertRuntimeMaintenanceInactive, assertRuntimeReplacementPrepared } from "./runtime-maintenance.js";
+import { assertRuntimeMaintenanceInactive, runtimeReplacementReadiness } from "./runtime-maintenance.js";
 import { spawn } from "node:child_process";
 import { which } from "bun";
 import { existsSync } from "node:fs";
@@ -62,7 +62,8 @@ type ManagedRuntimeRebindDependencies = {
   now?: () => number;
   wait?: (ms: number) => Promise<void>;
   readyTimeoutMs?: number;
-  assertPrepared?: () => Promise<void>;
+  /** `adopt-on-start`: pre-fence database; every legacy writer stops before the daemon starts. */
+  assertPrepared?: () => Promise<"ready" | "adopt-on-start"> | "ready" | "adopt-on-start";
 };
 
 function runCommand(command: string, args: string[], options: RunOptions = {}): Promise<RunResult> {
@@ -205,7 +206,7 @@ export async function rebindManagedRuntimeProcesses(
 ): Promise<boolean> {
   assertRuntimeMaintenanceInactive();
   if (previousProcesses.length === 0) return true;
-  await (dependencies.assertPrepared ?? assertRuntimeReplacementPrepared)();
+  const readiness = await (dependencies.assertPrepared ?? runtimeReplacementReadiness)();
   const run = dependencies.run ?? runCommand;
   const getProcesses = dependencies.getProcesses ?? (() => getPm2Processes({ strict: true }));
   const bunPath = dependencies.bunPath ?? process.execPath;
@@ -255,7 +256,10 @@ export async function rebindManagedRuntimeProcesses(
     startedAt: process.startedAt ?? undefined,
   });
   const predecessor = initial.find((process) => process.name === PM2_PROCESS_NAME);
-  const coordinated = predecessor?.status === "online" && phase(asManaged(predecessor)) === "ready";
+  // A pre-fence database is adopted by the new daemon at its entry, which refuses while a
+  // legacy writer runs: no overlap, the predecessors are removed before it starts.
+  const coordinated =
+    readiness === "ready" && predecessor?.status === "online" && phase(asManaged(predecessor)) === "ready";
   let readyDaemon: ManagedDaemonProcess | undefined;
   const daemonStillReady = (processes: Pm2Process[]): boolean => {
     const expected = readyDaemon;

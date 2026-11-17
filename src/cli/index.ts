@@ -442,6 +442,13 @@ void bootstrapCli().catch(async (error: unknown) => {
 });
 
 async function bootstrapCli(): Promise<void> {
+  // Before the command registry resolves a credential (the first ravi.db read):
+  // a database written by a pre-fence release is adopted here, with no operator command.
+  if (process.argv[2] === "daemon" && process.argv[3] === "run") {
+    const { adoptThreadFenceAtDaemonEntry } =
+      require("../threads/fence-adoption-live.js") as typeof import("../threads/fence-adoption-live.js");
+    await adoptThreadFenceAtDaemonEntry();
+  }
   if (await maybeRunManagedRuntimeRebindFromEnv()) return;
 
   // A runtime context never runs an app alias in-process: it goes through

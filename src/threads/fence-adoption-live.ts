@@ -3,13 +3,20 @@ import { connect } from "nats";
 import { openStateDatabase } from "../db/state-boundary.js";
 import { runtimeStateDatabasePaths } from "../db/state-paths.js";
 import { managedRuntimeBundlePath } from "../managed-runtime.js";
-import { getPm2Processes, runPm2, type Pm2Process } from "../pm2.js";
+import { getPm2Process, getPm2Processes, runPm2, type Pm2Process } from "../pm2.js";
 import type { MaintenanceProcess } from "../runtime-maintenance.js";
-import { readRuntimeBootReceipt, runtimeBundleFingerprint } from "../runtime-process-identity.js";
+import {
+  readLastRuntimeBootReceipt,
+  readRuntimeBootReceipt,
+  runtimeBootBundlePath,
+  runtimeBundleFingerprint,
+} from "../runtime-process-identity.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import {
   type AdoptionHost,
+  adoptThreadFenceAtBoot,
   adoptThreadFenceAsSuccessor,
+  type BootAdoptionResult,
   type DurableResidue,
   type ManagedRegistration,
   planThreadFenceAdoption,
@@ -44,6 +51,7 @@ export function liveRegistrations(): ManagedRegistration[] {
       startedAt: entry.startedAt ?? 0,
       online,
       scriptPath: managedRuntimeBundlePath(entry) ?? entry.execPath ?? "",
+      status: entry.status,
     };
   });
 }
@@ -181,6 +189,39 @@ export async function liveResidue(
   return mergeResidue(sqlite, broker, excluded);
 }
 
+/** The SQLite residue the successor re-derives itself, inside the authorization scope. */
+function successorSqliteResidue(databasePath: string, restartReasonPath: string) {
+  // The restart snapshots are re-read with the successor's own clock: past the resume window the
+  // adoption is refused instead of claiming sessions nobody will resume (CodeRabbit r4595928941).
+  return (adoption: ThreadFenceAdoption): DurableResidue =>
+    mergeResidue(
+      collectSqliteResidue(
+        legacyResidueRules(
+          databasePath,
+          legacyBridgeDatabasePath(databasePath),
+          legacyStateDatabasePaths(databasePath),
+        ),
+      ),
+      restartSnapshotResidue({
+        databasePath,
+        restartReasonPath,
+        stoppedProcessStartedAt: adoption.predecessors.find((entry) => entry.name === "ravi")?.startedAt,
+      }),
+    );
+}
+
+/** Installs only the fence, in its own short connection; store initialization then runs as usual. */
+function installFence(databasePath: string): () => void {
+  return () => {
+    const database = openStateDatabase(databasePath);
+    try {
+      prepareRegisteredThreadFence(database);
+    } finally {
+      database.close();
+    }
+  };
+}
+
 /**
  * Successor entry, after daemon schema ownership and before the command graph
  * can open any store: installs only the fence, in its own short connection,
@@ -202,30 +243,76 @@ export function adoptThreadFenceAtEntry(
     bundleDigest: host.bundleDigest,
     self: { pid: host.pid },
     // The successor re-derives the SQLite residue itself instead of trusting the coordinator's record.
-    // The restart snapshots are re-read with the successor's own clock: past the resume window the
-    // adoption is refused instead of claiming sessions nobody will resume (CodeRabbit r4595928941).
-    residue: (adoption) =>
-      mergeResidue(
-        collectSqliteResidue(
-          legacyResidueRules(
-            databasePath,
-            legacyBridgeDatabasePath(databasePath),
-            legacyStateDatabasePaths(databasePath),
-          ),
-        ),
-        restartSnapshotResidue({
-          databasePath,
-          restartReasonPath: host.restartReasonPath ?? RESTART_REASON_FILE,
-          stoppedProcessStartedAt: adoption.predecessors.find((entry) => entry.name === "ravi")?.startedAt,
-        }),
-      ),
-    open: () => {
-      const database = openStateDatabase(databasePath);
-      try {
-        prepareRegisteredThreadFence(database);
-      } finally {
-        database.close();
-      }
-    },
+    residue: successorSqliteResidue(databasePath, host.restartReasonPath ?? RESTART_REASON_FILE),
+    open: installFence(databasePath),
   });
+}
+
+/** Waits for the broker the residue reads, as the daemon does for PM2 parallel startup. */
+export async function waitForBroker(
+  url = process.env.NATS_URL || "nats://127.0.0.1:4222",
+  timeoutMs = 60_000,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const connection = await connect({ servers: url, reconnect: false, timeout: 2_000 });
+      await connection.close();
+      return true;
+    } catch {
+      // no-cause: Unreachable now; the caller refuses with its own message once the deadline passes.
+      if (Date.now() >= deadline) return false;
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+  }
+}
+
+/**
+ * Daemon entry, when no adoption was admitted: a database written by a
+ * pre-fence release is adopted here, without any operator command.
+ */
+export async function adoptThreadFenceOnUpgrade(stateDir = getRaviStateDir()): Promise<BootAdoptionResult> {
+  const databasePath = join(stateDir, "ravi.db");
+  const managed = getPm2Process("ravi");
+  return adoptThreadFenceAtBoot({
+    stateDir,
+    databasePath,
+    ownBundlePath: runtimeBootBundlePath(),
+    self: { pid: process.pid, startedAt: managed?.pid === process.pid ? (managed.startedAt ?? 0) : 0 },
+    registry: liveRegistrations,
+    bundleDigest: liveBundleDigest,
+    lastBootIdentity: (name) => {
+      const receipt = readLastRuntimeBootReceipt(name, stateDir);
+      if (!receipt?.bundle) return null;
+      return { name, pid: receipt.pid, startedAt: receipt.startedAt, bundleSha256: receipt.bundle.sha256 };
+    },
+    brokerReady: () => waitForBroker(),
+    stop: liveStop,
+    start: (name) => {
+      const result = runPm2(["start", name]);
+      if (result.status !== 0)
+        process.stderr.write(
+          `Thread fence adopted, but 'pm2 start ${name}' exited ${result.status}; run 'ravi channels start'\n`,
+        );
+    },
+    residue: (context) => liveResidue(databasePath, undefined, undefined, context?.daemonStartedAt),
+    successorResidue: successorSqliteResidue(databasePath, RESTART_REASON_FILE),
+    open: installFence(databasePath),
+  });
+}
+
+/**
+ * `daemon run` entry: adopts a pre-fence database, or does nothing. The normal
+ * case prints nothing; a refusal prints its single next step and exits, before
+ * the command graph can read the database (and fail with a less useful error).
+ */
+export async function adoptThreadFenceAtDaemonEntry(): Promise<void> {
+  try {
+    const upgrade = await adoptThreadFenceOnUpgrade();
+    if (upgrade.outcome === "adopted")
+      process.stderr.write(`Thread fence installed on upgrade (${upgrade.maintenanceId})\n`);
+  } catch (cause) {
+    process.stderr.write(`${cause instanceof Error ? cause.message : String(cause)}\n`);
+    process.exit(1);
+  }
 }

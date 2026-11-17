@@ -10,6 +10,7 @@ import {
   readFileSync,
   renameSync,
   rmdirSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -22,6 +23,7 @@ import {
   persistRuntimeMaintenance,
   processExitState,
   readRuntimeMaintenance,
+  recordedProcessExitState,
   type MaintenanceProcess,
   type ProcessCompletionEvidence,
   type RuntimeMaintenance,
@@ -59,6 +61,8 @@ export type ManagedRegistration = {
   online: boolean;
   /** The bundle this launcher starts on its next (re)start. */
   scriptPath: string;
+  /** Launcher status (`online`, `stopped`, `errored`, ...); `stopped` is an operator choice. */
+  status?: string;
 };
 
 export type DurableResidueSource = { source: string; pending: number; inFlight: number; detail?: unknown };
@@ -517,6 +521,8 @@ export function admitDaemonStart(input: {
   self: { pid: number; startedAt: number };
   /** How long to wait for a running coordinator or recovery; then the start is refused. */
   leaseTimeoutMs?: number;
+  /** Settle leftovers of an adoption that installed the fence or never will (see `healUnderLease`). */
+  heal?: boolean;
 }): "normal" | "successor" {
   if (!pathExists(interlockPath(input.stateDir)) && !readRuntimeMaintenance(input.stateDir)) return "normal";
   const refuse = (detail: string): never => {
@@ -539,26 +545,27 @@ export function admitDaemonStart(input: {
 }
 
 /** The state check and the claim happen under the coordinator lease, never interleaved with a recovery. */
-function admitUnderLease(
-  input: {
-    stateDir: string;
-    ownBundlePath: string;
-    bundleDigest: (path: string) => string | null;
-    self: { pid: number; startedAt: number };
-  },
-  refuse: (detail: string) => never,
-): "normal" | "successor" {
+type AdmissionInput = {
+  stateDir: string;
+  ownBundlePath: string;
+  bundleDigest: (path: string) => string | null;
+  self: { pid: number; startedAt: number };
+  heal?: boolean;
+};
+
+function admitUnderLease(input: AdmissionInput, refuse: (detail: string) => never): "normal" | "successor" {
   const record = readRuntimeMaintenance(input.stateDir);
   // A recovery may have released everything while this start waited for the lease.
   if (!pathExists(interlockPath(input.stateDir)) && !record) return "normal";
   const adoption = readThreadFenceAdoption(input.stateDir);
-  if (!adoption || !record || record.id !== adoption.maintenanceId) return refuse("explicit recovery is required");
   if (
-    adoption.phase === "adopting" &&
+    adoption?.phase === "adopting" &&
     adoption.successor?.pid === input.self.pid &&
     adoption.successor.startedAt === input.self.startedAt
   )
     return "successor";
+  if (input.heal && healUnderLease(input, adoption)) return "normal";
+  if (!adoption || !record || record.id !== adoption.maintenanceId) return refuse("explicit recovery is required");
   if (adoption.phase !== "authorized" || record.phase !== "stopped")
     return refuse(`thread fence adoption is ${adoption.phase}; explicit recovery is required`);
   if (
@@ -573,6 +580,37 @@ function admitUnderLease(
   }
   persistAdoption(input.stateDir, { ...adoption, phase: "adopting", successor: { ...input.self } });
   return "successor";
+}
+
+/**
+ * Automatic recovery at daemon entry, under the coordinator lease, so an upgrade
+ * never waits for an operator. Two leftovers are settled, nothing else:
+ * - the fence is installed and no successor is mid-adoption: `release`;
+ * - the fence is NOT installed, no successor is alive, and no authorized
+ *   successor for this very bundle is expected: `abandon`. Nothing was ever
+ *   installed, so the boot adoption re-derives every proof from scratch.
+ * A live successor, mismatched records or an unknown process exit still refuse.
+ */
+function healUnderLease(input: AdmissionInput, adoption: ThreadFenceAdoption | null): boolean {
+  const state = describeThreadFenceMaintenance({
+    stateDir: input.stateDir,
+    databasePath: join(input.stateDir, "ravi.db"),
+  });
+  if (state.fenced) {
+    if (!state.modes.includes("release")) return false;
+  } else {
+    if (!state.modes.includes("abandon")) return false;
+    if (state.successor && state.successor.exit !== "exited") return false;
+    if (
+      adoption?.phase === "authorized" &&
+      samePath(input.ownBundlePath, adoption.targetBundlePath) &&
+      input.bundleDigest(input.ownBundlePath) === adoption.targetBundleSha256
+    )
+      return false;
+  }
+  const maintenanceId = state.adoption?.maintenanceId ?? state.maintenance?.id ?? `orphan-${randomUUID()}`;
+  releaseInterlock(input.stateDir, maintenanceId);
+  return true;
 }
 
 function releaseInterlock(stateDir: string, maintenanceId: string): void {
@@ -639,14 +677,17 @@ function adoptUnderLease(input: SuccessorAdoptionInput): ThreadFenceAdoption {
             blocked("the database is not the one the coordinator inventoried");
           const registrations = input.registry();
           const daemon = singleRegistration(registrations, "ravi");
-          const channels = singleRegistration(registrations, "ravi-channels");
+          // An update that re-creates the launchers removes the channel runner before the daemon starts.
+          const channelRegistrations = registrations.filter((entry) => entry.name === "ravi-channels");
+          if (channelRegistrations.length > 1) blocked("expected at most one launcher registration for ravi-channels");
           if (!daemon.online || daemon.pid !== input.self.pid)
             blocked("the daemon launcher is not running this successor");
-          if (channels.online) blocked("the channel runner is running; admissions are not closed");
+          if (channelRegistrations.some((entry) => entry.online))
+            blocked("the channel runner is running; admissions are not closed");
           const others = registrations.filter((entry) => entry.online && entry.pid !== input.self.pid);
           if (others.some((entry) => samePath(entry.scriptPath, adoption.targetBundlePath)))
             blocked("another process runs the Ravi bundle");
-          for (const registration of [daemon, channels]) {
+          for (const registration of [daemon, ...channelRegistrations]) {
             if (!samePath(registration.scriptPath, adoption.targetBundlePath))
               blocked(`${registration.name} launcher does not start the authorized bundle`);
           }
@@ -814,4 +855,307 @@ export function successorOutcome(stateDir: string, databasePath: string): "pendi
   )
     return "pending";
   return databaseHasThreadFence(databasePath) ? "adopted" : "failed";
+}
+
+/** What the daemon entry needs to adopt a pre-fence database by itself. */
+export interface BootAdoptionHost {
+  stateDir: string;
+  databasePath: string;
+  /** The bundle this process runs. */
+  ownBundlePath: string;
+  self: { pid: number; startedAt: number };
+  registry(): ManagedRegistration[];
+  bundleDigest(path: string): string | null;
+  /** Last identity a runtime recorded at its boot, whatever process manager state it is in now. */
+  lastBootIdentity(name: Name): MaintenanceProcess | null;
+  /** Durable broker reachable; the residue cannot be classified without it. */
+  brokerReady(): Promise<boolean>;
+  stop(name: Name): Promise<void>;
+  start(name: Name): void;
+  residue(context?: { daemonStartedAt?: number }): Promise<DurableResidue>;
+  /** Re-read by the successor verifier, inside the authorization scope. */
+  successorResidue?: (adoption: ThreadFenceAdoption) => DurableResidue;
+  /** Installs the fence; runs inside the authorization scope. */
+  open(): void;
+  exitState?: (entry: { pid: number; startedAt: number }) => ExitState;
+  wait?: () => Promise<void>;
+  exitChecks?: number;
+  now?: () => number;
+}
+
+export type BootAdoptionResult =
+  | { outcome: "not-needed" }
+  | { outcome: "adopted"; maintenanceId: string; channelsStarted: boolean };
+
+/**
+ * Prefix of every boot adoption refusal: the daemon exits, nothing in the
+ * database changed, and the message carries the next step.
+ */
+export const THREAD_FENCE_UPGRADE_BLOCKED = "THREAD_FENCE_UPGRADE_BLOCKED";
+function upgradeBlocked(detail: string): never {
+  throw new Error(`${THREAD_FENCE_UPGRADE_BLOCKED}: ${detail}`);
+}
+
+/**
+ * Transparent upgrade. A daemon of this release that finds a database written
+ * by a pre-fence release, with no legacy process alive, adopts it by itself:
+ * the same interlock, records, evidence and successor verification as the
+ * coordinator, with the daemon as its own successor. Legacy identities come
+ * from the last boot receipts; every one must have exited (a process started
+ * before the current OS boot has). A running channel runner is stopped through
+ * its launcher first and started again once the fence is installed.
+ *
+ * Refuses, without touching anything, while a legacy daemon still runs (an
+ * older CLI's overlapping restart). After the interlock, any failure before
+ * the fence is installed releases the interlock again, so the next start
+ * re-derives everything; unknown residue keeps refusing with its list.
+ */
+export async function adoptThreadFenceAtBoot(host: BootAdoptionHost): Promise<BootAdoptionResult> {
+  try {
+    const result = await adoptAtBoot(host);
+    if (result.outcome === "adopted") clearUpgradeFailure(host.stateDir);
+    return result;
+  } catch (cause) {
+    recordUpgradeFailure(host.stateDir, cause);
+    throw cause;
+  }
+}
+
+const upgradeFailurePath = (stateDir: string) => join(maintenanceDirectory(stateDir), "upgrade-failure.json");
+export type UpgradeFailure = { at: number; pid: number; failure: string };
+
+/** Why the last boot adoption refused, for the CLI that is waiting on it. Never an authority to act. */
+export function readUpgradeFailure(stateDir: string): UpgradeFailure | null {
+  try {
+    const value = JSON.parse(readFileSync(upgradeFailurePath(stateDir), "utf8")) as UpgradeFailure;
+    return Number.isFinite(value?.at) && typeof value.failure === "string" ? value : null;
+  } catch {
+    // no-cause: No readable failure note means no failure to report; the caller keeps waiting on the fence.
+    return null;
+  }
+}
+
+function recordUpgradeFailure(stateDir: string, cause: unknown): void {
+  try {
+    writeAtomic(upgradeFailurePath(stateDir), maintenanceDirectory(stateDir), {
+      at: Date.now(),
+      pid: process.pid,
+      failure: cause instanceof Error ? cause.message : String(cause),
+    } satisfies UpgradeFailure);
+  } catch {
+    // no-cause: The note only speeds up the waiting CLI; the refusal itself is rethrown by the caller.
+  }
+}
+
+function clearUpgradeFailure(stateDir: string): void {
+  try {
+    rmSync(upgradeFailurePath(stateDir), { force: true });
+  } catch {
+    // no-cause: A stale note is ignored by readers older than the restart that wait on it.
+  }
+}
+
+async function adoptAtBoot(host: BootAdoptionHost): Promise<BootAdoptionResult> {
+  if (!existsSync(host.databasePath) || databaseHasThreadFence(host.databasePath)) return { outcome: "not-needed" };
+  assertRuntimeMaintenanceInactive(host.stateDir);
+  const exitState = host.exitState ?? ((entry: { pid: number; startedAt: number }) => recordedProcessExitState(entry));
+  const ownBundle = canonicalStatePath(host.ownBundlePath);
+  const isRavi = (entry: ManagedRegistration) =>
+    NAMES.includes(entry.name as Name) || samePath(entry.scriptPath, ownBundle);
+
+  // Read only: nothing is written or stopped before every precondition holds.
+  const registrations = host.registry();
+  const daemons = registrations.filter((entry) => entry.name === "ravi");
+  const self = daemons.find((entry) => entry.online && entry.pid === host.self.pid);
+  if (!self)
+    upgradeBlocked(
+      "only a daemon supervised by PM2 as 'ravi' upgrades the database; start it with 'ravi daemon start'",
+    );
+  const legacyDaemon = registrations.find(
+    (entry) =>
+      entry.online &&
+      entry.pid !== host.self.pid &&
+      entry.name !== "ravi-channels" &&
+      (entry.name === "ravi" || samePath(entry.scriptPath, ownBundle)),
+  );
+  if (daemons.length > 1 || legacyDaemon)
+    upgradeBlocked(
+      `a previous Ravi daemon is still running (pid ${legacyDaemon?.pid ?? "unknown"}); run 'ravi daemon restart -m "upgrade"' with this release to finish the upgrade`,
+    );
+  const channels = registrations.filter((entry) => entry.name === "ravi-channels");
+  if (channels.length > 1) upgradeBlocked("more than one ravi-channels launcher is registered; remove the duplicate");
+  if (channels[0] && !samePath(channels[0].scriptPath, ownBundle))
+    upgradeBlocked("the ravi-channels launcher starts another bundle; run 'ravi update' to align both launchers");
+  if (!samePath(self.scriptPath, ownBundle)) upgradeBlocked("the ravi launcher does not start this bundle");
+  const targetBundleSha256 = host.bundleDigest(ownBundle);
+  if (!targetBundleSha256 || !/^[a-f0-9]{64}$/.test(targetBundleSha256))
+    upgradeBlocked("this bundle cannot be certified");
+  const predecessors = NAMES.map((name) => {
+    const identity = host.lastBootIdentity(name);
+    if (
+      !identity ||
+      identity.name !== name ||
+      !Number.isSafeInteger(identity.pid) ||
+      identity.pid <= 0 ||
+      identity.pid === host.self.pid ||
+      !Number.isFinite(identity.startedAt) ||
+      identity.startedAt <= 0 ||
+      !/^[a-f0-9]{64}$/.test(identity.bundleSha256)
+    )
+      upgradeBlocked(
+        `the previous ${name} left no boot record (releases before 3.261104.2 write none); upgrade through 3.261113.2 first`,
+      );
+    return { ...identity };
+  });
+  const database = databaseIdentity(host.databasePath);
+  if (!(await host.brokerReady()))
+    upgradeBlocked(
+      "the message broker is unreachable; its pending work cannot be classified. Ravi retries on the next start",
+    );
+
+  const lease = acquireCoordinatorLease(host.stateDir);
+  let installed = false;
+  let maintenanceId = "";
+  const channelsToRestart = channels[0] !== undefined && channels[0].status !== "stopped";
+  try {
+    assertRuntimeMaintenanceInactive(host.stateDir);
+    if (readThreadFenceAdoption(host.stateDir)) upgradeBlocked("an adoption record appeared; restart to settle it");
+    if (databaseHasThreadFence(database.path)) return { outcome: "not-needed" };
+    mkdirSync(maintenanceDirectory(host.stateDir), { recursive: true, mode: 0o700 });
+    mkdirSync(interlockPath(host.stateDir), { mode: 0o700 });
+    maintenanceId = randomUUID();
+    const adoption: ThreadFenceAdoption = {
+      protocol: THREAD_FENCE_ADOPTION_PROTOCOL,
+      maintenanceId,
+      phase: "preparing",
+      database,
+      targetBundlePath: ownBundle,
+      targetBundleSha256,
+      predecessors,
+      completion: [],
+    };
+    persistAdoption(host.stateDir, adoption);
+    const record: RuntimeMaintenance = {
+      protocol: "ravi.runtime-maintenance/v1",
+      id: maintenanceId,
+      phase: "stopping",
+      targetBundleSha256,
+      predecessors,
+      completion: [],
+      exitedPids: [],
+    };
+    persistRuntimeMaintenance(record, host.stateDir);
+
+    const waitExit = async (entry: { pid: number; startedAt: number }, what: string) => {
+      for (let attempt = 0; attempt < (host.exitChecks ?? 100); attempt += 1) {
+        if (exitState(entry) === "exited") return;
+        await (host.wait ?? (() => new Promise((resolve) => setTimeout(resolve, 100))))();
+      }
+      upgradeBlocked(`${what} did not exit`);
+    };
+    const runningChannels = host.registry().find((entry) => entry.name === "ravi-channels" && entry.online);
+    if (runningChannels) {
+      await host.stop("ravi-channels");
+      // Its incarnation may predate its boot record; wait for the pid the launcher reported.
+      await waitExit(
+        { pid: runningChannels.pid, startedAt: runningChannels.startedAt || host.self.startedAt },
+        "ravi-channels",
+      );
+    }
+    for (const predecessor of predecessors) {
+      await waitExit(predecessor, `the previous ${predecessor.name} (pid ${predecessor.pid})`);
+      record.exitedPids.push(predecessor.pid);
+    }
+    persistRuntimeMaintenance(record, host.stateDir);
+    const after = host.registry();
+    const intruder = after.find((entry) => entry.online && entry.pid !== host.self.pid && isRavi(entry));
+    if (intruder) upgradeBlocked(`${intruder.name} (pid ${intruder.pid}) started during the upgrade`);
+    if (host.bundleDigest(ownBundle) !== targetBundleSha256) upgradeBlocked("this bundle changed during the upgrade");
+    const residue = await host.residue({
+      daemonStartedAt: predecessors.find((entry) => entry.name === "ravi")?.startedAt,
+    });
+    if (!residue || !Array.isArray(residue.sources) || !Array.isArray(residue.unknown))
+      upgradeBlocked("durable residue could not be read; Ravi retries on the next start");
+    if (residue.unknown.length > 0)
+      upgradeBlocked(
+        `accepted work with unknown outcome blocks the upgrade: ${residue.unknown.slice(0, 5).join(", ")}${residue.unknown.length > 5 ? ` (+${residue.unknown.length - 5})` : ""}. Settle it, then restart with 'ravi daemon restart -m "upgrade"'`,
+      );
+    const evidenceDirectory = join(maintenanceDirectory(host.stateDir), "evidence", maintenanceId, randomUUID());
+    const observedAt = (host.now ?? Date.now)();
+    const exclusionEvidence = writeEvidence(evidenceDirectory, "exclusion.json", {
+      protocol: THREAD_FENCE_ADOPTION_PROTOCOL,
+      maintenanceId,
+      observedAt,
+      mode: "boot",
+      target: { path: ownBundle, sha256: targetBundleSha256 },
+      self: host.self,
+      registrations: after.map((entry) => ({
+        name: entry.name,
+        online: entry.online,
+        pid: entry.pid,
+        scriptPath: entry.scriptPath,
+      })),
+    });
+    record.completion = predecessors.map((predecessor) => {
+      const evidence = writeEvidence(evidenceDirectory, `${predecessor.name}.json`, {
+        protocol: THREAD_FENCE_ADOPTION_PROTOCOL,
+        maintenanceId,
+        process: predecessor,
+        exit: { observedAt, state: "exited" },
+        rule: "every accepted unit is completed, durably pending or durably recorded as interrupted; unknown blocks",
+        residue,
+      });
+      return {
+        process: { ...predecessor },
+        admissionsClosed: true as const,
+        launcherDisabled: true as const,
+        evidencePath: evidence.path,
+        evidenceSha256: evidence.sha256,
+      };
+    });
+    record.phase = "stopped";
+    persistRuntimeMaintenance(record, host.stateDir);
+    // The daemon claims the successor role for itself, as an admitted successor would.
+    mkdirSync(successorClaimPath(host.stateDir), { mode: 0o700 });
+    persistAdoption(host.stateDir, {
+      ...adoption,
+      phase: "adopting",
+      exclusionEvidence,
+      completion: record.completion.map((entry) => ({ ...entry, process: { ...entry.process } })),
+      successor: { ...host.self },
+    });
+    adoptUnderLease({
+      stateDir: host.stateDir,
+      registry: host.registry,
+      bundleDigest: host.bundleDigest,
+      self: { pid: host.self.pid },
+      open: host.open,
+      residue: host.successorResidue,
+    });
+    installed = true;
+  } catch (cause) {
+    // Nothing was installed: release, so the next start derives every proof again.
+    if (!installed && maintenanceId && !databaseHasThreadFence(database.path)) {
+      try {
+        releaseInterlock(host.stateDir, maintenanceId);
+      } catch (releaseCause) {
+        throw new AggregateError(
+          [cause, releaseCause],
+          `${THREAD_FENCE_UPGRADE_BLOCKED}: the upgrade and its release both failed`,
+          {
+            cause,
+          },
+        );
+      }
+    }
+    throw cause;
+  } finally {
+    lease.release();
+  }
+  let channelsStarted = false;
+  if (channelsToRestart) {
+    host.start("ravi-channels");
+    channelsStarted = true;
+  }
+  return { outcome: "adopted", maintenanceId, channelsStarted };
 }

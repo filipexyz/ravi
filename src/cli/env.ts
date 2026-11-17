@@ -57,3 +57,6 @@ if (daemonAdmission === "successor") {
     require("../threads/fence-adoption-live.js") as typeof import("../threads/fence-adoption-live.js");
   adoptThreadFenceAtEntry();
 }
+// A pre-fence database is adopted by the daemon itself, at the start of
+// bootstrapCli (src/cli/index.ts): it needs the broker, so it cannot run in
+// this synchronous prologue that PM2 loads with require().

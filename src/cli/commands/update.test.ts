@@ -107,7 +107,7 @@ function createSourceUpdateScenario(
     join(seed, "supervisor.js"),
     options.supervisor === "noop"
       ? "// Deliberately exits zero without implementing the rebind protocol.\n"
-      : `import { decodeManagedRuntimeRebindRequest, rebindManagedRuntimeProcesses } from ${JSON.stringify(join(process.cwd(), "src/managed-runtime-rebind.ts"))};\nconst request = decodeManagedRuntimeRebindRequest(process.env.RAVI_INTERNAL_UPDATE_RUNTIME_REBIND);\ndelete process.env.RAVI_INTERNAL_UPDATE_RUNTIME_REBIND;\nif (!(await rebindManagedRuntimeProcesses(request.previousProcesses, request.target, { pidAlive: () => true, assertPrepared: async () => {} }))) throw new Error("Fixture reconciliation failed");\n`,
+      : `import { decodeManagedRuntimeRebindRequest, rebindManagedRuntimeProcesses } from ${JSON.stringify(join(process.cwd(), "src/managed-runtime-rebind.ts"))};\nconst request = decodeManagedRuntimeRebindRequest(process.env.RAVI_INTERNAL_UPDATE_RUNTIME_REBIND);\ndelete process.env.RAVI_INTERNAL_UPDATE_RUNTIME_REBIND;\nif (!(await rebindManagedRuntimeProcesses(request.previousProcesses, request.target, { pidAlive: () => true, assertPrepared: () => "ready" }))) throw new Error("Fixture reconciliation failed");\n`,
   );
   writeFileSync(join(seed, ".gitignore"), "dist/\nnode_modules/\nbun.lock\n", "utf8");
   writeExecutable(join(seed, "bin", "ravi"), "#!/usr/bin/env bash\necho checkout\n");
@@ -673,7 +673,7 @@ describe("update command helpers", () => {
           runtime.target,
           {
             getProcesses: () => [...services, unrelated],
-            assertPrepared: async () => {},
+            assertPrepared: () => "ready" as const,
             runnerEnv: () => ({}),
             run: async (_command, args) => {
               mutations.push(args);
@@ -774,7 +774,7 @@ describe("update command helpers", () => {
             runtime.target,
             {
               bunPath: process.execPath,
-              assertPrepared: async () => {},
+              assertPrepared: () => "ready" as const,
               runnerEnv: () => ({ RAVI_CHANNELS_CONSUME_OUTBOUND: "1" }),
               pidAlive: () => true,
               schemaPhase: (process) => (process.pid === 11 ? "ready" : null),
@@ -937,7 +937,7 @@ async function exerciseRebind(input: {
       processes.map(({ name, status, pid, createdAt }) => ({ name, status, pid, createdAt: createdAt ?? null })),
       target.target,
       {
-        assertPrepared: async () => {},
+        assertPrepared: () => "ready" as const,
         runnerEnv: () => ({}),
         getProcesses: () => {
           if (pendingReplacement) replaceDaemon();

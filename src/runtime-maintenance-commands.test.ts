@@ -6,14 +6,59 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { withoutRaviRuntimeContextEnv } from "./test/ravi-state.js";
 
+type Expectation = {
+  status: number;
+  stderr?: string;
+  pm2: RegExp;
+  forbiddenPm2: RegExp;
+};
+
 it.each([
-  ["daemon", "start", "new DaemonCommands().start(true)"],
-  ["daemon", "restart", 'new DaemonCommands().restart("isolated test", false, true)'],
-  ["channels", "start", "new ChannelsCommands().start(false, true)"],
-  ["channels", "restart", "new ChannelsCommands().restart(false, true)"],
-])(
-  "%s %s refuses legacy preparation before handoff or PM2 mutation",
-  (group, _action, invocation) => {
+  // The daemon adopts a pre-fence database at its entry: start goes ahead and never touches the database.
+  [
+    "daemon",
+    "start",
+    "new DaemonCommands().start(true)",
+    { status: 2, pm2: /^start\b/m, forbiddenPm2: /^(?:delete|restart)\b/m },
+  ],
+  // Restart stops the legacy pair first and waits for the daemon's adoption (here: it never comes).
+  [
+    "daemon",
+    "restart",
+    'new DaemonCommands().restart("isolated test", false, true)',
+    {
+      status: 1,
+      stderr: "did not finish the database upgrade",
+      pm2: /^start\b/m,
+      forbiddenPm2: /^(?:delete|restart)\b/m,
+    },
+  ],
+  // A channel runner cannot adopt; it refuses and names the command that does.
+  [
+    "channels",
+    "start",
+    "new ChannelsCommands().start(false, true)",
+    {
+      status: 1,
+      stderr: "ravi daemon restart",
+      pm2: /(?:)/,
+      forbiddenPm2: /^(?:start|delete|restart|save)\b/m,
+    },
+  ],
+  [
+    "channels",
+    "restart",
+    "new ChannelsCommands().restart(false, true)",
+    {
+      status: 1,
+      stderr: "ravi daemon restart",
+      pm2: /(?:)/,
+      forbiddenPm2: /^(?:start|delete|restart|save)\b/m,
+    },
+  ],
+] as const)(
+  "%s %s on a pre-fence database leaves its data and schema untouched",
+  (group, _action, invocation, expected: Expectation) => {
     const root = mkdtempSync(join(tmpdir(), "ravi-maintenance-native-control-"));
     const stateDir = join(root, "state");
     const bin = join(root, "bin");
@@ -50,15 +95,18 @@ it.each([
             RAVI_STATE_DIR: stateDir,
             RAVI_BUNDLE: bundle,
             TEST_PM2_LOG: log,
+            RAVI_DAEMON_RESTART_READY_TIMEOUT_MS: "300",
           },
           encoding: "utf8",
           timeout: 15000,
         },
       );
       expect(result.error).toBeUndefined();
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain("THREAD_SCHEMA_FENCED");
-      expect(readFileSync(log, "utf8")).not.toMatch(/^(?:start|delete|restart|save)\b/m);
+      expect(result.status).toBe(expected.status);
+      if (expected.stderr) expect(result.stderr).toContain(expected.stderr);
+      const pm2Calls = readFileSync(log, "utf8");
+      expect(pm2Calls).toMatch(expected.pm2);
+      expect(pm2Calls).not.toMatch(expected.forbiddenPm2);
       const after = new Database(join(stateDir, "ravi.db"), { readonly: true, create: false });
       try {
         expect(after.query("SELECT * FROM accepted_work").all()).toEqual([{ id: "retained" }]);

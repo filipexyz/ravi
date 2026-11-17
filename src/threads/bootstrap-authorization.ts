@@ -12,7 +12,11 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { canonicalStatePath } from "../db/state-boundary.js";
-import { processExitState, type MaintenanceProcess, type ProcessCompletionEvidence } from "../runtime-maintenance.js";
+import {
+  recordedProcessExitState,
+  type MaintenanceProcess,
+  type ProcessCompletionEvidence,
+} from "../runtime-maintenance.js";
 import { resolveAccountHome } from "../utils/account-home.js";
 import type { ThreadFenceBootstrapContext } from "./schema-fence.js";
 
@@ -197,7 +201,7 @@ export function withExitedThreadBootstrapAuthorization<T>(
     {
       database,
       verify: () => {
-        if (predecessors.some((entry) => processExitState(entry.pid) !== "exited"))
+        if (predecessors.some((entry) => recordedProcessExitState(entry) !== "exited"))
           blocked("a legacy predecessor is present or its physical exit is unknown");
         if (typeof verify !== "function") blocked("external completion and exclusion verifier is required");
         const proof = synchronous(verify(database, predecessors));
@@ -220,7 +224,7 @@ export function withExitedThreadBootstrapAuthorization<T>(
             blocked("predecessor persistence/completion is unproven");
           evidence.push(checkEvidence({ path: completion.evidencePath, sha256: completion.evidenceSha256 }));
         }
-        if (predecessors.some((entry) => processExitState(entry.pid) !== "exited"))
+        if (predecessors.some((entry) => recordedProcessExitState(entry) !== "exited"))
           blocked("legacy predecessor exit changed during verification");
         return {
           reason: "verified-predecessor-exits",
