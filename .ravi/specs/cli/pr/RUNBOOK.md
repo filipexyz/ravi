@@ -23,6 +23,10 @@ thread publications hand CI to their durable parent.
   context; run through the gateway/agent.`: a runtime context that belongs to
   no session ran the command. It cannot name another session; run it in a
   session, or from the operator's terminal.
+- `RUNTIME_CONTEXT_INACTIVE`: the context that started publish is no longer
+  live (revoked, e.g. its turn ended, or expired), possibly mid-upload. The grant is not the problem; do not ask for
+  one. Rerun the same command with the same `--expect-sha` from a live turn and
+  keep that turn open until it exits. Uploaded objects are skipped.
 - `PUBLICATION_SESSION_REQUIRED` from a terminal: `--reply-session` is missing
   (exit 2), or the session has no chat destination. `--reply-session` names a
   destination and grants no authority.

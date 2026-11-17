@@ -441,7 +441,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/audit.ts | 121 | fixed | binding retained / no recognized error surface | src/cli/audit.ts:af01abebdab1195a6f2d8e21 |
 | cli | src/cli/cloud-agents-contract.ts | 241 | fixed | binding retained / no recognized error surface | src/cli/cloud-agents-contract.ts:c8dbf439594a6d405bc0f209 |
 | cli | src/cli/codex-hook-transport.ts | 75 | fixed | binding retained / no recognized error surface | src/cli/codex-hook-transport.ts:815eaacac7107596f024c4a0 |
-| cli | src/cli/command-access.ts | 351 | triaged-follow-up | catch-without-binding | src/cli/command-access.ts:5b7e49b64c2fd8e3ff6c70a5 |
+| cli | src/cli/command-access.ts | 369 | triaged-follow-up | catch-without-binding | src/cli/command-access.ts:5b7e49b64c2fd8e3ff6c70a5 |
 | cli | src/cli/commands/agenda.ts | 469 | fixed | binding retained / no recognized error surface | src/cli/commands/agenda.ts:80070e42e9e3ab05f92009cb |
 | cli | src/cli/commands/agenda.ts | 607 | fixed | binding retained / no recognized error surface | src/cli/commands/agenda.ts:d53c5654d696bcde56eb1e12 |
 | cli | src/cli/commands/agents-library.ts | 65 | triaged-follow-up | rejection-without-binding | src/cli/commands/agents-library.ts:165d62a4d87b9cfbbd546147 |
@@ -671,10 +671,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/pages.ts | 1531 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:23b402e772b919537c1430af |
 | cli | src/cli/commands/pages.ts | 2403 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:362b802d766dcf83c4cb7620 |
 | cli | src/cli/commands/pages.ts | 2829 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/pages.ts:e2474b6819dd57cf210efcfa |
-| cli | src/cli/commands/pr.ts | 121 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:6dc250c56e86cef1e8a12b0a |
-| cli | src/cli/commands/pr.ts | 176 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:f2cfbe4db8427d9da814ffde |
-| cli | src/cli/commands/pr.ts | 196 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:5542d2a05595df529681fc30 |
-| cli | src/cli/commands/pr.ts | 234 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:7ae995b61fa1be7cd180d3f6 |
+| cli | src/cli/commands/pr.ts | 124 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:6dc250c56e86cef1e8a12b0a |
+| cli | src/cli/commands/pr.ts | 191 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:f2cfbe4db8427d9da814ffde |
+| cli | src/cli/commands/pr.ts | 211 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:5542d2a05595df529681fc30 |
+| cli | src/cli/commands/pr.ts | 249 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:7ae995b61fa1be7cd180d3f6 |
 | cli | src/cli/commands/projects.ts | 178 | fixed | binding retained / no recognized error surface | src/cli/commands/projects.ts:865c35ce0a8d92d905d8f4ee |
 | cli | src/cli/commands/prox-calls.ts | 569 | fixed | binding retained / no recognized error surface | src/cli/commands/prox-calls.ts:c74f0951b8fad167c123479a |
 | cli | src/cli/commands/prox-calls.ts | 1599 | triaged-follow-up | catch-without-binding | src/cli/commands/prox-calls.ts:fb030687fa118a84b786ec8c |
@@ -1638,9 +1638,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | pr | src/pr/journal.ts | 91 | triaged-follow-up | catch-without-binding | src/pr/journal.ts:3145d57414f258193d41f330 |
 | pr | src/pr/journal.ts | 107 | fixed | binding retained / no recognized error surface | src/pr/journal.ts:09aaf61b134f593fe2233482 |
 | pr | src/pr/service.ts | 152 | fixed | binding retained / no recognized error surface | src/pr/service.ts:b8163c956737ef1f22b2c7c6 |
-| pr | src/pr/service.ts | 243 | fixed | binding retained / no recognized error surface | src/pr/service.ts:2b0c8faf46293fd0637db8d8 |
-| pr | src/pr/service.ts | 324 | fixed | binding retained / no recognized error surface | src/pr/service.ts:c05fa19a4d48b8859e0af47d |
-| pr | src/pr/service.ts | 354 | triaged-follow-up | catch-without-binding | src/pr/service.ts:33a082f827152892352f8ea2 |
+| pr | src/pr/service.ts | 243 | fixed | binding retained / no recognized error surface | src/pr/service.ts:f1b1fc7d98ae1d310aaa4e2a |
+| pr | src/pr/service.ts | 329 | fixed | binding retained / no recognized error surface | src/pr/service.ts:c05fa19a4d48b8859e0af47d |
+| pr | src/pr/service.ts | 359 | triaged-follow-up | catch-without-binding | src/pr/service.ts:33a082f827152892352f8ea2 |
 | pr | src/pr/test-fixture.ts | 40 | triaged-follow-up | catch-without-binding | src/pr/test-fixture.ts:60d092aaec01b4962f56ab04 |
 | pr | src/pr/test-fixture.ts | 79 | triaged-follow-up | catch-without-binding | src/pr/test-fixture.ts:cafd5f68270c88168afab8e4 |
 | pr | src/pr/test-fixture.ts | 115 | triaged-follow-up | catch-without-binding | src/pr/test-fixture.ts:7bfdcaa0eb9fb376d4a9f61d |

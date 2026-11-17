@@ -3,7 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { Command, CommandAccess, Group, Option, Returns, type CommandAccessOptions } from "../decorators.js";
 import { contractDryRun, ContractError, renderContractError, wasContractErrorRendered } from "../agent-contract.js";
-import { enforceCliCommandAuthorization } from "../command-access.js";
+import { enforceCliCommandAuthorization, RUNTIME_CONTEXT_INACTIVE } from "../command-access.js";
 import { getCallerCwd, resolveCallerPath } from "../caller-cwd.js";
 import { buildAuditContextProvenance } from "../../permissions/audit-provenance.js";
 import { resultSchema, prError, PUBLICATION_CONTEXT_REQUIRED_MESSAGE, LIMITS } from "../../pr/contracts.js";
@@ -56,6 +56,9 @@ EXAMPLES
   ravi pr publish --repo owner/repo --base dev --json --execute
 ON ERROR
   PERMISSION_DENIED in a runtime context: ${PUBLICATION_CONTEXT_REQUIRED_MESSAGE}
+  RUNTIME_CONTEXT_INACTIVE: the context that started publish is no longer live (revoked, e.g. its turn ended, or
+  expired), possibly mid-upload; it is not a missing grant. Rerun with the same --expect-sha from a live turn and
+  keep it open until the command exits.
   PUBLICATION_SESSION_REQUIRED from a terminal: pass --reply-session <session> that has a chat destination.
   STATE_SCHEMA_NOT_READY from a terminal: the installed daemon prepares state; run ravi daemon restart -m "prepare state".
   WORKTREE_DIRTY: commit changes. GIT_OBJECT_MISMATCH: inspect the object; never accept a substitute SHA.
@@ -155,8 +158,20 @@ export class PrCommands {
         source: context?.transport ?? "cli",
         input: { repo, base, expectSha, replySession },
       });
-      if (!decision.allowed)
+      if (!decision.allowed) {
+        // A context that ended under a running publish is not a missing grant: say so, so nobody asks for one.
+        if (decision.denialDetails?.reason === RUNTIME_CONTEXT_INACTIVE)
+          throw prError(
+            "RUNTIME_CONTEXT_INACTIVE",
+            "The runtime context that started this publication is no longer live (revoked, for example when its turn ended, or expired); the grant is not the problem.",
+            {
+              ...decision.denialDetails,
+              suggestedAction:
+                "Rerun the same ravi pr publish command with the same --expect-sha from a live turn and keep that turn open until it exits; objects already uploaded are skipped.",
+            },
+          );
         throw prError("PERMISSION_DENIED", "This context cannot publish the selected PR.", decision.denialDetails);
+      }
     };
     authorize();
     if (!repo || !base || (dryRun && execute))
