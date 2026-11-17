@@ -28,6 +28,12 @@ export type ResidueRule = {
   unverified?: boolean;
   /** Searched in every runtime database; a database whose table lacks the column holds another table. */
   anyDatabase?: boolean;
+  /** Where the tag declares every value this column may take; the inventory test reads it from the tag. */
+  vocabulary?: LegacyVocabulary;
+  /** Why each value in `pending` is at rest by design: who resumes it, or why nothing needs resuming. */
+  restReasons?: Readonly<Record<string, string>>;
+  /** Work expressed without a status: rows matching `where` (static SQL from this file) are pending or block. */
+  condition?: { where: string; usesNow?: boolean; outcome: "pending" | "blocking" };
 };
 
 /**
@@ -343,6 +349,35 @@ export const LEGACY_RESIDUE_EXCLUSIONS: readonly { table: string; reason: string
     reason: "cadence definitions (last_status); the run unit is session_followup_runs, which has a rule",
   },
   { table: "task_observer_state", reason: "observer bookkeeping (last_status)" },
+  // Work-like tables without a status column (read in the tag's writers).
+  {
+    table: "daemon_restart_session_snapshots",
+    reason:
+      "written only by `ravi daemon restart` for its own restart epoch and read at boot for that epoch alone (daemon.ts l.683, same in the successor); the adoption stops through PM2 and writes no epoch",
+  },
+  {
+    table: "task_launch_plans",
+    reason: "launch plans of tasks; execution is the task's session turn, which has rules",
+  },
+  { table: "task_operation_receipts", reason: "idempotency receipts of task operations already answered" },
+  { table: "channel_outbound_publish_suppressions", reason: "suppression decisions of the publish outbox, records" },
+  { table: "workflow_node_run_tasks", reason: "links between workflow node runs and tasks; the runs have rules" },
+  { table: "runtime_turn_progress", reason: "progress trace of turns; the unit of work is runtime_turn_attempts" },
+  // Owner or expiry columns that describe ownership of records or credentials, not work in flight.
+  ...["crm_accounts", "crm_contact_profiles", "platform_identities", "session_participants", "chat_reading_lists"].map(
+    (table) => ({ table, reason: "owner_id names who owns a record, not a process holding work" }),
+  ),
+  ...["contexts", "contexts_new"].map((table) => ({
+    table,
+    reason: "context keys with an expiry; a credential, not work",
+  })),
+  { table: "calendar_members", reason: "calendar membership with an expiry; configuration" },
+  { table: "knowledge_marked_pages", reason: "pages marked for customers with an expiry; configuration" },
+  {
+    table: "slack_interaction_response_urls",
+    reason: "Slack response URLs kept until they expire; a stop only lets them expire, as Slack does",
+  },
+  { table: "migrated", reason: "fixture of src/db/fixtures/schema-lock-worker.ts, never in a runtime database" },
   {
     table: "runtime_boot_epochs",
     reason: "runtime incarnation bookkeeping; a stale active epoch of the stopped legacy is expected",
@@ -360,72 +395,201 @@ export const LEGACY_RESIDUE_EXCLUSIONS: readonly { table: string; reason: string
   })),
 ];
 
-/** Statuses read as terminal for work tables whose resumption was not verified; anything else blocks. */
-const UNVERIFIED_TERMINAL = [
-  "complete",
-  "completed",
-  "done",
-  "succeeded",
-  "success",
-  "ok",
-  "failed",
-  "error",
-  "cancelled",
-  "canceled",
-  "aborted",
-  "abandoned",
-  "expired",
-  "closed",
-  "dead",
-  "rejected",
-  "denied",
-  "superseded",
-  "skipped",
-  "sent",
-  "delivered",
-  "applied",
-  "resolved",
-] as const;
+/** A status union or `as const` list in the tag's source: every member must be classified by its rule. */
+export type LegacyVocabulary = { file: string; declaration: string };
+
+const NO_PROCESS_HOLDS_IT =
+  "no claim or lease column: the row is the whole state, no process holds it, and nothing is lost when processes stop";
 
 /**
  * Work tables of v3.261113.2 whose resumption in the successor was not verified.
- * Each is searched in every runtime database; a row in any status outside its
- * terminal set blocks, labelled "owner not verified".
+ * Each is searched in every runtime database. Terminal values come from the
+ * tag's own types; a value at rest by design carries its reason; every other
+ * value blocks, labelled "owner not verified".
  */
 export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "database">[] = [
-  ...[
-    "call_requests",
-    "call_runs",
-    "call_tool_runs",
-    "task_automation_runs",
-    "workflow_runs",
-    "workflow_node_runs",
-    "cloud_thread_runs",
-    "devin_sessions",
-    "library_agent_requests",
-    "thread_handoffs",
-    "permission_grant_applications",
-    "runtime_credential_attempts",
-    "calendar_event_reminders",
-  ].map((table) => ({
-    table,
+  {
+    table: "devin_sessions",
     column: "status",
-    terminal: UNVERIFIED_TERMINAL,
+    vocabulary: { file: "src/devin/client.ts", declaration: "DevinSessionStatus" },
+    terminal: ["exit", "error"],
+    pending: ["suspended"],
+    restReasons: { suspended: "paused on Devin's side; resuming is an explicit request, nothing runs meanwhile" },
+    inFlight: [],
+    blocking: ["new", "creating", "claimed", "running", "resuming"],
+    unverified: true,
+    anyDatabase: true,
+    owner: "Devin session sync (not verified): sessions being created or running block",
+  },
+  {
+    table: "task_automation_runs",
+    column: "status",
+    vocabulary: { file: "src/tasks/types.ts", declaration: "TaskAutomationRunStatus" },
+    terminal: ["spawned", "skipped", "failed"],
+    pending: [],
+    inFlight: [],
+    blocking: ["claimed"],
+    unverified: true,
+    anyDatabase: true,
+    owner: "task automations (not verified): a claimed run that never spawned blocks",
+  },
+  {
+    table: "call_requests",
+    column: "status",
+    vocabulary: { file: "src/prox/calls/types.ts", declaration: "CallRequestStatus" },
+    terminal: ["completed", "failed", "canceled"],
+    pending: ["pending", "scheduled", "snoozed", "blocked"],
+    restReasons: {
+      pending: `waiting for the call dispatcher; ${NO_PROCESS_HOLDS_IT}`,
+      scheduled: `waiting for its due time; ${NO_PROCESS_HOLDS_IT}`,
+      snoozed: `waiting for its snooze time; ${NO_PROCESS_HOLDS_IT}`,
+      blocked: `waiting for an operator or a rule to allow it; ${NO_PROCESS_HOLDS_IT}`,
+    },
+    inFlight: [],
+    blocking: ["running"],
+    unverified: true,
+    anyDatabase: true,
+    owner: "prox calls (not verified): a running request blocks",
+  },
+  {
+    table: "call_runs",
+    column: "status",
+    vocabulary: { file: "src/prox/calls/types.ts", declaration: "CallRunStatus" },
+    terminal: ["completed", "no_answer", "busy", "voicemail", "failed", "canceled"],
+    pending: [],
+    inFlight: [],
+    blocking: ["queued", "dialing", "ringing", "in_progress"],
+    unverified: true,
+    anyDatabase: true,
+    owner: "prox calls (not verified): a call being placed or in progress blocks",
+  },
+  {
+    table: "call_tool_runs",
+    column: "status",
+    vocabulary: { file: "src/prox/calls/types.ts", declaration: "CallToolRunStatus" },
+    terminal: ["completed", "failed", "timeout"],
+    pending: [],
+    inFlight: [],
+    // `blocked` may be a final refusal or a wait; not read in the writers, so it blocks.
+    blocking: ["pending", "running", "blocked"],
+    unverified: true,
+    anyDatabase: true,
+    owner: "prox call tools (not verified): unfinished tool runs block",
+  },
+  {
+    table: "workflow_runs",
+    column: "status",
+    vocabulary: { file: "src/workflows/types.ts", declaration: "WorkflowRunStatus" },
+    terminal: ["done", "failed", "cancelled", "archived"],
+    pending: ["draft", "waiting", "blocked"],
+    restReasons: {
+      draft: `not started; ${NO_PROCESS_HOLDS_IT}`,
+      waiting: `waiting for an event or a person; ${NO_PROCESS_HOLDS_IT}`,
+      blocked: `waiting to be unblocked; ${NO_PROCESS_HOLDS_IT}`,
+    },
+    inFlight: [],
+    blocking: ["ready", "running"],
+    unverified: true,
+    anyDatabase: true,
+    owner: "workflow runs (not verified): ready or running runs block",
+  },
+  {
+    table: "workflow_node_runs",
+    column: "status",
+    vocabulary: { file: "src/workflows/types.ts", declaration: "WorkflowNodeRunStatus" },
+    terminal: ["done", "failed", "skipped", "cancelled", "archived"],
+    pending: ["pending", "awaiting_release", "blocked"],
+    restReasons: {
+      pending: `waiting for its predecessors; ${NO_PROCESS_HOLDS_IT}`,
+      awaiting_release: `waiting for a manual release; ${NO_PROCESS_HOLDS_IT}`,
+      blocked: `waiting to be unblocked; ${NO_PROCESS_HOLDS_IT}`,
+    },
+    inFlight: [],
+    blocking: ["ready", "running"],
+    unverified: true,
+    anyDatabase: true,
+    owner: "workflow node runs (not verified): ready or running nodes block",
+  },
+  {
+    table: "cloud_thread_runs",
+    column: "status",
+    vocabulary: { file: "src/cloud-agents/types.ts", declaration: "CLOUD_RUN_STATUSES" },
+    terminal: ["completed", "failed", "stopped", "budget_exceeded"],
+    pending: ["waiting_approval", "waiting_input"],
+    restReasons: {
+      waiting_approval: "the cloud run waits for a person's approval; the run lives in the Console, not in this daemon",
+      waiting_input: "the cloud run waits for a person's input; the run lives in the Console, not in this daemon",
+    },
+    inFlight: [],
+    blocking: ["starting", "running"],
+    unverified: true,
+    anyDatabase: true,
+    owner: "cloud thread runs (not verified): starting or running runs block",
+  },
+  {
+    table: "runtime_credential_attempts",
+    column: "status",
+    vocabulary: { file: "src/runtime/credential-store.ts", declaration: "RuntimeCredentialAttemptStatus" },
+    terminal: ["succeeded", "failed", "abandoned"],
+    pending: [],
+    inFlight: [],
+    blocking: ["reserved", "started"],
+    unverified: true,
+    anyDatabase: true,
+    owner: "runtime credential pool (not verified): reserved or started attempts block",
+  },
+  // Free text without a type in the tag: only the values its writers set are known.
+  {
+    table: "permission_grant_applications",
+    column: "status",
+    terminal: ["done"],
+    pending: [],
+    inFlight: [],
+    blocking: ["applying"],
+    unverified: true,
+    anyDatabase: true,
+    owner: "permission grants (not verified, writers in src/permissions/apply-grant.ts): applying blocks",
+  },
+  {
+    table: "thread_handoffs",
+    column: "status",
+    terminal: ["delivered", "failed"],
     pending: [],
     inFlight: [],
     unverified: true,
     anyDatabase: true,
-    owner: "not verified: non-terminal rows block",
-  })),
+    owner: "thread handoffs (not verified, router-db.ts l.655-663): anything not delivered or failed blocks",
+  },
+  {
+    table: "library_agent_requests",
+    column: "status",
+    terminal: [],
+    pending: [],
+    inFlight: [],
+    unverified: true,
+    anyDatabase: true,
+    owner: "library agent requests (vocabulary not read): every row blocks until classified",
+  },
+  {
+    table: "calendar_event_reminders",
+    column: "status",
+    terminal: [],
+    pending: [],
+    inFlight: [],
+    unverified: true,
+    anyDatabase: true,
+    owner: "calendar reminders (no writer in the tag outside tests): any row blocks",
+  },
   {
     table: "cloud_chat_approvals",
     column: "status",
     terminal: ["approved", "denied", "closed"],
     pending: ["pending"],
+    restReasons: { pending: "waits for a person's decision; nothing runs until then" },
     inFlight: [],
     blocking: ["deciding"],
     anyDatabase: true,
-    owner: "cloud chat approvals: pending waits for a person; a decision in progress blocks",
+    owner: "cloud chat approvals: a decision in progress blocks",
   },
   {
     table: "session_adapters",
@@ -433,6 +597,7 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     terminal: ["configured", "stopped", "broken"],
     pending: [],
     inFlight: [],
+    // Whether a clean legacy stop leaves `running` was not verified: it blocks.
     blocking: ["running"],
     anyDatabase: true,
     owner: "session adapters: a running adapter at stop blocks (restart by the successor not verified)",
@@ -466,6 +631,49 @@ export const LEGACY_UNVERIFIED_RESIDUE_RULES: readonly Omit<ResidueRule, "databa
     blocking: ["pending", "accepting"],
     anyDatabase: true,
     owner: "slack attention notices: an admission in progress blocks (resumption not verified)",
+  },
+  // Tables whose work is expressed without a status column (read in the tag's writers).
+  {
+    table: "pr_publication_leases",
+    column: "expires_at",
+    terminal: [],
+    pending: [],
+    inFlight: [],
+    condition: { where: "expires_at > ?", usesNow: true, outcome: "blocking" },
+    anyDatabase: true,
+    owner:
+      "pr publish lease (src/pr/journal.ts l.52-54): an unexpired lease may belong to a running publication; an expired one is taken over",
+  },
+  {
+    table: "console_inbox_poll_locks",
+    column: "expires_at",
+    terminal: [],
+    pending: [],
+    inFlight: [],
+    condition: { where: "expires_at > ?", usesNow: true, outcome: "blocking" },
+    anyDatabase: true,
+    owner:
+      "console inbox poll lock (src/inbox/inbox-db.ts l.239-257): an unexpired lock may be held; an expired one is taken over",
+  },
+  {
+    table: "console_inbox_items",
+    column: "delivered_at",
+    terminal: [],
+    pending: [],
+    inFlight: [],
+    condition: { where: "delivered_at IS NULL", outcome: "pending" },
+    anyDatabase: true,
+    owner: "console inbox delivery: an undelivered item is a row with no holder (holding is console_inbox_poll_locks)",
+  },
+  {
+    table: "reaction_actions",
+    column: "completed_at",
+    terminal: [],
+    pending: [],
+    inFlight: [],
+    condition: { where: "completed_at IS NULL", outcome: "blocking" },
+    anyDatabase: true,
+    owner: "reaction actions (not verified): an action not completed blocks",
   },
 ];
 
@@ -549,6 +757,19 @@ export function collectSqliteResidue(rules: readonly ResidueRule[]): DurableResi
             sources.push({ source: label, pending: 0, inFlight: 0, detail: { column: "absent" } });
             continue;
           }
+        }
+        if (rule.condition) {
+          const statement = database.query(`SELECT COUNT(*) AS count FROM ${rule.table} WHERE ${rule.condition.where}`);
+          const { count } = (rule.condition.usesNow ? statement.get(Date.now()) : statement.get()) as { count: number };
+          if (rule.condition.outcome === "blocking" && count > 0)
+            unknown.push(`${label}: ${count} row(s) where ${rule.condition.where}: ${rule.owner}`);
+          sources.push({
+            source: label,
+            pending: rule.condition.outcome === "pending" ? count : 0,
+            inFlight: 0,
+            detail: { owner: rule.owner, where: rule.condition.where, count },
+          });
+          continue;
         }
         const rows = database
           .query(`SELECT ${rule.column} AS status, COUNT(*) AS count FROM ${rule.table} GROUP BY ${rule.column}`)

@@ -110,9 +110,15 @@ Run it from the operator's terminal (offline recovery path), never from an agent
 
 Residue that blocks: a status outside the rule of its table, an unreadable table, an unreachable broker, prompts left in `SESSION_PROMPTS` (memory storage, 60 s, not durable), mail/calendar rows `leased`/`sending` (no legacy owner resumes them), and non-terminal rows of `channel_outbound_receipts`, `channel_backend_runtime_state` and `cron_runs` (owner not verified). Pending and in-flight work with a named owner (prompt queue, turn attempts, ingress receipts, Slack inbound envelopes, recovery, outboxes, sync inbox, decision deliveries, jobs, broker consumers) is recorded with its counts and carried by the successor, which re-reads the SQLite residue itself before installing the fence.
 
-Work tables whose resumption in the successor was not verified (calls, workflow and automation runs, Devin sessions, cloud thread runs, handoffs, reminders, Slack thread lifecycle and turn health, adapters) are searched in every runtime database, and any row outside their terminal set blocks, labelled `owner not verified`. The complete table set of the tag is `src/threads/fence-adoption-inventory.ts`, derived from every `CREATE TABLE` of `v3.261113.2`; `fence-adoption-inventory.test.ts` fails when a table with a status, state, claim or lease column has neither a rule nor an exclusion with a reason.
+Work tables whose resumption in the successor was not verified (calls, workflow and automation runs, Devin sessions, cloud thread runs, credential attempts, grant applications, handoffs, library requests, reminders, Slack thread lifecycle, turn health and attention notices, adapters, reaction actions, unexpired publish and inbox leases) are searched in every runtime database. Their terminal and at-rest values come from the tag's own types; a value at rest carries its reason; any other value blocks, labelled `owner not verified`.
+
+The complete table set of the tag is `src/threads/fence-adoption-inventory.ts`, derived from every `CREATE TABLE` of `v3.261113.2` by `bun scripts/fence-adoption-inventory.ts`. `fence-adoption-inventory.test.ts` (in `test:runtime-identity`) re-derives it from the tag and compares, reads each declared vocabulary from the tag, and fails when a table with a status, state, claim, lease or work-marker column has neither a rule nor an exclusion with a reason.
+
+The runtime databases are those of `runtimeStateDatabasePaths` for the state directory; the credentials database follows `RAVI_CREDENTIALS_DB_PATH` from the environment of the process that runs the command, so run it with the same environment as the daemon.
 
 The preview does not read the residue: it is read only after both stops, so a block is discovered with production stopped. Plan the window for that: every block has an exit (`retry` once the cause is gone, or `abandon` and back to `3.261113.2`).
+
+If a command reports "another adoption coordinator or recovery is running" and none should be: the holder is the process with `runtime-maintenance/coordinator.lock` open (`lsof` on that file). Stop that process; the kernel releases the lock when it exits. Never delete the lock file.
 
 ### When something stops
 

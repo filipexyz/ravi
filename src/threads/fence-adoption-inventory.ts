@@ -1,6 +1,6 @@
 // Generated from every CREATE TABLE in the source of v3.261113.2 (48 files, 244 tables).
-// Regenerate with the inventory script described in quality/state-boundary RUNBOOK; never edit by hand.
-// statusColumns: columns named status/state/claim/lease, with their CHECK values when the schema has them.
+// Regenerate: bun scripts/fence-adoption-inventory.ts. Never edit by hand; fence-adoption-inventory.test.ts
+// compares this file with the tag. statusColumns: columns named status/state/claim/lease, with CHECK values.
 export type LegacyTableInventoryEntry = {
   table: string;
   file: string;

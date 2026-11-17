@@ -13,7 +13,7 @@ import {
   prepareThreadFenceAdoption,
   successorOutcome,
 } from "./fence-adoption.js";
-import { adoptThreadFenceAtEntry, liveResidue } from "./fence-adoption-live.js";
+import { adoptThreadFenceAtEntry, legacyStateDatabasePaths, liveResidue } from "./fence-adoption-live.js";
 import { collectSqliteResidue, legacyBridgeDatabasePath, legacyResidueRules } from "./fence-adoption-residue.js";
 
 /** ravi.db of v3.261113.2, generated from the tag (see the fixture header); never a production copy. */
@@ -110,7 +110,9 @@ function legacyState() {
 describe("fence adoption glue on the real v3.261113.2 schema", () => {
   it("every residue rule reads a real legacy table and column", () => {
     const { databasePath } = legacyState();
-    const residue = collectSqliteResidue(legacyResidueRules(databasePath, legacyBridgeDatabasePath(databasePath)));
+    const residue = collectSqliteResidue(
+      legacyResidueRules(databasePath, legacyBridgeDatabasePath(databasePath), legacyStateDatabasePaths(databasePath)),
+    );
     expect(residue.unknown).toEqual([]);
     // Unverified rules are searched in every database (labelled db:table); only explicit rules must find their table here.
     for (const source of residue.sources.filter((entry) => !entry.source.includes(":"))) {
@@ -135,7 +137,9 @@ describe("fence adoption glue on the real v3.261113.2 schema", () => {
       "INSERT INTO turns (id, conversation_id, status, lease_until, authority, created_at) VALUES ('t1', 'c1', 'completed', 0, 'x', 0), ('t2', 'c2', 'running', 0, 'x', 0)",
     );
     bridge.close();
-    const residue = collectSqliteResidue(legacyResidueRules(databasePath, legacyBridgeDatabasePath(databasePath)));
+    const residue = collectSqliteResidue(
+      legacyResidueRules(databasePath, legacyBridgeDatabasePath(databasePath), legacyStateDatabasePaths(databasePath)),
+    );
     expect(residue.unknown).toEqual(["turns.status=running (1): resumption not verified"]);
   });
 
