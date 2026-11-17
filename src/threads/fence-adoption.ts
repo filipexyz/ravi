@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { Database } from "bun:sqlite";
+import { constants as sqliteConstants, Database } from "bun:sqlite";
 import { acquireSchemaFileLock, SchemaLockBusyError } from "../db/schema-lock.js";
 import { canonicalStatePath } from "../db/state-boundary.js";
 import {
@@ -221,7 +221,8 @@ export function openStateReadOnly(path: string): Database {
   if (!existsSync(path)) throw new Error(`THREAD_FENCE_ADOPTION_UNVERIFIABLE: ${path} does not exist`);
   if (!existsSync(`${path}-wal`) && !existsSync(`${path}-shm`)) {
     const uri = `file:${path.replaceAll("%", "%25").replaceAll("?", "%3f").replaceAll("#", "%23")}?immutable=1`;
-    return new Database(uri, { readonly: true });
+    // Explicit flags: URI filenames are off by default in the SQLite Bun embeds on Linux.
+    return new Database(uri, sqliteConstants.SQLITE_OPEN_READONLY | sqliteConstants.SQLITE_OPEN_URI);
   }
   return new Database(path, { readonly: true, create: false });
 }

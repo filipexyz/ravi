@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
@@ -80,6 +80,23 @@ describe("legacy durable residue", () => {
     expect(byTable["jobs.status"]).toMatchObject({ pending: 0, inFlight: 1 });
     expect(byTable["runtime_prompt_queue.status"]).toMatchObject({ detail: { table: "absent" } });
     expect(LEGACY_RESIDUE_EXCLUSIONS.map((entry) => entry.table)).toContain("session_turns");
+  });
+
+  it("a cleanly closed WAL database (no -wal/-shm) is read without creating any file", () => {
+    const directory = root();
+    const path = join(directory, "ravi.db");
+    const db = new Database(path);
+    db.exec("PRAGMA journal_mode = WAL");
+    db.exec("CREATE TABLE runtime_prompt_queue (id TEXT, status TEXT NOT NULL)");
+    db.exec("INSERT INTO runtime_prompt_queue VALUES ('a', 'queued')");
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    db.close();
+    // What the last connection of a stopped runtime leaves on Linux; macOS may keep empty files.
+    for (const suffix of ["-wal", "-shm"]) rmSync(`${path}${suffix}`, { force: true });
+    const residue = collectSqliteResidue([queueRule(path)]);
+    expect(residue.unknown).toEqual([]);
+    expect(residue.sources[0]).toMatchObject({ pending: 1, inFlight: 0 });
+    expect(readdirSync(directory).sort()).toEqual(["ravi.db"]);
   });
 
   it("an unreadable database is unknown, and the probe never creates or changes a file", () => {
