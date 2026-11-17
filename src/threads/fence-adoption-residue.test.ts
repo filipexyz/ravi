@@ -3,7 +3,13 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
-import { collectSqliteResidue, LEGACY_ROUTER_RESIDUE_RULES, type ResidueRule } from "./fence-adoption-residue.js";
+import {
+  collectJetStreamResidue,
+  collectSqliteResidue,
+  LEGACY_ROUTER_RESIDUE_RULES,
+  mergeResidue,
+  type ResidueRule,
+} from "./fence-adoption-residue.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -60,5 +66,50 @@ describe("legacy durable residue", () => {
     const residue = collectSqliteResidue([queueRule(path)]);
     expect(residue.unknown).toHaveLength(1);
     expect(residue.unknown[0]).toContain("runtime_prompt_queue.status: unreadable");
+  });
+});
+
+describe("legacy broker residue", () => {
+  const reader = (streams: Record<string, number | null>, consumers: Record<string, [number, number] | null>) => ({
+    streamMessages: async (stream: string) => {
+      if (stream === "BROKEN") throw new Error("timeout");
+      return streams[stream] ?? null;
+    },
+    consumerPending: async (stream: string, consumer: string) => {
+      const value = consumers[`${stream}/${consumer}`];
+      return value ? { pending: value[0], ackPending: value[1] } : null;
+    },
+  });
+
+  it("durable queues and consumers count as pending with their owner", async () => {
+    const residue = await collectJetStreamResidue(
+      reader({ SESSION_PROMPTS: 0, CHANNEL_OUTBOUND: 3 }, { "MESSAGE/ravi-messages": [2, 1] }),
+    );
+    expect(residue.unknown).toEqual([]);
+    expect(residue.sources).toContainEqual(
+      expect.objectContaining({ source: "jetstream:CHANNEL_OUTBOUND", pending: 3 }),
+    );
+    expect(residue.sources).toContainEqual(
+      expect.objectContaining({ source: "jetstream:MESSAGE/ravi-messages", pending: 2, inFlight: 1 }),
+    );
+    expect(residue.sources).toContainEqual(
+      expect.objectContaining({ source: "jetstream:INSTANCE/ravi-instances", detail: { consumer: "absent" } }),
+    );
+  });
+
+  it("prompts left in the memory-only session stream are not durable and block", async () => {
+    const residue = await collectJetStreamResidue(reader({ SESSION_PROMPTS: 2 }, {}));
+    expect(residue.unknown).toEqual([
+      "jetstream:SESSION_PROMPTS: 2 prompt(s) in memory storage expire in 60 s and are not durable",
+    ]);
+  });
+
+  it("an unreachable broker is unknown, and residues merge without losing either side", async () => {
+    const broker = await collectJetStreamResidue(reader({}, {}), [
+      { kind: "workqueue-durable", stream: "BROKEN", owner: "x" },
+    ]);
+    expect(broker.unknown).toEqual(["jetstream:BROKEN: unreadable (timeout)"]);
+    const merged = mergeResidue(broker, { sources: [{ source: "a", pending: 1, inFlight: 0 }], unknown: [] });
+    expect(merged).toEqual({ sources: [{ source: "a", pending: 1, inFlight: 0 }], unknown: broker.unknown });
   });
 });

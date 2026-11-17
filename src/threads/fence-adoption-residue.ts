@@ -145,3 +145,73 @@ export function collectSqliteResidue(rules: readonly ResidueRule[]): DurableResi
   }
   return { sources, unknown };
 }
+
+/** Reads broker state; `null` means the stream or consumer does not exist. */
+export type JetStreamResidueReader = {
+  streamMessages(stream: string): Promise<number | null>;
+  consumerPending(stream: string, consumer: string): Promise<{ pending: number; ackPending: number } | null>;
+};
+
+export type JetStreamResidueRule =
+  | { kind: "workqueue-durable" | "workqueue-ephemeral"; stream: string; owner: string }
+  | { kind: "consumer"; stream: string; consumer: string; owner: string };
+
+/** Streams and consumers of v3.261113.2 (session-stream, outbound-stream, omni consumer). */
+export const LEGACY_JETSTREAM_RESIDUE_RULES: readonly JetStreamResidueRule[] = [
+  // Memory storage with a 60 s max age: a prompt left here when the daemon stops is not durable.
+  { kind: "workqueue-ephemeral", stream: "SESSION_PROMPTS", owner: "daemon prompt subscription" },
+  // File storage, 7 day max age: every remaining message is redelivered to the successor.
+  { kind: "workqueue-durable", stream: "CHANNEL_OUTBOUND", owner: "channel outbound consumer" },
+  { kind: "consumer", stream: "MESSAGE", consumer: "ravi-messages", owner: "omni consumer" },
+  { kind: "consumer", stream: "INSTANCE", consumer: "ravi-instances", owner: "omni consumer" },
+  { kind: "consumer", stream: "REACTION", consumer: "ravi-reactions", owner: "omni consumer" },
+];
+
+export async function collectJetStreamResidue(
+  reader: JetStreamResidueReader,
+  rules: readonly JetStreamResidueRule[] = LEGACY_JETSTREAM_RESIDUE_RULES,
+): Promise<DurableResidue> {
+  const sources: DurableResidueSource[] = [];
+  const unknown: string[] = [];
+  for (const rule of rules) {
+    const label = rule.kind === "consumer" ? `jetstream:${rule.stream}/${rule.consumer}` : `jetstream:${rule.stream}`;
+    try {
+      if (rule.kind === "consumer") {
+        const state = await reader.consumerPending(rule.stream, rule.consumer);
+        if (!state) {
+          sources.push({ source: label, pending: 0, inFlight: 0, detail: { consumer: "absent" } });
+          continue;
+        }
+        // Ack-pending messages are redelivered after ack_wait: durable, owned by the successor's consumer.
+        sources.push({
+          source: label,
+          pending: state.pending,
+          inFlight: state.ackPending,
+          detail: { owner: rule.owner },
+        });
+        continue;
+      }
+      const messages = await reader.streamMessages(rule.stream);
+      if (messages === null) {
+        sources.push({ source: label, pending: 0, inFlight: 0, detail: { stream: "absent" } });
+        continue;
+      }
+      if (rule.kind === "workqueue-ephemeral" && messages > 0) {
+        unknown.push(`${label}: ${messages} prompt(s) in memory storage expire in 60 s and are not durable`);
+        continue;
+      }
+      sources.push({ source: label, pending: messages, inFlight: 0, detail: { owner: rule.owner } });
+    } catch (cause) {
+      // no-cause: An unreadable broker source is recorded as unknown residue, which blocks adoption with this message.
+      unknown.push(`${label}: unreadable (${cause instanceof Error ? cause.message : String(cause)})`);
+    }
+  }
+  return { sources, unknown };
+}
+
+export function mergeResidue(...parts: DurableResidue[]): DurableResidue {
+  return {
+    sources: parts.flatMap((part) => part.sources),
+    unknown: parts.flatMap((part) => part.unknown),
+  };
+}
