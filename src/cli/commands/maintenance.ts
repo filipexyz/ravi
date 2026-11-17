@@ -4,10 +4,13 @@ import { z } from "zod";
 import { runPm2 } from "../../pm2.js";
 import {
   type AdoptionHost,
+  describeThreadFenceMaintenance,
   planThreadFenceAdoption,
   prepareThreadFenceAdoption,
   readThreadFenceAdoption,
   recoverThreadFenceAdoption,
+  resumeThreadFenceAdoption,
+  successorOutcome,
 } from "../../threads/fence-adoption.js";
 import {
   liveBootIdentity,
@@ -28,6 +31,11 @@ const RECOVER = "maintenance thread-fence-recover";
 const RECOVERY_MODES = ["release", "retry", "abandon"] as const;
 type RecoveryMode = (typeof RECOVERY_MODES)[number];
 
+const NEXT_AFTER_RELEASE =
+  "The fence is installed: start any stopped runtime with 'ravi daemon start' and 'ravi channels start'.";
+const NEXT_AFTER_ABANDON =
+  "No fence was installed: reinstall the previous release (3.261113.2), then start it with 'ravi daemon start' and 'ravi channels start'.";
+
 export const threadFenceAdoptReturnSchema = z.object({
   action: z.literal("thread-fence-adopt"),
   executed: z.literal(true),
@@ -42,7 +50,7 @@ export const threadFenceRecoverReturnSchema = z.object({
   executed: z.literal(true),
   result: z.enum(["released", "reauthorized", "abandoned"]),
   adopted: z.boolean().optional(),
-  detail: z.string().optional(),
+  detail: z.string(),
 });
 
 function liveHost(stateDir: string): AdoptionHost {
@@ -72,7 +80,11 @@ async function runMaintenance<T>(op: string, asJson: boolean | undefined, run: (
     if (error instanceof ContractError) throw error;
     const message = error instanceof Error ? error.message : String(error);
     const code = /^([A-Z][A-Z0-9_]+)(?::|$)/.exec(message)?.[1] ?? "THREAD_FENCE_ADOPTION_FAILED";
-    contractFail(op, code, message, { asJson, diagnostic: errorDiagnostic(error, { operation: op }) });
+    contractFail(op, code, message, {
+      asJson,
+      details: { suggestedAction: "Run 'ravi maintenance thread-fence-recover --mode <mode>' without --execute" },
+      diagnostic: errorDiagnostic(error, { operation: op }),
+    });
   }
 }
 
@@ -82,22 +94,37 @@ function print(payload: Record<string, unknown>, asJson: boolean | undefined, hu
 
 /**
  * Starts the existing `ravi` registration (same script, same environment) and
- * waits until the successor adopted the fence and released the interlock.
- * Channels start only after that, through their ordinary guarded entry.
+ * waits until the successor adopted the fence AND the interlock is gone; only
+ * then the channel runner starts, through its ordinary guarded entry.
  */
-async function startSuccessorAndWait(stateDir: string): Promise<{ adopted: boolean; detail: string }> {
-  if (runPm2(["start", "ravi"]).status !== 0) return { adopted: false, detail: "pm2 start ravi failed" };
-  const deadline = Date.now() + SUCCESSOR_WAIT_MS;
-  while (Date.now() < deadline) {
-    const adoption = readThreadFenceAdoption(stateDir);
-    if (!adoption) {
-      if (runPm2(["start", "ravi-channels"]).status !== 0)
-        return { adopted: true, detail: "fence adopted; pm2 start ravi-channels failed, start channels by hand" };
+export async function startSuccessorAndWait(
+  stateDir: string,
+  host: {
+    start: (name: "ravi" | "ravi-channels") => number;
+    wait: () => Promise<void>;
+    timeoutMs?: number;
+    now?: () => number;
+  } = {
+    start: (name) => runPm2(["start", name]).status,
+    wait: () => new Promise((resolve) => setTimeout(resolve, 1_000)),
+  },
+): Promise<{ adopted: boolean; detail: string }> {
+  const databasePath = join(stateDir, "ravi.db");
+  const now = host.now ?? Date.now;
+  if (host.start("ravi") !== 0) return { adopted: false, detail: "pm2 start ravi failed" };
+  const deadline = now() + (host.timeoutMs ?? SUCCESSOR_WAIT_MS);
+  while (now() < deadline) {
+    const outcome = successorOutcome(stateDir, databasePath);
+    if (outcome === "adopted") {
+      if (host.start("ravi-channels") !== 0)
+        return { adopted: true, detail: "fence adopted; pm2 start ravi-channels failed, run 'ravi channels start'" };
       return { adopted: true, detail: "fence adopted, interlock released, channels started" };
     }
-    if (adoption.phase === "blocked")
-      return { adopted: false, detail: `successor blocked: ${adoption.failure ?? "no detail"}` };
-    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    if (outcome === "failed") {
+      const state = describeThreadFenceMaintenance({ stateDir, databasePath });
+      return { adopted: false, detail: `successor did not adopt: ${state.diagnosis}` };
+    }
+    await host.wait();
   }
   return { adopted: false, detail: "successor did not finish adoption in time; inspect before any recovery" };
 }
@@ -107,7 +134,7 @@ function successorFailure(op: string, asJson: boolean | undefined, maintenanceId
     asJson,
     details: {
       maintenanceId,
-      suggestedAction: "Inspect runtime-maintenance/adoption.json, then run 'ravi maintenance thread-fence-recover'",
+      suggestedAction: "Run 'ravi maintenance thread-fence-recover --mode <mode>' without --execute to see the state",
     },
     diagnostic: errorDiagnostic(detail, { operation: op }),
   });
@@ -155,14 +182,15 @@ export class MaintenanceCommands {
 
   @Command({
     name: "thread-fence-recover",
-    description: "Explicit recovery of an interrupted thread fence adoption: release, retry or abandon",
+    description:
+      "Explicit recovery of a stopped or interrupted thread fence adoption: release, retry or abandon (preview shows the state)",
   })
   @CommandAccess({ kind: "mutate", resource: "daemon", action: "thread-fence-recover", risk: "high" })
   @Returns(threadFenceRecoverReturnSchema)
   @CliOnly()
   async recover(
     @Option({ flags: "--mode <mode>", description: "release | retry | abandon" }) mode?: string,
-    @Option({ flags: "--execute", description: "Apply; without it only the current record is shown" })
+    @Option({ flags: "--execute", description: "Apply; without it only the current state is shown" })
     execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
@@ -171,38 +199,42 @@ export class MaintenanceCommands {
       contractFail(RECOVER, "USAGE_ERROR", message, {
         asJson,
         exitCode: CONTRACT_EXIT_USAGE,
-        details: { suggestedAction: "Read the RUNBOOK of quality/state-boundary to choose the recovery mode" },
+        details: { suggestedAction: "Run with --mode release (without --execute) to see which modes apply now" },
         diagnostic: errorDiagnostic(message, { operation: RECOVER }),
       });
     }
     const recoveryMode = mode as RecoveryMode;
     return runMaintenance(RECOVER, asJson, async () => {
       const stateDir = getRaviStateDir();
+      const databasePath = join(stateDir, "ravi.db");
       if (!execute)
-        contractDryRun(RECOVER, { mode: recoveryMode, adoption: readThreadFenceAdoption(stateDir) }, { asJson });
-      const result = recoverThreadFenceAdoption({
-        stateDir,
-        databasePath: join(stateDir, "ravi.db"),
-        mode: recoveryMode,
-      });
+        contractDryRun(
+          RECOVER,
+          { mode: recoveryMode, state: describeThreadFenceMaintenance({ stateDir, databasePath }) },
+          { asJson },
+        );
+      const current = readThreadFenceAdoption(stateDir);
+      const resume =
+        recoveryMode === "retry" && (current?.phase === "preparing" || current?.phase === "preparation-blocked");
+      let maintenanceId = current?.maintenanceId ?? "unknown";
+      let result: "released" | "reauthorized" | "abandoned";
+      if (resume) {
+        maintenanceId = (await resumeThreadFenceAdoption(liveHost(stateDir))).maintenanceId;
+        result = "reauthorized";
+      } else result = recoverThreadFenceAdoption({ stateDir, databasePath, mode: recoveryMode });
       if (result !== "reauthorized") {
         const payload = threadFenceRecoverReturnSchema.parse({
           action: "thread-fence-recover",
           mode: recoveryMode,
           executed: true,
           result,
+          detail: result === "released" ? NEXT_AFTER_RELEASE : NEXT_AFTER_ABANDON,
         });
-        print(payload, asJson, `Thread fence adoption recovery: ${result}`);
+        print(payload, asJson, `Thread fence adoption recovery: ${result}. ${payload.detail}`);
         return payload;
       }
       const successor = await startSuccessorAndWait(stateDir);
-      if (!successor.adopted)
-        successorFailure(
-          RECOVER,
-          asJson,
-          readThreadFenceAdoption(stateDir)?.maintenanceId ?? "unknown",
-          successor.detail,
-        );
+      if (!successor.adopted) successorFailure(RECOVER, asJson, maintenanceId, successor.detail);
       const payload = threadFenceRecoverReturnSchema.parse({
         action: "thread-fence-recover",
         mode: recoveryMode,

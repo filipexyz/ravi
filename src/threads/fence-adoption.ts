@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   closeSync,
   constants,
+  existsSync,
   fsyncSync,
   lstatSync,
   mkdirSync,
@@ -14,6 +15,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
+import { acquireSchemaFileLock, SchemaLockBusyError } from "../db/schema-lock.js";
 import { canonicalStatePath } from "../db/state-boundary.js";
 import {
   assertRuntimeMaintenanceInactive,
@@ -37,6 +39,10 @@ import { THREAD_FENCE_TABLE } from "./schema-fence.js";
  * The fence itself is installed by the authorized successor daemon, inside
  * `withExitedThreadBootstrapAuthorization`, which re-verifies every claim.
  * Once the fence exists, ordinary restarts and updates need none of this.
+ *
+ * Every state after the interlock has an explicit recovery: the adoption record
+ * is written before anything is stopped, and recovery also accepts a maintenance
+ * record or an interlock left without one.
  */
 export const THREAD_FENCE_ADOPTION_PROTOCOL = "ravi.thread-fence-adoption/v1";
 
@@ -62,15 +68,34 @@ export type DurableResidue = { sources: DurableResidueSource[]; unknown: string[
 type EvidenceReference = { path: string; sha256: string };
 type DatabaseIdentity = { path: string; device: number; inode: number };
 
+export type ThreadFenceAdoptionPhase =
+  | "preparing"
+  | "preparation-blocked"
+  | "authorized"
+  | "adopting"
+  | "adopted"
+  | "blocked";
+const PHASES: readonly ThreadFenceAdoptionPhase[] = [
+  "preparing",
+  "preparation-blocked",
+  "authorized",
+  "adopting",
+  "adopted",
+  "blocked",
+];
+/** Phases before any successor was authorized: no evidence, no successor, never a fence. */
+const PREPARATION_PHASES: readonly ThreadFenceAdoptionPhase[] = ["preparing", "preparation-blocked"];
+
 export type ThreadFenceAdoption = {
   protocol: typeof THREAD_FENCE_ADOPTION_PROTOCOL;
   maintenanceId: string;
-  phase: "authorized" | "adopting" | "adopted" | "blocked";
+  phase: ThreadFenceAdoptionPhase;
   database: DatabaseIdentity;
   targetBundlePath: string;
   targetBundleSha256: string;
   predecessors: MaintenanceProcess[];
-  exclusionEvidence: EvidenceReference;
+  /** Present once the preparation authorized a successor. */
+  exclusionEvidence?: EvidenceReference;
   completion: ProcessCompletionEvidence[];
   successor?: { pid: number; startedAt: number };
   failure?: string;
@@ -109,6 +134,7 @@ const maintenanceDirectory = (stateDir: string) => join(stateDir, "runtime-maint
 const adoptionPath = (stateDir: string) => join(maintenanceDirectory(stateDir), "adoption.json");
 const successorClaimPath = (stateDir: string) => join(maintenanceDirectory(stateDir), "successor");
 const interlockPath = (stateDir: string) => join(maintenanceDirectory(stateDir), "interlock");
+const coordinatorLockPath = (stateDir: string) => join(maintenanceDirectory(stateDir), "coordinator.lock");
 
 function pathExists(path: string): boolean {
   try {
@@ -169,6 +195,21 @@ function samePath(a: string, b: string): boolean {
   return canonicalStatePath(a) === canonicalStatePath(b);
 }
 
+/**
+ * The coordinator, a resumed preparation and every recovery hold this OS lock
+ * (released by the kernel when the process dies), so recovery never races a
+ * coordinator that is still stopping processes.
+ */
+function acquireCoordinatorLease(stateDir: string): { release(): void } {
+  try {
+    return acquireSchemaFileLock(coordinatorLockPath(stateDir), 0);
+  } catch (cause) {
+    if (cause instanceof SchemaLockBusyError)
+      throw new Error("THREAD_FENCE_ADOPTION_BLOCKED: another adoption coordinator or recovery is running", { cause });
+    throw new Error("THREAD_FENCE_ADOPTION_UNVERIFIABLE: the coordinator lease cannot be taken", { cause });
+  }
+}
+
 /** Read-only fence probe; never installs, migrates or changes the journal mode. */
 export function databaseHasThreadFence(path: string): boolean {
   const database = new Database(path, { readonly: true, create: false });
@@ -188,16 +229,16 @@ export function readThreadFenceAdoption(stateDir: string): ThreadFenceAdoption |
   if (
     value?.protocol !== THREAD_FENCE_ADOPTION_PROTOCOL ||
     typeof value.maintenanceId !== "string" ||
-    !["authorized", "adopting", "adopted", "blocked"].includes(value.phase) ||
+    !PHASES.includes(value.phase) ||
     !/^[a-f0-9]{64}$/.test(value.targetBundleSha256) ||
     typeof value.targetBundlePath !== "string" ||
     !Array.isArray(value.predecessors) ||
     value.predecessors.length !== 2 ||
     !Array.isArray(value.completion) ||
-    value.completion.length !== 2 ||
-    !value.exclusionEvidence ||
     !value.database
   )
+    throw new Error("THREAD_FENCE_ADOPTION_CORRUPT");
+  if (!PREPARATION_PHASES.includes(value.phase) && (value.completion.length !== 2 || !value.exclusionEvidence))
     throw new Error("THREAD_FENCE_ADOPTION_CORRUPT");
   return value;
 }
@@ -250,35 +291,88 @@ export function planThreadFenceAdoption(host: AdoptionHost, targetBundlePath: st
 }
 
 /**
- * Coordinator. Holds the interlock from the first stop onward and never
- * releases it; the authorized successor or an explicit recovery does.
+ * Coordinator. Takes the interlock and writes the adoption record before the
+ * first stop; never releases the interlock. The authorized successor or an
+ * explicit recovery does.
  */
 export async function prepareThreadFenceAdoption(
   host: AdoptionHost,
   targetBundlePath: string,
 ): Promise<ThreadFenceAdoption> {
   const plan = planThreadFenceAdoption(host, targetBundlePath);
+  const lease = acquireCoordinatorLease(host.stateDir);
+  try {
+    // Re-checked under the lease: another coordinator may have finished in between.
+    assertRuntimeMaintenanceInactive(host.stateDir);
+    if (readThreadFenceAdoption(host.stateDir)) blocked("an adoption record already exists; use recovery");
+    mkdirSync(maintenanceDirectory(host.stateDir), { recursive: true, mode: 0o700 });
+    // Atomic, persistent ownership. No timeout or stale-lock deletion.
+    mkdirSync(interlockPath(host.stateDir), { mode: 0o700 });
+    const id = randomUUID();
+    const adoption: ThreadFenceAdoption = {
+      protocol: THREAD_FENCE_ADOPTION_PROTOCOL,
+      maintenanceId: id,
+      phase: "preparing",
+      database: plan.database,
+      targetBundlePath: plan.targetBundlePath,
+      targetBundleSha256: plan.targetBundleSha256,
+      predecessors: plan.predecessors.map((entry) => ({ ...entry })),
+      completion: [],
+    };
+    // The recovery handle exists before anything is stopped.
+    persistAdoption(host.stateDir, adoption);
+    const record: RuntimeMaintenance = {
+      protocol: "ravi.runtime-maintenance/v1",
+      id,
+      phase: "draining",
+      targetBundleSha256: plan.targetBundleSha256,
+      predecessors: plan.predecessors,
+      completion: [],
+      exitedPids: [],
+    };
+    persistRuntimeMaintenance(record, host.stateDir);
+    return await drivePreparation(host, adoption, record);
+  } finally {
+    lease.release();
+  }
+}
+
+/**
+ * Resumes a preparation that stopped (blocked or interrupted) before it
+ * authorized a successor: predecessors already proven gone are not stopped
+ * again, everything else is re-verified from scratch.
+ */
+export async function resumeThreadFenceAdoption(host: AdoptionHost): Promise<ThreadFenceAdoption> {
+  const lease = acquireCoordinatorLease(host.stateDir);
+  try {
+    const adoption = readThreadFenceAdoption(host.stateDir);
+    const record = readRuntimeMaintenance(host.stateDir);
+    if (!adoption || !PREPARATION_PHASES.includes(adoption.phase))
+      blocked("only a preparation that stopped before authorizing a successor resumes");
+    if (!record || record.id !== adoption.maintenanceId) blocked("the maintenance record is missing; use abandon");
+    if (!pathExists(interlockPath(host.stateDir))) blocked("the interlock is missing; use abandon");
+    if (databaseHasThreadFence(adoption.database.path)) blocked("the fence is installed; use release");
+    return await drivePreparation(host, adoption, record);
+  } finally {
+    lease.release();
+  }
+}
+
+async function drivePreparation(
+  host: AdoptionHost,
+  start: ThreadFenceAdoption,
+  record: RuntimeMaintenance,
+): Promise<ThreadFenceAdoption> {
   const now = host.now ?? Date.now;
   const exitState = host.exitState ?? processExitState;
   const directory = maintenanceDirectory(host.stateDir);
-  mkdirSync(directory, { recursive: true, mode: 0o700 });
-  // Atomic, persistent ownership. No timeout or stale-lock deletion.
-  mkdirSync(interlockPath(host.stateDir), { mode: 0o700 });
-  const record: RuntimeMaintenance = {
-    protocol: "ravi.runtime-maintenance/v1",
-    id: randomUUID(),
-    phase: "draining",
-    targetBundleSha256: plan.targetBundleSha256,
-    predecessors: plan.predecessors,
-    completion: [],
-    exitedPids: [],
-  };
-  persistRuntimeMaintenance(record, host.stateDir);
+  const target = start.targetBundlePath;
+  const { failure: _previous, ...rest } = start;
+  const adoption: ThreadFenceAdoption = { ...rest, phase: "preparing" };
   const assertOnlyPredecessors = () => {
     for (const entry of host.registry()) {
       // Unrelated apps (broker, gateway) are not Ravi writers; anything named or launched as Ravi is.
-      if (!entry.online || !(NAMES.includes(entry.name as Name) || samePath(entry.scriptPath, plan.targetBundlePath)))
-        continue;
+      if (!entry.online || !(NAMES.includes(entry.name as Name) || samePath(entry.scriptPath, target))) continue;
       if (
         !record.predecessors.some(
           (before) => before.name === entry.name && before.pid === entry.pid && before.startedAt === entry.startedAt,
@@ -288,12 +382,15 @@ export async function prepareThreadFenceAdoption(
     }
   };
   try {
+    persistAdoption(host.stateDir, adoption);
     record.phase = "stopping";
+    record.failure = undefined;
     persistRuntimeMaintenance(record, host.stateDir);
     for (const name of NAMES) {
       const predecessor = record.predecessors.find((entry) => entry.name === name)!;
+      if (record.exitedPids.includes(predecessor.pid) && exitState(predecessor.pid) === "exited") continue;
       assertOnlyPredecessors();
-      await host.stop(name);
+      if (host.registry().some((entry) => entry.name === name && entry.online)) await host.stop(name);
       let exited = false;
       for (let attempt = 0; attempt < (host.exitChecks ?? 100); attempt += 1) {
         assertOnlyPredecessors();
@@ -304,7 +401,7 @@ export async function prepareThreadFenceAdoption(
         await (host.wait ?? (() => new Promise((resolve) => setTimeout(resolve, 100))))();
       }
       if (!exited) blocked(`${name} physical exit is unproven`);
-      record.exitedPids.push(predecessor.pid);
+      if (!record.exitedPids.includes(predecessor.pid)) record.exitedPids.push(predecessor.pid);
       persistRuntimeMaintenance(record, host.stateDir);
     }
     if (record.predecessors.some((entry) => exitState(entry.pid) !== "exited"))
@@ -313,25 +410,25 @@ export async function prepareThreadFenceAdoption(
     for (const name of NAMES) {
       const registration = singleRegistration(after, name);
       if (registration.online) blocked(`${name} launcher restarted a process during maintenance`);
-      if (!samePath(registration.scriptPath, plan.targetBundlePath))
-        blocked(`${name} launcher changed its bundle during maintenance`);
+      if (!samePath(registration.scriptPath, target)) blocked(`${name} launcher changed its bundle during maintenance`);
     }
-    if (after.some((entry) => entry.online && samePath(entry.scriptPath, plan.targetBundlePath)))
+    if (after.some((entry) => entry.online && samePath(entry.scriptPath, target)))
       blocked("a process is running the target bundle during maintenance");
-    if (host.bundleDigest(plan.targetBundlePath) !== plan.targetBundleSha256)
+    if (host.bundleDigest(target) !== adoption.targetBundleSha256)
       blocked("the target bundle changed during maintenance");
     const residue = await host.residue();
     if (!residue || !Array.isArray(residue.sources) || !Array.isArray(residue.unknown))
       blocked("durable residue could not be read");
     if (residue.unknown.length > 0)
       blocked(`accepted work with unknown outcome: ${residue.unknown.slice(0, 5).join(", ")}`);
-    const evidenceDirectory = join(directory, "evidence", record.id);
+    // One evidence directory per attempt: a resumed preparation never rewrites earlier evidence.
+    const evidenceDirectory = join(directory, "evidence", record.id, randomUUID());
     const observedAt = now();
     const exclusionEvidence = writeEvidence(evidenceDirectory, "exclusion.json", {
       protocol: THREAD_FENCE_ADOPTION_PROTOCOL,
       maintenanceId: record.id,
       observedAt,
-      target: { path: plan.targetBundlePath, sha256: plan.targetBundleSha256 },
+      target: { path: target, sha256: adoption.targetBundleSha256 },
       // Every registration that could relaunch Ravi now starts only the target bundle,
       // which honours the interlock; the legacy code is not reachable by any launcher.
       registrations: after.map((entry) => ({
@@ -341,6 +438,7 @@ export async function prepareThreadFenceAdoption(
         scriptPath: entry.scriptPath,
       })),
     });
+    record.completion = [];
     for (const predecessor of record.predecessors) {
       const evidence = writeEvidence(evidenceDirectory, `${predecessor.name}.json`, {
         protocol: THREAD_FENCE_ADOPTION_PROTOCOL,
@@ -360,23 +458,20 @@ export async function prepareThreadFenceAdoption(
     }
     record.phase = "stopped";
     persistRuntimeMaintenance(record, host.stateDir);
-    const adoption: ThreadFenceAdoption = {
-      protocol: THREAD_FENCE_ADOPTION_PROTOCOL,
-      maintenanceId: record.id,
+    const authorized: ThreadFenceAdoption = {
+      ...adoption,
       phase: "authorized",
-      database: plan.database,
-      targetBundlePath: plan.targetBundlePath,
-      targetBundleSha256: plan.targetBundleSha256,
-      predecessors: record.predecessors.map((entry) => ({ ...entry })),
       exclusionEvidence,
       completion: record.completion.map((entry) => ({ ...entry, process: { ...entry.process } })),
     };
-    persistAdoption(host.stateDir, adoption);
-    return adoption;
+    persistAdoption(host.stateDir, authorized);
+    return authorized;
   } catch (cause) {
+    const failure = cause instanceof Error ? cause.message : String(cause);
     record.phase = "blocked";
-    record.failure = cause instanceof Error ? cause.message : String(cause);
+    record.failure = failure;
     persistRuntimeMaintenance(record, host.stateDir);
+    persistAdoption(host.stateDir, { ...adoption, phase: "preparation-blocked", failure });
     throw cause;
   }
 }
@@ -400,7 +495,12 @@ export function admitDaemonStart(input: {
   };
   const adoption = readThreadFenceAdoption(input.stateDir);
   if (!adoption || !record || record.id !== adoption.maintenanceId) return refuse("explicit recovery is required");
-  if (adoption.phase === "adopting" && adoption.successor?.pid === input.self.pid) return "successor";
+  if (
+    adoption.phase === "adopting" &&
+    adoption.successor?.pid === input.self.pid &&
+    adoption.successor.startedAt === input.self.startedAt
+  )
+    return "successor";
   if (adoption.phase !== "authorized" || record.phase !== "stopped")
     return refuse(`thread fence adoption is ${adoption.phase}; explicit recovery is required`);
   if (
@@ -426,7 +526,8 @@ function releaseInterlock(stateDir: string, maintenanceId: string): void {
   if (pathExists(adoptionPath(stateDir)))
     renameSync(adoptionPath(stateDir), join(history, `${maintenanceId}.adoption.json`));
   if (pathExists(successorClaimPath(stateDir))) rmdirSync(successorClaimPath(stateDir));
-  // The interlock goes last: any crash before this line keeps both starts blocked.
+  // The interlock goes last: any crash before this line keeps both starts blocked,
+  // and recovery accepts an interlock left without records.
   if (pathExists(interlockPath(stateDir))) rmdirSync(interlockPath(stateDir));
   fsyncDirectory(directory);
 }
@@ -434,8 +535,9 @@ function releaseInterlock(stateDir: string, maintenanceId: string): void {
 /**
  * Runs in the admitted successor, before any other state is opened. `open` must
  * synchronously open the router database so the fence is installed inside the
- * authorization scope. The verifier re-derives every claim; the record only
- * names what to verify.
+ * authorization scope. The verifier re-derives every claim it can observe:
+ * database identity, launcher state, bundle digest and, when `residue` is given,
+ * the SQLite residue itself; the broker residue stays the coordinator's record.
  */
 export function adoptThreadFenceAsSuccessor(input: {
   stateDir: string;
@@ -443,11 +545,14 @@ export function adoptThreadFenceAsSuccessor(input: {
   bundleDigest: (path: string) => string | null;
   self: { pid: number };
   open: () => void;
+  residue?: () => DurableResidue;
 }): ThreadFenceAdoption {
   const adoption = readThreadFenceAdoption(input.stateDir);
   if (!adoption || adoption.phase !== "adopting" || adoption.successor?.pid !== input.self.pid)
     blocked("this process is not the admitted successor");
   try {
+    const exclusionEvidence = adoption.exclusionEvidence;
+    if (!exclusionEvidence || adoption.completion.length !== 2) blocked("the adoption record has no evidence");
     withExitedThreadBootstrapAuthorization(
       {
         databasePath: adoption.database.path,
@@ -474,13 +579,16 @@ export function adoptThreadFenceAsSuccessor(input: {
           }
           if (input.bundleDigest(adoption.targetBundlePath) !== adoption.targetBundleSha256)
             blocked("the authorized bundle changed");
+          const residue = input.residue?.();
+          if (residue && residue.unknown.length > 0)
+            blocked(`accepted work with unknown outcome at adoption: ${residue.unknown.slice(0, 5).join(", ")}`);
           return {
             inventoryComplete: true,
-            // Legacy processes observed now; the successor itself is not a legacy writer.
+            // Legacy processes observed now: none may run (checked above); the successor is not a legacy writer.
             inventory: [],
             admissionsClosed: true,
             launchersExcluded: true,
-            exclusionEvidence: { ...adoption.exclusionEvidence },
+            exclusionEvidence: { ...exclusionEvidence },
             completion: adoption.completion.map((entry) => ({ ...entry, process: { ...entry.process } })),
           };
         },
@@ -504,40 +612,133 @@ export function adoptThreadFenceAsSuccessor(input: {
   }
 }
 
+export type RecoveryMode = "release" | "retry" | "abandon";
+type ExitState = "exited" | "present" | "unknown";
+
+export type ThreadFenceMaintenanceState = {
+  interlock: boolean;
+  maintenance: { id: string; phase: string; failure?: string; exitedPids: number[] } | null;
+  adoption: { maintenanceId: string; phase: ThreadFenceAdoptionPhase; failure?: string } | null;
+  successorClaim: boolean;
+  fenced: boolean;
+  predecessors: { name: string; pid: number; exit: ExitState }[];
+  successor: { pid: number; exit: ExitState } | null;
+  /** Recovery modes that apply now; empty means nothing may be recovered yet. */
+  modes: RecoveryMode[];
+  diagnosis: string;
+};
+
+/** Read-only view of every maintenance artifact; recovery acts only on what this reports. */
+export function describeThreadFenceMaintenance(input: {
+  stateDir: string;
+  databasePath: string;
+  exitState?: (pid: number) => ExitState;
+}): ThreadFenceMaintenanceState {
+  const exitState = input.exitState ?? processExitState;
+  const interlock = pathExists(interlockPath(input.stateDir));
+  const record = readRuntimeMaintenance(input.stateDir);
+  const adoption = readThreadFenceAdoption(input.stateDir);
+  const successorClaim = pathExists(successorClaimPath(input.stateDir));
+  const fenced = existsSync(input.databasePath) && databaseHasThreadFence(input.databasePath);
+  const predecessors = (adoption?.predecessors ?? record?.predecessors ?? []).map((entry) => ({
+    name: entry.name,
+    pid: entry.pid,
+    exit: exitState(entry.pid),
+  }));
+  const successor = adoption?.successor
+    ? { pid: adoption.successor.pid, exit: exitState(adoption.successor.pid) }
+    : null;
+  const successorGone = !successor || successor.exit === "exited";
+  let modes: RecoveryMode[] = [];
+  let diagnosis: string;
+  if (!interlock && !record && !adoption) diagnosis = "no maintenance is active";
+  else if (adoption && record && adoption.maintenanceId !== record.id)
+    diagnosis = "the adoption and maintenance records belong to different maintenances";
+  else if (fenced) {
+    if (!successorGone && adoption?.phase !== "adopted")
+      diagnosis = "the successor is still adopting; it releases the interlock itself";
+    else {
+      diagnosis = "the fence is installed; release returns to ordinary restarts";
+      modes = ["release"];
+    }
+  } else if (!successorGone) diagnosis = "the claimed successor is present or its exit is unknown";
+  else if (!adoption || PREPARATION_PHASES.includes(adoption.phase)) {
+    const failure = adoption?.failure ?? record?.failure;
+    diagnosis = adoption
+      ? "the preparation stopped before authorizing a successor"
+      : record
+        ? "a maintenance record without an adoption record"
+        : "an interlock without any record";
+    if (failure) diagnosis = `${diagnosis}: ${failure}`;
+    modes = adoption && record && interlock ? ["retry", "abandon"] : ["abandon"];
+  } else {
+    diagnosis = `the successor did not install the fence${adoption.failure ? `: ${adoption.failure}` : ""}`;
+    modes = ["retry", "abandon"];
+  }
+  return {
+    interlock,
+    maintenance: record
+      ? { id: record.id, phase: record.phase, failure: record.failure, exitedPids: [...record.exitedPids] }
+      : null,
+    adoption: adoption
+      ? { maintenanceId: adoption.maintenanceId, phase: adoption.phase, failure: adoption.failure }
+      : null,
+    successorClaim,
+    fenced,
+    predecessors,
+    successor,
+    modes,
+    diagnosis,
+  };
+}
+
 /**
  * Explicit recovery. Never clears queues, claims or markers and never touches the
  * database. `release`: the fence is installed and no successor is mid-adoption.
- * `retry`: no fence, the claimed successor exited; authorize one new successor.
+ * `retry`: no fence; a successor that failed is replaced by one new successor
+ * (a stopped preparation resumes through `resumeThreadFenceAdoption` instead).
  * `abandon`: no fence; release the interlock so the previous release can return.
  */
 export function recoverThreadFenceAdoption(input: {
   stateDir: string;
   databasePath: string;
-  mode: "release" | "retry" | "abandon";
-  exitState?: (pid: number) => "exited" | "present" | "unknown";
-}): string {
-  const exitState = input.exitState ?? processExitState;
-  const adoption = readThreadFenceAdoption(input.stateDir);
-  const record = readRuntimeMaintenance(input.stateDir);
-  if (!adoption || !record || adoption.maintenanceId !== record.id)
-    blocked("no thread fence adoption record matches the maintenance record");
-  const fenced = databaseHasThreadFence(input.databasePath);
-  const successorGone = !adoption.successor || exitState(adoption.successor.pid) === "exited";
-  if (input.mode === "release") {
-    if (!fenced) blocked("the fence is not installed; use retry or abandon");
-    if (adoption.phase !== "adopted" && !successorGone)
-      blocked("the successor is still adopting; it releases the interlock itself");
-    releaseInterlock(input.stateDir, record.id);
-    return "released";
+  mode: RecoveryMode;
+  exitState?: (pid: number) => ExitState;
+}): "released" | "reauthorized" | "abandoned" {
+  const lease = acquireCoordinatorLease(input.stateDir);
+  try {
+    const state = describeThreadFenceMaintenance(input);
+    if (!state.modes.includes(input.mode)) blocked(`${input.mode} does not apply: ${state.diagnosis}`);
+    const maintenanceId = state.adoption?.maintenanceId ?? state.maintenance?.id ?? `orphan-${randomUUID()}`;
+    if (input.mode === "retry") {
+      const adoption = readThreadFenceAdoption(input.stateDir)!;
+      if (PREPARATION_PHASES.includes(adoption.phase))
+        blocked("a stopped preparation resumes through the coordinator (resumeThreadFenceAdoption)");
+      if (pathExists(successorClaimPath(input.stateDir))) rmdirSync(successorClaimPath(input.stateDir));
+      const { successor: _previous, failure: _failure, ...rest } = adoption;
+      persistAdoption(input.stateDir, { ...rest, phase: "authorized" });
+      return "reauthorized";
+    }
+    releaseInterlock(input.stateDir, maintenanceId);
+    return input.mode === "release" ? "released" : "abandoned";
+  } finally {
+    lease.release();
   }
-  if (fenced) blocked("the fence is installed; only release applies");
-  if (!successorGone) blocked("the claimed successor is present or its exit is unknown");
-  if (input.mode === "retry") {
-    if (pathExists(successorClaimPath(input.stateDir))) rmdirSync(successorClaimPath(input.stateDir));
-    const { successor: _previous, failure: _failure, ...rest } = adoption;
-    persistAdoption(input.stateDir, { ...rest, phase: "authorized" });
-    return "reauthorized";
-  }
-  releaseInterlock(input.stateDir, record.id);
-  return "abandoned";
+}
+
+/**
+ * What the operator command waits for after starting the successor. `adopted`
+ * only when no record, claim or interlock remains and the fence exists, so the
+ * channel runner never starts while its entry guard would still refuse.
+ */
+export function successorOutcome(stateDir: string, databasePath: string): "pending" | "adopted" | "failed" {
+  const adoption = readThreadFenceAdoption(stateDir);
+  if (adoption) return adoption.phase === "blocked" || adoption.phase === "preparation-blocked" ? "failed" : "pending";
+  if (
+    pathExists(interlockPath(stateDir)) ||
+    readRuntimeMaintenance(stateDir) ||
+    pathExists(successorClaimPath(stateDir))
+  )
+    return "pending";
+  return databaseHasThreadFence(databasePath) ? "adopted" : "failed";
 }

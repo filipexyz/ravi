@@ -8,6 +8,7 @@ import type { Database } from "bun:sqlite";
 import { openStateDatabase } from "../db/state-boundary.js";
 import {
   assertRuntimeMaintenanceInactive,
+  persistRuntimeMaintenance,
   readRuntimeMaintenance,
   type MaintenanceProcess,
 } from "../runtime-maintenance.js";
@@ -15,10 +16,13 @@ import {
   admitDaemonStart,
   adoptThreadFenceAsSuccessor,
   databaseHasThreadFence,
+  describeThreadFenceMaintenance,
   planThreadFenceAdoption,
   prepareThreadFenceAdoption,
   readThreadFenceAdoption,
   recoverThreadFenceAdoption,
+  resumeThreadFenceAdoption,
+  successorOutcome,
   type AdoptionHost,
   type DurableResidue,
   type ManagedRegistration,
@@ -182,16 +186,140 @@ describe("thread fence adoption of a legacy database", () => {
     const f = fixture({ residue: { sources: [], unknown: ["outbox:7f3a"] } });
     await expect(prepareThreadFenceAdoption(f.host, f.bundlePath)).rejects.toThrow("unknown outcome: outbox:7f3a");
     expect(readRuntimeMaintenance(f.stateDir)).toMatchObject({ phase: "blocked" });
-    expect(readThreadFenceAdoption(f.stateDir)).toBeNull();
+    expect(readThreadFenceAdoption(f.stateDir)).toMatchObject({ phase: "preparation-blocked" });
     expect(() => assertRuntimeMaintenanceInactive(f.stateDir)).toThrow("RUNTIME_MAINTENANCE_ACTIVE");
     expect(databaseHasThreadFence(f.databasePath)).toBe(false);
+  });
+
+  it("a blocked preparation has an exit: abandon releases the interlock, nothing else changes", async () => {
+    const f = fixture({ residue: { sources: [], unknown: ["outbox:7f3a"] } });
+    await expect(prepareThreadFenceAdoption(f.host, f.bundlePath)).rejects.toThrow("unknown outcome");
+    // Adopting again is refused while the maintenance is open: recovery is the only way out.
+    expect(() => planThreadFenceAdoption(f.host, f.bundlePath)).toThrow("RUNTIME_MAINTENANCE_ACTIVE");
+    const state = describeThreadFenceMaintenance({ stateDir: f.stateDir, databasePath: f.databasePath });
+    expect(state).toMatchObject({ interlock: true, fenced: false, modes: ["retry", "abandon"] });
+    expect(state.diagnosis).toContain("unknown outcome: outbox:7f3a");
+    expect(state.maintenance).toMatchObject({ phase: "blocked" });
+    expect(state.predecessors.map((entry) => entry.exit)).toEqual(["exited", "exited"]);
+    expect(() =>
+      recoverThreadFenceAdoption({ stateDir: f.stateDir, databasePath: f.databasePath, mode: "release" }),
+    ).toThrow("release does not apply");
+    expect(recoverThreadFenceAdoption({ stateDir: f.stateDir, databasePath: f.databasePath, mode: "abandon" })).toBe(
+      "abandoned",
+    );
+    expect(() => assertRuntimeMaintenanceInactive(f.stateDir)).not.toThrow();
+    const self = { pid: process.pid, startedAt: 2_000 };
+    expect(admitDaemonStart({ stateDir: f.stateDir, ownBundlePath: f.bundlePath, bundleDigest: digestOf, self })).toBe(
+      "normal",
+    );
+    expect(databaseHasThreadFence(f.databasePath)).toBe(false);
+    // With the legacy release back online, a new adoption can be planned again.
+    expect(() => planThreadFenceAdoption(f.host, f.bundlePath)).toThrow("is not running under its launcher");
+  });
+
+  it("a blocked preparation resumes once its residue is known, without stopping anything again", async () => {
+    const f = fixture({ residue: { sources: [], unknown: ["jetstream: unreachable"] } });
+    await expect(prepareThreadFenceAdoption(f.host, f.bundlePath)).rejects.toThrow("unknown outcome");
+    expect(() =>
+      recoverThreadFenceAdoption({ stateDir: f.stateDir, databasePath: f.databasePath, mode: "retry" }),
+    ).toThrow("resumes through the coordinator");
+    f.host.residue = async () => ({
+      sources: [{ source: "jetstream:CHANNEL_OUTBOUND", pending: 1, inFlight: 0 }],
+      unknown: [],
+    });
+    const resumed = await resumeThreadFenceAdoption(f.host);
+    expect(resumed.phase).toBe("authorized");
+    expect(f.stops).toEqual(["ravi-channels", "ravi"]);
+    f.startSuccessor();
+    const self = { pid: process.pid, startedAt: 2_000 };
+    expect(admitDaemonStart({ stateDir: f.stateDir, ownBundlePath: f.bundlePath, bundleDigest: digestOf, self })).toBe(
+      "successor",
+    );
+    adoptThreadFenceAsSuccessor({
+      stateDir: f.stateDir,
+      registry: f.registry,
+      bundleDigest: digestOf,
+      self,
+      open: f.open,
+    });
+    expect(databaseHasThreadFence(f.databasePath)).toBe(true);
+    expect(successorOutcome(f.stateDir, f.databasePath)).toBe("adopted");
+  });
+
+  it("a maintenance record left without an adoption record can be abandoned", async () => {
+    const f = fixture();
+    mkdirSync(join(f.stateDir, "runtime-maintenance", "interlock"), { recursive: true });
+    persistRuntimeMaintenance(
+      {
+        protocol: "ravi.runtime-maintenance/v1",
+        id: "m-1",
+        phase: "blocked",
+        targetBundleSha256: "c".repeat(64),
+        predecessors: f.predecessors,
+        completion: [],
+        exitedPids: [],
+        failure: "pm2 stop ravi-channels exited 1",
+      },
+      f.stateDir,
+    );
+    const state = describeThreadFenceMaintenance({ stateDir: f.stateDir, databasePath: f.databasePath });
+    expect(state).toMatchObject({ adoption: null, modes: ["abandon"] });
+    expect(state.diagnosis).toContain("pm2 stop ravi-channels exited 1");
+    expect(recoverThreadFenceAdoption({ stateDir: f.stateDir, databasePath: f.databasePath, mode: "abandon" })).toBe(
+      "abandoned",
+    );
+    expect(() => assertRuntimeMaintenanceInactive(f.stateDir)).not.toThrow();
+  });
+
+  it("an interlock orphaned after the fence was installed is released, and only then the outcome is adopted", async () => {
+    const f = fixture();
+    await prepareThreadFenceAdoption(f.host, f.bundlePath);
+    f.startSuccessor();
+    const self = { pid: process.pid, startedAt: 2_000 };
+    admitDaemonStart({ stateDir: f.stateDir, ownBundlePath: f.bundlePath, bundleDigest: digestOf, self });
+    adoptThreadFenceAsSuccessor({
+      stateDir: f.stateDir,
+      registry: f.registry,
+      bundleDigest: digestOf,
+      self,
+      open: f.open,
+    });
+    // A crash inside the release after the records moved and before the interlock went away.
+    mkdirSync(join(f.stateDir, "runtime-maintenance", "interlock"));
+    expect(successorOutcome(f.stateDir, f.databasePath)).toBe("pending");
+    expect(() => assertRuntimeMaintenanceInactive(f.stateDir)).toThrow("RUNTIME_MAINTENANCE_ACTIVE");
+    const state = describeThreadFenceMaintenance({ stateDir: f.stateDir, databasePath: f.databasePath });
+    expect(state).toMatchObject({ adoption: null, maintenance: null, fenced: true, modes: ["release"] });
+    expect(recoverThreadFenceAdoption({ stateDir: f.stateDir, databasePath: f.databasePath, mode: "release" })).toBe(
+      "released",
+    );
+    expect(successorOutcome(f.stateDir, f.databasePath)).toBe("adopted");
+  });
+
+  it("the successor is re-admitted only with the same pid AND start time", async () => {
+    const f = fixture();
+    await prepareThreadFenceAdoption(f.host, f.bundlePath);
+    f.startSuccessor();
+    const self = { pid: process.pid, startedAt: 2_000 };
+    admitDaemonStart({ stateDir: f.stateDir, ownBundlePath: f.bundlePath, bundleDigest: digestOf, self });
+    expect(() =>
+      admitDaemonStart({
+        stateDir: f.stateDir,
+        ownBundlePath: f.bundlePath,
+        bundleDigest: digestOf,
+        self: { pid: process.pid, startedAt: 3_000 },
+      }),
+    ).toThrow("RUNTIME_MAINTENANCE_ACTIVE");
+    expect(admitDaemonStart({ stateDir: f.stateDir, ownBundlePath: f.bundlePath, bundleDigest: digestOf, self })).toBe(
+      "successor",
+    );
   });
 
   it("a launcher that relaunches a runtime during maintenance blocks the adoption", async () => {
     const f = fixture();
     f.state.relaunchChannelsOnStop = true;
     await expect(prepareThreadFenceAdoption(f.host, f.bundlePath)).rejects.toThrow("THREAD_FENCE_ADOPTION_BLOCKED");
-    expect(readThreadFenceAdoption(f.stateDir)).toBeNull();
+    expect(readThreadFenceAdoption(f.stateDir)).toMatchObject({ phase: "preparation-blocked" });
     expect(readRuntimeMaintenance(f.stateDir)).toMatchObject({ phase: "blocked" });
   });
 
@@ -246,7 +374,7 @@ describe("thread fence adoption of a legacy database", () => {
     ).toThrow("present or its exit is unknown");
     expect(() =>
       recoverThreadFenceAdoption({ stateDir: f.stateDir, databasePath: f.databasePath, mode: "release" }),
-    ).toThrow("fence is not installed");
+    ).toThrow("release does not apply");
     expect(
       recoverThreadFenceAdoption({
         stateDir: f.stateDir,

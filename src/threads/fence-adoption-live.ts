@@ -138,14 +138,24 @@ export async function liveResidue(databasePath: string): Promise<DurableResidue>
  * can open any store: installs only the fence, in its own short connection,
  * inside the authorization scope. Store initialization then runs as usual.
  */
-export function adoptThreadFenceAtEntry(stateDir = getRaviStateDir()): ThreadFenceAdoption {
+export function adoptThreadFenceAtEntry(
+  stateDir = getRaviStateDir(),
+  host: {
+    registry: () => ManagedRegistration[];
+    bundleDigest: (path: string) => string | null;
+    pid: number;
+  } = { registry: liveRegistrations, bundleDigest: liveBundleDigest, pid: process.pid },
+): ThreadFenceAdoption {
+  const databasePath = join(stateDir, "ravi.db");
   return adoptThreadFenceAsSuccessor({
     stateDir,
-    registry: liveRegistrations,
-    bundleDigest: liveBundleDigest,
-    self: { pid: process.pid },
+    registry: host.registry,
+    bundleDigest: host.bundleDigest,
+    self: { pid: host.pid },
+    // The successor re-derives the SQLite residue itself instead of trusting the coordinator's record.
+    residue: () => collectSqliteResidue(legacyResidueRules(databasePath)),
     open: () => {
-      const database = openStateDatabase(join(stateDir, "ravi.db"));
+      const database = openStateDatabase(databasePath);
       try {
         prepareRegisteredThreadFence(database);
       } finally {

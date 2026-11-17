@@ -105,25 +105,43 @@ export function assertRuntimeMaintenanceInactive(stateDir = getRaviStateDir()): 
  * fence adoption only the authorized successor bundle, supervised by PM2 as
  * `ravi`, is admitted, once; every other start stays blocked.
  */
-export function admitDaemonEntry(stateDir = getRaviStateDir()): "normal" | "successor" {
+export function admitDaemonEntry(
+  stateDir = getRaviStateDir(),
+  host?: {
+    managed: () => { pid: number; startedAt?: number } | null;
+    ownBundlePath: () => string;
+    bundleDigest: (path: string) => string | null;
+    pid: number;
+  },
+): "normal" | "successor" {
   const directory = join(stateDir, "runtime-maintenance");
   if (!interlockPathExists(join(directory, "interlock")) && !readRuntimeMaintenance(stateDir)) return "normal";
   const { admitDaemonStart } = require("./threads/fence-adoption.js") as typeof import("./threads/fence-adoption.js");
-  const { liveBundleDigest } =
-    require("./threads/fence-adoption-live.js") as typeof import("./threads/fence-adoption-live.js");
-  const { runtimeBootBundlePath } =
-    require("./runtime-process-identity.js") as typeof import("./runtime-process-identity.js");
-  const { getPm2Process } = require("./pm2.js") as typeof import("./pm2.js");
-  const managed = getPm2Process("ravi");
-  if (managed?.pid !== process.pid || !managed.startedAt)
+  const live =
+    host ??
+    (() => {
+      const { liveBundleDigest } =
+        require("./threads/fence-adoption-live.js") as typeof import("./threads/fence-adoption-live.js");
+      const { runtimeBootBundlePath } =
+        require("./runtime-process-identity.js") as typeof import("./runtime-process-identity.js");
+      const { getPm2Process } = require("./pm2.js") as typeof import("./pm2.js");
+      return {
+        managed: () => getPm2Process("ravi"),
+        ownBundlePath: () => runtimeBootBundlePath(),
+        bundleDigest: liveBundleDigest,
+        pid: process.pid,
+      };
+    })();
+  const managed = live.managed();
+  if (managed?.pid !== live.pid || !managed.startedAt)
     throw new Error(
       "RUNTIME_MAINTENANCE_ACTIVE: both runtime starts are blocked; only a PM2-supervised successor may adopt",
     );
   return admitDaemonStart({
     stateDir,
-    ownBundlePath: runtimeBootBundlePath(),
-    bundleDigest: liveBundleDigest,
-    self: { pid: process.pid, startedAt: managed.startedAt },
+    ownBundlePath: live.ownBundlePath(),
+    bundleDigest: live.bundleDigest,
+    self: { pid: live.pid, startedAt: managed.startedAt },
   });
 }
 

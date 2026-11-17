@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { openStateDatabase } from "../../db/state-boundary.js";
+import { prepareThreadFence } from "../../threads/schema-fence.js";
 import { getCommandsMetadata, getOptionsMetadata, getReturnsMetadata } from "../decorators.js";
-import { MaintenanceCommands } from "./maintenance.js";
+import { MaintenanceCommands, startSuccessorAndWait } from "./maintenance.js";
 
 let stateDir = "";
 let previous: string | undefined;
@@ -29,11 +31,45 @@ describe("maintenance thread-fence-recover contract", () => {
   });
 
   it("without --execute it is a dry-run (exit 3) that shows the record and writes nothing", async () => {
-    await expect(new MaintenanceCommands().recover("release", false, true)).rejects.toMatchObject({
-      code: "WRITE_REQUIRES_EXECUTE",
-      exitCode: 3,
-      details: { plan: { mode: "release", adoption: null } },
+    const error = (await new MaintenanceCommands().recover("release", false, true).catch((cause) => cause)) as {
+      code: string;
+      exitCode: number;
+      details: { plan: { mode: string; state: { interlock: boolean; modes: string[]; diagnosis: string } } };
+    };
+    expect(error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(error.exitCode).toBe(3);
+    expect(error.details.plan.mode).toBe("release");
+    expect(error.details.plan.state.interlock).toBe(false);
+    expect(error.details.plan.state.modes).toEqual([]);
+    expect(error.details.plan.state.diagnosis).toBe("no maintenance is active");
+  });
+
+  it("channels start only after the interlock is gone, not when the adoption record disappears", async () => {
+    const maintenance = join(stateDir, "runtime-maintenance");
+    mkdirSync(join(maintenance, "interlock"), { recursive: true });
+    const started: string[] = [];
+    let ticks = 0;
+    const result = await startSuccessorAndWait(stateDir, {
+      start: (name) => {
+        started.push(name);
+        return 0;
+      },
+      wait: async () => {
+        ticks += 1;
+        // The successor installed the fence and moved its records, but the interlock is still there.
+        expect(started).toEqual(["ravi"]);
+        if (ticks === 2) {
+          const db = openStateDatabase(join(stateDir, "ravi.db"));
+          prepareThreadFence(db);
+          db.close();
+          rmSync(join(maintenance, "interlock"), { recursive: true });
+        }
+      },
+      timeoutMs: 60_000,
     });
+    expect(result).toEqual({ adopted: true, detail: "fence adopted, interlock released, channels started" });
+    expect(started).toEqual(["ravi", "ravi-channels"]);
+    expect(ticks).toBe(2);
   });
 
   it("a domain refusal keeps its code and exits 1", async () => {
