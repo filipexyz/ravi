@@ -605,10 +605,23 @@ describe("daemon entry settles adoption leftovers by itself (heal)", () => {
   it("a successor that may still be adopting is never healed away", async () => {
     const f = fixture();
     await prepareThreadFenceAdoption(f.host, f.bundlePath);
-    // Claimed by a live process (this test runner) with another start time.
-    expect(admit(f, { pid: process.pid, startedAt: 2_000 })).toBe("successor");
-    expect(() => admit(f, { pid: exitedPid(), startedAt: 9_000 })).toThrow("RUNTIME_MAINTENANCE_ACTIVE");
+    // Claimed by a live process (this test runner), started during the current OS boot.
+    expect(admit(f, { pid: process.pid, startedAt: Date.now() - 1_000 })).toBe("successor");
+    expect(() => admit(f, { pid: exitedPid(), startedAt: 9_000 })).toThrow(
+      `a thread fence upgrade is still running in pid ${process.pid}`,
+    );
     expect(readThreadFenceAdoption(f.stateDir)).toMatchObject({ phase: "adopting" });
+  });
+
+  it("records of different maintenances, with no successor alive, are settled instead of refusing forever", async () => {
+    const f = fixture();
+    await prepareThreadFenceAdoption(f.host, f.bundlePath);
+    const path = join(f.stateDir, "runtime-maintenance", "active.json");
+    const record = JSON.parse(readFileSync(path, "utf8"));
+    writeFileSync(path, JSON.stringify({ ...record, id: "another-maintenance" }));
+    expect(admit(f, { pid: process.pid, startedAt: 4_000 }, join(f.stateDir, "elsewhere.js"))).toBe("normal");
+    expect(() => assertRuntimeMaintenanceInactive(f.stateDir)).not.toThrow();
+    expect(databaseHasThreadFence(f.databasePath)).toBe(false);
   });
 
   it("a successor that died before installing the fence is abandoned", async () => {

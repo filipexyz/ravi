@@ -103,7 +103,9 @@ export function readRuntimeMaintenance(stateDir = getRaviStateDir()): RuntimeMai
 export function assertRuntimeMaintenanceInactive(stateDir = getRaviStateDir()): void {
   const directory = join(stateDir, "runtime-maintenance");
   if (interlockPathExists(join(directory, "interlock")) || readRuntimeMaintenance(stateDir)) {
-    throw new Error("RUNTIME_MAINTENANCE_ACTIVE: both runtime starts are blocked; explicit recovery is required");
+    throw new Error(
+      "RUNTIME_MAINTENANCE_ACTIVE: a thread fence upgrade is in progress; the daemon finishes or settles it when it starts",
+    );
   }
 }
 

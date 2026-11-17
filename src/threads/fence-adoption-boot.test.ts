@@ -199,9 +199,13 @@ describe("transparent thread fence adoption at daemon entry", () => {
     expect(f.starts).toEqual([]);
     expect(readUpgradeFailure(f.stateDir)?.failure).toContain("outbox:7f3a");
     untouched(f.databasePath);
-    // Once the residue is settled the next start adopts; the runner it stopped is left as the operator sees it.
+    expect(f.stops).toEqual(["ravi-channels"]);
+    expect(readUpgradeFailure(f.stateDir)?.channelsStopped).toBe(true);
+    // Once the residue is settled the next start adopts and starts again the runner the refused attempt stopped,
+    // although its launcher now reads `stopped`.
     const settled = { ...f.host, residue: async () => ({ sources: [], unknown: [] }) };
-    expect(await adoptThreadFenceAtBoot(settled)).toMatchObject({ outcome: "adopted" });
+    expect(await adoptThreadFenceAtBoot(settled)).toMatchObject({ outcome: "adopted", channelsStarted: true });
+    expect(f.starts).toEqual(["ravi-channels"]);
     expect(readUpgradeFailure(f.stateDir)).toBeNull();
   });
 

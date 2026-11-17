@@ -201,9 +201,11 @@ describe("fence adoption glue on the real v3.261113.2 schema", () => {
     const deliveries = at("INSERT OR IGNORE INTO daemon_restart_resume_deliveries");
     // Ninth review: after (b) the file is the only carrier, the legacy included.
     const carrier = at("From here on `resend-<epoch>.json` is the only carrier of these messages.");
-    const retry = at("ravi maintenance thread-fence-recover --mode retry --execute");
+    const retry = at("(c) The next start adopts");
     const confirm = at("(d) Confirm the successor takes prompts before anything is sent.");
-    const ready = at("must show the line `Daemon ready` for this boot, that is, timestamped after the `retry` of (c)");
+    const ready = at(
+      "must show the line `Daemon ready` for this boot, that is, timestamped after the adopting start of (c)",
+    );
     // Tenth review: the time is noted before the send, and the receipt is the session's own line.
     const noted = at("T=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)   # noted before sending");
     const send = at("xargs -0 -r -n 2 ravi sessions send -w --");

@@ -301,6 +301,9 @@ export async function adoptThreadFenceOnUpgrade(stateDir = getRaviStateDir()): P
   });
 }
 
+/** PM2 restarts a refused daemon at once; this paces the attempts while the refusal waits for its fix. */
+const UPGRADE_RETRY_PAUSE_MS = 30_000;
+
 /**
  * `daemon run` entry: adopts a pre-fence database, or does nothing. The normal
  * case prints nothing; a refusal prints its single next step and exits, before
@@ -313,6 +316,7 @@ export async function adoptThreadFenceAtDaemonEntry(): Promise<void> {
       process.stderr.write(`Thread fence installed on upgrade (${upgrade.maintenanceId})\n`);
   } catch (cause) {
     process.stderr.write(`${cause instanceof Error ? cause.message : String(cause)}\n`);
+    await new Promise((resolve) => setTimeout(resolve, UPGRADE_RETRY_PAUSE_MS));
     process.exit(1);
   }
 }

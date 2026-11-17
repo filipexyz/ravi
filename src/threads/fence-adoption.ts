@@ -564,15 +564,23 @@ function admitUnderLease(input: AdmissionInput, refuse: (detail: string) => neve
     adoption.successor.startedAt === input.self.startedAt
   )
     return "successor";
-  if (input.heal && healUnderLease(input, adoption)) return "normal";
-  if (!adoption || !record || record.id !== adoption.maintenanceId) return refuse("explicit recovery is required");
+  // An installed fence means the adoption is done: nothing left to admit a successor for.
+  if (input.heal && databaseHasThreadFence(join(input.stateDir, "ravi.db")) && healUnderLease(input, adoption))
+    return "normal";
+  // Under heal, a refusal settles the leftovers instead, unless a successor may still be running.
+  const settle = (detail: string): "normal" => {
+    if (!input.heal) return refuse(detail);
+    if (healUnderLease(input, adoption)) return "normal";
+    return refuse(`a thread fence upgrade is still running in pid ${adoption?.successor?.pid}; the next start retries`);
+  };
+  if (!adoption || !record || record.id !== adoption.maintenanceId) return settle("explicit recovery is required");
   if (adoption.phase !== "authorized" || record.phase !== "stopped")
-    return refuse(`thread fence adoption is ${adoption.phase}; explicit recovery is required`);
+    return settle(`thread fence adoption is ${adoption.phase}; explicit recovery is required`);
   if (
     !samePath(input.ownBundlePath, adoption.targetBundlePath) ||
     input.bundleDigest(input.ownBundlePath) !== adoption.targetBundleSha256
   )
-    return refuse("only the authorized successor bundle may start during thread fence adoption");
+    return settle("only the authorized successor bundle may start during thread fence adoption");
   try {
     mkdirSync(successorClaimPath(input.stateDir), { mode: 0o700 });
   } catch (cause) {
@@ -584,32 +592,17 @@ function admitUnderLease(input: AdmissionInput, refuse: (detail: string) => neve
 
 /**
  * Automatic recovery at daemon entry, under the coordinator lease, so an upgrade
- * never waits for an operator. Two leftovers are settled, nothing else:
- * - the fence is installed and no successor is mid-adoption: `release`;
- * - the fence is NOT installed, no successor is alive, and no authorized
- *   successor for this very bundle is expected: `abandon`. Nothing was ever
- *   installed, so the boot adoption re-derives every proof from scratch.
- * A live successor, mismatched records or an unknown process exit still refuse.
+ * never waits for an operator. Whatever an interrupted adoption left, once its
+ * successor is gone the interlock is released: with the fence installed the
+ * adoption is done; without it nothing was ever installed, and the boot adoption
+ * re-derives every proof from scratch. Only a successor that may still be
+ * running (alive, or an exit that cannot be read) keeps the start refused; the
+ * launcher retries it.
  */
 function healUnderLease(input: AdmissionInput, adoption: ThreadFenceAdoption | null): boolean {
-  const state = describeThreadFenceMaintenance({
-    stateDir: input.stateDir,
-    databasePath: join(input.stateDir, "ravi.db"),
-  });
-  if (state.fenced) {
-    if (!state.modes.includes("release")) return false;
-  } else {
-    if (!state.modes.includes("abandon")) return false;
-    if (state.successor && state.successor.exit !== "exited") return false;
-    if (
-      adoption?.phase === "authorized" &&
-      samePath(input.ownBundlePath, adoption.targetBundlePath) &&
-      input.bundleDigest(input.ownBundlePath) === adoption.targetBundleSha256
-    )
-      return false;
-  }
-  const maintenanceId = state.adoption?.maintenanceId ?? state.maintenance?.id ?? `orphan-${randomUUID()}`;
-  releaseInterlock(input.stateDir, maintenanceId);
+  if (adoption?.successor && recordedProcessExitState(adoption.successor) !== "exited") return false;
+  const record = readRuntimeMaintenance(input.stateDir);
+  releaseInterlock(input.stateDir, adoption?.maintenanceId ?? record?.id ?? `orphan-${randomUUID()}`);
   return true;
 }
 
@@ -911,18 +904,20 @@ function upgradeBlocked(detail: string): never {
  * re-derives everything; unknown residue keeps refusing with its list.
  */
 export async function adoptThreadFenceAtBoot(host: BootAdoptionHost): Promise<BootAdoptionResult> {
+  // A refused attempt may have stopped the channel runner; the attempt that succeeds starts it again.
+  const progress = { channelsStopped: readUpgradeFailure(host.stateDir)?.channelsStopped === true };
   try {
-    const result = await adoptAtBoot(host);
+    const result = await adoptAtBoot(host, progress);
     if (result.outcome === "adopted") clearUpgradeFailure(host.stateDir);
     return result;
   } catch (cause) {
-    recordUpgradeFailure(host.stateDir, cause);
+    recordUpgradeFailure(host.stateDir, cause, progress.channelsStopped);
     throw cause;
   }
 }
 
 const upgradeFailurePath = (stateDir: string) => join(maintenanceDirectory(stateDir), "upgrade-failure.json");
-export type UpgradeFailure = { at: number; pid: number; failure: string };
+export type UpgradeFailure = { at: number; pid: number; failure: string; channelsStopped?: boolean };
 
 /** Why the last boot adoption refused, for the CLI that is waiting on it. Never an authority to act. */
 export function readUpgradeFailure(stateDir: string): UpgradeFailure | null {
@@ -935,12 +930,13 @@ export function readUpgradeFailure(stateDir: string): UpgradeFailure | null {
   }
 }
 
-function recordUpgradeFailure(stateDir: string, cause: unknown): void {
+function recordUpgradeFailure(stateDir: string, cause: unknown, channelsStopped: boolean): void {
   try {
     writeAtomic(upgradeFailurePath(stateDir), maintenanceDirectory(stateDir), {
       at: Date.now(),
       pid: process.pid,
       failure: cause instanceof Error ? cause.message : String(cause),
+      ...(channelsStopped ? { channelsStopped } : {}),
     } satisfies UpgradeFailure);
   } catch {
     // no-cause: The note only speeds up the waiting CLI; the refusal itself is rethrown by the caller.
@@ -955,7 +951,10 @@ function clearUpgradeFailure(stateDir: string): void {
   }
 }
 
-async function adoptAtBoot(host: BootAdoptionHost): Promise<BootAdoptionResult> {
+async function adoptAtBoot(
+  host: BootAdoptionHost,
+  progress: { channelsStopped: boolean },
+): Promise<BootAdoptionResult> {
   if (!existsSync(host.databasePath) || databaseHasThreadFence(host.databasePath)) return { outcome: "not-needed" };
   assertRuntimeMaintenanceInactive(host.stateDir);
   const exitState = host.exitState ?? ((entry: { pid: number; startedAt: number }) => recordedProcessExitState(entry));
@@ -1016,7 +1015,8 @@ async function adoptAtBoot(host: BootAdoptionHost): Promise<BootAdoptionResult> 
   const lease = acquireCoordinatorLease(host.stateDir);
   let installed = false;
   let maintenanceId = "";
-  const channelsToRestart = channels[0] !== undefined && channels[0].status !== "stopped";
+  // `stopped` is an operator choice, unless an earlier attempt of this upgrade made it.
+  const channelsToRestart = channels[0] !== undefined && (channels[0].status !== "stopped" || progress.channelsStopped);
   try {
     assertRuntimeMaintenanceInactive(host.stateDir);
     if (readThreadFenceAdoption(host.stateDir)) upgradeBlocked("an adoption record appeared; restart to settle it");
@@ -1056,6 +1056,7 @@ async function adoptAtBoot(host: BootAdoptionHost): Promise<BootAdoptionResult> 
     const runningChannels = host.registry().find((entry) => entry.name === "ravi-channels" && entry.online);
     if (runningChannels) {
       await host.stop("ravi-channels");
+      progress.channelsStopped = true;
       // Its incarnation may predate its boot record; wait for the pid the launcher reported.
       await waitExit(
         { pid: runningChannels.pid, startedAt: runningChannels.startedAt || host.self.startedAt },
