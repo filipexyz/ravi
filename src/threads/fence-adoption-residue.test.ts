@@ -375,6 +375,11 @@ describe("restart snapshots (CodeRabbit r4595928941)", () => {
     // Without the adoption record (no stopped process known) the last 60 minutes stand in for it.
     expect(restartSnapshotResidue({ ...state, now: T + 60_000 }).unknown).toHaveLength(1);
     expect(restartSnapshotResidue({ ...state, now: T + RESTART_RESUME_WINDOW_MS + 60_000 }).unknown).toEqual([]);
+    // A start time that is not a positive integer cannot bound this stop's snapshots: refused, not guessed.
+    for (const invalid of [0, -1, Number.NaN, 1.5])
+      expect(
+        restartSnapshotResidue({ ...state, now: T + 60_000, stoppedProcessStartedAt: invalid }).unknown[0],
+      ).toContain("start time that is not a positive integer");
     writeFileSync(state.restartReasonPath, "plain text reason");
     expect(readRestartEpoch(state.restartReasonPath)).toBeNull();
   });

@@ -978,6 +978,16 @@ export function restartSnapshotResidue(input: {
         AND (live.ephemeral = 0 OR live.expires_at IS NULL OR live.expires_at > ?)
         ${notDelivered}`;
     const epoch = readRestartEpoch(input.restartReasonPath ?? RESTART_REASON_FILE);
+    const startedAt = input.stoppedProcessStartedAt;
+    // Without an epoch the start time is the only bound; a record whose start time is not a positive
+    // integer cannot tell this stop's snapshots from older ones, so it is refused, not guessed.
+    if (!epoch && startedAt !== undefined && !(Number.isSafeInteger(startedAt) && startedAt > 0))
+      return {
+        sources: [],
+        unknown: [
+          `${label}: restart-reason.txt names no epoch and the adoption record gives the stopped daemon a start time that is not a positive integer (${String(startedAt)}): this stop's snapshots cannot be told from older ones`,
+        ],
+      };
     const row = (
       epoch
         ? database
