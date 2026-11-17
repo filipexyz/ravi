@@ -1,6 +1,6 @@
 import { assertRuntimeMaintenanceInactive, assertRuntimeReplacementPrepared } from "../../runtime-maintenance.js";
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
-import { getRestartReasonPath } from "../../runtime/restart-reason.js";
+import { getRestartReasonPath, resolveHandoffStateDir } from "../../runtime/restart-reason.js";
 import { readDaemonSchemaPhase } from "../../db/daemon-schema-owner.js";
 /**
  * Daemon Commands - Manage ravi via PM2
@@ -126,10 +126,10 @@ export function isInsideDaemonProcessTree(
   return false;
 }
 
-function readRestartReason(): RestartReasonFile | null {
-  if (!existsSync(RESTART_REASON_FILE)) return null;
+function readRestartReason(file = RESTART_REASON_FILE): RestartReasonFile | null {
+  if (!existsSync(file)) return null;
   try {
-    const raw = readFileSync(RESTART_REASON_FILE, "utf-8").trim();
+    const raw = readFileSync(file, "utf-8").trim();
     if (!raw) return null;
     try {
       return JSON.parse(raw) as RestartReasonFile;
@@ -144,10 +144,11 @@ function readRestartReason(): RestartReasonFile | null {
 function writeRestartReason(
   reason: string,
   sessionName?: string,
-  options: { preserveExistingSession?: boolean } = {},
+  options: { preserveExistingSession?: boolean; file?: string } = {},
 ): void {
-  mkdirSync(dirname(RESTART_REASON_FILE), { recursive: true });
-  const existing = options.preserveExistingSession ? readRestartReason() : null;
+  const file = options.file ?? RESTART_REASON_FILE;
+  mkdirSync(dirname(file), { recursive: true });
+  const existing = options.preserveExistingSession ? readRestartReason(file) : null;
   const existingSession = existing?.sessionName;
   const targetSession = sessionName ?? existingSession;
   const createdAt = existing?.createdAt ?? Date.now();
@@ -158,7 +159,7 @@ function writeRestartReason(
     createdAt,
     ...(targetSession ? { sessionName: targetSession } : {}),
   };
-  writeFileSync(RESTART_REASON_FILE, JSON.stringify(payload));
+  writeFileSync(file, JSON.stringify(payload));
   // The installed operator hands this file to the daemon; only runtime code
   // may persist the epoch in the real database.
   if (!hasRuntimeInvocationContext()) return;
@@ -579,7 +580,12 @@ export class DaemonCommands {
     if (decision === "handoff") {
       const target = this.requireRuntimeTarget({ build });
       const sessionName = getContext()?.sessionName ?? process.env.RAVI_SESSION_NAME;
-      writeRestartReason(message, sessionName);
+      // The daemon resolves a relative RAVI_STATE_DIR against target.cwd; the reason file, the worker and the
+      // successor must all use that one directory, whatever cwd this caller is in.
+      const handoffStateDir = resolveHandoffStateDir(process.env, target.cwd);
+      writeRestartReason(message, sessionName, {
+        file: getRestartReasonPath(handoffStateDir ? { ...process.env, RAVI_STATE_DIR: handoffStateDir } : process.env),
+      });
 
       const args = [target.bundlePath, "daemon", "restart", "-m", message, "--json"];
       if (build) args.push("--build");
@@ -591,8 +597,7 @@ export class DaemonCommands {
       cleanEnv.RAVI_BUNDLE = target.bundlePath;
       cleanEnv.RAVI_DAEMON_CWD = target.cwd;
       cleanEnv[DAEMON_RESTART_HANDOFF_ENV] = "1";
-      // The caller wrote restart-reason.txt in its state dir; the worker must read and rewrite the same file.
-      if (process.env.RAVI_STATE_DIR) cleanEnv.RAVI_STATE_DIR = process.env.RAVI_STATE_DIR;
+      if (handoffStateDir) cleanEnv.RAVI_STATE_DIR = handoffStateDir;
 
       const logPath = daemonRestartLogPath();
       appendDaemonRestartLog(
