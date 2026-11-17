@@ -114,4 +114,25 @@ ravi tasks automations show <id>
 
 ## Publication from a thread
 
-After publishing a PR, verify it is ready and inspect `ravi triggers list --json` for its `gh-follow:<repo>#<number>`. `gh pr create`, `gh pr ready` and `gh pr edit` express follow intent; a read-only `gh pr view` does not. Git Data API publication alone creates no follow. Ensure/register one with a durable parent `--reply-session` and verify `enabled`, `runtimeState`, `replySession` and `fireCount` before closing. Generated follows reconcile old thread owners and frozen thread sources during reuse and maintenance.
+Distinguish the publication paths before checking completion:
+
+- **`ravi pr publish`:** the command already creates/reuses a ready PR and
+  reconciles its follow. Use the successful result's `pr.ready` and
+  `follow.watchId`, `follow.ciWatchId`, `follow.triggerId` and
+  `follow.replySession` as the authority. Verify the returned ready state and
+  inspect the returned trigger ID for an active follow and durable reply owner;
+  do not create or register another trigger or repeat ready promotion. After a
+  partial failure, repeat the command in the same session/worktree with the
+  same `--expect-sha` to reconcile the existing PR/follow, as described in
+  `cli/pr` and `watch/RUNBOOK.md`.
+- **Manual Git Data API publication:** raw API calls alone create no follow.
+  Ensure/register the PR's follow with a durable parent reply session, then
+  verify ready state and inspect `ravi triggers list --json` for its
+  `gh-follow:<repo>#<number>`. `gh pr create`, `gh pr ready` and `gh pr edit`
+  express follow intent; a read-only `gh pr view` does not.
+
+Before closing, verify `enabled`, `runtimeState` and `replySession` on the
+selected trigger and inspect `fireCount`; zero is legitimate before the first
+event and is not a reason to create another trigger. Generated follows
+reconcile old thread owners and frozen thread sources during reuse and
+maintenance.
