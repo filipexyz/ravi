@@ -2152,9 +2152,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | threads | src/threads/fence-adoption-residue.ts | 313 | no-cause | An unreadable broker source is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-residue.ts:89497d605f16912495e5e8b1 |
 | threads | src/threads/fence-adoption.ts | 143 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:6b81ec65f8a6464f04d53849 |
 | threads | src/threads/fence-adoption.ts | 206 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:46490b12ec7da2fe894e8d92 |
-| threads | src/threads/fence-adoption.ts | 485 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:9002795c5ddd572258b60b5d |
-| threads | src/threads/fence-adoption.ts | 529 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:b7d74a794c4380f46a8c0ae9 |
-| threads | src/threads/fence-adoption.ts | 621 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:9aa1e864c0d1e38933ede476 |
+| threads | src/threads/fence-adoption.ts | 486 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:9002795c5ddd572258b60b5d |
+| threads | src/threads/fence-adoption.ts | 530 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:b7d74a794c4380f46a8c0ae9 |
+| threads | src/threads/fence-adoption.ts | 622 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:9aa1e864c0d1e38933ede476 |
 | threads | src/threads/schema-fence.ts | 67 | no-cause | Async proof is refused synchronously below; this observer only prevents a later unhandled rejection. | src/threads/schema-fence.ts:3cd6d17c849e233f229d1834 |
 | threads | src/threads/schema-fence.ts | 115 | fixed | binding retained / no recognized error surface | src/threads/schema-fence.ts:7ba88450199085a5324898fb |
 | threads | src/threads/schema-fence.ts | 280 | fixed | binding retained / no recognized error surface | src/threads/schema-fence.ts:1dbf6764b424627533b44e61 |
