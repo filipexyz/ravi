@@ -44,6 +44,8 @@ import {
   dbUpsertDaemonRestartEpoch,
 } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { join } from "node:path";
+import { dbCreateJob, dbMarkJobRunning } from "../jobs/store.js";
 import { querySessionTrace } from "../session-trace/query.js";
 import { getSessionTurn } from "../session-trace/session-trace-db.js";
 import {
@@ -189,7 +191,9 @@ function createDispatcher(
   extras: {
     pendingStartTimeoutMs?: number;
     idleSessionTtlMs?: number;
+    backgroundTaskTtlMs?: number;
     turnInactivityMs?: number;
+    publishBackgroundWake?: (sessionName: string, payload: Record<string, unknown>) => Promise<void>;
   } = {},
 ) {
   return new RuntimeSessionDispatcher({
@@ -5779,6 +5783,74 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }
+  });
+
+  it("background_task_prevents_idle_eviction", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-background-idle-");
+    try {
+      const wakes: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+      const dispatcher = createDispatcher(4, 0, crashRecoveryStub, {
+        idleSessionTtlMs: 60_000,
+        backgroundTaskTtlMs: 600_000,
+        turnInactivityMs: 60_000,
+        publishBackgroundWake: async (sessionName, payload) => {
+          wakes.push({ sessionName, payload });
+        },
+      });
+      const now = Date.now();
+      const nativeTask = { taskId: "bash-1", description: "nba sql", startedAt: now - 120_000 };
+      dispatcher.streamingSessions.set(
+        "native-bg",
+        createActiveSession({
+          lastActivity: now - 120_000,
+          turnActive: false,
+          pendingBackgroundTasks: new Map([[nativeTask.taskId, nativeTask]]),
+        }),
+      );
+      // A Ravi job still running for the session is pending work too.
+      const job = dbCreateJob({
+        sessionName: "job-bg",
+        command: "sleep 1000",
+        logPath: join(stateDir, "job-bg.log"),
+        origin: "detach",
+      });
+      dbMarkJobRunning(job.id, process.pid);
+      dispatcher.streamingSessions.set("job-bg", createActiveSession({ lastActivity: now - 120_000 }));
+      dispatcher.streamingSessions.set("plain-idle", createActiveSession({ lastActivity: now - 120_000 }));
+
+      const first = dispatcher.reclaimNonServingRuntimeSessions(now);
+      expect(first.idleEvicted).toEqual(["plain-idle"]);
+      expect(dispatcher.streamingSessions.has("native-bg")).toBe(true);
+      expect(dispatcher.streamingSessions.has("job-bg")).toBe(true);
+      expect(wakes).toHaveLength(0);
+
+      // Pending work has its own, larger TTL: past it the session goes, and the
+      // provider task that dies with it is reported as a failure, not dropped.
+      const later = now + 600_000;
+      const second = dispatcher.reclaimNonServingRuntimeSessions(later);
+      expect(second.idleEvicted.sort()).toEqual(["job-bg", "native-bg"]);
+      await Promise.resolve();
+      expect(wakes).toHaveLength(1);
+      expect(wakes[0]?.sessionName).toBe("native-bg");
+      expect(wakes[0]?.payload._backgroundTask).toEqual({ kind: "native_task_lost", taskIds: ["bash-1"] });
+      expect(String(wakes[0]?.payload.prompt)).toContain("Trate como falha");
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("does not reclaim a session with a provider background task under pool pressure", () => {
+    const dispatcher = createDispatcher(1, 0);
+    dispatcher.streamingSessions.set(
+      "native-bg",
+      createActiveSession({
+        lastActivity: Date.now() - 600_000,
+        pendingBackgroundTasks: new Map([["bash-1", { taskId: "bash-1", startedAt: Date.now() }]]),
+      }),
+    );
+    expect(dispatcher.canAcceptRuntimePrompt("incoming")).toBe(false);
+    dispatcher.streamingSessions.get("native-bg")?.pendingBackgroundTasks?.clear();
+    expect(dispatcher.canAcceptRuntimePrompt("incoming")).toBe(true);
   });
 
   it("cancels queued observer starts when a human inbound arrives and drains interactive first", async () => {

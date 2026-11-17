@@ -16,7 +16,17 @@ import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { spawnedAutomationEnv } from "../runtime/turn-origin.js";
 import { logger } from "../utils/logger.js";
-import { dbFinishJob, dbGetJob, dbListJobs, dbListRunningJobs, dbMarkJobNotified, dbMarkJobRunning } from "./store.js";
+import {
+  dbClaimJobDelivery,
+  dbFinishJob,
+  dbGetJob,
+  dbListJobs,
+  dbListRunningJobs,
+  dbListUndeliveredJobs,
+  dbMarkJobNotified,
+  dbMarkJobRunning,
+  dbRecordJobDeliveryFailure,
+} from "./store.js";
 import { isJobTerminal, type JobRecord } from "./types.js";
 import { jobStatusFromExitCode, readJobExitState } from "./detach.js";
 
@@ -32,6 +42,36 @@ export const KILL_ESCALATION_MS = 5_000;
 
 /** Tail que acompanha o aviso de conclusão. Suficiente para decidir, não para afogar. */
 export const JOB_RESULT_TAIL_CHARS = 2_000;
+/**
+ * Tentativas de entregar um desfecho antes de desistir. O reconcile roda a cada
+ * 30 s, então isto cobre alguns minutos de fila fora do ar; depois disso a linha
+ * fica com `delivery_error` como registro de quem ficou sem resposta.
+ */
+export const JOB_DELIVERY_MAX_ATTEMPTS = 20;
+
+/**
+ * Uma entrega `inflight` mais velha que isto é de quem morreu ou travou no meio
+ * da publicação, e o reconcile pode retomá-la.
+ *
+ * Precisa ser menor que a janela de deduplicação do SESSION_PROMPTS menos o
+ * intervalo do reconcile (30 s): o stream tem `max_age` de 60 s, e a janela de
+ * duplicatas do JetStream nunca passa do `max_age`. Com 30 s, a retomada cai
+ * entre 30 s e 60 s depois da reserva, dentro da janela — se a primeira
+ * publicação chegou à fila, a segunda colide com a chave e é descartada.
+ * Depois da janela (daemon fora por mais de um minuto com entrega em voo) a
+ * garantia volta a ser "pelo menos uma vez".
+ */
+export const JOB_DELIVERY_INFLIGHT_STALE_MS = 30_000;
+
+/** Chave estável do desfecho de um job: toda publicação dele carrega a mesma. */
+export function jobOutcomeMessageId(jobId: string): string {
+  return `job:${jobId}:done`;
+}
+
+export interface JobOutcomeDelivery {
+  /** Id de deduplicação da publicação; igual em toda tentativa do mesmo job. */
+  messageId: string;
+}
 
 export interface JobsRunnerOptions {
   /** Injetável para teste. */
@@ -41,7 +81,7 @@ export interface JobsRunnerOptions {
     logPath: string,
     env: Record<string, string>,
   ) => { pid: number | null; onExit: (cb: (code: number | null, signal: string | null) => void) => void };
-  notifySession?: (job: JobRecord, summary: string) => Promise<void>;
+  notifySession?: (job: JobRecord, summary: string, delivery: JobOutcomeDelivery) => Promise<void>;
   now?: () => number;
 }
 
@@ -58,10 +98,12 @@ export class JobsRunner {
   private reconcileTimer: ReturnType<typeof setInterval> | undefined;
   private readonly spawnCommand: NonNullable<JobsRunnerOptions["spawnCommand"]>;
   private readonly notify: NonNullable<JobsRunnerOptions["notifySession"]>;
+  private readonly now: () => number;
 
   constructor(options: JobsRunnerOptions = {}) {
     this.spawnCommand = options.spawnCommand ?? defaultSpawnCommand;
     this.notify = options.notifySession ?? defaultNotifySession;
+    this.now = options.now ?? Date.now;
   }
 
   async start(): Promise<void> {
@@ -133,20 +175,32 @@ export class JobsRunner {
     return true;
   }
 
-  /** Entrega o desfecho na sessão que pediu. Sem sessão, não há para quem avisar. */
+  /**
+   * Entrega o desfecho na sessão que pediu. Sem sessão, não há para quem avisar.
+   *
+   * Várias rotas veem o mesmo desfecho (o tópico publicado pelo CLI, o reconcile,
+   * o kill), e a publicação é assíncrona. Por isso a entrega é reservada no banco
+   * ANTES do await: quem não leva a reserva não publica. Reler `notifiedAt` não
+   * bastava — ele só é gravado depois da publicação, e nesse intervalo uma
+   * segunda rota publicava o mesmo job e a sessão rodava dois turnos.
+   */
   private async deliverOutcome(job: JobRecord): Promise<void> {
     if (!job.sessionName) return;
-    // Duas rotas podem ver o mesmo desfecho (o tópico publicado pelo CLI e o
-    // reconcile). Reler a linha fecha a janela em que as duas entregariam.
+    const claimed = dbClaimJobDelivery(job.id, { staleAfterMs: JOB_DELIVERY_INFLIGHT_STALE_MS, now: this.now() });
+    if (!claimed) return;
     const current = dbGetJob(job.id);
-    if (!current || !isJobTerminal(current.status) || current.notifiedAt || !current.sessionName) return;
+    if (!current?.sessionName) return;
     try {
-      await this.notify(current, buildJobOutcomeSummary(current));
+      await this.notify(current, buildJobOutcomeSummary(current), { messageId: jobOutcomeMessageId(current.id) });
       dbMarkJobNotified(current.id);
     } catch (error) {
-      log.warn("Could not deliver job outcome to session", {
+      // Nunca engolir: a linha guarda o motivo e o reconcile tenta de novo.
+      const reason = error instanceof Error ? error.message : String(error);
+      dbRecordJobDeliveryFailure(current.id, reason);
+      log.error("Could not deliver job outcome to session; will retry", {
         jobId: current.id,
         sessionName: current.sessionName,
+        attempts: current.deliveryAttempts + 1,
         error,
       });
     }
@@ -223,7 +277,24 @@ export class JobsRunner {
     if (finished && !finished.notifiedAt) await this.deliverOutcome(finished);
   }
 
-  private async reconcileOrphans(): Promise<void> {
+  /** Desfechos que terminaram mas não chegaram à sessão (fila fora do ar, daemon reiniciando). */
+  async redeliverUndeliveredOutcomes(): Promise<void> {
+    const undelivered = dbListUndeliveredJobs({
+      maxAttempts: JOB_DELIVERY_MAX_ATTEMPTS,
+      staleAfterMs: JOB_DELIVERY_INFLIGHT_STALE_MS,
+      now: this.now(),
+    });
+    for (const job of undelivered) {
+      await this.deliverOutcome(job);
+    }
+  }
+
+  async reconcileOrphans(): Promise<void> {
+    await this.reconcileRunningJobs();
+    await this.redeliverUndeliveredOutcomes();
+  }
+
+  private async reconcileRunningJobs(): Promise<void> {
     for (const job of dbListRunningJobs()) {
       if (this.jobs.has(job.id)) continue;
       if (job.status === "pending") {
@@ -302,14 +373,19 @@ export function readJobTail(logPath: string, maxChars = JOB_RESULT_TAIL_CHARS): 
   }
 }
 
-async function defaultNotifySession(job: JobRecord, summary: string): Promise<void> {
+async function defaultNotifySession(job: JobRecord, summary: string, delivery: JobOutcomeDelivery): Promise<void> {
   if (!job.sessionName) return;
-  await publishSessionPrompt(job.sessionName, {
-    prompt: summary,
-    deliveryBarrier: "after_response",
-    deliveryBarrierSource: "default",
-    _jobOutcome: { jobId: job.id, status: job.status },
-  });
+  await publishSessionPrompt(
+    job.sessionName,
+    {
+      prompt: summary,
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
+      _jobOutcome: { jobId: job.id, status: job.status },
+    },
+    // Mesma chave em toda tentativa: a fila descarta a republicação do mesmo desfecho.
+    { messageId: delivery.messageId },
+  );
 }
 
 function defaultSpawnCommand(command: string, cwd: string | null, logPath: string, env: Record<string, string>) {

@@ -352,6 +352,18 @@ function projectOperationalControls(details: unknown): Record<string, unknown> {
     }
     if (Object.keys(projected).length) controls.importProgress = projected;
   }
+  // What a publication had confirmed when its time budget ended: a phase name and counters, nothing else.
+  const timeout = read("timeout");
+  const timeoutPhase = safeDiagnosticField(timeout, "phase");
+  if (typeof timeoutPhase === "string" && /^[a-z]{1,16}$/.test(timeoutPhase)) {
+    const projected: Record<string, string | number | null> = { phase: timeoutPhase };
+    for (const key of ["budgetMs", "objectsUploaded", "objectCount", "bytesUploaded", "uploadBytes"] as const) {
+      const value = safeDiagnosticField(timeout, key);
+      if (counter(value) || ((key === "objectCount" || key === "uploadBytes") && value === null))
+        projected[key] = value;
+    }
+    controls.timeout = projected;
+  }
   return controls;
 }
 

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ContractError } from "../cli/agent-contract.js";
 import { publishGhPr, type GhPrPublicationDeps } from "../hooks/gh-pr-publish.js";
 import type { GhWatchFollowContext } from "../hooks/gh-watch.js";
+import { publicationBudgetMs, publicationTimeoutError } from "./budget.js";
 import { planSchema, prError, REPO, SHA, type PublicationPhase } from "./contracts.js";
 import { LocalGit, planObjects } from "./git.js";
 import {
@@ -146,7 +147,24 @@ export async function executePublication(
   },
 ) {
   const { input, plan, git, objects } = prepared;
-  options.authorize();
+  try {
+    options.authorize();
+  } catch (error) {
+    // The budget ended between the preflight and the first write: nothing was uploaded and the totals are known.
+    if (error instanceof ContractError && error.code === "PUBLICATION_TIMEOUT")
+      throw publicationTimeoutError(
+        {
+          phase: "preflight",
+          budgetMs: publicationBudgetMs(plan.uploadBytes),
+          objectsUploaded: 0,
+          objectCount: plan.objectCount,
+          bytesUploaded: 0,
+          uploadBytes: plan.uploadBytes,
+        },
+        error.details,
+      );
+    throw error;
+  }
   const journal = (options.journal ?? openPublicationJournal)(plan, options.provenance);
   const partial = {
     publicationId: journal.publicationId,
@@ -159,6 +177,7 @@ export async function executePublication(
     prNumber: plan.prNumber,
     uncertain: false,
   };
+  const uploaded = { objects: 0, bytes: 0 };
   let currentObject: { objectType: string; sha: string } | undefined;
   const auditedRequest: GithubRequest = async (endpoint, method, body) => {
     if (method === "GET") return await request(endpoint, method, body);
@@ -187,16 +206,18 @@ export async function executePublication(
     for (const object of objects) {
       currentObject = { objectType: object.type, sha: object.sha };
       const plural = object.type === "tree" ? "trees" : `${object.type}s`;
-      const uploaded = parseGithub(
+      const created = parseGithub(
         oidSchema,
         await auditedRequest(`repos/${plan.repo}/git/${plural}`, "POST", object.payload),
       );
-      if (uploaded.sha !== object.sha)
+      if (created.sha !== object.sha)
         throw prError(
           "GIT_OBJECT_MISMATCH",
           "GitHub created an object with a different SHA. The branch has not been moved.",
-          { objectType: object.type, expectedSha: object.sha, actualSha: uploaded.sha },
+          { objectType: object.type, expectedSha: object.sha, actualSha: created.sha },
         );
+      uploaded.objects++;
+      uploaded.bytes += object.bytes;
       currentObject = undefined;
     }
     await verifyCommit();
@@ -303,7 +324,16 @@ export async function executePublication(
   } catch (error) {
     const failure =
       error instanceof ContractError
-        ? error
+        ? error.code === "PUBLICATION_TIMEOUT"
+          ? publicationTimeoutError({
+              phase: partial.phase,
+              budgetMs: publicationBudgetMs(plan.uploadBytes),
+              objectsUploaded: uploaded.objects,
+              objectCount: plan.objectCount,
+              bytesUploaded: uploaded.bytes,
+              uploadBytes: plan.uploadBytes,
+            })
+          : error
         : error instanceof GithubError
           ? prError(
               "GITHUB_REQUEST_FAILED",

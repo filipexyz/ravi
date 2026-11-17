@@ -3,7 +3,8 @@ import type { Database } from "bun:sqlite";
 import { initializeStateSchema } from "../db/schema-owner.js";
 import { openStateDatabase } from "../db/state-boundary.js";
 import { getRaviDbPath } from "../router/router-db.js";
-import { prError, type PublicationPhase, type PublicationPlan, PUBLICATION_TIMEOUT_MS } from "./contracts.js";
+import { publicationBudgetMs } from "./budget.js";
+import { prError, type PublicationPhase, type PublicationPlan } from "./contracts.js";
 
 export interface PublicationJournal {
   publicationId: string;
@@ -32,6 +33,8 @@ export function openPublicationJournal(
   provenance: Record<string, string | null>,
   database?: Database,
 ): PublicationJournal {
+  // The lease outlives this publication's budget, which grows with its upload.
+  const leaseMs = publicationBudgetMs(plan.uploadBytes) + 30_000;
   let db: Database;
   try {
     db = database ?? openStateDatabase(getRaviDbPath(), { readwrite: true, create: false });
@@ -52,7 +55,7 @@ export function openPublicationJournal(
       .query(`INSERT INTO pr_publication_leases(resource,owner,expires_at) VALUES (?,?,?)
       ON CONFLICT(resource) DO UPDATE SET owner=excluded.owner,expires_at=excluded.expires_at
       WHERE pr_publication_leases.expires_at < ?`)
-      .run(key, attemptId, Date.now() + PUBLICATION_TIMEOUT_MS + 30_000, Date.now());
+      .run(key, attemptId, Date.now() + leaseMs, Date.now());
     if (!lock.changes)
       throw prError("PUBLICATION_BUSY", "Another publication is active for this repository and branch.", {
         retryable: true,

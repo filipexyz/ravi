@@ -49,6 +49,28 @@ describe("long-tool detach hook (default)", () => {
     expect(rewrittenCommand(result)).toBe(`'${SCRIPT_PATH}' -- 'bun run build'`);
   });
 
+  it("moves provider run_in_background into a Ravi job that detaches at once", async () => {
+    const result = await runHook(
+      { command: "nba sql 'select 1'", run_in_background: true, description: "query" },
+      { sessionName: "dm-session", agentId: "nba" },
+    );
+    const updated = (result.hookSpecificOutput as { updatedInput?: Record<string, unknown> } | undefined)?.updatedInput;
+
+    // The provider's own background task dies with its process on idle
+    // eviction; the Ravi job survives and wakes the session (bug 081dac32).
+    expect(updated?.run_in_background).toBe(false);
+    expect(updated?.command).toBe(
+      `RAVI_JOBS_DETACH_AFTER_MS=200 '${SCRIPT_PATH}' --session 'dm-session' --agent 'nba' -- 'nba sql '\\''select 1'\\'''`,
+    );
+    expect(updated?.description).toBe("query");
+  });
+
+  it("leaves run_in_background alone when there is no session to deliver to", async () => {
+    const result = await runHook({ command: "sleep 30", run_in_background: true });
+    const updated = (result.hookSpecificOutput as { updatedInput?: Record<string, unknown> } | undefined)?.updatedInput;
+    expect(updated?.run_in_background).toBe(true);
+  });
+
   it("keeps the rest of the tool input intact", async () => {
     const result = await runHook({ command: "bun test src/watch/", timeout: 300, description: "build" });
     const updated = (result.hookSpecificOutput as { updatedInput?: Record<string, unknown> } | undefined)?.updatedInput;

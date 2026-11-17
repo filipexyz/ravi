@@ -80,13 +80,29 @@ describe("Bash quoting permission boundary", () => {
     }
   });
 
-  it("allows active syntax, quoted shells and inline interpreters only with wildcard execute", () => {
+  it("authorizes the commands inside substitutions by their own grants", () => {
+    const ctx = {
+      agentId: "test-agent",
+      kind: "test-runtime",
+      capabilities: ["printf", "cat"].map((objectId) => ({
+        permission: "execute",
+        objectType: "executable",
+        objectId,
+      })),
+    };
+    for (const command of ['printf "%s" "$(whoami)"', 'printf "%s" "$\\\n(whoami)"', 'printf "%s" "`whoami`"']) {
+      const decision = evaluateBashPermission(command, ctx);
+      expect(decision.allowed, command).toBe(false);
+      expect(decision.denialType, command).toBe("executable");
+      expect(decision.reason, command).toContain("whoami");
+    }
+    for (const command of ["cat <<'EOF'\nliteral\nEOF", "cat <(printf ok)"]) {
+      expect(evaluateBashPermission(command, ctx).allowed, command).toBe(true);
+    }
+  });
+
+  it("allows quoted shells and inline interpreters only with wildcard execute", () => {
     for (const command of [
-      'printf "%s" "$(whoami)"',
-      'printf "%s" "$\\\n(whoami)"',
-      'printf "%s" "`whoami`"',
-      "cat <<'EOF'\nliteral\nEOF",
-      "cat <(printf ok)",
       'ba"sh" -c "echo ok"',
       'sudo "bash" -c "echo ok"',
       'python3 "-c" "print(1)"',
@@ -433,14 +449,14 @@ describe("createBashPermissionHook", () => {
       expect(isDenied(result)).toBe(false);
     });
 
-    it("blocks dangerous patterns before checking executables", async () => {
+    it("checks the command inside a substitution before allowing the outer command", async () => {
       const result = await callBashHook(
         "echo $(whoami)",
         "test",
         makeToolContext("test", [{ permission: "execute", objectType: "executable", objectId: "echo" }]),
       );
       expect(isDenied(result)).toBe(true);
-      expect(getDenyReason(result)).toContain("command substitution");
+      expect(getDenyReason(result)).toContain("whoami");
     });
 
     it("does not widen stale agent-runtime capabilities with the agent's materialized grants", () => {

@@ -5,7 +5,6 @@ import { ContractError } from "../cli/agent-contract.js";
 export const SHA = /^[a-f0-9]{40}$/;
 export const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 export const LIMITS = { commits: 100, objects: 5000, bytes: 50 * 1024 * 1024, blobBytes: 8 * 1024 * 1024 };
-export const PUBLICATION_TIMEOUT_MS = 180_000;
 export const PUBLICATION_CONTEXT_REQUIRED_MESSAGE =
   "pr publish requires an authenticated session context; run through the gateway/agent.";
 const sha = z.string().regex(SHA);
@@ -72,6 +71,16 @@ export const partialSchema = z.object({
   prNumber: z.number().int().positive().nullable(),
   uncertain: z.boolean(),
 });
+/** Where a publication was when its budget ran out. Uploaded counts are objects GitHub confirmed in this attempt. */
+export const timeoutSchema = z.object({
+  phase: phaseSchema,
+  budgetMs: z.number().int().positive(),
+  objectsUploaded: z.number().int().nonnegative(),
+  objectCount: z.number().int().nonnegative().nullable(),
+  bytesUploaded: z.number().int().nonnegative(),
+  uploadBytes: z.number().int().nonnegative().nullable(),
+});
+export type PublicationTimeout = z.infer<typeof timeoutSchema>;
 
 export function prError(
   code: string,
@@ -100,8 +109,11 @@ export function publicationRecoveryAction(code: string): string {
       return "Update/start the normal Ravi runtime, then rerun publication with the same expected SHA.";
     case "PR_PUBLICATION_INCOMPLETE":
     case "PUBLICATION_TIMEOUT":
+    case "PUBLICATION_REQUEST_TIMEOUT":
     case "PUBLICATION_AUDIT_FAILED":
       return "Inspect partial publication state and rerun the same publication with --expect-sha to reconcile.";
+    case "PUBLICATION_RESPONSE_TOO_LARGE":
+      return "Inspect the oversized git or GitHub response; a rerun alone hits the same output limit.";
     case "WORKTREE_DIRTY":
       return "Commit the intended changes before publishing the branch.";
     case "PR_CONFLICT":
@@ -118,6 +130,8 @@ export function projectPublicationDetails(value: Record<string, unknown>): Recor
   if (plan.success) result.plan = plan.data;
   const partial = partialSchema.safeParse(value.partial);
   if (partial.success) result.partial = partial.data;
+  const timeout = timeoutSchema.safeParse(value.timeout);
+  if (timeout.success) result.timeout = timeout.data;
   for (const key of ["expectedSha", "actualSha"])
     if (typeof value[key] === "string" && SHA.test(value[key] as string)) result[key] = value[key];
   if (["blob", "tree", "commit"].includes(String(value.objectType))) result.objectType = value.objectType;
