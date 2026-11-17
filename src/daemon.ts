@@ -662,8 +662,10 @@ function createStubSender(): OmniSender {
  * A plain `pm2 restart` (deploy, supervised bounce, crash) never writes
  * `restart-reason.txt`, so this used to return early and the sessions were
  * never told the daemon had restarted. Synthesize a boot reason instead and
- * let the notice path run: without a snapshot the delivery fences into a
- * `Daemon reiniciou` notice, which is exactly what the operator needs to see.
+ * let the notice path run, but only when the fallback session exists: without a
+ * snapshot the delivery fences into a `Daemon reiniciou` notice, which is
+ * exactly what the operator needs to see. On a first boot (no reason file and
+ * no session to tell) nothing was restarted, so the boot returns quietly.
  */
 async function notifyRestartReason() {
   const restartInfo = resolveBootRestartReason<RestartReasonInfo>({

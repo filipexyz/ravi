@@ -899,7 +899,7 @@ export function collectSqliteResidue(rules: readonly ResidueRule[]): DurableResi
   return { sources, unknown };
 }
 
-/** Where both releases keep the restart reason (tag daemon.ts l.131, this release l.134). */
+/** Where this release keeps the restart reason: the state dir (`~/.ravi` by default). The tag v3.261113.2 wrote it under HOME (tag daemon.ts l.131); the paths coincide while RAVI_STATE_DIR is unset. */
 export const RESTART_REASON_FILE = getRestartReasonPath();
 /** The successor resumes a stop's sessions only this long after the stop (daemon.ts l.135, l.686). */
 export const RESTART_RESUME_WINDOW_MS = 60 * 60 * 1000;
