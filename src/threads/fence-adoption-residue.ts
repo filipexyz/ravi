@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { Database } from "bun:sqlite";
-import type { DurableResidue, DurableResidueSource } from "./fence-adoption.js";
+import { type DurableResidue, type DurableResidueSource, openStateReadOnly } from "./fence-adoption.js";
 
 /**
  * Durable residue of a legacy (3.261113.2) runtime, read only after both
@@ -186,7 +186,7 @@ export function collectSqliteResidue(rules: readonly ResidueRule[]): DurableResi
       let database = handles.get(rule.database);
       try {
         if (!database) {
-          database = new Database(rule.database, { readonly: true, create: false });
+          database = openStateReadOnly(rule.database);
           handles.set(rule.database, database);
         }
         const exists = database.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(rule.table);

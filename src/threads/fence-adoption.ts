@@ -210,9 +210,25 @@ function acquireCoordinatorLease(stateDir: string): { release(): void } {
   }
 }
 
+/**
+ * Read-only connection that never creates or changes a file. A cleanly closed
+ * WAL database has no `-wal`/`-shm` (the last connection checkpointed and removed
+ * them), its main file holds every commit, and a read-only connection cannot
+ * create the shared-memory file: that case is read as immutable. With a WAL
+ * present, the ordinary read-only connection reads it, or fails and blocks.
+ */
+export function openStateReadOnly(path: string): Database {
+  if (!existsSync(path)) throw new Error(`THREAD_FENCE_ADOPTION_UNVERIFIABLE: ${path} does not exist`);
+  if (!existsSync(`${path}-wal`) && !existsSync(`${path}-shm`)) {
+    const uri = `file:${path.replaceAll("%", "%25").replaceAll("?", "%3f").replaceAll("#", "%23")}?immutable=1`;
+    return new Database(uri, { readonly: true });
+  }
+  return new Database(path, { readonly: true, create: false });
+}
+
 /** Read-only fence probe; never installs, migrates or changes the journal mode. */
 export function databaseHasThreadFence(path: string): boolean {
-  const database = new Database(path, { readonly: true, create: false });
+  const database = openStateReadOnly(path);
   try {
     return (
       database.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(THREAD_FENCE_TABLE) !== null

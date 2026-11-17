@@ -109,11 +109,16 @@ export async function withLiveJetStreamReader<T>(
 }
 
 /** Read only after both predecessors exited: router database, broker, and the excluded tables. */
-export async function liveResidue(databasePath: string): Promise<DurableResidue> {
+export async function liveResidue(
+  databasePath: string,
+  withReader: (
+    use: (reader: JetStreamResidueReader) => Promise<DurableResidue>,
+  ) => Promise<DurableResidue> = withLiveJetStreamReader,
+): Promise<DurableResidue> {
   const sqlite = collectSqliteResidue(legacyResidueRules(databasePath));
   let broker: DurableResidue;
   try {
-    broker = await withLiveJetStreamReader((reader) => collectJetStreamResidue(reader));
+    broker = await withReader((reader) => collectJetStreamResidue(reader));
   } catch (cause) {
     // no-cause: An unreachable broker is recorded as unknown residue, which blocks adoption with this message.
     broker = {
