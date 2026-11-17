@@ -1,6 +1,6 @@
 import { assertRuntimeMaintenanceInactive, assertRuntimeReplacementPrepared } from "../../runtime-maintenance.js";
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
-import { getRestartReasonPath } from "../../runtime/restart-reason.js";
+import { getRestartReasonPath, resolveHandoffStateDir } from "../../runtime/restart-reason.js";
 import { readDaemonSchemaPhase } from "../../db/daemon-schema-owner.js";
 /**
  * Daemon Commands - Manage ravi via PM2
@@ -592,7 +592,8 @@ export class DaemonCommands {
       cleanEnv.RAVI_DAEMON_CWD = target.cwd;
       cleanEnv[DAEMON_RESTART_HANDOFF_ENV] = "1";
       // The caller wrote restart-reason.txt in its state dir; the worker must read and rewrite the same file.
-      if (process.env.RAVI_STATE_DIR) cleanEnv.RAVI_STATE_DIR = process.env.RAVI_STATE_DIR;
+      const handoffStateDir = resolveHandoffStateDir(process.env, process.cwd());
+      if (handoffStateDir) cleanEnv.RAVI_STATE_DIR = handoffStateDir;
 
       const logPath = daemonRestartLogPath();
       appendDaemonRestartLog(

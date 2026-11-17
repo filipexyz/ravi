@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { getRaviStateDir } from "../utils/paths.js";
 
 /**
@@ -25,4 +25,16 @@ export function resolveBootRestartReason<T>(input: {
   if (input.fromFile) return input.fromFile;
   if (!input.fallbackSessionExists) return null;
   return input.synthesize();
+}
+
+/**
+ * `RAVI_STATE_DIR` as the detached restart worker must receive it. The worker
+ * starts in another cwd, so a relative value would resolve to a different
+ * directory than the one the caller wrote `restart-reason.txt` in: anchor it to
+ * the caller's cwd. Unset or empty stays unset.
+ */
+export function resolveHandoffStateDir(env: NodeJS.ProcessEnv, callerCwd: string): string | undefined {
+  const value = env.RAVI_STATE_DIR;
+  if (!value) return undefined;
+  return isAbsolute(value) ? value : resolve(callerCwd, value);
 }

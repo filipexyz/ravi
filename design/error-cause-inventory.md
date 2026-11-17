@@ -571,15 +571,15 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/daemon.ts | 328 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:dd10ae5178a34c12024603b0 |
 | cli | src/cli/commands/daemon.ts | 363 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:52ce28b9b543b169cdcaf263 |
 | cli | src/cli/commands/daemon.ts | 429 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:41c1753c0e9e0105aea8a86f |
-| cli | src/cli/commands/daemon.ts | 637 | fixed | binding retained / no recognized error surface | src/cli/commands/daemon.ts:070335abc5483ffaf0c14e30 |
-| cli | src/cli/commands/daemon.ts | 1038 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:cbe7daa72f79d5478b19d0de |
-| cli | src/cli/commands/daemon.ts | 1047 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:cd10c9495b22b133bc3c50d0 |
-| cli | src/cli/commands/daemon.ts | 1077 | fixed | binding retained / no recognized error surface | src/cli/commands/daemon.ts:58d15d82603876ef39620ef8 |
-| cli | src/cli/commands/daemon.ts | 1154 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:618944c2ca2f9fbc08441979 |
-| cli | src/cli/commands/daemon.ts | 1324 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:54aaa8f164cffd6891768be7 |
-| cli | src/cli/commands/daemon.ts | 1333 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:54aaa8f164cffd6891768be7 |
-| cli | src/cli/commands/daemon.ts | 1347 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:54aaa8f164cffd6891768be7 |
-| cli | src/cli/commands/daemon.ts | 1396 | fixed | binding retained / no recognized error surface | src/cli/commands/daemon.ts:0660b09c86856c038928eec6 |
+| cli | src/cli/commands/daemon.ts | 638 | fixed | binding retained / no recognized error surface | src/cli/commands/daemon.ts:070335abc5483ffaf0c14e30 |
+| cli | src/cli/commands/daemon.ts | 1039 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:cbe7daa72f79d5478b19d0de |
+| cli | src/cli/commands/daemon.ts | 1048 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:cd10c9495b22b133bc3c50d0 |
+| cli | src/cli/commands/daemon.ts | 1078 | fixed | binding retained / no recognized error surface | src/cli/commands/daemon.ts:58d15d82603876ef39620ef8 |
+| cli | src/cli/commands/daemon.ts | 1155 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:618944c2ca2f9fbc08441979 |
+| cli | src/cli/commands/daemon.ts | 1325 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:54aaa8f164cffd6891768be7 |
+| cli | src/cli/commands/daemon.ts | 1334 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:54aaa8f164cffd6891768be7 |
+| cli | src/cli/commands/daemon.ts | 1348 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:54aaa8f164cffd6891768be7 |
+| cli | src/cli/commands/daemon.ts | 1397 | fixed | binding retained / no recognized error surface | src/cli/commands/daemon.ts:0660b09c86856c038928eec6 |
 | cli | src/cli/commands/db.ts | 54 | triaged-follow-up | catch-without-binding | src/cli/commands/db.ts:ecaa7a4be44ef9cca7f3dd7d |
 | cli | src/cli/commands/db.ts | 81 | triaged-follow-up | catch-without-binding | src/cli/commands/db.ts:79cdb8bf8b319d593d64cdde |
 | cli | src/cli/commands/db.ts | 97 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/db.ts:0fa4c8eccad90392c776790f |

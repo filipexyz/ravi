@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
-import { getRestartReasonPath, resolveBootRestartReason } from "./restart-reason.js";
+import { getRestartReasonPath, resolveBootRestartReason, resolveHandoffStateDir } from "./restart-reason.js";
 
 describe("getRestartReasonPath", () => {
   it("follows RAVI_STATE_DIR, not HOME", () => {
@@ -31,5 +31,29 @@ describe("resolveBootRestartReason", () => {
 
   it("stays quiet on a first boot: no reason file and no session to tell", () => {
     expect(resolveBootRestartReason({ fromFile: null, fallbackSessionExists: false, synthesize })).toBeNull();
+  });
+});
+
+describe("resolveHandoffStateDir", () => {
+  it("anchors a relative RAVI_STATE_DIR to the caller cwd, not the worker cwd", () => {
+    expect(resolveHandoffStateDir({ RAVI_STATE_DIR: "state" }, "/work/caller")).toBe(join("/work/caller", "state"));
+    expect(resolveHandoffStateDir({ RAVI_STATE_DIR: "../shared/state" }, "/work/caller")).toBe(
+      join("/work", "shared", "state"),
+    );
+  });
+
+  it("keeps an absolute value, whatever the cwd", () => {
+    expect(resolveHandoffStateDir({ RAVI_STATE_DIR: "/srv/ravi-a" }, "/work/caller")).toBe("/srv/ravi-a");
+  });
+
+  it("stays unset when RAVI_STATE_DIR is missing or empty", () => {
+    expect(resolveHandoffStateDir({}, "/work/caller")).toBeUndefined();
+    expect(resolveHandoffStateDir({ RAVI_STATE_DIR: "" }, "/work/caller")).toBeUndefined();
+  });
+
+  it("makes caller and worker resolve the same restart-reason file from different cwds", () => {
+    const callerCwd = "/work/caller";
+    const handed = resolveHandoffStateDir({ RAVI_STATE_DIR: "state" }, callerCwd);
+    expect(getRestartReasonPath({ RAVI_STATE_DIR: handed })).toBe(join(callerCwd, "state", "restart-reason.txt"));
   });
 });
