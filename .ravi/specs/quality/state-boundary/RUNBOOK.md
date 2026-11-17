@@ -98,25 +98,36 @@ A release with the thread fence refuses to start on a database that has no fence
 
 Run it from the operator's terminal (offline recovery path), never from an agent session or through the gateway: both runtimes are down while it runs.
 
-1. Install the target release without restarting. The `ravi` and `ravi-channels` PM2 registrations must start the installed bundle; the running processes are still the legacy release.
+1. Install the target release without restarting. The `ravi` and `ravi-channels` PM2 registrations must start the installed bundle; the running processes are still the legacy release. From here until the adoption, a legacy process that dies is relaunched by PM2 on the new bundle, which refuses (no fence) and the plan then refuses too: reinstall `3.261113.2`, start it, and begin again.
 2. `ravi maintenance thread-fence-adopt` prints the read-only plan and exits 3. It refuses when the database already has the fence, an adoption record exists, a registration is missing or duplicated, a process is not online under PM2, a boot receipt does not match the running pid/start time, a predecessor already runs the target bundle, or another launcher starts the Ravi bundle.
 3. `ravi maintenance thread-fence-adopt --execute`:
-   - takes the interlock (`runtime-maintenance/interlock`) and never releases it on failure;
+   - holds the coordinator lease (`runtime-maintenance/coordinator.lock`, an OS lock released when the process dies), takes the interlock, and writes `adoption.json` (`preparing`) before the first stop; on failure it records `preparation-blocked` and keeps the interlock;
    - stops `ravi-channels`, then `ravi`, with `pm2 stop` (registrations stay, so PM2 cannot relaunch them) and accepts only ESRCH as exit;
    - re-reads the registry: no relaunch, no replacement, bundle unchanged;
    - reads the durable residue read-only: router database (`ravi.db`) by status, and JetStream (`CHANNEL_OUTBOUND`, omni `MESSAGE`/`INSTANCE`/`REACTION` consumers, `SESSION_PROMPTS`);
    - writes evidence under `runtime-maintenance/evidence/<id>/` and the authorization in `runtime-maintenance/adoption.json`;
    - starts `ravi` through PM2. The entrypoint admits only the authorized bundle, once (`runtime-maintenance/successor`), installs the fence inside `withExitedThreadBootstrapAuthorization`, records `adopted` and releases the interlock last. Channels start after that, through their ordinary guarded entry.
 
-Residue that blocks: a status outside the rule of its table, an unreadable table, an unreachable broker, prompts left in `SESSION_PROMPTS` (memory storage, 60 s, not durable) and mail/calendar rows `leased`/`sending` (no legacy owner resumes them). Pending and in-flight work with a named owner (prompt queue, turn attempts, ingress receipts, recovery, outboxes, decision deliveries, jobs, broker consumers) is recorded with its counts and carried by the successor.
+Residue that blocks: a status outside the rule of its table, an unreadable table, an unreachable broker, prompts left in `SESSION_PROMPTS` (memory storage, 60 s, not durable), mail/calendar rows `leased`/`sending` (no legacy owner resumes them), and non-terminal rows of `channel_outbound_receipts`, `channel_backend_runtime_state` and `cron_runs` (owner not verified). Pending and in-flight work with a named owner (prompt queue, turn attempts, ingress receipts, recovery, outboxes, sync inbox, decision deliveries, jobs, broker consumers) is recorded with its counts and carried by the successor, which re-reads the SQLite residue itself before installing the fence.
 
-Interrupted adoption: inspect `adoption.json` and the maintenance record, then `ravi maintenance thread-fence-recover --mode <mode> --execute`:
+### When something stops
 
-- `release`: the fence is installed and the successor finished or exited; releases the interlock.
-- `retry`: no fence and the claimed successor exited; authorizes one new successor and starts it.
-- `abandon`: no fence; releases the interlock so the previous release can be reinstalled and started.
+`ravi maintenance thread-fence-recover --mode release` (without `--execute`) prints the whole state: interlock, maintenance record, adoption record, successor claim, fence, predecessor and successor exits, the modes that apply now and the diagnosis. Act only on a mode it lists.
 
-Do not remove the interlock or the successor claim by hand, downgrade schema markers, clear queues/claims, reset context or expire a lease to force progress. Canonical health/attention JOINs and legacy context provenance (resume and local recovery) remain gates before any cross-audience projection.
+| Stopped at | What is down | Exit |
+|---|---|---|
+| Plan refused | nothing | fix what it names; nothing was written |
+| A stop failed, an exit unproven, a relaunch, the bundle changed, residue unknown or broker unreachable (`preparation-blocked`) | what was already stopped; the interlock refuses new-bundle starts | `retry` resumes (re-checks everything, does not stop again what is gone) once the cause is fixed; `abandon` releases the interlock |
+| Coordinator killed mid-preparation (`preparing`, lease free) | same | `retry` or `abandon` |
+| Interlock with a maintenance record and no adoption record, or with no record at all | same | `abandon` |
+| Successor failed before the fence (`blocked`) | both runtimes | `retry` authorizes one new successor and starts it; `abandon` |
+| Fence installed, interlock or records left behind (crash in the release) | channels | `release` |
+
+After `release`: the fence exists; start whatever is stopped with `ravi daemon start` and `ravi channels start` (the adopt command starts channels only after the interlock is really gone).
+
+After `abandon` (never a fence): the installed bundle refuses to boot on this database, so reinstall `3.261113.2` before starting. The legacy release does not know the interlock; `abandon` already removed it, so nothing is left orphaned. To try again, wait for the legacy runtime to settle the residue that blocked, then reinstall the target and start from step 1.
+
+Do not remove the interlock, the lease or the successor claim by hand, downgrade schema markers, clear queues/claims, reset context or expire a lease to force progress. Canonical health/attention JOINs and legacy context provenance (resume and local recovery) remain gates before any cross-audience projection.
 
 A failed shutdown drain must retain its failure while attempting the other component stops and exit nonzero. It must not tear down shared NATS/SQLite handles as though all accepted component work had settled. Neither a zero exit nor a scoped drain receipt replaces the external accepted-work verifier.
 

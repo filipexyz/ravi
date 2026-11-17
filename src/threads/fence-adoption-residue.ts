@@ -91,6 +91,40 @@ export const LEGACY_ROUTER_RESIDUE_RULES: readonly Omit<ResidueRule, "database">
     inFlight: ["leased"],
     owner: "sync outbox dispatcher",
   },
+  {
+    table: "sync_inbox",
+    column: "status",
+    terminal: ["applied", "skipped", "failed", "dead"],
+    pending: ["pending"],
+    inFlight: [],
+    owner: "sync inbox applier",
+  },
+  // The next three are closed by their CHECK constraints, but who resumes a
+  // non-terminal row in the successor was not verified: those rows block.
+  {
+    table: "channel_outbound_receipts",
+    column: "state",
+    terminal: ["complete", "suppressed"],
+    pending: [],
+    inFlight: [],
+    owner: "channel outbound (non-terminal receipts block)",
+  },
+  {
+    table: "channel_backend_runtime_state",
+    column: "state",
+    terminal: ["completed", "failed", "interrupted"],
+    pending: [],
+    inFlight: [],
+    owner: "channel backend runtime (non-terminal turns block)",
+  },
+  {
+    table: "cron_runs",
+    column: "status",
+    terminal: ["ok", "error"],
+    pending: [],
+    inFlight: [],
+    owner: "cron scheduler (unfinished runs block)",
+  },
   // src/decisions/delivery.ts: 'failed' and 'published' are claimed again; an expired
   // 'accepting' claim becomes 'uncertain', which only an explicit resolution settles.
   {
