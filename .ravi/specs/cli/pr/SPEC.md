@@ -26,6 +26,11 @@ normative: true
 `ravi pr publish` uploads the current committed branch through Git Data API,
 creates or reuses its ready PR, and reconciles CI follow. Upload, verification,
 PR reconciliation and follow are internal helpers, not separate public commands.
+After successful `ravi pr publish --execute`, agents MUST verify the returned
+ready PR and active CI follow. They MUST NOT repeat PR creation or follow
+registration as separate post-publication steps. A partial result follows the
+recovery procedure below; verification must not turn partial publication into
+a success claim.
 
 ## Contract
 
