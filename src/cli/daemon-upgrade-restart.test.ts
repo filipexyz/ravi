@@ -17,6 +17,8 @@ afterEach(() => {
 
 const BUNDLE = "/release/dist/bundle/index.js";
 type Behavior = "adopt" | "refuse" | "silent";
+/** `no-pid`: PM2 reports the registration online but spawning failed, so no process ever exists. */
+type Spawn = "ok" | "no-pid";
 
 /**
  * PM2 plus a simulated daemon of this release: on start it adopts (fence table,
@@ -24,12 +26,13 @@ type Behavior = "adopt" | "refuse" | "silent";
  * real `resumeChannelsAfterUpgrade`, which is what `startDaemon` does after
  * "Daemon ready".
  */
-function fixture(options: { processes?: UpgradeRestartProcess[]; behavior?: Behavior } = {}) {
+function fixture(options: { processes?: UpgradeRestartProcess[]; behavior?: Behavior; spawn?: Spawn } = {}) {
   const stateDir = mkdtempSync(join(tmpdir(), "ravi-upgrade-restart-"));
   roots.push(stateDir);
   new Database(join(stateDir, "ravi.db")).exec("CREATE TABLE legacy (id TEXT)");
   const state = {
     behavior: options.behavior ?? ("adopt" as Behavior),
+    spawn: options.spawn ?? ("ok" as Spawn),
     processes: (options.processes ?? [
       { name: "ravi", pid: 101, status: "online", onTarget: true },
       { name: "ravi-channels", pid: 102, status: "online", onTarget: true },
@@ -111,6 +114,10 @@ function fixture(options: { processes?: UpgradeRestartProcess[]; behavior?: Beha
     },
     start: (name) => {
       calls.push(`start ${name}`);
+      if (state.spawn === "no-pid") {
+        setProcess(name, { pid: 0, status: "online" });
+        return 0;
+      }
       setProcess(name, { pid: nextPid++, status: "online" });
       daemonStarts();
       return 0;
@@ -142,6 +149,7 @@ function fixture(options: { processes?: UpgradeRestartProcess[]; behavior?: Beha
     now: () => clock,
     timeoutMs: 5_000,
     channelsTimeoutMs: 3_000,
+    spawnGraceMs: 2_000,
   };
   return { stateDir, host, calls, state, daemonStarts, daemonReady };
 }
@@ -219,6 +227,31 @@ describe("restart onto a pre-fence database", () => {
     const outcome = await performUpgradeRestart(f.host);
     expect(outcome).toMatchObject({ ok: false, code: "THREAD_FENCE_UPGRADE_TIMEOUT" });
     expect(outcome.message).toContain("ravi daemon logs");
+  });
+
+  it("says the daemon did not start, not that the upgrade was slow, when PM2 gives it no pid", async () => {
+    const f = fixture({ spawn: "no-pid" });
+    const outcome = await performUpgradeRestart(f.host);
+    expect(outcome).toMatchObject({ ok: false, code: "PM2_FAILED" });
+    expect(outcome.message).toContain("no process started");
+    expect(outcome.message).toContain("pm2.log");
+    expect(outcome.message).not.toContain("did not finish the database upgrade");
+    // The runner's intent survives, so the later adopting start still brings it back.
+    expect(readChannelsStoppedForUpgrade(f.stateDir)).toMatchObject({ by: "daemon restart" });
+  });
+
+  it("a registration whose launcher is gone is recreated, so the restart starts the daemon", async () => {
+    // The CLI reports `onTarget: false` for it (same bundle, missing launcher): remove, then register anew.
+    const f = fixture({
+      processes: [
+        { name: "ravi", pid: 101, status: "online", onTarget: false },
+        { name: "ravi-channels", pid: 102, status: "online", onTarget: true },
+      ],
+    });
+    expect(await performUpgradeRestart(f.host)).toMatchObject({ ok: true, channelsStarted: true });
+    expect(f.calls).toContain("remove ravi");
+    expect(f.calls).toContain("start new");
+    expect(f.calls).not.toContain("start ravi");
   });
 
   it("with nothing registered it creates the daemon, and leaves an absent channel runner absent", async () => {
