@@ -431,10 +431,12 @@ function freshFixture(
     sidecar?: "-wal" | "-shm" | "-journal";
     /** A daemon PM2 does not report as `ravi` (startedAt 0), as in development. */
     foreground?: boolean;
+    stateDir?: string;
+    boundary?: BootAdoptionHost["boundary"];
   } = {},
 ) {
-  const stateDir = mkdtempSync(join(tmpdir(), "ravi-fence-fresh-"));
-  roots.push(stateDir);
+  const stateDir = options.stateDir ?? mkdtempSync(join(tmpdir(), "ravi-fence-fresh-"));
+  if (!options.stateDir) roots.push(stateDir);
   const databasePath = join(stateDir, "ravi.db");
   if (options.database === "empty") writeFileSync(databasePath, "");
   if (options.database === "legacy-schema") {
@@ -490,6 +492,7 @@ function freshFixture(
     wait: async () => {},
     exitChecks: 3,
     legacyDatabasePath: options.legacyDatabasePath ?? null,
+    boundary: options.boundary,
   };
   return { stateDir, databasePath, bundlePath, host, stops };
 }
@@ -566,6 +569,25 @@ describe("first start on a new state directory", () => {
     });
     await expect(adoptThreadFenceAtBoot(f.host)).rejects.toThrow("may still be running");
     expect(existsSync(f.databasePath)).toBe(false);
+  });
+
+  it("a source checkout running as the PM2 'ravi' on real state leaves neither the database nor the coordinator lock", async () => {
+    const home = mkdtempSync(join(tmpdir(), "ravi-fence-fresh-home-"));
+    roots.push(home);
+    const stateDir = join(home, ".ravi");
+    mkdirSync(stateDir);
+    const f = freshFixture({
+      stateDir,
+      // The sandbox home is this process's real state; the entry runs from a checkout, not the installed bundle.
+      boundary: {
+        homeDir: home,
+        env: {},
+        argv: ["bun", join(home, "checkout", "src", "cli", "index.ts"), "daemon", "run"],
+      },
+    });
+    await expect(adoptThreadFenceAtBoot(f.host)).rejects.toThrow("Refusing the real Ravi state database");
+    expect(existsSync(f.databasePath)).toBe(false);
+    expect(existsSync(join(stateDir, "runtime-maintenance", "coordinator.lock"))).toBe(false);
   });
 
   it("a daemon PM2 does not list online as 'ravi' creates nothing", async () => {

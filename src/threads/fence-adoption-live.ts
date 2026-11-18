@@ -25,6 +25,7 @@ import {
   type DurableResidue,
   type ManagedRegistration,
   planThreadFenceAdoption,
+  recordUpgradeFailure,
   resumeChannelsAfterUpgrade,
   type ThreadFenceAdoption,
   type ThreadFenceAdoptionPlan,
@@ -300,7 +301,14 @@ export async function adoptThreadFenceOnUpgrade(
   // The ordinary start, on a fenced database, reads nothing from PM2.
   if (existsSync(databasePath) && databaseHasThreadFence(databasePath)) return { outcome: "not-needed" };
   // A daemon PM2 does not report as `ravi` (foreground) carries startedAt 0.
-  const managed = managedRavi();
+  let managed: { pid: number; startedAt?: number | null } | undefined;
+  try {
+    managed = managedRavi();
+  } catch (cause) {
+    // Refused like any entry refusal: the waiting CLI reads why.
+    recordUpgradeFailure(stateDir, cause);
+    throw cause;
+  }
   return adoptThreadFenceAtBoot({
     stateDir,
     databasePath,

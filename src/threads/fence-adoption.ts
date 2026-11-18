@@ -18,7 +18,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { constants as sqliteConstants, Database } from "bun:sqlite";
 import { acquireSchemaFileLock, SchemaLockBusyError } from "../db/schema-lock.js";
-import { canonicalStatePath } from "../db/state-boundary.js";
+import { assertDatabaseTargetAllowed, canonicalStatePath, type DatabaseBoundaryOptions } from "../db/state-boundary.js";
 import {
   assertRuntimeMaintenanceInactive,
   persistRuntimeMaintenance,
@@ -958,6 +958,8 @@ export interface BootAdoptionHost {
   now?: () => number;
   /** The legacy database the router would move in; default: `legacyStateDatabasePath(databasePath)`. */
   legacyDatabasePath?: string | null;
+  /** State boundary of this process for the target check (tests inject a sandbox home). */
+  boundary?: DatabaseBoundaryOptions;
 }
 
 /** `created`: first start on a new state directory; the database was created with the fence. */
@@ -1015,7 +1017,8 @@ export function readUpgradeFailure(stateDir: string): UpgradeFailure | null {
   }
 }
 
-function recordUpgradeFailure(stateDir: string, cause: unknown): void {
+/** Keeps the reason a daemon start refused for the CLI that waits on it. Never throws. */
+export function recordUpgradeFailure(stateDir: string, cause: unknown): void {
   try {
     writeAtomic(upgradeFailurePath(stateDir), maintenanceDirectory(stateDir), {
       at: Date.now(),
@@ -1047,6 +1050,9 @@ const legacyDatabaseOf = (host: BootAdoptionHost) =>
  * runtime that left a boot record has exited.
  */
 async function createFencedStateDatabase(host: BootAdoptionHost): Promise<BootAdoptionResult> {
+  // First: a process the state boundary refuses (a source checkout running as the
+  // PM2 `ravi` on real state) leaves no directory, lock or database behind.
+  assertDatabaseTargetAllowed(host.databasePath, host.boundary);
   const ownBundle = canonicalStatePath(host.ownBundlePath);
   const exitState = host.exitState ?? ((entry: { pid: number; startedAt: number }) => recordedProcessExitState(entry));
   const exclusion = () => {

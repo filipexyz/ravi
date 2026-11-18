@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { openStateDatabase } from "../db/state-boundary.js";
 import { adoptThreadFenceOnUpgrade, liveBootIdentity, managedRaviSnapshot } from "./fence-adoption-live.js";
 import type { Pm2Process } from "../pm2.js";
+import { readUpgradeFailure } from "./fence-adoption.js";
 import { prepareThreadFence } from "./schema-fence.js";
 
 const roots: string[] = [];
@@ -93,6 +94,17 @@ describe("live daemon entry on a new isolated state directory", () => {
       "-wal exists without its database",
     );
     expect(existsSync(databasePath)).toBe(false);
+  });
+
+  it("an unreadable PM2 snapshot refuses the entry and leaves its reason for the waiting CLI", async () => {
+    const stateDir = isolated();
+    await expect(
+      adoptThreadFenceOnUpgrade(stateDir, () => {
+        throw new Error("Unable to read the managed PM2 processes");
+      }),
+    ).rejects.toThrow("Unable to read the managed PM2 processes");
+    expect(readUpgradeFailure(stateDir)?.failure).toContain("Unable to read the managed PM2 processes");
+    expect(existsSync(join(stateDir, "ravi.db"))).toBe(false);
   });
 
   it("a dangling link left as the write-ahead log also refuses the entry", async () => {
