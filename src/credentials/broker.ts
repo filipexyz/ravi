@@ -20,8 +20,10 @@ export function explainCredentialPolicy(input: {
       `execute:${input.provider}:${input.action}`,
     ],
     approval: {
-      required: isSensitiveAction(input.action),
-      reason: isSensitiveAction(input.action) ? "write_or_destructive_provider_action" : "read_only_provider_action",
+      required: isSensitiveAction(input.action, input.provider),
+      reason: isSensitiveAction(input.action, input.provider)
+        ? "write_or_destructive_provider_action"
+        : "read_only_provider_action",
     },
   };
 }
@@ -31,6 +33,8 @@ export async function resolveCredentialSecret(input: {
   connection: string;
   action: string;
   authority?: CredentialBrokerAuthority;
+  /** Host-only additional guard, after approval and immediately before backend access. */
+  beforeResolve?: () => Promise<void>;
   options?: CredentialStoreOptions;
 }): Promise<{ connection: CredentialConnectionRecord; secret: string; policy: CredentialPolicyExplanation }> {
   let connection = requireActiveConnection(input);
@@ -105,6 +109,15 @@ export async function resolveCredentialSecret(input: {
       decision = "allow";
     } else if (policy.approval.required) {
       approvalStatus = "operator_control";
+    }
+    if (input.beforeResolve) {
+      await input.beforeResolve();
+      const current = requireActiveConnection(input);
+      if (current.secretRef !== connection.secretRef || current.updatedAt !== connection.updatedAt)
+        throw new CredentialBrokerError("authorization_denied", "Credential connection changed during host guard.");
+      const currentCaller = authorizeCredentialUse(input);
+      if (currentCaller.actorContextId !== actorContextId || currentCaller.agentId !== agentId)
+        throw new CredentialBrokerError("caller_invalid", "Credential caller changed during host guard.");
     }
     const secret = await readSecret(connection.secretRef);
     audit("secret_resolved");
@@ -216,6 +229,17 @@ export function publicCredentialConnection(record: CredentialConnectionRecord): 
   };
 }
 
-function isSensitiveAction(action: string): boolean {
+function isSensitiveAction(action: string, provider: string): boolean {
+  if (
+    provider === "omie" &&
+    new Set([
+      "produtos/pedido:ListarPedidos",
+      "produtos/pedido:ConsultarPedido",
+      "produtos/pedido:StatusPedido",
+      "produtos/etapafat:ListarEtapasFaturamento",
+    ]).has(action)
+  )
+    return false;
+  if (provider === "slack" && action === "conversations.members") return false;
   return !/^(auth\.check|whoami|channels\.list|channels\.info|users\.list|users\.info)$/.test(action);
 }

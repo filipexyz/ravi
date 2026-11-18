@@ -219,3 +219,15 @@ Audit events MUST NOT include:
 - Keychain adapter uses a PoC-safe implementation in production.
 - Connection metadata stores a real token because `secretRef` validation is too
   loose.
+
+## Additional native action guards
+
+Native integrations MAY supply an in-process `beforeResolve` callback. It MUST
+run after any operation approval and before backend secret access. It is an
+additional restriction, never an authorization override; no CLI/gateway input
+may provide it. After it awaits, the broker MUST revalidate current caller,
+capabilities and the unchanged active connection before reading the secret.
+
+Only exact Omie order-query method IDs and Slack `conversations.members` are
+classified as reads by this integration. Neither method name patterns nor
+client-declared `mutating` flags may downgrade a provider write.

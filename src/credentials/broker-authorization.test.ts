@@ -427,6 +427,44 @@ describe("credential broker authorization boundary", () => {
     });
   }
 
+  it("runs the additional host guard after approval and before reading any secret", async () => {
+    const order: string[] = [];
+    spyOn(approvalService, "requestCascadingApproval").mockImplementation(async () => {
+      order.push("approval");
+      return { approved: true, isDelegated: false };
+    });
+    await expect(
+      asCaller(caller(), () =>
+        resolveCredentialSecret({
+          provider: "slack",
+          connection: "fixture",
+          action: "chat.postMessage",
+          beforeResolve: async () => {
+            order.push("guard");
+            throw new Error("member removed");
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+    expect(order).toEqual(["approval", "guard"]);
+    expect(readSecret).not.toHaveBeenCalled();
+  });
+  it("revalidates a connection disabled while the host guard awaited membership", async () => {
+    await expect(
+      asCaller(caller(), () =>
+        resolveCredentialSecret({
+          provider: "slack",
+          connection: "fixture",
+          action: "auth.check",
+          beforeResolve: async () => {
+            setCredentialConnectionStatus("slack", "fixture", "disabled");
+          },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "connection_disabled" });
+    expect(readSecret).not.toHaveBeenCalled();
+  });
+
   it("does not retain backend secret material in thrown errors or audit", async () => {
     readSecret.mockRejectedValue(new Error(fakeSecret));
     const failure = (await asCaller(caller(), () => resolve()).catch((error: unknown) => error)) as Error;

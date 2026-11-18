@@ -1,3 +1,5 @@
+import { AppError as OmieAppError } from "./convit-omie/domain.js";
+import { convitDelegation } from "./convit-omie/delegation.js";
 import { spawn } from "node:child_process";
 import { dirname } from "node:path";
 import { discoverAppManifests, getAppManifest, RAVI_APP_BUILTIN_OPERATION_HANDLERS } from "./service.js";
@@ -104,6 +106,7 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
 
 function classifyAppRunError(error: unknown): string {
   if (error instanceof RaviAppError) return error.code;
+  if (error instanceof OmieAppError && /^(OMIE_[A-Z0-9_]+|INVALID_INPUT)$/.test(error.code)) return error.code;
   if (error instanceof RaviAppPermissionDeniedError) return "PERMISSION_DENIED";
   if (error instanceof AppPermissionProviderDeniedError) {
     return ["deny", "needs_grant", "not_applicable"].includes(error.audit.decision)
@@ -383,7 +386,7 @@ async function dispatchResolvedOperation(
         durationMs: Date.now() - options.startedAt,
         ...(options.callerContext ? { callerContextId: options.callerContext.contextId } : {}),
         handler,
-        result: runBuiltinHandler(handler, app, options.args),
+        result: await runBuiltinHandler(handler, app, options.args),
       },
       permissionProvider,
     );
@@ -426,7 +429,13 @@ async function runCliOperation(
   const appId = app.manifest?.id ?? app.id;
   const invocation = resolveRaviAppCommand(resolved.operation.command ?? "", options.args, options.runtime);
   const appRoot = dirname(app.path);
-  const childContext = issueAppChildContext(app, resolved.id, options.callerContext);
+  const childContext = issueAppChildContext(
+    app,
+    resolved.id,
+    options.callerContext,
+    resolved.operation.permission,
+    options.args,
+  );
   const run = await spawnExecutable(invocation.executable, invocation.argv, {
     cwd: appRoot,
     env: buildRaviAppProcessEnv(options.env ?? process.env, {
@@ -504,7 +513,11 @@ function undeclaredOperationHelpHint(
   return `Este app nao declara ajuda para ${operationId}. Rode ravi apps show ${app.id} --json para ver o manifesto.`;
 }
 
-function runBuiltinHandler(handler: string, app: RaviAppManifestRecord, args: string[] = []): unknown {
+async function runBuiltinHandler(handler: string, app: RaviAppManifestRecord, args: string[] = []): Promise<unknown> {
+  if (handler === "apps.convit-omie.read") {
+    const { runConvitOmieHost } = await import("./convit-omie/native.js");
+    return runConvitOmieHost(app.id, "read", args);
+  }
   if (handler === "apps.help") {
     const operationIds = visibleOperationIdsForHelp(app);
     const perOpHint = `ravi ${app.id.split("/").join(" ")} help <op> — help enxuto por operacao`;
@@ -840,17 +853,22 @@ function isRecursiveCliCommand(appId: string, command: string, staticRootCommand
 }
 
 function resolveCallerContext(env?: NodeJS.ProcessEnv): ContextRecord | undefined {
-  return getRuntimeContextFromEnv(env ?? process.env) ?? getContext()?.context;
+  return (
+    getContext({ localOnly: true })?.context ?? getRuntimeContextFromEnv(env ?? process.env) ?? getContext()?.context
+  );
 }
 
 function issueAppChildContext(
   app: RaviAppManifestRecord,
   operationId: string,
   parent: ContextRecord | undefined,
+  operationPermission?: string,
+  args: string[] = [],
 ): ContextRecord | undefined {
   if (!parent) return undefined;
   const appId = app.manifest?.id ?? app.id;
-  const allow = app.manifest?.context?.allow ?? [];
+  const ceiling = app.manifest?.context?.allow ?? [];
+  const allow = appId === "convit-omie" ? convitDelegation(operationId, operationPermission, args, ceiling) : ceiling;
   const capabilities = allow.map(parseRaviAppCapability);
   const input: IssueRuntimeContextInput = {
     parent,
@@ -862,6 +880,13 @@ function issueAppChildContext(
       appId,
       operationId,
       source: "app-router",
+      ...(appId === "convit-omie"
+        ? {
+            actorPrincipal: parent.metadata?.actorPrincipal,
+            actorResolution: parent.metadata?.actorResolution,
+            surfacePrincipal: parent.metadata?.surfacePrincipal,
+          }
+        : {}),
     },
   };
   return issueRuntimeContext(input);

@@ -306,3 +306,21 @@ is ordinary CLI composition, not a distinct App protocol.
 - Running health checks during discovery creates side effects and slow startup.
 - Hiding app route failures behind generic Commander help makes agents unable
   to diagnose missing manifests or invalid operations.
+
+## Protected Convit order query pilot
+
+- The fixed builtin `apps.convit-omie.read` MUST execute only packaged order
+  query methods, never app-supplied modules, URLs or arbitrary code.
+- A Convit app child MUST preserve authenticated actor/surface metadata while
+  delegating only the requested query's exact capabilities, all inside the
+  declared `context.allow` ceiling and the live caller's authority.
+- Gateway-local authenticated context MUST take precedence over ambient process
+  environment when issuing an app child.
+- The host MUST verify the live human turn ancestry, persisted inbound and
+  canonical channel/thread identity. Outbound reply thread is not source proof.
+- Current native Slack membership and permissions MUST be rechecked after awaits
+  before secret access and before provider HTTP. A relay is not a human caller.
+- Read activation MUST NOT open a write ledger or enable commercial writes and
+  personal token lifecycle. Those remain explicitly unavailable.
+- A candidate manifest is not a release or a grant. Availability requires a
+  real participant's authenticated query to return to the originating channel.

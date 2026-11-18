@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { runWithContext } from "../cli/context.js";
-import type { ContextCapability, ContextRecord } from "../router/router-db.js";
+import { dbGetContext, type ContextCapability, type ContextRecord } from "../router/router-db.js";
 import { createRuntimeContext, getContextLineage, resolveRuntimeContext } from "../runtime/context-registry.js";
 import { cleanupIsolatedRaviState } from "../test/ravi-state.js";
 import { raviAppErrorToContractError } from "./error-contract.js";
@@ -1510,4 +1510,61 @@ describe("Ravi app router", () => {
       reasonCode: "provider_timeout",
     });
   });
+});
+
+it("Convit read child keeps the authenticated gateway actor and delegates no writes", async () => {
+  const root = makeRepo();
+  const allow = [
+    "execute:group:apps",
+    "use:app:convit-omie",
+    "read:omie:produtos.pedido.ListarPedidos",
+    "use:credential:omie:convit-pedidos",
+    "execute:omie:produtos/pedido:ListarPedidos",
+    "use:credential:slack:cassia-slack",
+    "execute:slack:conversations.members",
+  ];
+  const app = manifest("convit-omie");
+  app.context = { allow: [...allow, "execute:app:convit-omie"] };
+  app.interfaces = { cli: { command: "bun probe.mjs", json: true } };
+  app.operations = { "convit-omie.list": { interface: "cli", command: "bun probe.mjs {args}", mutating: false } };
+  writeManifest(root, "convit-omie", app);
+  writeFileSync(join(root, "src/apps/convit-omie/probe.mjs"), "console.log(JSON.stringify({success:true}));");
+  const capabilities = allow.map((cap) => {
+    const [permission, objectType, ...id] = cap.split(":");
+    return { permission, objectType, objectId: id.join(":") };
+  });
+  const parent = createRuntimeContext({
+    agentId: "main",
+    capabilities,
+    metadata: { actorPrincipal: "contact:verified", actorResolution: "resolved", surfacePrincipal: "chat:verified" },
+  });
+  const unrelated = createRuntimeContext({
+    agentId: "main",
+    capabilities,
+    metadata: { actorPrincipal: "contact:unrelated" },
+  });
+  const result = await runWithContext({ agentId: "main", context: parent, transport: "gateway" }, () =>
+    runAppOperation({
+      appId: "convit-omie",
+      operation: "list",
+      cwd: root,
+      json: true,
+      env: { ...process.env, RAVI_CONTEXT_KEY: unrelated.contextKey },
+    }),
+  );
+  expect(result.ok).toBe(true);
+  const child = dbGetContext(result.childContextId!);
+  expect(child?.metadata).toMatchObject({
+    parentContextId: parent.contextId,
+    actorPrincipal: "contact:verified",
+    surfacePrincipal: "chat:verified",
+  });
+  const delegated = child?.capabilities.map(({ permission, objectType, objectId }) => ({
+    permission,
+    objectType,
+    objectId,
+  }));
+  expect(delegated).toEqual(expect.arrayContaining(capabilities));
+  expect(delegated).toHaveLength(capabilities.length);
+  expect(delegated).not.toContainEqual({ permission: "execute", objectType: "app", objectId: "convit-omie" });
 });

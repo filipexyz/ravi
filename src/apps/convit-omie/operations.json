@@ -1,0 +1,4362 @@
+[
+  {
+    "id": "produtos/etapafat:ListarEtapasFaturamento",
+    "module": "Produtos",
+    "path": "/api/v1/produtos/etapafat/",
+    "http": "POST",
+    "method": "ListarEtapasFaturamento",
+    "classification": "read",
+    "permission": "read:omie:produtos.etapafat.ListarEtapasFaturamento",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "pagina": {
+          "type": "integer",
+          "maxLength": 15
+        },
+        "registros_por_pagina": {
+          "type": "integer",
+          "maxLength": 15
+        },
+        "ordenar_por": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "ordem_decrescente": {
+          "type": "string",
+          "maxLength": 1
+        }
+      }
+    },
+    "description": "Lista as etapas do faturamento"
+  },
+  {
+    "id": "produtos/pedido:AlterarPedFaturado",
+    "module": "Produtos",
+    "path": "/api/v1/produtos/pedido/",
+    "http": "POST",
+    "method": "AlterarPedFaturado",
+    "classification": "write",
+    "permission": "execute:omie:produtos.pedido.AlterarPedFaturado",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "codigo_pedido": {
+          "type": "integer",
+          "maxLength": 15
+        },
+        "codigo_pedido_integracao": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "numero_pedido": {
+          "type": "string",
+          "maxLength": 15
+        },
+        "codigo_rastreio": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "link_rastreio": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "previsao_entrega": {
+          "type": "string",
+          "maxLength": 10
+        },
+        "obs_venda": {
+          "type": "string"
+        }
+      }
+    },
+    "description": "Alteração dos dados de um pedido faturado."
+  },
+  {
+    "id": "produtos/pedido:AlterarPedidoVenda",
+    "module": "Produtos",
+    "path": "/api/v1/produtos/pedido/",
+    "http": "POST",
+    "method": "AlterarPedidoVenda",
+    "classification": "write",
+    "permission": "execute:omie:produtos.pedido.AlterarPedidoVenda",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "cabecalho": {
+          "type": "object",
+          "properties": {
+            "codigo_pedido": {
+              "type": "integer",
+              "maxLength": 15
+            },
+            "codigo_pedido_integracao": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "numero_pedido": {
+              "type": "string",
+              "maxLength": 15
+            },
+            "sequencial": {
+              "type": "string",
+              "maxLength": 4
+            },
+            "codigo_cliente": {
+              "type": "integer",
+              "maxLength": 15
+            },
+            "codigo_cliente_integracao": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "data_previsao": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "quantidade_itens": {
+              "type": "integer",
+              "maxLength": 6
+            },
+            "etapa": {
+              "type": "string",
+              "maxLength": 2
+            },
+            "codigo_parcela": {
+              "type": "string",
+              "maxLength": 3
+            },
+            "qtde_parcelas": {
+              "type": "integer",
+              "maxLength": 3
+            },
+            "origem_pedido": {
+              "type": "string",
+              "maxLength": 3
+            },
+            "codigo_cenario_impostos": {
+              "type": "integer",
+              "maxLength": 15
+            },
+            "bloqueado": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "importado_api": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "codigo_empresa": {
+              "deprecated": true,
+              "type": "integer",
+              "maxLength": 15
+            },
+            "codigo_empresa_integracao": {
+              "deprecated": true,
+              "type": "string",
+              "maxLength": 20
+            },
+            "tipo_desconto_pedido": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "perc_desconto_pedido": {
+              "type": "number",
+              "maxLength": 10
+            },
+            "valor_desconto_pedido": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "encerrado": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "enc_motivo": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "enc_data": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "enc_hora": {
+              "type": "string",
+              "maxLength": 8
+            },
+            "enc_user": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "nao_gerar_boleto": {
+              "type": "string",
+              "maxLength": 1
+            }
+          }
+        },
+        "departamentos": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "cCodDepto": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "nPerc": {
+                "type": "number",
+                "maxLength": 10
+              },
+              "nValor": {
+                "type": "number",
+                "maxLength": 18
+              },
+              "nValorFixo": {
+                "type": "string",
+                "maxLength": 1
+              }
+            }
+          }
+        },
+        "frete": {
+          "type": "object",
+          "properties": {
+            "codigo_transportadora": {
+              "type": "integer",
+              "maxLength": 15
+            },
+            "codigo_transportadora_integracao": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "modalidade": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "placa": {
+              "type": "string",
+              "maxLength": 7
+            },
+            "placa_estado": {
+              "type": "string",
+              "maxLength": 2
+            },
+            "registro_transportador": {
+              "type": "string",
+              "maxLength": 20
+            },
+            "quantidade_volumes": {
+              "type": "integer",
+              "maxLength": 15
+            },
+            "especie_volumes": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "marca_volumes": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "numeracao_volumes": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "peso_liquido": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "peso_bruto": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_frete": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_seguro": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "numero_lacre": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "outras_despesas": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "veiculo_proprio": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "previsao_entrega": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "codigo_rastreio": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "icms_retido": {
+              "type": "object",
+              "properties": {
+                "vServicoTr": {
+                  "type": "number",
+                  "maxLength": 18
+                },
+                "vBCRetencaoTr": {
+                  "type": "number",
+                  "maxLength": 18
+                },
+                "vAliquotaRetencaoTr": {
+                  "type": "number",
+                  "maxLength": 10
+                },
+                "vIcmsRetidoTr": {
+                  "type": "number",
+                  "maxLength": 18
+                },
+                "cCfopTr": {
+                  "type": "string",
+                  "maxLength": 10
+                },
+                "cCidadeTr": {
+                  "type": "string",
+                  "maxLength": 40
+                }
+              }
+            },
+            "codigo_tipo_entrega": {
+              "type": "integer",
+              "maxLength": 15
+            },
+            "link_rastreio": {
+              "type": "string",
+              "maxLength": 300
+            }
+          }
+        },
+        "informacoes_adicionais": {
+          "type": "object",
+          "properties": {
+            "codigo_categoria": {
+              "type": "string",
+              "maxLength": 20
+            },
+            "codigo_conta_corrente": {
+              "type": "integer",
+              "maxLength": 15
+            },
+            "numero_pedido_cliente": {
+              "type": "string",
+              "maxLength": 30
+            },
+            "numero_contrato": {
+              "type": "string",
+              "maxLength": 20
+            },
+            "contato": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "dados_adicionais_nf": {
+              "type": "string"
+            },
+            "consumidor_final": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "utilizar_emails": {
+              "type": "string"
+            },
+            "enviar_email": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "enviar_pix": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "codVend": {
+              "type": "integer",
+              "maxLength": 15
+            },
+            "codProj": {
+              "type": "integer",
+              "maxLength": 15
+            },
+            "outros_detalhes": {
+              "type": "object",
+              "properties": {
+                "cNatOperacaoOd": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "cIndicadorOd": {
+                  "type": "string",
+                  "maxLength": 1
+                },
+                "cIndicadorIntOd": {
+                  "type": "string",
+                  "maxLength": 1
+                },
+                "cCnpjIntOd": {
+                  "type": "string",
+                  "maxLength": 20
+                },
+                "cIdentificadorIntOd": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "dDataSaidaOd": {
+                  "type": "string",
+                  "maxLength": 10
+                },
+                "cHoraSaidaOd": {
+                  "type": "string",
+                  "maxLength": 8
+                },
+                "cCnpjCpfOd": {
+                  "type": "string",
+                  "maxLength": 20
+                },
+                "cNomeOd": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "cInscrEstadualOd": {
+                  "type": "string",
+                  "maxLength": 20
+                },
+                "cEnderecoOd": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "cNumeroOd": {
+                  "type": "string",
+                  "maxLength": 10
+                },
+                "cComplementoOd": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "cBairroOd": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "cEstadoOd": {
+                  "type": "string",
+                  "maxLength": 2
+                },
+                "cCidadeOd": {
+                  "type": "string",
+                  "maxLength": 40
+                },
+                "cCEPOd": {
+                  "type": "string",
+                  "maxLength": 10
+                },
+                "cSepararEnderecoOd": {
+                  "type": "string",
+                  "maxLength": 1
+                },
+                "cTelefoneOd": {
+                  "type": "string",
+                  "maxLength": 15
+                },
+                "cCnpjCpfOdRet": {
+                  "type": "string",
+                  "maxLength": 20
+                },
+                "cNomeOdRet": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "cInscrEstadualOdRet": {
+                  "type": "string",
+                  "maxLength": 20
+                },
+                "cEnderecoOdRet": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "cNumeroOdRet": {
+                  "type": "string",
+                  "maxLength": 10
+                },
+                "cComplementoOdRet": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "cBairroOdRet": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "cEstadoOdRet": {
+                  "type": "string",
+                  "maxLength": 2
+                },
+                "cCidadeOdRet": {
+                  "type": "string",
+                  "maxLength": 40
+                },
+                "cCEPOdRet": {
+                  "type": "string",
+                  "maxLength": 10
+                },
+                "cSepararEnderecoOdRet": {
+                  "type": "string",
+                  "maxLength": 1
+                },
+                "cTelefoneOdRet": {
+                  "type": "string",
+                  "maxLength": 15
+                }
+              }
+            },
+            "impostos_embutidos": {
+              "deprecated": true,
+              "type": "string",
+              "maxLength": 1
+            },
+            "meio_pagamento": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "descr_meio_pagamento": {
+              "type": "string"
+            },
+            "tipo_documento": {
+              "type": "string",
+              "maxLength": 5
+            },
+            "nfRelacionada": {
+              "type": "object",
+              "properties": {
+                "cChaveRef": {
+                  "type": "string",
+                  "maxLength": 44
+                },
+                "nNFRef": {
+                  "type": "string",
+                  "maxLength": 9
+                },
+                "cSerieRef": {
+                  "type": "string",
+                  "maxLength": 3
+                },
+                "dtEmissaoRef": {
+                  "type": "string",
+                  "maxLength": 10
+                },
+                "cnpjEmitRef": {
+                  "type": "string",
+                  "maxLength": 20
+                },
+                "cUfRef": {
+                  "type": "string",
+                  "maxLength": 2
+                },
+                "nNfPR": {
+                  "type": "string",
+                  "maxLength": 9
+                },
+                "cSeriePR": {
+                  "type": "string",
+                  "maxLength": 3
+                },
+                "dtEmissaoPR": {
+                  "type": "string",
+                  "maxLength": 10
+                },
+                "cnpjPR": {
+                  "type": "string",
+                  "maxLength": 20
+                },
+                "InscrEstPR": {
+                  "type": "string",
+                  "maxLength": 20
+                },
+                "cUfPR": {
+                  "type": "string",
+                  "maxLength": 2
+                },
+                "nCOORef": {
+                  "type": "string",
+                  "maxLength": 6
+                },
+                "nECFRef": {
+                  "type": "string",
+                  "maxLength": 3
+                },
+                "indPresenca": {
+                  "type": "string",
+                  "maxLength": 1
+                },
+                "indIntermediario": {
+                  "type": "string",
+                  "maxLength": 1
+                },
+                "cnpjIntermediario": {
+                  "type": "string",
+                  "maxLength": 20
+                },
+                "identIntermediario": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "nrProdutorRural": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "cAcaoItem": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "nrNumero": {
+                        "type": "string",
+                        "maxLength": 9
+                      },
+                      "nrSerie": {
+                        "type": "string",
+                        "maxLength": 3
+                      },
+                      "nrDtEmissao": {
+                        "type": "string",
+                        "maxLength": 10
+                      },
+                      "nrCnpjCpf": {
+                        "type": "string",
+                        "maxLength": 20
+                      },
+                      "nrIE": {
+                        "type": "string",
+                        "maxLength": 20
+                      },
+                      "nrUF": {
+                        "type": "string",
+                        "maxLength": 2
+                      }
+                    }
+                  }
+                },
+                "nrNF": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "cAcaoItem": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "nrChave": {
+                        "type": "string",
+                        "maxLength": 44
+                      }
+                    }
+                  }
+                },
+                "nrCupomFiscal": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "cAcaoItem": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "nrCOO": {
+                        "type": "string",
+                        "maxLength": 6
+                      },
+                      "nrNumeroECF": {
+                        "type": "string",
+                        "maxLength": 3
+                      }
+                    }
+                  }
+                },
+                "nrModelo1_1A": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "cAcaoItem": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "nrNumero": {
+                        "type": "string",
+                        "maxLength": 9
+                      },
+                      "nrSerie": {
+                        "type": "string",
+                        "maxLength": 3
+                      },
+                      "nrDtEmissao": {
+                        "type": "string",
+                        "maxLength": 10
+                      },
+                      "nrCnpjCpf": {
+                        "type": "string",
+                        "maxLength": 20
+                      },
+                      "nrUF": {
+                        "type": "string",
+                        "maxLength": 2
+                      }
+                    }
+                  }
+                },
+                "cSigNFRef": {
+                  "type": "string",
+                  "maxLength": 1
+                }
+              }
+            },
+            "nsu": {
+              "type": "string",
+              "maxLength": 100
+            }
+          }
+        },
+        "lista_parcelas": {
+          "type": "object",
+          "properties": {
+            "parcela": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "numero_parcela": {
+                    "type": "integer",
+                    "maxLength": 3
+                  },
+                  "valor": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "percentual": {
+                    "type": "number",
+                    "maxLength": 9
+                  },
+                  "data_vencimento": {
+                    "type": "string",
+                    "maxLength": 10
+                  },
+                  "quantidade_dias": {
+                    "type": "integer",
+                    "maxLength": 4
+                  },
+                  "tipo_documento": {
+                    "type": "string",
+                    "maxLength": 5
+                  },
+                  "meio_pagamento": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "descr_meio_pagamento": {
+                    "type": "string"
+                  },
+                  "nsu": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "nao_gerar_boleto": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "parcela_adiantamento": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "categoria_adiantamento": {
+                    "type": "string",
+                    "maxLength": 20
+                  },
+                  "conta_corrente_adiantamento": {
+                    "type": "integer",
+                    "maxLength": 15
+                  },
+                  "bandeira": {
+                    "type": "string",
+                    "maxLength": 2
+                  },
+                  "cnpj_fin": {
+                    "type": "string",
+                    "maxLength": 20
+                  }
+                }
+              }
+            }
+          }
+        },
+        "observacoes": {
+          "type": "object",
+          "properties": {
+            "obs_venda": {
+              "type": "string"
+            }
+          }
+        },
+        "det": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ide": {
+                "type": "object",
+                "properties": {
+                  "codigo_item_integracao": {
+                    "type": "string",
+                    "maxLength": 30
+                  },
+                  "codigo_item": {
+                    "type": "integer",
+                    "maxLength": 15
+                  },
+                  "simples_nacional": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "acao_item": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "id_ordem_producao": {
+                    "type": "integer",
+                    "maxLength": 15
+                  },
+                  "regra_impostos": {
+                    "deprecated": true,
+                    "type": "integer",
+                    "maxLength": 15
+                  }
+                }
+              },
+              "produto": {
+                "type": "object",
+                "properties": {
+                  "codigo_produto": {
+                    "type": "integer",
+                    "maxLength": 15
+                  },
+                  "codigo_produto_integracao": {
+                    "type": "string",
+                    "maxLength": 60
+                  },
+                  "codigo": {
+                    "type": "string",
+                    "maxLength": 60
+                  },
+                  "descricao": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "cfop": {
+                    "type": "string",
+                    "maxLength": 10
+                  },
+                  "ncm": {
+                    "type": "string",
+                    "maxLength": 13
+                  },
+                  "ean": {
+                    "type": "string",
+                    "maxLength": 14
+                  },
+                  "unidade": {
+                    "type": "string",
+                    "maxLength": 6
+                  },
+                  "quantidade": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "valor_unitario": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "codigo_tabela_preco": {
+                    "type": "integer",
+                    "maxLength": 15
+                  },
+                  "valor_mercadoria": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "tipo_desconto": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "percentual_desconto": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "valor_desconto": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "valor_deducao": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "valor_icms_desonerado": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "motivo_icms_desonerado": {
+                    "type": "string",
+                    "maxLength": 2
+                  },
+                  "valor_total": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "indicador_escala": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "cnpj_fabricante": {
+                    "type": "string",
+                    "maxLength": 20
+                  },
+                  "kit": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "componente_kit": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "codigo_item_kit": {
+                    "type": "integer",
+                    "maxLength": 15
+                  },
+                  "reservado": {
+                    "type": "string",
+                    "maxLength": 1
+                  }
+                }
+              },
+              "observacao": {
+                "type": "object",
+                "properties": {
+                  "obs_item": {
+                    "type": "string"
+                  }
+                }
+              },
+              "inf_adic": {
+                "type": "object",
+                "properties": {
+                  "peso_liquido": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "peso_bruto": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "numero_pedido_compra": {
+                    "type": "string",
+                    "maxLength": 15
+                  },
+                  "item_pedido_compra": {
+                    "type": "integer",
+                    "maxLength": 6
+                  },
+                  "dados_adicionais_item": {
+                    "type": "string"
+                  },
+                  "nao_movimentar_estoque": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "nao_gerar_financeiro": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "codigo_categoria_item": {
+                    "type": "string",
+                    "maxLength": 20
+                  },
+                  "codigo_beneficio_fiscal": {
+                    "type": "string",
+                    "maxLength": 10
+                  },
+                  "numero_fci": {
+                    "type": "string",
+                    "maxLength": 36
+                  },
+                  "codigo_local_estoque": {
+                    "type": "integer",
+                    "maxLength": 15
+                  },
+                  "codigo_cenario_impostos_item": {
+                    "type": "integer",
+                    "maxLength": 15
+                  },
+                  "nao_somar_total": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "numero_recopi": {
+                    "type": "string",
+                    "maxLength": 20
+                  }
+                }
+              },
+              "imposto": {
+                "type": "object",
+                "properties": {
+                  "icms_sn": {
+                    "type": "object",
+                    "properties": {
+                      "cod_sit_trib_icms_sn": {
+                        "type": "string",
+                        "maxLength": 3
+                      },
+                      "origem_icms_sn": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "aliq_icms_sn": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_credito_icms_sn": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "base_icms_sn": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_icms_sn": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "icms": {
+                    "type": "object",
+                    "properties": {
+                      "cod_sit_trib_icms": {
+                        "type": "string",
+                        "maxLength": 2
+                      },
+                      "origem_icms": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "modalidade_icms": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "perc_red_base_icms": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "base_icms": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_icms": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_icms": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "perc_fcp_icms": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "base_fcp_icms": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_fcp_icms": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "icms_st": {
+                    "type": "object",
+                    "properties": {
+                      "cod_sit_trib_icms_st": {
+                        "type": "string",
+                        "maxLength": 2
+                      },
+                      "modalidade_icms_st": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "perc_red_base_icms_st": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "base_icms_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_icms_st": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "margem_icms_st": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_icms_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_icms_opprop": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "perc_red_base_icms_op": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "cest": {
+                        "type": "string",
+                        "maxLength": 9
+                      },
+                      "perc_fcp_icms_st": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "base_fcp_icms_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_fcp_icms_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "icms_ie": {
+                    "type": "object",
+                    "properties": {
+                      "base_icms_uf_destino": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_icms_FCP": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "aliq_interna_uf_destino": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "aliq_interestadual": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "aliq_partilha_icms": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_fcp_icms_inter": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_icms_uf_dest": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_icms_uf_remet": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "icms_efet": {
+                    "type": "object",
+                    "properties": {
+                      "cod_sit_trib_icms_efet": {
+                        "type": "string",
+                        "maxLength": 2
+                      },
+                      "origem_icms_efet": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "modalidade_icms_efet": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "perc_red_base_icms_efet": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "base_icms_efet": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_icms_efet": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_icms_efet": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "ipi": {
+                    "type": "object",
+                    "properties": {
+                      "cod_sit_trib_ipi": {
+                        "type": "string",
+                        "maxLength": 2
+                      },
+                      "tipo_calculo_ipi": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "enquadramento_ipi": {
+                        "type": "string"
+                      },
+                      "base_ipi": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_ipi": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "qtde_unid_trib_ipi": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_unid_trib_ipi": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_ipi": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "pis_padrao": {
+                    "type": "object",
+                    "properties": {
+                      "cod_sit_trib_pis": {
+                        "type": "string",
+                        "maxLength": 2
+                      },
+                      "tipo_calculo_pis": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "base_pis": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_pis": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "qtde_unid_trib_pis": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_unid_trib_pis": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_pis": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "pis_st": {
+                    "type": "object",
+                    "properties": {
+                      "cod_sit_trib_pis_st": {
+                        "type": "string",
+                        "maxLength": 2
+                      },
+                      "tipo_calculo_pis_st": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "base_pis_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_pis_st": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "qtde_unid_trib_pis_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_unid_trib_pis_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "margem_pis_st": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_pis_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "cofins_padrao": {
+                    "type": "object",
+                    "properties": {
+                      "cod_sit_trib_cofins": {
+                        "type": "string",
+                        "maxLength": 2
+                      },
+                      "tipo_calculo_cofins": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "base_cofins": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_cofins": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "qtde_unid_trib_cofins": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_unid_trib_cofins": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_cofins": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "cofins_st": {
+                    "type": "object",
+                    "properties": {
+                      "cod_sit_trib_cofins_st": {
+                        "type": "string",
+                        "maxLength": 2
+                      },
+                      "tipo_calculo_cofins_st": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "base_cofins_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_cofins_st": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "qtde_unid_trib_cofins_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_unid_trib_cofins_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "margem_cofins_st": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_cofins_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "inss": {
+                    "type": "object",
+                    "properties": {
+                      "aliq_inss": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_inss": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "csll": {
+                    "type": "object",
+                    "properties": {
+                      "aliq_csll": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_csll": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "irrf": {
+                    "type": "object",
+                    "properties": {
+                      "aliq_irrf": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_irrf": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "iss": {
+                    "type": "object",
+                    "properties": {
+                      "base_iss": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_iss": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_iss": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "retem_iss": {
+                        "type": "string",
+                        "maxLength": 1
+                      }
+                    }
+                  },
+                  "ibs_cbs": {
+                    "type": "object",
+                    "properties": {
+                      "cst_ibs_cbs": {
+                        "type": "string",
+                        "maxLength": 3
+                      },
+                      "class_trib": {
+                        "type": "string",
+                        "maxLength": 6
+                      },
+                      "base_ibs_cbs": {
+                        "type": "number",
+                        "maxLength": 15
+                      }
+                    }
+                  },
+                  "ibs": {
+                    "type": "object",
+                    "properties": {
+                      "aliquota_ibs_uf": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "perc_dif_ibs_uf": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "perc_red_ibs_uf": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "valor_dif_ibs_uf": {
+                        "type": "number",
+                        "maxLength": 15
+                      },
+                      "valor_ibs_uf": {
+                        "type": "number",
+                        "maxLength": 15
+                      },
+                      "aliquota_ibs_mu": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "perc_dif_ibs_mu": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "perc_red_ibs_mu": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "valor_dif_ibs_mu": {
+                        "type": "number",
+                        "maxLength": 15
+                      },
+                      "valor_ibs_mu": {
+                        "type": "number",
+                        "maxLength": 15
+                      },
+                      "valor_ibs": {
+                        "type": "number",
+                        "maxLength": 15
+                      }
+                    }
+                  },
+                  "cbs": {
+                    "type": "object",
+                    "properties": {
+                      "aliquota_cbs": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "perc_dif_cbs": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "perc_red_cbs": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "valor_dif_cbs": {
+                        "type": "number",
+                        "maxLength": 15
+                      },
+                      "valor_cbs": {
+                        "type": "number",
+                        "maxLength": 15
+                      }
+                    }
+                  },
+                  "trib_reg": {
+                    "type": "object",
+                    "properties": {
+                      "cst_reg_ibs_cst": {
+                        "type": "string",
+                        "maxLength": 3
+                      },
+                      "class_trib_reg": {
+                        "type": "string",
+                        "maxLength": 6
+                      },
+                      "aliquota_reg_ibs_uf": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "aliquota_reg_ibs_mu": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "aliquota_reg_cbs": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "valor_reg_ibs_uf": {
+                        "type": "number",
+                        "maxLength": 15
+                      },
+                      "valor_reg_ibs_mu": {
+                        "type": "number",
+                        "maxLength": 15
+                      },
+                      "valor_reg_cbs": {
+                        "type": "number",
+                        "maxLength": 15
+                      }
+                    }
+                  }
+                }
+              },
+              "rastreabilidade": {
+                "type": "object",
+                "properties": {
+                  "numeroLote": {
+                    "type": "string",
+                    "maxLength": 20
+                  },
+                  "qtdeProdutoLote": {
+                    "type": "number",
+                    "maxLength": 12
+                  },
+                  "dataFabricacaoLote": {
+                    "type": "string",
+                    "maxLength": 10
+                  },
+                  "dataValidadeLote": {
+                    "type": "string",
+                    "maxLength": 10
+                  },
+                  "codigoAgregacaoLote": {
+                    "type": "string",
+                    "maxLength": 20
+                  }
+                }
+              },
+              "combustivel": {
+                "type": "object",
+                "properties": {
+                  "cCodigoANP": {
+                    "type": "string",
+                    "maxLength": 9
+                  },
+                  "cDescrANP": {
+                    "type": "string",
+                    "maxLength": 95
+                  },
+                  "cCODIF": {
+                    "type": "string",
+                    "maxLength": 21
+                  },
+                  "nPercGLP": {
+                    "type": "number",
+                    "maxLength": 8
+                  },
+                  "nPercGasNacional": {
+                    "type": "number",
+                    "maxLength": 8
+                  },
+                  "nPercGasImportado": {
+                    "type": "number",
+                    "maxLength": 8
+                  },
+                  "nValorPartida": {
+                    "type": "number",
+                    "maxLength": 16
+                  },
+                  "nQtdeFatTempAmb": {
+                    "type": "number",
+                    "maxLength": 16
+                  },
+                  "cUFConsumoComb": {
+                    "type": "string",
+                    "maxLength": 2
+                  },
+                  "nBC_CIDE": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "nAliquota_CIDE": {
+                    "type": "number",
+                    "maxLength": 10
+                  },
+                  "nValor_CIDE": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "nBC_UFRem": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "nValorUFRem": {
+                    "type": "number",
+                    "maxLength": 10
+                  },
+                  "nBC_UFDest": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "nValorUFDest": {
+                    "type": "number",
+                    "maxLength": 18
+                  }
+                }
+              },
+              "tributavel": {
+                "type": "object",
+                "properties": {
+                  "cUnidTrib": {
+                    "type": "string",
+                    "maxLength": 6
+                  },
+                  "nQuantTrib": {
+                    "type": "number",
+                    "maxLength": 19
+                  },
+                  "nValorTrib": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "cEanTrib": {
+                    "type": "string",
+                    "maxLength": 14
+                  }
+                }
+              },
+              "lote_validade": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "nIdLote": {
+                      "type": "integer",
+                      "maxLength": 15
+                    },
+                    "nQtdLote": {
+                      "type": "number",
+                      "maxLength": 18
+                    }
+                  },
+                  "required": ["nQtdLote"]
+                }
+              }
+            }
+          }
+        },
+        "market_place": {
+          "type": "object",
+          "properties": {
+            "nTaxa": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "nEnvio": {
+              "type": "number",
+              "maxLength": 18
+            }
+          }
+        },
+        "total_pedido": {
+          "type": "object",
+          "properties": {
+            "base_calculo_icms": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "base_calculo_st": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_pis": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_cofins": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_csll": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_icms": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_st": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_inss": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_IPI": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_ir": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_iss": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_deducoes": {
+              "type": "number",
+              "maxLength": 28
+            },
+            "valor_descontos": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_mercadorias": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_total_pedido": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "base_ibs_cbs": {
+              "type": "number",
+              "maxLength": 15
+            },
+            "valor_dif_ibs_uf": {
+              "type": "number",
+              "maxLength": 15
+            },
+            "valor_ibs_uf": {
+              "type": "number",
+              "maxLength": 15
+            },
+            "valor_dif_ibs_mu": {
+              "type": "number",
+              "maxLength": 15
+            },
+            "valor_ibs_mu": {
+              "type": "number",
+              "maxLength": 15
+            },
+            "valor_ibs": {
+              "type": "number",
+              "maxLength": 15
+            },
+            "valor_dif_cbs": {
+              "type": "number",
+              "maxLength": 15
+            },
+            "valor_cbs": {
+              "type": "number",
+              "maxLength": 15
+            },
+            "valor_tot_ibs_cbs_is": {
+              "type": "number",
+              "maxLength": 15
+            }
+          }
+        },
+        "infoCadastro": {
+          "type": "object",
+          "properties": {
+            "dInc": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "hInc": {
+              "type": "string",
+              "maxLength": 8
+            },
+            "uInc": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "dAlt": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "hAlt": {
+              "type": "string",
+              "maxLength": 8
+            },
+            "uAlt": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "dCan": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "hCan": {
+              "type": "string",
+              "maxLength": 8
+            },
+            "uCan": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "cancelado": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "dFat": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "hFat": {
+              "type": "string",
+              "maxLength": 8
+            },
+            "uFat": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "faturado": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "denegado": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "autorizado": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "devolvido": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "devolvido_parcial": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "cImpAPI": {
+              "type": "string",
+              "maxLength": 1
+            }
+          }
+        },
+        "exportacao": {
+          "type": "object",
+          "properties": {
+            "nao_exportacao": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "local_embarque": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "uf_embarque": {
+              "type": "string",
+              "maxLength": 2
+            },
+            "local_despacho": {
+              "type": "string",
+              "maxLength": 60
+            }
+          }
+        },
+        "lancamentos": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "nSequencia": {
+                "type": "integer",
+                "maxLength": 5
+              },
+              "cNaturezaDocumento": {
+                "type": "string",
+                "maxLength": 1
+              },
+              "nValorDocumento": {
+                "type": "number",
+                "maxLength": 18
+              },
+              "dDataDocumento": {
+                "type": "string",
+                "maxLength": 10
+              },
+              "cTipoDocumento": {
+                "type": "string",
+                "maxLength": 5
+              },
+              "cCategoria": {
+                "type": "string",
+                "maxLength": 20
+              },
+              "nContaCorrente": {
+                "type": "integer",
+                "maxLength": 15
+              },
+              "cOrigem": {
+                "type": "string",
+                "maxLength": 3
+              },
+              "cObs": {
+                "type": "string"
+              },
+              "nProjeto": {
+                "type": "integer",
+                "maxLength": 15
+              },
+              "nVendedor": {
+                "type": "integer",
+                "maxLength": 15
+              }
+            }
+          }
+        },
+        "agropecuario": {
+          "type": "object",
+          "properties": {
+            "cNumReceita": {
+              "type": "string",
+              "maxLength": 20
+            },
+            "cCpfResponsavel": {
+              "type": "string",
+              "maxLength": 14
+            },
+            "nTipoGuia": {
+              "type": "integer",
+              "maxLength": 1
+            },
+            "cUFGuia": {
+              "type": "string",
+              "maxLength": 2
+            },
+            "cSerieGuia": {
+              "type": "string",
+              "maxLength": 9
+            },
+            "nNumGuia": {
+              "type": "integer",
+              "maxLength": 9
+            }
+          }
+        }
+      }
+    },
+    "description": "Alteração do Pedido de Venda"
+  },
+  {
+    "id": "produtos/pedido:ConsultarPedido",
+    "module": "Produtos",
+    "path": "/api/v1/produtos/pedido/",
+    "http": "POST",
+    "method": "ConsultarPedido",
+    "classification": "read",
+    "permission": "read:omie:produtos.pedido.ConsultarPedido",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "codigo_pedido": {
+          "type": "integer",
+          "maxLength": 15
+        },
+        "codigo_pedido_integracao": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "numero_pedido": {
+          "type": "string",
+          "maxLength": 15
+        }
+      }
+    },
+    "description": "Consulta de Pedido de Venda de Produto"
+  },
+  {
+    "id": "produtos/pedido:DevolverPedido",
+    "module": "Produtos",
+    "path": "/api/v1/produtos/pedido/",
+    "http": "POST",
+    "method": "DevolverPedido",
+    "classification": "destructive",
+    "permission": "execute:omie:produtos.pedido.DevolverPedido",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "codigo_pedido": {
+          "type": "integer",
+          "maxLength": 15
+        },
+        "codigo_pedido_integracao": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "nIdMotivDevol": {
+          "type": "integer",
+          "maxLength": 15
+        },
+        "itens": {
+          "type": "object",
+          "properties": {
+            "codigo_produto": {
+              "type": "integer",
+              "maxLength": 15
+            },
+            "quantidade": {
+              "type": "number",
+              "maxLength": 18
+            }
+          },
+          "required": ["codigo_produto"]
+        }
+      }
+    },
+    "description": "Método para efetuar a devolução de um pedido."
+  },
+  {
+    "id": "produtos/pedido:ExcluirPedido",
+    "module": "Produtos",
+    "path": "/api/v1/produtos/pedido/",
+    "http": "POST",
+    "method": "ExcluirPedido",
+    "classification": "destructive",
+    "permission": "execute:omie:produtos.pedido.ExcluirPedido",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "codigo_pedido": {
+          "type": "integer",
+          "maxLength": 15
+        },
+        "codigo_pedido_integracao": {
+          "type": "string",
+          "maxLength": 60
+        }
+      }
+    },
+    "description": "Excluir pedido de venda de produto."
+  },
+  {
+    "id": "produtos/pedido:IncluirPedido",
+    "module": "Produtos",
+    "path": "/api/v1/produtos/pedido/",
+    "http": "POST",
+    "method": "IncluirPedido",
+    "classification": "write",
+    "permission": "execute:omie:produtos.pedido.IncluirPedido",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "cabecalho": {
+          "type": "object",
+          "properties": {
+            "codigo_pedido": {
+              "type": "integer",
+              "maxLength": 15
+            },
+            "codigo_pedido_integracao": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "numero_pedido": {
+              "type": "string",
+              "maxLength": 15
+            },
+            "sequencial": {
+              "type": "string",
+              "maxLength": 4
+            },
+            "codigo_cliente": {
+              "type": "integer",
+              "maxLength": 15
+            },
+            "codigo_cliente_integracao": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "data_previsao": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "quantidade_itens": {
+              "type": "integer",
+              "maxLength": 6
+            },
+            "etapa": {
+              "type": "string",
+              "maxLength": 2
+            },
+            "codigo_parcela": {
+              "type": "string",
+              "maxLength": 3
+            },
+            "qtde_parcelas": {
+              "type": "integer",
+              "maxLength": 3
+            },
+            "origem_pedido": {
+              "type": "string",
+              "maxLength": 3
+            },
+            "codigo_cenario_impostos": {
+              "type": "integer",
+              "maxLength": 15
+            },
+            "bloqueado": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "importado_api": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "codigo_empresa": {
+              "deprecated": true,
+              "type": "integer",
+              "maxLength": 15
+            },
+            "codigo_empresa_integracao": {
+              "deprecated": true,
+              "type": "string",
+              "maxLength": 20
+            },
+            "tipo_desconto_pedido": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "perc_desconto_pedido": {
+              "type": "number",
+              "maxLength": 10
+            },
+            "valor_desconto_pedido": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "encerrado": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "enc_motivo": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "enc_data": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "enc_hora": {
+              "type": "string",
+              "maxLength": 8
+            },
+            "enc_user": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "nao_gerar_boleto": {
+              "type": "string",
+              "maxLength": 1
+            }
+          }
+        },
+        "departamentos": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "cCodDepto": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "nPerc": {
+                "type": "number",
+                "maxLength": 10
+              },
+              "nValor": {
+                "type": "number",
+                "maxLength": 18
+              },
+              "nValorFixo": {
+                "type": "string",
+                "maxLength": 1
+              }
+            }
+          }
+        },
+        "frete": {
+          "type": "object",
+          "properties": {
+            "codigo_transportadora": {
+              "type": "integer",
+              "maxLength": 15
+            },
+            "codigo_transportadora_integracao": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "modalidade": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "placa": {
+              "type": "string",
+              "maxLength": 7
+            },
+            "placa_estado": {
+              "type": "string",
+              "maxLength": 2
+            },
+            "registro_transportador": {
+              "type": "string",
+              "maxLength": 20
+            },
+            "quantidade_volumes": {
+              "type": "integer",
+              "maxLength": 15
+            },
+            "especie_volumes": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "marca_volumes": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "numeracao_volumes": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "peso_liquido": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "peso_bruto": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_frete": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_seguro": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "numero_lacre": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "outras_despesas": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "veiculo_proprio": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "previsao_entrega": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "codigo_rastreio": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "icms_retido": {
+              "type": "object",
+              "properties": {
+                "vServicoTr": {
+                  "type": "number",
+                  "maxLength": 18
+                },
+                "vBCRetencaoTr": {
+                  "type": "number",
+                  "maxLength": 18
+                },
+                "vAliquotaRetencaoTr": {
+                  "type": "number",
+                  "maxLength": 10
+                },
+                "vIcmsRetidoTr": {
+                  "type": "number",
+                  "maxLength": 18
+                },
+                "cCfopTr": {
+                  "type": "string",
+                  "maxLength": 10
+                },
+                "cCidadeTr": {
+                  "type": "string",
+                  "maxLength": 40
+                }
+              }
+            },
+            "codigo_tipo_entrega": {
+              "type": "integer",
+              "maxLength": 15
+            },
+            "link_rastreio": {
+              "type": "string",
+              "maxLength": 300
+            }
+          }
+        },
+        "informacoes_adicionais": {
+          "type": "object",
+          "properties": {
+            "codigo_categoria": {
+              "type": "string",
+              "maxLength": 20
+            },
+            "codigo_conta_corrente": {
+              "type": "integer",
+              "maxLength": 15
+            },
+            "numero_pedido_cliente": {
+              "type": "string",
+              "maxLength": 30
+            },
+            "numero_contrato": {
+              "type": "string",
+              "maxLength": 20
+            },
+            "contato": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "dados_adicionais_nf": {
+              "type": "string"
+            },
+            "consumidor_final": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "utilizar_emails": {
+              "type": "string"
+            },
+            "enviar_email": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "enviar_pix": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "codVend": {
+              "type": "integer",
+              "maxLength": 15
+            },
+            "codProj": {
+              "type": "integer",
+              "maxLength": 15
+            },
+            "outros_detalhes": {
+              "type": "object",
+              "properties": {
+                "cNatOperacaoOd": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "cIndicadorOd": {
+                  "type": "string",
+                  "maxLength": 1
+                },
+                "cIndicadorIntOd": {
+                  "type": "string",
+                  "maxLength": 1
+                },
+                "cCnpjIntOd": {
+                  "type": "string",
+                  "maxLength": 20
+                },
+                "cIdentificadorIntOd": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "dDataSaidaOd": {
+                  "type": "string",
+                  "maxLength": 10
+                },
+                "cHoraSaidaOd": {
+                  "type": "string",
+                  "maxLength": 8
+                },
+                "cCnpjCpfOd": {
+                  "type": "string",
+                  "maxLength": 20
+                },
+                "cNomeOd": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "cInscrEstadualOd": {
+                  "type": "string",
+                  "maxLength": 20
+                },
+                "cEnderecoOd": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "cNumeroOd": {
+                  "type": "string",
+                  "maxLength": 10
+                },
+                "cComplementoOd": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "cBairroOd": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "cEstadoOd": {
+                  "type": "string",
+                  "maxLength": 2
+                },
+                "cCidadeOd": {
+                  "type": "string",
+                  "maxLength": 40
+                },
+                "cCEPOd": {
+                  "type": "string",
+                  "maxLength": 10
+                },
+                "cSepararEnderecoOd": {
+                  "type": "string",
+                  "maxLength": 1
+                },
+                "cTelefoneOd": {
+                  "type": "string",
+                  "maxLength": 15
+                },
+                "cCnpjCpfOdRet": {
+                  "type": "string",
+                  "maxLength": 20
+                },
+                "cNomeOdRet": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "cInscrEstadualOdRet": {
+                  "type": "string",
+                  "maxLength": 20
+                },
+                "cEnderecoOdRet": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "cNumeroOdRet": {
+                  "type": "string",
+                  "maxLength": 10
+                },
+                "cComplementoOdRet": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "cBairroOdRet": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "cEstadoOdRet": {
+                  "type": "string",
+                  "maxLength": 2
+                },
+                "cCidadeOdRet": {
+                  "type": "string",
+                  "maxLength": 40
+                },
+                "cCEPOdRet": {
+                  "type": "string",
+                  "maxLength": 10
+                },
+                "cSepararEnderecoOdRet": {
+                  "type": "string",
+                  "maxLength": 1
+                },
+                "cTelefoneOdRet": {
+                  "type": "string",
+                  "maxLength": 15
+                }
+              }
+            },
+            "impostos_embutidos": {
+              "deprecated": true,
+              "type": "string",
+              "maxLength": 1
+            },
+            "meio_pagamento": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "descr_meio_pagamento": {
+              "type": "string"
+            },
+            "tipo_documento": {
+              "type": "string",
+              "maxLength": 5
+            },
+            "nfRelacionada": {
+              "type": "object",
+              "properties": {
+                "cChaveRef": {
+                  "type": "string",
+                  "maxLength": 44
+                },
+                "nNFRef": {
+                  "type": "string",
+                  "maxLength": 9
+                },
+                "cSerieRef": {
+                  "type": "string",
+                  "maxLength": 3
+                },
+                "dtEmissaoRef": {
+                  "type": "string",
+                  "maxLength": 10
+                },
+                "cnpjEmitRef": {
+                  "type": "string",
+                  "maxLength": 20
+                },
+                "cUfRef": {
+                  "type": "string",
+                  "maxLength": 2
+                },
+                "nNfPR": {
+                  "type": "string",
+                  "maxLength": 9
+                },
+                "cSeriePR": {
+                  "type": "string",
+                  "maxLength": 3
+                },
+                "dtEmissaoPR": {
+                  "type": "string",
+                  "maxLength": 10
+                },
+                "cnpjPR": {
+                  "type": "string",
+                  "maxLength": 20
+                },
+                "InscrEstPR": {
+                  "type": "string",
+                  "maxLength": 20
+                },
+                "cUfPR": {
+                  "type": "string",
+                  "maxLength": 2
+                },
+                "nCOORef": {
+                  "type": "string",
+                  "maxLength": 6
+                },
+                "nECFRef": {
+                  "type": "string",
+                  "maxLength": 3
+                },
+                "indPresenca": {
+                  "type": "string",
+                  "maxLength": 1
+                },
+                "indIntermediario": {
+                  "type": "string",
+                  "maxLength": 1
+                },
+                "cnpjIntermediario": {
+                  "type": "string",
+                  "maxLength": 20
+                },
+                "identIntermediario": {
+                  "type": "string",
+                  "maxLength": 60
+                },
+                "nrProdutorRural": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "cAcaoItem": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "nrNumero": {
+                        "type": "string",
+                        "maxLength": 9
+                      },
+                      "nrSerie": {
+                        "type": "string",
+                        "maxLength": 3
+                      },
+                      "nrDtEmissao": {
+                        "type": "string",
+                        "maxLength": 10
+                      },
+                      "nrCnpjCpf": {
+                        "type": "string",
+                        "maxLength": 20
+                      },
+                      "nrIE": {
+                        "type": "string",
+                        "maxLength": 20
+                      },
+                      "nrUF": {
+                        "type": "string",
+                        "maxLength": 2
+                      }
+                    }
+                  }
+                },
+                "nrNF": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "cAcaoItem": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "nrChave": {
+                        "type": "string",
+                        "maxLength": 44
+                      }
+                    }
+                  }
+                },
+                "nrCupomFiscal": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "cAcaoItem": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "nrCOO": {
+                        "type": "string",
+                        "maxLength": 6
+                      },
+                      "nrNumeroECF": {
+                        "type": "string",
+                        "maxLength": 3
+                      }
+                    }
+                  }
+                },
+                "nrModelo1_1A": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "cAcaoItem": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "nrNumero": {
+                        "type": "string",
+                        "maxLength": 9
+                      },
+                      "nrSerie": {
+                        "type": "string",
+                        "maxLength": 3
+                      },
+                      "nrDtEmissao": {
+                        "type": "string",
+                        "maxLength": 10
+                      },
+                      "nrCnpjCpf": {
+                        "type": "string",
+                        "maxLength": 20
+                      },
+                      "nrUF": {
+                        "type": "string",
+                        "maxLength": 2
+                      }
+                    }
+                  }
+                },
+                "cSigNFRef": {
+                  "type": "string",
+                  "maxLength": 1
+                }
+              }
+            },
+            "nsu": {
+              "type": "string",
+              "maxLength": 100
+            }
+          }
+        },
+        "lista_parcelas": {
+          "type": "object",
+          "properties": {
+            "parcela": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "numero_parcela": {
+                    "type": "integer",
+                    "maxLength": 3
+                  },
+                  "valor": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "percentual": {
+                    "type": "number",
+                    "maxLength": 9
+                  },
+                  "data_vencimento": {
+                    "type": "string",
+                    "maxLength": 10
+                  },
+                  "quantidade_dias": {
+                    "type": "integer",
+                    "maxLength": 4
+                  },
+                  "tipo_documento": {
+                    "type": "string",
+                    "maxLength": 5
+                  },
+                  "meio_pagamento": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "descr_meio_pagamento": {
+                    "type": "string"
+                  },
+                  "nsu": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "nao_gerar_boleto": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "parcela_adiantamento": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "categoria_adiantamento": {
+                    "type": "string",
+                    "maxLength": 20
+                  },
+                  "conta_corrente_adiantamento": {
+                    "type": "integer",
+                    "maxLength": 15
+                  },
+                  "bandeira": {
+                    "type": "string",
+                    "maxLength": 2
+                  },
+                  "cnpj_fin": {
+                    "type": "string",
+                    "maxLength": 20
+                  }
+                }
+              }
+            }
+          }
+        },
+        "observacoes": {
+          "type": "object",
+          "properties": {
+            "obs_venda": {
+              "type": "string"
+            }
+          }
+        },
+        "det": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ide": {
+                "type": "object",
+                "properties": {
+                  "codigo_item_integracao": {
+                    "type": "string",
+                    "maxLength": 30
+                  },
+                  "codigo_item": {
+                    "type": "integer",
+                    "maxLength": 15
+                  },
+                  "simples_nacional": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "acao_item": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "id_ordem_producao": {
+                    "type": "integer",
+                    "maxLength": 15
+                  },
+                  "regra_impostos": {
+                    "deprecated": true,
+                    "type": "integer",
+                    "maxLength": 15
+                  }
+                }
+              },
+              "produto": {
+                "type": "object",
+                "properties": {
+                  "codigo_produto": {
+                    "type": "integer",
+                    "maxLength": 15
+                  },
+                  "codigo_produto_integracao": {
+                    "type": "string",
+                    "maxLength": 60
+                  },
+                  "codigo": {
+                    "type": "string",
+                    "maxLength": 60
+                  },
+                  "descricao": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "cfop": {
+                    "type": "string",
+                    "maxLength": 10
+                  },
+                  "ncm": {
+                    "type": "string",
+                    "maxLength": 13
+                  },
+                  "ean": {
+                    "type": "string",
+                    "maxLength": 14
+                  },
+                  "unidade": {
+                    "type": "string",
+                    "maxLength": 6
+                  },
+                  "quantidade": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "valor_unitario": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "codigo_tabela_preco": {
+                    "type": "integer",
+                    "maxLength": 15
+                  },
+                  "valor_mercadoria": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "tipo_desconto": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "percentual_desconto": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "valor_desconto": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "valor_deducao": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "valor_icms_desonerado": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "motivo_icms_desonerado": {
+                    "type": "string",
+                    "maxLength": 2
+                  },
+                  "valor_total": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "indicador_escala": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "cnpj_fabricante": {
+                    "type": "string",
+                    "maxLength": 20
+                  },
+                  "kit": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "componente_kit": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "codigo_item_kit": {
+                    "type": "integer",
+                    "maxLength": 15
+                  },
+                  "reservado": {
+                    "type": "string",
+                    "maxLength": 1
+                  }
+                }
+              },
+              "observacao": {
+                "type": "object",
+                "properties": {
+                  "obs_item": {
+                    "type": "string"
+                  }
+                }
+              },
+              "inf_adic": {
+                "type": "object",
+                "properties": {
+                  "peso_liquido": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "peso_bruto": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "numero_pedido_compra": {
+                    "type": "string",
+                    "maxLength": 15
+                  },
+                  "item_pedido_compra": {
+                    "type": "integer",
+                    "maxLength": 6
+                  },
+                  "dados_adicionais_item": {
+                    "type": "string"
+                  },
+                  "nao_movimentar_estoque": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "nao_gerar_financeiro": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "codigo_categoria_item": {
+                    "type": "string",
+                    "maxLength": 20
+                  },
+                  "codigo_beneficio_fiscal": {
+                    "type": "string",
+                    "maxLength": 10
+                  },
+                  "numero_fci": {
+                    "type": "string",
+                    "maxLength": 36
+                  },
+                  "codigo_local_estoque": {
+                    "type": "integer",
+                    "maxLength": 15
+                  },
+                  "codigo_cenario_impostos_item": {
+                    "type": "integer",
+                    "maxLength": 15
+                  },
+                  "nao_somar_total": {
+                    "type": "string",
+                    "maxLength": 1
+                  },
+                  "numero_recopi": {
+                    "type": "string",
+                    "maxLength": 20
+                  }
+                }
+              },
+              "imposto": {
+                "type": "object",
+                "properties": {
+                  "icms_sn": {
+                    "type": "object",
+                    "properties": {
+                      "cod_sit_trib_icms_sn": {
+                        "type": "string",
+                        "maxLength": 3
+                      },
+                      "origem_icms_sn": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "aliq_icms_sn": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_credito_icms_sn": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "base_icms_sn": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_icms_sn": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "icms": {
+                    "type": "object",
+                    "properties": {
+                      "cod_sit_trib_icms": {
+                        "type": "string",
+                        "maxLength": 2
+                      },
+                      "origem_icms": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "modalidade_icms": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "perc_red_base_icms": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "base_icms": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_icms": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_icms": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "perc_fcp_icms": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "base_fcp_icms": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_fcp_icms": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "icms_st": {
+                    "type": "object",
+                    "properties": {
+                      "cod_sit_trib_icms_st": {
+                        "type": "string",
+                        "maxLength": 2
+                      },
+                      "modalidade_icms_st": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "perc_red_base_icms_st": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "base_icms_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_icms_st": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "margem_icms_st": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_icms_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_icms_opprop": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "perc_red_base_icms_op": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "cest": {
+                        "type": "string",
+                        "maxLength": 9
+                      },
+                      "perc_fcp_icms_st": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "base_fcp_icms_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_fcp_icms_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "icms_ie": {
+                    "type": "object",
+                    "properties": {
+                      "base_icms_uf_destino": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_icms_FCP": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "aliq_interna_uf_destino": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "aliq_interestadual": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "aliq_partilha_icms": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_fcp_icms_inter": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_icms_uf_dest": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_icms_uf_remet": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "icms_efet": {
+                    "type": "object",
+                    "properties": {
+                      "cod_sit_trib_icms_efet": {
+                        "type": "string",
+                        "maxLength": 2
+                      },
+                      "origem_icms_efet": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "modalidade_icms_efet": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "perc_red_base_icms_efet": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "base_icms_efet": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_icms_efet": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_icms_efet": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "ipi": {
+                    "type": "object",
+                    "properties": {
+                      "cod_sit_trib_ipi": {
+                        "type": "string",
+                        "maxLength": 2
+                      },
+                      "tipo_calculo_ipi": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "enquadramento_ipi": {
+                        "type": "string"
+                      },
+                      "base_ipi": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_ipi": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "qtde_unid_trib_ipi": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_unid_trib_ipi": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_ipi": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "pis_padrao": {
+                    "type": "object",
+                    "properties": {
+                      "cod_sit_trib_pis": {
+                        "type": "string",
+                        "maxLength": 2
+                      },
+                      "tipo_calculo_pis": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "base_pis": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_pis": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "qtde_unid_trib_pis": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_unid_trib_pis": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_pis": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "pis_st": {
+                    "type": "object",
+                    "properties": {
+                      "cod_sit_trib_pis_st": {
+                        "type": "string",
+                        "maxLength": 2
+                      },
+                      "tipo_calculo_pis_st": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "base_pis_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_pis_st": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "qtde_unid_trib_pis_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_unid_trib_pis_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "margem_pis_st": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_pis_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "cofins_padrao": {
+                    "type": "object",
+                    "properties": {
+                      "cod_sit_trib_cofins": {
+                        "type": "string",
+                        "maxLength": 2
+                      },
+                      "tipo_calculo_cofins": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "base_cofins": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_cofins": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "qtde_unid_trib_cofins": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_unid_trib_cofins": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_cofins": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "cofins_st": {
+                    "type": "object",
+                    "properties": {
+                      "cod_sit_trib_cofins_st": {
+                        "type": "string",
+                        "maxLength": 2
+                      },
+                      "tipo_calculo_cofins_st": {
+                        "type": "string",
+                        "maxLength": 1
+                      },
+                      "base_cofins_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_cofins_st": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "qtde_unid_trib_cofins_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "valor_unid_trib_cofins_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "margem_cofins_st": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_cofins_st": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "inss": {
+                    "type": "object",
+                    "properties": {
+                      "aliq_inss": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_inss": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "csll": {
+                    "type": "object",
+                    "properties": {
+                      "aliq_csll": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_csll": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "irrf": {
+                    "type": "object",
+                    "properties": {
+                      "aliq_irrf": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_irrf": {
+                        "type": "number",
+                        "maxLength": 18
+                      }
+                    }
+                  },
+                  "iss": {
+                    "type": "object",
+                    "properties": {
+                      "base_iss": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "aliq_iss": {
+                        "type": "number",
+                        "maxLength": 10
+                      },
+                      "valor_iss": {
+                        "type": "number",
+                        "maxLength": 18
+                      },
+                      "retem_iss": {
+                        "type": "string",
+                        "maxLength": 1
+                      }
+                    }
+                  },
+                  "ibs_cbs": {
+                    "type": "object",
+                    "properties": {
+                      "cst_ibs_cbs": {
+                        "type": "string",
+                        "maxLength": 3
+                      },
+                      "class_trib": {
+                        "type": "string",
+                        "maxLength": 6
+                      },
+                      "base_ibs_cbs": {
+                        "type": "number",
+                        "maxLength": 15
+                      }
+                    }
+                  },
+                  "ibs": {
+                    "type": "object",
+                    "properties": {
+                      "aliquota_ibs_uf": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "perc_dif_ibs_uf": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "perc_red_ibs_uf": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "valor_dif_ibs_uf": {
+                        "type": "number",
+                        "maxLength": 15
+                      },
+                      "valor_ibs_uf": {
+                        "type": "number",
+                        "maxLength": 15
+                      },
+                      "aliquota_ibs_mu": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "perc_dif_ibs_mu": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "perc_red_ibs_mu": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "valor_dif_ibs_mu": {
+                        "type": "number",
+                        "maxLength": 15
+                      },
+                      "valor_ibs_mu": {
+                        "type": "number",
+                        "maxLength": 15
+                      },
+                      "valor_ibs": {
+                        "type": "number",
+                        "maxLength": 15
+                      }
+                    }
+                  },
+                  "cbs": {
+                    "type": "object",
+                    "properties": {
+                      "aliquota_cbs": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "perc_dif_cbs": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "perc_red_cbs": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "valor_dif_cbs": {
+                        "type": "number",
+                        "maxLength": 15
+                      },
+                      "valor_cbs": {
+                        "type": "number",
+                        "maxLength": 15
+                      }
+                    }
+                  },
+                  "trib_reg": {
+                    "type": "object",
+                    "properties": {
+                      "cst_reg_ibs_cst": {
+                        "type": "string",
+                        "maxLength": 3
+                      },
+                      "class_trib_reg": {
+                        "type": "string",
+                        "maxLength": 6
+                      },
+                      "aliquota_reg_ibs_uf": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "aliquota_reg_ibs_mu": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "aliquota_reg_cbs": {
+                        "type": "number",
+                        "maxLength": 7
+                      },
+                      "valor_reg_ibs_uf": {
+                        "type": "number",
+                        "maxLength": 15
+                      },
+                      "valor_reg_ibs_mu": {
+                        "type": "number",
+                        "maxLength": 15
+                      },
+                      "valor_reg_cbs": {
+                        "type": "number",
+                        "maxLength": 15
+                      }
+                    }
+                  }
+                }
+              },
+              "rastreabilidade": {
+                "type": "object",
+                "properties": {
+                  "numeroLote": {
+                    "type": "string",
+                    "maxLength": 20
+                  },
+                  "qtdeProdutoLote": {
+                    "type": "number",
+                    "maxLength": 12
+                  },
+                  "dataFabricacaoLote": {
+                    "type": "string",
+                    "maxLength": 10
+                  },
+                  "dataValidadeLote": {
+                    "type": "string",
+                    "maxLength": 10
+                  },
+                  "codigoAgregacaoLote": {
+                    "type": "string",
+                    "maxLength": 20
+                  }
+                }
+              },
+              "combustivel": {
+                "type": "object",
+                "properties": {
+                  "cCodigoANP": {
+                    "type": "string",
+                    "maxLength": 9
+                  },
+                  "cDescrANP": {
+                    "type": "string",
+                    "maxLength": 95
+                  },
+                  "cCODIF": {
+                    "type": "string",
+                    "maxLength": 21
+                  },
+                  "nPercGLP": {
+                    "type": "number",
+                    "maxLength": 8
+                  },
+                  "nPercGasNacional": {
+                    "type": "number",
+                    "maxLength": 8
+                  },
+                  "nPercGasImportado": {
+                    "type": "number",
+                    "maxLength": 8
+                  },
+                  "nValorPartida": {
+                    "type": "number",
+                    "maxLength": 16
+                  },
+                  "nQtdeFatTempAmb": {
+                    "type": "number",
+                    "maxLength": 16
+                  },
+                  "cUFConsumoComb": {
+                    "type": "string",
+                    "maxLength": 2
+                  },
+                  "nBC_CIDE": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "nAliquota_CIDE": {
+                    "type": "number",
+                    "maxLength": 10
+                  },
+                  "nValor_CIDE": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "nBC_UFRem": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "nValorUFRem": {
+                    "type": "number",
+                    "maxLength": 10
+                  },
+                  "nBC_UFDest": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "nValorUFDest": {
+                    "type": "number",
+                    "maxLength": 18
+                  }
+                }
+              },
+              "tributavel": {
+                "type": "object",
+                "properties": {
+                  "cUnidTrib": {
+                    "type": "string",
+                    "maxLength": 6
+                  },
+                  "nQuantTrib": {
+                    "type": "number",
+                    "maxLength": 19
+                  },
+                  "nValorTrib": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "cEanTrib": {
+                    "type": "string",
+                    "maxLength": 14
+                  }
+                }
+              },
+              "lote_validade": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "nIdLote": {
+                      "type": "integer",
+                      "maxLength": 15
+                    },
+                    "nQtdLote": {
+                      "type": "number",
+                      "maxLength": 18
+                    }
+                  },
+                  "required": ["nQtdLote"]
+                }
+              }
+            }
+          }
+        },
+        "market_place": {
+          "type": "object",
+          "properties": {
+            "nTaxa": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "nEnvio": {
+              "type": "number",
+              "maxLength": 18
+            }
+          }
+        },
+        "total_pedido": {
+          "type": "object",
+          "properties": {
+            "base_calculo_icms": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "base_calculo_st": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_pis": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_cofins": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_csll": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_icms": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_st": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_inss": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_IPI": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_ir": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_iss": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_deducoes": {
+              "type": "number",
+              "maxLength": 28
+            },
+            "valor_descontos": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_mercadorias": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_total_pedido": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "base_ibs_cbs": {
+              "type": "number",
+              "maxLength": 15
+            },
+            "valor_dif_ibs_uf": {
+              "type": "number",
+              "maxLength": 15
+            },
+            "valor_ibs_uf": {
+              "type": "number",
+              "maxLength": 15
+            },
+            "valor_dif_ibs_mu": {
+              "type": "number",
+              "maxLength": 15
+            },
+            "valor_ibs_mu": {
+              "type": "number",
+              "maxLength": 15
+            },
+            "valor_ibs": {
+              "type": "number",
+              "maxLength": 15
+            },
+            "valor_dif_cbs": {
+              "type": "number",
+              "maxLength": 15
+            },
+            "valor_cbs": {
+              "type": "number",
+              "maxLength": 15
+            },
+            "valor_tot_ibs_cbs_is": {
+              "type": "number",
+              "maxLength": 15
+            }
+          }
+        },
+        "infoCadastro": {
+          "type": "object",
+          "properties": {
+            "dInc": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "hInc": {
+              "type": "string",
+              "maxLength": 8
+            },
+            "uInc": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "dAlt": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "hAlt": {
+              "type": "string",
+              "maxLength": 8
+            },
+            "uAlt": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "dCan": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "hCan": {
+              "type": "string",
+              "maxLength": 8
+            },
+            "uCan": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "cancelado": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "dFat": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "hFat": {
+              "type": "string",
+              "maxLength": 8
+            },
+            "uFat": {
+              "type": "string",
+              "maxLength": 10
+            },
+            "faturado": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "denegado": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "autorizado": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "devolvido": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "devolvido_parcial": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "cImpAPI": {
+              "type": "string",
+              "maxLength": 1
+            }
+          }
+        },
+        "exportacao": {
+          "type": "object",
+          "properties": {
+            "nao_exportacao": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "local_embarque": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "uf_embarque": {
+              "type": "string",
+              "maxLength": 2
+            },
+            "local_despacho": {
+              "type": "string",
+              "maxLength": 60
+            }
+          }
+        },
+        "lancamentos": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "nSequencia": {
+                "type": "integer",
+                "maxLength": 5
+              },
+              "cNaturezaDocumento": {
+                "type": "string",
+                "maxLength": 1
+              },
+              "nValorDocumento": {
+                "type": "number",
+                "maxLength": 18
+              },
+              "dDataDocumento": {
+                "type": "string",
+                "maxLength": 10
+              },
+              "cTipoDocumento": {
+                "type": "string",
+                "maxLength": 5
+              },
+              "cCategoria": {
+                "type": "string",
+                "maxLength": 20
+              },
+              "nContaCorrente": {
+                "type": "integer",
+                "maxLength": 15
+              },
+              "cOrigem": {
+                "type": "string",
+                "maxLength": 3
+              },
+              "cObs": {
+                "type": "string"
+              },
+              "nProjeto": {
+                "type": "integer",
+                "maxLength": 15
+              },
+              "nVendedor": {
+                "type": "integer",
+                "maxLength": 15
+              }
+            }
+          }
+        },
+        "agropecuario": {
+          "type": "object",
+          "properties": {
+            "cNumReceita": {
+              "type": "string",
+              "maxLength": 20
+            },
+            "cCpfResponsavel": {
+              "type": "string",
+              "maxLength": 14
+            },
+            "nTipoGuia": {
+              "type": "integer",
+              "maxLength": 1
+            },
+            "cUFGuia": {
+              "type": "string",
+              "maxLength": 2
+            },
+            "cSerieGuia": {
+              "type": "string",
+              "maxLength": 9
+            },
+            "nNumGuia": {
+              "type": "integer",
+              "maxLength": 9
+            }
+          }
+        }
+      }
+    },
+    "description": "Inclui um pedido de venda de produto."
+  },
+  {
+    "id": "produtos/pedido:ListarPedidos",
+    "module": "Produtos",
+    "path": "/api/v1/produtos/pedido/",
+    "http": "POST",
+    "method": "ListarPedidos",
+    "classification": "read",
+    "permission": "read:omie:produtos.pedido.ListarPedidos",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "pagina": {
+          "type": "integer",
+          "maxLength": 15
+        },
+        "registros_por_pagina": {
+          "type": "integer",
+          "maxLength": 15
+        },
+        "apenas_importado_api": {
+          "type": "string",
+          "maxLength": 1
+        },
+        "ordenar_por": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "filtrar_por_data_de": {
+          "type": "string",
+          "maxLength": 10
+        },
+        "filtrar_por_data_ate": {
+          "type": "string",
+          "maxLength": 10
+        },
+        "filtrar_por_hora_de": {
+          "type": "string",
+          "maxLength": 8
+        },
+        "filtrar_por_hora_ate": {
+          "type": "string",
+          "maxLength": 8
+        },
+        "filtrar_apenas_inclusao": {
+          "type": "string",
+          "maxLength": 1
+        },
+        "filtrar_apenas_alteracao": {
+          "type": "string",
+          "maxLength": 1
+        },
+        "filtrar_por_cliente": {
+          "type": "integer",
+          "maxLength": 15
+        },
+        "filtrar_por_vendedor": {
+          "type": "integer",
+          "maxLength": 15
+        },
+        "filtrar_por_projeto": {
+          "type": "integer",
+          "maxLength": 15
+        },
+        "etapa": {
+          "type": "string",
+          "maxLength": 2
+        },
+        "numero_pedido_de": {
+          "type": "integer",
+          "maxLength": 15
+        },
+        "numero_pedido_ate": {
+          "type": "integer",
+          "maxLength": 15
+        },
+        "apenas_resumo": {
+          "type": "string",
+          "maxLength": 1
+        },
+        "data_previsao_de": {
+          "type": "string",
+          "maxLength": 10
+        },
+        "data_previsao_ate": {
+          "type": "string",
+          "maxLength": 10
+        },
+        "data_faturamento_de": {
+          "type": "string",
+          "maxLength": 10
+        },
+        "data_faturamento_ate": {
+          "type": "string",
+          "maxLength": 10
+        },
+        "data_emissao_de": {
+          "deprecated": true,
+          "type": "string",
+          "maxLength": 10
+        },
+        "data_emissao_ate": {
+          "deprecated": true,
+          "type": "string",
+          "maxLength": 10
+        },
+        "data_cancelamento_de": {
+          "type": "string",
+          "maxLength": 10
+        },
+        "data_cancelamento_ate": {
+          "type": "string",
+          "maxLength": 10
+        },
+        "status_pedido": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "ordem_descrescente": {
+          "deprecated": true,
+          "type": "string",
+          "maxLength": 1
+        }
+      }
+    },
+    "description": "Listar os pedidos de venda de produto"
+  },
+  {
+    "id": "produtos/pedido:SimularImpostos",
+    "module": "Produtos",
+    "path": "/api/v1/produtos/pedido/",
+    "http": "POST",
+    "method": "SimularImpostos",
+    "classification": "write",
+    "permission": "execute:omie:produtos.pedido.SimularImpostos",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "codigo_cliente": {
+          "type": "integer",
+          "maxLength": 15
+        },
+        "cliente_simul": {
+          "type": "object",
+          "properties": {
+            "clientes_contribuinte": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "clientes_estado": {
+              "type": "string",
+              "maxLength": 2
+            },
+            "cidades_codmunibge": {
+              "type": "string",
+              "maxLength": 7
+            },
+            "clientes_suframa": {
+              "type": "string",
+              "maxLength": 20
+            },
+            "clientes_cnae": {
+              "type": "string",
+              "maxLength": 7
+            },
+            "tipo_atividade": {
+              "type": "string",
+              "maxLength": 1
+            },
+            "optante_simples_nacional": {
+              "type": "string",
+              "maxLength": 1
+            }
+          }
+        },
+        "codigo_cliente_integracao": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "consumidor_final": {
+          "type": "string",
+          "maxLength": 1
+        },
+        "impostos_embutidos": {
+          "type": "string",
+          "maxLength": 1
+        },
+        "frete_simul": {
+          "type": "object",
+          "properties": {
+            "valor_frete": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "valor_seguro": {
+              "type": "number",
+              "maxLength": 18
+            },
+            "outras_despesas": {
+              "type": "number",
+              "maxLength": 18
+            }
+          }
+        },
+        "uf_entrega": {
+          "type": "string",
+          "maxLength": 2
+        },
+        "indPresenca": {
+          "type": "string",
+          "maxLength": 1
+        },
+        "det_simul": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "codigo_cenario_impostos_item": {
+                "type": "integer",
+                "maxLength": 15
+              },
+              "produto_simul": {
+                "type": "object",
+                "properties": {
+                  "codigo_produto": {
+                    "type": "integer",
+                    "maxLength": 15
+                  },
+                  "codigo_produto_integracao": {
+                    "type": "string",
+                    "maxLength": 60
+                  },
+                  "codigo_item_integracao": {
+                    "type": "string",
+                    "maxLength": 30
+                  },
+                  "quantidade": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "valor_unitario": {
+                    "type": "number",
+                    "maxLength": 18
+                  },
+                  "valor_desconto": {
+                    "type": "number",
+                    "maxLength": 18
+                  }
+                },
+                "required": ["quantidade", "valor_unitario"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "description": "Simula os impostos de um pedido de venda."
+  },
+  {
+    "id": "produtos/pedido:StatusPedido",
+    "module": "Produtos",
+    "path": "/api/v1/produtos/pedido/",
+    "http": "POST",
+    "method": "StatusPedido",
+    "classification": "read",
+    "permission": "read:omie:produtos.pedido.StatusPedido",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "codigo_pedido": {
+          "type": "integer",
+          "maxLength": 15
+        },
+        "codigo_pedido_integracao": {
+          "type": "string",
+          "maxLength": 60
+        }
+      }
+    },
+    "description": "Consulta do Status do Pedido"
+  },
+  {
+    "id": "produtos/pedido:TrocarEtapaPedido",
+    "module": "Produtos",
+    "path": "/api/v1/produtos/pedido/",
+    "http": "POST",
+    "method": "TrocarEtapaPedido",
+    "classification": "write",
+    "permission": "execute:omie:produtos.pedido.TrocarEtapaPedido",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "codigo_pedido": {
+          "type": "integer",
+          "maxLength": 15
+        },
+        "codigo_pedido_integracao": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "numero_pedido": {
+          "type": "string",
+          "maxLength": 15
+        },
+        "etapa": {
+          "type": "string",
+          "maxLength": 2
+        }
+      },
+      "required": ["etapa"]
+    },
+    "description": "Troca etapa do pedido."
+  }
+]
