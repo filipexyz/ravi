@@ -2180,30 +2180,30 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | threads | src/threads/fence-adoption-live.ts | 117 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption-live.ts:177b3e9a3efc65ca20a49767 |
 | threads | src/threads/fence-adoption-live.ts | 177 | no-cause | An unreachable broker is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-live.ts:5c21be34e03e3285ebdafccb |
 | threads | src/threads/fence-adoption-live.ts | 266 | no-cause | Unreachable now; the caller refuses with its own message once the deadline passes. | src/threads/fence-adoption-live.ts:0282572ddad1c629c18363ce |
-| threads | src/threads/fence-adoption-live.ts | 316 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption-live.ts:bf489530f83af0ef2c4378bf |
-| threads | src/threads/fence-adoption-live.ts | 352 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption-live.ts:8947d940dc0ab1aaa5fdf5dd |
+| threads | src/threads/fence-adoption-live.ts | 320 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption-live.ts:bf489530f83af0ef2c4378bf |
+| threads | src/threads/fence-adoption-live.ts | 356 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption-live.ts:8947d940dc0ab1aaa5fdf5dd |
 | threads | src/threads/fence-adoption-residue.ts | 891 | no-cause | An unreadable table is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-residue.ts:cac882736cd99cb83e8b2a23 |
 | threads | src/threads/fence-adoption-residue.ts | 922 | no-cause | Text that is not JSON gets a new epoch from the daemon (daemon.ts readRestartReasonInfo), which resumes nothing. | src/threads/fence-adoption-residue.ts:20b43f386a6e653b2ea9220e |
 | threads | src/threads/fence-adoption-residue.ts | 1037 | no-cause | An unreadable table is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-residue.ts:eaa27b65ff9ca78bebc79e75 |
 | threads | src/threads/fence-adoption-residue.ts | 1103 | no-cause | An unreadable broker source is recorded as unknown residue, which blocks adoption with this message. | src/threads/fence-adoption-residue.ts:89497d605f16912495e5e8b1 |
 | threads | src/threads/fence-adoption.ts | 154 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:6b81ec65f8a6464f04d53849 |
 | threads | src/threads/fence-adoption.ts | 219 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:46490b12ec7da2fe894e8d92 |
-| threads | src/threads/fence-adoption.ts | 280 | no-cause | An unreadable file is not proof of an empty database; the caller keeps the existing-state rules. | src/threads/fence-adoption.ts:668b1133d4f1acd62637e51d |
-| threads | src/threads/fence-adoption.ts | 286 | no-cause | A file SQLite cannot read is not proof of an empty database; the caller keeps the existing-state rules. | src/threads/fence-adoption.ts:668b1133d4f1acd62637e51d |
-| threads | src/threads/fence-adoption.ts | 300 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:975cec06d3d595eeb4638f36 |
-| threads | src/threads/fence-adoption.ts | 547 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:9002795c5ddd572258b60b5d |
-| threads | src/threads/fence-adoption.ts | 579 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:2f5d1660ccd56647a225a4bf |
-| threads | src/threads/fence-adoption.ts | 631 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:46da7ece37082a0709315748 |
-| threads | src/threads/fence-adoption.ts | 759 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:5833d0aae00cbee7a837f56f |
-| threads | src/threads/fence-adoption.ts | 962 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:026e7ae672dd8a9b783318e6 |
-| threads | src/threads/fence-adoption.ts | 976 | no-cause | No readable failure note means no failure to report; the caller keeps waiting on the fence. | src/threads/fence-adoption.ts:8fae76a635dab0b7648e8803 |
-| threads | src/threads/fence-adoption.ts | 989 | no-cause | The note only speeds up the waiting CLI; the refusal itself is rethrown by the caller. | src/threads/fence-adoption.ts:2c17a163c19349599320f596 |
-| threads | src/threads/fence-adoption.ts | 997 | no-cause | A stale note is ignored by readers older than the restart that wait on it. | src/threads/fence-adoption.ts:51dc521203070ae8b1697315 |
-| threads | src/threads/fence-adoption.ts | 1053 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:31f89bfe8b79c9d79c9769e5 |
-| threads | src/threads/fence-adoption.ts | 1257 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:bb02ecc2dfc52df610134ccb |
-| threads | src/threads/fence-adoption.ts | 1262 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:984ead54c70bb4096aa9cd23 |
-| threads | src/threads/fence-adoption.ts | 1301 | no-cause | No readable intent means no runner stopped by an upgrade; nothing is started. | src/threads/fence-adoption.ts:49ec78c9785b7e469d3c5029 |
-| threads | src/threads/fence-adoption.ts | 1348 | no-cause | The lease is held by an adoption in progress; the caller's check refuses with that state. | src/threads/fence-adoption.ts:8a3b8322e635da6d2fe63331 |
+| threads | src/threads/fence-adoption.ts | 305 | no-cause | An unreadable file is not proof of an empty database; the caller keeps the existing-state rules. | src/threads/fence-adoption.ts:668b1133d4f1acd62637e51d |
+| threads | src/threads/fence-adoption.ts | 311 | no-cause | A file SQLite cannot read is not proof of an empty database; the caller keeps the existing-state rules. | src/threads/fence-adoption.ts:668b1133d4f1acd62637e51d |
+| threads | src/threads/fence-adoption.ts | 325 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:975cec06d3d595eeb4638f36 |
+| threads | src/threads/fence-adoption.ts | 572 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:9002795c5ddd572258b60b5d |
+| threads | src/threads/fence-adoption.ts | 604 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:2f5d1660ccd56647a225a4bf |
+| threads | src/threads/fence-adoption.ts | 656 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:46da7ece37082a0709315748 |
+| threads | src/threads/fence-adoption.ts | 784 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:5833d0aae00cbee7a837f56f |
+| threads | src/threads/fence-adoption.ts | 987 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:026e7ae672dd8a9b783318e6 |
+| threads | src/threads/fence-adoption.ts | 1001 | no-cause | No readable failure note means no failure to report; the caller keeps waiting on the fence. | src/threads/fence-adoption.ts:8fae76a635dab0b7648e8803 |
+| threads | src/threads/fence-adoption.ts | 1014 | no-cause | The note only speeds up the waiting CLI; the refusal itself is rethrown by the caller. | src/threads/fence-adoption.ts:2c17a163c19349599320f596 |
+| threads | src/threads/fence-adoption.ts | 1022 | no-cause | A stale note is ignored by readers older than the restart that wait on it. | src/threads/fence-adoption.ts:51dc521203070ae8b1697315 |
+| threads | src/threads/fence-adoption.ts | 1078 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:31f89bfe8b79c9d79c9769e5 |
+| threads | src/threads/fence-adoption.ts | 1291 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:bb02ecc2dfc52df610134ccb |
+| threads | src/threads/fence-adoption.ts | 1296 | fixed | binding retained / no recognized error surface | src/threads/fence-adoption.ts:984ead54c70bb4096aa9cd23 |
+| threads | src/threads/fence-adoption.ts | 1335 | no-cause | No readable intent means no runner stopped by an upgrade; nothing is started. | src/threads/fence-adoption.ts:49ec78c9785b7e469d3c5029 |
+| threads | src/threads/fence-adoption.ts | 1382 | no-cause | The lease is held by an adoption in progress; the caller's check refuses with that state. | src/threads/fence-adoption.ts:8a3b8322e635da6d2fe63331 |
 | threads | src/threads/schema-fence.ts | 67 | no-cause | Async proof is refused synchronously below; this observer only prevents a later unhandled rejection. | src/threads/schema-fence.ts:3cd6d17c849e233f229d1834 |
 | threads | src/threads/schema-fence.ts | 115 | fixed | binding retained / no recognized error surface | src/threads/schema-fence.ts:7ba88450199085a5324898fb |
 | threads | src/threads/schema-fence.ts | 280 | fixed | binding retained / no recognized error surface | src/threads/schema-fence.ts:1dbf6764b424627533b44e61 |

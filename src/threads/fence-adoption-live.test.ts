@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { liveBootIdentity } from "./fence-adoption-live.js";
+import { openStateDatabase } from "../db/state-boundary.js";
+import { adoptThreadFenceOnUpgrade, liveBootIdentity } from "./fence-adoption-live.js";
+import { prepareThreadFence } from "./schema-fence.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -56,5 +58,39 @@ describe("live legacy boot identity", () => {
     expect(liveBootIdentity({ ...registration, name: "nats" }, stateDir)).toBeNull();
     const uncertified = stateWithReceipt({ ...legacyReceipt, bundle: null });
     expect(liveBootIdentity(registration, uncertified)).toBeNull();
+  });
+});
+
+describe("live daemon entry on a new isolated state directory", () => {
+  const isolated = () => {
+    const stateDir = mkdtempSync(join(tmpdir(), "ravi-fence-entry-"));
+    roots.push(stateDir);
+    return stateDir;
+  };
+
+  it("a daemon in the foreground starts: the entry creates nothing and the stores initialize the database", async () => {
+    const stateDir = isolated();
+    const databasePath = join(stateDir, "ravi.db");
+    // PM2 does not report this process as `ravi`: the development foreground run.
+    expect(await adoptThreadFenceOnUpgrade(stateDir, () => undefined)).toEqual({ outcome: "not-needed" });
+    expect(existsSync(databasePath)).toBe(false);
+    const db = openStateDatabase(databasePath);
+    try {
+      prepareThreadFence(db);
+    } finally {
+      db.close();
+    }
+    const audit = readFileSync(`${databasePath}.thread-bootstrap.jsonl`, "utf8").trim().split("\n").at(-1)!;
+    expect(JSON.parse(audit)).toMatchObject({ reason: "empty-isolated-state" });
+  });
+
+  it("an orphan write-ahead log refuses the entry and nothing creates the database", async () => {
+    const stateDir = isolated();
+    const databasePath = join(stateDir, "ravi.db");
+    writeFileSync(`${databasePath}-wal`, "frames");
+    await expect(adoptThreadFenceOnUpgrade(stateDir, () => undefined)).rejects.toThrow(
+      "-wal exists without its database",
+    );
+    expect(existsSync(databasePath)).toBe(false);
   });
 });

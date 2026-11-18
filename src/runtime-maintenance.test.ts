@@ -247,6 +247,13 @@ describe("runtime maintenance preparation", () => {
     expect(runtimeStartReadiness(f.stateDir)).toBe("adopt-on-start");
   });
 
+  it("a start refuses a sidecar without its database, before PM2 is touched", () => {
+    const f = fixture();
+    const path = join(f.stateDir, "ravi.db");
+    writeFileSync(`${path}-wal`, "frames");
+    expect(() => runtimeStartReadiness(f.stateDir)).toThrow("-wal exists without its database");
+  });
+
   it("refuses replacement on legacy schema without mutating its data or adding the fence", async () => {
     const f = fixture();
     const path = join(f.stateDir, "ravi.db");

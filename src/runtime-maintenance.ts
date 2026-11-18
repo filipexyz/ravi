@@ -346,8 +346,12 @@ export function runtimeReplacementReadiness(stateDir = getRaviStateDir()): "read
  */
 export function runtimeStartReadiness(stateDir = getRaviStateDir()): "ready" | "adopt-on-start" | "fresh" {
   assertRuntimeMaintenanceInactive(stateDir);
-  const { freshStateDatabase } = require("./threads/fence-adoption.js") as typeof import("./threads/fence-adoption.js");
-  if (freshStateDatabase(join(stateDir, "ravi.db"))) return "fresh";
+  const { freshStateDatabase, orphanStateJournal, orphanStateJournalDetail } =
+    require("./threads/fence-adoption.js") as typeof import("./threads/fence-adoption.js");
+  const path = join(stateDir, "ravi.db");
+  const orphan = orphanStateJournal(path);
+  if (orphan) throw new Error(`THREAD_FENCE_BOOTSTRAP_BLOCKED: ${orphanStateJournalDetail(path, orphan)}`);
+  if (freshStateDatabase(path)) return "fresh";
   return runtimeReplacementReadiness(stateDir);
 }
 

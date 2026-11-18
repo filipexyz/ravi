@@ -260,11 +260,36 @@ export function legacyStateDatabasePath(databasePath: string, home = homedir()):
   return databasePath === join(getRaviStateDir({}), "ravi.db") ? join(home, "ravi", "ravi.db") : null;
 }
 
+const STATE_JOURNAL_SUFFIXES = ["-wal", "-shm", "-journal"] as const;
+
+/**
+ * An SQLite sidecar (`-wal`, `-shm`, `-journal`) left without its database.
+ * A database created next to it could replay writes that were never
+ * checkpointed, without the fence. Read-only.
+ */
+export function orphanStateJournal(databasePath: string): string | null {
+  if (existsSync(databasePath)) return null;
+  for (const suffix of STATE_JOURNAL_SUFFIXES) {
+    if (existsSync(`${databasePath}${suffix}`)) return `${databasePath}${suffix}`;
+  }
+  return null;
+}
+
+/** The refusal for `orphanStateJournal`, with its next step. */
+export function orphanStateJournalDetail(databasePath: string, journal: string): string {
+  return (
+    `${journal} exists without its database ${databasePath}: it may hold writes that were never checkpointed, ` +
+    "and a new database next to it would replay them without the fence. Restore the database next to it, " +
+    "or move its -wal, -shm and -journal files out of the state directory, then start again"
+  );
+}
+
 /**
  * A database no release ever wrote: `missing`, or `empty` (an SQLite file with
  * no schema object, such as the one a refused first start leaves). Not fresh
- * with a write-ahead log holding frames, a log without its database, or a
- * legacy database the router would move in. Read-only; never creates a file.
+ * with a write-ahead log holding frames, a sidecar without its database
+ * (`orphanStateJournal`), or a legacy database the router would move in.
+ * Read-only; never creates a file.
  */
 export function freshStateDatabase(
   databasePath: string,
@@ -272,7 +297,7 @@ export function freshStateDatabase(
 ): "missing" | "empty" | null {
   if (legacyDatabasePath && existsSync(legacyDatabasePath)) return null;
   const wal = `${databasePath}-wal`;
-  if (!existsSync(databasePath)) return existsSync(wal) ? null : "missing";
+  if (!existsSync(databasePath)) return orphanStateJournal(databasePath) ? null : "missing";
   if (existsSync(wal) && statSync(wal).size > 0) return null;
   let database: Database;
   try {
@@ -1075,7 +1100,16 @@ async function createFencedStateDatabase(host: BootAdoptionHost): Promise<BootAd
 async function adoptAtBoot(host: BootAdoptionHost): Promise<BootAdoptionResult> {
   const exists = existsSync(host.databasePath);
   if (exists && databaseHasThreadFence(host.databasePath)) return { outcome: "not-needed" };
-  if (freshStateDatabase(host.databasePath, legacyDatabaseOf(host))) return createFencedStateDatabase(host);
+  // Nothing may create a database next to a sidecar it would replay, in any mode.
+  const orphan = orphanStateJournal(host.databasePath);
+  if (orphan) upgradeBlocked(orphanStateJournalDetail(host.databasePath, orphan));
+  if (freshStateDatabase(host.databasePath, legacyDatabaseOf(host))) {
+    // Only the PM2-supervised daemon creates the database here. A daemon in the
+    // foreground (development, on an isolated state directory) keeps the store
+    // path: an empty isolated database is authorized there (`empty-isolated-state`),
+    // and the state boundary refuses it real state.
+    return host.self.startedAt > 0 ? createFencedStateDatabase(host) : { outcome: "not-needed" };
+  }
   if (!exists) return { outcome: "not-needed" };
   assertRuntimeMaintenanceInactive(host.stateDir);
   const exitState = host.exitState ?? ((entry: { pid: number; startedAt: number }) => recordedProcessExitState(entry));

@@ -275,9 +275,13 @@ export async function waitForBroker(
  * Daemon entry, when no adoption was admitted: a database written by a
  * pre-fence release is adopted here, without any operator command.
  */
-export async function adoptThreadFenceOnUpgrade(stateDir = getRaviStateDir()): Promise<BootAdoptionResult> {
+export async function adoptThreadFenceOnUpgrade(
+  stateDir = getRaviStateDir(),
+  managedRavi: () => { pid: number; startedAt?: number | null } | undefined = () => getPm2Process("ravi"),
+): Promise<BootAdoptionResult> {
   const databasePath = join(stateDir, "ravi.db");
-  const managed = getPm2Process("ravi");
+  // A daemon PM2 does not report as `ravi` (foreground) carries startedAt 0.
+  const managed = managedRavi();
   return adoptThreadFenceAtBoot({
     stateDir,
     databasePath,

@@ -428,7 +428,9 @@ function freshFixture(
     supervised?: boolean;
     extra?: ManagedRegistration[];
     legacyDatabasePath?: string | null;
-    wal?: boolean;
+    sidecar?: "-wal" | "-shm" | "-journal";
+    /** A daemon PM2 does not report as `ravi` (startedAt 0), as in development. */
+    foreground?: boolean;
   } = {},
 ) {
   const stateDir = mkdtempSync(join(tmpdir(), "ravi-fence-fresh-"));
@@ -440,12 +442,12 @@ function freshFixture(
     legacy.exec("CREATE TABLE pending_work (id TEXT); INSERT INTO pending_work VALUES ('preserved')");
     legacy.close();
   }
-  if (options.wal) writeFileSync(`${databasePath}-wal`, "frames");
+  if (options.sidecar) writeFileSync(`${databasePath}${options.sidecar}`, "frames");
   mkdirSync(join(stateDir, "bundle"));
   const bundlePath = join(stateDir, "bundle", "index.js");
   writeFileSync(bundlePath, "// installed release\n");
   const now = Date.now();
-  const self = { pid: process.pid, startedAt: now };
+  const self = { pid: process.pid, startedAt: options.foreground ? 0 : now };
   const receipts: Record<"ravi" | "ravi-channels", MaintenanceProcess | null> = {
     ravi: null,
     "ravi-channels": null,
@@ -458,7 +460,7 @@ function freshFixture(
     ownBundlePath: bundlePath,
     self,
     registry: () => [
-      ...(options.supervised === false
+      ...(options.supervised === false || options.foreground
         ? []
         : [
             {
@@ -566,10 +568,27 @@ describe("first start on a new state directory", () => {
     expect(existsSync(f.databasePath)).toBe(false);
   });
 
-  it("only the daemon supervised by PM2 as 'ravi' creates the database", async () => {
+  it("a daemon PM2 does not list online as 'ravi' creates nothing", async () => {
     const f = freshFixture({ supervised: false });
     await expect(adoptThreadFenceAtBoot(f.host)).rejects.toThrow("supervised by PM2");
     expect(existsSync(f.databasePath)).toBe(false);
+  });
+
+  it("a daemon in the foreground keeps the store path: nothing is created at the entry, and the stores authorize the empty isolated database", async () => {
+    const f = freshFixture({ foreground: true });
+    expect(await adoptThreadFenceAtBoot(f.host)).toEqual({ outcome: "not-needed" });
+    expect(existsSync(f.databasePath)).toBe(false);
+    const db = openStateDatabase(f.databasePath);
+    handles.push(db);
+    prepareThreadFence(db);
+    expect(databaseHasThreadFence(f.databasePath)).toBe(true);
+    expect(lastAudit(f.databasePath)).toMatchObject({ reason: "empty-isolated-state" });
+  });
+
+  it("a daemon in the foreground on an empty database it left is not sent to the upgrade rules", async () => {
+    const f = freshFixture({ foreground: true, database: "empty" });
+    expect(await adoptThreadFenceAtBoot(f.host)).toEqual({ outcome: "not-needed" });
+    expect(databaseHasThreadFence(f.databasePath)).toBe(false);
   });
 
   it("is not a first start while the router would move a legacy database in", async () => {
@@ -582,9 +601,14 @@ describe("first start on a new state directory", () => {
     expect(existsSync(f.databasePath)).toBe(false);
   });
 
-  it("a write-ahead log without its database is not a first start", async () => {
-    const f = freshFixture({ wal: true });
-    expect(await adoptThreadFenceAtBoot(f.host)).toEqual({ outcome: "not-needed" });
-    expect(existsSync(f.databasePath)).toBe(false);
-  });
+  for (const sidecar of ["-wal", "-shm", "-journal"] as const) {
+    it(`a ${sidecar} without its database refuses at the entry, creating nothing, supervised or not`, async () => {
+      for (const foreground of [false, true]) {
+        const f = freshFixture({ sidecar, foreground });
+        await expect(adoptThreadFenceAtBoot(f.host)).rejects.toThrow(`${sidecar} exists without its database`);
+        expect(existsSync(f.databasePath)).toBe(false);
+        expect(readUpgradeFailure(f.stateDir)?.failure).toContain("Restore the database next to it");
+      }
+    });
+  }
 });
