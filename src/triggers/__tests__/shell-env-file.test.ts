@@ -47,4 +47,17 @@ describe("shell trigger env file location", () => {
     expect(shellEnvFileInsideStateDir(join(base, ".ravi-trigger", "ticket.env"), stateDir)).toBe(false);
     expect(shellEnvFileInsideStateDir(join(base, "ticket.env"), stateDir)).toBe(false);
   });
+
+  it("refuses a .. that the OS applies after following a symlink into the state dir", () => {
+    const base = makeRoot();
+    const stateDir = join(base, ".ravi");
+    mkdirSync(join(stateDir, "sub"), { recursive: true });
+    writeFileSync(join(stateDir, ".env"), "RAVI_ADMIN_TOKEN=canary\n");
+    // base/link -> base/.ravi/sub, so base/link/../.env opens base/.ravi/.env (Devin, PR #881).
+    symlinkSync(join(stateDir, "sub"), join(base, "link"));
+
+    expect(shellEnvFileInsideStateDir(`${base}/link/../.env`, stateDir)).toBe(true);
+    // Any .. segment is refused, even one a lexical check would place outside.
+    expect(shellEnvFileInsideStateDir(`${base}/elsewhere/../ticket.env`, stateDir)).toBe(true);
+  });
 });

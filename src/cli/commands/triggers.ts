@@ -175,11 +175,11 @@ function assertShellTriggerChange(
 function assertShellEnvFileAllowed(op: string, envFile: string | null | undefined, asJson?: boolean): void {
   if (!envFile || !shellEnvFileInsideStateDir(envFile)) return;
   const suggestedAction =
-    "put only the variables the command needs in a file outside the Ravi state dir, or let it reach Ravi through the credential broker";
+    "put only the variables the command needs in a file outside the Ravi state dir, given by a path without .., or let it reach Ravi through the credential broker";
   failShellTrigger(
     op,
     "TRIGGER_SHELL_ENV_FILE_IN_STATE_DIR",
-    `The env file ${envFile} is inside the Ravi state dir, which holds the daemon's own secrets. Next: ${suggestedAction}.`,
+    `The env file ${envFile} is inside the Ravi state dir, which holds the daemon's own secrets, or its path has a .. segment that could lead there. Next: ${suggestedAction}.`,
     { envFile, suggestedAction },
     asJson,
   );
