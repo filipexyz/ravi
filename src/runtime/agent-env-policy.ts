@@ -87,6 +87,10 @@ const ALLOWED_ENV_NAMES = new Set([
   "RAVI_CLI_INSTALLATION_NAME",
   "RAVI_LOG_LEVEL",
   "RAVI_CLI_LOG_LEVEL",
+  // Read by the Codex provider from the request env, not from the daemon's.
+  "RAVI_CODEX_TRANSPORT",
+  "RAVI_CODEX_RUST_LOG",
+  "RUST_LOG",
   "RAVI_EXECUTION_PLANE",
   "RAVI_HOST_CLI_GATEWAY",
   "RAVI_BASH_TRUSTED_EXECUTABLE_ROOTS",

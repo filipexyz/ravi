@@ -7,6 +7,7 @@ import {
   isAgentRuntimeEnvNameAllowed,
   resolveProviderLoginEnvKeys,
 } from "./agent-env-policy.js";
+import { resolveCodexTransportKind } from "./codex-transport.js";
 import { buildRuntimeEnv } from "./host-env.js";
 import { buildRuntimeRequestEnv } from "./runtime-request-context.js";
 import type { RuntimeCapabilities } from "./types.js";
@@ -164,6 +165,7 @@ describe("agent runtime env policy", () => {
       RAVI_STATE_DIR: "/Users/operator/.ravi",
       RAVI_GATEWAY_URL: "http://127.0.0.1:4211",
       RAVI_PM2_EXECUTABLE: "/opt/homebrew/bin/pm2",
+      RAVI_CODEX_TRANSPORT: "stdio",
       OMNI_API_URL: "http://127.0.0.1:8882",
       // Not listed: daemon-only config, internal markers, and names that do not look secret.
       RAVI_WEBHOOK_PUBLIC_BASE_URL: "https://hooks.example",
@@ -177,8 +179,23 @@ describe("agent runtime env policy", () => {
       RAVI_STATE_DIR: "/Users/operator/.ravi",
       RAVI_GATEWAY_URL: "http://127.0.0.1:4211",
       RAVI_PM2_EXECUTABLE: "/opt/homebrew/bin/pm2",
+      RAVI_CODEX_TRANSPORT: "stdio",
       OMNI_API_URL: "http://127.0.0.1:8882",
     });
+  });
+
+  it("keeps the operator's Codex transport choice in the env Codex starts from", () => {
+    const runtimeEnv = buildRuntimeEnv(
+      { PATH: "/usr/bin", RAVI_CODEX_TRANSPORT: "stdio" },
+      { RAVI_CONTEXT_KEY: "rctx_turn" },
+      undefined,
+      capabilities,
+      false,
+      { runtimeProviderId: "codex" },
+    );
+
+    // The Codex provider selects its transport from the request env (Devin, PR #873).
+    expect(resolveCodexTransportKind(runtimeEnv)).toBe("stdio");
   });
 
   it("drops personal access tokens and token-shaped values under allowed names", () => {
