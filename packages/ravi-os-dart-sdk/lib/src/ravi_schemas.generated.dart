@@ -124097,13 +124097,37 @@ class RaviSchemas {
 {
   "additionalProperties": false,
   "properties": {
+    "agent": {
+      "description": "Agent to route this channel to (route is created in the same call)",
+      "type": "string"
+    },
+    "agentCwd": {
+      "description": "CWD for --create-agent (default: ~/ravi/<agent>)",
+      "type": "string"
+    },
+    "agentModel": {
+      "description": "Runtime model selector for --create-agent",
+      "type": "string"
+    },
+    "agentProvider": {
+      "description": "Runtime provider id for --create-agent",
+      "type": "string"
+    },
     "channel": {
       "description": "Ravi channel config",
       "type": "string"
     },
+    "createAgent": {
+      "description": "Create --agent first when it does not exist",
+      "type": "boolean"
+    },
     "execute": {
       "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
+    },
+    "invite": {
+      "description": "Comma-separated Slack user IDs to invite after creating",
+      "type": "string"
     },
     "name": {
       "description": "New Slack channel name",

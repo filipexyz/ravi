@@ -28314,18 +28314,42 @@ class SlackCanvasShowcaseReturn {
 SlackCanvasShowcaseReturn slackCanvasShowcaseReturnFromJson(Object? json) => SlackCanvasShowcaseReturn.fromJsonValue(json);
 
 class SlackChannelsCreateOptions {
-  const SlackChannelsCreateOptions({this.channel, this.execute, this.private});
+  const SlackChannelsCreateOptions({this.agent, this.agentCwd, this.agentModel, this.agentProvider, this.channel, this.createAgent, this.execute, this.invite, this.private});
 
+  final String? agent;
+  final String? agentCwd;
+  final String? agentModel;
+  final String? agentProvider;
   final String? channel;
+  final bool? createAgent;
   final bool? execute;
+  final String? invite;
   final bool? private;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+    if (agentCwd != null) {
+      into["agentCwd"] = RaviJson.from(agentCwd);
+    }
+    if (agentModel != null) {
+      into["agentModel"] = RaviJson.from(agentModel);
+    }
+    if (agentProvider != null) {
+      into["agentProvider"] = RaviJson.from(agentProvider);
+    }
     if (channel != null) {
       into["channel"] = RaviJson.from(channel);
     }
+    if (createAgent != null) {
+      into["createAgent"] = RaviJson.from(createAgent);
+    }
     if (execute != null) {
       into["execute"] = RaviJson.from(execute);
+    }
+    if (invite != null) {
+      into["invite"] = RaviJson.from(invite);
     }
     if (private != null) {
       into["private"] = RaviJson.from(private);

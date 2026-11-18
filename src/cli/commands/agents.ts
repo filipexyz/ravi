@@ -988,6 +988,11 @@ export class AgentsCommands {
             ...(creatorAgentId ? { creatorAgentId, creatorVisibilityChanged } : {}),
           },
         },
+        // A new agent has no channel yet. These create the chat AND its route in one call.
+        channels: {
+          whatsappGroupCommand: `ravi whatsapp group create "<name>" <phone,...> --agent ${id} --execute`,
+          slackChannelCommand: `ravi slack channels-create <name> --private --invite <user,...> --agent ${id} --execute`,
+        },
       };
       if (asJson) {
         printJson(payload);
@@ -1015,6 +1020,9 @@ export class AgentsCommands {
         );
         console.log(`  Reset to bootstrap: ravi agents permissions ${id} none`);
         console.log(`  Break-glass only: ravi agents permissions ${id} full-access --execute`);
+        console.log(`  Give it a chat (creates the chat and its route):`);
+        console.log(`    WhatsApp group: ${payload.channels.whatsappGroupCommand}`);
+        console.log(`    Slack channel:  ${payload.channels.slackChannelCommand}`);
       }
       emitConfigChanged();
       return payload;

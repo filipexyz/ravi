@@ -23744,8 +23744,14 @@ export type SlackCanvasShowcaseReturn = {
 
 /** Input shape for `slack.channels-create`. */
 export type SlackChannelsCreateInput = {
+  agent?: string;
+  agentCwd?: string;
+  agentModel?: string;
+  agentProvider?: string;
   channel?: string;
+  createAgent?: boolean;
   execute?: boolean;
+  invite?: string;
   name: string;
   private?: boolean;
 };
