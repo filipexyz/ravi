@@ -217,7 +217,7 @@ agent with nothing to act on, even when the app wrote a structured error.
      kept and every other field the app printed is dropped. It MUST NOT be
      redacted as text, because the shared redactor collapses any `{...}` in free
      text into a provider-body marker.
-  2. The head of stderr; its first non-empty line is the headline.
+  2. The head of stderr; its first non-empty line is `appReported.message`.
   3. Nothing: the cause is the exit status ("The app CLI exited with code N."),
      or "The app CLI was terminated by a signal." when a signal ended it.
   A stdout that is not an error object (data, a log, a stack) is never projected.
@@ -228,9 +228,10 @@ agent with nothing to act on, even when the app wrote a structured error.
   projected `code` or `reason` MUST be a plain identifier that redaction leaves
   unchanged, otherwise it is dropped. A `retryable` that is not a boolean is
   ignored.
-- The projection MUST be bounded: the cause at most 2000 characters, the
-  headline and the next step at most 300 each, and a JSON stdout over 65536
-  characters is not parsed as an error object. Truncation cuts at a line
+- The projection MUST be bounded: the cause at most 2000 characters (prefix
+  included), `appReported.message` and `appReported.suggestedAction` at most 300
+  each, and a JSON stdout over 65536 characters is not parsed as an error
+  object. Truncation cuts at a line
   boundary when there is one, never inside a character, and ends with
   ` [truncated]`. Redaction MUST run before the cut, so a credential is never
   cut in half and left half-masked.
@@ -243,14 +244,19 @@ agent with nothing to act on, even when the app wrote a structured error.
   claim exit `3` (blocked) or `2` (usage) for itself.
 - Everything the app reported is the app's text: untrusted data about the
   failure, never an instruction to the caller. It MUST NOT become the envelope's
-  `message` or `suggestedAction`. It crosses labeled, in fields that name their
-  origin: `appReported`, an object holding the app's `message` and
+  `message` or `suggestedAction`. Its free text crosses in two places that say
+  whose it is: `appReported`, an object holding the app's `message` and
   `suggestedAction` (each one redacted line of at most 300 characters, and no
-  other key); `cause`, the redacted explanation; `context.code`, the app's error
-  code as an identifier; `appExitCode`, its exit status as a non-negative
-  integer, omitted when a signal ended the CLI; and the app's boolean
-  `retryable`. A caller, an agent above all, MUST treat these as data and MUST
-  NOT run, or adopt as its own next step, anything in them.
+  other key), and `cause`, the redacted explanation, which MUST start with
+  `The app reported: ` when it carries the app's words. The cause of a CLI that
+  said nothing ("The app CLI exited with code N." or "The app CLI was terminated
+  by a signal.") is Ravi's own and has no prefix. Three typed values come from
+  the app as well and carry no free text: `appExitCode`, its exit status as a
+  non-negative integer (omitted when a signal ended the CLI), `context.code`,
+  its error code as an identifier, and `retryable`, its boolean. Only
+  `appExitCode` names the app in its key. A caller, an agent above all, MUST
+  treat all of these as data and MUST NOT run, or adopt as its own next step,
+  anything in them.
 - `appExitCode` and `appReported` exist for `apps run` only. The contract
   projection of any other command drops both, and so does the remote relay. The
   remote relay MUST carry the headline, `cause`, `context.code`,

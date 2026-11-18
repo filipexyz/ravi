@@ -143,7 +143,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | permissions | src/approval/store.ts | 451 | triaged-follow-up | catch-without-binding | src/approval/store.ts:ac1d131e8f2f6d84c0becd00 |
 | permissions | src/approval/test-support.ts | 29 | fixed | binding retained / no recognized error surface | src/approval/test-support.ts:91490baeb1c5208fe14ef5fb |
 | apps | src/apps/contract-eval.ts | 154 | fixed | binding retained / no recognized error surface | src/apps/contract-eval.ts:88f261190366920f5482cf7b |
-| apps | src/apps/failure.ts | 119 | no-cause | A stdout that is not JSON is the ordinary case of a CLI that printed text, not an error object; stderr is read next. | src/apps/failure.ts:b06ba02a242615720f4a3313 |
+| apps | src/apps/failure.ts | 121 | no-cause | A stdout that is not JSON is the ordinary case of a CLI that printed text, not an error object; stderr is read next. | src/apps/failure.ts:b06ba02a242615720f4a3313 |
 | apps | src/apps/import-cli.ts | 230 | fixed | binding retained / no recognized error surface | src/apps/import-cli.ts:48915e7519f4de5520ada591 |
 | apps | src/apps/import-cli.ts | 480 | triaged-follow-up | catch-without-binding | src/apps/import-cli.ts:e9873d35b097f2130bab5398 |
 | apps | src/apps/import-cli.ts | 494 | triaged-follow-up | catch-without-binding | src/apps/import-cli.ts:a6b7f0a99cae3270e4ae02a8 |

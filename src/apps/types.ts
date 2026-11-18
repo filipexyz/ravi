@@ -336,12 +336,12 @@ export interface RaviAppCliFailure {
   source: "json" | "stderr" | "none";
   /** The app's own error code, when its JSON error named one as an identifier. */
   code?: string;
-  /** One-line, bounded: the app's message (or the first line of its stderr). */
+  /** One-line, bounded: the app's message (or the first line of its stderr), reported as `appReported.message`. */
   message?: string;
-  /** Multi-line, bounded: the explanation for the diagnostic `cause`. */
+  /** Multi-line, bounded: the diagnostic `cause`. It starts with "The app reported: " when it carries the app's words. */
   cause: string;
   retryable?: boolean;
-  /** One-line, bounded: the app's own next step, when its JSON error offered one. */
+  /** One-line, bounded: the app's own next step, when its JSON error offered one, reported as `appReported.suggestedAction`. */
   suggestedAction?: string;
 }
 
