@@ -56,7 +56,10 @@ const { dbCreateCronJob, dbGetCronJob, dbMarkJobDispatched, dbUpdateJobState, db
   "./cron-db.js"
 );
 const { CRON_RUNTIME_EVENTS_TOPIC } = await import("./turn-outcome.js");
-const { issueShellCronContext, CRON_SHELL_ALLOWED_CAPABILITIES } = await import("./shell-context.js");
+const { issueShellCronContext, CRON_SHELL_ALLOWED_COMMANDS, revokeOrphanedShellCronContexts } = await import(
+  "./shell-context.js"
+);
+const { getRegistry } = await import("../cli/registry-snapshot.js");
 const { createRuntimeContext } = await import("../runtime/context-registry.js");
 const { dbListContexts } = await import("../router/router-db.js");
 
@@ -681,67 +684,162 @@ describe("CronRunner shell jobs and personal connectors", () => {
     for (const call of publishCalls) expect(JSON.stringify(call.payload)).not.toContain(key!);
   });
 
+  // Owned by the test, not read from production: what the spec allows (13c).
+  const SPEC_SHELL_TUPLES = [
+    "mutate:bases.rows:add",
+    "mutate:bases.rows:archive",
+    "mutate:bases.rows:restore",
+    "mutate:bases.rows:update",
+    "mutate:pages:ship",
+    "read:bases.rows:export",
+    "read:bases.rows:get",
+    "read:bases.rows:history",
+    "read:bases.rows:query",
+    "read:bases.views:list",
+    "read:bases.views:query",
+    "read:bases.views:show",
+    "read:bases:list",
+    "read:bases:show",
+    "read:pages:list",
+    "read:pages:read",
+    "read:self:whoami",
+  ];
+  const tuples = (caps: Array<{ permission: string; objectType: string; objectId: string }>) =>
+    caps.map((c) => `${c.permission}:${c.objectType}:${c.objectId}`).sort();
+
   it("scopes the shell run's context to Bases, Pages and self whoami, within the agent's own capabilities", () => {
     const job = { id: "job-scope", agentId: "main" };
     const authority = { jobId: "job-scope", ownerPrincipal: "operator", ownerIsOperator: true };
-    const keys = (caps: Array<{ permission: string; objectType: string; objectId: string }>) =>
-      caps.map((c) => `${c.permission}:${c.objectType}:${c.objectId}`).sort();
+    const issue = (capabilities: Array<{ permission: string; objectType: string; objectId: string }>) =>
+      issueShellCronContext(job, authority, 1_000, { agentExists: () => true, capabilitiesFor: () => capabilities })!;
 
-    // An agent with broad authority: the context still gets only the allowlist.
-    const broad = issueShellCronContext(job, authority, 1_000, {
-      agentExists: () => true,
-      capabilitiesFor: () => [
-        { permission: "admin", objectType: "system", objectId: "*" },
-        { permission: "use", objectType: "tool", objectId: "*" },
-      ],
-    })!;
+    // An agent with broad authority: the key gets exactly the spec's tuples.
+    const broad = issue([
+      { permission: "admin", objectType: "system", objectId: "*" },
+      { permission: "use", objectType: "tool", objectId: "*" },
+    ]);
     try {
-      expect(keys(broad.context.capabilities)).toEqual(keys([...CRON_SHELL_ALLOWED_CAPABILITIES]));
-      for (const cap of broad.context.capabilities) {
-        expect(`${cap.permission}:${cap.objectType}`).not.toMatch(/^use:tool|sessions|tasks|admin:/);
-      }
+      expect(tuples(broad.context.capabilities)).toEqual(SPEC_SHELL_TUPLES);
     } finally {
       broad.release();
     }
 
-    // An agent with less: never more than the agent has.
-    const narrow = issueShellCronContext(job, authority, 1_000, {
-      agentExists: () => true,
-      capabilitiesFor: () => [
-        { permission: "read", objectType: "bases", objectId: "list" },
-        { permission: "use", objectType: "tool", objectId: "*" },
-        { permission: "execute", objectType: "group", objectId: "sessions" },
-        { permission: "mutate", objectType: "task", objectId: "*" },
-      ],
-    })!;
+    // An agent with less: never more than the agent may run.
+    const narrow = issue([
+      { permission: "read", objectType: "bases", objectId: "list" },
+      { permission: "use", objectType: "tool", objectId: "*" },
+      { permission: "execute", objectType: "group", objectId: "sessions" },
+      { permission: "mutate", objectType: "task", objectId: "*" },
+    ]);
     try {
-      expect(keys(narrow.context.capabilities)).toEqual(["read:bases:list"]);
+      expect(tuples(narrow.context.capabilities)).toEqual(["read:bases:list"]);
     } finally {
       narrow.release();
     }
   });
 
-  it("revokes shell cron contexts a previous process left live when the runner starts", async () => {
-    const leftover = createRuntimeContext({
-      kind: "cron-shell",
-      agentId: "main",
-      metadata: { actorPrincipal: "automation:cron:old", source: "cron-shell" },
-    });
-    const unrelated = createRuntimeContext({ kind: "cli-runtime", agentId: "main", metadata: {} });
-    const runner = new CronRunner();
-    await runner.start();
+  it("keeps a command the agent runs through a legacy or alternate grant, carrying only the narrow tuple", () => {
+    const job = { id: "job-legacy", agentId: "main" };
+    const authority = { jobId: "job-legacy", ownerPrincipal: "operator", ownerIsOperator: true };
+    const issued = issueShellCronContext(job, authority, 1_000, {
+      agentExists: () => true,
+      capabilitiesFor: () => [
+        { permission: "execute", objectType: "group", objectId: "pages_read" },
+        { permission: "read", objectType: "pages.list", objectId: "*" },
+        { permission: "execute", objectType: "group", objectId: "bases.rows" },
+      ],
+    })!;
     try {
-      const after = dbListContexts({ includeInactive: true, kind: "cron-shell" }).find(
-        (c) => c.contextId === leftover.contextId,
-      );
-      expect(after?.revokedAt).toBeDefined();
-      expect(after?.metadata?.revocationReason).toBe("cron_shell_daemon_restart");
-      const other = dbListContexts({ includeInactive: true, kind: "cli-runtime" }).find(
-        (c) => c.contextId === unrelated.contextId,
-      );
-      expect(other?.revokedAt).toBeUndefined();
+      const got = tuples(issued.context.capabilities);
+      expect(got).toContain("read:pages:read");
+      expect(got).toContain("read:pages:list");
+      expect(got).toContain("mutate:bases.rows:add");
+      for (const tuple of got) expect(SPEC_SHELL_TUPLES).toContain(tuple);
+      expect(got.some((tuple) => tuple.startsWith("execute:group") || tuple.includes("pages.list"))).toBe(false);
     } finally {
-      await runner.stop();
+      issued.release();
+    }
+  });
+
+  it("names every allowlisted command with the access the CLI registry declares for it", () => {
+    const registry = getRegistry().commands;
+    for (const entry of CRON_SHELL_ALLOWED_COMMANDS) {
+      const command = registry.find((c) => c.groupPath === entry.group && c.command === entry.command);
+      expect(command?.access).toMatchObject({ kind: entry.kind, resource: entry.resource, action: entry.action });
+      expect(command?.access?.requireConcreteResource).toBeFalsy();
+      expect(command?.access?.retiredLegacyGroups ?? []).toEqual([]);
+    }
+  });
+
+  it("revokes at boot only the shell cron contexts whose run is over", () => {
+    const make = (issuer?: { pid: number; host: string }) =>
+      createRuntimeContext({
+        kind: "cron-shell",
+        agentId: "main",
+        metadata: { actorPrincipal: "automation:cron:old", ...(issuer ? { cronShellIssuer: issuer } : {}) },
+      });
+    const noIssuer = make();
+    const deadHere = make({ pid: 4242, host: "this-host" });
+    const ownPidHere = make({ pid: 1000, host: "this-host" });
+    const liveHere = make({ pid: 5151, host: "this-host" });
+    const otherHost = make({ pid: 4242, host: "other-host" });
+    const unrelated = createRuntimeContext({ kind: "cli-runtime", agentId: "main", metadata: {} });
+
+    const revoked = revokeOrphanedShellCronContexts({
+      host: "this-host",
+      selfPid: 1000,
+      isAlive: (pid) => pid === 5151,
+    });
+
+    expect(revoked).toBe(3);
+    const reason = (id: string) =>
+      dbListContexts({ includeInactive: true }).find((c) => c.contextId === id)?.metadata?.revocationReason;
+    expect(reason(noIssuer.contextId)).toBe("cron_shell_daemon_restart");
+    expect(reason(deadHere.contextId)).toBe("cron_shell_daemon_restart");
+    expect(reason(ownPidHere.contextId)).toBe("cron_shell_daemon_restart");
+    for (const kept of [liveHere, otherHost, unrelated]) {
+      const row = dbListContexts({ includeInactive: true }).find((c) => c.contextId === kept.contextId);
+      expect(row).toBeDefined();
+      expect(row?.revokedAt).toBeUndefined();
+    }
+  });
+
+  it("keeps revoking the other orphaned contexts when one revocation fails", () => {
+    const make = () =>
+      createRuntimeContext({
+        kind: "cron-shell",
+        agentId: "main",
+        metadata: { actorPrincipal: "automation:cron:old" },
+      });
+    const first = make();
+    const second = make();
+    const third = make();
+    const attempted: string[] = [];
+
+    const revoked = revokeOrphanedShellCronContexts({
+      host: "this-host",
+      selfPid: 1000,
+      isAlive: () => false,
+      revoke: (contextId) => {
+        attempted.push(contextId);
+        if (contextId === second.contextId) throw new Error("revocation failed");
+      },
+    });
+
+    expect(new Set(attempted)).toEqual(new Set([first.contextId, second.contextId, third.contextId]));
+    expect(revoked).toBe(2);
+  });
+
+  it("records the issuing daemon process on a shell run's context", () => {
+    const issued = issueShellCronContext(
+      { id: "job-issuer", agentId: "main" },
+      { jobId: "job-issuer", ownerPrincipal: "operator", ownerIsOperator: true },
+      1_000,
+    )!;
+    try {
+      expect(issued.context.metadata?.cronShellIssuer).toMatchObject({ pid: process.pid });
+    } finally {
+      issued.release();
     }
   });
 

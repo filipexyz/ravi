@@ -61,14 +61,6 @@ function deps(overrides: Partial<KnowledgeAudienceDeps> = {}): KnowledgeAudience
       return parsed?.peerKind === "dm" && parsed.dmScope !== "main";
     },
     dmContact: ({ chatId }) => (chatId === OWNER_CHAT ? OWNER : chatId === CLIENT_CHAT ? CLIENT : null),
-    cronOwner: (jobId) =>
-      jobId === "mine"
-        ? { found: true, ownerPrincipal: "operator" }
-        : jobId === "legacy"
-          ? { found: true, ownerPrincipal: null }
-          : jobId === "theirs"
-            ? { found: true, ownerPrincipal: `contact:${CLIENT}` }
-            : { found: false, ownerPrincipal: null },
     packet: () => {
       throw new Error("packet must not be built");
     },
@@ -152,18 +144,30 @@ describe("knowledgeAudienceForPrompt", () => {
     ).toBe("none");
   });
 
-  it("gives operator only for the operator's own cron", () => {
-    expect(knowledgeAudienceForPrompt({ prompt: "r", _cron: true, _jobId: "mine" }, ctx, deps())).toBe("operator");
-    // A legacy job without an owner runs as nobody.
-    expect(knowledgeAudienceForPrompt({ prompt: "r", _cron: true, _jobId: "legacy" }, ctx, deps())).toBe("none");
-    expect(knowledgeAudienceForPrompt({ prompt: "r", _cron: true, _jobId: "theirs" }, ctx, deps())).toBe("none");
-    expect(knowledgeAudienceForPrompt({ prompt: "r", _cron: true, _jobId: "gone" }, ctx, deps())).toBe("none");
+  it("gives operator only for a run admitted as the operator's own cron", () => {
+    const run = (jobId: string, ownerPrincipal?: string, ownerIsOperator = false) => ({
+      prompt: "r",
+      _cron: true,
+      _jobId: jobId,
+      ...(ownerPrincipal ? { _cronAuthority: { jobId, ownerPrincipal, ownerIsOperator } } : {}),
+    });
+    expect(knowledgeAudienceForPrompt(run("mine", "operator", true), ctx, deps())).toBe("operator");
+    // A legacy job without an owner was admitted as nobody.
+    expect(knowledgeAudienceForPrompt(run("legacy", "unknown"), ctx, deps())).toBe("none");
+    expect(knowledgeAudienceForPrompt(run("theirs", `contact:${CLIENT}`), ctx, deps())).toBe("none");
+    // No admission snapshot, or one for another job: not the operator's.
+    expect(knowledgeAudienceForPrompt(run("gone"), ctx, deps())).toBe("none");
+    expect(
+      knowledgeAudienceForPrompt(
+        { ...run("mine"), _cronAuthority: { jobId: "other", ownerPrincipal: "operator", ownerIsOperator: true } },
+        ctx,
+        deps(),
+      ),
+    ).toBe("none");
     expect(
       knowledgeAudienceForPrompt(
         {
-          prompt: "r",
-          _cron: true,
-          _jobId: "mine",
+          ...run("mine", "operator", true),
           source: { channel: "whatsapp", accountId: "wa-main", chatId: CLIENT_CHAT },
         },
         ctx,

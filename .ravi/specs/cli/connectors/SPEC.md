@@ -331,7 +331,8 @@ MUST revalidate the human caller chain and contact before each protected call.
     owner (same table; also the owner blocked only by where the answer goes:
     a group, a shared session, a relay answering into a chat), else the
     creating turn's `actorPrincipal` (`unknown` when it cannot be resolved).
-    NULL means a legacy job and runs as **nobody** (`unknown`): enabled legacy
+    NULL means a legacy job and runs as **nobody** (`unknown`; its failure
+    reports stay in the inbox, settled with no direct message owed): enabled legacy
     rows were made explicit `operator` once, at the daemon's first start with
     this rule (`router_meta` key `migration:cron-owner-explicit-operator`, with
     the migrated job ids), and disabled ones stay NULL so re-enabling one
@@ -396,18 +397,31 @@ MUST revalidate the human caller chain and contact before each protected call.
       context with a `parentContextId` is not honored), with the run's
       `cronRunAuthority` snapshot and actor `automation:cron:<id>`, so it is
       classified exactly like a cron turn;
-    - its capabilities are only Bases (bases list/show; rows query, get,
-      history, export, add, update, archive, restore; views list, show,
-      query), Pages (list, read, ship) and `self whoami`, each kept only if
-      the job's agent has it: never tools, sessions, tasks or anything else;
-      a job whose agent does not exist, or whose owner does not act as the
-      operator, gets no context and runs as before;
-    - when the daemon starts, every live `cron-shell` context is revoked
-      (`cron_shell_daemon_restart`): no command of a previous process is
-      still running for it;
+    - its capabilities are only the commands Bases (bases list/show; rows
+      query, get, history, export, add, update, archive, restore; views
+      list, show, query), Pages (list, read, ship) and `self whoami`. A
+      command is kept when the job's agent may run it by any grant the
+      gateway accepts for it (the semantic tuple, its wildcards or the
+      legacy `execute:group:*` grants), and the key carries only the narrow
+      `kind:resource:action` tuple, never the grant that qualified it: never
+      tools, sessions, tasks or anything else;
+    - a job whose agent does not exist gets no context, and its command runs
+      without a key. A shell job whose owner does not act as the operator
+      never reaches this point: the runner refuses it with
+      `CRON_SHELL_NOT_OPERATOR`, disables it, runs no command and schedules
+      no retry (13b);
+    - the context records the daemon process that issued it (`pid`, `host`).
+      When a daemon starts, before its gateway accepts any request, it
+      revokes (`cron_shell_daemon_restart`) every live `cron-shell` context
+      whose run is provably over: no issuer recorded, or an issuer on this
+      host whose process is gone. A context of a live process, or of another
+      host, is kept (its command's end and its TTL still bound it). Taking
+      over cron leadership revokes nothing, so a job another live daemon is
+      still running keeps its key;
     - a shell job's `timeout` (which bounds the context's TTL) MAY be changed
       only by a turn whose owner acts as the operator; anyone else's
-      `cron set <id> timeout` fails `CRON_SHELL_NOT_OPERATOR` with no write;
+      `cron set <id> timeout` fails `CRON_SHELL_NOT_OPERATOR` (exit 3) with no
+      write, after an invalid value fails first as a usage error (exit 2);
     - it expires one minute after the command's timeout and MUST be revoked
       (`cron_shell_completed`) as soon as the command ends;
     - the key MUST NOT reach a log, `lastError` or a failure notice: captured

@@ -12,6 +12,7 @@ import {
   dbRenewActiveContext,
   dbRevokeContextCascade,
   dbUpdateContextMetadata,
+  closeRouterDb,
   getDb,
 } from "./router-db.js";
 import { resolveRuntimeContext } from "../runtime/context-registry.js";
@@ -407,5 +408,19 @@ describe("ensureCronOwnerExplicitMigration (legacy NULL cron owners)", () => {
     insertJob("legacy-late", true, null);
     ensureCronOwnerExplicitMigration();
     expect(ownerOf("legacy-late").owner_principal).toBeNull();
+  });
+
+  it("runs when the router schema opens, before anything reads the jobs", () => {
+    getDb().prepare("DELETE FROM router_meta WHERE key = ?").run(CRON_OWNER_EXPLICIT_MIGRATION_KEY);
+    insertJob("legacy-before-boot", true, null, "shell");
+    closeRouterDb();
+
+    // Reopening runs the schema init; the migration is part of it.
+    expect(ownerOf("legacy-before-boot").owner_principal).toBe("operator");
+    const marker = getDb()
+      .prepare("SELECT value FROM router_meta WHERE key = ?")
+      .get(CRON_OWNER_EXPLICIT_MIGRATION_KEY) as { value: string } | null;
+    expect(marker).not.toBeNull();
+    expect(JSON.parse(marker!.value)).toEqual({ jobIds: ["legacy-before-boot"] });
   });
 });

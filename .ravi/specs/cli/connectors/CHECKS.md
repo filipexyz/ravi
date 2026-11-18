@@ -178,7 +178,8 @@
   keep disabled NULL rows NULL, keep `enabled` and `updated_at`, record the
   migrated ids, and never run again (a NULL row enabled later stays NULL).
 - Opening a database whose `cron_jobs` lacks `owner_principal` MUST add the
-  column and keep existing rows NULL.
+  column; in the same open, the one-time owner migration then sets enabled
+  rows to `operator`, and disabled rows stay NULL.
 - `cron set <id> <key> ...` from a turn whose principal is not the job's
   owner, the operator included, MUST make that turn's principal the job's
   owner, in the same write, for every key but `description`, `cron`, `every`,
@@ -321,7 +322,13 @@
   leaves it out of `lastError` and every notice; no context for a job whose
   owner does not act as the operator or whose agent is missing; a
   `cron-shell` context with a parent is not honored. The context's
-  capabilities are only the Bases/Pages/`self whoami` allowlist, intersected
-  with the agent's (never `use:tool:*`, sessions or tasks); starting the
-  runner revokes live `cron-shell` contexts; a non-operator `cron set <id>
-  timeout` on a shell job fails `CRON_SHELL_NOT_OPERATOR` with no write.
+  capabilities are exactly the narrow tuples of the Bases/Pages/`self whoami`
+  commands the agent may run by any accepted grant, legacy
+  `execute:group:*` included (never `use:tool:*`, sessions or tasks); the
+  boot sweep revokes `cron-shell` contexts with no issuer, or whose issuer
+  process on this host is gone, and keeps a live issuer's and another
+  host's; a non-operator `cron set <id> timeout` on a shell job fails
+  `CRON_SHELL_NOT_OPERATOR` with no write, and an invalid value fails first
+  with exit 2. A failure report of a run no person owns is settled
+  (`cron.failure.unowned`) instead of replayed at every start. The Knowledge
+  preamble decides a cron run's audience from its `_cronAuthority` snapshot.

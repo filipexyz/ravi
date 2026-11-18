@@ -4277,22 +4277,24 @@ export const CRON_OWNER_EXPLICIT_MIGRATION_KEY = "migration:cron-owner-explicit-
 export function ensureCronOwnerExplicitMigration(database: Database = getDb()): void {
   const done = database.prepare("SELECT value FROM router_meta WHERE key = ?").get(CRON_OWNER_EXPLICIT_MIGRATION_KEY);
   if (done) return;
-  database.transaction(() => {
-    const rows = database
-      .prepare("SELECT id FROM cron_jobs WHERE owner_principal IS NULL AND enabled = 1 ORDER BY id")
-      .all() as Array<{ id: string }>;
-    const now = Date.now();
-    // `updated_at` stays: this corrects who the row already ran as, it is not an edit.
-    database
-      .prepare("UPDATE cron_jobs SET owner_principal = 'operator' WHERE owner_principal IS NULL AND enabled = 1")
-      .run();
-    database
-      .prepare("INSERT OR REPLACE INTO router_meta (key, value, updated_at) VALUES (?, ?, ?)")
-      .run(CRON_OWNER_EXPLICIT_MIGRATION_KEY, JSON.stringify({ jobIds: rows.map((row) => row.id) }), now);
-    if (rows.length > 0) {
-      log.info("Made legacy cron owners explicit", { count: rows.length, jobIds: rows.map((row) => row.id) });
-    }
-  })();
+  database
+    .transaction(() => {
+      const rows = database
+        .prepare("SELECT id FROM cron_jobs WHERE owner_principal IS NULL AND enabled = 1 ORDER BY id")
+        .all() as Array<{ id: string }>;
+      const now = Date.now();
+      // `updated_at` stays: this corrects who the row already ran as, it is not an edit.
+      database
+        .prepare("UPDATE cron_jobs SET owner_principal = 'operator' WHERE owner_principal IS NULL AND enabled = 1")
+        .run();
+      database
+        .prepare("INSERT OR REPLACE INTO router_meta (key, value, updated_at) VALUES (?, ?, ?)")
+        .run(CRON_OWNER_EXPLICIT_MIGRATION_KEY, JSON.stringify({ jobIds: rows.map((row) => row.id) }), now);
+      if (rows.length > 0) {
+        log.info("Made legacy cron owners explicit", { count: rows.length, jobIds: rows.map((row) => row.id) });
+      }
+    })
+    .immediate();
 }
 
 function getDefaultAgentIdFromDatabase(database: Database): string {

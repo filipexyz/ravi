@@ -11,7 +11,7 @@ Fonte única. As skills bases, pages, cron, triggers, tasks, sessions e apps apo
 | Thread de Slack | quem fez o pedido que abriu a thread, por até 72 h | sem pedido humano na origem: `ACTOR_UNKNOWN` | `sessions threads --json` |
 | Task | quem criou a task, no turno de dispatch, enquanto a task estiver aberta (até 72 h) | task criada por cron/agente/contato externo sem pessoa: `ACTOR_UNKNOWN` | `tasks show <id> --json` |
 | Cron `--message` | o dono do job (`Runs as`) | contato sem link: `ACTOR_NOT_LINKED` com `linkFlow: routine` | `cron show <id> --json` |
-| Cron `--shell` (só operador) | o operador, pelo `RAVI_CONTEXT_KEY` que o run injeta no script e revoga ao fim | runtime sem esse contexto: o `ravi` no script recusa; use cron `--message` | `cron show <id> --json` |
+| Cron `--shell` (só operador) | o operador, pelo `RAVI_CONTEXT_KEY` que o run injeta no script e revoga ao fim. A chave só alcança uma lista fechada: Bases (bases list/show; rows query, get, history, export, add, update, archive, restore; views list, show, query), Pages (list, read, ship com `--body`) e `self whoami`, e só o que o agent do job também pode | comando fora da lista (sessions, tasks, costs, media send, `pages ship --html/--dir`, `--out` em arquivo) recusa: use `--body`/stdout ou cron `--message` | `cron show <id> --json` |
 | Trigger | o dono do trigger, só em `--session isolated` | ver skill triggers (`routine_shared_session`, `routine_answers_elsewhere`) | `triggers show <id> --json` |
 | Ravi App | herda o turno de quem chamou o app | idem ao turno de origem | `apps show <id>` |
 | Outro agente, `[System] Ask/Inform` de outra sessão, comentário de PR, e-mail recebido | ninguém | `ACTOR_UNKNOWN` (`agent_relay`) | — |

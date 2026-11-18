@@ -37,7 +37,7 @@ import {
   dbDisableShellJobForOwner,
 } from "./cron-db.js";
 import { classifyDiskPressureHint } from "./disk-pressure.js";
-import { issueShellCronContext, redactContextKey, revokeLiveShellCronContexts } from "./shell-context.js";
+import { issueShellCronContext, redactContextKey } from "./shell-context.js";
 import { calculateNextRun } from "./schedule.js";
 import { markCronSourceAsBackground, type CronPromptSource } from "./source.js";
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS, runShellCronCommand, type ShellCronRunResult } from "./shell-executor.js";
@@ -90,10 +90,6 @@ export class CronRunner {
     this.running = true;
 
     log.info("Starting cron runner");
-
-    // No shell command of a previous process is still ours: its key dies now.
-    const revoked = revokeLiveShellCronContexts();
-    if (revoked > 0) log.info("Revoked shell cron contexts left by a previous process", { count: revoked });
 
     // Arm timer for next due job
     this.armTimer();

@@ -5,7 +5,14 @@ import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 
 import "reflect-metadata";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
-import { CONTRACT_EXIT_POLICY, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import {
+  CONTRACT_EXIT_POLICY,
+  CONTRACT_EXIT_USAGE,
+  contractDryRun,
+  contractFail,
+  pickFields,
+  suggestSimilar,
+} from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { isTriggerOwnSessionKey } from "../../triggers/authority.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
@@ -50,6 +57,34 @@ import {
 } from "../../link/connector-turn.js";
 import { assertShellAutomationAuthorized } from "../../permissions/shell-automation.js";
 import { assertNoUserOverlayAutomationWrite } from "../../permissions/user-overlay-automation.js";
+
+/** Why a shell timeout value is invalid, or null when it parses (same rules as parseCronShellTimeout). */
+function cronShellTimeoutError(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return `Invalid timeout: ${value}`;
+  if (/^\d+$/.test(trimmed)) {
+    const seconds = Number.parseInt(trimmed, 10);
+    return Number.isFinite(seconds) && seconds > 0 ? null : `Invalid timeout: ${value}`;
+  }
+  try {
+    parseDurationMs(trimmed);
+    return null;
+  } catch (err) {
+    return `Invalid timeout: ${err instanceof Error ? err.message : err}`;
+  }
+}
+
+function assertValidCronShellTimeout(op: string, value: string, asJson?: boolean): void {
+  const invalid = cronShellTimeoutError(value);
+  if (!invalid) return;
+  const suggestedAction = "use whole seconds (e.g. 600) or a duration (e.g. 10m, 2h), or null to reset";
+  contractFail(op, "USAGE_ERROR", invalid, {
+    asJson,
+    exitCode: CONTRACT_EXIT_USAGE,
+    details: { suggestedAction },
+    diagnostic: errorDiagnostic(invalid, { operation: op }),
+  });
+}
 
 function parseCronShellTimeout(value: string | undefined): number | undefined {
   if (!value) return undefined;
@@ -849,10 +884,13 @@ export class CronCommands {
       await nats.emit("ravi.cron.refresh", {});
 
       const updatedJob = dbGetCronJob(id)!;
+      // Enabling a job that does not act as the operator says so, like add and set.
+      const runsAsWarning = cronRunsAsWarning(updatedJob);
       const payload = {
         status: "enabled" as const,
         target: { type: "cron" as const, id },
         changedCount: 1,
+        warnings: runsAsWarning ? [runsAsWarning] : [],
         job: serializeCronJob(updatedJob),
       };
       if (asJson) {
@@ -862,6 +900,7 @@ export class CronCommands {
         if (updatedJob.nextRunAt) {
           console.log(`  Next run: ${new Date(updatedJob.nextRunAt).toLocaleString()}`);
         }
+        if (runsAsWarning) printCronRunsAs(updatedJob, runsAsWarning);
       }
       return payload;
     } catch (err) {
@@ -930,8 +969,8 @@ export class CronCommands {
     // A shell run's context lives as long as its timeout: only someone who
     // acts as the operator may change how long a shell job's key stays valid.
     if (job.executionType === "shell" && key === "timeout") {
-      // Invalid input fails before the owner refusal (exit 3).
-      if (value !== "null" && value !== "-") parseCronShellTimeout(value);
+      // Invalid input fails first, as a usage error (exit 2), before the owner refusal (exit 3).
+      if (value !== "null" && value !== "-") assertValidCronShellTimeout("cron set", value, asJson);
       assertShellOwnerActsAsOperator("cron set", resolveCronOwnerPrincipalForCurrentTurn(), asJson);
     }
     // Setting a command, or a change that moves a shell job to another owner,

@@ -9,7 +9,7 @@
 
 import { readActorBindingForActiveLogin } from "../../cloud-auth/actor-bindings.js";
 import { findContactsByTag } from "../../contacts.js";
-import { dbGetCronJob } from "../../cron/cron-db.js";
+import { readCronRunAuthority } from "../../cron/authority.js";
 import { CRON_OPERATOR_OWNER, readIsPrivateDirectSession } from "../../link/connector-turn.js";
 import type { PrivateDirectSessionInput } from "../../link/connector-turn.js";
 import { getSessionByName } from "../../router/index.js";
@@ -35,7 +35,6 @@ export interface KnowledgeAudienceDeps {
   /** The contact of a known direct chat. */
   dmContact?: (input: { chatId: string; channel: string | null }) => string | null;
   /** `cron_jobs.owner_principal`; `found: false` when the job is gone. */
-  cronOwner?: (jobId: string) => { found: boolean; ownerPrincipal: string | null };
   packet?: typeof buildContactPacket;
   /** Whether the owner contact is linked (`ravi link`) to the active login, as the classifier requires. */
   isLinkedOwner?: (contactId: string) => boolean;
@@ -85,7 +84,7 @@ export function resolveKnowledgeAudience(
     }
     const chat = chatOf(prompt.source);
     if (prompt._cron) {
-      if (!prompt._jobId || !cronIsOperators(prompt._jobId, deps)) return none;
+      if (!prompt._jobId || !cronIsOperators(prompt, deps)) return none;
       if (!isOperatorSession(ctx.sessionName, deps)) return none;
       return !chat || isOwnersDirectChat(prompt, chat, deps) ? operator() : none;
     }
@@ -141,19 +140,19 @@ function isOperatorRelay(origin: NonNullable<ReturnType<typeof resolveRuntimeTur
   return OPERATOR_RELAY_PRINCIPALS.has(`${origin.principal.type}:${origin.principal.id}`);
 }
 
-/** `operator` is the operator; so is a contact tagged as the owner. A NULL owner is nobody. */
-function cronIsOperators(jobId: string, deps: KnowledgeAudienceDeps): boolean {
-  const job = (deps.cronOwner ?? readCronOwner)(jobId);
-  if (!job.found) return false;
-  if (job.ownerPrincipal === null) return false;
-  if (job.ownerPrincipal === CRON_OPERATOR_OWNER) return true;
-  if (!job.ownerPrincipal.startsWith("contact:")) return false;
-  return ownerIds(deps).has(job.ownerPrincipal.slice("contact:".length));
-}
-
-function readCronOwner(jobId: string): { found: boolean; ownerPrincipal: string | null } {
-  const job = dbGetCronJob(jobId);
-  return job ? { found: true, ownerPrincipal: job.ownerPrincipal ?? null } : { found: false, ownerPrincipal: null };
+/**
+ * Whether the run was admitted as the operator's, read from the run's own
+ * admission snapshot (`_cronAuthority`), the same one the runtime and the
+ * connector classifier use, never the job's live owner: an owner changed
+ * after admission must not make the preamble invite a call the classifier
+ * refuses. `operator` is the operator; so is a contact tagged as the owner.
+ */
+function cronIsOperators(prompt: RuntimeLaunchPrompt, deps: KnowledgeAudienceDeps): boolean {
+  const authority = readCronRunAuthority(prompt._cronAuthority, prompt._jobId ?? "");
+  if (!authority?.ownerIsOperator) return false;
+  if (authority.ownerPrincipal === CRON_OPERATOR_OWNER) return true;
+  if (!authority.ownerPrincipal.startsWith("contact:")) return false;
+  return ownerIds(deps).has(authority.ownerPrincipal.slice("contact:".length));
 }
 
 /** Group turns: the inbound context says so, else the session key does. Unknown counts as a group. */

@@ -36,6 +36,12 @@ export function resolveCronFailureOwner(job: Pick<CronJob, "ownerPrincipal">): O
   return resolveOwnerDirectTarget({ listOwnerContactIds: () => [owner.slice(8)], readTargetSetting: () => null });
 }
 
+/** The operator or a contact owns the run, so a direct message is owed (and retried until sent). */
+export function cronFailureOwesDirectMessage(ownerPrincipal: string | null | undefined): boolean {
+  if (!ownerPrincipal || ownerPrincipal === "operator") return true;
+  return ownerPrincipal.startsWith("contact:") && ownerPrincipal.length > "contact:".length;
+}
+
 /** Deterministic delivery: reporting a broken model must never need that model. */
 export async function notifyCronFailure(
   job: CronFailureJob,
@@ -65,7 +71,17 @@ export async function notifyCronFailure(
       metadata: { jobId: job.id, category, ownerPrincipal: job.ownerPrincipal ?? "unknown" },
       actorType: "system",
     });
-    if (listLocalInboxEvents(item.id).some((event) => event.eventType === "cron.failure.notified")) return true;
+    const events = listLocalInboxEvents(item.id);
+    if (
+      events.some((event) => event.eventType === "cron.failure.notified" || event.eventType === "cron.failure.unowned")
+    )
+      return true;
+    // No person owns the run (`unknown`, an agent): no direct message is owed.
+    // The inbox item is the report; settle it so it is not resent every start.
+    if (!cronFailureOwesDirectMessage(job.ownerPrincipal)) {
+      markLocalInboxItem(item.id, item.status, { eventType: "cron.failure.unowned", actorType: "system" });
+      return true;
+    }
     if (!target) {
       log.warn("Cron failure retained in inbox; owner has no direct delivery target", { jobId: job.id });
       return false;
