@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openStateDatabase } from "../db/state-boundary.js";
-import { adoptThreadFenceOnUpgrade, liveBootIdentity } from "./fence-adoption-live.js";
+import { adoptThreadFenceOnUpgrade, liveBootIdentity, managedRaviSnapshot } from "./fence-adoption-live.js";
+import type { Pm2Process } from "../pm2.js";
 import { prepareThreadFence } from "./schema-fence.js";
 
 const roots: string[] = [];
@@ -92,5 +93,40 @@ describe("live daemon entry on a new isolated state directory", () => {
       "-wal exists without its database",
     );
     expect(existsSync(databasePath)).toBe(false);
+  });
+
+  it("a dangling link left as the write-ahead log also refuses the entry", async () => {
+    const stateDir = isolated();
+    const databasePath = join(stateDir, "ravi.db");
+    symlinkSync(join(stateDir, "gone"), `${databasePath}-wal`);
+    expect(existsSync(`${databasePath}-wal`)).toBe(false);
+    await expect(adoptThreadFenceOnUpgrade(stateDir, () => undefined)).rejects.toThrow(
+      "-wal exists without its database",
+    );
+    expect(existsSync(databasePath)).toBe(false);
+  });
+});
+
+describe("the PM2 registration the daemon entry trusts", () => {
+  const ravi = { name: "ravi", pid: 4242, status: "online", startedAt: 1 } as Pm2Process;
+
+  it("a process PM2 did not start is in the foreground and reads nothing from PM2", () => {
+    let listed = false;
+    expect(
+      managedRaviSnapshot({}, () => {
+        listed = true;
+        return [ravi];
+      }),
+    ).toBeUndefined();
+    expect(listed).toBe(false);
+  });
+
+  it("under PM2 the snapshot is strict: unreadable refuses instead of passing for the foreground", () => {
+    expect(() =>
+      managedRaviSnapshot({ pm_id: "3" }, () => {
+        throw new Error("Unable to read the managed PM2 processes");
+      }),
+    ).toThrow("Unable to read the managed PM2 processes");
+    expect(managedRaviSnapshot({ pm_id: "3" }, () => [ravi])).toEqual(ravi);
   });
 });

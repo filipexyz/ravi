@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { connect } from "nats";
 import { buildRunnerPm2Env } from "../channels/pm2-env.js";
@@ -20,6 +21,7 @@ import {
   adoptThreadFenceAsSuccessor,
   type BootAdoptionResult,
   type ChannelsResumeOutcome,
+  databaseHasThreadFence,
   type DurableResidue,
   type ManagedRegistration,
   planThreadFenceAdoption,
@@ -272,14 +274,31 @@ export async function waitForBroker(
 }
 
 /**
+ * The PM2 `ravi` registration this process may be. A process PM2 did not start
+ * (no `pm_id`) runs in the foreground: nothing is looked up. Under PM2 the
+ * snapshot is strict: an unreadable one refuses instead of passing for the
+ * foreground, where the entry would create nothing.
+ */
+export function managedRaviSnapshot(
+  env: NodeJS.ProcessEnv = process.env,
+  list: () => Pm2Process[] = () => getPm2Processes({ strict: true }),
+): Pm2Process | undefined {
+  if (env.pm_id === undefined) return undefined;
+  return list().find((entry) => entry.name === "ravi");
+}
+
+/**
  * Daemon entry, when no adoption was admitted: a database written by a
- * pre-fence release is adopted here, without any operator command.
+ * pre-fence release is adopted here, without any operator command; on a new
+ * state directory the PM2-supervised daemon creates the database with the fence.
  */
 export async function adoptThreadFenceOnUpgrade(
   stateDir = getRaviStateDir(),
-  managedRavi: () => { pid: number; startedAt?: number | null } | undefined = () => getPm2Process("ravi"),
+  managedRavi: () => { pid: number; startedAt?: number | null } | undefined = () => managedRaviSnapshot(),
 ): Promise<BootAdoptionResult> {
   const databasePath = join(stateDir, "ravi.db");
+  // The ordinary start, on a fenced database, reads nothing from PM2.
+  if (existsSync(databasePath) && databaseHasThreadFence(databasePath)) return { outcome: "not-needed" };
   // A daemon PM2 does not report as `ravi` (foreground) carries startedAt 0.
   const managed = managedRavi();
   return adoptThreadFenceAtBoot({

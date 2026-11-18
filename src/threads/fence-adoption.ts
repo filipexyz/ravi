@@ -268,11 +268,22 @@ const STATE_JOURNAL_SUFFIXES = ["-wal", "-shm", "-journal"] as const;
  * checkpointed, without the fence. Read-only.
  */
 export function orphanStateJournal(databasePath: string): string | null {
-  if (existsSync(databasePath)) return null;
+  if (entryPresent(databasePath)) return null;
   for (const suffix of STATE_JOURNAL_SUFFIXES) {
-    if (existsSync(`${databasePath}${suffix}`)) return `${databasePath}${suffix}`;
+    if (entryPresent(`${databasePath}${suffix}`)) return `${databasePath}${suffix}`;
   }
   return null;
+}
+
+/** Any directory entry, a dangling link included. An entry that cannot be read refuses. */
+function entryPresent(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw new Error(`THREAD_FENCE_ADOPTION_UNVERIFIABLE: ${path} cannot be inspected`, { cause });
+  }
 }
 
 /** The refusal for `orphanStateJournal`, with its next step. */
@@ -297,7 +308,7 @@ export function freshStateDatabase(
 ): "missing" | "empty" | null {
   if (legacyDatabasePath && existsSync(legacyDatabasePath)) return null;
   const wal = `${databasePath}-wal`;
-  if (!existsSync(databasePath)) return orphanStateJournal(databasePath) ? null : "missing";
+  if (!entryPresent(databasePath)) return orphanStateJournal(databasePath) ? null : "missing";
   if (existsSync(wal) && statSync(wal).size > 0) return null;
   let database: Database;
   try {
