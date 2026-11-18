@@ -705,7 +705,7 @@ export async function deliverSlackThreadParentReturn(
         callerContextId: record.closeContextId,
         payload: {
           prompt: buildSlackThreadParentNotice(record, "concluída.", "Resultado", record.closeResult),
-          source: buildSlackThreadParentSource(record, record.providerThreadId),
+          source: buildSlackThreadCompletionSource(record, record.providerThreadId),
           deliveryBarrier: "after_tool",
           deliveryBarrierSource: "default",
           _slackThreadLifecycle: {
@@ -1290,6 +1290,29 @@ function buildSlackThreadChildSource(
 }
 
 /** Parent turns from a thread reply at the channel root, never inside the thread. */
+/**
+ * Where the parent answers a finished thread: the direct chat that asked for it
+ * (a WhatsApp DM, say), or the Slack root when the thread was asked for in Slack.
+ * Attention and progress stay in Slack so the phone only hears the result.
+ */
+export function buildSlackThreadCompletionSource(
+  record: SlackThreadLifecycleRecord,
+  providerThreadId: string,
+): MessageTarget {
+  const origin = record.origin;
+  if (!origin?.accountId && !origin?.instanceId) return buildSlackThreadParentSource(record, providerThreadId);
+  return {
+    channel: origin.channel,
+    accountId: origin.accountId ?? origin.instanceId!,
+    ...(origin.instanceId ? { instanceId: origin.instanceId } : {}),
+    chatId: origin.chatId,
+    ...(origin.canonicalChatId ? { canonicalChatId: origin.canonicalChatId } : {}),
+    ...(origin.sourceMessageId ? { sourceMessageId: origin.sourceMessageId } : {}),
+    actorType: "system",
+    suppressPresence: true,
+  };
+}
+
 function buildSlackThreadParentSource(record: SlackThreadLifecycleRecord, providerThreadId: string): MessageTarget {
   const rootChat =
     (record.rootCanonicalChatId ? dbGetChat(record.rootCanonicalChatId) : null) ??

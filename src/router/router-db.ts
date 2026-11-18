@@ -3501,6 +3501,8 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
   ensureColumn(db, "slack_thread_lifecycle", "thinking_level", "TEXT");
   ensureColumn(db, "slack_thread_lifecycle", "initiator_context_id", "TEXT");
   ensureColumn(db, "slack_thread_lifecycle", "close_context_id", "TEXT");
+  // Additive and nullable: a protocol-1 writer (3.261117.4) names its columns and keeps writing rows without it.
+  ensureColumn(db, "slack_thread_lifecycle", "origin_json", "TEXT");
   ensureColumn(db, "triggers", "filter_reject_count", "INTEGER DEFAULT 0");
   migrateTriggerDebounce(db);
   ensureColumn(db, "triggers", "last_filter_reject_at", "INTEGER");

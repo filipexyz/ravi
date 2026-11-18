@@ -99,7 +99,12 @@ import { enforceCliCommandAccess, listCliCommandAccessCandidates } from "../comm
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
 import { CliExpectedError } from "../expected-error.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
-import type { ChannelContext, ResponseMessage, SessionRelayAction } from "../../runtime/message-types.js";
+import type {
+  ChannelContext,
+  MessageTarget,
+  ResponseMessage,
+  SessionRelayAction,
+} from "../../runtime/message-types.js";
 import { buildSessionRelayTurnOrigin } from "../../runtime/turn-origin.js";
 import { toPersistedChannelContext } from "../../channels/context.js";
 import {
@@ -120,6 +125,7 @@ import {
   createSlackThreadLifecycle,
   findSlackThreadLifecycleByChildSession,
   findSlackThreadLifecycleByChildRef,
+  type SlackThreadOrigin,
 } from "../../channels/slack/thread-lifecycle-store.js";
 import {
   closeSlackThread,
@@ -990,12 +996,13 @@ async function queueSlackChatAction(
   };
 }
 
-function resolveSlackThreadCreationTarget(session: SessionEntry): {
+export function resolveSlackThreadCreationTarget(session: SessionEntry): {
   parentSession: SessionEntry;
   accountId: string;
   instanceId: string;
   platformChatId: string;
   rootCanonicalChatId: string;
+  origin?: SlackThreadOrigin;
 } {
   const parentSessionKey = slackThreadParentSessionKey(session.sessionKey);
   const parentSession = parentSessionKey === session.sessionKey ? session : getSession(parentSessionKey);
@@ -1040,7 +1047,11 @@ function resolveSlackThreadCreationTarget(session: SessionEntry): {
     platformChatId = splitSlackThreadPlatformChatId(platformChatId)?.platformChatId;
   }
   instanceId ||= accountId;
-  accountId ||= parentSession.lastAccountId?.trim() || instanceId;
+  // The account is the selected Slack chat's own (the native adapter uses one id
+  // for both). The parent's last account belongs to whatever channel it last
+  // answered: a WhatsApp turn left `main` there, and the job then sat in the
+  // Slack outbound queue forever with no adapter for that account.
+  accountId ||= instanceId;
   if (!platformChatId || !instanceId || !accountId) {
     throw new Error("No executable Slack channel surface was found for this session");
   }
@@ -1070,12 +1081,39 @@ function resolveSlackThreadCreationTarget(session: SessionEntry): {
     throw new Error("The Slack channel has no enabled brokered credential connection");
   }
 
+  const origin = contextBelongsToSession && !contextSource ? resolveSlackThreadOrigin(context?.source) : undefined;
   return {
     parentSession,
     accountId,
     instanceId,
     platformChatId,
     rootCanonicalChatId: rootChat.id,
+    ...(origin ? { origin } : {}),
+  };
+}
+
+/**
+ * The non-Slack chat that asked for a thread, when it is a direct chat. Only
+ * a direct chat gets the completion back: a group (or a chat Ravi cannot
+ * classify) keeps today's behavior, with the completion in Slack only.
+ */
+function resolveSlackThreadOrigin(source: MessageTarget | undefined): SlackThreadOrigin | undefined {
+  if (!source?.channel || source.channel.toLowerCase() === "slack") return undefined;
+  const chatId = source.chatId?.trim();
+  if (!chatId) return undefined;
+  const chat =
+    (source.canonicalChatId ? dbGetChat(source.canonicalChatId) : null) ??
+    (source.instanceId
+      ? dbFindChat({ channel: source.channel, instanceId: source.instanceId, platformChatId: chatId })
+      : null);
+  if (!chat || chat.chatType !== "dm") return undefined;
+  return {
+    channel: source.channel,
+    chatId,
+    ...(source.accountId?.trim() ? { accountId: source.accountId.trim() } : {}),
+    ...(source.instanceId?.trim() ? { instanceId: source.instanceId.trim() } : {}),
+    canonicalChatId: chat.id,
+    ...(source.sourceMessageId?.trim() ? { sourceMessageId: source.sourceMessageId.trim() } : {}),
   };
 }
 
@@ -7138,6 +7176,7 @@ export class SessionCommands {
       initialPrompt: initialMessage,
       requestedBy,
       initiatorContextId: getContext()?.contextId,
+      ...(creationTarget.origin ? { origin: creationTarget.origin } : {}),
       modelOverride: normalizedModel,
       providerOverride: resolvedProvider,
       effortOverride: normalizedEffort,
@@ -7187,6 +7226,9 @@ export class SessionCommands {
         channelId: creationTarget.platformChatId,
         canonicalChatId: creationTarget.rootCanonicalChatId,
       },
+      origin: creationTarget.origin
+        ? { channel: creationTarget.origin.channel, canonicalChatId: creationTarget.origin.canonicalChatId ?? null }
+        : null,
       child: {
         status: "pending_root_delivery",
         modelOverride: normalizedModel ?? null,

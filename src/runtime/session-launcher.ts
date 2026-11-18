@@ -82,7 +82,7 @@ export function updateRuntimeSessionMetadata(sessionKey: string, prompt: Runtime
   // A relay's source is where that one relay delivers, not a chat the session
   // talks to: saving it as last_* would let later cron, trigger and heartbeat
   // turns reply (and send approval cards) there under a real account.
-  if (prompt.source && !isSessionRelayTurn(prompt)) {
+  if (prompt.source && !isSessionRelayTurn(prompt) && !isThreadOriginReturn(prompt)) {
     updateSessionSource(sessionKey, prompt.source);
   }
 
@@ -92,6 +92,17 @@ export function updateRuntimeSessionMetadata(sessionKey: string, prompt: Runtime
       updateSessionDisplayName(sessionKey, prompt.context.groupName);
     }
   }
+}
+
+/**
+ * A thread's completion addressed to the chat that asked for it (a WhatsApp DM)
+ * delivers there once. It is not the session's channel: saving it as last_*
+ * would move the parent's cron, followups and heartbeat to that chat — the same
+ * mechanism that once left Slack thread jobs on a WhatsApp account.
+ */
+function isThreadOriginReturn(prompt: RuntimeLaunchPrompt): boolean {
+  const lifecycle = (prompt as { _slackThreadLifecycle?: unknown })._slackThreadLifecycle;
+  return Boolean(lifecycle) && prompt.source?.channel.toLowerCase() !== "slack";
 }
 
 function intakeNoticeTargetKey(prompt: RuntimeLaunchPrompt): string | undefined {

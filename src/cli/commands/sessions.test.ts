@@ -2153,6 +2153,116 @@ describe("SessionCommands attach hints", () => {
     });
   });
 
+  function seedWhatsAppTurnInSlackAttachedSession(waChatType: "dm" | "group") {
+    const sessionKey = "agent:dev:main";
+    resolvedSession = {
+      sessionKey,
+      name: "dev-main",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+      // The last turn came from WhatsApp: this is the account that once
+      // stranded the Slack thread job in the outbound queue.
+      lastChannel: "whatsapp",
+      lastAccountId: "main",
+    } as any;
+    toolContext = {
+      sessionKey,
+      sessionName: "dev-main",
+      source: {
+        channel: "whatsapp",
+        accountId: "main",
+        instanceId: "wa-instance",
+        chatId: "178035101794451@lid",
+        canonicalChatId: "chat_wa",
+        sourceMessageId: "wa-msg-1",
+      },
+    };
+    sessionSubscriptions = [
+      { id: "sub_wa", sessionKey, chatId: "chat_wa", role: "primary" },
+      { id: "sub_slack", sessionKey, chatId: "chat_slack_dm", role: "input", outputAttachedAt: 1 },
+    ];
+    chatRecords.set("chat_wa", {
+      id: "chat_wa",
+      title: "Luís",
+      channel: "whatsapp",
+      instanceId: "wa-instance",
+      platformChatId: "178035101794451@lid",
+      chatType: waChatType,
+    });
+    chatRecords.set("chat_slack_dm", {
+      id: "chat_slack_dm",
+      title: "luis",
+      channel: "slack",
+      instanceId: "ravi-slack",
+      platformChatId: "D0C8BEV8QUR",
+      chatType: "dm",
+    });
+    routerConfig = {
+      agents: {},
+      channels: {
+        "ravi-slack": {
+          name: "ravi-slack",
+          provider: "slack",
+          enabled: true,
+          credentialConnection: "ravi-slack-secret",
+        },
+      },
+      instances: {},
+      instanceToAccount: {},
+    };
+  }
+
+  it("opens a thread asked for on WhatsApp under the Slack chat's own account and records the DM origin", async () => {
+    seedWhatsAppTurnInSlackAttachedSession("dm");
+
+    const result = (await new SessionCommands().createThread(
+      "Resumo da semana",
+      "gpt-5.6",
+      "codex",
+      undefined,
+      undefined,
+      undefined,
+      true,
+    )) as Record<string, any>;
+
+    expect(result).toMatchObject({
+      status: "queued",
+      slack: { accountId: "ravi-slack", instanceId: "ravi-slack", channelId: "D0C8BEV8QUR" },
+      origin: { channel: "whatsapp", canonicalChatId: "chat_wa" },
+    });
+    expect(createdSlackThreadLifecycles).toEqual([
+      expect.objectContaining({
+        accountId: "ravi-slack",
+        instanceId: "ravi-slack",
+        platformChatId: "D0C8BEV8QUR",
+        origin: {
+          channel: "whatsapp",
+          accountId: "main",
+          instanceId: "wa-instance",
+          chatId: "178035101794451@lid",
+          canonicalChatId: "chat_wa",
+          sourceMessageId: "wa-msg-1",
+        },
+      }),
+    ]);
+    expect((publishedOutboundJobs[0] as any).request.target).toMatchObject({
+      channel: "slack",
+      accountId: "ravi-slack",
+      instanceId: "ravi-slack",
+      chatId: "D0C8BEV8QUR",
+    });
+  });
+
+  it("keeps a thread asked for in a WhatsApp group in Slack only (no origin)", async () => {
+    seedWhatsAppTurnInSlackAttachedSession("group");
+
+    await new SessionCommands().createThread("Resumo", "gpt-5.6", "codex", undefined, undefined, undefined, true);
+
+    expect(createdSlackThreadLifecycles).toHaveLength(1);
+    expect(createdSlackThreadLifecycles[0]).toMatchObject({ accountId: "ravi-slack", instanceId: "ravi-slack" });
+    expect((createdSlackThreadLifecycles[0] as any).origin).toBeUndefined();
+  });
+
   it("carries the parent's explicit provider override into the child thread", async () => {
     const sessionKey = "agent:dev:slack:ravi-slack:C123";
     resolvedSession = {
