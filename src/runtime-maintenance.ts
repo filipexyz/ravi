@@ -331,8 +331,7 @@ export const THREAD_FENCE_UPGRADE_GUIDANCE =
 export function runtimeReplacementReadiness(stateDir = getRaviStateDir()): "ready" | "adopt-on-start" {
   assertRuntimeMaintenanceInactive(stateDir);
   const path = join(stateDir, "ravi.db");
-  if (!existsSync(path))
-    throw new Error("THREAD_FENCE_BOOTSTRAP_BLOCKED: no preparation evidence for the running processes");
+  if (!existsSync(path)) throw new Error(missingDatabase(path));
   const { databaseHasThreadFence } =
     require("./threads/fence-adoption.js") as typeof import("./threads/fence-adoption.js");
   if (!databaseHasThreadFence(path)) return "adopt-on-start";
@@ -340,12 +339,27 @@ export function runtimeReplacementReadiness(stateDir = getRaviStateDir()): "read
   return "ready";
 }
 
+/**
+ * `ravi daemon start`, with no daemon running. `fresh`: no release ever wrote
+ * the database (missing, or empty after a refused first start); the daemon
+ * creates it with the fence at its entry. Anything else is a replacement.
+ */
+export function runtimeStartReadiness(stateDir = getRaviStateDir()): "ready" | "adopt-on-start" | "fresh" {
+  assertRuntimeMaintenanceInactive(stateDir);
+  const { freshStateDatabase } = require("./threads/fence-adoption.js") as typeof import("./threads/fence-adoption.js");
+  if (freshStateDatabase(join(stateDir, "ravi.db"))) return "fresh";
+  return runtimeReplacementReadiness(stateDir);
+}
+
+const missingDatabase = (path: string) =>
+  `THREAD_FENCE_BOOTSTRAP_BLOCKED: no preparation evidence for the running processes: ${path} does not exist. ` +
+  "On a new installation, run 'ravi daemon start': the daemon creates the state database.";
+
 /** Called before update can stop either predecessor. No initialization/readiness fallback. */
 export function assertRuntimeReplacementPrepared(stateDir = getRaviStateDir()): void {
   assertRuntimeMaintenanceInactive(stateDir);
   const path = join(stateDir, "ravi.db");
-  if (!existsSync(path))
-    throw new Error("THREAD_FENCE_BOOTSTRAP_BLOCKED: no preparation evidence for the running processes");
+  if (!existsSync(path)) throw new Error(missingDatabase(path));
   const { assertThreadFenceReady } = require("./threads/schema-fence.js") as typeof import("./threads/schema-fence.js");
   // The detached update supervisor is not a schema owner. Inspect only the
   // durable protocol, without lazy initialization or opening a writable handle.

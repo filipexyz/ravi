@@ -11,6 +11,8 @@ import {
   prepareRuntimeMaintenance,
   processExitState,
   readRuntimeMaintenance,
+  runtimeReplacementReadiness,
+  runtimeStartReadiness,
   type MaintenanceProcess,
   type ProcessCompletionEvidence,
 } from "./runtime-maintenance.js";
@@ -227,6 +229,22 @@ describe("runtime maintenance preparation", () => {
     expect(() =>
       assertThreadFenceBootstrapAuthorized({ existingSchema: false, databasePath: join(home!, ".ravi", "ravi.db") }),
     ).toThrow("BOOTSTRAP_BLOCKED");
+  });
+
+  it("a first start needs no preparation evidence; a replacement without a database still refuses", () => {
+    const f = fixture();
+    const path = join(f.stateDir, "ravi.db");
+    expect(runtimeStartReadiness(f.stateDir)).toBe("fresh");
+    expect(() => runtimeReplacementReadiness(f.stateDir)).toThrow("On a new installation, run 'ravi daemon start'");
+    expect(() => assertRuntimeReplacementPrepared(f.stateDir)).toThrow("no preparation evidence");
+    // The empty file a refused first start leaves is still a first start.
+    writeFileSync(path, "");
+    expect(runtimeStartReadiness(f.stateDir)).toBe("fresh");
+    // A database a release wrote is not: the daemon adopts it at its entry.
+    const db = new Database(path);
+    db.exec("CREATE TABLE sentinel (value TEXT)");
+    db.close();
+    expect(runtimeStartReadiness(f.stateDir)).toBe("adopt-on-start");
   });
 
   it("refuses replacement on legacy schema without mutating its data or adding the fence", async () => {

@@ -14,7 +14,8 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { constants as sqliteConstants, Database } from "bun:sqlite";
 import { acquireSchemaFileLock, SchemaLockBusyError } from "../db/schema-lock.js";
 import { canonicalStatePath } from "../db/state-boundary.js";
@@ -28,7 +29,12 @@ import {
   type ProcessCompletionEvidence,
   type RuntimeMaintenance,
 } from "../runtime-maintenance.js";
-import { withExitedThreadBootstrapAuthorization, type ExitedThreadBootstrapProof } from "./bootstrap-authorization.js";
+import { getRaviStateDir } from "../utils/paths.js";
+import {
+  withExitedThreadBootstrapAuthorization,
+  withFreshStateThreadAuthorization,
+  type ExitedThreadBootstrapProof,
+} from "./bootstrap-authorization.js";
 import { THREAD_FENCE_TABLE } from "./schema-fence.js";
 
 /**
@@ -241,6 +247,45 @@ export function databaseHasThreadFence(path: string): boolean {
     return (
       database.query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(THREAD_FENCE_TABLE) !== null
     );
+  } finally {
+    database.close();
+  }
+}
+
+/**
+ * The pre-`~/.ravi` database the router moves into the default state directory
+ * when that directory has none (router-db). Only for the default database path.
+ */
+export function legacyStateDatabasePath(databasePath: string, home = homedir()): string | null {
+  return databasePath === join(getRaviStateDir({}), "ravi.db") ? join(home, "ravi", "ravi.db") : null;
+}
+
+/**
+ * A database no release ever wrote: `missing`, or `empty` (an SQLite file with
+ * no schema object, such as the one a refused first start leaves). Not fresh
+ * with a write-ahead log holding frames, a log without its database, or a
+ * legacy database the router would move in. Read-only; never creates a file.
+ */
+export function freshStateDatabase(
+  databasePath: string,
+  legacyDatabasePath: string | null = legacyStateDatabasePath(databasePath),
+): "missing" | "empty" | null {
+  if (legacyDatabasePath && existsSync(legacyDatabasePath)) return null;
+  const wal = `${databasePath}-wal`;
+  if (!existsSync(databasePath)) return existsSync(wal) ? null : "missing";
+  if (existsSync(wal) && statSync(wal).size > 0) return null;
+  let database: Database;
+  try {
+    database = openStateReadOnly(databasePath);
+  } catch {
+    // no-cause: An unreadable file is not proof of an empty database; the caller keeps the existing-state rules.
+    return null;
+  }
+  try {
+    return database.query("SELECT 1 FROM sqlite_master LIMIT 1").get() === null ? "empty" : null;
+  } catch {
+    // no-cause: A file SQLite cannot read is not proof of an empty database; the caller keeps the existing-state rules.
+    return null;
   } finally {
     database.close();
   }
@@ -875,9 +920,15 @@ export interface BootAdoptionHost {
   wait?: () => Promise<void>;
   exitChecks?: number;
   now?: () => number;
+  /** The legacy database the router would move in; default: `legacyStateDatabasePath(databasePath)`. */
+  legacyDatabasePath?: string | null;
 }
 
-export type BootAdoptionResult = { outcome: "not-needed" } | { outcome: "adopted"; maintenanceId: string };
+/** `created`: first start on a new state directory; the database was created with the fence. */
+export type BootAdoptionResult =
+  | { outcome: "not-needed" }
+  | { outcome: "adopted"; maintenanceId: string }
+  | { outcome: "created" };
 
 /**
  * Prefix of every boot adoption refusal: the daemon exits, nothing in the
@@ -906,7 +957,7 @@ function upgradeBlocked(detail: string): never {
 export async function adoptThreadFenceAtBoot(host: BootAdoptionHost): Promise<BootAdoptionResult> {
   try {
     const result = await adoptAtBoot(host);
-    if (result.outcome === "adopted") clearUpgradeFailure(host.stateDir);
+    if (result.outcome !== "not-needed") clearUpgradeFailure(host.stateDir);
     return result;
   } catch (cause) {
     recordUpgradeFailure(host.stateDir, cause);
@@ -948,8 +999,84 @@ function clearUpgradeFailure(stateDir: string): void {
   }
 }
 
+const legacyDatabaseOf = (host: BootAdoptionHost) =>
+  host.legacyDatabasePath === undefined ? legacyStateDatabasePath(host.databasePath) : host.legacyDatabasePath;
+
+/**
+ * First start on a new state directory: nothing to adopt. The daemon creates
+ * the database exclusively (or takes the empty one a refused first start left)
+ * and installs the fence before any store opens it, inside
+ * `withFreshStateThreadAuthorization`. Refuses, creating nothing, unless this
+ * is the PM2-supervised `ravi`, no other Ravi process runs, and every previous
+ * runtime that left a boot record has exited.
+ */
+async function createFencedStateDatabase(host: BootAdoptionHost): Promise<BootAdoptionResult> {
+  const ownBundle = canonicalStatePath(host.ownBundlePath);
+  const exitState = host.exitState ?? ((entry: { pid: number; startedAt: number }) => recordedProcessExitState(entry));
+  const exclusion = () => {
+    const registrations = host.registry();
+    if (!registrations.some((entry) => entry.name === "ravi" && entry.online && entry.pid === host.self.pid))
+      upgradeBlocked(
+        "only a daemon supervised by PM2 as 'ravi' creates the state database; start it with 'ravi daemon start'",
+      );
+    const other = registrations.find(
+      (entry) =>
+        entry.online &&
+        entry.pid !== host.self.pid &&
+        (NAMES.includes(entry.name as Name) || samePath(entry.scriptPath, ownBundle)),
+    );
+    if (other)
+      upgradeBlocked(
+        `${other.name} (pid ${other.pid}) is running without a state database; stop it, then start the daemon again`,
+      );
+    for (const name of NAMES) {
+      const previous = host.lastBootIdentity(name);
+      if (previous && previous.pid !== host.self.pid && exitState(previous) !== "exited")
+        upgradeBlocked(`the previous ${name} (pid ${previous.pid}) may still be running; stop it, then start again`);
+    }
+    return registrations.map((entry) => ({ name: entry.name, pid: entry.pid, online: entry.online }));
+  };
+  // Read only: nothing is created before the exclusion holds.
+  exclusion();
+  const lease = acquireCoordinatorLease(host.stateDir);
+  try {
+    assertRuntimeMaintenanceInactive(host.stateDir);
+    if (readThreadFenceAdoption(host.stateDir)) upgradeBlocked("an adoption record appeared; restart to settle it");
+    if (existsSync(host.databasePath) && databaseHasThreadFence(host.databasePath)) return { outcome: "not-needed" };
+    if (!freshStateDatabase(host.databasePath, legacyDatabaseOf(host)))
+      upgradeBlocked("the state database changed during the first start; Ravi retries on the next start");
+    if (!existsSync(host.databasePath)) {
+      mkdirSync(dirname(host.databasePath), { recursive: true, mode: 0o700 });
+      let raced = false;
+      try {
+        closeSync(openSync(host.databasePath, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600));
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause;
+        // no-cause: EEXIST is the expected race outcome, reported below as its own refusal.
+        raced = true;
+      }
+      if (raced)
+        upgradeBlocked(
+          "another process created the state database during the first start; Ravi retries on the next start",
+        );
+    }
+    withFreshStateThreadAuthorization(
+      { databasePath: host.databasePath, verify: () => ({ registrations: exclusion() }) },
+      () => host.open(),
+    );
+  } finally {
+    lease.release();
+  }
+  if (!databaseHasThreadFence(host.databasePath))
+    upgradeBlocked("the fence was not installed on the new state database");
+  return { outcome: "created" };
+}
+
 async function adoptAtBoot(host: BootAdoptionHost): Promise<BootAdoptionResult> {
-  if (!existsSync(host.databasePath) || databaseHasThreadFence(host.databasePath)) return { outcome: "not-needed" };
+  const exists = existsSync(host.databasePath);
+  if (exists && databaseHasThreadFence(host.databasePath)) return { outcome: "not-needed" };
+  if (freshStateDatabase(host.databasePath, legacyDatabaseOf(host))) return createFencedStateDatabase(host);
+  if (!exists) return { outcome: "not-needed" };
   assertRuntimeMaintenanceInactive(host.stateDir);
   const exitState = host.exitState ?? ((entry: { pid: number; startedAt: number }) => recordedProcessExitState(entry));
   const ownBundle = canonicalStatePath(host.ownBundlePath);

@@ -311,6 +311,8 @@ export async function adoptThreadFenceAtDaemonEntry(): Promise<void> {
     const upgrade = await adoptThreadFenceOnUpgrade();
     if (upgrade.outcome === "adopted")
       process.stderr.write(`Thread fence installed on upgrade (${upgrade.maintenanceId})\n`);
+    if (upgrade.outcome === "created")
+      process.stderr.write("State database created with the thread fence (first start)\n");
   } catch (cause) {
     process.stderr.write(`${cause instanceof Error ? cause.message : String(cause)}\n`);
     // Only a launcher restarts at once; PM2 marks its children with pm_id.

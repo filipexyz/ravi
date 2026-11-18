@@ -23,11 +23,17 @@ import type { ThreadFenceBootstrapContext } from "./schema-fence.js";
 type EvidenceReference = { path: string; sha256: string };
 type DatabaseIdentity = { path: string; device: number; inode: number };
 type BootstrapAudit = {
-  reason: "exclusively-created-isolated-state" | "verified-predecessor-exits" | "empty-isolated-state";
+  reason:
+    | "exclusively-created-isolated-state"
+    | "verified-predecessor-exits"
+    | "empty-isolated-state"
+    | "fresh-state-database";
   evidence?: EvidenceReference[];
   predecessors?: MaintenanceProcess[];
+  /** Fresh state only: the launcher registrations observed while authorizing. */
+  registrations?: { name: string; pid: number; online: boolean }[];
 };
-type Scope = { database: DatabaseIdentity; verify: () => BootstrapAudit };
+type Scope = { database: DatabaseIdentity; verify: (context: ThreadFenceBootstrapContext) => BootstrapAudit };
 
 // Lexical and synchronous: detached tasks never inherit a bootstrap grant.
 let activeScope: Scope | undefined;
@@ -87,7 +93,8 @@ export function recordThreadBootstrapAuthorization(databasePath: string, audit: 
 }
 
 /** Called under the schema lock immediately before the first fence installation. */
-export function verifyScopedThreadBootstrap({ databasePath, openedDatabase }: ThreadFenceBootstrapContext): boolean {
+export function verifyScopedThreadBootstrap(context: ThreadFenceBootstrapContext): boolean {
+  const { databasePath, openedDatabase } = context;
   const scope = activeScope;
   if (!scope) return false;
   const current = identity(databasePath);
@@ -104,7 +111,7 @@ export function verifyScopedThreadBootstrap({ databasePath, openedDatabase }: Th
     current.inode !== scope.database.inode
   )
     blocked("authorization belongs to a different database identity");
-  const audit = synchronous(scope.verify());
+  const audit = synchronous(scope.verify(context));
   // The external verifier cannot substitute the file while authorizing it.
   const verified = identity(databasePath);
   if (verified.device !== current.device || verified.inode !== current.inode || verified.path !== current.path)
@@ -135,6 +142,47 @@ export function withNewIsolatedThreadState<T>(parentDirectory: string, callback:
   const database = identity(path);
   return withScope({ database, verify: () => ({ reason: "exclusively-created-isolated-state" }) }, () =>
     callback(stateDirectory),
+  );
+}
+
+/**
+ * First start on a new state directory: the daemon owns a database that holds
+ * no schema (it created it exclusively, or a refused first start left it empty),
+ * so no predecessor wrote anything to adopt. The caller's verifier must hold
+ * the coordinator lease and prove, synchronously, that no other Ravi process
+ * runs and no previous one may still run. The fence is installed before any
+ * store writes, so every later writer is fenced from its first row. Any table
+ * found at installation refuses: that is existing state, adopted only by
+ * `withExitedThreadBootstrapAuthorization`.
+ */
+export function withFreshStateThreadAuthorization<T>(
+  input: {
+    databasePath: string;
+    verify: () => { registrations: { name: string; pid: number; online: boolean }[] };
+  },
+  callback: () => T,
+): T {
+  const database = Object.freeze(identity(input.databasePath));
+  const verify = input.verify;
+  return withScope(
+    {
+      database,
+      verify: (context) => {
+        if (context.existingSchema) blocked("a new state database must be empty; this one already holds tables");
+        if (typeof verify !== "function") blocked("a fresh-state verifier is required");
+        const proof = synchronous(verify());
+        if (!proof || !Array.isArray(proof.registrations)) blocked("fresh-state exclusion is unproven");
+        return {
+          reason: "fresh-state-database",
+          registrations: proof.registrations.map((entry) => ({
+            name: entry.name,
+            pid: entry.pid,
+            online: entry.online,
+          })),
+        };
+      },
+    },
+    callback,
   );
 }
 

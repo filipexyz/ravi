@@ -2,6 +2,7 @@ import {
   assertRuntimeMaintenanceInactive,
   processExitState,
   runtimeReplacementReadiness,
+  runtimeStartReadiness,
 } from "../../runtime-maintenance.js";
 import { performUpgradeRestart } from "../daemon-upgrade-restart.js";
 import { settleThreadFenceLeftovers } from "../../threads/fence-adoption.js";
@@ -483,10 +484,12 @@ export class DaemonCommands {
       return payload;
     }
 
-    // A database written by a pre-fence release is upgraded by the daemon at its entry.
-    const readiness = runtimeReplacementReadiness();
+    // A database written by a pre-fence release is upgraded by the daemon at its entry;
+    // on a new installation the daemon creates it there.
+    const readiness = runtimeStartReadiness();
     if (readiness === "adopt-on-start" && !asJson)
       console.log("The database was written by an earlier release; the daemon upgrades it as it starts.");
+    if (readiness === "fresh" && !asJson) console.log("No state database yet: the daemon creates it as it starts.");
 
     // Clean up old launchd/systemd if present
     this.cleanupLegacyServices({ silent: Boolean(asJson) });
