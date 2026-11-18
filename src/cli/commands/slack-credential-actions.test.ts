@@ -80,12 +80,28 @@ const ENTRY_POINTS = [
   "resolveSlackCredentialContext",
   "resolveSlackCredentialConfigFromEnv",
 ] as const;
+/**
+ * Each forwarding call and its arguments, as source text with whitespace
+ * collapsed. A forwarder that starts passing anything else (a hard-coded
+ * action, a dropped destructive mark) fails the test.
+ */
 const KNOWN_INTERNAL_CALLS: Record<string, string> = {
-  "resolveSlackCredentialContext → resolveSlackCredentialConfigFromEnv": "forwards its action",
-  "createSlackOpsContext → resolveSlackCredentialContext": "forwards its action",
-  "mutationCredentialContext → resolveSlackCredentialContext": "forwards input.action",
-  "mutationOpsContext → mutationCredentialContext": "forwards its input",
+  "resolveSlackCredentialContext → resolveSlackCredentialConfigFromEnv":
+    'process.env | { action, ...(options.destructive ? { destructive: true } : {}), channel, channels, authority: { kind: "local-operator" }, }',
+  "createSlackOpsContext → resolveSlackCredentialContext": "target | action | contract",
+  "mutationCredentialContext → resolveSlackCredentialContext":
+    "target | input.action | contract | { ...(input.destructive ? { destructive: true } : {}), }",
+  "mutationOpsContext → mutationCredentialContext": "input",
 };
+
+/** The only declarations of the entry-point names allowed in slack.ts. */
+const ENTRY_POINT_DECLARATIONS = [
+  "import resolveSlackCredentialConfigFromEnv",
+  "function createSlackOpsContext",
+  "function resolveSlackCredentialContext",
+  "method mutationCredentialContext",
+  "method mutationOpsContext",
+];
 
 interface BrokerCall {
   action: string;
@@ -97,6 +113,7 @@ interface BrokerCall {
 interface Extraction {
   calls: BrokerCall[];
   internal: string[];
+  declarations: string[];
   problems: string[];
 }
 
@@ -168,12 +185,48 @@ function topLevelProperty(object: ts.ObjectLiteralExpression, name: string): ts.
   );
 }
 
+function isEntryPointName(name: string): boolean {
+  return (ENTRY_POINTS as readonly string[]).includes(name);
+}
+
+/**
+ * Every identifier spelling an entry point must be a declaration or the
+ * callee of a call this extractor reads (`name(...)` or `this.name(...)`).
+ * An alias (`const send = createSlackOpsContext`), another receiver
+ * (`other.mutationOpsContext(...)`), `.bind`/`.call`, or passing the
+ * function as a value would hide a broker call, so each one fails.
+ */
+function checkIdentifier(identifier: ts.Identifier, result: Extraction): void {
+  const parent = identifier.parent;
+  const where = `slack.ts:${lineOf(identifier)}`;
+  if ((ts.isFunctionDeclaration(parent) || ts.isMethodDeclaration(parent)) && parent.name === identifier) {
+    result.declarations.push(`${ts.isFunctionDeclaration(parent) ? "function" : "method"} ${identifier.text}`);
+    return;
+  }
+  if (ts.isImportSpecifier(parent) && parent.name === identifier) {
+    result.declarations.push(`import ${identifier.text}`);
+    return;
+  }
+  if (ts.isCallExpression(parent) && parent.expression === identifier) return;
+  if (
+    ts.isPropertyAccessExpression(parent) &&
+    parent.name === identifier &&
+    parent.expression.kind === ts.SyntaxKind.ThisKeyword &&
+    ts.isCallExpression(parent.parent) &&
+    parent.parent.expression === parent
+  ) {
+    return;
+  }
+  result.problems.push(`${where}: ${identifier.text} used as ${ts.SyntaxKind[parent.kind]}, not as a direct call`);
+}
+
 function extract(): Extraction {
-  const result: Extraction = { calls: [], internal: [], problems: [] };
+  const result: Extraction = { calls: [], internal: [], declarations: [], problems: [] };
   const visit = (node: ts.Node) => {
+    if (ts.isIdentifier(node) && isEntryPointName(node.text)) checkIdentifier(node, result);
     if (ts.isCallExpression(node)) {
       const callee = calleeName(node);
-      if (callee && (ENTRY_POINTS as readonly string[]).includes(callee)) record(node, callee, result);
+      if (callee && isEntryPointName(callee)) record(node, callee, result);
     }
     ts.forEachChild(node, visit);
   };
@@ -181,11 +234,23 @@ function extract(): Extraction {
   return result;
 }
 
+function argumentsText(call: ts.CallExpression): string {
+  return call.arguments
+    .map((argument) => argument.getText(sourceFile))
+    .join(" | ")
+    .replace(/\s+/g, " ");
+}
+
 function record(call: ts.CallExpression, callee: string, result: Extraction): void {
   const where = `slack.ts:${lineOf(call)}`;
   const internalKey = `${enclosingFunctionName(call)} → ${callee}`;
-  if (KNOWN_INTERNAL_CALLS[internalKey]) {
+  const expectedArguments = KNOWN_INTERNAL_CALLS[internalKey];
+  if (expectedArguments !== undefined) {
     result.internal.push(internalKey);
+    const actual = argumentsText(call);
+    if (actual !== expectedArguments) {
+      result.problems.push(`${where}: ${internalKey} forwards (${actual}), expected (${expectedArguments})`);
+    }
     return;
   }
 
@@ -201,6 +266,11 @@ function record(call: ts.CallExpression, callee: string, result: Extraction): vo
     const input = call.arguments[0];
     if (!input || !ts.isObjectLiteralExpression(input)) {
       return void result.problems.push(`${where}: ${callee} input is not an object literal`);
+    }
+    // A spread could bring in an action or a destructive mark the table
+    // never sees; every property must be written in the call.
+    if (input.properties.some((property) => ts.isSpreadAssignment(property))) {
+      return void result.problems.push(`${where}: ${callee} input spreads another object`);
     }
     const action = topLevelProperty(input, "action");
     if (!action) return void result.problems.push(`${where}: ${callee} has no top-level action`);
@@ -228,11 +298,15 @@ function brokerClass(call: BrokerCall): ActionClass {
 }
 
 describe("Slack actions sent to the credential broker", () => {
-  const { calls, internal, problems } = extract();
+  const { calls, internal, declarations, problems } = extract();
 
   it("reaches every credential entry point through a known helper or a classified site", () => {
     expect(problems).toEqual([]);
     expect(internal.sort()).toEqual(Object.keys(KNOWN_INTERNAL_CALLS).sort());
+  });
+
+  it("declares each entry point once and uses it only as a direct call", () => {
+    expect(declarations.sort()).toEqual([...ENTRY_POINT_DECLARATIONS].sort());
   });
 
   it("finds exactly the call sites the table counts", () => {
