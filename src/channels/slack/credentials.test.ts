@@ -113,6 +113,34 @@ describe("Slack credential config", () => {
     });
   });
 
+  it("forwards the caller's destructive mark to the broker, and only when set", async () => {
+    const resolveSecret = mock(async () => ({
+      secret: JSON.stringify({ appToken: "xapp-test", botToken: "xoxb-test" }),
+    }));
+    const channel = slackChannel({ name: "test-slack", credentialConnection: "test-connection" });
+
+    await resolveSlackCredentialConfigFromEnv(
+      {},
+      { channel, resolveSecret, action: "canvases.edit", destructive: true },
+    );
+    expect(resolveSecret).toHaveBeenLastCalledWith({
+      provider: "slack",
+      connection: "test-connection",
+      action: "canvases.edit",
+      destructive: true,
+    });
+
+    await resolveSlackCredentialConfigFromEnv(
+      {},
+      { channel, resolveSecret, action: "canvases.edit", destructive: false },
+    );
+    expect(resolveSecret).toHaveBeenLastCalledWith({
+      provider: "slack",
+      connection: "test-connection",
+      action: "canvases.edit",
+    });
+  });
+
   it("uses the channel credential connection when configured", async () => {
     const resolveSecret = mock(async () => ({
       secret: JSON.stringify({

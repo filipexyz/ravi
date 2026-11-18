@@ -85,7 +85,7 @@ export async function resolveCredentialSecret(input: {
       decision = "needs_approval";
       approvalStatus = "pending";
       audit("approval_pending");
-      const { requestCascadingApproval } = await import("../approval/service.js");
+      const { isFixedApprovalRefusalReason, requestCascadingApproval } = await import("../approval/service.js");
       const context = authorization.context;
       const result = await requestCascadingApproval({
         resolvedSource: context.source,
@@ -103,8 +103,19 @@ export async function resolveCredentialSecret(input: {
       });
       if (!result.approved) {
         approvalStatus = "denied";
+        // Keep only fixed text the approval service wrote: an exception
+        // message or a rejecting human's words never leave as `detail`.
+        const fixedReason =
+          result.reason &&
+          isFixedApprovalRefusalReason(result.reason, "permission", {
+            permission: "execute",
+            objectType: connection.provider,
+            objectId: input.action,
+          })
+            ? result.reason
+            : undefined;
         throw new CredentialBrokerError("approval_denied", "Credential action approval was not granted.", {
-          ...(result.reason ? { detail: result.reason } : {}),
+          ...(fixedReason ? { detail: fixedReason } : {}),
         });
       }
       approvalStatus = "approved";
@@ -137,8 +148,9 @@ export async function resolveCredentialSecret(input: {
     audit("failed", code);
     // Backend/parser causes can contain the plaintext. Do not retain them on
     // an error that CLI diagnostics or a runner may serialize.
-    // The approval service's refusal reason is built from fixed text, never
-    // from secrets, so it survives for the caller to show the way out.
+    // An approval refusal keeps its reason only when it is fixed text the
+    // approval service wrote (checked where it was thrown), so the caller can
+    // show the way out without echoing an exception or a person's words.
     const detail = error instanceof CredentialBrokerError && code === "approval_denied" ? error.detail : undefined;
     throw new CredentialBrokerError(
       code,

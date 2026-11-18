@@ -1406,42 +1406,33 @@ describe("slack agent-first contract", () => {
     expect(payload).toMatchObject({ ok: true, dryRun: false, method: "canvases.access.delete" });
   });
 
-  it("canvas-edit marks a section delete as destructive for the broker, and a replace as an ordinary write", async () => {
+  it("canvas-edit marks a section delete and a whole-canvas replace as destructive, and a section replace as an ordinary write", async () => {
     const commands = new SlackCommands();
-    await silenced(() =>
-      commands.canvasEdit(
-        "F123",
-        "delete",
-        "ravi-slack",
-        "S1",
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        true,
-        true,
-      ),
-    );
-    expect(credentialResolutionCalls).toEqual([{ action: "canvases.edit", destructive: true, channel: "ravi-slack" }]);
+    const edit = (operation: string, sectionId?: string, markdown?: string) =>
+      silenced(() =>
+        commands.canvasEdit(
+          "F123",
+          operation,
+          "ravi-slack",
+          sectionId,
+          markdown,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          true,
+        ),
+      );
 
-    credentialResolutionCalls.length = 0;
-    await silenced(() =>
-      commands.canvasEdit(
-        "F123",
-        "replace",
-        "ravi-slack",
-        "S1",
-        "# Updated",
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        true,
-        true,
-      ),
-    );
-    expect(credentialResolutionCalls).toEqual([{ action: "canvases.edit", channel: "ravi-slack" }]);
+    await edit("delete", "S1");
+    await edit("replace", undefined, "# Whole body");
+    await edit("replace", "S1", "# Updated");
+    expect(credentialResolutionCalls).toEqual([
+      { action: "canvases.edit", destructive: true, channel: "ravi-slack" },
+      { action: "canvases.edit", destructive: true, channel: "ravi-slack" },
+      { action: "canvases.edit", channel: "ravi-slack" },
+    ]);
   });
 
   it("canvas-access-set still validates the access level BEFORE the brake", async () => {

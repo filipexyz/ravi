@@ -388,11 +388,12 @@ async function resolveSlackCredentialContext(
 }
 
 /**
- * A canvas change that removes content without putting anything in its place.
- * `replace`, `rename` and inserts write new content and stay ordinary writes.
+ * A canvas change that removes existing content: deleting a section, or
+ * replacing the whole canvas (its previous body is gone). A section
+ * `replace`, `rename` and inserts stay ordinary writes.
  */
-export function isSlackCanvasRemovalChange(change: { operation: string }): boolean {
-  return change.operation === "delete";
+export function isSlackCanvasRemovalChange(change: SlackCanvasEditChange): boolean {
+  return change.operation === "delete" || isWholeCanvasReplace(change);
 }
 
 /** Resolve credentials and construct a Slack client for an executing/read operation. */
@@ -2990,6 +2991,8 @@ export class SlackCommands {
     const { client, config } = await this.mutationOpsContext({
       channelName: raviChannel,
       action: "slack.canvas.showcase",
+      // Publishes a whole canvas body over whatever was there: destructive.
+      destructive: true,
       op,
       method: "slack.canvas.showcase",
       request,
@@ -3040,6 +3043,8 @@ export class SlackCommands {
     const { client, config } = await this.mutationOpsContext({
       channelName: raviChannel,
       action: "slack.canvas.channelShowcase",
+      // Publishes a whole canvas body over whatever was there: destructive.
+      destructive: true,
       op,
       method: "slack.canvas.channelShowcase",
       request,
@@ -3162,6 +3167,8 @@ export class SlackCommands {
     const { client, config } = await this.mutationOpsContext({
       channelName: raviChannel,
       action: "slack.canvas.artifact.publish",
+      // Publishes a whole canvas body over whatever was there: destructive.
+      destructive: true,
       op,
       method: "slack.canvas.artifact.publish",
       request,

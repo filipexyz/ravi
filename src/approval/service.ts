@@ -410,6 +410,29 @@ async function waitForExistingApproval(
   }
 }
 
+/**
+ * Refusal reasons this service writes from fixed text. Any other reason may
+ * carry an exception message or the text a human typed when rejecting, so a
+ * caller that shows the reason outside the approval flow keeps only these.
+ */
+const FIXED_APPROVAL_REFUSAL_REASONS: ReadonlySet<string> = new Set([
+  "Falha ao enviar mensagem de aprovação.",
+  "Falha ao correlacionar pedido de aprovação.",
+  "Timeout — nenhuma resposta em 5 minutos.",
+  "No approval source available.",
+  "The permission grant result could not be recorded.",
+  "The permission grant could not be applied.",
+]);
+
+/** True when `reason` is fixed text this service wrote for this request. */
+export function isFixedApprovalRefusalReason(
+  reason: string,
+  type: ApprovalRequestType,
+  options?: RequestApprovalOptions,
+): boolean {
+  return FIXED_APPROVAL_REFUSAL_REASONS.has(reason) || reason === buildNoSlackGrantorReason(type, options);
+}
+
 function buildNoSlackGrantorReason(type: ApprovalRequestType, options: RequestApprovalOptions | undefined): string {
   const asked =
     options?.permission && options.objectType && options.objectId

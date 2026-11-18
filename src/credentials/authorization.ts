@@ -162,6 +162,9 @@ export function actorHoldsCredentialAction(
   context: ContextRecord,
   input: { provider: string; connection: string; action: string },
 ): boolean {
+  // Only Slack's actions are classified (read set, destructive verbs, the
+  // caller's destructive mark); any other provider keeps the card.
+  if (input.provider !== "slack") return false;
   const metadata = context.metadata ?? {};
   if (metadata.actorResolution !== "resolved" || metadata.actorProjection) return false;
   // A cron, a trigger or an observer may carry its owner as the actor; only a

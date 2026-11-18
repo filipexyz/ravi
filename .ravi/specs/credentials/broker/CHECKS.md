@@ -53,7 +53,14 @@ Tests MUST cover:
 - A call marked `destructive: true` (`canvases.edit` with a `delete` change)
   asks for approval on the author's own turn, while the same `canvases.edit`
   without the mark passes; `ravi slack canvas-edit` sends the mark for
-  `delete` and not for `replace`.
+  `delete` and for a whole-canvas `replace`, and not for a section
+  `replace`.
+- `src/channels/slack/credentials.ts` forwards `destructive` to the broker
+  only when set.
+- The exception never applies to a provider other than `slack`.
+- Agent, system and unknown turn origins never skip the card.
+- An approval refusal keeps `detail` only for fixed approval-service text;
+  an arbitrary reason (exception text) is dropped.
 - Cron/trigger provenance, missing provenance, agent relay, unresolved
   speaker, thread projection, an author without the action and a blocked
   author never skip the card.

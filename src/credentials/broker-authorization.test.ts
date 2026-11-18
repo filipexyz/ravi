@@ -30,6 +30,7 @@ import { createRuntimeContext, revokeRuntimeContext } from "../runtime/context-r
 import { writeCredentialsFile } from "../runtime/credentials-store.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import * as backends from "./backends.js";
+import { actorHoldsCredentialAction } from "./authorization.js";
 import { execCredentialBroker, resolveCredentialSecret } from "./broker.js";
 import {
   closeCredentialsDb,
@@ -558,6 +559,9 @@ describe("credential approval on the author's own turn", () => {
 
   const asks: Array<[string, Record<string, unknown>, (() => void) | undefined]> = [
     ["a cron or trigger carrying its owner", { ...humanTurn, turnProvenance: { origin: "cron" } }, undefined],
+    ["an agent-origin turn", { ...humanTurn, turnProvenance: { origin: "agent" } }, undefined],
+    ["a system-origin turn", { ...humanTurn, turnProvenance: { origin: "system" } }, undefined],
+    ["an unknown-origin turn", { ...humanTurn, turnProvenance: { origin: "unknown" } }, undefined],
     ["a turn without provenance", { actorResolution: "resolved", actorPrincipal: `contact:${contactId}` }, undefined],
     ["an agent relay", { ...humanTurn, actorPrincipal: "agent:other" }, undefined],
     ["an unresolved speaker", { ...humanTurn, actorResolution: "missing_contact" }, undefined],
@@ -580,6 +584,39 @@ describe("credential approval on the author's own turn", () => {
       expect(audits().some((row) => row.approval_status === "actor_authorized")).toBe(false);
     });
   }
+
+  it("grants the exception only for Slack", () => {
+    author([
+      ...holds,
+      { permission: "use", objectType: "credential", objectId: "github:fixture" },
+      { permission: "execute", objectType: "github", objectId: "*" },
+    ]);
+    const context = turn(humanTurn);
+    expect(
+      actorHoldsCredentialAction(context, { provider: "slack", connection: "fixture", action: "chat.postMessage" }),
+    ).toBe(true);
+    expect(
+      actorHoldsCredentialAction(context, { provider: "github", connection: "fixture", action: "repos.update" }),
+    ).toBe(false);
+  });
+
+  it("keeps only a fixed refusal reason as the error detail", async () => {
+    const fixed = "Timeout — nenhuma resposta em 5 minutos.";
+    const leaked = "Error: connect ECONNREFUSED vault.internal:8200 token=s.fixture-only";
+    const approval = spyOn(approvalService, "requestCascadingApproval");
+
+    approval.mockResolvedValueOnce({ approved: false, reason: fixed, isDelegated: false } as never);
+    await expect(asCaller(caller(), () => resolve("chat.postMessage"))).rejects.toMatchObject({
+      code: "approval_denied",
+      detail: fixed,
+    });
+
+    approval.mockResolvedValueOnce({ approved: false, reason: leaked, isDelegated: false } as never);
+    const error = await asCaller(caller(), () => resolve("chat.postMessage")).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: "approval_denied" });
+    expect((error as { detail?: string }).detail).toBeUndefined();
+    expect(JSON.stringify(error)).not.toContain("fixture-only");
+  });
 
   it("reads conversation history without asking anyone", async () => {
     const approval = spyOn(approvalService, "requestCascadingApproval");
