@@ -26,6 +26,7 @@ import {
   type ApprovalFinalizeSlackInput,
   type ApprovalRespondSlackInput,
   type ApprovalServiceDependencies,
+  isFixedApprovalRefusalReason,
 } from "./service.js";
 import { setApprovalGrantorRouterConfigForTest } from "./grantor.js";
 import {
@@ -1821,5 +1822,27 @@ describe("approval service", () => {
       expect(sameGrantTuple(forAgent("dev"), forAgent("dev"))).toBe(true);
       expect(sameGrantTuple(forAgent("dev"), forAgent("ops"))).toBe(false);
     });
+  });
+});
+
+describe("isFixedApprovalRefusalReason", () => {
+  const options = { permission: "execute", objectType: "slack", objectId: "conversations.create" };
+
+  it("accepts fixed text this service writes, including the no-grantor reason for the same request", () => {
+    expect(isFixedApprovalRefusalReason("Timeout — nenhuma resposta em 5 minutos.", "permission", options)).toBe(true);
+    expect(isFixedApprovalRefusalReason("No approval source available.", "permission", options)).toBe(true);
+    const noGrantor =
+      "Ninguém neste Slack pode aprovar execute:slack:conversations.create: nenhuma pessoa vinculada a um usuário do Slack tem a permissão execute:slack:conversations.create. Nenhum pedido foi enviado. Quem tem essa permissão precisa vincular o próprio usuário do Slack ao seu contato, ou conceder a permissão direto ao agente.";
+    expect(isFixedApprovalRefusalReason(noGrantor, "permission", options)).toBe(true);
+  });
+
+  it("rejects exception text, a person's words and a no-grantor reason for another request", () => {
+    expect(isFixedApprovalRefusalReason("Error: connect ECONNREFUSED 10.0.0.1:8200", "permission", options)).toBe(
+      false,
+    );
+    expect(isFixedApprovalRefusalReason("não, isso apaga o canal do cliente", "permission", options)).toBe(false);
+    const other =
+      "Ninguém neste Slack pode aprovar execute:slack:chat.delete: nenhuma pessoa vinculada a um usuário do Slack tem a permissão execute:slack:chat.delete. Nenhum pedido foi enviado. Quem tem essa permissão precisa vincular o próprio usuário do Slack ao seu contato, ou conceder a permissão direto ao agente.";
+    expect(isFixedApprovalRefusalReason(other, "permission", options)).toBe(false);
   });
 });
