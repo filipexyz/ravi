@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { connect } from "nats";
 import { buildRunnerPm2Env } from "../channels/pm2-env.js";
@@ -20,9 +21,11 @@ import {
   adoptThreadFenceAsSuccessor,
   type BootAdoptionResult,
   type ChannelsResumeOutcome,
+  databaseHasThreadFence,
   type DurableResidue,
   type ManagedRegistration,
   planThreadFenceAdoption,
+  recordUpgradeFailure,
   resumeChannelsAfterUpgrade,
   type ThreadFenceAdoption,
   type ThreadFenceAdoptionPlan,
@@ -272,12 +275,40 @@ export async function waitForBroker(
 }
 
 /**
- * Daemon entry, when no adoption was admitted: a database written by a
- * pre-fence release is adopted here, without any operator command.
+ * The PM2 `ravi` registration this process may be. A process PM2 did not start
+ * (no `pm_id`) runs in the foreground: nothing is looked up. Under PM2 the
+ * snapshot is strict: an unreadable one refuses instead of passing for the
+ * foreground, where the entry would create nothing.
  */
-export async function adoptThreadFenceOnUpgrade(stateDir = getRaviStateDir()): Promise<BootAdoptionResult> {
+export function managedRaviSnapshot(
+  env: NodeJS.ProcessEnv = process.env,
+  list: () => Pm2Process[] = () => getPm2Processes({ strict: true }),
+): Pm2Process | undefined {
+  if (env.pm_id === undefined) return undefined;
+  return list().find((entry) => entry.name === "ravi");
+}
+
+/**
+ * Daemon entry, when no adoption was admitted: a database written by a
+ * pre-fence release is adopted here, without any operator command; on a new
+ * state directory the PM2-supervised daemon creates the database with the fence.
+ */
+export async function adoptThreadFenceOnUpgrade(
+  stateDir = getRaviStateDir(),
+  managedRavi: () => { pid: number; startedAt?: number | null } | undefined = () => managedRaviSnapshot(),
+): Promise<BootAdoptionResult> {
   const databasePath = join(stateDir, "ravi.db");
-  const managed = getPm2Process("ravi");
+  // The ordinary start, on a fenced database, reads nothing from PM2.
+  if (existsSync(databasePath) && databaseHasThreadFence(databasePath)) return { outcome: "not-needed" };
+  // A daemon PM2 does not report as `ravi` (foreground) carries startedAt 0.
+  let managed: { pid: number; startedAt?: number | null } | undefined;
+  try {
+    managed = managedRavi();
+  } catch (cause) {
+    // Refused like any entry refusal: the waiting CLI reads why.
+    recordUpgradeFailure(stateDir, cause);
+    throw cause;
+  }
   return adoptThreadFenceAtBoot({
     stateDir,
     databasePath,
@@ -311,6 +342,8 @@ export async function adoptThreadFenceAtDaemonEntry(): Promise<void> {
     const upgrade = await adoptThreadFenceOnUpgrade();
     if (upgrade.outcome === "adopted")
       process.stderr.write(`Thread fence installed on upgrade (${upgrade.maintenanceId})\n`);
+    if (upgrade.outcome === "created")
+      process.stderr.write("State database created with the thread fence (first start)\n");
   } catch (cause) {
     process.stderr.write(`${cause instanceof Error ? cause.message : String(cause)}\n`);
     // Only a launcher restarts at once; PM2 marks its children with pm_id.

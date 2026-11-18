@@ -9,6 +9,7 @@ import { openStateDatabase } from "../db/state-boundary.js";
 import type { MaintenanceProcess } from "../runtime-maintenance.js";
 import {
   withExitedThreadBootstrapAuthorization,
+  withFreshStateThreadAuthorization,
   withNewIsolatedThreadState,
   type ExitedThreadBootstrapProof,
 } from "./bootstrap-authorization.js";
@@ -241,5 +242,54 @@ describe("thread bootstrap authorization", () => {
       db.exec("ROLLBACK");
       expect(db.query("SELECT name FROM sqlite_master WHERE name = 'thread_schema_fence'").get()).toBeNull();
     });
+  });
+
+  it("a fresh-state scope installs the fence on an empty database only, and records who it saw", () => {
+    const directory = root();
+    const databasePath = join(directory, "ravi.db");
+    writeFileSync(databasePath, "");
+    const registrations = [{ name: "ravi", pid: process.pid, online: true }];
+    withFreshStateThreadAuthorization({ databasePath, verify: () => ({ registrations }) }, () => {
+      const db = openStateDatabase(databasePath);
+      handles.push(db);
+      prepareThreadFence(db);
+      expect(readThreadSchemaFence(db).phase).toBe("legacy_ready");
+    });
+    expect(audit(databasePath)).toMatchObject({ reason: "fresh-state-database", registrations });
+  });
+
+  it("a fresh-state scope refuses a database that already holds tables, before any fence SQL", () => {
+    const databasePath = join(root(), "ravi.db");
+    const db = legacy(databasePath);
+    expect(() =>
+      withFreshStateThreadAuthorization({ databasePath, verify: () => ({ registrations: [] }) }, () =>
+        prepareThreadFence(db),
+      ),
+    ).toThrow("must be empty");
+    expect(db.query("SELECT name FROM sqlite_master WHERE name = 'thread_schema_fence'").get()).toBeNull();
+    expect(db.query("SELECT id FROM pending_work").all()).toEqual([{ id: "preserved" }]);
+  });
+
+  it("a fresh-state verifier that refuses keeps the database without the fence", () => {
+    const databasePath = join(root(), "ravi.db");
+    writeFileSync(databasePath, "");
+    expect(() =>
+      withFreshStateThreadAuthorization(
+        {
+          databasePath,
+          verify: () => {
+            throw new Error("another runtime is running");
+          },
+        },
+        () => {
+          const db = openStateDatabase(databasePath);
+          handles.push(db);
+          prepareThreadFence(db);
+        },
+      ),
+    ).toThrow("another runtime is running");
+    const db = openStateDatabase(databasePath);
+    handles.push(db);
+    expect(db.query("SELECT name FROM sqlite_master WHERE name = 'thread_schema_fence'").get()).toBeNull();
   });
 });

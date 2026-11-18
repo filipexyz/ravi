@@ -420,3 +420,217 @@ describe("recorded process exit", () => {
     expect(recordedProcessExitState({ pid: exitedPid(), startedAt: Date.now() })).toBe("exited");
   });
 });
+
+function freshFixture(
+  options: {
+    database?: "missing" | "empty" | "legacy-schema";
+    receipts?: Partial<Record<"ravi" | "ravi-channels", MaintenanceProcess | null>>;
+    supervised?: boolean;
+    extra?: ManagedRegistration[];
+    legacyDatabasePath?: string | null;
+    sidecar?: "-wal" | "-shm" | "-journal";
+    /** A daemon PM2 does not report as `ravi` (startedAt 0), as in development. */
+    foreground?: boolean;
+    stateDir?: string;
+    boundary?: BootAdoptionHost["boundary"];
+  } = {},
+) {
+  const stateDir = options.stateDir ?? mkdtempSync(join(tmpdir(), "ravi-fence-fresh-"));
+  if (!options.stateDir) roots.push(stateDir);
+  const databasePath = join(stateDir, "ravi.db");
+  if (options.database === "empty") writeFileSync(databasePath, "");
+  if (options.database === "legacy-schema") {
+    const legacy = openStateDatabase(databasePath);
+    legacy.exec("CREATE TABLE pending_work (id TEXT); INSERT INTO pending_work VALUES ('preserved')");
+    legacy.close();
+  }
+  if (options.sidecar) writeFileSync(`${databasePath}${options.sidecar}`, "frames");
+  mkdirSync(join(stateDir, "bundle"));
+  const bundlePath = join(stateDir, "bundle", "index.js");
+  writeFileSync(bundlePath, "// installed release\n");
+  const now = Date.now();
+  const self = { pid: process.pid, startedAt: options.foreground ? 0 : now };
+  const receipts: Record<"ravi" | "ravi-channels", MaintenanceProcess | null> = {
+    ravi: null,
+    "ravi-channels": null,
+    ...options.receipts,
+  };
+  const stops: string[] = [];
+  const host: BootAdoptionHost = {
+    stateDir,
+    databasePath,
+    ownBundlePath: bundlePath,
+    self,
+    registry: () => [
+      ...(options.supervised === false || options.foreground
+        ? []
+        : [
+            {
+              name: "ravi",
+              pid: self.pid,
+              startedAt: self.startedAt,
+              online: true,
+              scriptPath: bundlePath,
+              status: "online",
+            },
+          ]),
+      { name: "nats", pid: 1, startedAt: 1, online: true, scriptPath: "/usr/local/bin/nats-server", status: "online" },
+      ...(options.extra ?? []),
+    ],
+    bundleDigest: digestOf,
+    lastBootIdentity: (name) => receipts[name],
+    brokerReady: async () => true,
+    stop: async (name) => {
+      stops.push(name);
+    },
+    residue: async () => ({ sources: [], unknown: [] }),
+    open: () => {
+      const db = openStateDatabase(databasePath);
+      handles.push(db);
+      prepareThreadFence(db);
+    },
+    wait: async () => {},
+    exitChecks: 3,
+    legacyDatabasePath: options.legacyDatabasePath ?? null,
+    boundary: options.boundary,
+  };
+  return { stateDir, databasePath, bundlePath, host, stops };
+}
+
+const lastAudit = (databasePath: string) =>
+  JSON.parse(readFileSync(`${databasePath}.thread-bootstrap.jsonl`, "utf8").trim().split("\n").at(-1)!);
+
+describe("first start on a new state directory", () => {
+  it("creates the database with the fence when none exists; the next start is ordinary", async () => {
+    const f = freshFixture();
+    expect(await adoptThreadFenceAtBoot(f.host)).toEqual({ outcome: "created" });
+    expect(databaseHasThreadFence(f.databasePath)).toBe(true);
+    expect(lastAudit(f.databasePath)).toMatchObject({
+      reason: "fresh-state-database",
+      registrations: [
+        { name: "ravi", pid: process.pid, online: true },
+        { name: "nats", pid: 1, online: true },
+      ],
+    });
+    expect(f.stops).toEqual([]);
+    expect(() => assertRuntimeMaintenanceInactive(f.stateDir)).not.toThrow();
+    expect(readUpgradeFailure(f.stateDir)).toBeNull();
+    // Stores open the fenced database as usual.
+    const db = openStateDatabase(f.databasePath);
+    handles.push(db);
+    expect(() => prepareThreadFence(db)).not.toThrow();
+    expect(await adoptThreadFenceAtBoot(f.host)).toEqual({ outcome: "not-needed" });
+  });
+
+  it("takes the empty database a refused first start left behind, once its daemon has exited", async () => {
+    const f = freshFixture({
+      database: "empty",
+      receipts: {
+        ravi: { name: "ravi", pid: exitedPid(), startedAt: Date.now() - 1_000, bundleSha256: "b".repeat(64) },
+      },
+    });
+    expect(await adoptThreadFenceAtBoot(f.host)).toEqual({ outcome: "created" });
+    expect(databaseHasThreadFence(f.databasePath)).toBe(true);
+  });
+
+  it("a database with tables and no fence is existing state: the upgrade rules still refuse it", async () => {
+    const f = freshFixture({ database: "legacy-schema" });
+    await expect(adoptThreadFenceAtBoot(f.host)).rejects.toThrow("left no boot record");
+    expect(databaseHasThreadFence(f.databasePath)).toBe(false);
+    const db = openStateDatabase(f.databasePath);
+    handles.push(db);
+    expect(db.query("SELECT id FROM pending_work").all()).toEqual([{ id: "preserved" }]);
+    expect(existsSync(`${f.databasePath}.thread-bootstrap.jsonl`)).toBe(false);
+  });
+
+  it("refuses, creating nothing, beside another Ravi process", async () => {
+    const f = freshFixture({
+      extra: [
+        {
+          name: "ravi-channels",
+          pid: livePid(),
+          startedAt: 1,
+          online: true,
+          scriptPath: "/old/bundle.js",
+          status: "online",
+        },
+      ],
+    });
+    await expect(adoptThreadFenceAtBoot(f.host)).rejects.toThrow("is running without a state database");
+    expect(existsSync(f.databasePath)).toBe(false);
+    expect(readUpgradeFailure(f.stateDir)?.failure).toContain("ravi-channels");
+  });
+
+  it("refuses, creating nothing, while a previous runtime may still run", async () => {
+    const f = freshFixture({
+      receipts: {
+        "ravi-channels": { name: "ravi-channels", pid: livePid(), startedAt: Date.now(), bundleSha256: "b".repeat(64) },
+      },
+    });
+    await expect(adoptThreadFenceAtBoot(f.host)).rejects.toThrow("may still be running");
+    expect(existsSync(f.databasePath)).toBe(false);
+  });
+
+  it("a source checkout running as the PM2 'ravi' on real state leaves neither the database nor the coordinator lock", async () => {
+    const home = mkdtempSync(join(tmpdir(), "ravi-fence-fresh-home-"));
+    roots.push(home);
+    const stateDir = join(home, ".ravi");
+    mkdirSync(stateDir);
+    const f = freshFixture({
+      stateDir,
+      // The sandbox home is this process's real state; the entry runs from a checkout, not the installed bundle.
+      boundary: {
+        homeDir: home,
+        env: {},
+        argv: ["bun", join(home, "checkout", "src", "cli", "index.ts"), "daemon", "run"],
+      },
+    });
+    await expect(adoptThreadFenceAtBoot(f.host)).rejects.toThrow("Refusing the real Ravi state database");
+    expect(existsSync(f.databasePath)).toBe(false);
+    expect(existsSync(join(stateDir, "runtime-maintenance", "coordinator.lock"))).toBe(false);
+  });
+
+  it("a daemon PM2 does not list online as 'ravi' creates nothing", async () => {
+    const f = freshFixture({ supervised: false });
+    await expect(adoptThreadFenceAtBoot(f.host)).rejects.toThrow("supervised by PM2");
+    expect(existsSync(f.databasePath)).toBe(false);
+  });
+
+  it("a daemon in the foreground keeps the store path: nothing is created at the entry, and the stores authorize the empty isolated database", async () => {
+    const f = freshFixture({ foreground: true });
+    expect(await adoptThreadFenceAtBoot(f.host)).toEqual({ outcome: "not-needed" });
+    expect(existsSync(f.databasePath)).toBe(false);
+    const db = openStateDatabase(f.databasePath);
+    handles.push(db);
+    prepareThreadFence(db);
+    expect(databaseHasThreadFence(f.databasePath)).toBe(true);
+    expect(lastAudit(f.databasePath)).toMatchObject({ reason: "empty-isolated-state" });
+  });
+
+  it("a daemon in the foreground on an empty database it left is not sent to the upgrade rules", async () => {
+    const f = freshFixture({ foreground: true, database: "empty" });
+    expect(await adoptThreadFenceAtBoot(f.host)).toEqual({ outcome: "not-needed" });
+    expect(databaseHasThreadFence(f.databasePath)).toBe(false);
+  });
+
+  it("is not a first start while the router would move a legacy database in", async () => {
+    const legacyDir = mkdtempSync(join(tmpdir(), "ravi-fence-legacy-"));
+    roots.push(legacyDir);
+    const legacyDatabasePath = join(legacyDir, "ravi.db");
+    writeFileSync(legacyDatabasePath, "");
+    const f = freshFixture({ legacyDatabasePath });
+    expect(await adoptThreadFenceAtBoot(f.host)).toEqual({ outcome: "not-needed" });
+    expect(existsSync(f.databasePath)).toBe(false);
+  });
+
+  for (const sidecar of ["-wal", "-shm", "-journal"] as const) {
+    it(`a ${sidecar} without its database refuses at the entry, creating nothing, supervised or not`, async () => {
+      for (const foreground of [false, true]) {
+        const f = freshFixture({ sidecar, foreground });
+        await expect(adoptThreadFenceAtBoot(f.host)).rejects.toThrow(`${sidecar} exists without its database`);
+        expect(existsSync(f.databasePath)).toBe(false);
+        expect(readUpgradeFailure(f.stateDir)?.failure).toContain("Restore the database next to it");
+      }
+    });
+  }
+});
