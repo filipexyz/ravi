@@ -1,0 +1,17 @@
+#!/bin/sh
+# STAND-IN for ssh (no sshd here). Logs argv; only alias vps1; runs the remote command with a separate HOME whose
+# `ravi` is the REAL CLI source entrypoint talking to the attack gateway. Modes (ATK_SSH_MODE):
+#   normal | stall:<s>   run the command, then hang <s> seconds before exiting (network stall after the remote issue)
+#   hold:<s>             run the command, exit 0, but leave a background child holding stdout/stderr for <s> seconds
+#                        (what a ControlPersist master or a ProxyCommand child can do)
+printf '%s\n' "$*" >> "$ATK_SSH_LOG"
+while [ $# -gt 0 ]; do case "$1" in -o) shift 2 ;; --) shift; break ;; -*) shift ;; *) break ;; esac; done
+[ "$1" = "vps1" ] || { echo "stand-in ssh: unknown host $1" >&2; exit 255; }
+shift
+out=$(cd "$ATK_REMOTE_HOME" && HOME="$ATK_REMOTE_HOME" PATH="$ATK_REMOTE_BIN:$PATH" sh -c "$1"); rc=$?
+case "$ATK_SSH_MODE" in
+  stall:*) sleep "${ATK_SSH_MODE#stall:}" ;;
+  hold:*) ( sleep "${ATK_SSH_MODE#hold:}" ) & ;;
+esac
+printf '%s\n' "$out"
+exit $rc

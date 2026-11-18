@@ -1,0 +1,332 @@
+[
+  {
+    "file": "a1-results.json",
+    "name": "P-ws: ASCII + Unicode whitespace (NBSP, U+2028, BOM) inside the text is stripped and accepted",
+    "verdict": "held (accepted as same request; benign)",
+    "evidence": "OK"
+  },
+  {
+    "file": "a1-results.json",
+    "name": "P-zw: zero-width space inside the text",
+    "verdict": "held",
+    "evidence": "SCHEMA"
+  },
+  {
+    "file": "a1-results.json",
+    "name": "P-homoglyph prefix",
+    "verdict": "held",
+    "evidence": "NOT_A_REQUEST"
+  },
+  {
+    "file": "a1-results.json",
+    "name": "P-dupkey: duplicate iat key",
+    "verdict": "held",
+    "evidence": "SCHEMA"
+  },
+  {
+    "file": "a1-results.json",
+    "name": "P-dupkey2: installs given twice (first wins? last wins?)",
+    "verdict": "held",
+    "evidence": "SCHEMA"
+  },
+  {
+    "file": "a1-results.json",
+    "name": "P-numstr: numbers as strings / exponent / .0 / -0",
+    "verdict": "held",
+    "evidence": "{\"v\":\"SCHEMA\",\"iat\":\"SCHEMA\",\"iatExp\":\"SCHEMA\",\"iatFloat\":\"SCHEMA\",\"negZero\":\"SCHEMA\"}"
+  },
+  {
+    "file": "a1-results.json",
+    "name": "P-proto: __proto__/constructor as installation names, preset, extra key",
+    "verdict": "held",
+    "evidence": "{\"constructor\":\"UNKNOWN_INSTALL\",\"toString\":\"SCHEMA\",\"hasownproperty\":\"UNKNOWN_INSTALL\",\"prototype\":\"UNKNOWN_INSTALL\",\"protoKeyInObject\":\"SCHEMA\",\"presetConstructor\":\"UNKNOWN_PRESET\",\"presetProto\":\"UNKNOWN_PRESET\"}"
+  },
+  {
+    "file": "a1-results.json",
+    "name": "P-long: body of 2001 chars (1 MB and 5 MB go through stdin in a1b: a 1 MB argv is refused by the OS)",
+    "verdict": "held",
+    "evidence": "[\"SCHEMA\",423]"
+  },
+  {
+    "file": "a1-results.json",
+    "name": "P-curve: public key (0,0)=infinity encoding, off-curve y, x=p",
+    "verdict": "held",
+    "evidence": "{\"zero\":\"SCHEMA\",\"offCurve\":\"SCHEMA\",\"xEqP\":\"SCHEMA\"}"
+  },
+  {
+    "file": "a1-results.json",
+    "name": "P-iat: far past, far future, negative, MAX_SAFE_INTEGER, +50s skew",
+    "verdict": "held",
+    "evidence": "{\"past\":\"REQUEST_TOO_OLD\",\"future\":\"REQUEST_FROM_FUTURE\",\"negative\":\"REQUEST_TOO_OLD\",\"huge\":\"REQUEST_FROM_FUTURE\",\"skew50s\":\"OK\"}"
+  },
+  {
+    "file": "a1-results.json",
+    "name": "PH-norm: phrase variants (accepted = passed the phrase check)",
+    "verdict": "info",
+    "evidence": "{\"lower\":\"accepted(MULTIPLE_PENDING)\",\"spaces\":\"accepted(ISSUE_FAILED)\",\"underscores\":\"accepted(ISSUE_FAILED)\",\"spacedHyphen\":\"accepted(ISSUE_FAILED)\",\"doubleSpace\":\"accepted(ISSUE_FAILED)\",\"accents\":\"accepted(ISSUE_FAILED)\",\"cyrillicA\":\"accepted(ISSUE_FAILED)\",\"fullwidth\":\"accepted(ISSUE_FAILED)\",\"zeroWidth\":\"refused\",\"dotlessI\":\"accepted(ISSUE_FAILED)\",\"longS\":\"accepted(ISSUE_FAILED)\",\"nbsp\":\"accepted(ISSUE_FAILED)\",\"quote\":\"refused\",\"trailingDot\":\"refused\"}"
+  },
+  {
+    "file": "a1-results.json",
+    "name": "KF: key file attacks via status (symlink->0644, two lines, spaces, directory, garbage)",
+    "verdict": "held",
+    "evidence": "{\"symlinkTo0644\":{\"code\":0,\"problem\":\"chave emissora de local: ~/.ravi/pairing/issuer.key tem modo 644; use chmod 600\",\"leak\":false},\"twoLines\":{\"code\":0,\"problem\":\"chave emissora de local: ~/.ravi/pairing/issuer.key não contém uma chave de contexto\",\"leak\":false},\"trailingSpaces\":{\"code\":0,\"problem\":\"ok (0600)\",\"leak\":false},\"leadingSpaces\":{\"code\":0,\"problem\":\"ok (0600)\",\"leak\":false},\"directory\":{\"code\":0,\"problem\":\"EISDIR: illegal operation on a directory, read\",\"leak\":false},\"garbageNoEcho\":{\"code\":0,\"problem\":\"chave emissora de local: ~/.ravi/pairing/issuer.key não contém uma chave de contexto\",\"leak\":false},\"devZero\":\"skipped (would hang readFileSync)\"}"
+  },
+  {
+    "file": "a1-results.json",
+    "name": "CFG: config values trying to inject ssh options or shell",
+    "verdict": "held",
+    "evidence": "{\"aliasDash\":\"2:CONFIG_INSTALLS\",\"aliasSpace\":\"2:CONFIG_INSTALLS\",\"raviSpace\":\"2:CONFIG_INSTALLS\",\"raviSubst\":\"2:CONFIG_INSTALLS\",\"raviBacktick\":\"2:CONFIG_INSTALLS\",\"keyQuote\":\"2:CONFIG_INSTALLS\",\"keyDollar\":\"2:CONFIG_INSTALLS\",\"scopeStar\":\"2:CONFIG_SCOPE\",\"scopeColon\":\"2:CONFIG_SCOPE\",\"scopeComma\":\"2:CONFIG_SCOPE\",\"scopeShell\":\"2:CONFIG_SCOPE\",\"scopeExtraKey\":\"2:CONFIG_SCOPE\",\"baseUrlCreds\":\"2:CONFIG_INSTALLS\",\"baseUrlPath\":\"2:CONFIG_INSTALLS\",\"baseUrlEvil\":\"2:CONFIG_INSTALLS\",\"httpUrlRemote\":\"2:CONFIG_INSTALLS\",\"protoName\":\"2:CONFIG_INSTALLS\",\"revokeViaEval\":\"2:CONFIG_INSTALLS\",\"raviTraversal\":\"0:OK\"}"
+  },
+  {
+    "file": "a1b-results.json",
+    "name": "P-long: 5 MB body on stdin / exactly 2000 'A' (valid b64, not JSON)",
+    "verdict": "held",
+    "evidence": "{\"big\":\"SCHEMA\",\"ms\":71,\"b2000\":\"SCHEMA\"}"
+  },
+  {
+    "file": "a2-results.json",
+    "name": "PH-grind: second request with the SAME phrase, attacker's own public key",
+    "verdict": "demonstrated (known limit, limites.md)",
+    "evidence": "{\"victimPhrase\":\"ABOBORA-GRAMA-TULIPA\",\"forgedPhrase\":\"ABOBORA-GRAMA-TULIPA\",\"stats\":\"{\\\"hashes\\\":19606370,\\\"seconds\\\":40.3,\\\"rate_per_s\\\":485972}\",\"wallSeconds\":40.382}"
+  },
+  {
+    "file": "a2-results.json",
+    "name": "PH-grind-approve: both checked -> approve with the shared phrase refused",
+    "verdict": "held",
+    "evidence": "MULTIPLE_PENDING"
+  },
+  {
+    "file": "a3-results.json",
+    "name": "LG-1: 10 parallel checks of one request",
+    "verdict": "held",
+    "evidence": "{\"ok\":1,\"codes\":[\"NONCE_REUSED\",\"OK\",\"NONCE_REUSED\",\"NONCE_REUSED\",\"NONCE_REUSED\",\"NONCE_REUSED\",\"NONCE_REUSED\",\"NONCE_REUSED\",\"NONCE_REUSED\",\"NONCE_REUSED\"]}"
+  },
+  {
+    "file": "a3-results.json",
+    "name": "LG-2: 6 parallel approves of one checked request",
+    "verdict": "held",
+    "evidence": "{\"ok\":1,\"codes\":[\"OK\",\"NONCE_REUSED\",\"NONCE_REUSED\",\"NONCE_REUSED\",\"NONCE_REUSED\",\"NONCE_REUSED\"],\"linksInLedger\":1}"
+  },
+  {
+    "file": "a3-results.json",
+    "name": "LG-3a: ledger phrase edited by hand -> approve with a phrase the owner never saw",
+    "verdict": "held",
+    "evidence": "{\"realPhrase\":\"VALE-MANDIOCA-FUMACA\",\"approve\":\"PHRASE_MISMATCH\"}"
+  },
+  {
+    "file": "a3-results.json",
+    "name": "LG-3b: state reset by hand -> same request approved twice",
+    "verdict": "held",
+    "evidence": "{\"second\":\"PHRASE_MISMATCH\"}"
+  },
+  {
+    "file": "a3-results.json",
+    "name": "LG-3c: nonce removed by hand -> request accepted again (until 10 min)",
+    "verdict": "WEAK (same root cause)",
+    "evidence": "OK"
+  },
+  {
+    "file": "a3-results.json",
+    "name": "LG-4a: symlink planted at ledger.json.tmp",
+    "verdict": "held",
+    "evidence": "{\"check\":\"OK\",\"victimOverwritten\":false,\"victimMode\":\"644\",\"ledgerIsNowSymlink\":false}"
+  },
+  {
+    "file": "a3-results.json",
+    "name": "LG-4b: symlink at ledger.json",
+    "verdict": "info",
+    "evidence": "{\"ledgerStillSymlink\":false,\"targetMode\":\"644\",\"note\":\"rename replaces the link with a regular 0600 file; target was read once and left alone\"}"
+  },
+  {
+    "file": "a3-results.json",
+    "name": "LG-4c: symlink at ledger.json.lock",
+    "verdict": "held (link treated as dead-pid lock and unlinked; target untouched)",
+    "evidence": "{\"check\":\"OK\",\"target\":\"keep me\"}"
+  },
+  {
+    "file": "a3-results.json",
+    "name": "LG-5: dead-pid lock broken; live-pid fresh lock -> LEDGER_LOCKED; live-pid >30 s lock broken; fresh empty lock waits",
+    "verdict": "held",
+    "evidence": "{\"deadPid\":\"OK\",\"livePid\":\"LEDGER_LOCKED after 5004 ms\",\"liveOld\":\"OK\",\"emptyFresh\":\"LEDGER_LOCKED\"}"
+  },
+  {
+    "file": "a3-results.json",
+    "name": "LG-5b: stale lock + 16 concurrent checks (8 rounds): every OK check recorded?",
+    "verdict": "held",
+    "evidence": "{\"roundsWithLoss\":0,\"detail\":[\"16 ok / 16 in ledger\",\"16 ok / 16 in ledger\",\"16 ok / 16 in ledger\",\"16 ok / 16 in ledger\",\"16 ok / 16 in ledger\",\"16 ok / 16 in ledger\",\"16 ok / 16 in ledger\",\"16 ok / 16 in ledger\"]}"
+  },
+  {
+    "file": "a3-results.json",
+    "name": "LG-6: ledger left 0644",
+    "verdict": "info",
+    "evidence": "{\"afterList\":\"600\",\"note\":\"no refusal and no warning; any write re-creates it 0600 via tmp+rename (holds no key)\"}"
+  },
+  {
+    "file": "a3-results.json",
+    "name": "LG-7: corrupt ledger containing a key-looking string",
+    "verdict": "held",
+    "evidence": "ERRO (ERROR): JSON Parse error: Unexpected identifier \"[chave]\""
+  },
+  {
+    "file": "a4-results.json",
+    "name": "setup: status --probe both installations (vps1 through ssh stand-in + REAL CLI)",
+    "verdict": "ok (vps1 baseUrl 47999 is a fake tunnel port: status --probe now reports it)",
+    "evidence": "[\"local:ok:\",\"vps1:a página não alcança http://127.0.0.1:47999 (túnel caído, daemon parado ou porta errada):\"]"
+  },
+  {
+    "file": "a4-results.json",
+    "name": "LK-ps: any process argv containing rctx_ while approve (http + ssh/real CLI) runs",
+    "verdict": "held",
+    "evidence": "{\"scans\":166,\"hits\":[],\"approve\":\"OK\"}"
+  },
+  {
+    "file": "a4-results.json",
+    "name": "IS-orphan: ssh times out after the remote `context issue` ran",
+    "verdict": "held",
+    "evidence": "{\"approve\":\"ISSUE_FAILED\",\"ms\":2548,\"contextsBefore\":2,\"orphanOnGateway\":[{\"id\":\"ctx_rPeRCU-c_8-SPEyrIWQFYdht\",\"issuedFor\":\"connect:exemplo-painel.ravi.page:1nGtVvhy\",\"status\":\"active\"}],\"inLedger\":true,\"nonceState\":\"failed\"}"
+  },
+  {
+    "file": "a4-results.json",
+    "name": "IS-hold: ssh exits 0 with the JSON, but a child keeps stdout open (ControlPersist / ProxyCommand child)",
+    "verdict": "held",
+    "evidence": "{\"approve\":\"OK\",\"ms\":1874,\"inLedger\":true,\"sshMode\":\"hold:8\",\"timeoutMs\":3000}"
+  },
+  {
+    "file": "a4-results.json",
+    "name": "OD-1: --out-dir whose index.html is a symlink to another file",
+    "verdict": "held",
+    "evidence": "{\"approve\":\"OUT_DIR\",\"victim\":\"<h1>owner page</h1>\\n\",\"mode\":\"644\"}"
+  },
+  {
+    "file": "a4-results.json",
+    "name": "OD-2: --out-dir is an existing regular file",
+    "verdict": "held",
+    "evidence": "{\"approve\":\"OUT_DIR\",\"msg\":\"{\\\"ok\\\":false,\\\"error\\\":{\\\"code\\\":\\\"OUT_DIR\\\",\\\"message\\\":\\\"--out-dir precisa ser uma pasta (não um arquivo nem um link simbólico); use \\\\\\\"$(mktemp -d)\\\\\\\"\\\"}}\\n\",\"linkRecorded\":false}"
+  },
+  {
+    "file": "a4-results.json",
+    "name": "OD-3: --out-dir pointing at the page folder (agent mistake)",
+    "verdict": "held",
+    "evidence": "OUT_DIR"
+  },
+  {
+    "file": "a4-results.json",
+    "name": "DC-1: disconnect --install <unknown name>",
+    "verdict": "held",
+    "evidence": "{\"ok\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"essa conexão não tem a instalação vps-b\"}}\n"
+  },
+  {
+    "file": "a4-results.json",
+    "name": "DC-2: origin with trailing slash / upper-case host / upper-case scheme / two slashes",
+    "verdict": "info",
+    "evidence": "{\"slash\":\"exit0 6 rows\",\"upperHost\":\"exit0\",\"upperScheme\":\"exit0\",\"twoSlashes\":\"NOT_FOUND\"}"
+  },
+  {
+    "file": "a4-results.json",
+    "name": "DC-3: manual revoke by the owner, repeated disconnect verifies via context info",
+    "verdict": "held",
+    "evidence": "[{\"phrase\":\"DRAGAO-GIRASSOL-VIDRO\",\"name\":\"local\",\"contextId\":\"ctx_UBaZk2JZ7Jvt94VkBfb7_RUv\",\"result\":\"revogada\"},{\"phrase\":\"TROVAO-ABRIGO-AGULHA\",\"name\":\"local\",\"contextId\":\"ctx_UcZJu9FbFNmr1LyOKSRb6Hri\",\"result\":\"manual: rode no seu terminal: ravi context revoke ctx_UcZJu9FbFNmr1LyOKSRb6Hri --reason ravi-connect  e depois repita o \\\"desconectar\\\" para eu conferir\"}]"
+  },
+  {
+    "file": "a4-results.json",
+    "name": "DC-4: ledger contextId swapped to a revoked context with another issuedFor",
+    "verdict": "held (issuedFor must equal the recorded cliName)",
+    "evidence": "{\"results\":[\"manual: rode no seu terminal: ravi conte\"],\"realLinkStatus\":\"active\"}"
+  },
+  {
+    "file": "a4-results.json",
+    "name": "DC-5: one phrase matching two links",
+    "verdict": "info",
+    "evidence": "{\"rows\":2,\"note\":\"both are acted on (here: two manual commands); no prompt that more than one link matched\"}"
+  },
+  {
+    "file": "a4-results.json",
+    "name": "LK-all: rctx_ in any stdout/stderr/--json/error output, ledger, out-dir file or ssh argv log of this run",
+    "verdict": "held",
+    "evidence": "{\"bytesScanned\":55650,\"outputs\":30}"
+  },
+  {
+    "file": "a4b-results.json",
+    "name": "LK-ps: real-looking key in any process argv during approve",
+    "verdict": "held",
+    "evidence": "{\"scans\":334,\"argvHits\":[],\"approve\":\"OK\"}"
+  },
+  {
+    "file": "a4b-results.json",
+    "name": "LK-env: processes carrying RAVI_CONTEXT_KEY in their environment (same-user readable /proc/<pid>/environ)",
+    "verdict": "info",
+    "evidence": "{\"envHits\":[\"bun --no-env-file src/cli/index.ts context issue connect:exemplo-painel.ravi.pag\"],\"note\":\"only the remote `ravi` (by design: key in env, not argv); readable only by the same uid\"}"
+  },
+  {
+    "file": "a5-results.json",
+    "name": "PG-forge-refused: forged envelope with other baseUrl / extra installation / wildcard / admin / send under ver / events / other hash",
+    "verdict": "held",
+    "evidence": "{\"otherBaseUrl\":\"refused: envelope aponta local para outro endereço\",\"extraInstall\":\"refused: envelope traz instalação não pedida\",\"wildcardCap\":\"refused: envelope traz permissões fora do preset ver\",\"adminCap\":\"refused: envelope traz permissões fora do preset ver\",\"sendUnderVer\":\"refused: envelope traz permissões fora do preset ver\",\"eventsCap\":\"refused: envelope traz permissões fora do preset ver\",\"wrongHash\":\"refused: não há pedido pendente deste envelope neste navegador (ou passou de 15 minutos)\"}"
+  },
+  {
+    "file": "a5-results.json",
+    "name": "PG-forge-accepted: forged envelope for the pending request (public text + attacker-held key on the owner's gateway, expiry 9999-12-31, scope name outside the config)",
+    "verdict": "known limit (forged envelope accepted, see limites.md; the real envelope of the same request is still accepted afterwards and wins)",
+    "evidence": "{\"accept\":\"accepted:local\",\"states\":{\"local\":\"reconnect\"},\"card\":\"local: precisa reconectar\",\"legitEnvelopeStillUsable\":\"accepted\"}"
+  },
+  {
+    "file": "a5-results.json",
+    "name": "PG-evil-route: second route on the same origin reads IndexedDB, opens the envelope, uses the link from outside the browser",
+    "verdict": "demonstrated (known limit, limites.md)",
+    "evidence": "{\"stolenInstalls\":1,\"childStatus\":200,\"childDays\":\"59.0\"}"
+  },
+  {
+    "file": "a5-results.json",
+    "name": "PG-forget: after 'Esquecer este navegador' (same tab)",
+    "verdict": "held",
+    "evidence": "{\"afterForgeCall\":\"refused: aprovação necessária para local\",\"idb\":{\"keys\":[],\"rctx\":false,\"links\":0,\"dbs\":[\"ravi-connect\"],\"ls\":0},\"childStillValid\":200}"
+  },
+  {
+    "file": "a5-results.json",
+    "name": "PG-replay: old envelopes pasted after disconnect (new pending)",
+    "verdict": "held (the revoked envelope of a request under 15 minutes opens again, but its link is revoked: still 'precisa reconectar'; older ones refused)",
+    "evidence": "{\"afterRevoke\":{\"local\":\"reconnect\"},\"replay\":[\"accepted\",\"refused: não há pedido pendente deste envelope ne\",\"refused: não há pedido pendente deste envelope ne\"],\"afterReplay\":{\"local\":\"reconnect\"}}"
+  },
+  {
+    "file": "a5-results.json",
+    "name": "PG-two-tabs: tab 1 and tab 2 both click Conectar; owner approves tab 1's request (phrase shown in tab 1)",
+    "verdict": "held",
+    "evidence": "{\"tab1Phrase\":\"BATATA-CARTA-FOLHA\",\"tab2Phrase\":\"ARARA-ARARA-FITA\",\"tab1Status\":\"Conectado: local.\",\"approve\":\"OK\"}"
+  },
+  {
+    "file": "a5-results.json",
+    "name": "PG-proto-name: installation named 'constructor' in createConnect",
+    "verdict": "info",
+    "evidence": "constructor: não conectada"
+  },
+  {
+    "file": "a5-results.json",
+    "name": "PG-idb: IndexedDB per state (keys, rctx_ in clear?)",
+    "verdict": "held",
+    "evidence": "{\"notLinked\":{\"keys\":[],\"rctx\":false,\"links\":0,\"dbs\":[\"ravi-connect\"],\"ls\":0},\"pending\":{\"keys\":[\"p:50AZBTJfFmqvG2edXbJRjJQJPTRZ0hFPQA01LcYH_H8\",\"pending\"],\"rctx\":false,\"links\":0,\"dbs\":[\"ravi-connect\"],\"ls\":0},\"linked\":{\"keys\":[\"links\",\"p:50AZBTJfFmqvG2edXbJRjJQJPTRZ0hFPQA01LcYH_H8\",\"p:yW8BtaLimZujZU-NJ75BYT-XJuxFjrxqFBezMI_7gy0\"],\"rctx\":false,\"links\":1,\"dbs\":[\"ravi-connect\"],\"ls\":0},\"afterForget\":{\"keys\":[],\"rctx\":false,\"links\":0,\"dbs\":[\"ravi-connect\"],\"ls\":0}}"
+  },
+  {
+    "file": "a6-results.json",
+    "name": "MS-short: issuer that expires in 30 days; confirmation promised 60",
+    "verdict": "held (reply warns after the fact; the confirmation the owner approved still said 60 dias)",
+    "evidence": "{\"confirmationSays\":\"Validade: 60 dias (até 2027-01-17), ou menos se a chave emissora de uma instalação vencer antes\",\"shortened\":[\"local\"],\"replyHead\":[\"Conectado: local até 2026-12-18.\",\"Atenção: local vale menos que os 60 dias combinados, porque a chave emissora de lá vence antes. Faça a Rotação de references/instalacao.md e reconecte.\"]}"
+  },
+  {
+    "file": "a6-results.json",
+    "name": "MS-status: issuer holding view:system:events + read:sessions:read + an extra session",
+    "verdict": "held",
+    "evidence": "{\"problem\":\"chave emissora com capacidade a mais: view:system:events, read:sessions:read, access:session:segredo; revogue-a e crie outra com pair.ts caps local\",\"note\":null,\"extraHeld\":[\"view:system:events\",\"read:sessions:read\",\"access:session:segredo\"]}"
+  },
+  {
+    "file": "a6-results.json",
+    "name": "MS-guard: a session literally named rctx_<x> in the scope",
+    "verdict": "info",
+    "evidence": "{\"check\":\"CONFIG_SCOPE\",\"again\":\"CONFIG_SCOPE\",\"caps\":\"CONFIG_SCOPE\"}"
+  },
+  {
+    "file": "a6-results.json",
+    "name": "LG-5c: stale lock + 24 concurrent checks x 25 rounds",
+    "verdict": "held (TOCTOU window in breakStaleLock exists in code but was not hit)",
+    "evidence": "{\"lossRounds\":0,\"det\":\"24/24 24/24 24/24 24/24 24/24 24/24 24/24 24/24 24/24 24/24 24/24 24/24 24/24 24/24 24/24 24/24 24/24 24/24 24/24 24/24 24/24 24/24 24/24 24/24 24/24\"}"
+  }
+]

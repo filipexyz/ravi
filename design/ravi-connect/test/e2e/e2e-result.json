@@ -1,0 +1,430 @@
+{
+ "pass": 81,
+ "total": 81,
+ "ravi_src": "source checkout at commit cb92032",
+ "results": [
+  {
+   "name": "setup: two separate real gateway processes up (own state dirs)",
+   "result": "pass",
+   "evidence": "{\"A\":\"http://127.0.0.1:43575\",\"B\":\"http://127.0.0.1:38223\",\"stateA\":\"state-A\",\"stateB\":\"state-B\"}"
+  },
+  {
+   "name": "S1 pair caps: issuer --allow per installation = read:context:info + issue + conversar + named scope, no wildcard, no events, no revoke",
+   "result": "pass",
+   "evidence": "{\"CAPS_A\":\"read:context:info,mutate:context:issue,read:context:whoami,read:sessions:list,read:sessions:info,read:agents:list,mutate:sessions:send,access:session:outro-main,view:agent:outro\",\"CAPS_B\":\"read:context:info,mutate:context:issue,read:context:whoami,read:sessions:list,read:sessions:info,read:agents:list,mutate:sessions:send,access:session:main,access:session:outro-main\"}"
+  },
+  {
+   "name": "setup: issuer and revoker (2 caps) keys on each gateway",
+   "result": "pass",
+   "evidence": "[\"200/9\",\"200/9\",\"200/2\",\"200/2\"]"
+  },
+  {
+   "name": "pair status --probe: both installations reachable, no PROBLEMA, no key printed",
+   "result": "pass",
+   "evidence": "[\"local:http http://127.0.0.1:43575:ok\",\"vps1:ssh vps1:ok\"]"
+  },
+  {
+   "name": "T1a first visit: both not-linked",
+   "result": "pass",
+   "evidence": "{\"local\":\"not-linked\",\"vps1\":\"not-linked\"}"
+  },
+  {
+   "name": "T1b check: same 3-word phrase as the page, confirmation from parsed fields (origin, local+vps1, ver, per-installation scope, 60 dias, 'sim <FRASE>')",
+   "result": "pass",
+   "evidence": "{\"page\":\"JOIA-GAIVOTA-DEDAL\",\"helper\":\"JOIA-GAIVOTA-DEDAL\",\"confirmation\":\"Pedido de conexão\\nPágina: https://exemplo-painel.ravi.page\\nInstalações: local, vps1\\nPermissões: ver (só leitura, só das sessões e agentes listados abaixo; inclui ver ao vivo o que acontece nessas sessões: texto das conversas, chamadas de ferramentas e seus resultados, pedidos de aprovação)\\n- local: sessões outro-main; agentes outro\\n- vps1: sessões main, outro-main; agentes (só o próprio)\\nValidade: 60 dias (até 2027-01-17), ou menos se a chave emissora de uma instalação vencer antes\\nFrase: JOIA-GAIVOTA-DEDAL\\nA frase é igual à que aparece na página? Para aprovar, responda \\\"sim JOIA-GAIVOTA-DEDAL\\\". Para recusar, \\\"não\\\".\"}"
+  },
+  {
+   "name": "P1 approve without --phrase: usage error (exit 2); with a different phrase: PHRASE_MISMATCH (exit 3), nothing issued, and the request is cancelled (the right phrase afterwards -> NONCE_REUSED)",
+   "result": "pass",
+   "evidence": "[2,\"USAGE\",3,\"PHRASE_MISMATCH\",\"NONCE_REUSED\"]"
+  },
+  {
+   "name": "T1c approve: one link per installation, ~60 days, no rctx_ in helper output",
+   "result": "pass",
+   "evidence": "[\"local:60.000d\",\"vps1:60.000d\"]"
+  },
+  {
+   "name": "T1d link contexts live on their own gateway with exactly issue + ver + that installation's named scope; parent = that gateway's issuer",
+   "result": "pass",
+   "evidence": "{\"local\":[\"access:session:outro-main\",\"mutate:context:issue\",\"read:agents:list\",\"read:context:whoami\",\"read:sessions:info\",\"read:sessions:list\",\"view:agent:outro\"],\"vps1parent\":true,\"vps1OnA\":422}"
+  },
+  {
+   "name": "T1e vps1 issued through the ssh stand-in (real CLI behind it) with -a, -x, ForwardX11=no, ClearAllForwardings, BatchMode, ConnectTimeout; PATH prefix; remote key mode checked before cat; no key in ssh argv",
+   "result": "pass",
+   "evidence": "-a -x -T -o ForwardX11=no -o ClearAllForwardings=yes -o ControlMaster=no -o ControlPath=none -o BatchMode=yes -o ConnectTimeout=10 -- vps1 PATH=\"$HOME/.bun/bin:$HOME/.local/bin:$PATH\"; export PATH; f=\"$HOME\"/'.ravi/pairing/issuer.key'; m=$(stat -c %a \"$f\" 2>/d"
+  },
+  {
+   "name": "T1f both installations give working <=1h access keys (children of their link) with exactly ver + that installation's scope",
+   "result": "pass",
+   "evidence": "{\"local\":{\"parentIsLink\":true,\"ttlMin\":\"60.0\",\"caps\":[\"access:session:outro-main\",\"read:agents:list\",\"read:context:whoami\",\"read:sessions:info\",\"read:sessions:list\",\"view:agent:outro\"]},\"vps1\":{\"parentIsLink\":true,\"ttlMin\":\"60.0\",\"caps\":[\"access:session:main\",\"access:session:outro-main\",\"read:agents:list\",\"read:context:whoami\",\"read:sessions:info\",\"read:sessions:list\"]}}"
+  },
+  {
+   "name": "T1h scoping: sessions list = exactly the configured sessions (not 'segredo'), agents list = own agent (bootstrap) + configured agents, info in scope 200, out of scope not found",
+   "result": "pass",
+   "evidence": "{\"local\":{\"sessions\":[\"outro-main\"],\"agents\":[\"bootstrap\",\"outro\"],\"infoIn\":200,\"infoOut\":\"422 SESSION_NOT_FOUND\"},\"vps1\":{\"sessions\":[\"main\",\"outro-main\"],\"agents\":[\"bootstrap\"],\"infoIn\":200,\"infoOut\":\"422 SESSION_NOT_FOUND\"}}"
+  },
+  {
+   "name": "T1i streams: events (whole bus) 403 on both; sessions/outro-main (in scope) 200; sessions/segredo 403",
+   "result": "pass",
+   "evidence": "{\"local\":{\"events\":403,\"inScope\":200,\"outOfScope\":403},\"vps1\":{\"events\":403,\"inScope\":200,\"outOfScope\":403}}"
+  },
+  {
+   "name": "T1g access key under ver: issue admin 403, context revoke 403, sessions send (in-scope session) 403, issuing itself an out-of-scope session 403, on both",
+   "result": "pass",
+   "evidence": "{\"local\":[403,403,403,403],\"vps1\":[403,403,403,403]}"
+  },
+  {
+   "name": "T2 no rctx_ anywhere in IndexedDB (all dbs/stores), localStorage, sessionStorage; stored private key non-extractable",
+   "result": "pass",
+   "evidence": "{\"stores\":{\"ravi-connect/kv\":[\"links\",\"p:ur3HwCXD_1t28bCY5rYOWXL0N9XC5705UKg0bZ-o4ak\"]},\"bytes\":2775,\"ls\":0,\"hasRctx\":false,\"keyMarks\":[\"cryptoKey\\\\\\\":true,\\\\\\\"extractable\\\\\\\":false,\\\\\\\"type\\\\\\\":\\\\\\\"private\\\\\\\"}\",\"cryptoKey\\\\\\\":true,\\\\\\\"extractable\\\\\\\":false,\\\\\\\"type\\\\\\\":\\\\\\\"private\\\\\\\"}\"],\"sample\":\"[[{\\\"hash\\\":\\\"ur3HwCXD_1t28bCY5rYOWXL0N9XC5705UKg0bZ-o4ak\\\",\\\"request\\\":{\\\"v\\\":1,\\\"kind\\\":\\\"ravi-connect\\\",\\\"origin\\\":\\\"https://exemplo-painel.ravi.page\\\",\\\"pub\\\":{\\\"x\\\":\\\"9iFktWu_Hl7owJxrM3p7Np76cPct40ZiM9pK7nRBj2A\\\",\\\"y\\\":\\\"3uTwbgiEngWXaXRdxSnZBXLSeBjMl2p3EsV8R8VjaLY\\\"},\\\"preset\\\":\\\"ver\\\",\\\"installs\\\":[\\\"local\\\",\\\"vps1\\\"],\\\"nonce\\\":\\\"W\"}"
+  },
+  {
+   "name": "T3a second visit (new tab, same profile): linked with no approval, fresh access keys",
+   "result": "pass",
+   "evidence": "{\"st\":[\"linked\",\"linked\"],\"pending\":false,\"ids\":{\"local\":\"ctx_G61ON7ixWtzlAdbU9ezWHSbm\",\"vps1\":\"ctx_-lRAgcqO62tXs8BT0msXVkAl\"}}"
+  },
+  {
+   "name": "T3b browser fully closed and reopened (persistent profile on disk): still linked, no approval",
+   "result": "pass",
+   "evidence": "{\"local\":\"linked\",\"vps1\":\"linked\"}"
+  },
+  {
+   "name": "T4 another browser profile cannot open the owner's envelope (with no pending, and with the owner's request forged into its pending)",
+   "result": "pass",
+   "evidence": "{\"noPending\":\"refused: não há pedido pendente deste envelope neste navegador (ou passou de 15 minutos)\",\"withPending\":\"refused: Error não há pedido pendente deste envelope neste navegador (ou passou de 15 minutos)\",\"p2state\":{\"local\":\"waiting\",\"vps1\":\"waiting\"}}"
+  },
+  {
+   "name": "T5 reused request refused: check -> NONCE_REUSED, approve -> refused (exit 3)",
+   "result": "pass",
+   "evidence": "[\"NONCE_REUSED\",\"NONCE_REUSED\"]"
+  },
+  {
+   "name": "T6 request older than 10 minutes refused (REQUEST_TOO_OLD); 9m57s accepted",
+   "result": "pass",
+   "evidence": "[\"REQUEST_TOO_OLD\",0]"
+  },
+  {
+   "name": "P2 two checked requests waiting: approve refused MULTIPLE_PENDING; cancel cancels both; approving a cancelled one -> NONCE_REUSED",
+   "result": "pass",
+   "evidence": "{\"multi\":\"MULTIPLE_PENDING\",\"cancelled\":2,\"afterCancel\":\"NONCE_REUSED\"}"
+  },
+  {
+   "name": "P3 approve refuses a request whose iat is older than 15 minutes (REQUEST_TOO_OLD), even with a fresh check",
+   "result": "pass",
+   "evidence": "REQUEST_TOO_OLD"
+  },
+  {
+   "name": "T7 origin outside the allowlist refused (other project, suffix look-alike, http, case, port, trailing slash)",
+   "result": "pass",
+   "evidence": "{\"https://outro-projeto.ravi.page\":\"ORIGIN_NOT_ALLOWED\",\"https://exemplo-painel.ravi.page.evil.example\":\"ORIGIN_NOT_ALLOWED\",\"http://exemplo-painel.ravi.page\":\"SCHEMA\",\"https://EXEMPLO-painel.ravi.page\":\"SCHEMA\",\"https://exemplo-painel.ravi.page:443\":\"SCHEMA\",\"https://exemplo-painel.ravi.page/\":\"SCHEMA\"}"
+  },
+  {
+   "name": "T8 unknown preset and every way to add admin:system:* refused at check (exit 3)",
+   "result": "pass",
+   "evidence": "{\"preset_admin\":\"UNKNOWN_PRESET\",\"preset_admin_cap\":\"UNKNOWN_PRESET\",\"preset_proto\":\"UNKNOWN_PRESET\",\"preset_proto2\":\"UNKNOWN_PRESET\",\"extra_caps_field\":\"SCHEMA\",\"extra_allow_field\":\"SCHEMA\",\"install_wildcard\":\"SCHEMA\",\"install_unknown\":\"UNKNOWN_INSTALL\"}"
+  },
+  {
+   "name": "T9 link ttl of 0, above 60 days, negative, fractional, string refused before any issue",
+   "result": "pass",
+   "evidence": "{\"0\":\"TTL_ZERO\",\"61\":\"TTL_TOO_LONG\",\"-1\":\"TTL_ZERO\",\"60.5\":\"TTL_ZERO\",\"\\\"60\\\"\":\"TTL_ZERO\",\"1e3\":\"TTL_TOO_LONG\"}"
+  },
+  {
+   "name": "T10 the link key itself (opened from the envelope) cannot context revoke (issuer or itself), cannot mint admin or revoke children, cannot prune",
+   "result": "pass",
+   "evidence": "{\"local\":{\"revokeIssuer\":403,\"revokeSelf\":403,\"issueAdmin\":403,\"issueRevoke\":403,\"prune\":403,\"issuerAlive\":200,\"ttl0Days\":\"60.00\",\"ttl59dDays\":\"59.00\"},\"vps1\":{\"revokeIssuer\":403,\"revokeSelf\":403,\"issueAdmin\":403,\"issueRevoke\":403,\"prune\":403,\"issuerAlive\":200,\"ttl0Days\":\"60.00\",\"ttl59dDays\":\"59.00\"}}"
+  },
+  {
+   "name": "T11a gateway B process stopped: vps1 offline (live call and fresh reload), local stays linked; card text says offline",
+   "result": "pass",
+   "evidence": "{\"live\":{\"calls\":{\"local\":\"ok\",\"vps1\":\"offline\"},\"st\":[\"local:linked\",\"vps1:offline\"]},\"reload\":{\"local\":\"linked\",\"vps1\":\"offline\"},\"vpsText\":\"vps1: offline (sem resposta; confira o túnel ou o daemon)\"}"
+  },
+  {
+   "name": "T11b approve while vps1 is down: local link issued, vps1 reported failed, no key in output",
+   "result": "pass",
+   "evidence": "{\"installs\":[\"local\"],\"failed\":[{\"name\":\"vps1\",\"code\":\"SERVER_UNAVAILABLE\",\"message\":\"ssh vps1: exit 1 SERVER_UNAVAILABLE Remote gateway request failed.\",\"maybeIssued\":false}]}"
+  },
+  {
+   "name": "T11c gateway B restarted on the same port/state: vps1 back to linked without approval (link survived the restart)",
+   "result": "pass",
+   "evidence": "{\"st\":\"linked\",\"ok\":true}"
+  },
+  {
+   "name": "T12a disconnect <phrase as typed in chat> --install vps1 (revoked on gateway B via ssh stand-in): vps1 -> reconnect (AUTH_REQUIRED, no new mint), local still linked",
+   "result": "pass",
+   "evidence": "{\"d1\":[{\"phrase\":\"PONTE-PRAIA-RODA\",\"name\":\"vps1\",\"contextId\":\"ctx_C6gAJ1bb8zWQlQMX6uX2K6Om\",\"result\":\"revogada\"}],\"afterD1\":{\"err\":\"reconnect AUTH_REQUIRED\",\"mintsDelta\":0,\"vps\":\"reconnect\",\"local\":\"linked\",\"localOk\":true},\"vpsLinkRevoked\":1795029080100}"
+  },
+  {
+   "name": "T12b page offers Conectar for the revoked one; new request asks only vps1; after paste both linked again",
+   "result": "pass",
+   "evidence": "{\"installs\":[\"vps1\"],\"newPhrase\":true}"
+  },
+  {
+   "name": "T12c disconnect <origin>: every recorded link on both gateways revoked; open access key 401; reload shows 'precisa reconectar' for both and a Conectar button",
+   "result": "pass",
+   "evidence": "{\"results\":[\"local:revogada\",\"vps1:revogada\"],\"deadOld\":\"401 AUTH_REQUIRED\",\"st12\":{\"local\":\"reconnect\",\"vps1\":\"reconnect\"},\"txt12\":\"Alguma instalação precisa de nova aprovação.\"}"
+  },
+  {
+   "name": "T12d disconnect revoked only link contexts (issuer keys on both gateways alive)",
+   "result": "pass",
+   "evidence": "[200,200]"
+  },
+  {
+   "name": "T12e disconnect again: nothing to revoke, exit 0",
+   "result": "pass",
+   "evidence": "[]"
+  },
+  {
+   "name": "T13 preset conversar: access caps = ver + mutate:sessions:send + scope (both gateways); link = that + issue; send to an in-scope session passes authorization, to an out-of-scope one 422 not found; revoke still 403",
+   "result": "pass",
+   "evidence": "{\"local\":{\"caps\":[\"access:session:outro-main\",\"mutate:sessions:send\",\"read:agents:list\",\"read:context:whoami\",\"read:sessions:info\",\"read:sessions:list\",\"view:agent:outro\"],\"sendIn\":\"422 SESSION_RELAY_FAILED\",\"sendOut\":\"422 COMMAND_FAILED\",\"revoke\":403},\"vps1\":{\"sendIn\":\"422 SESSION_RELAY_FAILED\",\"sendOut\":\"422 COMMAND_FAILED\",\"revoke\":403},\"linkCaps\":[8,8]}"
+  },
+  {
+   "name": "F1 page refuses a validly sealed but forged envelope: caps outside the preset (admin), a baseUrl other than the pinned one, a wildcard scope",
+   "result": "pass",
+   "evidence": "[\"refused: envelope traz permissões fora do preset ver\",\"refused: envelope aponta local para outro endereço\",\"refused: envelope traz permissões fora do preset ver\"]"
+  },
+  {
+   "name": "F2 helper envelope pointing local to another address: page refuses, nothing linked",
+   "result": "pass",
+   "evidence": "{\"fr2\":\"refused: envelope aponta local para outro endereço\",\"st4\":{\"local\":\"waiting\",\"vps1\":\"waiting\"}}"
+  },
+  {
+   "name": "F3 createConnect refuses the array form, a non-loopback address and an unknown preset",
+   "result": "pass",
+   "evidence": "[\"refused\",\"refused\",\"refused\",\"refused\"]"
+  },
+  {
+   "name": "F4 config refused (exit 2) for a wildcard or relation-shaped scope name, a missing scope, a non-loopback baseUrl",
+   "result": "pass",
+   "evidence": "{\"scope_wildcard\":\"CONFIG_SCOPE\",\"scope_relation\":\"CONFIG_SCOPE\",\"scope_missing\":\"CONFIG_SCOPE\",\"baseUrl_remote\":\"CONFIG_INSTALLS\"}"
+  },
+  {
+   "name": "F5 ledger lock: dead pid -> broken; live pid but older than 30 s -> broken; live and fresh -> LEDGER_LOCKED (exit 1)",
+   "result": "pass",
+   "evidence": "[0,0,\"LEDGER_LOCKED\"]"
+  },
+  {
+   "name": "F6 remote issuer key with mode 644: nothing issued on vps1 (KEY_FILE_MODE), no key printed",
+   "result": "pass",
+   "evidence": "{\"ok\":false,\"error\":{\"code\":\"ISSUE_FAILED\",\"message\":\"nenhuma instalação emitiu chave. Não conectou vps1: KEY_FILE_MODE. Confira o daemon e o ssh e peça para clicar em Conectar de novo.\"}}\n"
+  },
+  {
+   "name": "F7 status --probe flags an issuer without the scope relations as PROBLEMA; vps1 probe over ssh (remote path quoting) works",
+   "result": "pass",
+   "evidence": "{\"local\":\"chave emissora sem access:session:outro-main, view:agent:outro; refaça com pair.ts caps local\"}"
+  },
+  {
+   "name": "F8 disconnect refuses (NOT_OURS) a recorded link whose parent is missing, leaving the context alive; with the parent restored it revokes",
+   "result": "pass",
+   "evidence": "{\"first\":\"falhou (NOT_OURS): local: o contexto ctx_7D-lIt3-Rr93U_Xs_pYzKNQU não confere co\",\"alive\":200,\"second\":\"revogada\"}"
+  },
+  {
+   "name": "B1 stage B: wa.me link carries the request prefilled; Slack copy+open link present",
+   "result": "pass",
+   "evidence": "{\"wa\":\"https://wa.me/5500000000000?text=ravi-connect%3Av1...\",\"slack\":\"https://example-workspace.slack.com/app_redirect?channel=D0000000000\"}"
+  },
+  {
+   "name": "B2 stage B approve: envelope only in a 0600 file, route /_link/<code> matches the page, reply has no envelope",
+   "result": "pass",
+   "evidence": "{\"route\":\"/_link/3dca02ba17c1a374\"}"
+  },
+  {
+   "name": "B3 stage B: page polled its own /_link/<code> and linked both installations with no paste",
+   "result": "pass",
+   "evidence": "{\"local\":\"linked\",\"vps1\":\"linked\"}"
+  },
+  {
+   "name": "B4 after a stage-B delivery by polling, the envelope box of the NEXT request is empty (old draft cleared)",
+   "result": "pass",
+   "evidence": "{\"boxValue\":\"\"}"
+  },
+  {
+   "name": "G1 'Esquecer este navegador' (two clicks): IndexedDB emptied, card back to not linked",
+   "result": "pass",
+   "evidence": "{\"links\":0,\"pending\":false,\"keptRequests\":0,\"keysExtractable\":false,\"hasRctx\":false}"
+  },
+  {
+   "name": "X1 pair list: no keys printed, every link revoked after disconnects",
+   "result": "pass",
+   "evidence": "[\"PONTE-PRAIA-RODA:local=revogada,vps1=revogada\",\"FOGAO-CIDADE-CEREJA:local=revogada,vps1=revogada\",\"CAJU-GOIABA-MELANCIA:local=revogada,vps1=revogada\",\"ALEGRIA-OVELHA-BICHO:local=revogada\",\"PALHA-CORAL-POMAR:vps1=revogada\",\"LACO-FIGO-MADEIRA:local=revogada,vps1=revogada\",\"FERRO-LAMA-LARANJA:local=revogada,vps1=revogada\",\"CABANA-ABOBORA-LAGOA:local=revogada\",\"BOMBOM-FOLHA-MEL:local=revogada,vps1=revogada\"]"
+  },
+  {
+   "name": "X2 ledger 0600, no rctx_ in ledger",
+   "result": "pass",
+   "evidence": "{\"ledgerMode\":\"600\"}"
+  },
+  {
+   "name": "X3 request text with a line break inside (chat wrapping) still accepted; text with a leading greeting refused",
+   "result": "pass",
+   "evidence": "{\"wrapped\":\"exit0\",\"greeting\":\"NOT_A_REQUEST\"}"
+  },
+  {
+   "name": "X4 two parallel approve runs of one checked request: exactly one issues links",
+   "result": "pass",
+   "evidence": "{\"codes\":[0,3],\"linksAfter\":1}"
+  },
+  {
+   "name": "N1 every ssh call carries ConnectTimeout=10 and BatchMode=yes and the remote command starts with the PATH prefix; issue over the real CLI works; the same command without the prefix fails (exit 127, ravi not found in a clean ssh shell)",
+   "result": "pass",
+   "evidence": "{\"approve\":0,\"calls\":2,\"first\":\"-a -x -T -o ForwardX11=no -o ClearAllForwardings=yes -o ControlMaster=no -o ControlPath=none -o BatchMode=yes -o ConnectTimeout=10 -- vps1 PATH=\\\"$HOME/.bun/bin:$HOME/.local/bin:$PATH\\\"; export PATH; f=\",\"withoutPrefixExit\":127}"
+  },
+  {
+   "name": "N2 remote that hangs (vps1 first in the request): vps1 fails SSH_TIMEOUT after the configured 3 s (kept in the ledger as pending: it may exist there), local is still issued, recorded and its link works",
+   "result": "pass",
+   "evidence": "{\"code\":0,\"failed\":[{\"name\":\"vps1\",\"code\":\"SSH_TIMEOUT\",\"message\":\"ssh vps1: sem resposta em 3 s\",\"maybeIssued\":true}],\"installs\":[\"local\"],\"ledger\":[\"vps1:pending\",\"local\"],\"linkWhoami\":200,\"ms\":3049}"
+  },
+  {
+   "name": "N2b remote issue completed but ssh hung before the answer: SSH_TIMEOUT within the limit; the vps1 row was recorded BEFORE issuing (pending, cliName), the reply says it may exist there; list shows 'emissão interrompida', status lists it; disconnect prints the manual 'context list' + 'context revoke' instruction with that cliName; the owner finds it with the real CLI and revokes it",
+   "result": "pass",
+   "evidence": "{\"code\":1,\"err\":\"ISSUE_FAILED\",\"ms\":15041,\"activeOnVps\":1,\"row\":{\"name\":\"vps1\",\"contextId\":\"\",\"cliName\":\"connect:exemplo-painel.ravi.page:cZlsXT-a\",\"parentContextId\":null,\"expiresAt\":1800213123378,\"pending\":true},\"disconnect\":\"manual: a emissão em vps1 foi interrompida e pode ter criado o contexto connect:exemplo-painel.ravi.page:cZlsXT-a. Rode \",\"ownerRevoke\":0}"
+  },
+  {
+   "name": "N3 helper SIGKILLed while vps1 is being issued: local link already in the ledger, vps1 recorded as pending (no lock left), list shows local 'ativa', disconnect prints the manual command, the owner runs it, the second disconnect answers 'revogada' and marks the ledger",
+   "result": "pass",
+   "evidence": "{\"seenBeforeKill\":true,\"ledger\":[\"local\",\"vps1:pending\"],\"nonceState\":\"approving\",\"lockLeft\":false,\"first\":[\"manual: rode no seu terminal: ravi context revoke ctx_K3hAHuzOT6Z2s3TuKZNbr-OJ --reason ravi-connect  e depois repita o \",\"manual: a emissão em vps1 foi interrompida e pode ter criado o contexto connect:exemplo-painel.ravi.page:dZ6wzBcy. Rode \"],\"owner\":0,\"second\":[\"revogada\",\"manual: a emissão em vps1 foi interrompida e pode ter criado o contexto connect:exemplo-painel.ravi.page:dZ6wzBcy. Rode na VPS (ssh vps1): ravi context list --json --fields contextId,issuedFor  e, se aparecer connect:exemplo-painel.ravi.page:dZ6wzBcy, ravi context revoke <contextId> --reason ravi-connect . Esta linha some do registro quando a data dela passa (2027-01-17)\"]}"
+  },
+  {
+   "name": "N4 remote CLI prints warning lines (one starting with '{', one ending with '}') before and after its JSON: issue, whoami (status --probe) and info (manual-revoke check) are all still parsed",
+   "result": "pass",
+   "evidence": "{\"issue\":0,\"probe\":\"ok\",\"disconnectAfterOwnerRevoke\":\"revogada\"}"
+  },
+  {
+   "name": "N4b a one-line JSON log printed after the CLI's JSON: extractJson picks the object with the expected fields; approve succeeds and the ledger row has the contextId",
+   "result": "pass",
+   "evidence": "{\"code\":0,\"err\":\"exit0\",\"active\":1,\"ledger\":{\"contextId\":true,\"pending\":false}}"
+  },
+  {
+   "name": "N5 vps1 issuer with 30 days left: vps1 link ~30 d, local ~60 d, shortened = [vps1], reply warns 'vps1 vale menos que os 60 dias'",
+   "result": "pass",
+   "evidence": "{\"days\":{\"local\":60,\"vps1\":30},\"shortened\":[\"vps1\"],\"reply\":[\"Conectado: local até 2027-01-17, vps1 até 2026-12-18.\",\"Atenção: vps1 vale menos que os 60 dias combinados, porque a chave emissora de lá vence antes. Faça a Rotação de references/instalacao.md e reconecte.\"]}"
+  },
+  {
+   "name": "N5b the confirmation the owner approves already says the link can be shorter than the issuer key allows",
+   "result": "pass",
+   "evidence": "Validade: 60 dias (até 2027-01-17), ou menos se a chave emissora de uma instalação vencer antes"
+  },
+  {
+   "name": "N6 default revoke 'manual': first disconnect prints 'manual: rode no seu terminal / na VPS (ssh vps1): ravi context revoke <id> --reason ravi-connect' (exit 0, ok:false), links still work, ledger untouched; the owner runs exactly that command with the admin key (real CLI); second disconnect answers 'revogada' for both and marks the ledger; third: nothing to revoke",
+   "result": "pass",
+   "evidence": "{\"first\":{\"local\":\"manual: rode no seu terminal: ravi context revoke ctx_VVpJAfAWKhd6ryBvmho16Vwb --reason ravi-connect  e depois repita o \\\"desconectar\\\" para eu conferir\",\"vps1\":\"manual: rode na VPS (ssh vps1): ravi context revoke ctx_GLSPWvjYzqG3QLDQyOMLatGv --reason ravi-connect  e depois repita o \\\"desconectar\\\" para eu conferir\"},\"exitFirst\":0,\"okFirst\":false,\"live\":[200,200],\"owner\":{\"local\":0,\"vps1\":0},\"second\":[\"local:revogada\",\"vps1:revogada\"],\"third\":0,\"linkAfter\":[401,401]}"
+  },
+  {
+   "name": "N7 issuer without read:context:info: link revoked by the owner, disconnect still answers 'manual: ...' (cannot verify), ledger not marked; status --probe notes 'emissora sem read:context:info'",
+   "result": "pass",
+   "evidence": "{\"actual\":\"revoked\",\"disconnect\":\"manual: rode na VPS (ssh vps1): ravi context revoke ctx_ZSZbSsSwrputUCnFUSh3E4AX\",\"note\":\"emissora sem read:context:info: depois de uma revogação manual o helper não consegue conferir\"}"
+  },
+  {
+   "name": "N8 revoker key: revoke via http (local) and via cli over ssh (vps1) -> 'revogada' directly, both contexts revoked; via cli on the local installation too",
+   "result": "pass",
+   "evidence": "{\"results\":[\"local:revogada\",\"vps1:revogada\"],\"status\":[\"revoked\",\"revoked\"],\"localCli\":\"revogada\",\"localCliStatus\":\"revoked\"}"
+  },
+  {
+   "name": "R1 'sim' with accents, cedilla and ' - ' between words (phone keyboard) is accepted as the same phrase",
+   "result": "pass",
+   "evidence": "{\"typed\":\"frutá - óstrá - fumáçá\",\"code\":0,\"err\":\"exit0\"}"
+  },
+  {
+   "name": "R2 disconnect <frase> --install <unknown>: exit 1 NOT_FOUND, nothing revoked; the phrase typed with accents then revokes 'local'",
+   "result": "pass",
+   "evidence": "{\"unknown\":\"NOT_FOUND\",\"accented\":[\"revogada\"]}"
+  },
+  {
+   "name": "R3 --out-dir that is a symlink, a non-empty folder or a file: exit 2 OUT_DIR before the request is used (folder contents untouched); then a new folder works and the envelope file is 0600",
+   "result": "pass",
+   "evidence": "{\"refused\":[\"OUT_DIR\",\"OUT_DIR\",\"OUT_DIR\"],\"ok\":0}"
+  },
+  {
+   "name": "R4 symlink at ledger.json.tmp: target untouched (text and 0644 mode), list works, no temp file left",
+   "result": "pass",
+   "evidence": "{\"xr4v\":{\"text\":\"intocado\",\"mode\":\"644\"},\"leftTmp\":[]}"
+  },
+  {
+   "name": "R5 status --probe: issuer with an extra capability (read:sessions:read, an out-of-config session) -> PROBLEMA 'capacidade a mais'; an allowed origin missing from the gateway CORS -> PROBLEMA; a baseUrl nothing answers (tunnel down) -> PROBLEMA; all fine -> ok:true, page ok, issuer contextId shown; never a key",
+   "result": "pass",
+   "evidence": "{\"extra\":\"chave emissora com capacidade a mais: read:sessions:read, access:session:segredo; revogue-a e crie outra com pair.ts caps local\",\"cors\":\"http://127.0.0.1:43575 não libera https://outro-projeto.ravi.page no CORS (RAVI_CORS_ORIGINS, passo 1 de instalacao.md)\",\"tunnel\":\"a página não alcança http://127.0.0.1:9 (túnel caído, daemon parado ou porta errada)\",\"fine\":[\"local:ok\",\"vps1:ok\"]}"
+  },
+  {
+   "name": "R6 scope name containing 'rctx_' refused at config load (exit 2), before any nonce is used",
+   "result": "pass",
+   "evidence": "CONFIG_SCOPE"
+  },
+  {
+   "name": "R10 ssh exits 0 while a child still holds stdout (ControlPersist-like): approve succeeds well before the 20 s limit",
+   "result": "pass",
+   "evidence": "{\"code\":0,\"err\":\"exit0\",\"ms\":1913}"
+  },
+  {
+   "name": "R7 two tabs: tab 2 made a newer request; tab 1 still opens the envelope of ITS request and links",
+   "result": "pass",
+   "evidence": "{\"t1acc\":\"OPENED local,vps1\",\"t1st\":{\"local\":\"linked\",\"vps1\":\"linked\"}}"
+  },
+  {
+   "name": "R8 forged envelope (public request text, pinned address, preset caps) is accepted and fails at mint (reconnect); the real envelope of the same request is NOT refused afterwards and links both",
+   "result": "pass",
+   "evidence": "{\"forged\":\"OPENED\",\"afterForged\":{\"local\":\"reconnect\",\"vps1\":\"not-linked\"},\"real\":\"OPENED local,vps1\",\"after\":{\"local\":\"linked\",\"vps1\":\"linked\"}}"
+  },
+  {
+   "name": "R9 forget(): a handle obtained before keeps no key (call refused 'reconnect', state not-linked), IndexedDB holds nothing (links, pending, kept requests)",
+   "result": "pass",
+   "evidence": "{\"before\":\"ok\",\"after\":\"refused reconnect\",\"state\":\"not-linked\",\"stored\":{\"links\":0,\"pending\":false,\"keptRequests\":0,\"keysExtractable\":false,\"hasRctx\":false}}"
+  },
+  {
+   "name": "O1a owner flow: card offers Conectar on a fresh profile; same phrase on page and in the confirmation; approve with 'sim <frase>' in lowercase with spaces; button reads 'Usar este envelope'",
+   "result": "pass",
+   "evidence": "{\"states\":{\"local\":\"not-linked\",\"vps1\":\"not-linked\"},\"phrase\":true,\"approve\":0,\"button\":\"Usar este envelope\"}"
+  },
+  {
+   "name": "P1 text pasted in the envelope box survives a state change (card redrawn: new textarea, same text)",
+   "result": "pass",
+   "evidence": "{\"redrawn\":true,\"same\":1621}"
+  },
+  {
+   "name": "O1b after 'Usar este envelope' (the button clicked after the redraw): both linked, each lists only its scoped sessions, access keys are children of the two links",
+   "result": "pass",
+   "evidence": "{\"local\":{\"sessions\":[\"outro-main\"],\"parent\":\"ctx_w-gnMQmjcEQ3qCr649tWaQpl\"},\"vps1\":{\"sessions\":[\"main\",\"outro-main\"],\"parent\":\"ctx_UqLA6xT5C2a6xqAyFH5UfomP\"}}"
+  },
+  {
+   "name": "O2 reload, then browser closed and reopened on the same profile: linked both times, no approval",
+   "result": "pass",
+   "evidence": "{\"reload\":{\"local\":\"linked\",\"vps1\":\"linked\"},\"reopen\":{\"local\":\"linked\",\"vps1\":\"linked\"}}"
+  },
+  {
+   "name": "O3 another browser profile pasting the owner's envelope (with its own pending request): refused, nothing linked",
+   "result": "pass",
+   "evidence": "{\"oRef\":\"refused: não há pedido pendente deste envelope neste navegador (ou passou de 15 minutos)\",\"oOtherSt\":{\"local\":\"waiting\",\"vps1\":\"waiting\"}}"
+  },
+  {
+   "name": "O4 'desconectar <frase> na vps1' (manual): only vps1 answered with the command, page still works until the owner runs it; after it: vps1 'precisa reconectar' (AUTH_REQUIRED), local linked; repeat -> 'revogada'; list: local ativa, vps1 revogada",
+   "result": "pass",
+   "evidence": "{\"first\":\"manual: rode na VPS (ssh vps1): ravi context revoke ctx_UqLA6xT5C2a6xqAyFH5UfomP --reason \",\"beforeOwner\":\"ok\",\"owner\":0,\"after\":{\"vps1\":\"reconnect AUTH_REQUIRED\",\"local\":\"ok\"},\"second\":[{\"phrase\":\"LEITE-TRATOR-GARFO\",\"name\":\"vps1\",\"contextId\":\"ctx_UqLA6xT5C2a6xqAyFH5UfomP\",\"result\":\"revogada\"}],\"card\":\"vps1: precisa reconectar\"}"
+  },
+  {
+   "name": "O5 reconnect vps1: new request asks only vps1 with a new phrase; partial text survives a redraw; after paste both linked; local still on its ORIGINAL link, vps1 on the new one; after reload both linked; list has the new vps1 link 'ativa'",
+   "result": "pass",
+   "evidence": "{\"installs\":[\"vps1\"],\"newPhrase\":true,\"kept2\":{\"redrawn\":true,\"len\":40},\"parents\":{\"localSame\":true,\"vps1New\":true},\"reload\":{\"local\":\"linked\",\"vps1\":\"linked\"}}"
+  },
+  {
+   "name": "O6 at rest after the whole flow: two stored links (local's old one, vps1's new one), no rctx_, keys non-extractable",
+   "result": "pass",
+   "evidence": "{\"links\":2,\"pending\":false,\"keptRequests\":2,\"keysExtractable\":false,\"hasRctx\":false}"
+  }
+ ],
+ "problems": [
+  {
+   "severity": "medium",
+   "where": "design (link key holds mutate:context:issue) / assets/connect.js mint()",
+   "problem": "The '1-hour access key' is enforced only by connect.js. Anyone holding the opened link key (any script on the project origin, see limites.md) can call context/issue with ttl '0m' (inherits the link's 60 days: got 60.00 d) or '59d' (got 59.00 d), and can delegate mutate:context:issue onward, so stolen children outlive a later page reload; revoking the link does cascade and kill them.",
+   "fix": "Document it in limites.md next to 'O link aberto é portador'; longer term needs a gateway-side max child ttl per context (PEDIDO-LUIS.md)."
+  },
+  {
+   "severity": "info",
+   "where": "scripts/pair.ts cmdApprove",
+   "problem": "After a crash mid-approve the nonce stays in state 'approving' forever and the envelope for the already-issued link is lost; the page must send a new request (expected, but the owner sees no reply). The orphaned link is listed and can be disconnected (N3)."
+  },
+  {
+   "severity": "info",
+   "where": "scripts/pair.ts cmdDisconnect",
+   "problem": "A disconnect that only printed 'manual: ...' exits 0 with ok:false; the SKILL handles it by text ('manual: ...' lines), so this is consistent, but an agent keying on the exit code alone would report success."
+  }
+ ]
+}

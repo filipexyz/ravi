@@ -1,0 +1,47 @@
+#!/bin/sh
+# STAND-IN for ssh (there is no sshd in the test environment). Everything after ssh is real: the remote shell runs
+# with a clean environment (env -i, PATH=/usr/bin:/bin, like a non-interactive ssh session), a separate "remote"
+# HOME, and the `ravi` found there is a wrapper around the REAL CLI source entrypoint (written by e2e.cjs).
+# It logs argv, refuses to run without -a, ClearAllForwardings=yes, BatchMode=yes and ConnectTimeout=<n>,
+# and knows only the alias vps1. $E2E_SSH_MODE_FILE selects a failure to simulate:
+#   hang        ssh never answers (unreachable VPS); the process is a single `sleep`, so killing it closes the pipes
+#   hang-after  the remote command runs to the end, then the connection hangs before its output comes back
+#   hold        the remote command runs and answers, ssh exits 0, but a background child keeps stdout open
+#               (like a ControlPersist master or a daemonized helper)
+printf '%s\n' "$*" >> "$E2E_SSH_LOG"
+sawa=0; sawc=0; sawb=0; sawt=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o)
+      case "$2" in
+        ClearAllForwardings=yes) sawc=1 ;;
+        BatchMode=yes) sawb=1 ;;
+        ConnectTimeout=[0-9]*) sawt=1 ;;
+      esac
+      shift 2 ;;
+    -a) sawa=1; shift ;;
+    --) shift; break ;;
+    -*) shift ;;
+    *) break ;;
+  esac
+done
+[ "$sawa$sawc$sawb$sawt" = 1111 ] || { echo "stand-in ssh: -a, ClearAllForwardings, BatchMode or ConnectTimeout missing" >&2; exit 99; }
+[ "$1" = "vps1" ] || { echo "ssh: Could not resolve hostname $1" >&2; exit 255; }
+shift
+mode=$(cat "$E2E_SSH_MODE_FILE" 2>/dev/null)
+remote_env="HOME=$E2E_REMOTE_HOME PATH=/usr/bin:/bin LANG=C.UTF-8"
+case "$mode" in
+  hang)
+    echo $$ >> "$E2E_SSH_HANG_PIDS"
+    exec sleep 600 ;;
+  hang-after)
+    echo $$ >> "$E2E_SSH_HANG_PIDS"
+    (cd "$E2E_REMOTE_HOME" && env -i $remote_env sh -c "$1") > /dev/null 2>&1
+    exec sleep 600 ;;
+  hold)
+    (cd "$E2E_REMOTE_HOME" && env -i $remote_env sh -c "$1"); rc=$?
+    sleep 600 &
+    echo $! >> "$E2E_SSH_HANG_PIDS"
+    exit $rc ;;
+esac
+cd "$E2E_REMOTE_HOME" && exec env -i $remote_env sh -c "$1"

@@ -1,0 +1,3 @@
+#!/bin/sh
+# The REAL CLI (ravi-copy source) as the remote `ravi`; isolated state shared with the attack gateway.
+cd "$ATK_RAVI_COPY" && exec env -u HTTPS_PROXY -u HTTP_PROXY RAVI_STATE_DIR="$ATK_REMOTE_STATE" RAVI_GATEWAY_URL="$ATK_REMOTE_GW" NATS_URL=nats://127.0.0.1:1 RAVI_SUPPRESS_AUDIT_EVENTS=1 bun --no-env-file src/cli/index.ts "$@"
