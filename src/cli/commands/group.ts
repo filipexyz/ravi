@@ -4,8 +4,6 @@ import { errorDiagnostic } from "../../utils/error-diagnostic.js";
  */
 
 import "reflect-metadata";
-import { mkdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { Group, Command, CommandAccess, Arg, Option, Scope } from "../decorators.js";
 import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { hashForAudit } from "../provenance.js";
@@ -36,12 +34,9 @@ import {
   updateSessionName,
 } from "../../router/sessions.js";
 import { generateSessionName, ensureUniqueName } from "../../router/session-name.js";
-import { createAgent, getAgent } from "../../router/config.js";
+import { getAgent } from "../../router/config.js";
 import { expandHome } from "../../router/resolver.js";
-import { ensureAgentInstructionFiles } from "../../runtime/agent-instructions.js";
-import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
-import { DEFAULT_RUNTIME_PROVIDER_ID } from "../../runtime/provider-registry.js";
-import { ensureAgentCanViewAgent } from "../../permissions/agent-default-capabilities-provider.js";
+import { ensureChannelAgent } from "../channel-agent.js";
 import { buildRuntimeCallerPrincipal } from "../../runtime/turn-origin.js";
 import { nats } from "../../nats.js";
 
@@ -240,69 +235,6 @@ function inferActorAdminPhones(): string[] {
   }
 
   return uniquePhones(resolved).filter(isGroupParticipantIdentity);
-}
-
-function defaultAgentCwd(agentId: string): string {
-  return `${homedir()}/ravi/${agentId}`;
-}
-
-function ensureGroupAgent(input: {
-  agentId: string;
-  createIfMissing?: boolean;
-  cwd?: string;
-  provider?: string;
-  model?: string;
-}): {
-  status: "existing" | "created";
-  agentId: string;
-  cwd: string;
-  provider?: string;
-  model?: string;
-} {
-  const existing = getAgent(input.agentId);
-  if (existing) {
-    return {
-      status: "existing",
-      agentId: existing.id,
-      cwd: expandHome(existing.cwd),
-      ...(existing.provider ? { provider: existing.provider } : {}),
-      ...(existing.model ? { model: existing.model } : {}),
-    };
-  }
-
-  if (!input.createIfMissing) {
-    fail(`Agent not found: ${input.agentId}. Pass --create-agent to create it before routing the group.`);
-  }
-
-  const provider = input.provider?.trim() || undefined;
-  const model = input.model?.trim() || undefined;
-  if (model) {
-    const result = validateRuntimeModelSelector(provider ?? DEFAULT_RUNTIME_PROVIDER_ID, model);
-    if (!result.ok) fail(result.error ?? `Invalid model: ${model}`);
-  }
-
-  const cwd = expandHome(input.cwd?.trim() || defaultAgentCwd(input.agentId));
-  mkdirSync(cwd, { recursive: true });
-  const created = createAgent({
-    id: input.agentId,
-    cwd,
-    ...(provider ? { provider } : {}),
-    ...(model ? { model } : {}),
-  });
-  const creatorAgentId = getContext()?.agentId;
-  if (creatorAgentId && creatorAgentId !== created.id) {
-    ensureAgentCanViewAgent(creatorAgentId, created.id);
-  }
-  ensureAgentInstructionFiles(cwd, {
-    createAgentsStub: `# ${input.agentId}\n\nInstruções do agente aqui.\n`,
-  });
-  return {
-    status: "created",
-    agentId: created.id,
-    cwd,
-    ...(created.provider ? { provider: created.provider } : {}),
-    ...(created.model ? { model: created.model } : {}),
-  };
 }
 
 function upsertGroupChatParticipants(input: {
@@ -1143,7 +1075,7 @@ export class GroupCommands {
     // Validate all participants exist in contacts before creating group
     validateParticipantsAreContacts("whatsapp group create", participants, asJson);
 
-    // Same guard ensureGroupAgent applies later, surfaced BEFORE the brake so
+    // Same guard ensureChannelAgent applies later, surfaced BEFORE the brake so
     // the dry-run plan never promises a route to a nonexistent agent.
     if (agent && !createAgentIfMissing && !getAgent(agent)) {
       fail(`Agent not found: ${agent}. Pass --create-agent to create it before routing the group.`);
@@ -1169,7 +1101,7 @@ export class GroupCommands {
     }
 
     const preparedAgent = agent
-      ? ensureGroupAgent({
+      ? ensureChannelAgent({
           agentId: agent,
           createIfMissing: createAgentIfMissing,
           cwd: agentCwd,
@@ -1384,6 +1316,20 @@ export class GroupCommands {
       }
 
       emitConfigChanged();
+    } else {
+      // A group with no route falls to the instance default agent (often an
+      // onboarding agent) on its first message. Say so instead of staying silent.
+      const defaultAgent = instance?.agent ?? null;
+      jsonPayload.route = {
+        status: "none",
+        defaultAgent,
+        hint: `Pass --agent <id> to route this group. Without a route, the first message goes to ${defaultAgent ? `the instance default agent "${defaultAgent}"` : "the instance default"}.`,
+      };
+      if (!asJson) {
+        console.log(
+          `  Route:        none — first message goes to ${defaultAgent ? `default agent "${defaultAgent}"` : "the instance default"}; add --agent <id> to route it`,
+        );
+      }
     }
 
     if (asJson) {
