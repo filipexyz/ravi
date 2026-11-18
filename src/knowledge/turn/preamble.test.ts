@@ -53,7 +53,6 @@ function audienceWith(overrides: Partial<KnowledgeAudienceDeps> = {}) {
     sessionKeyFor: () => "agent:main:whatsapp:dm:5511",
     isPrivateDirectSession: (input) => !input.sessionKey?.endsWith(":main"),
     dmContact: () => null,
-    cronOwner: () => ({ found: false, ownerPrincipal: null }),
     packet: noPacket,
     isLinkedOwner: () => true,
     isOperatorSession: () => true,

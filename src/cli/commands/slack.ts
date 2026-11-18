@@ -4,6 +4,7 @@
 
 import "reflect-metadata";
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
+import { type CredentialBrokerErrorCode, isCredentialBrokerError } from "../../credentials/errors.js";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
@@ -153,6 +154,8 @@ interface SlackOpsTarget {
 interface SlackMutationContextInput {
   channelName?: string;
   action: string;
+  /** The mutation removes content although `action` does not say so. */
+  destructive?: boolean;
   op: string;
   method: string;
   request: Record<string, unknown>;
@@ -311,21 +314,51 @@ function resolveSlackOpsTarget(channelName: string | undefined, contract: SlackC
   };
 }
 
+/** Broker codes that mean "this caller was refused", not "something broke". */
+const SLACK_CREDENTIAL_REFUSAL_CODES: ReadonlySet<CredentialBrokerErrorCode> = new Set([
+  "approval_denied",
+  "authorization_denied",
+  "caller_invalid",
+]);
+
 async function resolveSlackCredentialContext(
   target: SlackOpsTarget,
   action: string,
   contract: SlackContractContext,
+  options: { destructive?: boolean } = {},
 ): Promise<SlackCredentialConfig> {
   const { channel, channels } = target;
   let config: SlackCredentialConfig | null;
   try {
     config = await resolveSlackCredentialConfigFromEnv(process.env, {
       action,
+      ...(options.destructive ? { destructive: true } : {}),
       channel,
       channels,
       authority: { kind: "local-operator" },
     });
   } catch (error) {
+    if (isCredentialBrokerError(error) && SLACK_CREDENTIAL_REFUSAL_CODES.has(error.code)) {
+      // A refusal is a permission outcome, not an internal failure: say who
+      // refused and how to get through instead of surfacing a 500.
+      contractFail(
+        contract.op,
+        "PERMISSION_DENIED",
+        error.detail ?? `Slack credential use was refused (${error.code}) for channel ${channel.name}.`,
+        {
+          asJson: contract.asJson,
+          diagnostic: errorDiagnostic(error, {
+            operation: contract.op,
+            provider: "slack",
+            code: error.code,
+          }),
+          details: {
+            suggestedAction:
+              "Link the requester's Slack user to the contact that holds the permission (`ravi contacts info <contact>`, `ravi contacts merge <source> <target>`), grant the permission to the agent, or run the command from the operator terminal.",
+          },
+        },
+      );
+    }
     throw Object.assign(new Error("Slack credential resolution failed.", { cause: error }), {
       context: { operation: contract.op, provider: "slack" },
     });
@@ -352,6 +385,15 @@ async function resolveSlackCredentialContext(
     );
   }
   return config;
+}
+
+/**
+ * A canvas change that removes existing content: deleting a section, or
+ * replacing the whole canvas (its previous body is gone). A section
+ * `replace`, `rename` and inserts stay ordinary writes.
+ */
+export function isSlackCanvasRemovalChange(change: SlackCanvasEditChange): boolean {
+  return change.operation === "delete" || isWholeCanvasReplace(change);
 }
 
 /** Resolve credentials and construct a Slack client for an executing/read operation. */
@@ -2949,6 +2991,8 @@ export class SlackCommands {
     const { client, config } = await this.mutationOpsContext({
       channelName: raviChannel,
       action: "slack.canvas.showcase",
+      // Publishes a whole canvas body over whatever was there: destructive.
+      destructive: true,
       op,
       method: "slack.canvas.showcase",
       request,
@@ -2999,6 +3043,8 @@ export class SlackCommands {
     const { client, config } = await this.mutationOpsContext({
       channelName: raviChannel,
       action: "slack.canvas.channelShowcase",
+      // Publishes a whole canvas body over whatever was there: destructive.
+      destructive: true,
       op,
       method: "slack.canvas.channelShowcase",
       request,
@@ -3121,6 +3167,8 @@ export class SlackCommands {
     const { client, config } = await this.mutationOpsContext({
       channelName: raviChannel,
       action: "slack.canvas.artifact.publish",
+      // Publishes a whole canvas body over whatever was there: destructive.
+      destructive: true,
       op,
       method: "slack.canvas.artifact.publish",
       request,
@@ -3265,6 +3313,9 @@ export class SlackCommands {
     const { client, config } = await this.mutationOpsContext({
       channelName: raviChannel,
       action: "canvases.edit",
+      // Deleting a section removes content: always ask, even on the author's
+      // own turn (the broker cannot see the change inside canvases.edit).
+      destructive: isSlackCanvasRemovalChange(change),
       op,
       method: "canvases.edit",
       request,
@@ -3584,7 +3635,9 @@ export class SlackCommands {
     if (!input.execute) {
       this.brakeDryRun(input.op, target.summary, input.method, input.request, input.asJson, input.item);
     }
-    return resolveSlackCredentialContext(target, input.action, contract);
+    return resolveSlackCredentialContext(target, input.action, contract, {
+      ...(input.destructive ? { destructive: true } : {}),
+    });
   }
 
   private async mutationOpsContext(input: SlackMutationContextInput): Promise<SlackOpsContext> {

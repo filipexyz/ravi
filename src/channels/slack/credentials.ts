@@ -30,6 +30,7 @@ export type SlackCredentialResolver = (input: {
   provider: string;
   connection: string;
   action: string;
+  destructive?: boolean;
   authority?: CredentialBrokerAuthority;
 }) => Promise<{ secret: string; connection?: { connection: string } }>;
 
@@ -39,6 +40,8 @@ export async function resolveSlackCredentialConfigFromEnv(
     resolveSecret?: SlackCredentialResolver;
     authority?: CredentialBrokerAuthority;
     action?: string;
+    /** The call removes content; the broker always asks for approval. */
+    destructive?: boolean;
     channel?: ChannelConfig;
     channels?: Record<string, ChannelConfig>;
   } = {},
@@ -53,6 +56,7 @@ export async function resolveSlackCredentialConfigFromEnv(
       provider: "slack",
       connection,
       action: options.action ?? "socket_mode.connect",
+      ...(options.destructive ? { destructive: true } : {}),
       ...(options.authority ? { authority: options.authority } : {}),
     });
     const payload = parseSlackSecretPayload(resolved.secret);
