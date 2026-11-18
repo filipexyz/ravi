@@ -434,10 +434,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels | src/channels/terminal-projection-recovery.ts | 169 | fixed | binding retained / no recognized error surface | src/channels/terminal-projection-recovery.ts:b16c531362ec7ba4323b45f4 |
 | channels | src/channels/terminal-projection-recovery.ts | 200 | fixed | binding retained / no recognized error surface | src/channels/terminal-projection-recovery.ts:545c0a622bfd6a2bb7c8fbcc |
 | channels | src/channels/terminal-projection-recovery.ts | 368 | fixed | binding retained / no recognized error surface | src/channels/terminal-projection-recovery.ts:cec37543b58b49807dd44f1f |
-| ci | src/ci/quality-gate.ts | 435 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:35e920db0e1dc5d202263c0b |
-| ci | src/ci/quality-gate.ts | 446 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:3ca26f959f0fbb07f2541ae7 |
-| ci | src/ci/quality-gate.ts | 456 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:51a5a6018c77cc4a8a8aac22 |
-| ci | src/ci/quality-gate.ts | 465 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:4ef5158409736ec9a3bee50a |
+| ci | src/ci/quality-gate.ts | 441 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:35e920db0e1dc5d202263c0b |
+| ci | src/ci/quality-gate.ts | 452 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:3ca26f959f0fbb07f2541ae7 |
+| ci | src/ci/quality-gate.ts | 462 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:51a5a6018c77cc4a8a8aac22 |
+| ci | src/ci/quality-gate.ts | 471 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:4ef5158409736ec9a3bee50a |
 | ci | src/ci/run-quality-gate.ts | 37 | triaged-follow-up | catch-without-binding | src/ci/run-quality-gate.ts:5271b06f964c5c57249517e5 |
 | cli | src/cli/audit.ts | 55 | triaged-follow-up | rejection-without-binding | src/cli/audit.ts:66ccfbc7e8e1dda3b8608604 |
 | cli | src/cli/audit.ts | 58 | triaged-follow-up | rejection-without-binding | src/cli/audit.ts:66ccfbc7e8e1dda3b8608604 |
@@ -1982,10 +1982,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/runtime-request-builder.ts | 1304 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:97f069feec77376de9ce4cfe |
 | runtime-chat | src/runtime/runtime-request-builder.ts | 1320 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:fceed3ce3c4bcb1014946096 |
 | runtime-chat | src/runtime/runtime-request-builder.ts | 1330 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:e11eb49a2511c5a3e84172db |
-| runtime-chat | src/runtime/runtime-request-context.ts | 111 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:9c19b85e67a579c3b18fc384 |
-| runtime-chat | src/runtime/runtime-request-context.ts | 184 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:fb0b243ac337da14f0ac5365 |
-| runtime-chat | src/runtime/runtime-request-context.ts | 472 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:7206346edd25c13ff4d8a8d8 |
-| runtime-chat | src/runtime/runtime-request-context.ts | 702 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:f5a91420c25bdfe230c4347d |
+| runtime-chat | src/runtime/runtime-request-context.ts | 110 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:9c19b85e67a579c3b18fc384 |
+| runtime-chat | src/runtime/runtime-request-context.ts | 183 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:fb0b243ac337da14f0ac5365 |
+| runtime-chat | src/runtime/runtime-request-context.ts | 471 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:7206346edd25c13ff4d8a8d8 |
+| runtime-chat | src/runtime/runtime-request-context.ts | 701 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:f5a91420c25bdfe230c4347d |
 | sessions | src/runtime/session-dispatcher.ts | 557 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:f62a129921ede3d5cf54be0f |
 | sessions | src/runtime/session-dispatcher.ts | 566 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:083324775001a686ec7a5875 |
 | sessions | src/runtime/session-dispatcher.ts | 701 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:4e182c47be33a9110d382f81 |

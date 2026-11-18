@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import {
   AGENT_ENV_PASSTHROUGH_VAR,
   filterAgentRuntimeBaseEnv,
@@ -41,13 +42,21 @@ const DAEMON_CONFIG: Record<string, string> = {
   RAVI_STATE_DIR: "/Users/operator/.ravi",
   RAVI_HTTP_PORT: "4211",
   NATS_URL: "nats://127.0.0.1:4222",
-  CLAUDE_CODE_MAX_OUTPUT_TOKENS: "64000",
   HTTPS_PROXY: "http://proxy.internal:3128",
 };
 
+/** Provider configuration: each name belongs to one provider. */
+const PROVIDER_CONFIG: Record<string, string> = {
+  CLAUDE_CODE_MAX_OUTPUT_TOKENS: "64000",
+  ANTHROPIC_BASE_URL: "https://api.anthropic.example",
+  CODEX_HOME: "/Users/operator/.codex",
+  PI_CODING_AGENT_DIR: "/Users/operator/.pi/agent",
+  GROK_HOME: "/Users/operator/.grok",
+};
+
 describe("agent runtime env policy", () => {
-  it("drops every daemon secret and keeps runtime and toolchain config", () => {
-    const env = filterAgentRuntimeBaseEnv({ ...DAEMON_SECRETS, ...DAEMON_CONFIG });
+  it("drops every daemon secret and keeps shared runtime and toolchain config", () => {
+    const env = filterAgentRuntimeBaseEnv({ ...DAEMON_SECRETS, ...DAEMON_CONFIG }, { runtimeProviderId: "pi" });
 
     for (const name of Object.keys(DAEMON_SECRETS)) {
       expect(env[name]).toBeUndefined();
@@ -55,14 +64,79 @@ describe("agent runtime env policy", () => {
     expect(env).toEqual(DAEMON_CONFIG);
   });
 
-  it("drops an allowlisted name whose value is a URL with a password", () => {
+  it("drops an allowlisted name whose value carries URL userinfo", () => {
     const env = filterAgentRuntimeBaseEnv({
       NATS_URL: "nats://ravi:canary-nats@127.0.0.1:4222",
       HTTPS_PROXY: "http://user:canary-proxy@proxy.internal:3128",
+      // Empty user name with a password (Devin, PR #871).
+      HTTP_PROXY: "http://:canary-empty-user@proxy.internal:3128",
+      // A token used as the user name.
+      ALL_PROXY: "https://canary-token@proxy.internal",
+      // A URL with credentials inside a longer value.
+      NODE_OPTIONS: "--use-env-proxy --proxy=http://u:canary-inline@proxy.internal",
       PATH: "/usr/bin",
+      NO_PROXY: "localhost,127.0.0.1",
     });
 
-    expect(env).toEqual({ PATH: "/usr/bin" });
+    expect(env).toEqual({ PATH: "/usr/bin", NO_PROXY: "localhost,127.0.0.1" });
+  });
+
+  it("gives provider config only to the provider that owns it", () => {
+    const base = { ...DAEMON_CONFIG, ...PROVIDER_CONFIG };
+
+    const claude = filterAgentRuntimeBaseEnv(base, { runtimeProviderId: "claude" });
+    expect(claude.CLAUDE_CODE_MAX_OUTPUT_TOKENS).toBe("64000");
+    expect(claude.ANTHROPIC_BASE_URL).toBe("https://api.anthropic.example");
+    expect(claude.CODEX_HOME).toBeUndefined();
+    expect(claude.GROK_HOME).toBeUndefined();
+
+    const codex = filterAgentRuntimeBaseEnv(base, { runtimeProviderId: "codex" });
+    expect(codex.CODEX_HOME).toBe("/Users/operator/.codex");
+    expect(codex.ANTHROPIC_BASE_URL).toBeUndefined();
+    expect(codex.CLAUDE_CODE_MAX_OUTPUT_TOKENS).toBeUndefined();
+
+    const unknown = filterAgentRuntimeBaseEnv(base);
+    for (const name of Object.keys(PROVIDER_CONFIG)) {
+      expect(unknown[name]).toBeUndefined();
+    }
+  });
+
+  it("keeps ANTHROPIC_CUSTOM_HEADERS out unless passed through, and then only for Claude", () => {
+    const base = { ...DAEMON_CONFIG, ANTHROPIC_CUSTOM_HEADERS: "Authorization: Bearer canary-header" };
+    expect(filterAgentRuntimeBaseEnv(base, { runtimeProviderId: "claude" }).ANTHROPIC_CUSTOM_HEADERS).toBeUndefined();
+
+    const passed = { ...base, [AGENT_ENV_PASSTHROUGH_VAR]: "ANTHROPIC_CUSTOM_HEADERS" };
+    expect(filterAgentRuntimeBaseEnv(passed, { runtimeProviderId: "claude" }).ANTHROPIC_CUSTOM_HEADERS).toBe(
+      "Authorization: Bearer canary-header",
+    );
+    for (const provider of ["codex", "pi", "grok", undefined]) {
+      expect(
+        filterAgentRuntimeBaseEnv(passed, { runtimeProviderId: provider }).ANTHROPIC_CUSTOM_HEADERS,
+      ).toBeUndefined();
+    }
+  });
+
+  it("passes git's env config trio whole or not at all", () => {
+    const gitConfig = {
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: "http.extraHeader",
+      GIT_CONFIG_VALUE_0: "Authorization: Bearer canary-git",
+    };
+
+    const dropped = filterAgentRuntimeBaseEnv({ ...DAEMON_CONFIG, ...gitConfig, GIT_EDITOR: "vi" });
+    expect(dropped.GIT_CONFIG_COUNT).toBeUndefined();
+    expect(dropped.GIT_CONFIG_KEY_0).toBeUndefined();
+    expect(dropped.GIT_CONFIG_VALUE_0).toBeUndefined();
+    expect(dropped.GIT_EDITOR).toBe("vi");
+
+    const passed = filterAgentRuntimeBaseEnv({
+      ...DAEMON_CONFIG,
+      ...gitConfig,
+      [AGENT_ENV_PASSTHROUGH_VAR]: "GIT_CONFIG_COUNT",
+    });
+    expect(passed.GIT_CONFIG_COUNT).toBe("1");
+    expect(passed.GIT_CONFIG_KEY_0).toBe("http.extraHeader");
+    expect(passed.GIT_CONFIG_VALUE_0).toBe("Authorization: Bearer canary-git");
   });
 
   it("never lets a Ravi- or tool-prefixed secret through its prefix", () => {
@@ -72,9 +146,14 @@ describe("agent runtime env policy", () => {
       "GH_TOKEN",
       "GIT_ASKPASS_PASSWORD",
       "NODE_AUTH_TOKEN",
+      "GIT_CONFIG_PARAMETERS",
+      "GIT_CONFIG_KEY_0",
+      "OTEL_EXPORTER_OTLP_HEADERS",
     ]) {
       expect(isAgentRuntimeEnvNameAllowed(name)).toBe(false);
+      expect(isAgentRuntimeEnvNameAllowed(name, "claude")).toBe(false);
     }
+    expect(isAgentRuntimeEnvNameAllowed("ANTHROPIC_CUSTOM_HEADERS", "claude")).toBe(false);
     for (const name of ["RAVI_STATE_DIR", "GH_PAGER", "GIT_EDITOR", "NODE_OPTIONS", "SSH_AUTH_SOCK"]) {
       expect(isAgentRuntimeEnvNameAllowed(name)).toBe(true);
     }
@@ -164,5 +243,24 @@ describe("agent shell env", () => {
       if (saved.openai === undefined) delete process.env.OPENAI_API_KEY;
       else process.env.OPENAI_API_KEY = saved.openai;
     }
+  });
+
+  it("git still runs in an agent shell when the daemon env carries a git config trio", () => {
+    const runtimeEnv = buildRuntimeEnv(
+      {
+        ...DAEMON_CONFIG,
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: "http.extraHeader",
+        GIT_CONFIG_VALUE_0: "Authorization: Bearer canary-git",
+      },
+      { RAVI_CONTEXT_KEY: "rctx_turn" },
+      undefined,
+      capabilities,
+    );
+
+    // A partial trio (count and value without the key) makes git refuse every command.
+    const git = spawnSync("git", ["config", "--list"], { env: runtimeEnv, encoding: "utf8", cwd: tmpdir() });
+    expect(git.status).toBe(0);
+    expect(git.stdout).not.toContain("canary-git");
   });
 });

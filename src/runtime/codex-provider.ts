@@ -1,4 +1,4 @@
-import { filterAgentRuntimeBaseEnv, resolveProviderLoginEnvKeys } from "./agent-env-policy.js";
+import { filterAgentRuntimeBaseEnv } from "./agent-env-policy.js";
 import type { RuntimeGoal, RuntimeGoalStatus } from "./types.js";
 import { RUNTIME_OPERATION_UNSUPPORTED } from "./runtime-control-errors.js";
 import { spawn } from "node:child_process";
@@ -415,7 +415,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
           cwd: input.cwd,
           // Same boundary as a turn: never the whole daemon env (see agent-env-policy.ts).
           env: {
-            ...filterAgentRuntimeBaseEnv(process.env, { inheritedAuthEnvKeys: resolveProviderLoginEnvKeys("codex") }),
+            ...filterAgentRuntimeBaseEnv(process.env, { runtimeProviderId: "codex" }),
             ...input.env,
             ...(typeof input.sessionParams?.codexHome === "string"
               ? { CODEX_HOME: input.sessionParams.codexHome }

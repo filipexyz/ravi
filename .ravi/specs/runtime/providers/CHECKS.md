@@ -37,7 +37,9 @@
 - The Ravi turn env (`RAVI_CONTEXT_KEY`) and the selected managed credential MUST still reach the provider after the filter.
 - A provider MUST inherit only its own login variables from the daemon env: Claude gets `CLAUDE_CODE_OAUTH_TOKEN` and not `OPENAI_API_KEY`; Pi gets neither.
 - A name under an allowed prefix that looks like a secret (`RAVI_ADMIN_TOKEN`, `GH_TOKEN`, `NODE_AUTH_TOKEN`) MUST be dropped; `SSH_AUTH_SOCK`, `RAVI_STATE_DIR` and `CLAUDE_CODE_MAX_OUTPUT_TOKENS` MUST be kept.
-- An allowlisted name whose value is a URL with a password MUST be dropped.
+- An allowlisted name whose value contains a URL with userinfo MUST be dropped, including an empty user with a password (`http://:pass@host`) and a token as the user (`https://token@host`).
+- Provider-scoped config (`CLAUDE_*`, `ANTHROPIC_*`, `CODEX_*`, `PI_*`, `GROK_*`) MUST reach only its own provider; `ANTHROPIC_CUSTOM_HEADERS` MUST be dropped by default and, when passed through, MUST reach Claude only.
+- `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>` MUST be passed or dropped together; `git config --list` MUST still run in an agent shell when the daemon env carries the trio.
 - Names in `RAVI_AGENT_ENV_PASSTHROUGH` MUST reach the provider; names not listed MUST NOT.
 - Codex stored-session control MUST spawn without daemon secrets (`src/runtime/codex-control-env.test.ts`).
 

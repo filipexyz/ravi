@@ -38,11 +38,11 @@ function prependPathEntry(currentPath: string | undefined, entry: string): strin
  * Env for a provider runtime process (Claude Code, Codex, Pi, Grok).
  *
  * The daemon env is not inherited wholesale: `filterAgentRuntimeBaseEnv` keeps
- * only allowlisted names, the operator passthrough list and the provider's own
- * login variables (`inheritedAuthEnvKeys`). Every command the agent runs
- * inherits this env, so anything left here is readable by the agent. The Ravi
- * turn env and the selected credential (`providerEnv`) are added on purpose
- * after the filter.
+ * only allowlisted names, the operator passthrough list, and the config and
+ * login variables of the provider being started (`runtimeProviderId`). Every
+ * command the agent runs inherits this env, so anything left here is readable
+ * by the agent. The Ravi turn env and the selected credential (`providerEnv`)
+ * are added on purpose after the filter.
  */
 export function buildRuntimeEnv(
   baseEnv: Record<string, string>,
@@ -50,10 +50,10 @@ export function buildRuntimeEnv(
   providerEnv: Record<string, string> | undefined,
   capabilities: RuntimeCapabilities,
   forceSanitizeSecrets = false,
-  options: { inheritedAuthEnvKeys?: readonly string[] } = {},
+  options: { runtimeProviderId?: string } = {},
 ): Record<string, string> {
   const sanitizedBaseEnv = filterAgentRuntimeBaseEnv(baseEnv, {
-    inheritedAuthEnvKeys: options.inheritedAuthEnvKeys,
+    runtimeProviderId: options.runtimeProviderId,
   });
   for (const key of TASK_RUNTIME_ENV_VARS) {
     delete sanitizedBaseEnv[key];

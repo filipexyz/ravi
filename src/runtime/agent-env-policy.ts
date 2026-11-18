@@ -72,22 +72,17 @@ const ALLOWED_ENV_NAMES = new Set([
   "PM2_HOME",
   "MANPATH",
   "INFOPATH",
-  "CLAUDECODE",
 ]);
 
 /**
- * Prefixes for runtime and toolchain configuration. A name under one of these
- * prefixes still has to pass the secret-name check below, so `RAVI_ADMIN_TOKEN`
- * or `GH_TOKEN` never pass through a prefix.
+ * Prefixes for runtime and toolchain configuration shared by every provider. A
+ * name under one of these prefixes still has to pass the secret-name check
+ * below, so `RAVI_ADMIN_TOKEN` or `GH_TOKEN` never pass through a prefix.
  */
 const ALLOWED_ENV_PREFIXES = [
   "LC_",
   "XDG_",
   "RAVI_",
-  "CLAUDE_",
-  "ANTHROPIC_",
-  "CODEX_",
-  "PI_",
   "OMNI_",
   "BUN_",
   "NODE_",
@@ -98,8 +93,28 @@ const ALLOWED_ENV_PREFIXES = [
   "PNPM_",
   "PYENV_",
   "COREPACK_",
-  "GROK_",
 ];
+
+/**
+ * Provider configuration prefixes. A name under one of them reaches only the
+ * provider that owns it, also when the operator lists it in the passthrough:
+ * `ANTHROPIC_*` never reaches Codex, Pi or Grok.
+ */
+const PROVIDER_ENV_PREFIXES: Record<string, readonly string[]> = {
+  claude: ["CLAUDE_", "ANTHROPIC_"],
+  codex: ["CODEX_"],
+  pi: ["PI_"],
+  grok: ["GROK_"],
+};
+
+/**
+ * Git's env config injection (`GIT_CONFIG_COUNT` with `GIT_CONFIG_KEY_<n>` and
+ * `GIT_CONFIG_VALUE_<n>`). Values can carry credentials (for example an
+ * `http.extraHeader` with a token), and git refuses to run when the trio is
+ * incomplete, so the family is passed or dropped as a whole: dropped by
+ * default, passed only when the passthrough names one of its members.
+ */
+const GIT_CONFIG_ENV_FAMILY = /^GIT_CONFIG_(COUNT|KEY_\d+|VALUE_\d+)$/;
 
 /**
  * Names that look like they hold a secret. Applied to every inherited name,
@@ -123,6 +138,10 @@ const SECRET_ENV_NAME_PATTERNS = [
   /CONNECTION_STRING/i,
   /(^|_)(DATABASE|DB|POSTGRES|POSTGRESQL|PG|MYSQL|REDIS|MONGO|MONGODB|AMQP|RABBITMQ)_(URL|URI)$/i,
   /^DATABASE_URL$/i,
+  // Extra request headers (`ANTHROPIC_CUSTOM_HEADERS`, `OTEL_EXPORTER_OTLP_HEADERS`) usually carry auth.
+  /HEADERS?($|_)/i,
+  // `git -c` config travels in this variable and can carry credentials.
+  /^GIT_CONFIG_PARAMETERS$/,
 ];
 
 /**
@@ -136,22 +155,43 @@ export function isSecretShapedEnvName(name: string): boolean {
   return SECRET_ENV_NAME_PATTERNS.some((pattern) => pattern.test(name));
 }
 
+/** Provider that owns a provider-scoped name, or undefined for a shared name. */
+function providerOwningEnvName(name: string): string | undefined {
+  for (const [providerId, prefixes] of Object.entries(PROVIDER_ENV_PREFIXES)) {
+    if (prefixes.some((prefix) => name.startsWith(prefix))) return providerId;
+  }
+  return undefined;
+}
+
+function isInProviderScope(name: string, runtimeProviderId: string | undefined): boolean {
+  const owner = providerOwningEnvName(name);
+  return owner === undefined || owner === runtimeProviderId;
+}
+
 /**
  * Exact names are checked first: none of them holds a secret, and the
  * secret-name check would otherwise drop `SSH_AUTH_SOCK` (a socket path that
- * git needs for SSH remotes).
+ * git needs for SSH remotes). Provider-scoped prefixes only pass for their own
+ * provider; with no provider given, they never pass.
  */
-export function isAgentRuntimeEnvNameAllowed(name: string): boolean {
+export function isAgentRuntimeEnvNameAllowed(name: string, runtimeProviderId?: string): boolean {
   if (ALLOWED_ENV_NAMES.has(name)) return true;
+  if (GIT_CONFIG_ENV_FAMILY.test(name)) return false;
   if (isSecretShapedEnvName(name)) return false;
-  return ALLOWED_ENV_PREFIXES.some((prefix) => name.startsWith(prefix));
+  if (ALLOWED_ENV_PREFIXES.some((prefix) => name.startsWith(prefix))) return true;
+  const owner = providerOwningEnvName(name);
+  return owner !== undefined && owner === runtimeProviderId;
 }
 
-/** A URL that carries a password (`scheme://user:pass@host`), such as a proxy or NATS URL with credentials. */
-const URL_WITH_PASSWORD = /^[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:[^\s/@]+@/i;
+/**
+ * A URL with userinfo anywhere in the value (`scheme://<anything>@host`). That
+ * covers `user:pass@`, an empty user with a password (`:pass@`) and a token used
+ * as the user name (`token@`): any of them can be a credential.
+ */
+const URL_WITH_USERINFO = /[a-z][a-z0-9+.-]*:\/\/[^\s/?#@]*@/i;
 
 export function isSecretShapedEnvValue(value: string): boolean {
-  return URL_WITH_PASSWORD.test(value.trim());
+  return URL_WITH_USERINFO.test(value);
 }
 
 export function parseAgentEnvPassthrough(value: string | undefined): string[] {
@@ -164,37 +204,46 @@ export function parseAgentEnvPassthrough(value: string | undefined): string[] {
 
 export interface AgentRuntimeBaseEnvOptions {
   /**
-   * Login variables of the provider being started (for example
-   * `CLAUDE_CODE_OAUTH_TOKEN` for Claude Code). They reach only that provider's
-   * process, and only when present in the daemon env.
+   * Provider being started (`claude`, `codex`, `pi`, `grok`). It selects the
+   * provider-scoped config names and the login variables (for example
+   * `CLAUDE_CODE_OAUTH_TOKEN` for Claude Code) that only this provider may
+   * inherit from the daemon env. Without it, no provider-scoped name passes.
    */
-  inheritedAuthEnvKeys?: readonly string[];
+  runtimeProviderId?: string;
 }
 
 /**
  * Filters the daemon env down to what an agent runtime may inherit.
  *
- * Returns only names that pass the allowlist (and whose value is not a URL with
- * a password), the operator passthrough list, and the provider's own login
- * variables. Everything else, including every other provider's keys, the admin
- * token and third-party API keys, is dropped.
+ * Returns only names that pass the allowlist (and whose value carries no URL
+ * userinfo), the operator passthrough list, and the provider's own login
+ * variables. Everything else, including every other provider's keys and
+ * config, the admin token and third-party API keys, is dropped.
  */
 export function filterAgentRuntimeBaseEnv(
   baseEnv: Record<string, string | undefined>,
   options: AgentRuntimeBaseEnvOptions = {},
 ): Record<string, string> {
-  const explicit = new Set([
-    ...parseAgentEnvPassthrough(baseEnv[AGENT_ENV_PASSTHROUGH_VAR]),
-    ...(options.inheritedAuthEnvKeys ?? []),
-  ]);
+  const { runtimeProviderId } = options;
+  const explicit = new Set(
+    [
+      ...parseAgentEnvPassthrough(baseEnv[AGENT_ENV_PASSTHROUGH_VAR]),
+      ...resolveProviderLoginEnvKeys(runtimeProviderId),
+    ].filter((name) => isInProviderScope(name, runtimeProviderId)),
+  );
+  const passGitConfigFamily = [...explicit].some((name) => GIT_CONFIG_ENV_FAMILY.test(name));
   const filtered: Record<string, string> = {};
   for (const [name, value] of Object.entries(baseEnv)) {
     if (typeof value !== "string") continue;
+    if (GIT_CONFIG_ENV_FAMILY.test(name)) {
+      if (passGitConfigFamily) filtered[name] = value;
+      continue;
+    }
     if (explicit.has(name)) {
       filtered[name] = value;
       continue;
     }
-    if (isAgentRuntimeEnvNameAllowed(name) && !isSecretShapedEnvValue(value)) {
+    if (isAgentRuntimeEnvNameAllowed(name, runtimeProviderId) && !isSecretShapedEnvValue(value)) {
       filtered[name] = value;
     }
   }
