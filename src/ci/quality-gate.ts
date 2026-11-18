@@ -119,6 +119,10 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/allowed-skills.test.ts",
   ],
   "src/runtime/": [
+    // Agent runtime env: the provider spawn carries no daemon secret (allowlist, per-provider login).
+    "src/runtime/agent-env-policy.test.ts",
+    // Codex stored-session control spawns through the same env filter.
+    "src/runtime/codex-control-env.test.ts",
     // Shutdown failure propagation and scoped drain evidence.
     "src/runtime/shutdown.test.ts",
     // Restart-reason path follows the state dir; a first boot sends no restart notice.
@@ -224,6 +228,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/watch/events.test.ts",
   ],
   "src/hooks/": [
+    // Secret stripping moved from a Bash PreToolUse hook to the runtime spawn env.
+    "src/runtime/agent-env-policy.test.ts",
     "src/hooks/gh-watch.test.ts",
     "src/hooks/gh-pr-publish.test.ts",
     "src/hooks/gh-follow-sweep.test.ts",

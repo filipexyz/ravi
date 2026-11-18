@@ -1245,6 +1245,8 @@ export function buildRuntimeRequestEnv(options: {
   providerEnv?: Record<string, string>;
   runtimeCapabilities: RuntimeCapabilities;
   forceSanitizeSecrets?: boolean;
+  /** Provider being started; selects the provider config and login variables it may inherit from the daemon env. */
+  runtimeProviderId?: string;
 }): Record<string, string> {
   const baseRuntimeEnv = Object.fromEntries(
     Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
@@ -1255,6 +1257,7 @@ export function buildRuntimeRequestEnv(options: {
     options.providerEnv,
     options.runtimeCapabilities,
     options.forceSanitizeSecrets,
+    { runtimeProviderId: options.runtimeProviderId },
   );
 }
 

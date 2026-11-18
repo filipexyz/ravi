@@ -244,10 +244,6 @@ mock.module("./hooks/index.js", () => ({
 
 mock.module("./hooks/sanitize-bash.js", () => ({
   SANITIZED_ENV_VARS: [],
-  createSanitizeBashHook: () => ({
-    matcher: "Bash",
-    hooks: [async () => ({})],
-  }),
 }));
 
 mock.module("./permissions/provider-runtime.js", () => ({

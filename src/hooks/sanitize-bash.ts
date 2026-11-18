@@ -1,5 +1,15 @@
-import type { HookCallbackMatcher } from "../bash/hook.js";
-
+/**
+ * Upstream provider credentials and broker capabilities that must never reach
+ * a runtime that runs under the model broker, nor the Pi RPC process (which
+ * also executes the agent's tools).
+ *
+ * This list is not the agent-shell boundary. Every provider process env is
+ * built from an allowlist at spawn (runtime/agent-env-policy.ts); this list
+ * is applied on top of it where a runtime must not hold even its own provider
+ * key. The former PreToolUse `unset` hook built from this list was removed:
+ * it never took effect, because the job wrapper rewrote the command from the
+ * original input after it.
+ */
 export const SANITIZED_ENV_VARS = [
   "RAVI_IDENTITYD_CAPABILITY_FD",
   "RAVI_IDENTITYD_RUNTIME_SOCKET",
@@ -28,25 +38,3 @@ export const SANITIZED_ENV_VARS = [
   "AWS_SESSION_TOKEN",
   "DATABASE_URL",
 ];
-
-export function createSanitizeBashHook(): HookCallbackMatcher {
-  return {
-    matcher: "Bash",
-    hooks: [
-      async (input, _toolUseId, _context) => {
-        const command = (input.tool_input as { command?: string })?.command;
-        if (!command) return {};
-        const unsetPrefix = `unset ${SANITIZED_ENV_VARS.join(" ")} 2>/dev/null; `;
-        return {
-          hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            updatedInput: {
-              ...(input.tool_input as Record<string, unknown>),
-              command: unsetPrefix + command,
-            },
-          },
-        };
-      },
-    ],
-  };
-}

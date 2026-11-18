@@ -571,12 +571,14 @@ async function buildRuntimeStartRequestInternal(
     raviEnv,
     runtimeCapabilities,
     forceSanitizeSecrets: Boolean(modelBroker),
+    runtimeProviderId,
   });
   const runtimeEnv = buildRuntimeRequestEnv({
     raviEnv,
     ...(providerEnv ? { providerEnv } : {}),
     runtimeCapabilities,
     forceSanitizeSecrets: Boolean(modelBroker),
+    runtimeProviderId,
   });
   const selectedCredential = credentialResolution.attemptBinding ?? undefined;
   const blockedProcessAuthEnvKeys = isolateSelectedClaudeAuthEnv({
@@ -809,6 +811,7 @@ async function buildRuntimeStartRequestInternal(
       ...(nextProviderEnv ? { providerEnv: nextProviderEnv } : {}),
       runtimeCapabilities,
       forceSanitizeSecrets: true,
+      runtimeProviderId,
     });
     activeProviderEnvKeys = rotateRuntimeProviderEnvironment({
       runtimeEnv,
