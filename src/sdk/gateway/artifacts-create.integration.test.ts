@@ -27,7 +27,12 @@ const allowedContext: ContextRecord = {
   agentId: "gateway-artifacts-agent",
   sessionKey: "agent:gateway-artifacts-agent:main",
   sessionName: "gateway-artifacts-main",
-  capabilities: [{ permission: "execute", objectType: "group", objectId: "artifacts", source: "test" }],
+  capabilities: [
+    { permission: "execute", objectType: "group", objectId: "artifacts", source: "test" },
+    // `artifacts create --path` reads a local file on the caller's behalf, which the gateway allows only for a
+    // context that holds `use:tool:Read`.
+    { permission: "use", objectType: "tool", objectId: "Read", source: "test" },
+  ],
   metadata: { authorityMode: "delegated" },
   createdAt: Date.now(),
 };

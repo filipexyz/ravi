@@ -39,10 +39,12 @@ describe("media send audit contract", () => {
     });
     const closeSpy = spyOn(nats, "close").mockImplementation(async () => {});
     const previousContextKey = process.env.RAVI_CONTEXT_KEY;
+    // With a context key in the environment the CLI must go through the Ravi gateway and refuses to run in-process
+    // (GATEWAY_REQUIRED). This test drives the in-process path with `runWithContext`, so no ambient key may leak in.
+    delete process.env.RAVI_CONTEXT_KEY;
     const originalExit = process.exit;
     const originalLog = console.log;
     const originalError = console.error;
-    process.env.RAVI_CONTEXT_KEY = mediaContext.contextKey;
     process.exit = ((code?: number) => {
       throw new Error(`__media_audit_exit_${code}__`);
     }) as typeof process.exit;

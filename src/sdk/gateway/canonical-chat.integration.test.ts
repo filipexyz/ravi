@@ -112,8 +112,13 @@ describe("gateway — canonical chat and message writes", () => {
       clientRequestId: "request-denied",
     });
     expect(denied.status).toBe(403);
-    expect((await denied.json()) as { error: string }).toMatchObject({
-      error: "PermissionDenied",
+    // The denial is a contract envelope that names the concrete grant the context lacks.
+    expect(
+      (await denied.json()) as { success: boolean; outcome: string; error: { code: string; capability: string } },
+    ).toMatchObject({
+      success: false,
+      outcome: "denied",
+      error: { code: "PERMISSION_DENIED", capability: `mutate:agent:${agentId}` },
     });
 
     const allowed = await post("/api/v1/chats/ensure", ensureExactContext.contextKey, {

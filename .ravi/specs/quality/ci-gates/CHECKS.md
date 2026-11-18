@@ -21,6 +21,15 @@ status: active
 - The same test fails when the job named `Quality Gate` loses `if: always()`, drops a `needs` entry, is renamed, or stops requiring `success` from every dependency (failed, cancelled and skipped all fail it).
 - A new CI job that is neither gated nor listed as deliberately not gated fails the same test until someone decides.
 
+## Test Discovery Checks
+
+- `bun test src/ci/test-discovery.test.ts` fails when a test file is selected by no CI command and is not in `src/ci/test-discovery-exclusions.ts`, naming the file and where to add it.
+- The same test fails when an exclusion names a file that no longer exists, when CI runs an excluded file, when an exclusion has no reason (fewer than 40 characters), and when an exclusion that says it is run by a package script (`runBy`) is not selected by that script.
+- The same test fails when a filter in a CI command selects no test file, for example a path left behind by a rename. Bun does not: it runs the command as long as one filter matches.
+- The same test fails on a CI command it cannot read: a wrapped `bun`, a substitution or redirection in a `bun test` command, an unknown `bun test` flag, a glob that matches no test file, a `bun run` of a script that does not exist, or a test command in a step with `working-directory`.
+- The same test runs the real `bun test` over stub files for every filter shape in use (substring, `./dir`, `./file`, absolute path, a filter nothing matches next to one that matches) and fails when Bun and the model disagree.
+- Dropping `src/cli/media-send.test.ts` from every shard, adding `src/zzz/new.test.ts` without a shard path, or renaming a directory a filter names makes that test fail.
+
 ## Spec Gate Checks
 
 - `ravi specs sync --json` succeeds for the full spec tree including `quality/ci-gates`.
