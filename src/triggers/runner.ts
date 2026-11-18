@@ -56,7 +56,7 @@ import { buildTriggerPrompt } from "./prompt.js";
 import { TriggerDebouncer, type TriggerBatch } from "./debounce.js";
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS, runShellCronCommand, type ShellCronRunResult } from "../cron/shell-executor.js";
 import { filterAgentRuntimeBaseEnv } from "../runtime/agent-env-policy.js";
-import { shellEnvFileInsideStateDir } from "./shell-env-file.js";
+import { shellEnvFileRefusal } from "./shell-env-file.js";
 
 const log = logger.child("triggers:runner");
 const EVENT_DEDUPE_TTL_MS = 60_000;
@@ -1069,9 +1069,16 @@ export class TriggerRunner {
       return;
     }
     // The env file is what the command gets on purpose. One inside the Ravi
-    // state dir (the daemon's own `.env`, for example) would hand it every secret.
-    if (stored.shellEnvFile && shellEnvFileInsideStateDir(stored.shellEnvFile)) {
-      log.error("Shell trigger not run: its env file is inside the Ravi state dir", { triggerId: stored.id });
+    // state dir (the daemon's own `.env`, for example), or a hard link that may
+    // be one, would hand it every secret. Checked again here because the file
+    // can change after the trigger was saved.
+    const envFileRefusal = stored.shellEnvFile ? shellEnvFileRefusal(stored.shellEnvFile) : null;
+    if (envFileRefusal) {
+      log.error("Shell trigger not run: its env file is refused", {
+        triggerId: stored.id,
+        triggerName: stored.name,
+        reason: envFileRefusal,
+      });
       return;
     }
 

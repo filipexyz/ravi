@@ -1,4 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { linkSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getRaviStateDir } from "../../utils/paths.js";
 
@@ -530,6 +532,17 @@ describe("TriggersCommands topic guidance", () => {
     await expect(commands.set("trg_1", "env-file", daemonEnvFile, true)).rejects.toMatchObject({
       code: "TRIGGER_SHELL_ENV_FILE_IN_STATE_DIR",
     });
+    // A hard link has its own path outside the state dir; it is refused for having more than one link.
+    const outside = mkdtempSync(join(tmpdir(), "ravi-trigger-env-link-"));
+    try {
+      writeFileSync(join(outside, "own.env"), "TICKET_QUEUE=ops\n");
+      linkSync(join(outside, "own.env"), join(outside, "linked.env"));
+      await expect(commands.set("trg_1", "env-file", join(outside, "linked.env"), true)).rejects.toMatchObject({
+        code: "TRIGGER_SHELL_ENV_FILE_HARD_LINK",
+      });
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
     expect(createdTriggers).toEqual([]);
     expect(updatedTriggers).toEqual([]);
   });

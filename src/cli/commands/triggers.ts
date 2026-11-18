@@ -6,7 +6,7 @@ import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { CONTRACT_EXIT_POLICY, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
-import { shellEnvFileInsideStateDir } from "../../triggers/shell-env-file.js";
+import { shellEnvFileRefusal } from "../../triggers/shell-env-file.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -171,11 +171,25 @@ function assertShellTriggerChange(
   }
 }
 
-/** The env file of a shell trigger may not sit inside the Ravi state dir (see `shell-env-file.ts`). */
+/**
+ * The env file of a shell trigger may not sit inside the Ravi state dir, nor
+ * be a hard link (see `shell-env-file.ts`). A path check, not an access boundary.
+ */
 function assertShellEnvFileAllowed(op: string, envFile: string | null | undefined, asJson?: boolean): void {
-  if (!envFile || !shellEnvFileInsideStateDir(envFile)) return;
+  if (!envFile) return;
+  const refusal = shellEnvFileRefusal(envFile);
+  if (!refusal) return;
   const suggestedAction =
-    "put only the variables the command needs in a file outside the Ravi state dir, given by a path without .., or let it reach Ravi through the credential broker";
+    "put only the variables the command needs in a regular file of its own outside the Ravi state dir, given by a path without ..";
+  if (refusal === "hard_link") {
+    failShellTrigger(
+      op,
+      "TRIGGER_SHELL_ENV_FILE_HARD_LINK",
+      `The env file ${envFile} has more than one hard link, so its content may be a file inside the Ravi state dir. Next: ${suggestedAction}.`,
+      { envFile, suggestedAction },
+      asJson,
+    );
+  }
   failShellTrigger(
     op,
     "TRIGGER_SHELL_ENV_FILE_IN_STATE_DIR",

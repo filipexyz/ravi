@@ -6,11 +6,17 @@
  * `.env`, a credentials file) would hand the command every secret the
  * allowlist keeps out, so it is refused on create and edit, and the runner
  * does not run a trigger that points at one.
+ *
+ * This is a path check at create and at fire time, not an access boundary.
+ * The file can change between the check and the read, and the daemon and the
+ * command run as the same OS user, so whoever can write the file system can
+ * still reach the state dir. The check stops the plain mistakes and the known
+ * tricks: `..`, symlinks and hard links.
  */
 
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { getRaviStateDir } from "../utils/paths.js";
 
 function expandHome(path: string): string {
@@ -62,5 +68,33 @@ export function shellEnvFileInsideStateDir(envFile: string, stateDir: string = g
   const file = realOrResolved(envFile);
   const dir = realOrResolved(stateDir);
   const fromDir = relative(dir, file);
-  return fromDir === "" || (!fromDir.startsWith("..") && !isAbsolute(fromDir));
+  if (fromDir === "") return true;
+  // Outside only through a real parent segment: a child named `..secrets.env`
+  // also starts with two dots and is inside.
+  const outside = fromDir === ".." || fromDir.startsWith(`..${sep}`) || isAbsolute(fromDir);
+  return !outside;
+}
+
+/**
+ * True when the env file exists with more than one hard link. A hard link to
+ * the daemon's `.env` placed outside the state dir has its own path, so no
+ * path check can see where its content lives; a file with one link cannot be
+ * that.
+ */
+export function shellEnvFileHasHardLinks(envFile: string): boolean {
+  const raw = absoluteRaw(envFile);
+  return existsSync(raw) && statSync(raw).nlink > 1;
+}
+
+/**
+ * Why a shell trigger may not use this env file, or null when it may:
+ * `in_state_dir` (inside, or a `..` that may lead there) or `hard_link`.
+ */
+export function shellEnvFileRefusal(
+  envFile: string,
+  stateDir: string = getRaviStateDir(),
+): "in_state_dir" | "hard_link" | null {
+  if (shellEnvFileInsideStateDir(envFile, stateDir)) return "in_state_dir";
+  if (shellEnvFileHasHardLinks(envFile)) return "hard_link";
+  return null;
 }

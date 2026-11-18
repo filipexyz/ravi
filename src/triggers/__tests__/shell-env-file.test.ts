@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { shellEnvFileInsideStateDir } from "../shell-env-file.js";
+import { shellEnvFileInsideStateDir, shellEnvFileRefusal } from "../shell-env-file.js";
 
 let root: string | null = null;
 
@@ -59,5 +59,30 @@ describe("shell trigger env file location", () => {
     expect(shellEnvFileInsideStateDir(`${base}/link/../.env`, stateDir)).toBe(true);
     // Any .. segment is refused, even one a lexical check would place outside.
     expect(shellEnvFileInsideStateDir(`${base}/elsewhere/../ticket.env`, stateDir)).toBe(true);
+  });
+
+  it("treats a child whose name starts with two dots as inside (CodeRabbit, PR #881)", () => {
+    const base = makeRoot();
+    const stateDir = join(base, ".ravi");
+    mkdirSync(stateDir);
+    writeFileSync(join(stateDir, "..secrets.env"), "RAVI_ADMIN_TOKEN=canary\n");
+
+    expect(shellEnvFileInsideStateDir(join(stateDir, "..secrets.env"), stateDir)).toBe(true);
+    // The parent and a sibling next to the state dir stay outside.
+    expect(shellEnvFileInsideStateDir(join(base, "ticket.env"), stateDir)).toBe(false);
+  });
+
+  it("refuses a hard link, which a path check cannot follow", () => {
+    const base = makeRoot();
+    const stateDir = join(base, ".ravi");
+    mkdirSync(stateDir);
+    writeFileSync(join(stateDir, ".env"), "RAVI_ADMIN_TOKEN=canary\n");
+    linkSync(join(stateDir, ".env"), join(base, "innocent.env"));
+    writeFileSync(join(base, "own.env"), "TICKET_QUEUE=ops\n");
+
+    expect(shellEnvFileInsideStateDir(join(base, "innocent.env"), stateDir)).toBe(false);
+    expect(shellEnvFileRefusal(join(base, "innocent.env"), stateDir)).toBe("hard_link");
+    expect(shellEnvFileRefusal(join(base, "own.env"), stateDir)).toBeNull();
+    expect(shellEnvFileRefusal(join(stateDir, ".env"), stateDir)).toBe("in_state_dir");
   });
 });

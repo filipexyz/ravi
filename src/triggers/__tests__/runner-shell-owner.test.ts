@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dbCreateAgent, getDb } from "../../router/router-db.js";
@@ -233,6 +233,21 @@ describe("shell trigger owner and env", () => {
     await startRunner();
 
     emit(topic, { eventId: "evt-state-env" });
+    await sleep(500);
+
+    expect(existsSync(markerPath())).toBe(false);
+  });
+
+  it("does not run a shell trigger whose env file is a hard link", async () => {
+    const topic = "ravi.test.shell-hard-link";
+    const stateEnvFile = join(stateDir!, ".env");
+    writeFileSync(stateEnvFile, "RAVI_ADMIN_TOKEN=canary-hard-link\n");
+    const linked = join(markerDir!, "innocent.env");
+    linkSync(stateEnvFile, linked);
+    createShellTrigger({ name: "hard-link-env", topic, ownerPrincipal: "operator", envFile: linked });
+    await startRunner();
+
+    emit(topic, { eventId: "evt-hard-link" });
     await sleep(500);
 
     expect(existsSync(markerPath())).toBe(false);
