@@ -297,6 +297,44 @@ function brokerClass(call: BrokerCall): ActionClass {
     : "read";
 }
 
+function hasModifier(node: ts.Node, kind: ts.SyntaxKind): boolean {
+  return ts.canHaveModifiers(node) && (ts.getModifiers(node) ?? []).some((modifier) => modifier.kind === kind);
+}
+
+/**
+ * How each entry point is declared: exported or not, and for methods whether
+ * they are private. An exported helper or a public mutation method could be
+ * called from another file, outside this test's reach.
+ */
+function entryPointVisibility(): Record<string, string> {
+  const visibility: Record<string, string> = {};
+  const visit = (node: ts.Node) => {
+    if ((ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) && node.name) {
+      const name = node.name.getText(sourceFile);
+      if (isEntryPointName(name)) {
+        const exported =
+          hasModifier(node, ts.SyntaxKind.ExportKeyword) || hasModifier(node, ts.SyntaxKind.DefaultKeyword);
+        const access = ts.isMethodDeclaration(node)
+          ? hasModifier(node, ts.SyntaxKind.PrivateKeyword)
+            ? " private"
+            : " not-private"
+          : "";
+        visibility[name] = `${exported ? "exported" : "local"}${access}`;
+      }
+    }
+    // `export { name }` / `export { name as other }` re-exports.
+    if (ts.isExportDeclaration(node) && node.exportClause && ts.isNamedExports(node.exportClause)) {
+      for (const element of node.exportClause.elements) {
+        const local = (element.propertyName ?? element.name).text;
+        if (isEntryPointName(local)) visibility[`re-export ${local}`] = "exported";
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return visibility;
+}
+
 describe("Slack actions sent to the credential broker", () => {
   const { calls, internal, declarations, problems } = extract();
 
@@ -307,6 +345,15 @@ describe("Slack actions sent to the credential broker", () => {
 
   it("declares each entry point once and uses it only as a direct call", () => {
     expect(declarations.sort()).toEqual([...ENTRY_POINT_DECLARATIONS].sort());
+  });
+
+  it("keeps the entry points local to slack.ts: no export, and the mutation methods private", () => {
+    expect(entryPointVisibility()).toEqual({
+      createSlackOpsContext: "local",
+      resolveSlackCredentialContext: "local",
+      mutationCredentialContext: "local private",
+      mutationOpsContext: "local private",
+    });
   });
 
   it("finds exactly the call sites the table counts", () => {

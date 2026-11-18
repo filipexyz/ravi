@@ -165,6 +165,9 @@ audit surfaces while still allowing Ravi to perform approved external actions.
   - the object passed to `this.mutationOpsContext` and
     `this.mutationCredentialContext` has no spread; every property is
     written in the call;
+  - none of the five entry points is exported or re-exported from
+    `slack.ts`, and `mutationOpsContext` and `mutationCredentialContext` are
+    `private`, so no other file can reach the broker through them;
   - a site's action is a string literal, a conditional of string literals, or
     a `const` in the same function initialized to one of those; anything else
     fails;
@@ -175,8 +178,15 @@ audit surfaces while still allowing Ravi to perform approved external actions.
     literal; the three whole-canvas publishers carry the literal `true`, and
     the only non-literal mark is `isSlackCanvasRemovalChange(change)` on
     `canvases.edit`.
-  It does not cover Slack calls outside `slack.ts` (socket mode and delivery
-  use internal-service authority and never show the card).
+  It does not cover, by design:
+  - Slack calls outside `slack.ts` (socket mode and delivery use
+    internal-service authority and never show the card);
+  - an entry point reached through a computed or string key
+    (`this["mutationOpsContext"](...)`), which is not an identifier;
+  - mutation of the argument after it is built (assigning `input.action` or
+    `input.destructive` before or inside the forwarding call), which the AST
+    of the call site does not show.
+  Code review owns these; the test does not claim them.
 
 - Trusted host entrypoints MAY explicitly select operator-control for direct
   local operator commands or named Slack infrastructure services. Internal
