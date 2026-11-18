@@ -1020,7 +1020,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | costs | src/costs/pricing-catalog.ts | 255 | triaged-follow-up | catch-without-binding | src/costs/pricing-catalog.ts:6313c80f0e29a2794c3fc323 |
 | costs | src/costs/pricing-catalog.ts | 306 | triaged-follow-up | catch-without-binding | src/costs/pricing-catalog.ts:e2413b21d59a5ab0b644dddc |
 | credentials | src/credentials/backends.ts | 108 | no-cause | Process errors may echo secret stdin or arguments; only the fixed Keychain failure may escape. | src/credentials/backends.ts:167696ef3f8aa5396bfd9bae |
-| credentials | src/credentials/broker.ts | 114 | fixed | binding retained / no recognized error surface | src/credentials/broker.ts:857b7d636b7b1bdeb546bcfe |
+| credentials | src/credentials/broker.ts | 122 | fixed | binding retained / no recognized error surface | src/credentials/broker.ts:857b7d636b7b1bdeb546bcfe |
 | credentials | src/credentials/file-backend.ts | 35 | fixed | binding retained / no recognized error surface | src/credentials/file-backend.ts:62ce46c69e26d756b02048f0 |
 | credentials | src/credentials/file-backend.ts | 86 | fixed | binding retained / no recognized error surface | src/credentials/file-backend.ts:6e4dd7f9ffb136fa659cfacb |
 | credentials | src/credentials/file-backend.ts | 98 | no-cause | Filesystem diagnostics may expose secret paths or payloads; only the fixed broker error may escape. | src/credentials/file-backend.ts:2fb81c4638a70c4b4ed77526 |

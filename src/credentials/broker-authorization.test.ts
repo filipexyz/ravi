@@ -4,6 +4,8 @@ import { generateKeyPairSync, sign } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as approvalService from "../approval/service.js";
+import * as contacts from "../contacts.js";
+import * as providerRuntime from "../permissions/provider-runtime.js";
 import { resolveSlackCredentialConfigFromEnv } from "../channels/slack/credentials.js";
 import { runWithContext } from "../cli/context.js";
 import {
@@ -433,5 +435,115 @@ describe("credential broker authorization boundary", () => {
     expect(failure.message).not.toContain("fixture-only");
     expect(failure.cause).toBeUndefined();
     expect(JSON.stringify(audits())).not.toContain("fixture-only");
+  });
+});
+
+describe("credential approval on the author's own turn", () => {
+  const contactId = "c-operator";
+  const humanTurn = {
+    actorResolution: "resolved",
+    actorPrincipal: `contact:${contactId}`,
+    turnProvenance: { origin: "human" },
+  };
+  const holds = [
+    { permission: "use", objectType: "credential", objectId: "slack:fixture" },
+    { permission: "execute", objectType: "slack", objectId: "*" },
+  ];
+
+  function author(
+    capabilities = holds,
+    contact: Record<string, unknown> | null = { id: contactId, status: "allowed" },
+  ) {
+    spyOn(contacts, "getContactById").mockImplementation((id: string) =>
+      contact && id === contactId ? (contact as never) : null,
+    );
+    const original = providerRuntime.materializeSubjectCapabilities;
+    spyOn(providerRuntime, "materializeSubjectCapabilities").mockImplementation(((type: string, id: string) =>
+      type === "contact" && id === contactId ? capabilities : original(type as never, id)) as never);
+  }
+
+  function turn(metadata: Record<string, unknown>) {
+    setLiveCapabilities([useCapability, readCapability, writeCapability, ...destructiveCapabilities]);
+    return caller([useCapability, readCapability, writeCapability, ...destructiveCapabilities], { metadata });
+  }
+
+  const destructiveCapabilities = [
+    "conversations.create",
+    "conversations.archive",
+    "conversations.kick",
+    "chat.delete",
+  ].map((objectId) => ({
+    permission: "execute",
+    objectType: "slack",
+    objectId,
+  }));
+
+  it("lets the author's own write through without a card and audits it", async () => {
+    author();
+    const approval = spyOn(approvalService, "requestCascadingApproval");
+    await asCaller(turn(humanTurn), () => resolve("conversations.create"));
+    expect(approval).not.toHaveBeenCalled();
+    expect(readSecret).toHaveBeenCalledTimes(1);
+    expect(audits().at(-1)).toMatchObject({
+      action: "conversations.create",
+      decision: "allow",
+      approval_required: 1,
+      approval_status: "actor_authorized",
+      result_status: "secret_resolved",
+    });
+  });
+
+  for (const action of ["conversations.archive", "conversations.kick", "chat.delete"]) {
+    it(`still asks for ${action} on the author's own turn`, async () => {
+      author();
+      const approval = spyOn(approvalService, "requestCascadingApproval").mockResolvedValue({
+        approved: false,
+        isDelegated: false,
+      } as never);
+      await denied(
+        asCaller(turn(humanTurn), () => resolve(action)),
+        "approval_denied",
+      );
+      expect(approval).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  const asks: Array<[string, Record<string, unknown>, (() => void) | undefined]> = [
+    ["a cron or trigger carrying its owner", { ...humanTurn, turnProvenance: { origin: "cron" } }, undefined],
+    ["a turn without provenance", { actorResolution: "resolved", actorPrincipal: `contact:${contactId}` }, undefined],
+    ["an agent relay", { ...humanTurn, actorPrincipal: "agent:other" }, undefined],
+    ["an unresolved speaker", { ...humanTurn, actorResolution: "missing_contact" }, undefined],
+    ["a thread acting for its parent", { ...humanTurn, actorProjection: { sourceContextId: "ctx_parent" } }, undefined],
+    ["an author without the action", humanTurn, () => author([holds[0]!])],
+    ["a blocked author", humanTurn, () => author(holds, { id: contactId, status: "blocked" })],
+  ];
+  for (const [label, metadata, setup] of asks) {
+    it(`never skips the card for a write from ${label}`, async () => {
+      (setup ?? author)();
+      spyOn(approvalService, "requestCascadingApproval").mockResolvedValue({
+        approved: false,
+        isDelegated: false,
+      } as never);
+      // Refused either by the card or, earlier, by the caller check.
+      await expect(asCaller(turn(metadata), () => resolve("conversations.create"))).rejects.toMatchObject({
+        code: expect.stringMatching(/^(approval_denied|caller_invalid)$/),
+      });
+      expect(readSecret).not.toHaveBeenCalled();
+      expect(audits().some((row) => row.approval_status === "actor_authorized")).toBe(false);
+    });
+  }
+
+  it("reads conversation history without asking anyone", async () => {
+    const approval = spyOn(approvalService, "requestCascadingApproval");
+    setLiveCapabilities([
+      useCapability,
+      { permission: "execute", objectType: "slack", objectId: "conversations.history" },
+    ]);
+    await asCaller(
+      caller([useCapability, { permission: "execute", objectType: "slack", objectId: "conversations.history" }]),
+      () => resolve("conversations.history"),
+    );
+    expect(approval).not.toHaveBeenCalled();
+    expect(audits().at(-1)).toMatchObject({ approval_required: 0, result_status: "secret_resolved" });
   });
 });

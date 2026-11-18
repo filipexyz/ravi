@@ -1,5 +1,5 @@
 import { getContext } from "../cli/context.js";
-import { authorizeCredentialUse, type CredentialBrokerAuthority } from "./authorization.js";
+import { actorHoldsCredentialAction, authorizeCredentialUse, type CredentialBrokerAuthority } from "./authorization.js";
 export type { CredentialBrokerAuthority } from "./authorization.js";
 import { readSecret, redactSecretRef } from "./backends.js";
 import { CredentialBrokerError } from "./errors.js";
@@ -66,7 +66,15 @@ export async function resolveCredentialSecret(input: {
     actorContextId = authorization.actorContextId;
     agentId = authorization.agentId;
     decision = "allow";
-    if (policy.approval.required && authorization.context) {
+    if (
+      policy.approval.required &&
+      authorization.context &&
+      !isDestructiveAction(input.action) &&
+      actorHoldsCredentialAction(authorization.context, input)
+    ) {
+      // The card would ask the turn's author to approve their own request.
+      approvalStatus = "actor_authorized";
+    } else if (policy.approval.required && authorization.context) {
       decision = "needs_approval";
       approvalStatus = "pending";
       audit("approval_pending");
@@ -224,6 +232,34 @@ export function publicCredentialConnection(record: CredentialConnectionRecord): 
   };
 }
 
+// Provider reads that change nothing. Anything else is a write and asks a
+// human, unless the turn's own author already holds it.
+const READ_ONLY_ACTIONS = new Set([
+  "auth.check",
+  "whoami",
+  "channels.list",
+  "channels.info",
+  "conversations.list",
+  "conversations.info",
+  "conversations.history",
+  "conversations.replies",
+  "conversations.members",
+  "users.list",
+  "users.info",
+  "users.lookupByEmail",
+  "users.conversations",
+  "team.info",
+]);
+
 function isSensitiveAction(action: string): boolean {
-  return !/^(auth\.check|whoami|channels\.list|channels\.info|users\.list|users\.info)$/.test(action);
+  return !READ_ONLY_ACTIONS.has(action);
+}
+
+// Actions that remove something or someone. They ask a human every time,
+// even when the turn's own author holds them.
+const DESTRUCTIVE_VERBS = new Set(["archive", "kick", "delete"]);
+
+export function isDestructiveAction(action: string): boolean {
+  const verb = action.split(".").pop() ?? "";
+  return DESTRUCTIVE_VERBS.has(verb);
 }
