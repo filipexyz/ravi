@@ -165,3 +165,18 @@ Audit rows MUST NOT include:
 - `items`
 
 All commands MUST have `@CommandAccess` metadata.
+
+## Slack action classification
+
+```bash
+bun test src/cli/commands/slack-credential-actions.test.ts
+```
+
+Reads the TypeScript AST of `src/cli/commands/slack.ts` and fails when: a
+credential entry point is called outside the four known forwarding calls and
+the classified sites; a site's action is not a string literal (or a
+conditional / same-function `const` of literals); the number of sites for an
+action or in total differs from the table; the broker's read/write/destructive
+class differs from the table; a whole-canvas publisher's top-level
+`destructive` is not the literal `true`; or a non-literal `destructive` appears
+anywhere but `canvases.edit`. Comments never count.

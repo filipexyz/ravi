@@ -127,17 +127,17 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | permissions | src/approval/grantor.ts | 143 | triaged-follow-up | catch-without-binding | src/approval/grantor.ts:4531760e0c3838364a258e83 |
 | permissions | src/approval/grantor.ts | 171 | triaged-follow-up | catch-without-binding | src/approval/grantor.ts:b6c47d5279cb74466f584953 |
 | permissions | src/approval/service.ts | 310 | fixed | binding retained / no recognized error surface | src/approval/service.ts:4113090bdfee8676e562b4a3 |
-| permissions | src/approval/service.ts | 473 | fixed | binding retained / no recognized error surface | src/approval/service.ts:5b38d947769e34f5d06100d8 |
-| permissions | src/approval/service.ts | 514 | triaged-follow-up | rejection-without-binding | src/approval/service.ts:1e5b2ada9e3eb6121bb823ad |
-| permissions | src/approval/service.ts | 537 | triaged-follow-up | rejection-without-binding | src/approval/service.ts:1e5b2ada9e3eb6121bb823ad |
-| permissions | src/approval/service.ts | 647 | fixed | binding retained / no recognized error surface | src/approval/service.ts:cec06f9a9c66f6330b63f868 |
-| permissions | src/approval/service.ts | 869 | fixed | binding retained / no recognized error surface | src/approval/service.ts:f268eb99be81506853371f91 |
-| permissions | src/approval/service.ts | 906 | fixed | binding retained / no recognized error surface | src/approval/service.ts:3a7468362c542614807a743e |
-| permissions | src/approval/service.ts | 924 | fixed | binding retained / no recognized error surface | src/approval/service.ts:f645966f7ff5ceaa4ff9d49a |
-| permissions | src/approval/service.ts | 945 | fixed | binding retained / no recognized error surface | src/approval/service.ts:2ff5bafadd9c5191b11954a8 |
-| permissions | src/approval/service.ts | 960 | fixed | binding retained / no recognized error surface | src/approval/service.ts:02b6e0be80efebbe843d1f3e |
-| permissions | src/approval/service.ts | 1005 | fixed | binding retained / no recognized error surface | src/approval/service.ts:0446c3e82195d3d0cb0b9e59 |
-| permissions | src/approval/service.ts | 1264 | fixed | binding retained / no recognized error surface | src/approval/service.ts:e75d2182c32380dcc097db58 |
+| permissions | src/approval/service.ts | 481 | fixed | binding retained / no recognized error surface | src/approval/service.ts:5b38d947769e34f5d06100d8 |
+| permissions | src/approval/service.ts | 522 | triaged-follow-up | rejection-without-binding | src/approval/service.ts:1e5b2ada9e3eb6121bb823ad |
+| permissions | src/approval/service.ts | 545 | triaged-follow-up | rejection-without-binding | src/approval/service.ts:1e5b2ada9e3eb6121bb823ad |
+| permissions | src/approval/service.ts | 655 | fixed | binding retained / no recognized error surface | src/approval/service.ts:cec06f9a9c66f6330b63f868 |
+| permissions | src/approval/service.ts | 877 | fixed | binding retained / no recognized error surface | src/approval/service.ts:f268eb99be81506853371f91 |
+| permissions | src/approval/service.ts | 914 | fixed | binding retained / no recognized error surface | src/approval/service.ts:3a7468362c542614807a743e |
+| permissions | src/approval/service.ts | 932 | fixed | binding retained / no recognized error surface | src/approval/service.ts:f645966f7ff5ceaa4ff9d49a |
+| permissions | src/approval/service.ts | 953 | fixed | binding retained / no recognized error surface | src/approval/service.ts:2ff5bafadd9c5191b11954a8 |
+| permissions | src/approval/service.ts | 968 | fixed | binding retained / no recognized error surface | src/approval/service.ts:02b6e0be80efebbe843d1f3e |
+| permissions | src/approval/service.ts | 1013 | fixed | binding retained / no recognized error surface | src/approval/service.ts:0446c3e82195d3d0cb0b9e59 |
+| permissions | src/approval/service.ts | 1272 | fixed | binding retained / no recognized error surface | src/approval/service.ts:e75d2182c32380dcc097db58 |
 | permissions | src/approval/slack-click-feedback.ts | 112 | fixed | binding retained / no recognized error surface | src/approval/slack-click-feedback.ts:bd781b46e5db4e6dd05bf998 |
 | permissions | src/approval/slack-click-feedback.ts | 118 | fixed | binding retained / no recognized error surface | src/approval/slack-click-feedback.ts:9b04d5b1beb41af8f4b7d658 |
 | permissions | src/approval/store.ts | 451 | triaged-follow-up | catch-without-binding | src/approval/store.ts:ac1d131e8f2f6d84c0becd00 |
