@@ -615,7 +615,8 @@ describe("connector turn classification", () => {
         origin: "agent",
       });
       expect(jobsRunner.startJob(job.id)).toBe(true);
-      expect(spawned.env).toEqual({ RAVI_AUTOMATION_PRINCIPAL: `automation:job:${job.id}` });
+      // The runner hands the full env to the spawn (`buildJobEnv`); the principal marks the job as acting for itself.
+      expect(spawned.env?.RAVI_AUTOMATION_PRINCIPAL).toBe(`automation:job:${job.id}`);
       expectBlocked(
         resolveConnectorTurn({ ...OWNER, env: { ...process.env, ...(spawned.env ?? {}) } }),
         "CONNECTOR_SPEAKER_NOT_OWNER",
