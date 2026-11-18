@@ -95,6 +95,7 @@ function jsonErrorInfo(stdout: string): Record<string, unknown> | undefined {
   try {
     parsed = JSON.parse(trimmed);
   } catch {
+    // no-cause: A stdout that is not JSON is the ordinary case of a CLI that printed text, not an error object; stderr is read next.
     return undefined;
   }
   const root = record(parsed);
