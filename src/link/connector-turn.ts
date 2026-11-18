@@ -49,7 +49,7 @@ import {
 import { RAVI_AUTOMATION_PRINCIPAL_ENV, readSpawnedAutomationPrincipal } from "../runtime/turn-origin.js";
 import { readTurnReplyTarget } from "../runtime/turn-reply-target.js";
 import { resolveHumanRequestCaller } from "../runtime/human-request.js";
-import { resolveThreadInheritedRequester } from "../runtime/thread-requester.js";
+import { resolveThreadCronRequester, resolveThreadInheritedRequester } from "../runtime/thread-requester.js";
 import { resolveTaskTurnRequester } from "../runtime/delegated-requester.js";
 import { resolveRuntimeTurnOrigin } from "../runtime/turn-origin.js";
 import { parseTriggerSessionKey, readTriggerRunAuthority } from "../triggers/authority.js";
@@ -195,6 +195,8 @@ export interface ConnectorTurnDeps {
   now?: number;
   /** The requester a thread turn inherits (default: `resolveThreadInheritedRequester`). */
   getThreadRequester?: typeof resolveThreadInheritedRequester;
+  /** The cron owner a thread handoff from a cron run inherits (default: `resolveThreadCronRequester`). */
+  getThreadCronRequester?: typeof resolveThreadCronRequester;
   /** The requester a task dispatch turn carries (default: `resolveTaskTurnRequester`). */
   getTaskRequester?: typeof resolveTaskTurnRequester;
 }
@@ -846,21 +848,45 @@ function withDelegatedRequester(
           relayAgentId: input.relayAgentId,
         })
       : null);
-  if (!requester) return refusal;
-  const requesterMeta = requester.caller.metadata ?? {};
-  const isOwner = isOwnerUser(
-    input.owner,
-    stringField(requesterMeta, "consoleUserId"),
-    stringField(requesterMeta, "consoleOrgId"),
-  );
+  if (requester) {
+    const requesterMeta = requester.caller.metadata ?? {};
+    const isOwner = isOwnerUser(
+      input.owner,
+      stringField(requesterMeta, "consoleUserId"),
+      stringField(requesterMeta, "consoleOrgId"),
+    );
+    return delegated(refusal, input, { kind: isOwner ? "owner" : "contact", contactId: requester.contactId });
+  }
+  if (!input.relayAgentId) return refusal;
+  // A thread handoff a cron run of the parent session made acts for the cron's
+  // owner, never for the thread's earlier requester.
+  const cron = (deps.getThreadCronRequester ?? resolveThreadCronRequester)({
+    sessionKey: input.turnSession.key,
+    turnOrigin: metadata.turnOrigin,
+    relayAgentId: input.relayAgentId,
+  });
+  if (!cron) return refusal;
+  const ownerContactId = cron.ownerPrincipal.startsWith("contact:")
+    ? cron.ownerPrincipal.slice("contact:".length).trim()
+    : "";
+  if (ownerContactId) {
+    const status = (deps.getContactStatus ?? readCronContactStatus)(ownerContactId);
+    if (!status || status === "blocked") return refusal;
+  }
+  if (cron.ownerIsOperator && cronOwnerIsOperator(cron.ownerPrincipal, input.owner, deps)) {
+    return delegated(refusal, input, { kind: "owner" });
+  }
+  return ownerContactId ? delegated(refusal, input, { kind: "contact", contactId: ownerContactId }) : refusal;
+}
+
+function delegated(
+  refusal: Extract<ConnectorTurnResult, { ok: false }>,
+  input: { actorPrincipal: string; base: Pick<ConnectorTurn, "agentId" | "sessionName" | "turnKey"> },
+  speaker: ConnectorTurn["speaker"],
+): ConnectorTurnResult {
   return {
     ...refusal,
-    delegatedRequester: {
-      ...input.base,
-      actorPrincipal: input.actorPrincipal,
-      speaker: { kind: isOwner ? "owner" : "contact", contactId: requester.contactId },
-      conversation: "automation",
-    },
+    delegatedRequester: { ...input.base, actorPrincipal: input.actorPrincipal, speaker, conversation: "automation" },
   };
 }
 

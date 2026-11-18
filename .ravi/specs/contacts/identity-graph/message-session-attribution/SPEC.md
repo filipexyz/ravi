@@ -239,7 +239,15 @@ calls) for the person who asked, and only when that person is proven:
   thread's session, or the thread's `session.return` (proved by the parent
   turn's `turnOrigin` and the session of the context it names). A parent turn
   driven by another session's Ask/Inform, another thread's return, a trigger
-  (a PR, an e-mail), a cron or any automation MUST inherit nothing. A person's
+  (a PR, an e-mail) or any other automation MUST inherit nothing.
+- **Cron in the parent.** A thread handoff made from a cron run of the
+  thread's own parent session (a host-issued `turn-runtime` context whose actor
+  is `automation:cron:<id>` and whose `cronRunAuthority` snapshot names that
+  job) acts for the cron's **owner**, never for the thread's earlier
+  requester: an operator-owned cron acts as the operator, a contact-owned cron
+  as that contact (refused when the contact is removed or blocked), and a cron
+  with no traceable human owner inherits nothing. The run is subject to the
+  same withdrawal and 72-hour rules. A person's
   own parent turn is authorized as theirs (the direct handoff above), never
   upgraded to the thread's requester. If the first request no longer resolves,
   the turn MUST NOT fall through to a later, different requester. A thread no

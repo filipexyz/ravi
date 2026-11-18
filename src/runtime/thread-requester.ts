@@ -1,5 +1,7 @@
 import { dbGetContext, dbGetOpenThreadHumanRequestTurns, type ContextRecord } from "../router/router-db.js";
 import { isWorkHandoff, resolveHumanRequestCaller, type HumanRequestCaller } from "./human-request.js";
+import { readCronRunAuthority, type CronRunAuthority } from "../cron/authority.js";
+import { isHandoffPreservingRevocation } from "./context-revocation.js";
 import { resolveRuntimeTurnOrigin } from "./turn-origin.js";
 
 export interface ThreadInheritedRequester extends HumanRequestCaller {
@@ -112,4 +114,55 @@ function wasCausedByThread(
     (cause.producer === "channel" && cause.action === "session.return");
   if (!fromThread) return false;
   return getById(cause.callerContextId)?.sessionKey === threadSessionKey;
+}
+
+export interface ThreadCronRequester {
+  jobId: string;
+  /** The cron job's admitted owner (`operator`, `contact:<id>`, ...) from the run's host snapshot. */
+  ownerPrincipal: string;
+  ownerIsOperator: boolean;
+  /** The cron run turn of the parent session that handed this work over. */
+  cronTurn: ContextRecord;
+}
+
+/**
+ * A parent turn a cron fired hands the thread work for the cron's owner,
+ * never for the thread's earlier requester. Same thread rules as above (open
+ * thread, work handoff, the parent session's own turn, same agent), and the
+ * parent turn must be the cron run itself: a host-issued `turn-runtime`
+ * context whose actor is `automation:cron:<id>` and whose `cronRunAuthority`
+ * snapshot names that job. Its owner is then mapped by the caller (operator,
+ * an eligible contact, or nobody). The run must not have been withdrawn and
+ * must be at most 72 hours old.
+ */
+export function resolveThreadCronRequester(
+  input: { sessionKey: string | null; turnOrigin: unknown; relayAgentId: string },
+  deps: ThreadRequesterDeps & { readAuthority?: (value: unknown, jobId: string) => CronRunAuthority | null } = {},
+): ThreadCronRequester | null {
+  if (!input.sessionKey) return null;
+  const origin = resolveRuntimeTurnOrigin(input.turnOrigin);
+  if (!origin || !isWorkHandoff(origin)) return null;
+  if (origin.principal.type !== "agent" || origin.principal.id !== input.relayAgentId) return null;
+  if (!origin.callerContextId) return null;
+
+  const getById = deps.getContextById ?? dbGetContext;
+  const thread = (deps.getThread ?? dbGetOpenThreadHumanRequestTurns)(input.sessionKey);
+  if (!thread) return null;
+  const cronTurn = getById(origin.callerContextId);
+  if (
+    !cronTurn ||
+    cronTurn.kind !== "turn-runtime" ||
+    cronTurn.agentId !== input.relayAgentId ||
+    cronTurn.sessionKey !== thread.parentSessionKey
+  )
+    return null;
+  const principal = typeof cronTurn.metadata?.actorPrincipal === "string" ? cronTurn.metadata.actorPrincipal : "";
+  if (!principal.startsWith("automation:cron:")) return null;
+  const jobId = principal.slice("automation:cron:".length);
+  if (!jobId) return null;
+  const authority = (deps.readAuthority ?? readCronRunAuthority)(cronTurn.metadata?.cronRunAuthority, jobId);
+  if (!authority) return null;
+  if (cronTurn.revokedAt && !isHandoffPreservingRevocation(cronTurn.metadata?.revocationReason)) return null;
+  if ((deps.now ?? Date.now()) - cronTurn.createdAt > DELEGATED_REQUESTER_MAX_AGE_MS) return null;
+  return { jobId, ownerPrincipal: authority.ownerPrincipal, ownerIsOperator: authority.ownerIsOperator, cronTurn };
 }

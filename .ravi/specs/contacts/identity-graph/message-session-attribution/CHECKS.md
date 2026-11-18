@@ -128,7 +128,11 @@ Expected:
   own session, another session's Ask/Inform, another thread's return or a
   trigger, an unidentified person in the parent, a different parent session or
   agent, a blocked first requester (no fallthrough), a forged `turnOrigin` on a
-  CLI child and a requester older than 72 hours. A task created from a verified
+  CLI child and a requester older than 72 hours. A handoff from a parent cron
+  run acts for an operator-owned cron as the operator and a contact-owned cron
+  as that contact (not the thread's earlier requester); a cron with no human
+  owner, a blocked contact owner, a withdrawn or 72-hour-old run and a cron
+  principal on a non-turn context are refused. A task created from a verified
   request (directly or from an inheriting thread turn) acts for that person in
   its dispatch turn; no request, a turn no person started, a finished task, a
   requester older than 72 hours, a foreign agent and a forged task scope on a

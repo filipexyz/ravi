@@ -1450,20 +1450,20 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | link | src/link/client.ts | 98 | triaged-follow-up | catch-without-binding | src/link/client.ts:f47c9ac5ebbb9d36b270f6c9 |
 | link | src/link/client.ts | 157 | triaged-follow-up | catch-without-binding | src/link/client.ts:142fcfbb7c9568d5686e81a3 |
 | link | src/link/connector-mode.ts | 74 | triaged-follow-up | catch-without-binding | src/link/connector-mode.ts:1dba2a9a3f2aa4bda248910c |
-| link | src/link/connector-turn.ts | 461 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:32240cf9072fe876c000542b |
-| link | src/link/connector-turn.ts | 551 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:64ab8a22ae98c9bc153bb6af |
-| link | src/link/connector-turn.ts | 576 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:48e1be97cb9e1d4b51ba2c62 |
-| link | src/link/connector-turn.ts | 598 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:40b56210d2697d533a1ab492 |
-| link | src/link/connector-turn.ts | 928 | no-cause | a session that cannot be read cannot be shown to be the trigger's alone, so it is not | src/link/connector-turn.ts:21af7ef0b74c64585c70079a |
-| link | src/link/connector-turn.ts | 974 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:1f43168c3fcdb77a16f9bc8b |
-| link | src/link/connector-turn.ts | 994 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:c09b05b12bb5b71a49b5dd0a |
-| link | src/link/connector-turn.ts | 1021 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:353cbde6393f0276f55d759d |
-| link | src/link/connector-turn.ts | 1046 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:140204216fa0931bfaa4ea23 |
-| link | src/link/connector-turn.ts | 1154 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:f477353490ca689fd56056ff |
-| link | src/link/connector-turn.ts | 1162 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:f9a567d6b94c71b5a727504a |
-| link | src/link/connector-turn.ts | 1235 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:3676f94b18f57df591d022b2 |
-| link | src/link/connector-turn.ts | 1252 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:466003e4e23f1c1a20502846 |
-| link | src/link/connector-turn.ts | 1271 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:79ddfd14ef08e80cf0dd6d2c |
+| link | src/link/connector-turn.ts | 463 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:32240cf9072fe876c000542b |
+| link | src/link/connector-turn.ts | 553 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:64ab8a22ae98c9bc153bb6af |
+| link | src/link/connector-turn.ts | 578 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:48e1be97cb9e1d4b51ba2c62 |
+| link | src/link/connector-turn.ts | 600 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:40b56210d2697d533a1ab492 |
+| link | src/link/connector-turn.ts | 954 | no-cause | a session that cannot be read cannot be shown to be the trigger's alone, so it is not | src/link/connector-turn.ts:21af7ef0b74c64585c70079a |
+| link | src/link/connector-turn.ts | 1000 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:1f43168c3fcdb77a16f9bc8b |
+| link | src/link/connector-turn.ts | 1020 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:c09b05b12bb5b71a49b5dd0a |
+| link | src/link/connector-turn.ts | 1047 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:353cbde6393f0276f55d759d |
+| link | src/link/connector-turn.ts | 1072 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:140204216fa0931bfaa4ea23 |
+| link | src/link/connector-turn.ts | 1180 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:f477353490ca689fd56056ff |
+| link | src/link/connector-turn.ts | 1188 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:f9a567d6b94c71b5a727504a |
+| link | src/link/connector-turn.ts | 1261 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:3676f94b18f57df591d022b2 |
+| link | src/link/connector-turn.ts | 1278 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:466003e4e23f1c1a20502846 |
+| link | src/link/connector-turn.ts | 1297 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:79ddfd14ef08e80cf0dd6d2c |
 | link | src/link/connectors.ts | 193 | fixed | binding retained / no recognized error surface | src/link/connectors.ts:061c62748854fb522ca5829b |
 | link | src/link/connectors.ts | 329 | fixed | binding retained / no recognized error surface | src/link/connectors.ts:eea2b71b32b52b092697cfc3 |
 | link | src/link/connectors.ts | 353 | fixed | binding retained / no recognized error surface | src/link/connectors.ts:2b0a87456edc35822950019d |

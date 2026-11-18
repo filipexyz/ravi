@@ -19,7 +19,7 @@ import { createTask } from "../tasks/service.js";
 import { dbCompleteTask, dbDispatchTask } from "../tasks/task-db.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { createRuntimeContext } from "./context-registry.js";
+import { createRuntimeContext, revokeRuntimeContext } from "./context-registry.js";
 import {
   resolveRequesterContext,
   resolveRequesterContextIdFor,
@@ -309,6 +309,76 @@ describe("Slack thread turns keep the person who asked for the thread", () => {
     ageContext(turn.contextId, DELEGATED_REQUESTER_MAX_AGE_MS + 60_000);
     const later = handToThread(turnCausedBy(first, "inform"), "execute");
     expect(accessFor(later)).toMatchObject({ kind: "refused", reason: { kind: "agent_relay" } });
+  });
+});
+
+describe("a thread handoff from a cron run acts for the cron's owner", () => {
+  function cronTurn(ownerPrincipal: string, ownerIsOperator: boolean, kind = "turn-runtime") {
+    return createRuntimeContext({
+      kind,
+      agentId: mainAgent.id,
+      sessionKey: keyOf(mainAgent.id, PARENT_NAME),
+      sessionName: PARENT_NAME,
+      metadata: {
+        actorPrincipal: "automation:cron:job-1",
+        actorResolution: "resolved",
+        cronRunAuthority: { jobId: "job-1", ownerPrincipal, ownerIsOperator },
+      },
+    }) as Turn;
+  }
+
+  it("an operator's cron acts as the operator, not as the thread's earlier requester", () => {
+    askedThread();
+    const later = handToThread(cronTurn("operator", true), "execute");
+    expect(accessFor(later)).toMatchObject({ kind: "operator" });
+  });
+
+  it("a contact's cron acts as that contact", () => {
+    const { contact: earlier } = askedThread();
+    const owner = createContact({ phone: "5511900077050", name: "Cron Owner" });
+    const later = handToThread(cronTurn(`contact:${owner.id}`, false), "execute");
+    expect(accessFor(later)).toMatchObject({ kind: "contact", contactId: owner.id });
+    expect(accessFor(later)).not.toMatchObject({ contactId: earlier.id });
+  });
+
+  it.each([
+    ["no person owns it", "agent:some-agent"],
+    ["its owner is unknown", "unknown"],
+  ])("a cron %s inherits nothing", (_label, ownerPrincipal) => {
+    askedThread();
+    const later = handToThread(cronTurn(ownerPrincipal, false), "execute");
+    expect(accessFor(later).kind).toBe("refused");
+  });
+
+  it("a cron whose contact owner is blocked inherits nothing", () => {
+    askedThread();
+    const owner = createContact({ phone: "5511900077051", name: "Blocked Owner" });
+    blockContact("5511900077051");
+    const later = handToThread(cronTurn(`contact:${owner.id}`, false), "execute");
+    expect(accessFor(later).kind).toBe("refused");
+  });
+
+  it("a cron run older than 72 hours inherits nothing", () => {
+    askedThread();
+    const run = cronTurn("operator", true);
+    ageContext(run.contextId, DELEGATED_REQUESTER_MAX_AGE_MS + 60_000);
+    expect(accessFor(handToThread(run, "execute")).kind).toBe("refused");
+  });
+
+  it("a withdrawn cron run inherits nothing; a completed one still does", () => {
+    askedThread();
+    const withdrawn = cronTurn("operator", true);
+    revokeRuntimeContext(withdrawn.contextId, { cascade: false, reason: "turn_context_aborted" });
+    expect(accessFor(handToThread(withdrawn, "execute")).kind).toBe("refused");
+    const completed = cronTurn("operator", true);
+    revokeRuntimeContext(completed.contextId, { cascade: false, reason: "turn_context_completed" });
+    expect(accessFor(handToThread(completed, "execute"))).toMatchObject({ kind: "operator" });
+  });
+
+  it("a cron principal on a context the host did not issue as a turn is ignored", () => {
+    askedThread();
+    const later = handToThread(cronTurn("operator", true, "cli-runtime"), "execute");
+    expect(accessFor(later).kind).toBe("refused");
   });
 });
 
