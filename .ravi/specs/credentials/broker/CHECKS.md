@@ -172,7 +172,11 @@ All commands MUST have `@CommandAccess` metadata.
 bun test src/cli/commands/slack-credential-actions.test.ts
 ```
 
-Fails when `ravi slack` sends an action the table does not classify, when
-the broker's class for an action differs from the table, or when a
-whole-canvas publisher loses its literal `destructive: true`.
-
+Reads the TypeScript AST of `src/cli/commands/slack.ts` and fails when: a
+credential entry point is called outside the four known forwarding calls and
+the classified sites; a site's action is not a string literal (or a
+conditional / same-function `const` of literals); the number of sites for an
+action or in total differs from the table; the broker's read/write/destructive
+class differs from the table; a whole-canvas publisher's top-level
+`destructive` is not the literal `true`; or a non-literal `destructive` appears
+anywhere but `canvases.edit`. Comments never count.

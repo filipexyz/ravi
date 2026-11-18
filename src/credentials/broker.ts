@@ -258,8 +258,6 @@ const READ_ONLY_ACTIONS = new Set([
   "auth.test",
   "blocks.validate",
   "canvases.sections.lookup",
-  "files.list",
-  "slack.topology",
   "whoami",
   "channels.list",
   "channels.info",

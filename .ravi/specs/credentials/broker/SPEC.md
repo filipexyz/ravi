@@ -119,8 +119,8 @@ audit surfaces while still allowing Ravi to perform approved external actions.
   `auth.test`, `whoami`, `blocks.validate`, `canvases.sections.lookup`,
   `channels.list`, `channels.info`, `conversations.list`,
   `conversations.info`, `conversations.history`, `conversations.replies`,
-  `conversations.members`, `files.list`, `slack.topology`, `users.list`,
-  `users.info`, `users.lookupByEmail`, `users.conversations`, `team.info`. Every other
+  `conversations.members`, `users.list`, `users.info`, `users.lookupByEmail`,
+  `users.conversations`, `team.info`. Every other
   action is sensitive.
 - Known limitation: the exception reads the author's subject capabilities
   (`materializeSubjectCapabilities("contact", id)`), not grants scoped to a
@@ -141,11 +141,35 @@ audit surfaces while still allowing Ravi to perform approved external actions.
   through `actor_context_id` (context metadata `actorPrincipal`) while the
   context exists. Recording `contact_id` needs a credentials-DB column
   migration and is deferred.
+- Reads that still ask: `files.list` and `slack.topology` are read-only but
+  stay sensitive. The topology exposes Ravi's internal state (agent ids,
+  session keys, routes, policy) and lists DMs; `files.list` enumerates files
+  per channel and per person. Lending either to a cron, a trigger or a relay
+  without a card is not worth it; on the author's own turn they follow the
+  write exception like any other sensitive action.
 - Every action `src/cli/commands/slack.ts` sends to the broker MUST be listed
-  in `src/cli/commands/slack-credential-actions.test.ts` as read, write or
-  destructive. The test extracts the calls from the source and fails on an
-  unlisted action, a non-literal action, a class the broker does not
-  produce, or a non-literal `destructive` mark the table does not expect.
+  in `src/cli/commands/slack-credential-actions.test.ts` with its class
+  (read, write or destructive) and its number of call sites. The test reads
+  the TypeScript AST of `slack.ts` (comments and strings never count) and
+  guarantees:
+  - every call to `createSlackOpsContext`, `this.mutationOpsContext`,
+    `this.mutationCredentialContext`, `resolveSlackCredentialContext` and
+    `resolveSlackCredentialConfigFromEnv` is either one of the four known
+    forwarding calls inside those helpers or a classified site; any other
+    call fails;
+  - a site's action is a string literal, a conditional of string literals, or
+    a `const` in the same function initialized to one of those; anything else
+    fails;
+  - the number of sites per action, and in total, equals the table exactly;
+  - the broker's class (`explainCredentialPolicy`, `isDestructiveAction` and
+    the site's `destructive` mark) equals the table for every site;
+  - `destructive` is read only as a top-level property of the call's object
+    literal; the three whole-canvas publishers carry the literal `true`, and
+    the only non-literal mark is `isSlackCanvasRemovalChange(change)` on
+    `canvases.edit`.
+  It does not cover Slack calls outside `slack.ts` (socket mode and delivery
+  use internal-service authority and never show the card).
+
 - Trusted host entrypoints MAY explicitly select operator-control for direct
   local operator commands or named Slack infrastructure services. Internal
   service authority MUST be limited to its provider/action allowlist, MUST NOT
