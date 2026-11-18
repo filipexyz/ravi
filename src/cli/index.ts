@@ -23,6 +23,7 @@ import { dirname, join } from "node:path";
 import { registerCommands } from "./registry.js";
 import * as allCommands from "./commands/index.js";
 import {
+  argsForRootUsageContract,
   CONTRACT_EXIT_USAGE,
   ContractError,
   contractFail,
@@ -476,7 +477,7 @@ async function bootstrapCli(): Promise<void> {
       );
       return;
     }
-    await program.parseAsync();
+    await parseCli();
     return;
   }
 
@@ -487,7 +488,12 @@ async function bootstrapCli(): Promise<void> {
     process.exit(process.exitCode ?? 0);
   }
 
-  await program.parseAsync();
+  await parseCli();
+}
+
+/** Parse the process arguments. An unknown root command is a usage error even when a help flag follows it. */
+function parseCli(): Promise<Command> {
+  return program.parseAsync([...process.argv.slice(0, 2), ...argsForRootUsageContract(process.argv.slice(2), program)]);
 }
 
 function rootCommandNames(command: Command): Set<string> {

@@ -59,7 +59,13 @@ export interface Trigger {
   id: string;
   name: string;
   agentId?: string;
-  /** Explicit account ID for outbound routing (overrides session.lastAccountId) */
+  /**
+   * Account ID for outbound routing. It replaces the account a destination
+   * carries (session.lastAccountId, a session key's, the frozen reply source's)
+   * only when it is a credential for the destination's channel (the channel of
+   * the instance that goes by this name) and was not taken from the reply
+   * source. See `triggerSourceAccount`.
+   */
   accountId?: string;
   topic: string;
   message: string;

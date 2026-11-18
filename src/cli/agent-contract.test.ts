@@ -1,6 +1,8 @@
 import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { describe, expect, it } from "bun:test";
+import { Command } from "commander";
 import {
+  argsForRootUsageContract,
   ContractError,
   GENERIC_COMMAND_FAILED_MESSAGE,
   expectedErrorToContractError,
@@ -706,6 +708,65 @@ describe("diagnostic identifier egress", () => {
     expect(JSON.stringify(envelope)).not.toContain("PRIVATE_");
   });
 
+  describe("what a Ravi App CLI reported about its failure", () => {
+    const failure = (op: string, extra: Record<string, unknown>) =>
+      new ContractError(op, "APP_OPERATION_FAILED", "Ravi app operation failed.", 1, {
+        ...errorDiagnostic(new Error("Ravi app operation failed.")),
+        ...extra,
+      }).envelope().error;
+
+    it("keeps the exit status as a bare non-negative integer", () => {
+      expect(failure("apps run", { appExitCode: 2 }).appExitCode).toBe(2);
+      expect(failure("apps run", { appExitCode: 0 }).appExitCode).toBe(0);
+      for (const bad of [-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 2, "2", null, true, [2], { code: 2 }]) {
+        expect(failure("apps run", { appExitCode: bad })).not.toHaveProperty("appExitCode");
+      }
+    });
+
+    it("keeps the app's message and next step as two redacted, bounded, single-line strings", () => {
+      const reported = failure("apps run", {
+        appReported: {
+          message: "first line\nsecond   line token=fixture-token",
+          suggestedAction: "x".repeat(500),
+          code: "PRIVATE_EXTRA_KEY",
+          nested: { message: "PRIVATE_NESTED" },
+        },
+      }).appReported as { message: string; suggestedAction: string };
+      expect(reported.message).toBe("first line second line token=[redacted:token]");
+      expect(reported.suggestedAction.length).toBeLessThanOrEqual(300);
+      expect(reported.suggestedAction.endsWith(" [truncated]")).toBe(true);
+      expect(Object.keys(reported).sort()).toEqual(["message", "suggestedAction"]);
+      // One of the two is enough.
+      expect(failure("apps run", { appReported: { message: "only this" } }).appReported).toEqual({
+        message: "only this",
+      });
+      expect(JSON.stringify(reported)).not.toMatch(/PRIVATE_|fixture-token/);
+    });
+
+    it("drops what is not a message or a next step", () => {
+      for (const bad of [
+        "text",
+        ["a", "b"],
+        null,
+        42,
+        {},
+        { message: 7, suggestedAction: {} },
+        { message: "   ", suggestedAction: "\n\t" },
+        { other: "PRIVATE_OTHER" },
+      ]) {
+        expect(failure("apps run", { appReported: bad })).not.toHaveProperty("appReported");
+      }
+    });
+
+    it("exists for `apps run` and for no other command", () => {
+      for (const op of ["sessions report", "apps list", "demo"]) {
+        const envelope = failure(op, { appExitCode: 2, appReported: { message: "from the app" } });
+        expect(envelope).not.toHaveProperty("appExitCode");
+        expect(envelope).not.toHaveProperty("appReported");
+      }
+    });
+  });
+
   it("rejects credential-bearing code and operation fields without discarding the cause", () => {
     const error = new ContractError(
       "upload?key=PRIVATE_OP",
@@ -718,5 +779,39 @@ describe("diagnostic identifier egress", () => {
     expect(error.code).toBe("COMMAND_FAILED");
     expect(error.envelope().error.cause).toBe("provider unavailable");
     expect(JSON.stringify(error.envelope())).not.toMatch(/PRIVATE_OP|PRIVATE_CODE/);
+  });
+});
+
+describe("argsForRootUsageContract", () => {
+  const program = new Command("ravi");
+  program.command("tasks").alias("t");
+  program.command("secret", { hidden: true });
+  const argsFor = (...args: string[]) => argsForRootUsageContract(args, program);
+
+  it("drops the help flags after an unknown root command so the parser reaches its unknown-command error", () => {
+    expect(argsFor("task", "--help")).toEqual(["task"]);
+    expect(argsFor("task", "-h")).toEqual(["task"]);
+    expect(argsFor("task", "list", "--help", "--json")).toEqual(["task", "list", "--json"]);
+    expect(argsFor("task", "-h", "--help")).toEqual(["task"]);
+  });
+
+  it("leaves every other invocation as it is", () => {
+    expect(argsFor("task")).toEqual(["task"]);
+    expect(argsFor("tasks", "--help")).toEqual(["tasks", "--help"]);
+    expect(argsFor("t", "-h")).toEqual(["t", "-h"]);
+    expect(argsFor("secret", "--help")).toEqual(["secret", "--help"]);
+    expect(argsFor("help", "tasks")).toEqual(["help", "tasks"]);
+    expect(argsFor("help", "--help")).toEqual(["help", "--help"]);
+    expect(argsFor("--help")).toEqual(["--help"]);
+    expect(argsFor("-h")).toEqual(["-h"]);
+    expect(argsFor()).toEqual([]);
+  });
+
+  it("keeps a help flag that follows the end-of-options marker, and does not touch its input", () => {
+    expect(argsFor("task", "--", "--help")).toEqual(["task", "--", "--help"]);
+    expect(argsFor("task", "--help", "--", "-h")).toEqual(["task", "--", "-h"]);
+    const input = ["task", "--help"];
+    argsForRootUsageContract(input, program);
+    expect(input).toEqual(["task", "--help"]);
   });
 });

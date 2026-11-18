@@ -323,6 +323,28 @@ export interface RaviAppRunOptions extends RaviAppDiscoveryOptions {
   };
 }
 
+/**
+ * What the router keeps of a CLI operation that exited non-zero. Every string is
+ * already redacted and bounded (`src/apps/failure.ts`): this is a projection of
+ * the app's output, never the output itself, so a failed result still carries no
+ * `stdout`, `stderr` or `command`.
+ */
+export interface RaviAppCliFailure {
+  /** The child's exit status; null when a signal ended it. */
+  exitCode: number | null;
+  /** Where the explanation came from: the app's JSON error, its stderr, or nowhere. */
+  source: "json" | "stderr" | "none";
+  /** The app's own error code, when its JSON error named one as an identifier. */
+  code?: string;
+  /** One-line, bounded: the app's message (or the first line of its stderr), reported as `appReported.message`. */
+  message?: string;
+  /** Multi-line, bounded: the diagnostic `cause`. It starts with "The app reported: " when it carries the app's words. */
+  cause: string;
+  retryable?: boolean;
+  /** One-line, bounded: the app's own next step, when its JSON error offered one, reported as `appReported.suggestedAction`. */
+  suggestedAction?: string;
+}
+
 export interface RaviAppRunResult {
   ok: boolean;
   appId: string | null;
@@ -335,6 +357,8 @@ export interface RaviAppRunResult {
   result?: unknown;
   error?: string;
   errorCode?: string;
+  /** Set only when a CLI operation failed after it ran. */
+  failure?: RaviAppCliFailure;
   dryRun?: true;
   plan?: {
     appId: string;

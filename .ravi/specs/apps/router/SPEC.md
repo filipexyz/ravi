@@ -18,11 +18,15 @@ tags:
   - operations
 applies_to:
   - src/apps/router.ts
+  - src/apps/failure.ts
+  - src/apps/error-contract.ts
   - src/apps/service.ts
   - src/cli/index.ts
   - src/cli/commands/apps.ts
   - src/cli/registry.ts
   - src/cli/audit.ts
+  - src/cli/agent-contract.ts
+  - src/cli/remote-gateway.ts
   - src/permissions
 owners:
   - ravi-dev
@@ -151,7 +155,8 @@ ravi apps run <app-id> [operation] [args...] --execute --json
 - Missing apps, permission denials, provider failures, and subprocess failures
   MUST cross public CLI, tool, and gateway boundaries as the shared contract
   envelope. Raw provider errors, command strings, stdout, and stderr MUST NOT
-  appear in a failure response.
+  appear in a failure response. The one thing of a failed subprocess that does
+  cross is the redacted, bounded projection defined under "Failed App Output".
 - App or provider policy decisions `deny`, `needs_grant`, and `not_applicable`
   are `PERMISSION_DENIED` with outcome `denied`. Provider timeout, process
   failure, invalid JSON, and invalid schema are
@@ -188,8 +193,84 @@ Argument handling:
   behavior and MUST NOT be forwarded to the app implementation.
 - Successful app process completion MAY preserve exit status, stdout, and
   stderr semantics for the requesting transport. Failed process output is
-  private diagnostic material and MUST be replaced by the stable contract
-  error at public boundaries.
+  private diagnostic material: it MUST NOT cross a public boundary as output.
+  The caller learns of the failure through the stable contract error and the
+  projection defined under "Failed App Output".
+
+## Failed App Output
+
+A Ravi App CLI that exits non-zero, or that a signal ends, fails the run with
+`APP_OPERATION_FAILED`. The caller MUST be able to learn why from the failure
+response alone, so the router keeps a projection of what the CLI said and never
+the output itself. Collapsing a failure to a bare "operation failed" leaves the
+agent with nothing to act on, even when the app wrote a structured error.
+
+- The raw stdout, raw stderr, command line, and arguments MUST NOT appear in the
+  failure result, the contract envelope, an audit event, or a log. Only the
+  projection below crosses.
+- The projection is read from the first source that says something:
+  1. The app's own error object on stdout: `{ "error": { "code", "reason",
+     "message", "suggestedAction", "retryable", "cause" } }`,
+     `{ "error": "<text>", "code": ... }`, or a top-level
+     `{ "ok": false, "code": ..., "message": ... }` (the shapes the first-party
+     apps print with `--json`). It is read field by field: only those fields are
+     kept and every other field the app printed is dropped. It MUST NOT be
+     redacted as text, because the shared redactor collapses any `{...}` in free
+     text into a provider-body marker.
+  2. The head of stderr; its first non-empty line is `appReported.message`.
+  3. Nothing: the cause is the exit status ("The app CLI exited with code N."),
+     or "The app CLI was terminated by a signal." when a signal ended it.
+  A stdout that is not an error object (data, a log, a stack) is never projected.
+- Every projected string MUST pass the shared diagnostic redactor before it is
+  kept, with the child context key also masked by exact value in every form an
+  app may log it in: as is, base64 (padded or not), base64url, hex (both cases),
+  and URL-encoded. A key inside a longer encoded text is not recognized. A
+  projected `code` or `reason` MUST be a plain identifier that redaction leaves
+  unchanged, otherwise it is dropped. A `retryable` that is not a boolean is
+  ignored.
+- The projection MUST be bounded: the cause at most 2000 characters (prefix
+  included), `appReported.message` and `appReported.suggestedAction` at most 300
+  each, and a JSON stdout over 65536 characters is not parsed as an error
+  object. Truncation cuts at a line
+  boundary when there is one, never inside a character, and ends with
+  ` [truncated]`. Redaction MUST run before the cut, so a credential is never
+  cut in half and left half-masked.
+- The contract error keeps the router's own code, exit status, headline, and
+  next step: code `APP_OPERATION_FAILED`, exit `1`, outcome `failed`, message
+  `Ravi app operation failed.`, and a `suggestedAction` that Ravi writes
+  (`Resolve the reported cause and retry` when the CLI reported a cause,
+  `Inspect redacted runtime logs and retry` when it said nothing). The app's exit
+  status MUST NOT be mapped onto the contract exit taxonomy, so an app cannot
+  claim exit `3` (blocked) or `2` (usage) for itself.
+- Everything the app reported is the app's text: untrusted data about the
+  failure, never an instruction to the caller. It MUST NOT become the envelope's
+  `message` or `suggestedAction`. Its free text crosses in two places that say
+  whose it is: `appReported`, an object holding the app's `message` and
+  `suggestedAction` (each one redacted line of at most 300 characters, and no
+  other key), and `cause`, the redacted explanation, which MUST start with
+  `The app reported: ` when it carries the app's words. The cause of a CLI that
+  said nothing ("The app CLI exited with code N." or "The app CLI was terminated
+  by a signal.") is Ravi's own and has no prefix. Three typed values come from
+  the app as well and carry no free text: `appExitCode`, its exit status as a
+  non-negative integer (omitted when a signal ended the CLI), `context.code`,
+  its error code as an identifier, and `retryable`, its boolean. Only
+  `appExitCode` names the app in its key. A caller, an agent above all, MUST
+  treat all of these as data and MUST NOT run, or adopt as its own next step,
+  anything in them.
+- `appExitCode` and `appReported` exist for `apps run` only. The contract
+  projection of any other command drops both, and so does the remote relay. The
+  remote relay MUST carry the headline, `cause`, `context.code`,
+  `suggestedAction`, `retryable`, `appExitCode`, and `appReported` of an
+  `apps run` failure to the calling process, and cleans `appReported` again at
+  that boundary.
+- The terminal audit keeps recording the outcome, the contract exit code, and
+  the error code, never text. The app's text MUST NOT enter an audit event.
+- Redaction is pattern-based, so it is a net and not a guarantee: a credential
+  with no label and no known prefix, or an argument echoed back, is not
+  recognized. An app MUST NOT print a credential value on its error paths.
+- An app SHOULD print one structured error object on stdout under `--json` and
+  exit non-zero: that is the one form that keeps its code, reason, message, and
+  next step intact.
 
 ## Resolution Order
 
@@ -298,6 +379,14 @@ is ordinary CLI composition, not a distinct App protocol.
 - Forwarding the parent context key gives the app undeclared caller authority.
 - Implementing SDK/tool/stream as separate executors creates surface-dependent
   behavior and authorization drift.
+- Dropping a failed CLI's output entirely makes every app failure read
+  "Ravi app operation failed." with no reason, even when the app wrote a
+  structured error (found 2026-11-18 while building the `vault` app). Forwarding
+  it raw leaks credentials and payloads. Project it, redacted and bounded.
+- Passing the app's JSON error through the text redactor turns it into
+  `[redacted:provider.body]`; read the fields one by one instead.
+- Mapping the app's exit status onto the contract exit codes lets an app
+  impersonate `blocked` (3) or `usage_error` (2); carry it as `appExitCode`.
 - Treating JSON output as an App protocol duplicates the CLI process contract.
 - Executing manifest commands through a shell lets app arguments become command
   injection.

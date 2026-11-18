@@ -8,6 +8,12 @@ import {
 } from "../cli/agent-contract.js";
 import { RaviAppError, type RaviAppRunResult } from "./types.js";
 
+const APP_OPERATION_FAILED_MESSAGE = "Ravi app operation failed.";
+/** Ravi's next step when the CLI reported a cause. The app's own next step never takes its place. */
+const REPORTED_CAUSE_ACTION = "Resolve the reported cause and retry";
+/** Ravi's next step when the CLI said nothing, so there is no reported cause to resolve. */
+const NO_REASON_ACTION = "Inspect redacted runtime logs and retry";
+
 export function raviAppErrorToContractError(op: string, error: RaviAppError): ContractError {
   const message = error.code === "not_found" ? "Ravi app was not found." : "Ravi app already exists.";
   const suggestedAction =
@@ -63,11 +69,29 @@ export function enforceRaviAppRunResult(result: RaviAppRunResult, asJson: boolea
     });
   }
 
-  contractFail("apps run", result.errorCode ?? "APP_OPERATION_FAILED", "Ravi app operation failed.", {
+  const failure = result.failure;
+  // A CLI that ran and failed explains itself through the projection the router kept (never its raw output). What it
+  // reported is the app's text, so it stays labeled as the app's: the headline and the next step are Ravi's own and
+  // never take it. It travels as `appReported` (its message and its next step), `cause` (the redacted explanation),
+  // `context.code` (its own error code) and `appExitCode`. The contract code and exit stay the router's.
+  // Spec apps/router, "Failed App Output".
+  const appReported = {
+    ...(failure?.message ? { message: failure.message } : {}),
+    ...(failure?.suggestedAction ? { suggestedAction: failure.suggestedAction } : {}),
+  };
+  contractFail("apps run", result.errorCode ?? "APP_OPERATION_FAILED", APP_OPERATION_FAILED_MESSAGE, {
     ...{
       asJson,
-      details: { suggestedAction: "Inspect redacted runtime logs and retry" },
+      details: {
+        suggestedAction: failure && failure.source !== "none" ? REPORTED_CAUSE_ACTION : NO_REASON_ACTION,
+        ...(failure?.retryable !== undefined ? { retryable: failure.retryable } : {}),
+        ...(failure && failure.exitCode !== null ? { appExitCode: failure.exitCode } : {}),
+        ...(Object.keys(appReported).length > 0 ? { appReported } : {}),
+      },
     },
-    diagnostic: errorDiagnostic("Ravi app operation failed.", { operation: "apps run" }),
+    diagnostic: errorDiagnostic(failure?.cause ?? APP_OPERATION_FAILED_MESSAGE, {
+      operation: "apps run",
+      ...(failure?.code ? { code: failure.code } : {}),
+    }),
   });
 }

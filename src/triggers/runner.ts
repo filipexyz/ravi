@@ -16,7 +16,8 @@ import { followFingerprint, followHealthTopic } from "../pr/follow-health.js";
 import { getLocalWatchRunner } from "../watch/local-runner.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
-import { getDefaultAgentId } from "../router/router-db.js";
+import { canonicalChannelId } from "../channels/capabilities.js";
+import { dbGetInstance, getDefaultAgentId } from "../router/router-db.js";
 import { deriveSourceFromSessionKey } from "../router/session-key.js";
 import {
   getMainSession,
@@ -110,17 +111,56 @@ export function planTriggerTopicRefresh(
 }
 
 /**
+ * The channel an account delivers on: the channel of the instance that goes by
+ * that name, as the rest of Ravi names channels (`whatsapp-baileys` is
+ * `whatsapp`). `undefined` for an account no instance goes by: it names no channel.
+ */
+export function accountChannel(accountId: string): string | undefined {
+  const instance = dbGetInstance(accountId);
+  return instance ? canonicalChannelId(instance.channel) : undefined;
+}
+
+/**
+ * The account an outbound source for a trigger turn goes out through.
+ *
+ * `source` already carries the account its chat was reached through: the one the
+ * session last talked on, the one in a session key, the one frozen in the reply
+ * source. The trigger's own `accountId` replaces it only when both hold:
+ *
+ * - It is a credential for the source's channel. The instance named for the
+ *   account says which channel; one on another channel is the wrong provider's
+ *   credential, so the source keeps its own. An account no instance goes by names
+ *   no channel and is applied.
+ * - It was set on its own (`--account`, the agent's account). An account equal to
+ *   the frozen reply source's was taken from the creator's chat and says nothing
+ *   about the chat this source reaches, which can sit in another workspace of the
+ *   same channel: it replaces no account the source already carries.
+ */
+export function triggerSourceAccount(
+  trigger: Pick<Trigger, "accountId" | "replySource">,
+  source: { channel: string; accountId: string },
+  channelOf: (accountId: string) => string | undefined = accountChannel,
+): string {
+  const own = trigger.accountId;
+  if (!own) return source.accountId;
+  const ownChannel = channelOf(own);
+  if (ownChannel !== undefined && ownChannel !== canonicalChannelId(source.channel)) return source.accountId;
+  const inherited = trigger.replySource?.accountId === own;
+  return inherited && source.accountId ? source.accountId : own;
+}
+
+/**
  * Outbound source for a trigger turn, taken from where a session last talked.
- * `undefined` when the session has never had a chat to reply to.
+ * `undefined` when the session has never had a chat to reply to. The account is
+ * the session's own; whether the trigger's replaces it is `triggerSourceAccount`.
  */
 export function sourceFromSessionEntry(
   session: { lastChannel?: string; lastAccountId?: string; lastTo?: string } | null | undefined,
-  accountId?: string,
 ): { channel: string; accountId: string; chatId: string } | undefined {
   if (!session?.lastChannel || !session.lastTo) return undefined;
   return {
     channel: session.lastChannel,
-    accountId: accountId ?? session.lastAccountId ?? "",
+    accountId: session.lastAccountId ?? "",
     chatId: session.lastTo,
   };
 }
@@ -620,7 +660,7 @@ export class TriggerRunner {
         // Another trigger's own session never stands in for the main session.
         if (resolved?.name && sessionAdmitsTriggerFire(resolved)) {
           sessionName = resolved.name;
-          source = sourceFromSessionEntry(resolved, trigger.accountId);
+          source = sourceFromSessionEntry(resolved);
         } else {
           // Fallback: derive source from session key and use main session
           source = deriveSourceFromSessionKey(trigger.replySession) ?? undefined;
@@ -635,7 +675,7 @@ export class TriggerRunner {
         // dropped by the gateway (2a728cd4).
         sessionName = this.resolveMainSessionName(agentId, agentCwd);
         if (!trigger.replySource) {
-          source = sourceFromSessionEntry(resolveSession(sessionName), trigger.accountId);
+          source = sourceFromSessionEntry(resolveSession(sessionName));
         }
       }
     } else if (trigger.session === "isolated") {
@@ -673,7 +713,7 @@ export class TriggerRunner {
       // Derive source from replySession for isolated sessions too
       if (trigger.replySession) {
         source =
-          sourceFromSessionEntry(resolveSession(trigger.replySession), trigger.accountId) ??
+          sourceFromSessionEntry(resolveSession(trigger.replySession)) ??
           deriveSourceFromSessionKey(trigger.replySession) ??
           undefined;
       }
@@ -735,13 +775,13 @@ export class TriggerRunner {
 
       if (trigger.replySession) {
         source =
-          sourceFromSessionEntry(resolveSession(trigger.replySession), trigger.accountId) ??
+          sourceFromSessionEntry(resolveSession(trigger.replySession)) ??
           deriveSourceFromSessionKey(trigger.replySession) ??
           undefined;
       } else if (!trigger.replySource) {
         // Like main-session triggers (2a728cd4): reply where the target
         // session last talked, unless a creator-time recipient is pinned.
-        source = sourceFromSessionEntry(existing, trigger.accountId);
+        source = sourceFromSessionEntry(existing);
       }
     }
 
@@ -750,15 +790,15 @@ export class TriggerRunner {
     if (!source && trigger.replySource) {
       source = {
         channel: trigger.replySource.channel,
-        accountId: trigger.accountId ?? trigger.replySource.accountId,
+        accountId: trigger.replySource.accountId,
         chatId: trigger.replySource.chatId,
       };
     }
 
-    // Override accountId in source if trigger has explicit accountId
-    if (source && trigger.accountId) {
-      source.accountId = trigger.accountId;
-    }
+    // The trigger's own account replaces the one the source carries only where
+    // it is meant to: on its own channel, and when it was not taken from the
+    // creator's chat. Every path above ends here, so one rule covers them all.
+    if (source && trigger.accountId) source.accountId = triggerSourceAccount(trigger, source);
 
     if ((trigger.executionType ?? "agent") === "shell") {
       await this.fireShellTrigger(trigger, event, source, opts.batch, { stored, ownerFire });

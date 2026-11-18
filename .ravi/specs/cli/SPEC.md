@@ -95,7 +95,11 @@ The canonical failure value is a `ContractError` and its envelope:
   not an execution failure.
 - Root parser, domain parser, handler and bootstrap paths MUST preserve this
   taxonomy. Unknown root commands are usage errors (`USAGE_ERROR`, exit `2`),
-  including when Commander can suggest a valid command.
+  including when Commander can suggest a valid command and when a help flag
+  follows the unknown command: Commander looks for help before it looks for an
+  unknown command, so the root hands the parser the arguments without the help
+  flags (`argsForRootUsageContract`) and `ravi task --help` fails like
+  `ravi task` instead of printing the root help with exit `0`.
 - Expected handler failures that still use the compatibility `fail()` helper
   are normalized at the shared transport boundary as `COMMAND_FAILED`, exit
   `1`. JSON CLI, tools and gateway MUST receive one canonical envelope whose

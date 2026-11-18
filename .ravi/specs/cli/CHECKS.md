@@ -71,6 +71,12 @@ and transport names follow [`SPEC.md`](./SPEC.md).
   operation path.
 - Exit `0/1/2/3` survives handler, root/domain parser, bootstrap, tool and
   gateway paths; an unknown root command is `USAGE_ERROR`, exit `2`.
+- `ravi task`, `ravi task --help` and `ravi task -h` exit `2` with
+  `unknown command 'task'` and the suggestion `(Did you mean tasks?)`, and never
+  print the root help. `ravi tasks --help`, `ravi help tasks` and `ravi --help`
+  still print help with exit `0`.
+  `bun test src/cli/root-version.test.ts src/cli/agent-contract.test.ts` covers
+  both the spawned CLI and the argument rewrite.
 - Tool and gateway adapters preserve known `ContractError` values; neither
   appends a generic error nor replaces the envelope with a generic HTTP 500
   body. `UNHANDLED_ERROR` and `RETURN_SHAPE_ERROR` may retain HTTP status `500`.

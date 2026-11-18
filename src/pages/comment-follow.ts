@@ -2,7 +2,7 @@ import { getContext, type ToolContext } from "../cli/context.js";
 import { getAgent } from "../router/config.js";
 import { getAccountForAgent } from "../router/router-db.js";
 import { evaluateFilter, validateFilter } from "../triggers/filter.js";
-import { resolveDurableFollowOwner } from "../triggers/follow-owner.js";
+import { type DurableFollowOwnerOptions, resolveDurableFollowOwner } from "../triggers/follow-owner.js";
 import { findTriggerTopicCatalogEntry } from "../triggers/topic-catalog.js";
 import { dbCreateTrigger, dbDeleteTrigger, dbListTriggers, dbUpdateTrigger } from "../triggers/triggers-db.js";
 import type { Trigger, TriggerInput, TriggerReplySource } from "../triggers/types.js";
@@ -169,13 +169,24 @@ export function pageCommentBindingFromShip(input: PageCommentShipSource): PageCo
 }
 
 /**
+ * A page comment follow is refused only for a session the Slack thread registry
+ * should know. A thread of another channel or a task's own thread has no Slack
+ * lifecycle and no `sessions close-thread` to block, so a ship from there keeps
+ * arming on that session, as it did before ships moved to a thread's parent.
+ * (The PR follow keeps the stricter default: it also guards publication.)
+ */
+const PAGE_COMMENT_OWNER: DurableFollowOwnerOptions = { refuse: "slack-thread" };
+
+/**
  * The session a comment should wake for a ship made from the current context.
  *
  * A ship from a Slack thread arms the route's trigger on the thread's durable
  * parent, not on the thread: the thread closes, the page does not. A trigger
- * left on the child would also block `sessions close-thread`. When the thread's
- * lifecycle or parent cannot be resolved this throws, and `pages ship` reports
- * it as a `commentFollow` warning without failing the publish.
+ * left on the child would also block `sessions close-thread`. When the Slack
+ * thread's lifecycle or parent cannot be resolved this throws, and `pages ship`
+ * reports it as a `commentFollow` warning without failing the publish. A ship
+ * from a session that is not a Slack thread child, in a thread of another channel
+ * or a task's thread included, arms on that session as it always did.
  */
 export function pageCommentCreatorFromContext(readContext?: () => ToolContext | undefined): PageCommentCreator | null {
   const ctx = (readContext ?? getContext)();
@@ -199,6 +210,8 @@ export function pageCommentCreatorFromContext(readContext?: () => ToolContext | 
       source,
     },
     "page comment follow",
+    undefined,
+    PAGE_COMMENT_OWNER,
   );
 }
 
@@ -217,6 +230,8 @@ export function pageCommentReplyTargetPatch(trigger: Trigger): PageCommentTrigge
       source: trigger.replySource,
     },
     "page comment follow",
+    undefined,
+    PAGE_COMMENT_OWNER,
   );
   if (resolved.sessionName === trigger.replySession) return {};
   return {

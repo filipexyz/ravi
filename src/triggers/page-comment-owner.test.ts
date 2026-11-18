@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { Transpiler } from "bun";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { closeSlackThreadLifecycle, registerInboundSlackThread } from "../channels/slack/thread-lifecycle-store.js";
 import {
@@ -12,7 +14,7 @@ import { deleteSession, getOrCreateSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { resolveTriggerActivation } from "./activation.js";
 import { resolveDurableFollowOwner } from "./follow-owner.js";
-import { dbCreateTrigger, dbGetTrigger } from "./triggers-db.js";
+import { dbCreateTrigger, dbGetTrigger, dbListTriggers } from "./triggers-db.js";
 
 let stateDir: string | null = null;
 beforeEach(async () => {
@@ -54,6 +56,22 @@ function threadContext(key: string, name: string, providerThreadId: string) {
     sessionKey: key,
     source: { channel: "slack", accountId: ACCOUNT, chatId: `C123#${providerThreadId}`, threadId: providerThreadId },
   } as never;
+}
+
+// Keys that carry `:thread:` and that no Slack lifecycle ever stood behind: a thread of
+// another channel (its id is that channel's message id) and a task's own thread.
+const WHATSAPP_THREAD_KEY = "agent:agent-test:whatsapp:main:group:120363024772797713@g.us:thread:3EB0C767D0F1A2B3";
+const WHATSAPP_THREAD_SOURCE = {
+  channel: "whatsapp",
+  accountId: "wa-main",
+  chatId: "120363024772797713@g.us",
+  threadId: "3EB0C767D0F1A2B3",
+};
+const TASK_THREAD_KEY = "agent:agent-test:thread:thr_m3k2x9_a1b2c3d4e5";
+
+function seedNonSlackThreads() {
+  getOrCreateSession(WHATSAPP_THREAD_KEY, "agent-test", "/tmp/page-comment-owner", { name: "wa-thread" });
+  getOrCreateSession(TASK_THREAD_KEY, "agent-test", "/tmp/page-comment-owner", { name: "task-worker" });
 }
 
 const ship = (route: string) => ({
@@ -109,6 +127,56 @@ describe("durable owner of a follow armed from a Slack thread", () => {
     expect(() => resolveDurableFollowOwner({ sessionKey: THREAD_ONE }, "page comment follow")).toThrow(
       "Cannot register page comment follow: durable parent session is missing.",
     );
+  });
+
+  it("refuses a missing lifecycle only for a Slack thread when asked to: another channel's thread or a task's keeps its own follow", () => {
+    seedNonSlackThreads();
+    const slackOnly = { refuse: "slack-thread" } as const;
+    // By key, by name (the session row supplies the key), and with a source that carries a thread id.
+    const own = [
+      {
+        agentId: "agent-test",
+        sessionName: "wa-thread",
+        sessionKey: WHATSAPP_THREAD_KEY,
+        source: WHATSAPP_THREAD_SOURCE,
+      },
+      { agentId: "agent-test", sessionName: "wa-thread", source: WHATSAPP_THREAD_SOURCE },
+      { agentId: "agent-test", sessionName: "task-worker", sessionKey: TASK_THREAD_KEY },
+      { agentId: "agent-test", sessionName: "task-worker" },
+      // No session row to read a key from, and the source is not Slack's: nothing says this is a Slack thread.
+      { agentId: "agent-test", sessionName: "no-row", source: WHATSAPP_THREAD_SOURCE },
+    ];
+    for (const context of own) {
+      expect(resolveDurableFollowOwner(context, "page comment follow", undefined, slackOnly)).toEqual(context);
+    }
+
+    // The same shapes for a Slack thread (its id is a timestamp) are still refused.
+    const slackKey = `${PARENT_KEY}:thread:9.9`;
+    getOrCreateSession(slackKey, "agent-test", "/tmp/page-comment-owner", { name: "slack-ghost" });
+    const slack = { channel: "slack", accountId: ACCOUNT, chatId: "C123#9.9", threadId: "9.9" };
+    for (const context of [
+      { sessionKey: slackKey },
+      { sessionName: "slack-ghost" },
+      { sessionName: "no-row", source: slack },
+    ]) {
+      expect(() => resolveDurableFollowOwner(context, "page comment follow", undefined, slackOnly)).toThrow(
+        "Cannot register page comment follow: thread lifecycle is missing or ambiguous.",
+      );
+    }
+  });
+
+  it("keeps refusing every thread-like key by default: the PR follow and `ravi pr publish` do not take the narrower rule", () => {
+    seedNonSlackThreads();
+    for (const context of [
+      { sessionKey: WHATSAPP_THREAD_KEY },
+      { sessionName: "wa-thread" },
+      { sessionKey: TASK_THREAD_KEY },
+      { sessionName: "task-worker" },
+    ]) {
+      expect(() => resolveDurableFollowOwner(context, "PR follow")).toThrow(
+        "Cannot register PR follow: thread lifecycle is missing or ambiguous.",
+      );
+    }
   });
 });
 
@@ -192,6 +260,29 @@ describe("page comment follow armed by a ship from a thread", () => {
     const result = await ensurePageCommentFollow(ship("/pipeline"), shipDeps(context));
     expect(result).toMatchObject({ ok: true, replySession: "parent" });
   });
+
+  it("arms a ship from another channel's thread or a task's thread on that session, as before", async () => {
+    seedNonSlackThreads();
+    const fromWhatsApp = {
+      agentId: "agent-test",
+      sessionName: "wa-thread",
+      sessionKey: WHATSAPP_THREAD_KEY,
+      source: WHATSAPP_THREAD_SOURCE,
+    } as never;
+    const fromTask = { agentId: "agent-test", sessionName: "task-worker", sessionKey: TASK_THREAD_KEY } as never;
+
+    const whatsapp = await ensurePageCommentFollow(ship("/from-whatsapp"), shipDeps(fromWhatsApp));
+    const task = await ensurePageCommentFollow(ship("/from-task"), shipDeps(fromTask));
+
+    expect(whatsapp).toMatchObject({ ok: true, replySession: "wa-thread" });
+    expect(task).toMatchObject({ ok: true, replySession: "task-worker" });
+    const stored = Object.fromEntries(dbListTriggers().map((trigger) => [trigger.name, trigger]));
+    expect(stored["page-comment:site_1:/from-whatsapp"]).toMatchObject({
+      replySession: "wa-thread",
+      replySource: WHATSAPP_THREAD_SOURCE,
+    });
+    expect(stored["page-comment:site_1:/from-task"]).toMatchObject({ replySession: "task-worker" });
+  });
 });
 
 describe("repair of page comment triggers left on a thread", () => {
@@ -265,6 +356,17 @@ describe("repair of page comment triggers left on a thread", () => {
     expect(dbGetTrigger(ghost.id)!.replySession).toBe(`${PARENT_KEY}:thread:9.9`);
   });
 
+  it("leaves a trigger on another channel's thread or a task's thread alone, and reports no failure", () => {
+    seedNonSlackThreads();
+    const onTask = legacyTrigger("page-comment:site_1:/blog/a", "task-worker");
+    const byKey = legacyTrigger("page-comment:site_1:/blog/b", WHATSAPP_THREAD_KEY);
+
+    expect(repairThreadBoundPageCommentFollows()).toEqual({ repaired: 0, failures: [] });
+
+    expect(dbGetTrigger(onTask.id)!.replySession).toBe("task-worker");
+    expect(dbGetTrigger(byKey.id)!.replySession).toBe(WHATSAPP_THREAD_KEY);
+  });
+
   it("reports a write that fails and keeps repairing the others", () => {
     seedParent();
     seedThread(THREAD_ONE, "child", "1.2");
@@ -295,5 +397,101 @@ describe("repair of page comment triggers left on a thread", () => {
       replySource: { channel: "slack", accountId: ACCOUNT, chatId: "C123" },
     });
     expect(dbGetTrigger(trigger.id)!.replySession).toBe("child");
+  });
+});
+
+describe("daemon boot repairs the triggers left on threads before the trigger runner loads", () => {
+  // The daemon's own boot step, as written in daemon.ts, run without importing the
+  // daemon and starting its services. A change to that function's boundaries
+  // intentionally requires updating this test.
+  const daemonSource = readFileSync(new URL("../daemon.ts", import.meta.url), "utf8");
+  const bootStep = "function repairThreadBoundPageCommentFollowsAtBoot(): void {";
+  const bootStart = daemonSource.indexOf(bootStep);
+  const bootEnd = daemonSource.indexOf("\n}\n", bootStart) + 2;
+  const startDaemonAt = daemonSource.indexOf("export async function startDaemon()");
+
+  type LogCall = { level: "info" | "warn" | "error"; message: string; fields: Record<string, unknown> };
+
+  function runBootStep(repair: () => unknown = repairThreadBoundPageCommentFollows) {
+    const calls: LogCall[] = [];
+    const record =
+      (level: LogCall["level"]) =>
+      (message: string, fields: Record<string, unknown> = {}) => {
+        calls.push({ level, message, fields });
+      };
+    const log = { info: record("info"), warn: record("warn"), error: record("error") };
+    const js = new Transpiler({ loader: "ts" }).transformSync(daemonSource.slice(bootStart, bootEnd));
+    const step = new Function(
+      "repairThreadBoundPageCommentFollows",
+      "log",
+      `${js}\nreturn repairThreadBoundPageCommentFollowsAtBoot;`,
+    )(repair, log) as () => void;
+    return { step, calls };
+  }
+
+  const pageCommentTrigger = (route: string, replySession: string) =>
+    dbCreateTrigger({
+      name: `page-comment:site_1:${route}`,
+      topic: "ravi.watch.console.page.comment.created",
+      message: "comment",
+      agentId: "agent-test",
+      session: "main",
+      replySession,
+    });
+
+  it("finds the boot step and the repair it runs in the daemon source", () => {
+    expect(bootStart).toBeGreaterThan(-1);
+    expect(bootEnd).toBeGreaterThan(bootStart);
+    expect(daemonSource).toContain('import { repairThreadBoundPageCommentFollows } from "./pages/comment-follow.js";');
+  });
+
+  it("moves the triggers a restart finds on threads, so the threads close, and reports what it could not verify", () => {
+    seedParent();
+    const record = seedThread(THREAD_ONE, "child", "1.2");
+    const held = pageCommentTrigger("/blog/a", "child");
+    const unverifiable = pageCommentTrigger("/blog/b", `${PARENT_KEY}:thread:9.9`);
+    expect(() => closeSlackThreadLifecycle({ childSessionKey: record.childSessionKey! })).toThrow(
+      "Thread still receives active triggers",
+    );
+
+    const { step, calls } = runBootStep();
+    step();
+
+    expect(dbGetTrigger(held.id)!.replySession).toBe("parent");
+    expect(dbGetTrigger(unverifiable.id)!.replySession).toBe(`${PARENT_KEY}:thread:9.9`);
+    expect(calls.map((call) => call.level)).toEqual(["info", "warn"]);
+    expect(calls[0]).toMatchObject({ level: "info", fields: { repaired: 1 } });
+    expect(calls[1]).toMatchObject({ level: "warn", fields: { triggerId: unverifiable.id } });
+    expect(closeSlackThreadLifecycle({ childSessionKey: record.childSessionKey! }).changed).toBe(true);
+  });
+
+  it("is silent when there is nothing to move, and boot goes on when the repair itself fails", () => {
+    seedParent();
+    pageCommentTrigger("/blog/a", "parent");
+    const quiet = runBootStep();
+    quiet.step();
+    expect(quiet.calls).toEqual([]);
+
+    const failing = runBootStep(() => {
+      throw new Error("db locked");
+    });
+    expect(() => failing.step()).not.toThrow();
+    expect(failing.calls).toHaveLength(1);
+    expect(failing.calls[0]).toMatchObject({
+      level: "error",
+      fields: { error: expect.objectContaining({ message: "db locked" }) },
+    });
+  });
+
+  it("startDaemon runs the step once, after the runtime state is ready and before the trigger runner starts", () => {
+    const call = "\n  repairThreadBoundPageCommentFollowsAtBoot();\n";
+    const body = daemonSource.slice(startDaemonAt);
+    const callAt = body.indexOf(call);
+    expect(startDaemonAt).toBeGreaterThan(-1);
+    expect(callAt).toBeGreaterThan(-1);
+    expect(daemonSource.split("repairThreadBoundPageCommentFollowsAtBoot();").length - 1).toBe(1);
+    expect(body.indexOf("initializeRuntimeState()")).toBeGreaterThan(-1);
+    expect(body.indexOf("initializeRuntimeState()")).toBeLessThan(callAt);
+    expect(body.indexOf("await startTriggerRunner();")).toBeGreaterThan(callAt);
   });
 });
