@@ -1,7 +1,7 @@
 import { dbGetContext, type ContextRecord } from "../router/router-db.js";
 import { dbGetTaskDispatchRequester, type TaskDispatchRequesterRow } from "../tasks/task-db.js";
 import { resolveHumanRequestCaller, type HumanRequestCaller } from "./human-request.js";
-import { resolveThreadInheritedRequester } from "./thread-requester.js";
+import { isDelegatedRequesterFresh, resolveThreadInheritedRequester } from "./thread-requester.js";
 import { RUNTIME_TURN_ORIGIN_PROTOCOL, RUNTIME_TURN_ORIGIN_SCHEMA_VERSION } from "./turn-origin.js";
 
 /**
@@ -30,6 +30,7 @@ export interface DelegatedRequesterDeps {
   resolveRequester?: typeof resolveHumanRequestCaller;
   getTaskDispatch?: (handoffId: string) => TaskDispatchRequesterRow | null;
   getThreadRequester?: typeof resolveThreadInheritedRequester;
+  now?: number;
 }
 
 const ACTIVE_ASSIGNMENT = new Set(["assigned", "accepted", "blocked"]);
@@ -65,7 +66,7 @@ export function resolveRequesterContext(
  * `raviThread` of a task scope (only a turn-runtime context does), its handoff
  * must be the one the task runtime froze for this task's active assignment to
  * this same agent, the task must not be finished or archived, and the task's
- * recorded requester must still resolve.
+ * recorded requester must still resolve and be at most 72 hours old.
  */
 export function resolveTaskTurnRequester(
   input: { raviThread: unknown; agentId: string | null | undefined },
@@ -82,7 +83,8 @@ export function resolveTaskTurnRequester(
   }
   if (!row.requesterContextId) return null;
   const requester = resolveRequesterContext(row.requesterContextId, deps);
-  return requester ? { ...requester, taskId: row.taskId, requesterContextId: row.requesterContextId } : null;
+  if (!requester || !isDelegatedRequesterFresh(requester, deps)) return null;
+  return { ...requester, taskId: row.taskId, requesterContextId: row.requesterContextId };
 }
 
 /**

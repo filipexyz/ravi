@@ -34,6 +34,7 @@ import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import {
+  isExplicitLocalRuntimeAbort,
   resolveRuntimeToolEffectFence,
   type RuntimeHostStreamingSession,
   type RuntimeMessageTarget,
@@ -1149,6 +1150,7 @@ async function buildRuntimeStartRequestInternal(
       }
       turnRuntimeContextActivated = true;
       streamingSession.currentRuntimeContextKey = runtimeEnv.RAVI_CONTEXT_KEY;
+      const turnContextKey = runtimeEnv.RAVI_CONTEXT_KEY;
       streamingSession.currentBridgeTurnId = boundTurnPrompt._bridgeTurnId;
       stopActiveContextLease = startActiveRuntimeRequestContextLease({
         runtimeContext,
@@ -1164,6 +1166,11 @@ async function buildRuntimeStartRequestInternal(
         approvalSource,
         isActive: () => streamingSession.turnActive && !streamingSession.done,
         signal: streamingSession.abortController.signal,
+        abortedBySuccessor: () =>
+          Boolean(turnContextKey) &&
+          streamingSession.supersededRuntimeContextKey === turnContextKey &&
+          !streamingSession.pendingAbort &&
+          !isExplicitLocalRuntimeAbort(streamingSession.internalAbortReason),
       });
     },
     afterTurnEnd: () => {

@@ -121,13 +121,24 @@ Expected:
 - `src/runtime/runtime-request-context.test.ts` covers queued and chained
   handoffs, speaker changes, spoofed/derived callers, revocations, authority
   ceilings and notification exclusion; personal/shared connectors remain denied.
-- `src/runtime/delegated-requester.test.ts` covers delegated work: a later
-  thread handoff from a parent turn no person started acts for the thread's
-  first requester; a thread nobody asked into and a non-thread session stay
-  `agent_relay`; a task created from a verified request (directly or from an
-  inheriting thread turn) acts for that person in its dispatch turn; a task
-  created from no verified request, a finished task, a foreign agent or a
-  forged task scope on a CLI child stay refused.
+- `src/runtime/delegated-requester.test.ts` covers delegated work: a parent
+  handoff started by the thread's own `inform`, `answer` or `session.return`
+  acts for the thread's first requester; refused: a thread nobody asked into,
+  a non-thread session, a closed thread, a parent turn caused by the parent's
+  own session, another session's Ask/Inform, another thread's return or a
+  trigger, an unidentified person in the parent, a different parent session or
+  agent, a blocked first requester (no fallthrough), a forged `turnOrigin` on a
+  CLI child and a requester older than 72 hours. A task created from a verified
+  request (directly or from an inheriting thread turn) acts for that person in
+  its dispatch turn; no request, a turn no person started, a finished task, a
+  requester older than 72 hours, a foreign agent and a forged task scope on a
+  CLI child stay refused.
+- `src/router/router-db.contexts.test.ts` covers
+  `dbGetOpenThreadHumanRequestTurns`: open thread only, turn-runtime contexts
+  of the child session carrying `humanRequest`, oldest first.
+- `src/runtime/runtime-request-context.test.ts` covers the lease: a successor
+  abort records `turn_context_superseded` and keeps the handoff; any other
+  abort records `turn_context_aborted` and invalidates it.
 - The same suite MUST reject an already admitted child after ancestor
   revocation or contact block, preserve explicit revocation across real lease
   shutdown, and preserve connector restrictions through actor projection.

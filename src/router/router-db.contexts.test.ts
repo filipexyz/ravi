@@ -5,6 +5,7 @@ import {
   dbCreateAgent,
   dbCreateContext,
   dbGetContext,
+  dbGetOpenThreadHumanRequestTurns,
   dbListContexts,
   dbRenewActiveContext,
   dbRevokeContextCascade,
@@ -13,6 +14,7 @@ import {
 } from "./router-db.js";
 import { resolveRuntimeContext } from "../runtime/context-registry.js";
 import { getOrCreateSession } from "./sessions.js";
+import { closeSlackThreadLifecycle, registerInboundSlackThread } from "../channels/slack/thread-lifecycle-store.js";
 
 const AGENT_ID = "context-storage-test";
 const SESSION_KEY = `agent:${AGENT_ID}:test`;
@@ -290,5 +292,62 @@ describe("context metadata and transactional revocation persistence", () => {
       expect(dbRenewActiveContext(context.contextId, context.expiresAt, 60_000, now + 1_000)).toBeNull();
       expect(dbGetContext(context.contextId)).toEqual(context);
     }
+  });
+});
+
+describe("dbGetOpenThreadHumanRequestTurns", () => {
+  const PARENT_KEY = `agent:${AGENT_ID}:slack:group:C0THR`;
+  const CHILD_KEY = `${PARENT_KEY}:thread:1712345678.000001`;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-router-thread-human-turns-");
+    dbCreateAgent({ id: AGENT_ID, cwd: "/tmp/context-storage-test" });
+    getOrCreateSession(PARENT_KEY, AGENT_ID, "/tmp/context-storage-test", { name: "thr-parent" });
+    getOrCreateSession(CHILD_KEY, AGENT_ID, "/tmp/context-storage-test", { name: "thr-child" });
+    registerInboundSlackThread({
+      parentSessionKey: PARENT_KEY,
+      parentSessionName: "thr-parent",
+      childSessionKey: CHILD_KEY,
+      childSessionName: "thr-child",
+      accountId: "slack-main",
+      instanceId: "slack-main",
+      platformChatId: "C0THR",
+      threadCanonicalChatId: "chat-thr",
+      providerThreadId: "1712345678.000001",
+    });
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  const human = (id: string, createdAt: number, overrides: Partial<ContextRecord> = {}) =>
+    createContext(id, {
+      sessionKey: CHILD_KEY,
+      createdAt,
+      metadata: { humanRequest: { callerContextId: "ctx_caller", originContextId: "ctx_origin" } },
+      ...overrides,
+    });
+
+  it("returns the open thread's parent and only its turn-runtime human-request turns, oldest first", () => {
+    human("late", 3_000);
+    human("early", 1_500);
+    createContext("agent-only", { sessionKey: CHILD_KEY, createdAt: 1_000, metadata: { actorPrincipal: "agent:x" } });
+    human("cli-child", 1_200, { kind: "cli-runtime" });
+    human("other-session", 1_100, { sessionKey: PARENT_KEY });
+
+    const thread = dbGetOpenThreadHumanRequestTurns(CHILD_KEY);
+
+    expect(thread?.parentSessionKey).toBe(PARENT_KEY);
+    expect(thread?.humanRequestTurns.map((turn) => turn.contextId)).toEqual(["early", "late"]);
+  });
+
+  it("returns null for a closed thread, a session that is not a thread child and a blank key", () => {
+    human("early", 1_500);
+    expect(dbGetOpenThreadHumanRequestTurns(PARENT_KEY)).toBeNull();
+    expect(dbGetOpenThreadHumanRequestTurns("  ")).toBeNull();
+    closeSlackThreadLifecycle({ childSessionKey: CHILD_KEY });
+    expect(dbGetOpenThreadHumanRequestTurns(CHILD_KEY)).toBeNull();
   });
 });

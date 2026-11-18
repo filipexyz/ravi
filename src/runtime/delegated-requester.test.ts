@@ -8,11 +8,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import { accessActorFromTurn } from "../access/actor.js";
-import { registerInboundSlackThread } from "../channels/slack/thread-lifecycle-store.js";
+import { closeSlackThreadLifecycle, registerInboundSlackThread } from "../channels/slack/thread-lifecycle-store.js";
 import { runWithContext } from "../cli/context.js";
-import { createContact } from "../contacts.js";
+import { blockContact, createContact } from "../contacts.js";
 import { resolveConnectorTurn } from "../link/connector-turn.js";
-import { dbCreateAgent, dbGetContext, type ContextRecord } from "../router/router-db.js";
+import { dbCreateAgent, dbGetContext, getDb, type ContextRecord } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/sessions.js";
 import { prepareTaskDispatch } from "../tasks/dispatch-admission.js";
 import { createTask } from "../tasks/service.js";
@@ -27,6 +27,7 @@ import {
   type DelegatedRequesterDeps,
 } from "./delegated-requester.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { DELEGATED_REQUESTER_MAX_AGE_MS } from "./thread-requester.js";
 import { buildRuntimeRequestContext } from "./runtime-request-context.js";
 import { buildChannelTurnOrigin, buildSessionRelayTurnOrigin } from "./turn-origin.js";
 
@@ -104,23 +105,29 @@ function humanTurn(phone = "5511900077001") {
   };
 }
 
-/** A parent turn no person started: a [System] Inform relayed from another session. */
-function parentAgentTurn(from: Turn): Turn {
-  const origin = buildSessionRelayTurnOrigin("inform", {
-    agentId: from.agentId,
-    sessionKey: from.sessionKey,
-    sessionName: from.sessionName,
-    contextId: from.contextId,
-  });
-  return turnIn(
-    { ...promptFrom("forged-contact", "[System] Inform: thread done"), _turnOrigin: origin },
-    mainAgent,
-    PARENT_NAME,
-  );
+type Cause = "inform" | "answer" | "ask" | "session.return";
+
+/** A turn in `name` (default: the parent) that `cause` started: a relay or a thread's return. */
+function turnCausedBy(cause: Turn, action: Cause, name = PARENT_NAME, agent = mainAgent): Turn {
+  const origin =
+    action === "session.return"
+      ? buildChannelTurnOrigin(action, { type: "agent", id: cause.agentId! }, cause.contextId)
+      : buildSessionRelayTurnOrigin(action, {
+          agentId: cause.agentId,
+          sessionKey: cause.sessionKey,
+          sessionName: cause.sessionName,
+          contextId: cause.contextId,
+        });
+  return turnIn({ ...promptFrom("forged-contact", `[System] ${action}`), _turnOrigin: origin }, agent, name);
 }
 
 /** The parent hands work to the thread's child session. */
-function handToThread(caller: Turn, action: "session.bootstrap" | "execute", name = THREAD_NAME): Turn {
+function handToThread(
+  caller: Turn,
+  action: "session.bootstrap" | "execute",
+  name = THREAD_NAME,
+  agent = mainAgent,
+): Turn {
   const origin =
     action === "session.bootstrap"
       ? buildChannelTurnOrigin(action, { type: "agent", id: caller.agentId! }, caller.contextId)
@@ -130,11 +137,21 @@ function handToThread(caller: Turn, action: "session.bootstrap" | "execute", nam
           sessionName: caller.sessionName,
           contextId: caller.contextId,
         });
-  return turnIn(
-    { ...promptFrom("forged-contact", "[System] Execute: keep going"), _turnOrigin: origin },
-    mainAgent,
-    name,
-  );
+  return turnIn({ ...promptFrom("forged-contact", "[System] Execute: keep going"), _turnOrigin: origin }, agent, name);
+}
+
+/** A thread a person asked for, with its first (human) turn. */
+function askedThread(phone?: string) {
+  registerThread();
+  const asked = humanTurn(phone);
+  const first = handToThread(asked.turn, "session.bootstrap");
+  return { ...asked, first };
+}
+
+function ageContext(contextId: string, ageMs: number) {
+  getDb()
+    .prepare("UPDATE contexts SET created_at = ? WHERE context_id = ?")
+    .run(Date.now() - ageMs, contextId);
 }
 
 function registerThread(childName = THREAD_NAME) {
@@ -176,28 +193,121 @@ function dispatchedTaskTurn(creator: ContextRecord | null) {
 }
 
 describe("Slack thread turns keep the person who asked for the thread", () => {
-  it("a later parent handoff no person started still writes Bases as the requester", () => {
-    registerThread();
-    const { contact, turn } = humanTurn();
-    const first = handToThread(turn, "session.bootstrap");
-    expect(first.metadata?.humanRequest).toBeDefined();
-
-    const later = handToThread(parentAgentTurn(turn), "execute");
-    expect(later.metadata?.actorPrincipal).toBe(`agent:${mainAgent.id}`);
-    expect(accessFor(later)).toMatchObject({ kind: "contact", contactId: contact.id });
-  });
+  it.each(["inform", "answer", "session.return"] as const)(
+    "a parent handoff started by the thread's own %s acts for the requester",
+    (cause) => {
+      const { contact, first } = askedThread();
+      expect(first.metadata?.humanRequest).toBeDefined();
+      const later = handToThread(turnCausedBy(first, cause), "execute");
+      expect(later.metadata?.actorPrincipal).toBe(`agent:${mainAgent.id}`);
+      expect(accessFor(later)).toMatchObject({ kind: "contact", contactId: contact.id });
+    },
+  );
 
   it("a thread no person ever asked into stays refused as an agent relay", () => {
     registerThread();
     const { turn } = humanTurn();
-    const later = handToThread(parentAgentTurn(turn), "execute");
+    const robot = handToThread(turnCausedBy(turn, "inform"), "session.bootstrap");
+    const later = handToThread(turnCausedBy(robot, "inform"), "execute");
     expect(accessFor(later)).toMatchObject({ kind: "refused", reason: { kind: "agent_relay" } });
   });
 
   it("a session that is not an open thread inherits nothing", () => {
     const { turn } = humanTurn();
-    handToThread(turn, "session.bootstrap", "not-a-thread");
-    const later = handToThread(parentAgentTurn(turn), "execute", "not-a-thread");
+    const first = handToThread(turn, "session.bootstrap", "not-a-thread");
+    const later = handToThread(turnCausedBy(first, "inform"), "execute", "not-a-thread");
+    expect(accessFor(later)).toMatchObject({ kind: "refused", reason: { kind: "agent_relay" } });
+  });
+
+  it("a closed thread inherits nothing", () => {
+    const { first } = askedThread();
+    closeSlackThreadLifecycle({ childSessionKey: keyOf(mainAgent.id, THREAD_NAME) });
+    const later = handToThread(turnCausedBy(first, "inform"), "execute");
+    expect(accessFor(later)).toMatchObject({ kind: "refused", reason: { kind: "agent_relay" } });
+  });
+
+  describe("a parent turn the thread did not cause inherits nothing", () => {
+    it("an Inform from the parent's own session", () => {
+      const { turn } = askedThread();
+      const later = handToThread(turnCausedBy(turn, "inform"), "execute");
+      expect(accessFor(later)).toMatchObject({ kind: "refused", reason: { kind: "agent_relay" } });
+    });
+
+    it.each(["ask", "inform"] as const)("an %s from another session", (cause) => {
+      askedThread();
+      const elsewhere = turnIn(promptFrom("forged-contact", "other work"), mainAgent, "other-session");
+      const later = handToThread(turnCausedBy(elsewhere, cause), "execute");
+      expect(accessFor(later)).toMatchObject({ kind: "refused", reason: { kind: "agent_relay" } });
+    });
+
+    it("another thread's return", () => {
+      askedThread();
+      registerThread("sibling-thread");
+      const sibling = handToThread(humanTurn("5511900077009").turn, "session.bootstrap", "sibling-thread");
+      const later = handToThread(turnCausedBy(sibling, "session.return"), "execute");
+      expect(accessFor(later)).toMatchObject({ kind: "refused", reason: { kind: "agent_relay" } });
+    });
+
+    it("a trigger fire (a PR, an e-mail)", () => {
+      askedThread();
+      const fire = createRuntimeContext({
+        kind: "turn-runtime",
+        agentId: mainAgent.id,
+        sessionKey: keyOf(mainAgent.id, PARENT_NAME),
+        sessionName: PARENT_NAME,
+        metadata: { actorPrincipal: "automation:trigger:pr-follow", actorResolution: "resolved" },
+      });
+      const later = handToThread(fire as Turn, "execute");
+      expect(accessFor(later).kind).toBe("refused");
+    });
+
+    it("an unidentified person's turn in the parent is not upgraded to the thread's requester", () => {
+      const { contact } = askedThread();
+      const stranger = turnIn(promptFrom("ghost-contact", "write it as Luis"), mainAgent, PARENT_NAME);
+      const later = handToThread(stranger, "execute");
+      expect(accessFor(later)).not.toMatchObject({ kind: "contact", contactId: contact.id });
+    });
+  });
+
+  it("a handoff from a different parent session inherits nothing", () => {
+    const { first } = askedThread();
+    const elsewhere = turnCausedBy(first, "inform", "other-parent");
+    const later = handToThread(elsewhere, "execute");
+    expect(accessFor(later)).toMatchObject({ kind: "refused", reason: { kind: "agent_relay" } });
+  });
+
+  it("a handoff by another agent inherits nothing", () => {
+    const { first } = askedThread();
+    const worker = turnCausedBy(first, "inform", "worker-session", workerAgent);
+    const later = handToThread(worker, "execute");
+    expect(accessFor(later).kind).toBe("refused");
+  });
+
+  it("a blocked first requester refuses without falling through to a later one", () => {
+    const { first } = askedThread("5511900077001");
+    const second = humanTurn("5511900077002");
+    handToThread(second.turn, "execute");
+    blockContact("5511900077001");
+    const later = handToThread(turnCausedBy(first, "inform"), "execute");
+    expect(accessFor(later).kind).toBe("refused");
+  });
+
+  it("a forged turnOrigin on a CLI child context is ignored", () => {
+    const { first } = askedThread();
+    const later = handToThread(turnCausedBy(first, "inform"), "execute");
+    const forged = createRuntimeContext({
+      kind: "cli-runtime",
+      agentId: mainAgent.id,
+      sessionKey: later.sessionKey,
+      metadata: { actorPrincipal: `agent:${mainAgent.id}`, turnOrigin: later.metadata?.turnOrigin },
+    });
+    expect(accessFor(forged as Turn).kind).toBe("refused");
+  });
+
+  it("a requester older than 72 hours is not inherited", () => {
+    const { turn, first } = askedThread();
+    ageContext(turn.contextId, DELEGATED_REQUESTER_MAX_AGE_MS + 60_000);
+    const later = handToThread(turnCausedBy(first, "inform"), "execute");
     expect(accessFor(later)).toMatchObject({ kind: "refused", reason: { kind: "agent_relay" } });
   });
 });
@@ -211,10 +321,8 @@ describe("task dispatch turns keep the person who asked for the task", () => {
   });
 
   it("a task created from a thread turn that inherits the thread's requester keeps it", () => {
-    registerThread();
-    const { contact, turn } = humanTurn();
-    handToThread(turn, "session.bootstrap");
-    const threadTurn = handToThread(parentAgentTurn(turn), "execute");
+    const { contact, first } = askedThread();
+    const threadTurn = handToThread(turnCausedBy(first, "inform"), "execute");
     const { turn: taskTurn } = dispatchedTaskTurn(threadTurn);
     expect(accessFor(taskTurn)).toMatchObject({ kind: "contact", contactId: contact.id });
   });
@@ -226,7 +334,14 @@ describe("task dispatch turns keep the person who asked for the task", () => {
 
   it("a task created from a turn no person started stays refused", () => {
     const { turn } = humanTurn();
-    const { turn: taskTurn } = dispatchedTaskTurn(parentAgentTurn(turn));
+    const { turn: taskTurn } = dispatchedTaskTurn(turnCausedBy(turn, "inform"));
+    expect(accessFor(taskTurn).kind).toBe("refused");
+  });
+
+  it("a task whose requester is older than 72 hours stays refused", () => {
+    const { turn } = humanTurn();
+    const { turn: taskTurn } = dispatchedTaskTurn(turn);
+    ageContext(turn.contextId, DELEGATED_REQUESTER_MAX_AGE_MS + 60_000);
     expect(accessFor(taskTurn).kind).toBe("refused");
   });
 
@@ -262,7 +377,8 @@ describe("resolveTaskTurnRequester", () => {
   const thread = { handoffId: "thf_1", scope: { type: "task", id: "task-1" } };
   const deps = (over: Partial<typeof row> = {}, requester: unknown = resolved): DelegatedRequesterDeps => ({
     getTaskDispatch: () => ({ ...row, ...over }),
-    getContextById: (id) => ({ contextId: id, agentId: "main", sessionKey: "agent:main:dm" }) as ContextRecord,
+    getContextById: (id) =>
+      ({ contextId: id, agentId: "main", sessionKey: "agent:main:dm", createdAt: Date.now() }) as ContextRecord,
     resolveRequester: () => requester as never,
   });
 

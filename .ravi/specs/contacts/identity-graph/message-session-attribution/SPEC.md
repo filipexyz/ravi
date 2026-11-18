@@ -188,8 +188,10 @@ Rules:
   this proof. A bootstrap without it remains an agent/automation turn.
 - `inform`, `answer`, `session.return`, cron, observer and other automation
   notifications MUST NOT inherit human authority from a previous request.
-- Ordinary turn completion/rotation, and an aborted turn (a newer message or
-  the runtime interrupted it), MAY leave an admitted handoff usable.
+- Ordinary turn completion/rotation, and a turn a newer message superseded
+  (`turn_context_superseded`: the person kept talking), MAY leave an admitted
+  handoff usable. Any other abort, including an explicit stop or interrupt by
+  the operator (`turn_context_aborted`), MUST invalidate it.
   Explicit revocation, permission-profile reduction, missing/cyclic ancestry,
   and a deleted, blocked or opted-out contact MUST invalidate human handoffs.
   Invalid human handoffs MUST receive zero capabilities, never fall back to
@@ -230,13 +232,18 @@ calls) for the person who asked, and only when that person is proven:
   carrying those fields MUST be ignored.
 - **Slack thread.** A turn in the child session of an *open* Slack thread that
   is a work handoff (`session.bootstrap`, `send`, `ask`, `execute`) from an
-  agent, made from a turn of the thread's own parent session whose actor is an
-  agent or an automation, inherits the thread's *first* verified human request
-  (the earliest turn of that thread carrying `humanRequest`). A person's own
-  turn is authorized as theirs, never upgraded to the thread's requester. If
-  the first request no longer resolves, the turn MUST NOT fall through to a
-  later, different requester. A thread no person ever asked into inherits
-  nothing.
+  agent, made from a turn of the thread's own parent session by that same agent,
+  inherits the thread's *first* verified human request (the earliest turn of
+  that thread carrying `humanRequest`) only when that parent turn was caused by
+  the thread itself: an `inform` or `answer` relayed from a turn of the
+  thread's session, or the thread's `session.return` (proved by the parent
+  turn's `turnOrigin` and the session of the context it names). A parent turn
+  driven by another session's Ask/Inform, another thread's return, a trigger
+  (a PR, an e-mail), a cron or any automation MUST inherit nothing. A person's
+  own parent turn is authorized as theirs (the direct handoff above), never
+  upgraded to the thread's requester. If the first request no longer resolves,
+  the turn MUST NOT fall through to a later, different requester. A thread no
+  person ever asked into inherits nothing.
 - **Task.** `ravi tasks create` MUST record on the task (`requester_context_id`,
   written once) the verified request behind the creating turn: the turn
   itself when it is a verified human request, the thread's requester when it
@@ -247,6 +254,9 @@ calls) for the person who asked, and only when that person is proven:
   `blocked`) to the same agent, and the task is not `done`, `failed` or
   archived. A task created from no verified request (a cron, an external
   contact's relay, an agent-only turn) has no requester and stays refused.
+- **72-hour limit.** A delegated requester (thread or task) whose originating
+  human turn is more than 72 hours old MUST NOT be inherited; the turn is
+  refused again (`ACTOR_UNKNOWN`) until the person asks again.
 - **Attribution only.** The inherited requester is passed as
   `delegatedRequester`; personal and shared connectors stay refused (their
   direct-request/consent policy is separate), and the agent producer stays the
