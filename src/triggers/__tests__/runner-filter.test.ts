@@ -123,6 +123,8 @@ function createTrigger(input: { name: string; topic: string; filter?: string; ex
     executionType: shell ? "shell" : "agent",
     shellCommand: shell ? `printf '%s\\n' "$RAVI_TRIGGER_ID" >> '${markerPath()}'` : undefined,
     shellTimeoutMs: shell ? 10_000 : undefined,
+    // A shell trigger runs only when its owner acts as the operator.
+    ownerPrincipal: shell ? "operator" : undefined,
     session: "isolated",
     cooldownMs: 0,
     filter: input.filter,
@@ -501,6 +503,8 @@ describe("TriggerRunner shell environment", () => {
       executionType: "shell",
       shellCommand: `printf '%s\\n' "$RAVI_AUTOMATION_PRINCIPAL" >> '${markerPath()}'`,
       shellTimeoutMs: 10_000,
+      // A shell trigger runs only when its owner acts as the operator.
+      ownerPrincipal: "operator",
       session: "isolated",
       cooldownMs: 0,
     });

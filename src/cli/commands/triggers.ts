@@ -5,7 +5,7 @@ import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 
 import "reflect-metadata";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
-import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { CONTRACT_EXIT_POLICY, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -92,6 +92,46 @@ function canReadTrigger(scopeCtx: ScopeContext, trigger: Pick<Trigger, "agentId"
  * the envelope with real similar ids/names. Candidates keep the same REBAC
  * visibility filter as `triggers list`, so scope isolation stays intact.
  */
+/**
+ * Same rule as shell cron jobs (`CRON_SHELL_NOT_OPERATOR`): a shell trigger's
+ * command runs with this machine's access, so only an owner that acts as the
+ * operator may create one or change what it runs or the env it gets. The
+ * runner checks the owner again on every fire.
+ */
+function assertShellTriggerOwnerActsAsOperator(op: string, ownerPrincipal: string, asJson?: boolean): void {
+  if (triggerOwnerActsAsOperator(ownerPrincipal)) return;
+  const owner = ownerPrincipal || "unknown";
+  const suggestedAction =
+    "do not retry from this turn; use an agent trigger (--message) instead, which runs as its creator, or ask the operator to create the shell trigger from the terminal or their own chat";
+  const message = `A shell trigger would run as ${owner}, not the operator. A shell command runs with this machine's access, so only the operator can own one. Next: ${suggestedAction}.`;
+  contractFail(op, "TRIGGER_SHELL_NOT_OPERATOR", message, {
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_POLICY,
+      details: { ownerPrincipal: owner, suggestedAction },
+    },
+    diagnostic: errorDiagnostic(message, { operation: op }),
+  });
+}
+
+function failShellTriggerWouldLoseOwner(
+  op: string,
+  trigger: Pick<Trigger, "id" | "ownerPrincipal" | "executionType">,
+  asJson?: boolean,
+): never {
+  const owner = triggerRunsAs(trigger);
+  const suggestedAction = `create a new shell trigger from this turn (ravi triggers add <name> --topic <topic> --shell <cmd>) and remove this one (ravi triggers rm ${trigger.id} --execute)`;
+  const message = `Trigger ${trigger.id} runs as ${owner}. Changing what it runs from this turn would leave it with no owner, and a shell trigger with no owner does not run. Next: ${suggestedAction}.`;
+  contractFail(op, "TRIGGER_SHELL_NOT_OPERATOR", message, {
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_POLICY,
+      details: { ownerPrincipal: owner, suggestedAction },
+    },
+    diagnostic: errorDiagnostic(message, { operation: op }),
+  });
+}
+
 function failTriggerNotFound(op: string, id: string, asJson?: boolean): never {
   const scopeCtx = getScopeContext();
   const candidates = dbListTriggers()
@@ -247,13 +287,15 @@ function describeSession(
 }
 
 /**
- * The `Runs as` line. Only an agent trigger's turns are held to the owner; a
- * shell command runs with the machine's access whoever owns the trigger.
+ * The `Runs as` line. A shell trigger runs only when its owner acts as the
+ * operator; the runner turns it off otherwise.
  */
 function describeRunsAs(trigger: Pick<Trigger, "ownerPrincipal" | "executionType">): string {
   const owner = triggerRunsAs(trigger);
-  if ((trigger.executionType ?? "agent") === "shell") return `${owner} (not enforced on a shell trigger)`;
-  return triggerOwnerActsAsOperator(trigger.ownerPrincipal) ? owner : `${owner} (not the operator)`;
+  if (triggerOwnerActsAsOperator(trigger.ownerPrincipal)) return owner;
+  if ((trigger.executionType ?? "agent") === "shell")
+    return `${owner} (not the operator: a shell trigger does not run)`;
+  return `${owner} (not the operator)`;
 }
 
 function invalidFilterWarning(
@@ -645,7 +687,10 @@ export class TriggersCommands {
     if (!isShellTrigger && (onError || timeout || envFile)) {
       fail("--on-error, --timeout and --env-file are only valid with --shell/--exec");
     }
-    if (isShellTrigger) assertShellAutomationAuthorized("triggers add");
+    if (isShellTrigger) {
+      assertShellAutomationAuthorized("triggers add");
+      assertShellTriggerOwnerActsAsOperator("triggers add", resolveTriggerOwnerForCurrentTurn(), asJson);
+    }
 
     const resolvedMessage = isShellTrigger
       ? {
@@ -899,6 +944,18 @@ export class TriggersCommands {
       assertTriggerTargetAuthorized("triggers set", { agentId: triggerOwnerId(trigger), session: value }, asJson);
     } else if (key === "replySession" && !clearing) {
       assertTriggerTargetAuthorized("triggers set", { agentId: triggerOwnerId(trigger), replySession: value }, asJson);
+    }
+
+    // What a shell trigger runs, and the env it gets on purpose (its env
+    // file), are the operator's to set. Checked before the edit so the refusal
+    // keeps its code.
+    if (key === "shell" || key === "exec" || (key === "env-file" && (trigger.executionType ?? "agent") === "shell")) {
+      const setter = resolveTriggerOwnerForCurrentTurn();
+      assertShellTriggerOwnerActsAsOperator("triggers set", setter, asJson);
+      // This edit keeps the owner only when the owner makes it. On a trigger
+      // someone else owns, or nobody does, it would leave a shell trigger with
+      // no owner, which never runs: refuse instead of saving a dead trigger.
+      if ((trigger.ownerPrincipal ?? "") !== setter) failShellTriggerWouldLoseOwner("triggers set", trigger, asJson);
     }
 
     // The trigger keeps its owner only when the owner makes this change;

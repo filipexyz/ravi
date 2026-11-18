@@ -5,6 +5,7 @@ import {
   AGENT_ENV_PASSTHROUGH_VAR,
   filterAgentRuntimeBaseEnv,
   isAgentRuntimeEnvNameAllowed,
+  isSecretShapedEnvValue,
   resolveProviderLoginEnvKeys,
 } from "./agent-env-policy.js";
 import { resolveCodexTransportKind } from "./codex-transport.js";
@@ -219,6 +220,42 @@ describe("agent runtime env policy", () => {
     };
 
     expect(filterAgentRuntimeBaseEnv({ ...tokenShaped, ...benign })).toEqual(benign);
+  });
+
+  it("passes the Claude executable override and the stale-bundle escape hatch", () => {
+    const env = filterAgentRuntimeBaseEnv({
+      RAVI_CLAUDE_CODE_EXECUTABLE: "/opt/claude/bin/claude",
+      RAVI_ALLOW_STALE_BUNDLE: "1",
+    });
+    expect(env).toEqual({ RAVI_CLAUDE_CODE_EXECUTABLE: "/opt/claude/bin/claude", RAVI_ALLOW_STALE_BUNDLE: "1" });
+  });
+
+  it("keeps a directory list whole even when one directory is named like a token", () => {
+    const tokenNamedDir = "/Users/operator/sk-1234567890abcdef1234/bin";
+    const env = filterAgentRuntimeBaseEnv({
+      PATH: `${tokenNamedDir}:/usr/bin`,
+      PKG_CONFIG_PATH: "/opt/ghp_abcdefghijklmnopqrstuvwxyz12/lib/pkgconfig",
+      MANPATH: "/opt/sk-tools-1234567890abcdef/man",
+      // A Go workspace list (CodeRabbit, PR #877).
+      GOPATH: "/opt/sk-1234567890abcdef1234/go:/Users/operator/go",
+      // Not a directory list: the token-shape check still applies.
+      NODE_OPTIONS: `--require=${tokenNamedDir}/hook.js`,
+    });
+
+    expect(env.PATH).toBe(`${tokenNamedDir}:/usr/bin`);
+    expect(env.PKG_CONFIG_PATH).toBe("/opt/ghp_abcdefghijklmnopqrstuvwxyz12/lib/pkgconfig");
+    expect(env.MANPATH).toBe("/opt/sk-tools-1234567890abcdef/man");
+    expect(env.GOPATH).toBe("/opt/sk-1234567890abcdef1234/go:/Users/operator/go");
+    expect(env.NODE_OPTIONS).toBeUndefined();
+  });
+
+  it("checks a long value for URL userinfo without quadratic time", () => {
+    // An unbounded scheme pattern retried from every position took seconds here.
+    const long = "a".repeat(200_000);
+    const started = performance.now();
+    expect(isSecretShapedEnvValue(long, "NODE_OPTIONS")).toBe(false);
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(isSecretShapedEnvValue(`${"a".repeat(10_000)} https://u:canary@host`, "NODE_OPTIONS")).toBe(true);
   });
 
   it("passes names the operator lists in RAVI_AGENT_ENV_PASSTHROUGH", () => {
