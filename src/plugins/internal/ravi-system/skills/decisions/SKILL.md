@@ -10,6 +10,8 @@ description: |
 
 A decisão guarda pergunta, dono, resposta e histórico. Task e thread são origens; não crie task artificial para perguntar algo numa thread.
 
+> Compõe com: sessions (threads), tasks (pergunta que bloqueia e deixa a task `parked`).
+
 ## Contrato
 
 O namespace precisa estar autorizado (`execute:group:decisions` ou grants específicos). Isso não dá acesso à origem: a task ou sessão continua decidindo quem lê e quem altera. Nenhuma permissão é ampliada automaticamente. Uma negação pede o operador correto, não uma tentativa de contorno.

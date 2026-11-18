@@ -16,7 +16,7 @@ description: |
 
 # Ravi Bases
 
-> Verbos: GUARDAR · MOSTRAR (via view) · REAGIR (eventos de linha). Compõe com: pages, triggers, whatsapp.
+> Verbos: GUARDAR · MOSTRAR (via view) · REAGIR (eventos de linha). Compõe com: pages (tela), triggers (reação), cron (rotina), tasks e threads (trabalho que grava linha), apps (app que grava), whatsapp.
 > Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
 
 Uma base é uma tabela tipada de um projeto do Console: propriedades, linhas
@@ -49,7 +49,7 @@ houver mais de um projeto (`ravi cloud scope show`).
 | "Pages viewer principals must name a Ravi Pages site" | o site não existe. Ship de esqueleto, depois `siteId` em `ravi pages list --json` |
 | `PROJECT_ACCESS_DENIED` + `missingScopes` | login anterior às Bases: `ravi login` de novo |
 
-Autoria: num turno que outra pessoa escreveu, leituras e escritas de Bases (e o `$viewer`) são dela quando ela fez `ravi link` e é membro ativo da org, com o menor papel entre ela e o operador (views com `$viewer` mostram as linhas dela). Sem link, leitura e escrita são recusadas com `ACTOR_NOT_LINKED` (exit 3) e o Ravi já começa o vínculo: repasse o `chatLinePt` do erro ("me chama na DM" no WhatsApp), não contorne e não leia pelo operador. Turno que o Ravi não consegue atribuir (turno de outro agente, quem fala não identificado) é recusado antes de qualquer chamada com `ACTOR_UNKNOWN` (exit 3): não repita desse turno; a pessoa pede da conversa dela ou o operador roda no terminal. Nos turnos do próprio operador (terminal, a DM dele, as rotinas dele), tudo é do operador. Um cron que outra pessoa criou (`ownerPrincipal: contact:<id>` em `ravi cron show <id> --json`) age como essa pessoa, nunca como o operador: leituras e escritas vão pelo `ravi link` dela. Sem link, o run recebe `ACTOR_NOT_LINKED` com `linkFlow: routine` e o Ravi não manda DM (ninguém está pedindo num run agendado): não repita, não desative o job e reporte ao operador que a pessoa precisa vincular a conta. Um cron sem pessoa dona (`unknown`) recebe `ACTOR_UNKNOWN` com `refusalReason: routine_not_operator_owned`: reporte ao operador, que revisa e recria o job do turno de quem deve agir. Antes de dar por pronto um cron recorrente que usa Bases, rode um `ravi cron run <id> --execute` real (um one-shot não: o run manual consome o job); só o operador pode ter job `--shell` (`CRON_SHELL_NOT_OPERATOR` para os outros). Um turno que um trigger disparou age como o dono do trigger (`ownerPrincipal` e `runsAsOperator` em `ravi triggers show <id> --json`), que é quem o criou: o operador, ou a pessoa que pediu, pelo `ravi link` dela (`ACTOR_NOT_LINKED` com `linkFlow: routine` sem link). Trigger sem pessoa dona (os criados antes de o dono existir, os follows gerados e os que outra pessoa mudou) recebe `ACTOR_UNKNOWN` com `refusalReason: routine_not_operator_owned` e `routine: trigger`; trigger com dono disparado fora da sessão própria dele (na `main` do agente, na sessão de um chat, numa sessão com nome ou template) recebe `ACTOR_UNKNOWN` com `refusalReason: routine_shared_session`; trigger com dono cujo turno começou com um chat ligado à resposta recebe `ACTOR_UNKNOWN` com `refusalReason: routine_answers_elsewhere`. Nos três casos não repita, não desative, e reporte ao operador: ninguém assume um trigger editando, ele é criado de novo no turno de quem deve agir; a sessão própria é o dono quem dá (`--session isolated` ao criar, ou `ravi triggers set <id> session isolated`), e a resposta fica na linha. O ledger guarda a pessoa responsável e, ao lado, o agente (`rows history`).
+Autoria: quem age depende do turno. No turno do operador age o operador. No turno de outra pessoa age ela, pelo `ravi link` dela (sem link: `ACTOR_NOT_LINKED`; repasse o `chatLinePt`). Thread, task e cron agem por quem pediu ou pelo dono, por até 72 h. Turno de outro agente ou de terceiro dá `ACTOR_UNKNOWN`: não repita. Tabela completa: `ravi skills show bases --file references/autoria.md`. Só o operador pode ter job `--shell` (`CRON_SHELL_NOT_OPERATOR`). O ledger guarda a pessoa responsável e, ao lado, o agente (`rows history`).
 
 Freios: `bases archive|restore`, `rows purge`, `rows approve|reject`, `views archive`,
 `views share` (quando amplia o acesso), `charts archive`, `props update --type`,
@@ -110,6 +110,7 @@ ravi bases aggregate tarefas --group-by status,prazo:month --agg count sum:horas
 
 Abra só o que precisar: `ravi skills show bases --file references/<arquivo>`.
 
+- `autoria.md`: quem age em cada tipo de turno (operador, outra pessoa, thread, task, cron, trigger, app) e o que fazer com cada recusa.
 - `views-access-forms.md`: view como contrato, `views share`, dono + supervisão, aprovador, ids de membro, presets, formulários.
 - `events-triggers.md`: eventos, assinatura filtrada, `--trigger` (rascunho num turno de agente), fila, anti-loop, varredura.
 - `approvals-agent-columns.md`: coluna `approval` (pedir, aprovar, recusar) e coluna `agent` (`rows fill`, `rows rerun`).

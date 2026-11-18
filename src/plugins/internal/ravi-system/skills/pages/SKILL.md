@@ -17,7 +17,7 @@ description: |
 
 # Ravi Pages
 
-> Verbos: MOSTRAR. Compõe com: bases, cron (snapshot).
+> Verbos: MOSTRAR. Compõe com: bases (página de dados), cron (snapshot), apps (app que publica com `--body`), threads (resultado vira página).
 > Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
 
 Um projeto tem um host default (`<orgSlug>-<projectSlug>.ravi.page`). Páginas são rotas nesse host. A URL é `https://<host><rota>`. Domínio custom é um binding em cima desse host.
@@ -64,7 +64,7 @@ ravi pages ship --project <projeto> --title "Docs" --route /docs --dir ./site --
 Regras:
 
 - Sem slug posicional, o ship usa o host default do projeto: o site com `isDefault`, ou o slug `<orgSlug>-<projectSlug>`. Se esse host ainda não existe, o CLI cria só esse, com `isDefault`. Não cria outro.
-- `--title` é obrigatório e não gera host. Conteúdo: exatamente um de `--body` (fragmento, wrap HTML5), `--html` (arquivo) ou `--dir` (diretório + entrypoint).
+- `--title` é obrigatório e não gera host. Conteúdo: exatamente um de `--body` (fragmento, wrap HTML5), `--html` (arquivo) ou `--dir` (diretório + entrypoint). `--html` e `--dir` leem arquivo local e exigem `use:tool:Read` no contexto: de dentro de um Ravi App ou contexto-filho sem essa permissão sai `PERMISSION_DENIED` (runtime mais antigo mostrava `SERVER_UNAVAILABLE` para o mesmo caso), e o caminho é passar o conteúdo com `--body`.
 - Defaults: `--visibility private`, `--route /` (home do projeto), `--entrypoint index.html`.
 - Liste rotas com `ravi pages published` antes de publicar. `--route /` substitui a home. Outra página precisa de outra rota (`/relatorio`, `/docs`).
 - `[project]` posicional junto com um segundo argumento é host legado. O projeto entra por `--project` ou pelo scope do Console.
@@ -146,7 +146,7 @@ ravi access status <request-id>
 
 Quem age: no turno do próprio operador (terminal, a DM dele, as rotinas dele) age o usuário do `ravi login`. Quando outra pessoa escreveu a mensagem, o Console age por ELA, pelo `ravi link` dela. Para compartilhar ou convidar, ela e o operador precisam ter o papel; para pedir acesso, basta ser ela. Sem link sai `ACTOR_NOT_LINKED` (exit 3) e o Ravi já começou o vínculo dela: repasse o `chatLinePt` do erro (no WhatsApp, num grupo, "me chama na DM"; o Ravi responde a DM dela com o link) e só tente de novo quando ela pedir. Turno que o Ravi não consegue atribuir é recusado antes de qualquer chamada (`ACTOR_UNKNOWN`, exit 3). `invites list` só roda no turno do operador.
 
-Autoria do resto (`ship`, `publish`, Bases, comentários): num turno que outra pessoa escreveu, o Console grava a escrita no nome dela quando ela fez `ravi link` e é membro ativo da org, com o menor papel entre ela e o operador, e registra os dois na auditoria (o agente fica anotado ao lado). Sem link a escrita é recusada com `ACTOR_NOT_LINKED`, como acima. Leituras de Bases no turno de quem fez `ravi link` também são dela (o `$viewer` da view é ela); sem link, a leitura de Bases também é recusada com `ACTOR_NOT_LINKED` (nunca lê pelo operador). Se o papel dela não permitir, a escrita também é recusada: diga isso a ela e não contorne.
+Autoria do resto (`ship`, `publish`, Bases, comentários): segue a mesma regra de quem age, com o agente anotado ao lado na auditoria. Thread, task e cron agem por quem pediu ou pelo dono. Tabela por tipo de turno: `ravi skills show bases --file references/autoria.md`.
 
 ## Página de dados
 

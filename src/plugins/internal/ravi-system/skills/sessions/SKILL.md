@@ -17,7 +17,7 @@ description: |
 
 # Sessions Manager
 
-> Verbos: AGIR (mandar a chat ou sessão) · RELATAR (followups). Compõe com: triggers, whatsapp.
+> Verbos: AGIR (mandar a chat ou sessão; thread = unidade de trabalho delegado) · RELATAR (followups). Compõe com: tasks (trabalho com dono e estado), decisions (pergunta numa thread), bases e pages (resultado da thread), triggers, whatsapp.
 > Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
 
 Sessões são conversas persistentes entre agents e usuários. Cada sessão tem um nome único, um agent associado, e pode ter canal de saída (WhatsApp, Matrix, etc).
@@ -323,7 +323,16 @@ ravi sessions thread-configure <sessão-da-thread> --model gpt-6-astra --effort 
 # Na thread: avisar a sessão do canal sem fechar, e fechar (com ou sem resultado)
 ravi sessions report "progresso, bloqueio ou decisão"
 ravi sessions close-thread [--return "resultado"]
+
+# No pai: fechar uma filha pelo nome (fora da thread o nome vai em --session, não posicional)
+ravi sessions close-thread --session <sessão-da-thread> --return "resultado"
 ```
+
+Retorno ao pai: a thread que termina o trabalho fala com o pai por `report` ou `close-thread --return`. Responder só dentro da thread não chega ao pai. Quando um turno da filha, iniciado pelo pai, termina sem retorno, o runtime pede uma vez à própria thread um retorno curto. Se ela continuar calada, o pai recebe um `[System] Inform` com a última mensagem dela. Isso vale para qualquer provider. Para evitar o aviso, feche cada turno de trabalho com `report` ou com o `close-thread --return`.
+
+Thread pedida fora do Slack: um pedido feito num DM de WhatsApp para uma sessão com Slack abre a thread no chat do Slack escolhido. Atenção e progresso ficam no Slack; só o resultado final (`close-thread --return`) volta para o DM que pediu. Grupo nunca recebe esse retorno.
+
+Bases, Pages e apps dentro da thread agem por quem fez o pedido que abriu a thread, por até 72 h. Um handoff vindo de outra sessão, de trigger ou de automação não herda ninguém (`ravi skills show bases --file references/autoria.md`).
 
 A raiz da thread aparece no canal como um card: a primeira linha da mensagem inicial é o título (escreva um título curto nela), o resto vira um resumo, e a mensagem inteira abre a thread quando não cabe no card. O card mostra quem pediu (quem escreveu o turno; nos turnos do operador, o contato dono) e o status, e muda sozinho com `report`, `close-thread` e quando `thread-send` reabre a thread.
 

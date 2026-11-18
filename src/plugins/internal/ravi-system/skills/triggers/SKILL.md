@@ -12,7 +12,7 @@ description: |
 
 # Trigger Manager
 
-> Verbos: REAGIR. Compõe com: bases, whatsapp, slack, cron.
+> Verbos: REAGIR. Compõe com: bases (eventos de linha), whatsapp, slack, cron (varredura que cobre o que o cooldown descarta), tasks (`ravi.task.*.event`). Turno de trigger não repassa autoria a thread: quem age está em `ravi skills show bases --file references/autoria.md`.
 > Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
 
 Você gerencia os triggers de eventos do Ravi. Triggers são reações automáticas que disparam quando eventos específicos acontecem no sistema.

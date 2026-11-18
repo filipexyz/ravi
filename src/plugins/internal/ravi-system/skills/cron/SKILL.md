@@ -10,7 +10,7 @@ description: |
 
 # Cron Manager
 
-> Verbos: RELATAR. Compõe com: bases, pages (snapshot), whatsapp.
+> Verbos: RELATAR. Compõe com: bases (rotina que grava ou lê linhas), pages (snapshot), apps (rotina que chama um app), sessions (thread que o run abre age pelo dono do job), whatsapp.
 > Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
 
 Você gerencia os jobs agendados do Ravi. Jobs são tarefas que rodam automaticamente em horários ou intervalos específicos.
@@ -128,6 +128,8 @@ Depois de criar job que deve responder em um chat/sessão específica, sempre ro
 Para trabalho determinístico (ETL, scraping, sync, scripts idempotentes), prefira `--shell` em vez de pedir para um agent usar Bash. Isso mantém tracking em `ravi cron list/show`, evita custo de tokens em runs bem-sucedidos e só envolve agent quando houver `--on-error`. Só o operador pode ser dono de um job `--shell`: o comando roda com o acesso da máquina e as credenciais do operador, então nada o prende às permissões de outra pessoa. Num turno de outra pessoa, `cron add --shell` (e um `cron set` que deixaria um shell com outro dono) é recusado com `CRON_SHELL_NOT_OPERATOR` (exit 3): não repita, use um job de agente (`--message`, que age como quem criou) ou peça ao operador. O runner não roda job shell de outro dono.
 
 **Execução em andamento.** O dono é fixado junto das instruções no momento do disparo. Transferir o job vale só na próxima execução. Desativar ou excluir o job impede futuros disparos agendados, mas não cancela o trabalho já admitido (incluindo one-shots excluídos automaticamente). Bloquear ou remover o contato dono original recusa as próximas chamadas de conectores, Bases, acesso a Pages e Knowledge; não desfaz ações concluídas nem mata um processo shell já iniciado. Runs antigos sem snapshot de admissão recusam essas chamadas: uma nova execução precisa ser admitida pelo runner.
+
+Trabalho que o run repassa: uma thread que recebe trabalho de um turno de cron age pelo dono do job (não pelo requisitante anterior da thread), por até 72 h contadas daquele run. Tabela de quem age: `ravi skills show bases --file references/autoria.md`.
 
 Job recusado ou falhando: não desative em silêncio (`ravi cron disable`). Reporte o job e a recusa ao operador e deixe a decisão com ele.
 
