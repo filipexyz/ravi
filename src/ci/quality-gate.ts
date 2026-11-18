@@ -250,6 +250,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   ],
   "src/session-trace/": ["src/session-trace/session-trace.test.ts"],
   "src/triggers/": [
+    // Shell triggers: operator owner, stored command and env at fire, env file outside the state dir.
+    "src/triggers/__tests__/runner-shell-owner.test.ts",
+    "src/triggers/__tests__/shell-env-file.test.ts",
     "src/triggers/triggers.test.ts",
     // Catalog entries: payload/schema shape for trigger-ready subjects.
     "src/triggers/__tests__/topic-catalog.test.ts",
@@ -269,6 +272,10 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/triggers/__tests__/ownership.test.ts",
     "src/triggers/__tests__/triggers-db.test.ts",
     "src/triggers/__tests__/runner-owner.test.ts",
+    // A follow armed from a Slack thread belongs to its durable parent, so the
+    // thread can close; page comment triggers an older ship left on a thread are
+    // moved to the parent at boot.
+    "src/triggers/page-comment-owner.test.ts",
   ],
   "src/approval/": [
     "src/approval/service.test.ts",

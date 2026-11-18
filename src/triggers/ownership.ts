@@ -240,10 +240,12 @@ export function triggerRunsAsWarning(
   trigger: Pick<Trigger, "id" | "ownerPrincipal" | "executionType">,
   deps: ConnectorTurnDeps = {},
 ): string | null {
-  if ((trigger.executionType ?? "agent") !== "agent") return null;
   if (triggerOwnerActsAsOperator(trigger.ownerPrincipal, deps)) return null;
   const owner = triggerRunsAs(trigger);
   const lead = `Trigger ${trigger.id} runs as ${owner}, not the operator`;
+  if ((trigger.executionType ?? "agent") !== "agent") {
+    return `${lead}: a shell trigger runs only when its owner acts as the operator, so its next event turns it off without running the command (TRIGGER_SHELL_NOT_OPERATOR). The operator recreates it from their own chat with Ravi and removes this one.`;
+  }
   if (owner.startsWith("contact:")) {
     return `${lead}: in Bases its turns act as that person through their own ravi link, never as the operator, and are refused while they have not linked (ACTOR_NOT_LINKED).`;
   }
@@ -260,6 +262,8 @@ export function triggerOwnerLostWarning(
 ): string | null {
   if (!before.ownerPrincipal?.trim() || after.ownerPrincipal?.trim()) return null;
   const lead = `Trigger ${before.id} no longer runs as ${before.ownerPrincipal}: this change was not made by its owner, so the trigger now has no owner`;
-  if ((before.executionType ?? "agent") !== "agent") return `${lead}.`;
+  if ((before.executionType ?? "agent") !== "agent") {
+    return `${lead}, and a shell trigger with no owner does not run (TRIGGER_SHELL_NOT_OPERATOR).`;
+  }
   return `${lead} and Bases refuses its turns (ACTOR_UNKNOWN). The owner has to create it again to use Bases.`;
 }

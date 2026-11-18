@@ -692,6 +692,7 @@ describe("a shell trigger's failure notice", () => {
       shellCommand: "exit 3",
       onError,
       cooldownMs: 0,
+      ownerPrincipal: "operator",
     });
   }
 

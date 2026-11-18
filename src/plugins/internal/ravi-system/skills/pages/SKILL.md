@@ -69,7 +69,7 @@ Regras:
 - Liste rotas com `ravi pages published` antes de publicar. `--route /` substitui a home. Outra página precisa de outra rota (`/relatorio`, `/docs`).
 - `[project]` posicional junto com um segundo argumento é host legado. O projeto entra por `--project` ou pelo scope do Console.
 - `--visibility public` vale no mesmo comando, sem `--execute`. Só para página estática.
-- Comentário ou resposta numa página acorda a sessão que publicou essa rota por último: o ship arma um trigger `page-comment:<site id>:<rota>` (`ravi.watch.console.page.comment.created`) com o texto, o autor e a URL. Outra sessão que publica a mesma rota passa a recebê-los. O Console manda o evento só pra instalação que publicou a versão comentada; uma rota publicada antes disso só avisa depois de um novo ship.
+- Comentário ou resposta numa página acorda a sessão que publicou essa rota por último: o ship arma um trigger `page-comment:<site id>:<rota>` (`ravi.watch.console.page.comment.created`) com o texto, o autor e a URL. Outra sessão que publica a mesma rota passa a recebê-los. Publicar de dentro de uma thread do Slack arma o trigger na sessão pai da thread, não na thread: a thread fecha com `close-thread` sem ficar presa a ele, e os comentários chegam ao pai. Se a thread não puder ser resolvida, o ship publica e devolve `commentFollow.ok: false` com o aviso, sem trigger. O Console manda o evento só pra instalação que publicou a versão comentada; uma rota publicada antes disso só avisa depois de um novo ship.
 
 Prefixos reservados de host: `ravi` e `ravi-*`. O CLI não cria esses slugs.
 

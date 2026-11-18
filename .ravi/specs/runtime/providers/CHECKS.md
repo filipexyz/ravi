@@ -44,7 +44,10 @@
 - Codex stored-session control MUST spawn without daemon secrets (`src/runtime/codex-control-env.test.ts`).
 - `RAVI_*`/`OMNI_*` names MUST pass only from the explicit list: `RAVI_STATE_DIR`, `RAVI_GATEWAY_URL`, `OMNI_API_URL` pass; `RAVI_GATEWAY_INTERNAL`, `RAVI_IDENTITYD_*` and an unlisted `RAVI_SIGNING_SALT` do not.
 - `*_PAT` names MUST be dropped; a token-shaped value (`sk-`, `ghp_`, `github_pat_`, `xox…-`, JWT, PEM, `AKIA`) MUST be dropped under any allowed name, and ordinary paths MUST still pass.
-- A job owned by an agent or session MUST start without daemon secrets, also when actually spawned (`src/jobs/jobs.test.ts`); a job with no owner keeps the daemon env.
+- Every job MUST start without daemon secrets, also when actually spawned, whoever created it (`src/jobs/jobs.test.ts`); a name in `RAVI_AGENT_ENV_PASSTHROUGH` still reaches it.
+- A shell trigger whose owner does not act as the operator MUST NOT run: it is turned off once with one notice that does not carry the command. An operator's shell trigger MUST start from the allowlisted env plus its env file, and MUST run the command stored at fire time, not the one the runner loaded (`src/triggers/__tests__/runner-shell-owner.test.ts`).
+- `triggers add --shell`, any `set` on a shell trigger, `enable` and `disable` MUST refuse a local `ravi` with no runtime context, a requester that does not act as the operator, and a requester that is not the trigger's owner (`TRIGGER_SHELL_NOT_OPERATOR`); an env file inside the Ravi state dir, also through a symlink, MUST be refused (`TRIGGER_SHELL_ENV_FILE_IN_STATE_DIR`, `src/triggers/__tests__/shell-env-file.test.ts`), and the runner MUST NOT run a trigger that points at one.
+- A directory list (`PATH`, `PKG_CONFIG_PATH`, `MANPATH`) MUST pass whole even when a directory is named like a token; a 200 000-character value MUST be checked in linear time.
 - The runtime probe MUST start the provider with the filtered env while it resolves credentials from the whole env (`src/runtime/runtime-probe.test.ts`).
 - Every `buildRuntimeRequestEnv` call in the request builder MUST pass `runtimeProviderId` (`src/runtime/runtime-request-builder.env-provider.test.ts`).
 

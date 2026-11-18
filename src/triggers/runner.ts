@@ -31,12 +31,19 @@ import {
 } from "../router/index.js";
 import { getAgent } from "../router/config.js";
 import { spawnedAutomationEnv } from "../runtime/turn-origin.js";
-import { dbListTriggers, dbGetTrigger, dbRecordTriggerFilterRejects, dbUpdateTriggerState } from "./triggers-db.js";
+import {
+  dbDisableShellTriggerForOwner,
+  dbListTriggers,
+  dbGetTrigger,
+  dbRecordTriggerFilterRejects,
+  dbUpdateTriggerState,
+} from "./triggers-db.js";
 import {
   captureTriggerRunAuthority,
   sameTriggerDefinition,
   sessionAdmitsTriggerFire,
   triggerFireSession,
+  triggerOwnerActsAsOperator,
   triggerRunsAs,
 } from "./ownership.js";
 import { isTriggerOwnSessionKey, triggerOwnSessionName } from "./authority.js";
@@ -48,6 +55,8 @@ import { isInternalEventTopic } from "./topic-policy.js";
 import { buildTriggerPrompt } from "./prompt.js";
 import { TriggerDebouncer, type TriggerBatch } from "./debounce.js";
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS, runShellCronCommand, type ShellCronRunResult } from "../cron/shell-executor.js";
+import { filterAgentRuntimeBaseEnv } from "../runtime/agent-env-policy.js";
+import { shellEnvFileInsideStateDir } from "./shell-env-file.js";
 
 const log = logger.child("triggers:runner");
 const EVENT_DEDUPE_TTL_MS = 60_000;
@@ -752,7 +761,7 @@ export class TriggerRunner {
     }
 
     if ((trigger.executionType ?? "agent") === "shell") {
-      await this.fireShellTrigger(trigger, event, source, opts.batch);
+      await this.fireShellTrigger(trigger, event, source, opts.batch, { stored, ownerFire });
       return;
     }
 
@@ -1001,14 +1010,69 @@ export class TriggerRunner {
     });
   }
 
+  /**
+   * A shell trigger whose owner does not act as the operator never runs. It is
+   * turned off once, with one notice to the main session; later events find it
+   * off. The notice never carries the command, its env or any event data.
+   */
+  private refuseShellTriggerOwner(trigger: Trigger): void {
+    const code = "TRIGGER_SHELL_NOT_OPERATOR";
+    if (!dbDisableShellTriggerForOwner(trigger)) return;
+    trigger.enabled = false;
+    // Drop the copy this runner holds, so later events stop reaching it.
+    void nats.emit("ravi.triggers.refresh", {}).catch((error) => {
+      log.warn("Failed to request a trigger refresh after turning off a shell trigger", {
+        triggerId: trigger.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+    log.error("Shell trigger disabled: owner is not the operator", { triggerId: trigger.id, code });
+    const agentId = getDefaultAgentId();
+    const sessionName = getMainSession(agentId)?.name ?? agentId;
+    void publishSessionPrompt(sessionName, {
+      prompt: `[System] Inform: [from: trigger:${trigger.id}] Shell trigger disabled (${code}). It runs as ${triggerRunsAs(trigger)}, not the operator, and a shell command runs with this machine's access. No command was executed. Inspect with ravi triggers show ${trigger.id}. The operator can recreate it from their own chat with Ravi and remove this one.`,
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
+    }).catch((error) => {
+      log.error("Failed to publish shell trigger ownership notice; trigger remains disabled", {
+        triggerId: trigger.id,
+        code,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
+
   private async fireShellTrigger(
     trigger: Trigger,
     event: { topic: string; data: unknown },
     source: { channel: string; accountId: string; chatId: string } | undefined,
-    batch?: TriggerBatch,
+    batch: TriggerBatch | undefined,
+    current: { stored: Trigger | null; ownerFire: boolean },
   ): Promise<void> {
-    if (!trigger.shellCommand?.trim()) {
+    // The trigger as stored now decides, never the copy the runner loaded. A
+    // change to what `sameTriggerDefinition` compares (topic, filter, enabled,
+    // execution type, ...) or a deleted row skips this fire, and the refresh
+    // reloads the trigger. Everything this fire runs comes from the stored row:
+    // its owner, command, env file and timeout.
+    if (!current.ownerFire || !current.stored) {
+      log.warn("Skipping shell trigger fire: its stored definition changed or is gone", { triggerId: trigger.id });
+      return;
+    }
+    const stored = current.stored;
+    if (!stored.shellCommand?.trim()) {
       throw new Error("Shell trigger is missing shellCommand");
+    }
+    // Same rule as shell cron jobs: a shell command runs with this machine's
+    // access, so it runs only when its current owner acts as the operator.
+    if (!triggerOwnerActsAsOperator(stored.ownerPrincipal)) {
+      this.refuseShellTriggerOwner(stored);
+      return;
+    }
+    // The env file is what the command gets on purpose. One inside the Ravi
+    // state dir (the daemon's own `.env`, for example) would hand it every secret.
+    if (stored.shellEnvFile && shellEnvFileInsideStateDir(stored.shellEnvFile)) {
+      log.error("Shell trigger not run: its env file is inside the Ravi state dir", { triggerId: stored.id });
+      return;
     }
 
     const firedAt = Date.now();
@@ -1047,9 +1111,13 @@ export class TriggerRunner {
         hasSource: !!source,
       });
 
-      const result = await runShellCronCommand(trigger.shellCommand, {
-        timeoutMs: trigger.shellTimeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS,
-        envFile: trigger.shellEnvFile,
+      const result = await runShellCronCommand(stored.shellCommand, {
+        timeoutMs: stored.shellTimeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS,
+        // An event decides when this runs, so the command starts from the
+        // allowlisted agent env, never the daemon's secrets. What the command
+        // needs on purpose comes from its env file.
+        baseEnv: filterAgentRuntimeBaseEnv(process.env),
+        envFile: stored.shellEnvFile,
         env: {
           ...this.buildShellEnv(trigger, event, source, eventFile, dataFile),
           RAVI_TRIGGER_EVENTS_FILE: eventsFile,
@@ -1075,7 +1143,7 @@ export class TriggerRunner {
 
       if (!ok && errorMessage) {
         try {
-          await this.notifyShellTriggerError(trigger, result, errorMessage);
+          await this.notifyShellTriggerError(stored, result, errorMessage);
         } catch (notifyError) {
           log.error("Failed to notify session about trigger shell error", {
             triggerId: trigger.id,

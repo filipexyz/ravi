@@ -46,6 +46,7 @@ import { startCronRunner, stopCronRunner } from "./cron/index.js";
 import { revokeOrphanedShellCronContexts } from "./cron/shell-context.js";
 import { startLocalWatchRunner, stopLocalWatchRunner } from "./watch/local-runner.js";
 import { startGhFollowMaintenanceRunner, stopGhFollowMaintenanceRunner } from "./hooks/gh-follow-sweep.js";
+import { repairThreadBoundPageCommentFollows } from "./pages/comment-follow.js";
 import { startJobsRunner, stopJobsRunner } from "./jobs/index.js";
 import { startSessionFollowupRunner, stopSessionFollowupRunner } from "./session-followups/index.js";
 import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
@@ -416,6 +417,23 @@ function revokeOrphanedShellCronKeysAtBoot(): void {
   }
 }
 
+function repairThreadBoundPageCommentFollowsAtBoot(): void {
+  try {
+    const { repaired, failures } = repairThreadBoundPageCommentFollows();
+    if (repaired > 0) log.info("Moved page comment triggers from Slack threads to their durable parent", { repaired });
+    for (const failure of failures) {
+      // Left as they were: a trigger whose thread cannot be resolved is not moved on a guess.
+      log.warn("Could not move a page comment trigger off its Slack thread", {
+        triggerId: failure.triggerId,
+        error: failure.error,
+      });
+    }
+  } catch (error) {
+    // Boot continues: a trigger left on a thread only blocks closing that thread.
+    log.error("Failed to repair page comment triggers at boot", { error });
+  }
+}
+
 export async function startDaemon() {
   assertRuntimeMaintenanceInactive();
   acquireDaemonSchemaOwnership();
@@ -427,6 +445,8 @@ export async function startDaemon() {
   // Before any gateway listens: a shell cron key whose issuing process is gone
   // must not be usable against this daemon.
   revokeOrphanedShellCronKeysAtBoot();
+  // Before the trigger runner loads: its subscriptions read the repaired owners.
+  repairThreadBoundPageCommentFollowsAtBoot();
 
   // Step 1: Connect to NATS (with retry for PM2 parallel startup)
   const natsUrl = process.env.NATS_URL || "nats://127.0.0.1:4222";

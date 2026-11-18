@@ -209,7 +209,7 @@ describe("job runner", () => {
     expect(envs[0]?.RAVI_AUTOMATION_PRINCIPAL).toBe(`automation:job:${job.id}`);
   });
 
-  it("gives a job owned by an agent or session the allowlisted env, never the daemon's secrets", () => {
+  it("starts every job with the allowlisted env, whoever created it", () => {
     const daemonEnv = {
       PATH: "/usr/bin:/bin",
       RAVI_STATE_DIR: "/tmp/ravi-state",
@@ -218,23 +218,19 @@ describe("job runner", () => {
       DEVIN_API_KEY: "canary-devin",
     };
 
-    for (const owner of [
-      { agentId: "main", sessionName: null },
-      { agentId: null, sessionName: "main" },
-    ]) {
-      const env = buildJobEnv({ id: "job_owned", ...owner }, daemonEnv);
-      expect(env.PATH).toBe("/usr/bin:/bin");
-      expect(env.RAVI_STATE_DIR).toBe("/tmp/ravi-state");
-      expect(env.RAVI_ADMIN_TOKEN).toBeUndefined();
-      expect(env.OPENAI_API_KEY).toBeUndefined();
-      expect(env.DEVIN_API_KEY).toBeUndefined();
-      expect(env.RAVI_AUTOMATION_PRINCIPAL).toBe("automation:job:job_owned");
-    }
+    // No owner, an agent, a session: there is no exception, not even for the operator.
+    const env = buildJobEnv({ id: "job_any" }, daemonEnv);
+    expect(env.PATH).toBe("/usr/bin:/bin");
+    expect(env.RAVI_STATE_DIR).toBe("/tmp/ravi-state");
+    expect(env.RAVI_ADMIN_TOKEN).toBeUndefined();
+    expect(env.OPENAI_API_KEY).toBeUndefined();
+    expect(env.DEVIN_API_KEY).toBeUndefined();
+    expect(env.RAVI_AUTOMATION_PRINCIPAL).toBe("automation:job:job_any");
 
-    // Only the operator's terminal creates a job with no owner; it keeps the daemon env.
-    const operator = buildJobEnv({ id: "job_operator", agentId: null, sessionName: null }, daemonEnv);
-    expect(operator.DEVIN_API_KEY).toBe("canary-devin");
-    expect(operator.RAVI_AUTOMATION_PRINCIPAL).toBe("automation:job:job_operator");
+    // A secret a job needs on purpose comes from the operator's passthrough list.
+    const passed = buildJobEnv({ id: "job_any" }, { ...daemonEnv, RAVI_AGENT_ENV_PASSTHROUGH: "DEVIN_API_KEY" });
+    expect(passed.DEVIN_API_KEY).toBe("canary-devin");
+    expect(passed.RAVI_ADMIN_TOKEN).toBeUndefined();
   });
 
   it("spawns an agent-owned job without the daemon env underneath", async () => {

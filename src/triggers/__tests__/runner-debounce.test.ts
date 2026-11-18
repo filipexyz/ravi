@@ -132,6 +132,8 @@ function createTrigger(input: {
       ? `printf '%s %s\\n' "$RAVI_TRIGGER_EVENT_COUNT" "$(tr -d '\\n ' < "$RAVI_TRIGGER_EVENTS_FILE")" >> '${markerPath()}'`
       : undefined,
     shellTimeoutMs: shell ? 10_000 : undefined,
+    // A shell trigger runs only when its owner acts as the operator.
+    ownerPrincipal: shell ? "operator" : undefined,
     session: "isolated",
     cooldownMs: input.cooldownMs ?? 0,
     debounceMs: input.debounceMs ?? 0,

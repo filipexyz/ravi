@@ -9,6 +9,12 @@ export interface ShellCronRunOptions {
   timeoutMs?: number;
   envFile?: string;
   env?: Record<string, string>;
+  /**
+   * Env the command starts from, before the env file and `env`. Defaults to the
+   * daemon's own env (operator-owned shell crons). Shell triggers pass the
+   * allowlisted agent env (`runtime/agent-env-policy.ts`).
+   */
+  baseEnv?: NodeJS.ProcessEnv;
 }
 
 export interface ShellCronRunResult {
@@ -68,7 +74,7 @@ export async function runShellCronCommand(
 ): Promise<ShellCronRunResult> {
   const started = Date.now();
   const timeoutMs = options.timeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS;
-  const env = { ...process.env, ...loadEnvFile(options.envFile), ...(options.env ?? {}) };
+  const env = { ...(options.baseEnv ?? process.env), ...loadEnvFile(options.envFile), ...(options.env ?? {}) };
 
   return new Promise((resolve, reject) => {
     const detached = process.platform !== "win32";

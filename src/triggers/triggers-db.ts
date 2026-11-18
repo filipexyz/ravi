@@ -253,6 +253,21 @@ export function isOwnerNeutralTriggerUpdate(updates: TriggerUpdate): boolean {
  * was then chosen by someone else, so nobody's authority goes with it. No
  * update can give a trigger an owner.
  */
+/**
+ * Turns off a shell trigger whose owner does not act as the operator. Only the
+ * call that changes the row returns true, so only one runner sends the notice,
+ * also across reloads and competing daemons.
+ */
+export function dbDisableShellTriggerForOwner(trigger: Pick<Trigger, "id" | "ownerPrincipal">): boolean {
+  const result = getDb()
+    .prepare(
+      `UPDATE triggers SET enabled = 0, updated_at = ?
+       WHERE id = ? AND enabled = 1 AND execution_type = 'shell' AND owner_principal IS ?`,
+    )
+    .run(Date.now(), trigger.id, trigger.ownerPrincipal ?? null);
+  return result.changes > 0;
+}
+
 export function dbUpdateTrigger(id: string, updates: TriggerUpdate, options: TriggerUpdateOptions = {}): Trigger {
   const db = getDb();
   const existing = dbGetTrigger(id);
