@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
+import { createSlackThreadLifecycle } from "../channels/slack/thread-lifecycle-store.js";
 import { openStateDatabase } from "../db/state-boundary.js";
 import { prepareThreadFence } from "../threads/schema-fence.js";
 import {
@@ -1324,6 +1325,33 @@ describe("slack thread lifecycle schema", () => {
     legacyDb.close();
 
     expect(lifecycleColumns(getDb())).toContain("requested_by");
+  });
+
+  it("adds origin_json to a ravi.db written by the protocol-1 writer, which keeps inserting without it", () => {
+    expect(lifecycleColumns(getDb())).toContain("origin_json");
+    closeRouterDb();
+
+    const legacyDb = new Database(join(stateDir!, "ravi.db"));
+    legacyDb.exec("ALTER TABLE slack_thread_lifecycle DROP COLUMN origin_json");
+    expect(lifecycleColumns(legacyDb)).not.toContain("origin_json");
+    legacyDb.close();
+
+    const upgraded = getDb();
+    expect(lifecycleColumns(upgraded)).toContain("origin_json");
+    // A row written without an origin (what the protocol-1 writer produces) stays null.
+    createSlackThreadLifecycle({
+      requestId: "slack-thread:legacy",
+      parentSessionKey: "p",
+      parentSessionName: "p",
+      accountId: "ravi-slack",
+      instanceId: "ravi-slack",
+      platformChatId: "C1",
+      initialPrompt: "x",
+    });
+    const row = upgraded
+      .prepare("SELECT origin_json FROM slack_thread_lifecycle WHERE request_id = 'slack-thread:legacy'")
+      .get() as { origin_json: string | null };
+    expect(row.origin_json).toBeNull();
   });
 
   it("adds the thread runtime columns to a ravi.db created before threads could pin them", () => {

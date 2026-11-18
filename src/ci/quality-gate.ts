@@ -178,6 +178,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/session-dispatcher.test.ts",
     // Dispatch/launch prompt intake failure (no agent): durable trace, turn end, chat notice, held prompts.
     "src/runtime/intake-failure.test.ts",
+    // Session last_* metadata: a relay or a thread completion addressed to the asking
+    // chat (a WhatsApp DM) never moves the session's own channel.
+    "src/runtime/session-launcher-metadata.test.ts",
     // Host runtime control: typed refusals, provider timeout, per-session lanes.
     "src/runtime/control-host.test.ts",
     "src/runtime/host-subscriptions.test.ts",

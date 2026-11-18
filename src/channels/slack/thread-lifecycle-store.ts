@@ -33,6 +33,8 @@ export interface SlackThreadLifecycleRecord {
   requestedBy?: string;
   /** Runtime context of the turn that asked for the thread; its turns never exceed that turn's overlay. */
   initiatorContextId?: string;
+  /** Non-Slack direct chat that asked for the thread; its completion returns there. */
+  origin?: SlackThreadOrigin;
   modelOverride?: string;
   /** Runtime provider requested for the child, recorded so a delayed materialization keeps it. */
   providerOverride?: string;
@@ -86,6 +88,7 @@ interface SlackThreadLifecycleRow {
   close_sequence: number;
   close_result: string | null;
   close_context_id: string | null;
+  origin_json: string | null;
   closed_at: number | null;
   parent_return_requested: number;
   parent_event_id: string | null;
@@ -95,6 +98,19 @@ interface SlackThreadLifecycleRow {
   failure_reason: string | null;
   created_at: number;
   updated_at: number;
+}
+
+/**
+ * The non-Slack direct chat that asked for a thread (for example a WhatsApp DM).
+ * The thread itself lives in Slack; only its completion goes back here.
+ */
+export interface SlackThreadOrigin {
+  channel: string;
+  accountId?: string;
+  instanceId?: string;
+  chatId: string;
+  canonicalChatId?: string;
+  sourceMessageId?: string;
 }
 
 export interface CreateSlackThreadLifecycleInput {
@@ -110,6 +126,7 @@ export interface CreateSlackThreadLifecycleInput {
   initialPrompt: string;
   requestedBy?: string;
   initiatorContextId?: string;
+  origin?: SlackThreadOrigin;
   modelOverride?: string;
   providerOverride?: string;
   effortOverride?: string;
@@ -151,10 +168,10 @@ export function createSlackThreadLifecycle(input: CreateSlackThreadLifecycleInpu
             request_id, source, status, parent_session_key, parent_session_name,
             initiator_session_key, initiator_session_name, account_id, instance_id,
             platform_chat_id, root_canonical_chat_id, initial_prompt, requested_by, model_override,
-            provider_override, effort_override, thinking_level, initiator_context_id,
+            provider_override, effort_override, thinking_level, initiator_context_id, origin_json,
             created_at, updated_at
           )
-          VALUES (?, 'action', 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, 'action', 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(request_id) DO NOTHING
         `,
         requestId,
@@ -173,6 +190,7 @@ export function createSlackThreadLifecycle(input: CreateSlackThreadLifecycleInpu
         cleanOptional(input.effortOverride),
         cleanOptional(input.thinkingLevel),
         cleanOptional(input.initiatorContextId),
+        serializeSlackThreadOrigin(input.origin),
         now,
         now,
       );
@@ -839,6 +857,7 @@ function rowToSlackThreadLifecycle(row: SlackThreadLifecycleRow): SlackThreadLif
     closeSequence: row.close_sequence,
     ...(row.close_result ? { closeResult: row.close_result } : {}),
     ...(row.close_context_id ? { closeContextId: row.close_context_id } : {}),
+    ...(parseSlackThreadOrigin(row.origin_json) ? { origin: parseSlackThreadOrigin(row.origin_json)! } : {}),
     ...(row.closed_at !== null ? { closedAt: row.closed_at } : {}),
     parentReturnRequested: row.parent_return_requested === 1,
     ...(row.parent_event_id ? { parentEventId: row.parent_event_id } : {}),
@@ -862,4 +881,44 @@ function requireText(value: string, label: string): string {
 function cleanOptional(value: string | undefined): string | null {
   const normalized = value?.trim();
   return normalized ? normalized : null;
+}
+
+function serializeSlackThreadOrigin(origin: SlackThreadOrigin | undefined): string | null {
+  if (!origin) return null;
+  const channel = cleanOptional(origin.channel);
+  const chatId = cleanOptional(origin.chatId);
+  if (!channel || !chatId || channel.toLowerCase() === "slack") return null;
+  const value: SlackThreadOrigin = { channel, chatId };
+  const accountId = cleanOptional(origin.accountId);
+  const instanceId = cleanOptional(origin.instanceId);
+  const canonicalChatId = cleanOptional(origin.canonicalChatId);
+  const sourceMessageId = cleanOptional(origin.sourceMessageId);
+  if (accountId) value.accountId = accountId;
+  if (instanceId) value.instanceId = instanceId;
+  if (canonicalChatId) value.canonicalChatId = canonicalChatId;
+  if (sourceMessageId) value.sourceMessageId = sourceMessageId;
+  return JSON.stringify(value);
+}
+
+/** Unreadable origin reads as none: the completion then stays in Slack, as before origins existed. */
+export function parseSlackThreadOrigin(raw: string | null | undefined): SlackThreadOrigin | undefined {
+  if (!raw) return undefined;
+  try {
+    const value = JSON.parse(raw) as Record<string, unknown>;
+    const channel = typeof value.channel === "string" ? value.channel.trim() : "";
+    const chatId = typeof value.chatId === "string" ? value.chatId.trim() : "";
+    if (!channel || !chatId || channel.toLowerCase() === "slack") return undefined;
+    const text = (key: string) => (typeof value[key] === "string" && (value[key] as string).trim()) || undefined;
+    return {
+      channel,
+      chatId,
+      ...(text("accountId") ? { accountId: text("accountId") } : {}),
+      ...(text("instanceId") ? { instanceId: text("instanceId") } : {}),
+      ...(text("canonicalChatId") ? { canonicalChatId: text("canonicalChatId") } : {}),
+      ...(text("sourceMessageId") ? { sourceMessageId: text("sourceMessageId") } : {}),
+    };
+  } catch {
+    // no-cause: A malformed origin only loses the WhatsApp return; the completion then stays in Slack, as before origins existed.
+    return undefined;
+  }
 }

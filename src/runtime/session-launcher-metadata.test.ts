@@ -33,4 +33,26 @@ describe("updateRuntimeSessionMetadata", () => {
     });
     expect(getSession(session.sessionKey)?.lastTo).toBe("5511900001111@s.whatsapp.net");
   });
+
+  it("never saves a thread completion addressed to the asking WhatsApp DM as the session's last chat", () => {
+    const session = getOrCreateSession("agent:crm:main", "crm", "/tmp/crm");
+    updateRuntimeSessionMetadata(session.sessionKey, {
+      prompt: "oi do slack",
+      source: { channel: "slack", accountId: "ravi-slack", instanceId: "ravi-slack", chatId: "D0C8BEV8QUR" },
+    });
+    expect(getSession(session.sessionKey)?.lastChannel).toBe("slack");
+
+    updateRuntimeSessionMetadata(session.sessionKey, {
+      prompt: "[System] Inform: Slack thread concluída.",
+      source: { channel: "whatsapp", accountId: "main", chatId: "178035101794451@lid" },
+      _slackThreadLifecycle: {
+        eventId: "evt-1",
+        eventType: "thread.closed",
+        requestId: "slack-thread:req-1",
+        parentSessionKey: session.sessionKey,
+      },
+    } as any);
+    expect(getSession(session.sessionKey)?.lastChannel).toBe("slack");
+    expect(getSession(session.sessionKey)?.lastTo).toBe("D0C8BEV8QUR");
+  });
 });

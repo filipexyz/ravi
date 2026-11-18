@@ -37,6 +37,7 @@ import {
   findSlackThreadLifecycleByChildRef,
   getSlackThreadLifecycle,
   markSlackThreadRootDelivered,
+  parseSlackThreadOrigin,
 } from "./thread-lifecycle-store.js";
 import { decodeLiteralLineBreaks } from "./thread-text.js";
 
@@ -741,6 +742,75 @@ describe("Slack thread lifecycle", () => {
   });
 });
 
+describe("Slack thread asked for from a WhatsApp DM", () => {
+  const origin = {
+    channel: "whatsapp",
+    accountId: "main",
+    instanceId: "wa-instance",
+    chatId: "178035101794451@lid",
+    canonicalChatId: "chat_wa",
+    sourceMessageId: "wa-msg-1",
+  };
+
+  it("stores the origin and reads it back; a Slack or unreadable origin is none", () => {
+    seedPendingCreation({ origin });
+    expect(getSlackThreadLifecycle("slack-thread:req-1")?.origin).toEqual(origin);
+    expect(parseSlackThreadOrigin('{"channel":"slack","chatId":"C1"}')).toBeUndefined();
+    expect(parseSlackThreadOrigin("not json")).toBeUndefined();
+    expect(parseSlackThreadOrigin(null)).toBeUndefined();
+  });
+
+  it("returns the completion to the WhatsApp DM while progress stays in Slack", async () => {
+    const fixture = seedPendingCreation({ origin });
+    await finalizeSlackThreadCreation(fixture.requestId, {
+      publishPrompt: mock(async () => {}),
+      publishEvent: mock(async () => {}),
+    });
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+    const parentPrompts: Array<{ sessionName: string; payload: Record<string, any> }> = [];
+    const dependencies = {
+      publishPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
+        if (sessionName === "ravi-parent") parentPrompts.push({ sessionName, payload: payload as Record<string, any> });
+      }),
+      publishEvent: mock(async () => {}),
+    };
+
+    await reportSlackThreadProgress(child, "metade pronta", dependencies);
+    await closeSlackThread(child, "Trabalho pronto", dependencies);
+
+    const report = parentPrompts.find((entry) => entry.payload._slackThreadLifecycle?.eventType === "thread.report");
+    const closed = parentPrompts.find((entry) => entry.payload._slackThreadLifecycle?.eventType === "thread.closed");
+    expect(report?.payload.source).toMatchObject({ channel: "slack", chatId: "C123" });
+    expect(closed?.payload.source).toEqual({
+      channel: "whatsapp",
+      accountId: "main",
+      instanceId: "wa-instance",
+      chatId: "178035101794451@lid",
+      canonicalChatId: "chat_wa",
+      sourceMessageId: "wa-msg-1",
+      actorType: "system",
+      suppressPresence: true,
+    });
+  });
+
+  it("keeps the completion in Slack when the thread has no origin", async () => {
+    const fixture = seedPendingCreation();
+    await finalizeSlackThreadCreation(fixture.requestId, {
+      publishPrompt: mock(async () => {}),
+      publishEvent: mock(async () => {}),
+    });
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+    const parentPrompts: Array<Record<string, any>> = [];
+    await closeSlackThread(child, "Pronto", {
+      publishPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
+        if (sessionName === "ravi-parent") parentPrompts.push(payload as Record<string, any>);
+      }),
+      publishEvent: mock(async () => {}),
+    });
+    expect(parentPrompts[0]?.source).toMatchObject({ channel: "slack", chatId: "C123" });
+  });
+});
+
 describe("Slack thread orchestration", () => {
   function capture() {
     const prompts: Array<{
@@ -1061,6 +1131,7 @@ function seedPendingCreation(
     teamId?: string;
     requestedBy?: string;
     initiatorContextId?: string;
+    origin?: Parameters<typeof createSlackThreadLifecycle>[0]["origin"];
   } = {},
 ): {
   requestId: string;
@@ -1094,6 +1165,7 @@ function seedPendingCreation(
     rootCanonicalChatId: rootChat.id,
     initialPrompt: "Investigate the branch",
     initiatorContextId: input.initiatorContextId,
+    ...(input.origin ? { origin: input.origin } : {}),
     ...(input.requestedBy ? { requestedBy: input.requestedBy } : {}),
     modelOverride: "gpt-5.6",
     providerOverride: "codex",
