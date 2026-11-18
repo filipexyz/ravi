@@ -1594,10 +1594,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | pages | src/pages/chat.ts | 230 | triaged-follow-up | catch-without-binding | src/pages/chat.ts:07c2c3da38c76eb3ce9a3171 |
 | pages | src/pages/chat.ts | 424 | fixed | binding retained / no recognized error surface | src/pages/chat.ts:9cdef9eb838186019937d8a8 |
 | pages | src/pages/client.ts | 327 | fixed | binding retained / no recognized error surface | src/pages/client.ts:9e916b75385b47458b37e4da |
-| pages | src/pages/comment-follow.ts | 265 | fixed | binding retained / no recognized error surface | src/pages/comment-follow.ts:fc44077b9affeda255709134 |
-| pages | src/pages/comment-follow.ts | 372 | triaged-follow-up | surface-bypasses-constructor | src/pages/comment-follow.ts:aa828366b9a34b3631013d59 |
-| pages | src/pages/comment-follow.ts | 414 | triaged-follow-up | catch-without-binding | src/pages/comment-follow.ts:be20d26fcac2c9ceeb6622b3 |
-| pages | src/pages/comment-follow.ts | 450 | triaged-follow-up | catch-without-binding | src/pages/comment-follow.ts:be20d26fcac2c9ceeb6622b3 |
+| pages | src/pages/comment-follow.ts | 280 | fixed | binding retained / no recognized error surface | src/pages/comment-follow.ts:fc44077b9affeda255709134 |
+| pages | src/pages/comment-follow.ts | 387 | triaged-follow-up | surface-bypasses-constructor | src/pages/comment-follow.ts:aa828366b9a34b3631013d59 |
+| pages | src/pages/comment-follow.ts | 429 | triaged-follow-up | catch-without-binding | src/pages/comment-follow.ts:be20d26fcac2c9ceeb6622b3 |
+| pages | src/pages/comment-follow.ts | 465 | triaged-follow-up | catch-without-binding | src/pages/comment-follow.ts:be20d26fcac2c9ceeb6622b3 |
 | pages | src/pages/kit.ts | 176 | triaged-follow-up | surface-bypasses-constructor | src/pages/kit.ts:99f143281464822511745db6 |
 | pages | src/pages/read.ts | 234 | triaged-follow-up | catch-without-binding | src/pages/read.ts:9ed9671ad7eb34b4127f77cf |
 | pages | src/pages/read.ts | 466 | triaged-follow-up | catch-without-binding | src/pages/read.ts:648bd450a2b2e0e0fa12013c |
@@ -2222,22 +2222,22 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | transcripts.ts | src/transcripts.ts | 125 | triaged-follow-up | catch-without-binding | src/transcripts.ts:357dcea2cb58a902af73a0a2 |
 | transcripts.ts | src/transcripts.ts | 150 | triaged-follow-up | catch-without-binding | src/transcripts.ts:3b9888e880079f508a09d805 |
 | transcripts.ts | src/transcripts.ts | 166 | triaged-follow-up | catch-without-binding | src/transcripts.ts:c75b8796c37a25066c992d5f |
-| triggers | src/triggers/runner.ts | 184 | triaged-follow-up | catch-without-binding | src/triggers/runner.ts:351c8fb619d9c8cadc1fc580 |
-| triggers | src/triggers/runner.ts | 189 | triaged-follow-up | catch-without-binding | src/triggers/runner.ts:b55c54d8a41539ec483a767e |
-| triggers | src/triggers/runner.ts | 238 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:dca2797b2cd1cbd9c0bcf074 |
-| triggers | src/triggers/runner.ts | 249 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:259ab900c31c45539ee2a48b |
-| triggers | src/triggers/runner.ts | 265 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:eda27fa416bc30d8e98ac9b7 |
-| triggers | src/triggers/runner.ts | 371 | triaged-follow-up | catch-without-binding | src/triggers/runner.ts:5d67ee16fb45c1cab3adaabe |
-| triggers | src/triggers/runner.ts | 479 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:cee3b0f994ca17f85eee5244 |
-| triggers | src/triggers/runner.ts | 487 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:b090483fd14e6839c04b29a3 |
-| triggers | src/triggers/runner.ts | 558 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:ebee8337f2dc263d32e180e8 |
-| triggers | src/triggers/runner.ts | 881 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:09388027ac2df7f2cec67567 |
-| triggers | src/triggers/runner.ts | 1023 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:a6c9b55f7f50afd445312cc2 |
-| triggers | src/triggers/runner.ts | 1036 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:58274394c1111439ca9c2b1d |
-| triggers | src/triggers/runner.ts | 1147 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:f8c23e28c45f28fab923300a |
-| triggers | src/triggers/runner.ts | 1164 | triaged-follow-up | rejection-without-binding | src/triggers/runner.ts:2a64131ac5e4f6832e8265d6 |
-| triggers | src/triggers/runner.ts | 1200 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:50ee05b1b307f84258692b5e |
-| triggers | src/triggers/runner.ts | 1244 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:98d070593ad0a160c67acebc |
+| triggers | src/triggers/runner.ts | 224 | triaged-follow-up | catch-without-binding | src/triggers/runner.ts:351c8fb619d9c8cadc1fc580 |
+| triggers | src/triggers/runner.ts | 229 | triaged-follow-up | catch-without-binding | src/triggers/runner.ts:b55c54d8a41539ec483a767e |
+| triggers | src/triggers/runner.ts | 278 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:dca2797b2cd1cbd9c0bcf074 |
+| triggers | src/triggers/runner.ts | 289 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:259ab900c31c45539ee2a48b |
+| triggers | src/triggers/runner.ts | 305 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:eda27fa416bc30d8e98ac9b7 |
+| triggers | src/triggers/runner.ts | 411 | triaged-follow-up | catch-without-binding | src/triggers/runner.ts:5d67ee16fb45c1cab3adaabe |
+| triggers | src/triggers/runner.ts | 519 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:cee3b0f994ca17f85eee5244 |
+| triggers | src/triggers/runner.ts | 527 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:b090483fd14e6839c04b29a3 |
+| triggers | src/triggers/runner.ts | 598 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:ebee8337f2dc263d32e180e8 |
+| triggers | src/triggers/runner.ts | 921 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:09388027ac2df7f2cec67567 |
+| triggers | src/triggers/runner.ts | 1063 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:a6c9b55f7f50afd445312cc2 |
+| triggers | src/triggers/runner.ts | 1076 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:58274394c1111439ca9c2b1d |
+| triggers | src/triggers/runner.ts | 1187 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:f8c23e28c45f28fab923300a |
+| triggers | src/triggers/runner.ts | 1204 | triaged-follow-up | rejection-without-binding | src/triggers/runner.ts:2a64131ac5e4f6832e8265d6 |
+| triggers | src/triggers/runner.ts | 1240 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:50ee05b1b307f84258692b5e |
+| triggers | src/triggers/runner.ts | 1284 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:98d070593ad0a160c67acebc |
 | triggers | src/triggers/triggers-db.ts | 67 | triaged-follow-up | catch-without-binding | src/triggers/triggers-db.ts:18050dd160921a6db0880e71 |
 | tui | src/tui/App.tsx | 208 | triaged-follow-up | rejection-without-binding | src/tui/App.tsx:0aedf48025a85ece64c6b534 |
 | tui | src/tui/App.tsx | 243 | triaged-follow-up | rejection-without-binding | src/tui/App.tsx:0aedf48025a85ece64c6b534 |
