@@ -1,4 +1,11 @@
-import { assertRuntimeMaintenanceInactive, assertRuntimeReplacementPrepared } from "../../runtime-maintenance.js";
+import {
+  assertRuntimeMaintenanceInactive,
+  processExitState,
+  runtimeReplacementReadiness,
+} from "../../runtime-maintenance.js";
+import { performUpgradeRestart } from "../daemon-upgrade-restart.js";
+import { settleThreadFenceLeftovers } from "../../threads/fence-adoption.js";
+import { getRaviStateDir } from "../../utils/paths.js";
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { getRestartReasonPath, resolveHandoffStateDir } from "../../runtime/restart-reason.js";
 import { readDaemonSchemaPhase } from "../../db/daemon-schema-owner.js";
@@ -50,7 +57,12 @@ import {
   getPm2Processes,
   PM2_PROCESS_NAME,
 } from "../../pm2.js";
-import { buildManagedRuntimeIdentity, managedRuntimeWarnings } from "../../managed-runtime.js";
+import {
+  buildManagedRuntimeIdentity,
+  managedRuntimeBundlePath,
+  managedRuntimeWarnings,
+  normalizeRuntimePath,
+} from "../../managed-runtime.js";
 import {
   ADMIN_BOOTSTRAP_AGENT_ID,
   ADMIN_BOOTSTRAP_KIND,
@@ -449,6 +461,8 @@ export class DaemonCommands {
   @CommandAccess({ kind: "mutate", resource: "daemon", action: "start", risk: "high" })
   @Returns(daemonMutationReturnSchema)
   start(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+    // Leftovers of an interrupted upgrade settle here too, so this start reaches the daemon entry.
+    settleThreadFenceLeftovers(getRaviStateDir());
     assertRuntimeMaintenanceInactive();
     requirePm2();
 
@@ -468,7 +482,10 @@ export class DaemonCommands {
       return payload;
     }
 
-    assertRuntimeReplacementPrepared();
+    // A database written by a pre-fence release is upgraded by the daemon at its entry.
+    const readiness = runtimeReplacementReadiness();
+    if (readiness === "adopt-on-start" && !asJson)
+      console.log("The database was written by an earlier release; the daemon upgrades it as it starts.");
 
     // Clean up old launchd/systemd if present
     this.cleanupLegacyServices({ silent: Boolean(asJson) });
@@ -550,9 +567,10 @@ export class DaemonCommands {
     @Option({ flags: "-b, --build", description: "Run build before restarting (dev mode)" }) build?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    settleThreadFenceLeftovers(getRaviStateDir());
     assertRuntimeMaintenanceInactive();
     requirePm2();
-    assertRuntimeReplacementPrepared();
+    const readiness = runtimeReplacementReadiness();
 
     if (!message) {
       fail('Flag -m é obrigatória. Use: ravi daemon restart -m "motivo"');
@@ -666,6 +684,58 @@ export class DaemonCommands {
 
     const runPm2Status = (args: string[], cwd?: string) =>
       (asJson ? runPm2Quiet(args, { cwd }) : runPm2(args, undefined, { cwd })).status;
+    if (readiness === "adopt-on-start") {
+      // No overlap here: the new daemon only adopts once every legacy writer is gone.
+      const upgrade = await performUpgradeRestart({
+        stateDir: getRaviStateDir(),
+        list: () =>
+          getPm2Processes({ strict: true }).map((process) => ({
+            name: process.name,
+            pid: process.pid,
+            status: process.status,
+            onTarget:
+              normalizeRuntimePath(managedRuntimeBundlePath(process)) === normalizeRuntimePath(target.bundlePath),
+          })),
+        stop: (name) => runPm2Status(["stop", name]),
+        start: (name) => runPm2Status(["start", name]),
+        remove: (name) => runPm2Status(["delete", name]),
+        startNew: () => runPm2Status(startDaemonPm2Args(target.bundlePath), target.cwd),
+        daemonReady: () => {
+          const daemon = getPm2Processes({ strict: true }).find(
+            (process) => process.name === PM2_PROCESS_NAME && process.status === "online",
+          );
+          return Boolean(
+            daemon && readDaemonSchemaPhase({ pid: daemon.pid, startedAt: daemon.startedAt ?? undefined }) === "ready",
+          );
+        },
+        exitState: (pid) => processExitState(pid),
+        wait: () => new Promise((resolve) => setTimeout(resolve, 500)),
+        timeoutMs: optionalDurationMs("RAVI_DAEMON_RESTART_READY_TIMEOUT_MS"),
+      });
+      if (upgrade.ok) persistPm2ProcessList();
+      const logPath = appendDaemonRestartLog(`upgrade restart: ${upgrade.code} ${upgrade.message}`);
+      const payload = {
+        action: "restart" as const,
+        mode: "upgrade" as const,
+        changed: upgrade.ok,
+        code: upgrade.code,
+        message: upgrade.message,
+        channelsStarted: upgrade.channelsStarted,
+        previousRunning,
+        build: buildResult,
+        target,
+        logPath,
+        status: buildDaemonStatusJson(!asJson),
+      };
+      if (asJson) printJson(payload);
+      if (!upgrade.ok)
+        fail(
+          upgrade.message,
+          "The database keeps its pre-upgrade state until the daemon adopts it. Fix the cause above, then run the same restart again.",
+        );
+      if (!asJson) console.log(upgrade.message);
+      return payload;
+    }
     const cutover = await performSupervisedDaemonRestart({
       processName: PM2_PROCESS_NAME,
       mustBeDetached: process.env[DAEMON_RESTART_HANDOFF_WORKER_ENV] === "1",

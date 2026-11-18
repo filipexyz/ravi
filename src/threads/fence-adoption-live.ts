@@ -1,18 +1,29 @@
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { connect } from "nats";
+import { buildRunnerPm2Env } from "../channels/pm2-env.js";
+import { buildChannelsPm2Env, buildChannelsPm2StartArgs } from "../daemon-stdin.js";
 import { openStateDatabase } from "../db/state-boundary.js";
 import { runtimeStateDatabasePaths } from "../db/state-paths.js";
 import { managedRuntimeBundlePath } from "../managed-runtime.js";
-import { getPm2Processes, runPm2, type Pm2Process } from "../pm2.js";
+import { getPm2Process, getPm2Processes, runPm2, type Pm2Process } from "../pm2.js";
 import type { MaintenanceProcess } from "../runtime-maintenance.js";
-import { readRuntimeBootReceipt, runtimeBundleFingerprint } from "../runtime-process-identity.js";
+import {
+  readLastRuntimeBootReceipt,
+  readRuntimeBootReceipt,
+  runtimeBootBundlePath,
+  runtimeBundleFingerprint,
+} from "../runtime-process-identity.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import {
   type AdoptionHost,
+  adoptThreadFenceAtBoot,
   adoptThreadFenceAsSuccessor,
+  type BootAdoptionResult,
+  type ChannelsResumeOutcome,
   type DurableResidue,
   type ManagedRegistration,
   planThreadFenceAdoption,
+  resumeChannelsAfterUpgrade,
   type ThreadFenceAdoption,
   type ThreadFenceAdoptionPlan,
 } from "./fence-adoption.js";
@@ -44,6 +55,7 @@ export function liveRegistrations(): ManagedRegistration[] {
       startedAt: entry.startedAt ?? 0,
       online,
       scriptPath: managedRuntimeBundlePath(entry) ?? entry.execPath ?? "",
+      status: entry.status,
     };
   });
 }
@@ -121,8 +133,8 @@ export async function withLiveJetStreamReader<T>(
 }
 
 /**
- * Preview for `thread-fence-adopt` without --execute, while 3.261113.2 still runs: the same SQLite
- * rules, read only, before any stop. Advisory: rows in flight now are carried or recomputed by the
+ * Read-only preview of the SQLite residue, while 3.261113.2 still runs: the same rules the
+ * daemon entry applies after the stop. Advisory: rows in flight now are carried or recomputed by the
  * successor; a blocking row (`resumption not verified`) is already here and will block the window,
  * so the operator can settle it before (RUNBOOK). Not read: the broker, whose residue is what the
  * stop drains, and the restart snapshots, whose epoch only the stop creates.
@@ -133,7 +145,7 @@ export function previewLiveSqliteResidue(databasePath: string): DurableResidue {
   );
 }
 
-/** What `thread-fence-adopt` without --execute returns: the read-only plan and the residue preview. */
+/** The coordinator's read-only plan plus the residue preview (no production caller; tests fabricate states with it). */
 export function adoptionDryRun(
   host: AdoptionHost,
   targetBundlePath: string,
@@ -181,6 +193,39 @@ export async function liveResidue(
   return mergeResidue(sqlite, broker, excluded);
 }
 
+/** The SQLite residue the successor re-derives itself, inside the authorization scope. */
+function successorSqliteResidue(databasePath: string, restartReasonPath: string) {
+  // The restart snapshots are re-read with the successor's own clock: past the resume window the
+  // adoption is refused instead of claiming sessions nobody will resume (CodeRabbit r4595928941).
+  return (adoption: ThreadFenceAdoption): DurableResidue =>
+    mergeResidue(
+      collectSqliteResidue(
+        legacyResidueRules(
+          databasePath,
+          legacyBridgeDatabasePath(databasePath),
+          legacyStateDatabasePaths(databasePath),
+        ),
+      ),
+      restartSnapshotResidue({
+        databasePath,
+        restartReasonPath,
+        stoppedProcessStartedAt: adoption.predecessors.find((entry) => entry.name === "ravi")?.startedAt,
+      }),
+    );
+}
+
+/** Installs only the fence, in its own short connection; store initialization then runs as usual. */
+function installFence(databasePath: string): () => void {
+  return () => {
+    const database = openStateDatabase(databasePath);
+    try {
+      prepareRegisteredThreadFence(database);
+    } finally {
+      database.close();
+    }
+  };
+}
+
 /**
  * Successor entry, after daemon schema ownership and before the command graph
  * can open any store: installs only the fence, in its own short connection,
@@ -202,30 +247,110 @@ export function adoptThreadFenceAtEntry(
     bundleDigest: host.bundleDigest,
     self: { pid: host.pid },
     // The successor re-derives the SQLite residue itself instead of trusting the coordinator's record.
-    // The restart snapshots are re-read with the successor's own clock: past the resume window the
-    // adoption is refused instead of claiming sessions nobody will resume (CodeRabbit r4595928941).
-    residue: (adoption) =>
-      mergeResidue(
-        collectSqliteResidue(
-          legacyResidueRules(
-            databasePath,
-            legacyBridgeDatabasePath(databasePath),
-            legacyStateDatabasePaths(databasePath),
-          ),
-        ),
-        restartSnapshotResidue({
-          databasePath,
-          restartReasonPath: host.restartReasonPath ?? RESTART_REASON_FILE,
-          stoppedProcessStartedAt: adoption.predecessors.find((entry) => entry.name === "ravi")?.startedAt,
-        }),
-      ),
-    open: () => {
-      const database = openStateDatabase(databasePath);
-      try {
-        prepareRegisteredThreadFence(database);
-      } finally {
-        database.close();
-      }
-    },
+    residue: successorSqliteResidue(databasePath, host.restartReasonPath ?? RESTART_REASON_FILE),
+    open: installFence(databasePath),
   });
+}
+
+/** Waits for the broker the residue reads, as the daemon does for PM2 parallel startup. */
+export async function waitForBroker(
+  url = process.env.NATS_URL || "nats://127.0.0.1:4222",
+  timeoutMs = 60_000,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const connection = await connect({ servers: url, reconnect: false, timeout: 2_000 });
+      await connection.close();
+      return true;
+    } catch {
+      // no-cause: Unreachable now; the caller refuses with its own message once the deadline passes.
+      if (Date.now() >= deadline) return false;
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+  }
+}
+
+/**
+ * Daemon entry, when no adoption was admitted: a database written by a
+ * pre-fence release is adopted here, without any operator command.
+ */
+export async function adoptThreadFenceOnUpgrade(stateDir = getRaviStateDir()): Promise<BootAdoptionResult> {
+  const databasePath = join(stateDir, "ravi.db");
+  const managed = getPm2Process("ravi");
+  return adoptThreadFenceAtBoot({
+    stateDir,
+    databasePath,
+    ownBundlePath: runtimeBootBundlePath(),
+    self: { pid: process.pid, startedAt: managed?.pid === process.pid ? (managed.startedAt ?? 0) : 0 },
+    registry: liveRegistrations,
+    bundleDigest: liveBundleDigest,
+    lastBootIdentity: (name) => {
+      const receipt = readLastRuntimeBootReceipt(name, stateDir);
+      if (!receipt?.bundle) return null;
+      return { name, pid: receipt.pid, startedAt: receipt.startedAt, bundleSha256: receipt.bundle.sha256 };
+    },
+    brokerReady: () => waitForBroker(),
+    stop: liveStop,
+    residue: (context) => liveResidue(databasePath, undefined, undefined, context?.daemonStartedAt),
+    successorResidue: successorSqliteResidue(databasePath, RESTART_REASON_FILE),
+    open: installFence(databasePath),
+  });
+}
+
+/** PM2 restarts a refused daemon at once; this paces the attempts while the refusal waits for its fix. */
+const UPGRADE_RETRY_PAUSE_MS = 30_000;
+
+/**
+ * `daemon run` entry: adopts a pre-fence database, or does nothing. The normal
+ * case prints nothing; a refusal prints its single next step and exits, before
+ * the command graph can read the database (and fail with a less useful error).
+ */
+export async function adoptThreadFenceAtDaemonEntry(): Promise<void> {
+  try {
+    const upgrade = await adoptThreadFenceOnUpgrade();
+    if (upgrade.outcome === "adopted")
+      process.stderr.write(`Thread fence installed on upgrade (${upgrade.maintenanceId})\n`);
+  } catch (cause) {
+    process.stderr.write(`${cause instanceof Error ? cause.message : String(cause)}\n`);
+    // Only a launcher restarts at once; PM2 marks its children with pm_id.
+    if (process.env.pm_id !== undefined) await new Promise((resolve) => setTimeout(resolve, UPGRADE_RETRY_PAUSE_MS));
+    process.exit(1);
+  }
+}
+
+/**
+ * Called once the daemon is ready: starts the channel runner an upgrade stopped,
+ * on this daemon's bundle. Never throws; a failure keeps the intent for the next
+ * ready daemon and is logged with the command that fixes it.
+ */
+export function resumeChannelsAfterUpgradeLive(stateDir = getRaviStateDir()): ChannelsResumeOutcome {
+  const ownBundlePath = runtimeBootBundlePath();
+  try {
+    return resumeChannelsAfterUpgrade({
+      stateDir,
+      databasePath: join(stateDir, "ravi.db"),
+      ownBundlePath,
+      registry: liveRegistrations,
+      startExisting: () => runPm2(["start", "ravi-channels"]).status,
+      recreate: () => {
+        if (getPm2Process("ravi-channels") && runPm2(["delete", "ravi-channels"]).status !== 0) return 1;
+        const args = buildChannelsPm2StartArgs({ bundlePath: ownBundlePath, processes: getPm2Processes() });
+        const started = runPm2(
+          args,
+          { ...buildRunnerPm2Env(), ...buildChannelsPm2Env() },
+          {
+            cwd: resolve(dirname(ownBundlePath), "../.."),
+          },
+        ).status;
+        if (started === 0) runPm2(["save", "--force"]);
+        return started;
+      },
+    });
+  } catch (cause) {
+    process.stderr.write(
+      `The channel runner stopped for the upgrade could not be started (${cause instanceof Error ? cause.message : String(cause)}); run 'ravi channels start'\n`,
+    );
+    return "failed";
+  }
 }

@@ -1,10 +1,16 @@
-import { assertRuntimeMaintenanceInactive, assertRuntimeReplacementPrepared } from "./runtime-maintenance.js";
+import { assertRuntimeMaintenanceInactive, runtimeReplacementReadiness } from "./runtime-maintenance.js";
 import { spawn } from "node:child_process";
 import { which } from "bun";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { buildRunnerPm2Env } from "./channels/pm2-env.js";
+import {
+  readChannelsStoppedForUpgrade,
+  recordChannelsStoppedForUpgrade,
+  settleThreadFenceLeftovers,
+} from "./threads/fence-adoption.js";
+import { getRaviStateDir } from "./utils/paths.js";
 import {
   managedRuntimeMatchesTarget,
   managedRuntimeBundlePath,
@@ -53,6 +59,7 @@ type ManagedRuntimeRebindRequest = {
 };
 
 type ManagedRuntimeRebindDependencies = {
+  stateDir?: string;
   run?: (command: string, args: string[], options?: RunOptions) => Promise<RunResult>;
   getProcesses?: () => Pm2Process[];
   runnerEnv?: () => Record<string, string>;
@@ -62,7 +69,8 @@ type ManagedRuntimeRebindDependencies = {
   now?: () => number;
   wait?: (ms: number) => Promise<void>;
   readyTimeoutMs?: number;
-  assertPrepared?: () => Promise<void>;
+  /** `adopt-on-start`: pre-fence database; every legacy writer stops before the daemon starts. */
+  assertPrepared?: () => Promise<"ready" | "adopt-on-start"> | "ready" | "adopt-on-start";
 };
 
 function runCommand(command: string, args: string[], options: RunOptions = {}): Promise<RunResult> {
@@ -198,14 +206,36 @@ async function waitForManagedRuntimeTarget(
   return managedRuntimeMatchesTarget(previousProcesses, getProcesses(), target);
 }
 
+/** The ready daemon consumes the intent and starts the runner; this waits for both. */
+async function waitForChannelsAfterUpgrade(
+  stateDir: string,
+  getProcesses: () => Pm2Process[],
+  dependencies: ManagedRuntimeRebindDependencies,
+): Promise<boolean> {
+  const now = dependencies.now ?? Date.now;
+  const wait = dependencies.wait ?? ((ms: number) => delay(ms));
+  const deadline = now() + (dependencies.readyTimeoutMs ?? 30_000);
+  for (;;) {
+    const online = getProcesses().some(
+      (process) => process.name === CHANNELS_PM2_PROCESS_NAME && process.status === "online",
+    );
+    if (online && !readChannelsStoppedForUpgrade(stateDir)) return true;
+    if (now() >= deadline) return false;
+    await wait(250);
+  }
+}
+
 export async function rebindManagedRuntimeProcesses(
   previousProcesses: ManagedRuntimeProcessSnapshot[],
   target: ManagedRuntimeTarget,
   dependencies: ManagedRuntimeRebindDependencies = {},
 ): Promise<boolean> {
-  assertRuntimeMaintenanceInactive();
+  const stateDir = dependencies.stateDir ?? getRaviStateDir();
+  // Leftovers of an interrupted upgrade settle here, so the update reaches the daemon entry.
+  settleThreadFenceLeftovers(stateDir);
+  assertRuntimeMaintenanceInactive(stateDir);
   if (previousProcesses.length === 0) return true;
-  await (dependencies.assertPrepared ?? assertRuntimeReplacementPrepared)();
+  const readiness = await (dependencies.assertPrepared ?? runtimeReplacementReadiness)();
   const run = dependencies.run ?? runCommand;
   const getProcesses = dependencies.getProcesses ?? (() => getPm2Processes({ strict: true }));
   const bunPath = dependencies.bunPath ?? process.execPath;
@@ -236,7 +266,7 @@ export async function rebindManagedRuntimeProcesses(
   runtimeEnv.RAVI_REPO = existsSync(join(target.cwd, ".git")) ? target.cwd : "";
   const runnerEnv = { ...(dependencies.runnerEnv ?? buildRunnerPm2Env)(), ...buildChannelsPm2Env(bunPath) };
   const execute = async (args: string[], env = runtimeEnv, cwd?: string): Promise<number> => {
-    assertRuntimeMaintenanceInactive();
+    assertRuntimeMaintenanceInactive(stateDir);
     const result = await run("pm2", args, { cwd, env, stream: false });
     return result.success ? 0 : 1;
   };
@@ -255,7 +285,10 @@ export async function rebindManagedRuntimeProcesses(
     startedAt: process.startedAt ?? undefined,
   });
   const predecessor = initial.find((process) => process.name === PM2_PROCESS_NAME);
-  const coordinated = predecessor?.status === "online" && phase(asManaged(predecessor)) === "ready";
+  // A pre-fence database is adopted by the new daemon at its entry, which refuses while a
+  // legacy writer runs: no overlap, the predecessors are removed before it starts.
+  const coordinated =
+    readiness === "ready" && predecessor?.status === "online" && phase(asManaged(predecessor)) === "ready";
   let readyDaemon: ManagedDaemonProcess | undefined;
   const daemonStillReady = (processes: Pm2Process[]): boolean => {
     const expected = readyDaemon;
@@ -277,6 +310,10 @@ export async function rebindManagedRuntimeProcesses(
 
   // Legacy owners do not hold the schema lock. They cannot coexist with a new
   // writer, even while PM2 reports both processes online.
+  // On a pre-fence database the runner comes back through the ready daemon that adopted,
+  // whichever start that is: the intent is written before its registration goes.
+  const channelsViaDaemon = readiness === "adopt-on-start" && channels?.status === "online";
+  if (channelsViaDaemon) recordChannelsStoppedForUpgrade(stateDir, "update");
   if (!coordinated) {
     if ((await remove(CHANNELS_PM2_PROCESS_NAME)) !== 0) return false;
     if ((await remove(PM2_PROCESS_NAME)) !== 0) return false;
@@ -329,7 +366,9 @@ export async function rebindManagedRuntimeProcesses(
   }
 
   const channelStart = plan.find((step) => step.action === "start" && step.processName === CHANNELS_PM2_PROCESS_NAME);
-  if (
+  if (channelsViaDaemon) {
+    if (!(await waitForChannelsAfterUpgrade(stateDir, getProcesses, dependencies))) return false;
+  } else if (
     channelStart &&
     (await execute(channelStart.args, buildPm2Env({ ...runtimeEnv, ...runnerEnv }), target.cwd)) !== 0
   )

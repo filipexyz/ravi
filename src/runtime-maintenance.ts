@@ -10,6 +10,7 @@ import {
   renameSync,
   writeFileSync,
 } from "node:fs";
+import { uptime } from "node:os";
 import { join } from "node:path";
 import { getRaviStateDir } from "./utils/paths.js";
 import { resolveAccountHome } from "./utils/account-home.js";
@@ -102,7 +103,9 @@ export function readRuntimeMaintenance(stateDir = getRaviStateDir()): RuntimeMai
 export function assertRuntimeMaintenanceInactive(stateDir = getRaviStateDir()): void {
   const directory = join(stateDir, "runtime-maintenance");
   if (interlockPathExists(join(directory, "interlock")) || readRuntimeMaintenance(stateDir)) {
-    throw new Error("RUNTIME_MAINTENANCE_ACTIVE: both runtime starts are blocked; explicit recovery is required");
+    throw new Error(
+      "RUNTIME_MAINTENANCE_ACTIVE: a thread fence upgrade is in progress; the daemon finishes or settles it when it starts",
+    );
   }
 }
 
@@ -148,6 +151,9 @@ export function admitDaemonEntry(
     ownBundlePath: live.ownBundlePath(),
     bundleDigest: live.bundleDigest,
     self: { pid: live.pid, startedAt: managed.startedAt },
+    // An upgrade must not need an operator: leftovers of an interrupted adoption
+    // that never installed the fence (or already did) are settled here.
+    heal: true,
   });
 }
 
@@ -160,6 +166,20 @@ export function processExitState(pid: number, probe = process.kill): "exited" | 
   } catch (cause) {
     return (cause as NodeJS.ErrnoException).code === "ESRCH" ? "exited" : "unknown";
   }
+}
+
+/**
+ * Exit state of a recorded process. A process that started before the current
+ * OS boot cannot be running, whatever now owns its (reused) pid.
+ */
+export function recordedProcessExitState(
+  entry: { pid: number; startedAt: number },
+  probe: (pid: number) => "exited" | "present" | "unknown" = processExitState,
+  bootedAt = Date.now() - uptime() * 1_000,
+): "exited" | "present" | "unknown" {
+  // uptime() has second precision: keep a margin before trusting the comparison.
+  if (Number.isFinite(entry.startedAt) && entry.startedAt > 0 && entry.startedAt < bootedAt - 2_000) return "exited";
+  return probe(entry.pid);
 }
 
 function sameProcess(a: MaintenanceProcess, b: MaintenanceProcess): boolean {
@@ -295,9 +315,29 @@ export function assertThreadFenceBootstrapAuthorized(input: ThreadFenceBootstrap
     recordThreadBootstrapAuthorization(input.databasePath, { reason: "empty-isolated-state" });
     return;
   }
-  throw new Error(
-    "THREAD_FENCE_BOOTSTRAP_BLOCKED: external persistence/completion evidence and process exits require review",
-  );
+  throw new Error(`THREAD_FENCE_BOOTSTRAP_BLOCKED: ${THREAD_FENCE_UPGRADE_GUIDANCE}`);
+}
+
+/** Every refusal on a database written by a pre-fence release says what to do next. */
+export const THREAD_FENCE_UPGRADE_GUIDANCE =
+  "this database was written by an earlier Ravi release; the daemon upgrades it when it starts. " +
+  "Run 'ravi daemon restart -m \"upgrade\"' (or 'ravi daemon start' when it is stopped).";
+
+/**
+ * What a runtime replacement needs. `adopt-on-start`: the database was written
+ * by a pre-fence release, and the replacement must stop every predecessor
+ * before starting the daemon, which adopts the fence at its entry.
+ */
+export function runtimeReplacementReadiness(stateDir = getRaviStateDir()): "ready" | "adopt-on-start" {
+  assertRuntimeMaintenanceInactive(stateDir);
+  const path = join(stateDir, "ravi.db");
+  if (!existsSync(path))
+    throw new Error("THREAD_FENCE_BOOTSTRAP_BLOCKED: no preparation evidence for the running processes");
+  const { databaseHasThreadFence } =
+    require("./threads/fence-adoption.js") as typeof import("./threads/fence-adoption.js");
+  if (!databaseHasThreadFence(path)) return "adopt-on-start";
+  assertRuntimeReplacementPrepared(stateDir);
+  return "ready";
 }
 
 /** Called before update can stop either predecessor. No initialization/readiness fallback. */
@@ -311,6 +351,11 @@ export function assertRuntimeReplacementPrepared(stateDir = getRaviStateDir()): 
   // durable protocol, without lazy initialization or opening a writable handle.
   const database = new Database(path, { readonly: true, create: false });
   try {
+    const fenced = database
+      .query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'thread_schema_fence'")
+      .get();
+    // Written by a pre-fence release: only the daemon adopts it, at its entry.
+    if (!fenced) throw new Error(`THREAD_SCHEMA_FENCED: ${THREAD_FENCE_UPGRADE_GUIDANCE}`);
     assertThreadFenceReady(database);
   } finally {
     database.close();
