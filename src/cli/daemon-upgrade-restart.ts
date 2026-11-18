@@ -20,7 +20,7 @@ export type UpgradeRestartProcess = {
   name: string;
   pid: number;
   status: string;
-  /** The registration starts the target bundle. */
+  /** The registration can start the target bundle as it is: same bundle and a launcher that still exists. */
   onTarget: boolean;
 };
 
@@ -42,6 +42,8 @@ export type UpgradeRestartHost = {
   now?: () => number;
   timeoutMs?: number;
   channelsTimeoutMs?: number;
+  /** How long PM2 may take to give a started daemon a pid before the start counts as failed. */
+  spawnGraceMs?: number;
 };
 
 export type UpgradeRestartOutcome = {
@@ -53,6 +55,7 @@ export type UpgradeRestartOutcome = {
 
 const UPGRADE_WAIT_MS = 180_000;
 const CHANNELS_WAIT_MS = 30_000;
+const SPAWN_GRACE_MS = 15_000;
 
 export async function performUpgradeRestart(host: UpgradeRestartHost): Promise<UpgradeRestartOutcome> {
   const now = host.now ?? Date.now;
@@ -101,12 +104,25 @@ export async function performUpgradeRestart(host: UpgradeRestartHost): Promise<U
       );
     if (!readRuntimeMaintenance(host.stateDir) && databaseHasThreadFence(databasePath) && host.daemonReady())
       return awaitChannels(host, now, runnerExpected);
+    // PM2 reports the registration online while spawning failed (a missing launcher or runtime): no pid ever
+    // appears and no adoption or refusal can follow. That is a daemon that did not start, not a slow upgrade.
+    if (now() - startedAt >= (host.spawnGraceMs ?? SPAWN_GRACE_MS) && !daemonHasProcess(host))
+      return fail(
+        "PM2_FAILED",
+        "PM2 registered the daemon but no process started (no pid), so the database upgrade never began; " +
+          "read ~/.pm2/pm2.log for the spawn error, then run 'ravi daemon stop' and 'ravi daemon start'",
+      );
     await host.wait();
   }
   return fail(
     "THREAD_FENCE_UPGRADE_TIMEOUT",
     "the daemon did not finish the database upgrade in time; read 'ravi daemon logs' for the reason",
   );
+}
+
+function daemonHasProcess(host: UpgradeRestartHost): boolean {
+  const daemon = host.list().find((entry) => entry.name === "ravi");
+  return Boolean(daemon && daemon.status !== "online") || Boolean(daemon && daemon.pid > 0);
 }
 
 /** The ready daemon starts the runner the upgrade stopped; this only waits for it and says what happened. */
