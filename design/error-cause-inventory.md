@@ -796,13 +796,13 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/skills.ts | 602 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/skills.ts:91561788503f4ec039ff70e4 |
 | cli | src/cli/commands/skills.ts | 2333 | fixed | binding retained / no recognized error surface | src/cli/commands/skills.ts:8a9f0453330a52261d46eb59 |
 | cli | src/cli/commands/skills.ts | 2388 | fixed | binding retained / no recognized error surface | src/cli/commands/skills.ts:920bb9fc0b0ebd544d4fce27 |
-| channels-slack | src/cli/commands/slack.ts | 328 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:66b5de83e6fd5acb8fb35160 |
-| channels-slack | src/cli/commands/slack.ts | 434 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:d99046dd6a6e969b9e90eb63 |
-| channels-slack | src/cli/commands/slack.ts | 445 | triaged-follow-up | catch-without-binding | src/cli/commands/slack.ts:8f52890620905e69730b310f |
-| channels-slack | src/cli/commands/slack.ts | 1384 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:bec1cbc6cec672c0b0e9be35 |
-| channels-slack | src/cli/commands/slack.ts | 2083 | triaged-follow-up | cause-not-forwarded-at-surface | src/cli/commands/slack.ts:2e7093676db6fe63f1ec32b3 |
-| channels-slack | src/cli/commands/slack.ts | 2573 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:ebb0b5ae5dcb6a742fd68cd4 |
-| channels-slack | src/cli/commands/slack.ts | 2593 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:4604cea8b89f11e71c8c24cb |
+| channels-slack | src/cli/commands/slack.ts | 336 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:0788acaba0330c98747ac78d |
+| channels-slack | src/cli/commands/slack.ts | 463 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:d99046dd6a6e969b9e90eb63 |
+| channels-slack | src/cli/commands/slack.ts | 474 | triaged-follow-up | catch-without-binding | src/cli/commands/slack.ts:8f52890620905e69730b310f |
+| channels-slack | src/cli/commands/slack.ts | 1413 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:bec1cbc6cec672c0b0e9be35 |
+| channels-slack | src/cli/commands/slack.ts | 2112 | triaged-follow-up | cause-not-forwarded-at-surface | src/cli/commands/slack.ts:2e7093676db6fe63f1ec32b3 |
+| channels-slack | src/cli/commands/slack.ts | 2602 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:ebb0b5ae5dcb6a742fd68cd4 |
+| channels-slack | src/cli/commands/slack.ts | 2622 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:4604cea8b89f11e71c8c24cb |
 | cli | src/cli/commands/specs.ts | 46 | triaged-follow-up | catch-without-binding | src/cli/commands/specs.ts:8806013e21fb2b560ad57403 |
 | cli | src/cli/commands/specs.ts | 100 | triaged-follow-up | catch-without-binding | src/cli/commands/specs.ts:577e5c29ebd7e3c53bb66da9 |
 | cli | src/cli/commands/specs.ts | 139 | fixed | binding retained / no recognized error surface | src/cli/commands/specs.ts:f2127fc5d6e51624c60be4d3 |
@@ -1020,7 +1020,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | costs | src/costs/pricing-catalog.ts | 255 | triaged-follow-up | catch-without-binding | src/costs/pricing-catalog.ts:6313c80f0e29a2794c3fc323 |
 | costs | src/costs/pricing-catalog.ts | 306 | triaged-follow-up | catch-without-binding | src/costs/pricing-catalog.ts:e2413b21d59a5ab0b644dddc |
 | credentials | src/credentials/backends.ts | 108 | no-cause | Process errors may echo secret stdin or arguments; only the fixed Keychain failure may escape. | src/credentials/backends.ts:167696ef3f8aa5396bfd9bae |
-| credentials | src/credentials/broker.ts | 112 | fixed | binding retained / no recognized error surface | src/credentials/broker.ts:d5f05fc82781c390376e91cd |
+| credentials | src/credentials/broker.ts | 114 | fixed | binding retained / no recognized error surface | src/credentials/broker.ts:857b7d636b7b1bdeb546bcfe |
 | credentials | src/credentials/file-backend.ts | 35 | fixed | binding retained / no recognized error surface | src/credentials/file-backend.ts:62ce46c69e26d756b02048f0 |
 | credentials | src/credentials/file-backend.ts | 86 | fixed | binding retained / no recognized error surface | src/credentials/file-backend.ts:6e4dd7f9ffb136fa659cfacb |
 | credentials | src/credentials/file-backend.ts | 98 | no-cause | Filesystem diagnostics may expose secret paths or payloads; only the fixed broker error may escape. | src/credentials/file-backend.ts:2fb81c4638a70c4b4ed77526 |

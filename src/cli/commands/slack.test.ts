@@ -15,6 +15,7 @@ import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CloudAuthError } from "../../cloud-auth/errors.js";
+import { CredentialBrokerError } from "../../credentials/errors.js";
 
 afterAll(() => {
   mock.restore();
@@ -1517,6 +1518,40 @@ describe("slack agent-first contract", () => {
     expect(error.details.context).toMatchObject({ code: "SLACK_CREDENTIAL_CONNECTION_UNAVAILABLE" });
     expect(clientCalls).toHaveLength(0);
   });
+
+  it("a refused credential approval is PERMISSION_DENIED with the refusal reason, not a 500", async () => {
+    const reason = "Ninguém neste Slack pode aprovar execute:slack:conversations.create.";
+    credentialResolutionError = new CredentialBrokerError(
+      "approval_denied",
+      "Credential operation failed (approval_denied): slack:ravi-slack",
+      { detail: reason },
+    );
+    const error = await expectContractError(
+      () => new SlackCommands().permissionsList("ravi-slack", true),
+      "PERMISSION_DENIED",
+      1,
+    );
+    expect(error.message).toBe(reason);
+    expect(error.details.context).toMatchObject({ provider: "slack", code: "approval_denied" });
+    expect(String(error.details.suggestedAction)).toContain("ravi contacts merge");
+    expect(clientCalls).toHaveLength(0);
+  });
+
+  for (const code of ["authorization_denied", "caller_invalid"] as const) {
+    it(`a ${code} credential refusal is PERMISSION_DENIED`, async () => {
+      credentialResolutionError = new CredentialBrokerError(
+        code,
+        `Credential operation failed (${code}): slack:ravi-slack`,
+      );
+      const error = await expectContractError(
+        () => new SlackCommands().permissionsList("ravi-slack", true),
+        "PERMISSION_DENIED",
+        1,
+      );
+      expect(error.message).toContain(code);
+      expect(error.details.context).toMatchObject({ provider: "slack", code });
+    });
+  }
 
   for (const boundary of ["credential", "permissions"] as const) {
     it(`preserves_slack_${boundary}_failure_cause_and_redacts_credential`, async () => {

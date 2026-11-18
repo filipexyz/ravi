@@ -88,7 +88,9 @@ export async function resolveCredentialSecret(input: {
       });
       if (!result.approved) {
         approvalStatus = "denied";
-        throw new CredentialBrokerError("approval_denied", "Credential action approval was not granted.");
+        throw new CredentialBrokerError("approval_denied", "Credential action approval was not granted.", {
+          ...(result.reason ? { detail: result.reason } : {}),
+        });
       }
       approvalStatus = "approved";
       // Approval cannot revive a revoked context, bypass a changed provider or
@@ -120,9 +122,15 @@ export async function resolveCredentialSecret(input: {
     audit("failed", code);
     // Backend/parser causes can contain the plaintext. Do not retain them on
     // an error that CLI diagnostics or a runner may serialize.
+    // The approval service's refusal reason is built from fixed text, never
+    // from secrets, so it survives for the caller to show the way out.
+    const detail = error instanceof CredentialBrokerError && code === "approval_denied" ? error.detail : undefined;
     throw new CredentialBrokerError(
       code,
       `Credential operation failed (${code}): ${input.provider}:${input.connection}`,
+      {
+        ...(detail ? { detail } : {}),
+      },
     );
   }
 }
