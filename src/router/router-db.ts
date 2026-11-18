@@ -3,7 +3,7 @@ import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from
 import { migrateDecisions } from "../decisions/schema.js";
 import { assertThreadFenceReady } from "../threads/schema-fence.js";
 import { ensureSessionGoalStatusSchema } from "../runtime/session-goal-schema.js";
-import { isOrdinaryTurnCompletionRevocation } from "../runtime/context-revocation.js";
+import { isHandoffPreservingRevocation } from "../runtime/context-revocation.js";
 /**
  * Router Database - SQLite-backed configuration storage
  *
@@ -7286,6 +7286,32 @@ export function dbGetThreadParentChat(
   return row ? rowToChat(row) : null;
 }
 
+/**
+ * The open Slack thread a session runs as, with the turns in it that a
+ * verified human request started (oldest first). Read-only; null when the
+ * session is not an open thread's child session.
+ */
+export function dbGetOpenThreadHumanRequestTurns(childSessionKey: string): {
+  parentSessionKey: string;
+  humanRequestTurns: ContextRecord[];
+} | null {
+  const key = childSessionKey.trim();
+  if (!key) return null;
+  const db = getDb();
+  const thread = db
+    .prepare(
+      "SELECT parent_session_key FROM slack_thread_lifecycle WHERE child_session_key = ? AND status = 'open' ORDER BY updated_at DESC LIMIT 1",
+    )
+    .get(key) as { parent_session_key: string } | undefined;
+  if (!thread) return null;
+  const rows = db
+    .prepare(
+      "SELECT * FROM contexts WHERE session_key = ? AND kind = 'turn-runtime' AND json_extract(metadata_json, '$.humanRequest') IS NOT NULL ORDER BY created_at ASC LIMIT 8",
+    )
+    .all(key) as ContextRow[];
+  return { parentSessionKey: thread.parent_session_key, humanRequestTurns: rows.map(rowToContext) };
+}
+
 export function dbFindChat(input: {
   channel: string;
   instanceId?: string | null;
@@ -10738,8 +10764,8 @@ export function dbRevokeContextCascade(contextId: string, options: RevokeContext
       // benign completion and thereby revive already queued human work.
       if (
         !target.revokedAt ||
-        isOrdinaryTurnCompletionRevocation(metadata[reasonKey]) ||
-        !isOrdinaryTurnCompletionRevocation(reasonNote)
+        isHandoffPreservingRevocation(metadata[reasonKey]) ||
+        !isHandoffPreservingRevocation(reasonNote)
       ) {
         metadata[reasonKey] = reasonNote;
       }

@@ -243,6 +243,12 @@ export interface RuntimeHostStreamingSession {
    * Native Pi steer must not keep a long-lived turn on a revoked/expired key.
    */
   currentRuntimeContextKey?: string;
+  /**
+   * The context key of the turn a newer message superseded (set when a
+   * successor interrupts it). Its revocation then reads as superseded, not as
+   * a withdrawal, so work that turn already handed off keeps its requester.
+   */
+  supersededRuntimeContextKey?: string;
   currentBridgeTurnId?: string;
   /** Recovery timer for the narrow state where a provider is alive but not accepting queued input. */
   idleGapRecoveryTimer?: ReturnType<typeof setTimeout>;

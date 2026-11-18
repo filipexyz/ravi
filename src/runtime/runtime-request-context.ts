@@ -74,6 +74,11 @@ export function startActiveRuntimeRequestContextLease(
     runtimeContext: ContextRecord;
     isActive: () => boolean;
     signal: AbortSignal;
+    /**
+     * Whether the abort is a newer message superseding this turn (not an
+     * explicit stop). Only then is the revocation recorded as superseded.
+     */
+    abortedBySuccessor?: () => boolean;
   },
 ): () => void {
   const issued = structuredClone(options.runtimeContext);
@@ -109,7 +114,8 @@ export function startActiveRuntimeRequestContextLease(
       });
     }
   };
-  const onAbort = () => stop(true, "turn_context_aborted");
+  const onAbort = () =>
+    stop(true, options.abortedBySuccessor?.() === true ? "turn_context_superseded" : "turn_context_aborted");
   const renew = () => {
     if (stopped) return;
     if (!options.isActive() || options.runtimeContext.contextId !== issued.contextId) {
