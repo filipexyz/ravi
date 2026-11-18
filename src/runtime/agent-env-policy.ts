@@ -244,13 +244,14 @@ const TOKEN_SHAPED_VALUES = [
 ];
 
 /**
- * Variables that hold a list of directories (`PATH`, `MANPATH`,
+ * Variables that hold a list of directories (`PATH`, `GOPATH`, `MANPATH`,
  * `PKG_CONFIG_PATH`, ...). A directory named like a token (`sk-...`) is not a
  * credential, and dropping the variable would drop the whole search path, so
  * the token-shape check does not apply to them.
  */
 function isPathListEnvName(name: string): boolean {
-  return /(^|_)PATH$/.test(name) || name === "MANPATH" || name === "INFOPATH" || name === "CPATH";
+  // `PATH`, `GOPATH`, `MANPATH`, `INFOPATH`, `CPATH`, `PKG_CONFIG_PATH`, `NODE_PATH`, ...
+  return name.endsWith("PATH");
 }
 
 /**

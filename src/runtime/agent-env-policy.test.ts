@@ -236,6 +236,8 @@ describe("agent runtime env policy", () => {
       PATH: `${tokenNamedDir}:/usr/bin`,
       PKG_CONFIG_PATH: "/opt/ghp_abcdefghijklmnopqrstuvwxyz12/lib/pkgconfig",
       MANPATH: "/opt/sk-tools-1234567890abcdef/man",
+      // A Go workspace list (CodeRabbit, PR #877).
+      GOPATH: "/opt/sk-1234567890abcdef1234/go:/Users/operator/go",
       // Not a directory list: the token-shape check still applies.
       NODE_OPTIONS: `--require=${tokenNamedDir}/hook.js`,
     });
@@ -243,6 +245,7 @@ describe("agent runtime env policy", () => {
     expect(env.PATH).toBe(`${tokenNamedDir}:/usr/bin`);
     expect(env.PKG_CONFIG_PATH).toBe("/opt/ghp_abcdefghijklmnopqrstuvwxyz12/lib/pkgconfig");
     expect(env.MANPATH).toBe("/opt/sk-tools-1234567890abcdef/man");
+    expect(env.GOPATH).toBe("/opt/sk-1234567890abcdef1234/go:/Users/operator/go");
     expect(env.NODE_OPTIONS).toBeUndefined();
   });
 
