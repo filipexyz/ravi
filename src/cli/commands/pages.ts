@@ -156,6 +156,7 @@ Examples:
   ravi pages published --project demo --json
 
 A successful ship arms or reuses a page.comment.created trigger for the current agent, filtered to this page.
+From a Slack thread the trigger wakes the thread's parent session, not the thread, so the thread can still close.
 
 Happy path:
   One command. Do not choreograph pages create + pages publish.

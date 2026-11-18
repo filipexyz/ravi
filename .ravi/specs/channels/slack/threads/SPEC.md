@@ -22,6 +22,7 @@ applies_to:
   - src/prompt-builder.ts
   - src/runtime/runtime-system-prompt.ts
   - src/cli/commands/sessions.ts
+  - src/triggers/follow-owner.ts
 owners:
   - dev
 status: active
@@ -306,3 +307,4 @@ The existing thread reconciler also drains decision effects. Exact origin bindin
 - Closing MUST refuse atomically with `THREAD_TRIGGERS_PENDING` when a trigger addresses the child by name or key in `replySession` and the shared activation verdict is `active` (including `enabled`). The refusal MUST list offending trigger ids and explain `ravi triggers set <id> replySession <parent-session>`.
 - Refusal MUST leave lifecycle status, close sequence, parent return and card untouched. The same guard applies after child pruning. Disabled, invalid-filter, blocked-topic and unbound-agent triggers MUST NOT block close.
 - Repointing is explicit for arbitrary triggers; close MUST NOT silently change their recipients. After handoff, close MAY proceed. The remote CLI MUST retain actionable ids without forwarding arbitrary remote text.
+- The product's own follows are never armed on a child. A follow created from inside a thread (`gh-follow:*` from `gh pr create`, `page-comment:*` from `pages ship`) MUST be armed on the thread's durable parent (`resolveDurableFollowOwner`: the parent's agent, the thread's account, the parent's chat without the thread id), and MUST fail closed, without arming, when the lifecycle or parent cannot be resolved. A `page-comment:*` trigger that an older version left addressing a child is repaired at daemon boot (`pages/comment-follow`), not by close: close still refuses it like any other active trigger until then.

@@ -21,8 +21,7 @@ import type { Database } from "bun:sqlite";
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import { dbGetAgent } from "../router/router-db.js";
 import type { ContextSource } from "../router/router-db.js";
-import { getSession, resolveSession } from "../router/sessions.js";
-import { findSlackThreadLifecycleByChildRef } from "../channels/slack/thread-lifecycle-store.js";
+import { resolveDurableFollowOwner } from "../triggers/follow-owner.js";
 import {
   dbCreateTrigger,
   dbListTriggers,
@@ -610,41 +609,7 @@ export function buildGhFollowTriggerInput(
 
 /** The lifecycle survives pruning, including delayed `gh pr create` resolution. */
 export function resolveGhFollowContext(context: GhWatchFollowContext, database?: Database): GhWatchFollowContext {
-  const ref = context.sessionKey ?? context.sessionName;
-  if (!ref) return context;
-  const thread = findSlackThreadLifecycleByChildRef(ref, database);
-  if (!thread) {
-    const session = database
-      ? (database
-          .query("SELECT session_key AS sessionKey FROM sessions WHERE session_key=? OR name=?")
-          .get(ref, ref) as { sessionKey: string } | null)
-      : resolveSession(ref);
-    if (
-      ref.includes(":thread:") ||
-      session?.sessionKey.includes(":thread:") ||
-      (!session && context.source?.channel === "slack" && context.source.threadId)
-    ) {
-      throw new Error("Cannot register PR follow: thread lifecycle is missing or ambiguous.");
-    }
-    return context;
-  }
-  const parent = database
-    ? (database
-        .query("SELECT session_key AS sessionKey, name, agent_id AS agentId FROM sessions WHERE session_key=?")
-        .get(thread.parentSessionKey) as { sessionKey: string; name: string | null; agentId: string } | null)
-    : getSession(thread.parentSessionKey);
-  if (!parent || parent.sessionKey.includes(":thread:")) {
-    throw new Error("Cannot register PR follow: durable parent session is missing.");
-  }
-  return {
-    ...context,
-    agentId: parent.agentId,
-    accountId: thread.accountId,
-    sessionName: parent.name ?? parent.sessionKey,
-    sessionKey: parent.sessionKey,
-    // Never keep the child's frozen replySource as fallback after handoff.
-    source: { channel: "slack", accountId: thread.accountId, chatId: thread.platformChatId },
-  };
+  return resolveDurableFollowOwner(context, "PR follow", database);
 }
 
 /** Reconcile the saved owner's lifecycle; a new observer must not steal a follow. */
