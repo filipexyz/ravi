@@ -132,7 +132,12 @@ Expected:
   run acts for an operator-owned cron as the operator and a contact-owned cron
   as that contact (not the thread's earlier requester); a cron with no human
   owner, a blocked contact owner, a withdrawn or 72-hour-old run and a cron
-  principal on a non-turn context are refused. A task created from a verified
+  principal on a non-turn context are refused; so are a cron run of another
+  session, a parent-session turn recorded for another agent and a snapshot
+  naming another job, and a snapshot that says operator without the current
+  binding acts as that contact, not as the operator. A thread or task turn
+  that acts for a requester owns any cron it creates as its own actor
+  principal, never `operator`. A task created from a verified
   request (directly or from an inheriting thread turn) acts for that person in
   its dispatch turn; no request, a turn no person started, a finished task, a
   requester older than 72 hours, a foreign agent and a forged task scope on a
