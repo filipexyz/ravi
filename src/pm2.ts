@@ -5,6 +5,7 @@
  */
 
 import { execSync, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { which } from "bun";
 import { parsePm2Jlist } from "./pm2-output.js";
 
@@ -107,6 +108,8 @@ export interface Pm2Process {
   cpu: number;
   memory: number;
   execPath?: string | null;
+  /** `pm2_env.exec_interpreter`: what PM2 spawns the script with (a launcher file, a shell or a runtime name). */
+  interpreter?: string | null;
   cwd?: string | null;
   args?: string[];
   createdAt?: number | null;
@@ -128,6 +131,7 @@ export function parsePm2Processes(raw: string): Pm2Process[] {
     cpu: p.monit?.cpu ?? 0,
     memory: p.monit?.memory ?? 0,
     execPath: typeof p.pm2_env?.pm_exec_path === "string" ? p.pm2_env.pm_exec_path : null,
+    interpreter: typeof p.pm2_env?.exec_interpreter === "string" ? p.pm2_env.exec_interpreter : null,
     cwd: typeof p.pm2_env?.pm_cwd === "string" ? p.pm2_env.pm_cwd : null,
     args: Array.isArray(p.pm2_env?.args)
       ? p.pm2_env.args.filter((arg: unknown): arg is string => typeof arg === "string")
@@ -135,6 +139,23 @@ export function parsePm2Processes(raw: string): Pm2Process[] {
     createdAt: typeof p.pm2_env?.created_at === "number" ? p.pm2_env.created_at : null,
     startedAt: typeof p.pm2_env?.pm_uptime === "number" ? p.pm2_env.pm_uptime : null,
   }));
+}
+
+/**
+ * A registration made by an older release can name a launcher file that lives next to the
+ * bundle (`dist/bundle/ravi-pm2-stdin`, written by the daemon at start). Replacing the package
+ * removes it, and PM2 then fails to spawn with ENOENT while still reporting the process online
+ * without a pid. A registration whose interpreter is an absolute path that is gone cannot start
+ * anything and has to be recreated, not restarted. Bare names (`bun`, `node`) resolve through
+ * PATH and are not judged here.
+ */
+export function pm2RegistrationLauncherMissing(
+  process: Pick<Pm2Process, "interpreter">,
+  exists: (path: string) => boolean = existsSync,
+): boolean {
+  const interpreter = process.interpreter?.trim();
+  if (!interpreter || !interpreter.startsWith("/")) return false;
+  return !exists(interpreter);
 }
 
 function parsePm2List(strict = false): Pm2Process[] {

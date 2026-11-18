@@ -56,6 +56,7 @@ import {
   getRaviPid,
   getPm2Processes,
   PM2_PROCESS_NAME,
+  pm2RegistrationLauncherMissing,
 } from "../../pm2.js";
 import {
   buildManagedRuntimeIdentity,
@@ -693,8 +694,10 @@ export class DaemonCommands {
             name: process.name,
             pid: process.pid,
             status: process.status,
+            // Same bundle is not enough: a registration whose launcher file is gone cannot start it.
             onTarget:
-              normalizeRuntimePath(managedRuntimeBundlePath(process)) === normalizeRuntimePath(target.bundlePath),
+              normalizeRuntimePath(managedRuntimeBundlePath(process)) === normalizeRuntimePath(target.bundlePath) &&
+              !pm2RegistrationLauncherMissing(process),
           })),
         stop: (name) => runPm2Status(["stop", name]),
         start: (name) => runPm2Status(["start", name]),

@@ -4,7 +4,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parsePm2Jlist } from "./pm2-output.js";
-import { buildPm2Env, parsePm2Processes, runPm2 } from "./pm2.js";
+import { buildPm2Env, parsePm2Processes, pm2RegistrationLauncherMissing, runPm2 } from "./pm2.js";
 import { OUTDATED_PM2_BANNER, runWithPm2Jlist } from "./test/pm2-jlist.js";
 
 describe("PM2 jlist output", () => {
@@ -160,6 +160,30 @@ describe("PM2 process start identity", () => {
         ]),
       )[0]?.startedAt,
     ).toBeNull();
+  });
+});
+
+describe("PM2 registration launcher", () => {
+  const legacy = "/pkg/dist/bundle/ravi-pm2-stdin";
+  const raw = (interpreter: unknown) =>
+    JSON.stringify([{ name: "ravi", pid: 0, pm_id: 0, pm2_env: { status: "online", exec_interpreter: interpreter } }]);
+
+  it("reads the interpreter PM2 spawns the script with", () => {
+    expect(parsePm2Processes(raw(legacy))[0]?.interpreter).toBe(legacy);
+    expect(parsePm2Processes(raw(undefined))[0]?.interpreter).toBeNull();
+  });
+
+  it("calls a registration unusable when its absolute launcher file is gone (package replaced in place)", () => {
+    const [registered] = parsePm2Processes(raw(legacy));
+    expect(pm2RegistrationLauncherMissing(registered!, () => false)).toBe(true);
+    expect(pm2RegistrationLauncherMissing(registered!, (path) => path === legacy)).toBe(false);
+  });
+
+  it("does not judge shells, bare runtime names or an unknown interpreter", () => {
+    for (const interpreter of ["/bin/sh", "bun", "node", "none", "", null, undefined]) {
+      const exists = (path: string) => path === "/bin/sh";
+      expect(pm2RegistrationLauncherMissing({ interpreter }, exists)).toBe(false);
+    }
   });
 });
 
