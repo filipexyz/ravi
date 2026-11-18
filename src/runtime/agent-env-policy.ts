@@ -17,6 +17,7 @@
  * provider's own login variables).
  */
 
+import { RAVI_APP_GATEWAY_ENV_KEYS } from "../apps/command.js";
 import { CLAUDE_INHERITED_AUTH_ENV_KEYS } from "./credential-secret-shape.js";
 
 /** Daemon env names an agent runtime may inherit as-is. */
@@ -42,7 +43,6 @@ const ALLOWED_ENV_NAMES = new Set([
   "EDITOR",
   "VISUAL",
   "PAGER",
-  "SSH_AUTH_SOCK",
   "__CF_USER_TEXT_ENCODING",
   "HTTP_PROXY",
   "HTTPS_PROXY",
@@ -69,21 +69,52 @@ const ALLOWED_ENV_NAMES = new Set([
   "LIBRARY_PATH",
   "NATS_URL",
   "NATS_PORT",
+  // Capability, not configuration: it lets the agent use the operator's SSH
+  // keys (sign, push) without reading them. See the SPEC.
+  "SSH_AUTH_SOCK",
+  // Capability: the PM2 home lets the agent control PM2, including the daemon.
   "PM2_HOME",
   "MANPATH",
   "INFOPATH",
+  // Ravi names are listed one by one, never by prefix: a new RAVI_* secret must
+  // not reach agents just because its name does not look like one.
+  "RAVI_STATE_DIR",
+  "RAVI_HOME",
+  ...RAVI_APP_GATEWAY_ENV_KEYS,
+  "RAVI_BIN",
+  "RAVI_BUNDLE",
+  "RAVI_CLI_BIN",
+  "RAVI_CLI_INSTALLATION_NAME",
+  "RAVI_LOG_LEVEL",
+  "RAVI_CLI_LOG_LEVEL",
+  // Read by the Codex provider from the request env, not from the daemon's.
+  "RAVI_CODEX_TRANSPORT",
+  "RAVI_CODEX_RUST_LOG",
+  "RUST_LOG",
+  "RAVI_EXECUTION_PLANE",
+  "RAVI_HOST_CLI_GATEWAY",
+  "RAVI_BASH_TRUSTED_EXECUTABLE_ROOTS",
+  "RAVI_JOBS_CLI",
+  "RAVI_JOBS_DETACH",
+  "RAVI_JOBS_DETACH_AFTER_MS",
+  "RAVI_PM2_EXECUTABLE",
+  "RAVI_DAEMON_CWD",
+  "RAVI_DAEMON_RESTART_DETACH_TIMEOUT_MS",
+  "RAVI_DAEMON_RESTART_POLL_MS",
+  "RAVI_DAEMON_RESTART_READY_TIMEOUT_MS",
+  "OMNI_API_URL",
+  "OMNI_API_PORT",
 ]);
 
 /**
- * Prefixes for runtime and toolchain configuration shared by every provider. A
- * name under one of these prefixes still has to pass the secret-name check
- * below, so `RAVI_ADMIN_TOKEN` or `GH_TOKEN` never pass through a prefix.
+ * Prefixes for toolchain configuration shared by every provider. A name under
+ * one of these prefixes still has to pass the secret-name check below, so
+ * `GH_TOKEN` or `NODE_AUTH_TOKEN` never pass through a prefix. `RAVI_*` and
+ * `OMNI_*` are not prefixes here: their names are listed one by one above.
  */
 const ALLOWED_ENV_PREFIXES = [
   "LC_",
   "XDG_",
-  "RAVI_",
-  "OMNI_",
   "BUN_",
   "NODE_",
   "GH_",
@@ -132,6 +163,8 @@ const SECRET_ENV_NAME_PATTERNS = [
   /COOKIE/i,
   /APIKEY/i,
   /(^|_)PASS($|_)/i,
+  // Personal access tokens (`GITHUB_PAT`, `COLOSSEUM_COPILOT_PAT`).
+  /(^|_)PAT($|_)/i,
   /(^|_)AUTH($|_)/i,
   /(^|_)(API_)?KEYS?($|_)/i,
   /(^|_)DSN($|_)/i,
@@ -190,8 +223,23 @@ export function isAgentRuntimeEnvNameAllowed(name: string, runtimeProviderId?: s
  */
 const URL_WITH_USERINFO = /[a-z][a-z0-9+.-]*:\/\/[^\s/?#@]*@/i;
 
+/**
+ * Values shaped like a credential, whatever the variable is called: provider
+ * keys (`sk-...`), GitHub tokens (`ghp_...`, `github_pat_...`), Slack tokens
+ * (`xoxb-...`), JWTs (`eyJ...`), PEM blocks (`-----BEGIN ...`) and AWS access
+ * key ids (`AKIA...`).
+ */
+const TOKEN_SHAPED_VALUES = [
+  /(^|[^A-Za-z0-9])sk-[A-Za-z0-9_-]{16,}/,
+  /(^|[^A-Za-z0-9_])(gh[opsur]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/,
+  /(^|[^A-Za-z0-9])xox[abeoprs]-[A-Za-z0-9-]{10,}/,
+  /(^|[^A-Za-z0-9])eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/,
+  /-----BEGIN [A-Z0-9 ]+-----/,
+  /(^|[^A-Z0-9])AKIA[0-9A-Z]{16}($|[^A-Z0-9])/,
+];
+
 export function isSecretShapedEnvValue(value: string): boolean {
-  return URL_WITH_USERINFO.test(value);
+  return URL_WITH_USERINFO.test(value) || TOKEN_SHAPED_VALUES.some((pattern) => pattern.test(value));
 }
 
 export function parseAgentEnvPassthrough(value: string | undefined): string[] {
@@ -216,8 +264,8 @@ export interface AgentRuntimeBaseEnvOptions {
  * Filters the daemon env down to what an agent runtime may inherit.
  *
  * Returns only names that pass the allowlist (and whose value carries no URL
- * userinfo), the operator passthrough list, and the provider's own login
- * variables. Everything else, including every other provider's keys and
+ * userinfo and is not shaped like a token), the operator passthrough list, and
+ * the provider's own login variables. Everything else, including every other provider's keys and
  * config, the admin token and third-party API keys, is dropped.
  */
 export function filterAgentRuntimeBaseEnv(

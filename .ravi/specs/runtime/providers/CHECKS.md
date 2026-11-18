@@ -42,6 +42,11 @@
 - `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>` MUST be passed or dropped together; `git config --list` MUST still run in an agent shell when the daemon env carries the trio.
 - Names in `RAVI_AGENT_ENV_PASSTHROUGH` MUST reach the provider; names not listed MUST NOT.
 - Codex stored-session control MUST spawn without daemon secrets (`src/runtime/codex-control-env.test.ts`).
+- `RAVI_*`/`OMNI_*` names MUST pass only from the explicit list: `RAVI_STATE_DIR`, `RAVI_GATEWAY_URL`, `OMNI_API_URL` pass; `RAVI_GATEWAY_INTERNAL`, `RAVI_IDENTITYD_*` and an unlisted `RAVI_SIGNING_SALT` do not.
+- `*_PAT` names MUST be dropped; a token-shaped value (`sk-`, `ghp_`, `github_pat_`, `xox…-`, JWT, PEM, `AKIA`) MUST be dropped under any allowed name, and ordinary paths MUST still pass.
+- A job owned by an agent or session MUST start without daemon secrets, also when actually spawned (`src/jobs/jobs.test.ts`); a job with no owner keeps the daemon env.
+- The runtime probe MUST start the provider with the filtered env while it resolves credentials from the whole env (`src/runtime/runtime-probe.test.ts`).
+- Every `buildRuntimeRequestEnv` call in the request builder MUST pass `runtimeProviderId` (`src/runtime/runtime-request-builder.env-provider.test.ts`).
 
 ## Negative Tests Needed
 

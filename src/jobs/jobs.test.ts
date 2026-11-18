@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getDb } from "../router/router-db.js";
 import {
+  buildJobEnv,
   buildJobOutcomeSummary,
   isPidAlive,
   JOB_DELIVERY_INFLIGHT_STALE_MS,
@@ -204,7 +205,61 @@ describe("job runner", () => {
     (runner as unknown as { running: boolean }).running = true;
 
     expect(runner.startJob(job.id)).toBe(true);
-    expect(envs).toEqual([{ RAVI_AUTOMATION_PRINCIPAL: `automation:job:${job.id}` }]);
+    expect(envs).toHaveLength(1);
+    expect(envs[0]?.RAVI_AUTOMATION_PRINCIPAL).toBe(`automation:job:${job.id}`);
+  });
+
+  it("gives a job owned by an agent or session the allowlisted env, never the daemon's secrets", () => {
+    const daemonEnv = {
+      PATH: "/usr/bin:/bin",
+      RAVI_STATE_DIR: "/tmp/ravi-state",
+      RAVI_ADMIN_TOKEN: "canary-admin",
+      OPENAI_API_KEY: "canary-openai",
+      DEVIN_API_KEY: "canary-devin",
+    };
+
+    for (const owner of [
+      { agentId: "main", sessionName: null },
+      { agentId: null, sessionName: "main" },
+    ]) {
+      const env = buildJobEnv({ id: "job_owned", ...owner }, daemonEnv);
+      expect(env.PATH).toBe("/usr/bin:/bin");
+      expect(env.RAVI_STATE_DIR).toBe("/tmp/ravi-state");
+      expect(env.RAVI_ADMIN_TOKEN).toBeUndefined();
+      expect(env.OPENAI_API_KEY).toBeUndefined();
+      expect(env.DEVIN_API_KEY).toBeUndefined();
+      expect(env.RAVI_AUTOMATION_PRINCIPAL).toBe("automation:job:job_owned");
+    }
+
+    // Only the operator's terminal creates a job with no owner; it keeps the daemon env.
+    const operator = buildJobEnv({ id: "job_operator", agentId: null, sessionName: null }, daemonEnv);
+    expect(operator.DEVIN_API_KEY).toBe("canary-devin");
+    expect(operator.RAVI_AUTOMATION_PRINCIPAL).toBe("automation:job:job_operator");
+  });
+
+  it("spawns an agent-owned job without the daemon env underneath", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-job-env-"));
+    const logPath = join(dir, "job.log");
+    const previous = process.env.RAVI_JOB_TEST_CANARY_SECRET;
+    process.env.RAVI_JOB_TEST_CANARY_SECRET = "canary-job-secret";
+    try {
+      const job = makeJob({ command: "env", logPath });
+      const exited = new Promise<void>((resolve) => {
+        const runner = new JobsRunner({ notifySession: async () => resolve() });
+        (runner as unknown as { running: boolean }).running = true;
+        expect(runner.startJob(job.id)).toBe(true);
+      });
+      await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 5_000))]);
+
+      const output = readFileSync(logPath, "utf8");
+      expect(output).toContain("RAVI_AUTOMATION_PRINCIPAL=");
+      expect(output).not.toContain("RAVI_JOB_TEST_CANARY_SECRET");
+      expect(output).not.toContain("canary-job-secret");
+    } finally {
+      if (previous === undefined) delete process.env.RAVI_JOB_TEST_CANARY_SECRET;
+      else process.env.RAVI_JOB_TEST_CANARY_SECRET = previous;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("records a failed outcome delivery on the job and retries it instead of dropping it", async () => {

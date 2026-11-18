@@ -7,6 +7,7 @@ import {
   isAgentRuntimeEnvNameAllowed,
   resolveProviderLoginEnvKeys,
 } from "./agent-env-policy.js";
+import { resolveCodexTransportKind } from "./codex-transport.js";
 import { buildRuntimeEnv } from "./host-env.js";
 import { buildRuntimeRequestEnv } from "./runtime-request-context.js";
 import type { RuntimeCapabilities } from "./types.js";
@@ -157,6 +158,67 @@ describe("agent runtime env policy", () => {
     for (const name of ["RAVI_STATE_DIR", "GH_PAGER", "GIT_EDITOR", "NODE_OPTIONS", "SSH_AUTH_SOCK"]) {
       expect(isAgentRuntimeEnvNameAllowed(name)).toBe(true);
     }
+  });
+
+  it("passes Ravi and Omni names only from the explicit list", () => {
+    const env = filterAgentRuntimeBaseEnv({
+      RAVI_STATE_DIR: "/Users/operator/.ravi",
+      RAVI_GATEWAY_URL: "http://127.0.0.1:4211",
+      RAVI_PM2_EXECUTABLE: "/opt/homebrew/bin/pm2",
+      RAVI_CODEX_TRANSPORT: "stdio",
+      OMNI_API_URL: "http://127.0.0.1:8882",
+      // Not listed: daemon-only config, internal markers, and names that do not look secret.
+      RAVI_WEBHOOK_PUBLIC_BASE_URL: "https://hooks.example",
+      RAVI_GATEWAY_INTERNAL: "1",
+      RAVI_IDENTITYD_RUNTIME_SOCKET: "/run/ravi/identityd.sock",
+      RAVI_SIGNING_SALT: "canary-salt",
+      OMNI_SIGNING_SALT: "canary-omni-salt",
+    });
+
+    expect(env).toEqual({
+      RAVI_STATE_DIR: "/Users/operator/.ravi",
+      RAVI_GATEWAY_URL: "http://127.0.0.1:4211",
+      RAVI_PM2_EXECUTABLE: "/opt/homebrew/bin/pm2",
+      RAVI_CODEX_TRANSPORT: "stdio",
+      OMNI_API_URL: "http://127.0.0.1:8882",
+    });
+  });
+
+  it("keeps the operator's Codex transport choice in the env Codex starts from", () => {
+    const runtimeEnv = buildRuntimeEnv(
+      { PATH: "/usr/bin", RAVI_CODEX_TRANSPORT: "stdio" },
+      { RAVI_CONTEXT_KEY: "rctx_turn" },
+      undefined,
+      capabilities,
+      false,
+      { runtimeProviderId: "codex" },
+    );
+
+    // The Codex provider selects its transport from the request env (Devin, PR #873).
+    expect(resolveCodexTransportKind(runtimeEnv)).toBe("stdio");
+  });
+
+  it("drops personal access tokens and token-shaped values under allowed names", () => {
+    expect(isAgentRuntimeEnvNameAllowed("GITHUB_PAT")).toBe(false);
+    expect(isAgentRuntimeEnvNameAllowed("GH_PAT")).toBe(false);
+    expect(isAgentRuntimeEnvNameAllowed("COLOSSEUM_COPILOT_PAT")).toBe(false);
+
+    const tokenShaped = {
+      NODE_OPTIONS: "--header=sk-ant-api03-canaryCanaryCanary1234",
+      GIT_TRACE: "ghp_canaryCanaryCanaryCanary1234",
+      GH_PAGER: "github_pat_canaryCanaryCanary_1234567890",
+      PAGER: "xoxb-1234567890-canary-token",
+      LANG: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJjYW5hcnkifQ.signature",
+      EDITOR: "-----BEGIN OPENSSH PRIVATE KEY-----",
+      VISUAL: "AKIACANARYCANARY1234",
+    };
+    const benign = {
+      PATH: "/opt/task-runner-sk-tools/bin:/usr/bin",
+      XDG_DATA_HOME: "/Users/operator/.local/share",
+      GIT_EDITOR: "vi",
+    };
+
+    expect(filterAgentRuntimeBaseEnv({ ...tokenShaped, ...benign })).toEqual(benign);
   });
 
   it("passes names the operator lists in RAVI_AGENT_ENV_PASSTHROUGH", () => {

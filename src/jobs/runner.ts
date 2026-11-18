@@ -14,6 +14,7 @@ import { appendFileSync, mkdirSync, openSync, closeSync, readFileSync, existsSyn
 import { dirname } from "node:path";
 import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
+import { filterAgentRuntimeBaseEnv } from "../runtime/agent-env-policy.js";
 import { spawnedAutomationEnv } from "../runtime/turn-origin.js";
 import { logger } from "../utils/logger.js";
 import {
@@ -73,8 +74,30 @@ export interface JobOutcomeDelivery {
   messageId: string;
 }
 
+/**
+ * Env completo com que um job começa.
+ *
+ * Job com dono (agent ou sessão) recebe o mesmo env filtrado de um runtime de
+ * agent (`runtime/agent-env-policy.ts`): o comando roda no daemon, e herdar o
+ * env dele devolveria ao agent, pela saída do job, os segredos que o turno não
+ * tem. Só o job sem dono, que nasce do terminal do operador sem contexto de
+ * runtime, herda o env do daemon. Em todos, o job age em nome dele mesmo.
+ */
+export function buildJobEnv(
+  job: Pick<JobRecord, "id" | "agentId" | "sessionName">,
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const ownedByAgent = Boolean(job.agentId || job.sessionName);
+  const inherited = ownedByAgent
+    ? filterAgentRuntimeBaseEnv(baseEnv)
+    : Object.fromEntries(
+        Object.entries(baseEnv).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+      );
+  return { ...inherited, ...spawnedAutomationEnv("job", job.id) };
+}
+
 export interface JobsRunnerOptions {
-  /** Injetável para teste. */
+  /** Injetável para teste. Recebe o env completo do processo (ver `buildJobEnv`). */
   spawnCommand?: (
     command: string,
     cwd: string | null,
@@ -147,7 +170,7 @@ export class JobsRunner {
     let spawned: { pid: number | null; onExit: (cb: (code: number | null, signal: string | null) => void) => void };
     try {
       // O job age em nome dele mesmo, nunca como o terminal do operador.
-      spawned = this.spawnCommand(job.command, job.cwd, job.logPath, spawnedAutomationEnv("job", job.id));
+      spawned = this.spawnCommand(job.command, job.cwd, job.logPath, buildJobEnv(job));
     } catch (error) {
       dbFinishJob(jobId, { status: "failed", exitCode: null, signal: null });
       appendFileSync(
@@ -396,7 +419,8 @@ function defaultSpawnCommand(command: string, cwd: string | null, logPath: strin
     cwd: cwd ?? process.cwd(),
     stdio: ["ignore", fd, fd],
     detached: process.platform !== "win32",
-    env: { ...process.env, ...env },
+    // Env completo, já decidido por `buildJobEnv`; nunca o do daemon por baixo.
+    env,
   });
   closeSync(fd);
   return {
