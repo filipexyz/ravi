@@ -621,6 +621,12 @@ export async function startDaemon() {
   await bot.consumerReady;
   markDaemonSchemaReady();
   log.info("Daemon ready");
+  // A channel runner an upgrade stopped comes back only now, against a ready daemon on a fenced database.
+  const { resumeChannelsAfterUpgradeLive } = await import("./threads/fence-adoption-live.js");
+  const channelsAfterUpgrade = resumeChannelsAfterUpgradeLive();
+  if (channelsAfterUpgrade === "started") log.info("Channel runner started again after the upgrade");
+  else if (channelsAfterUpgrade === "failed")
+    log.warn("The channel runner stopped for the upgrade did not start; run 'ravi channels start'");
 
   // Notify restart reason after consumer is ready + delay to let sessions reconnect first.
   // The TUI sends "Continue from where you left off" on reconnect — we wait for that turn

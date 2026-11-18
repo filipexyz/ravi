@@ -1,4 +1,6 @@
 import { assertRuntimeMaintenanceInactive, assertRuntimeReplacementPrepared } from "../../runtime-maintenance.js";
+import { settleThreadFenceLeftovers } from "../../threads/fence-adoption.js";
+import { getRaviStateDir } from "../../utils/paths.js";
 /**
  * Channels Commands - manage native Ravi channel runner.
  */
@@ -698,6 +700,7 @@ export class ChannelsCommands {
     @Option({ flags: "-b, --build", description: "Use dist bundle from source repo" }) build?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    settleThreadFenceLeftovers(getRaviStateDir());
     assertRuntimeMaintenanceInactive();
     requirePm2();
     assertRuntimeReplacementPrepared();
@@ -824,6 +827,7 @@ export class ChannelsCommands {
     @Option({ flags: "-b, --build", description: "Use dist bundle from source repo" }) build?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    settleThreadFenceLeftovers(getRaviStateDir());
     assertRuntimeMaintenanceInactive();
     requirePm2();
     const runnerEnv = buildRunnerPm2Env();

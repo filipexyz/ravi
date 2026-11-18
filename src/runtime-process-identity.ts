@@ -132,15 +132,30 @@ function validMetadata(value: unknown): value is RuntimeFileMetadata {
 
 export function readRuntimeBootReceipt(process: Pm2Process, stateDir = getRaviStateDir()): RuntimeBootReceipt | null {
   if (process.pid <= 0 || !process.startedAt || !["ravi", "ravi-channels"].includes(process.name)) return null;
+  const value = readLastRuntimeBootReceipt(process.name as RuntimeProcessName, stateDir);
+  return value && value.pid === process.pid && value.startedAt === process.startedAt ? value : null;
+}
+
+/**
+ * The last boot identity a runtime recorded, whether or not that process still
+ * runs. Evidence of who ran last, never proof that it stopped.
+ */
+export function readLastRuntimeBootReceipt(
+  name: RuntimeProcessName,
+  stateDir = getRaviStateDir(),
+): RuntimeBootReceipt | null {
+  if (!["ravi", "ravi-channels"].includes(name)) return null;
   try {
     const value = JSON.parse(
-      readFileSync(join(stateDir, "runtime-processes", `${process.name}.json`), "utf8"),
+      readFileSync(join(stateDir, "runtime-processes", `${name}.json`), "utf8"),
     ) as RuntimeBootReceipt;
     if (
       value.schemaVersion !== 1 ||
-      value.name !== process.name ||
-      value.pid !== process.pid ||
-      value.startedAt !== process.startedAt ||
+      value.name !== name ||
+      !Number.isSafeInteger(value.pid) ||
+      value.pid <= 0 ||
+      !Number.isFinite(value.startedAt) ||
+      value.startedAt <= 0 ||
       typeof value.runningVersion !== "string" ||
       !value.runningVersion ||
       typeof value.bundlePath !== "string" ||

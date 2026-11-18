@@ -119,8 +119,8 @@ describe("the installed operator CLI on real state", () => {
       }
       expect(isLocalRecoveryCommand(group, "run")).toBe(false);
     }
-    expect(isLocalRecoveryCommand("maintenance", "thread-fence-adopt")).toBe(true);
-    expect(isLocalRecoveryCommand("maintenance", "thread-fence-recover")).toBe(true);
+    // The thread fence upgrade has no command: the daemon adopts at its entry.
+    expect(isLocalRecoveryCommand("maintenance", "thread-fence-adopt")).toBe(false);
     expect(isLocalRecoveryCommand("daemon", "admin-key")).toBe(false);
     expect(isLocalRecoveryCommand("agents", "create")).toBe(false);
     expect(isLocalRecoveryCommand("unknown", "status")).toBe(false);
