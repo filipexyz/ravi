@@ -713,12 +713,11 @@ for the row (empty for connections made with the current connect flow).
   contact can still unset it itself (`env -u`, a script file); the bash hook
   only blocks literal `RAVI_*` overrides. Rule 13b closes it for crons by
   refusing shell jobs that do not act as the operator. Shell triggers follow
-  the same rule (`TRIGGER_SHELL_NOT_OPERATOR` on create and set, and on every
-  fire, which turns the trigger off), and their command starts from the
-  allowlisted agent env. A `ravi jobs run` job inherits the daemon env only
-  when the operator created it with their context verified in the daemon and
-  it has no session or agent; every other job starts from the allowlisted env
-  (runtime/providers, Agent Runtime Env).
+  the same rule (`TRIGGER_SHELL_NOT_OPERATOR` on create and on every edit,
+  which only the owner makes from a daemon-verified turn, and on every fire,
+  which turns the trigger off), and their command starts from the
+  allowlisted agent env. Every `ravi jobs run` job starts from the
+  allowlisted env, whoever created it (runtime/providers, Agent Runtime Env).
 - Before the origin check, the session-goal wake (`execute`, no caller)
   looked like the operator's own `ravi sessions send`.
 - Open policy gaps: heartbeat turns have no owner (HEARTBEAT.md can be edited

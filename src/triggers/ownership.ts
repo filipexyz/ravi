@@ -244,7 +244,7 @@ export function triggerRunsAsWarning(
   const owner = triggerRunsAs(trigger);
   const lead = `Trigger ${trigger.id} runs as ${owner}, not the operator`;
   if ((trigger.executionType ?? "agent") !== "agent") {
-    return `${lead}: a shell trigger runs only when its owner acts as the operator, so its next event turns it off without running the command (TRIGGER_SHELL_NOT_OPERATOR). The operator recreates it, or turns it into an agent trigger.`;
+    return `${lead}: a shell trigger runs only when its owner acts as the operator, so its next event turns it off without running the command (TRIGGER_SHELL_NOT_OPERATOR). The operator recreates it from their own chat with Ravi and removes this one.`;
   }
   if (owner.startsWith("contact:")) {
     return `${lead}: in Bases its turns act as that person through their own ravi link, never as the operator, and are refused while they have not linked (ACTOR_NOT_LINKED).`;

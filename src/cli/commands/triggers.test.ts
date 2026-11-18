@@ -1,4 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { join } from "node:path";
+import { getRaviStateDir } from "../../utils/paths.js";
 
 afterAll(() => mock.restore());
 const actualRouterDbModule = await import("../../router/router-db.js");
@@ -392,6 +394,8 @@ describe("TriggersCommands topic guidance", () => {
 
   it("creates shell triggers without a prompt message", async () => {
     const commands = new TriggersCommands();
+    // A shell trigger is created only from a request the daemon verified.
+    mockToolContext = { transport: "gateway" };
 
     const payload = await captureJson(() =>
       commands.add(
@@ -438,6 +442,7 @@ describe("TriggersCommands topic guidance", () => {
 
   it("refuses a shell trigger from a turn that does not act as the operator", async () => {
     const commands = new TriggersCommands();
+    mockToolContext = { transport: "gateway" };
 
     for (const owner of ["contact:c_ana", "unknown"]) {
       currentTurnOwner = owner;
@@ -455,13 +460,101 @@ describe("TriggersCommands topic guidance", () => {
           true,
           "printf ok",
         ),
-      ).rejects.toMatchObject({ code: "TRIGGER_SHELL_NOT_OPERATOR" });
+      ).rejects.toMatchObject({
+        code: "TRIGGER_SHELL_NOT_OPERATOR",
+        message: expect.stringContaining("not the operator"),
+      });
     }
     expect(createdTriggers).toEqual([]);
   });
 
+  it("refuses to create or change a shell trigger from a local ravi with no runtime context", async () => {
+    const commands = new TriggersCommands();
+    // The operator's owner principal, but no daemon-verified transport: any local process could claim it.
+    mockToolContext = undefined;
+    currentTurnOwner = "operator";
+    await expect(
+      commands.add(
+        "local shell",
+        "ravi.inbound.interaction",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        "printf ok",
+      ),
+    ).rejects.toMatchObject({ code: "TRIGGER_SHELL_NOT_OPERATOR", message: expect.stringContaining("local ravi") });
+    triggerRecord = {
+      ...buildTriggerRecord(),
+      ownerPrincipal: "operator",
+      executionType: "shell",
+      shellCommand: "true",
+    };
+    await expect(commands.disable("trg_1", true)).rejects.toMatchObject({ code: "TRIGGER_SHELL_NOT_OPERATOR" });
+    expect(createdTriggers).toEqual([]);
+    expect(updatedTriggers).toEqual([]);
+  });
+
+  it("refuses an env file inside the Ravi state dir", async () => {
+    const commands = new TriggersCommands();
+    mockToolContext = { transport: "gateway" };
+    const daemonEnvFile = join(getRaviStateDir(), ".env");
+    await expect(
+      commands.add(
+        "secrets shell",
+        "ravi.inbound.interaction",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        "printf ok",
+        undefined,
+        undefined,
+        daemonEnvFile,
+      ),
+    ).rejects.toMatchObject({ code: "TRIGGER_SHELL_ENV_FILE_IN_STATE_DIR" });
+    triggerRecord = {
+      ...buildTriggerRecord(),
+      ownerPrincipal: "operator",
+      executionType: "shell",
+      shellCommand: "true",
+    };
+    await expect(commands.set("trg_1", "env-file", daemonEnvFile, true)).rejects.toMatchObject({
+      code: "TRIGGER_SHELL_ENV_FILE_IN_STATE_DIR",
+    });
+    expect(createdTriggers).toEqual([]);
+    expect(updatedTriggers).toEqual([]);
+  });
+
+  it("refuses to turn someone else's shell trigger on or off", async () => {
+    const commands = new TriggersCommands();
+    mockToolContext = { transport: "gateway" };
+    currentTurnOwner = "operator";
+    triggerRecord = {
+      ...buildTriggerRecord(),
+      ownerPrincipal: "contact:c_ana",
+      executionType: "shell",
+      shellCommand: "true",
+    };
+    await expect(commands.enable("trg_1", true)).rejects.toMatchObject({ code: "TRIGGER_SHELL_NOT_OPERATOR" });
+    await expect(commands.disable("trg_1", true)).rejects.toMatchObject({
+      code: "TRIGGER_SHELL_NOT_OPERATOR",
+      message: expect.stringContaining("only its owner changes a shell trigger"),
+    });
+    expect(updatedTriggers).toEqual([]);
+  });
+
   it("refuses to change a trigger's shell command or env file from a non-operator turn", async () => {
     const commands = new TriggersCommands();
+    mockToolContext = { transport: "gateway" };
     currentTurnOwner = "contact:c_ana";
 
     await expect(commands.set("trg_1", "shell", "printf ok", true)).rejects.toMatchObject({
@@ -476,6 +569,7 @@ describe("TriggersCommands topic guidance", () => {
 
   it("refuses an operator edit that would leave a shell trigger with no owner", async () => {
     const commands = new TriggersCommands();
+    mockToolContext = { transport: "gateway" };
     currentTurnOwner = "operator";
 
     for (const ownerPrincipal of ["contact:c_ana", undefined]) {
@@ -690,6 +784,7 @@ describe("TriggersCommands topic guidance", () => {
     const commands = new TriggersCommands();
     // The operator's own trigger: the edit keeps its owner, so the shell trigger can run.
     triggerRecord = { ...buildTriggerRecord(), ownerPrincipal: "operator" };
+    mockToolContext = { transport: "gateway" };
 
     const payload = await captureJson(() => commands.set("trg_1", "shell", "printf ok", true));
 
@@ -1033,6 +1128,8 @@ describe("triggers invalid filter visibility", () => {
       executionType: "shell",
       shellCommand: "bun scripts/open-ticket.ts",
       filter: LEGACY_FILTER,
+      // Only its owner, the operator, changes a shell trigger.
+      ownerPrincipal: "operator",
     };
   }
 
@@ -1063,6 +1160,8 @@ describe("triggers invalid filter visibility", () => {
     emitMock.mockClear();
     triggerRecord = invalidShellTrigger();
     triggerList = [validTrigger(), invalidShellTrigger()];
+    // A shell trigger is changed only from a request the daemon verified.
+    mockToolContext = { transport: "gateway" };
   });
 
   it("list --json marks the invalid filter as inactive and leaves valid triggers active", async () => {
@@ -1352,11 +1451,14 @@ describe("TriggersCommands owner", () => {
       expect(cooldown).toMatchObject({ trigger: { ownerPrincipal: "operator", runsAsOperator: true } });
       expect(cooldown).not.toHaveProperty("warnings");
 
+      // A shell trigger is the exception: nobody but its owner changes it, not even its pace.
       triggerRecord = { ...buildTriggerRecord(), ownerPrincipal: "operator", executionType: "shell" };
+      mockToolContext = { transport: "gateway" };
       updateOwners.length = 0;
-      const timeout = await captureJson(() => new TriggersCommands().set("trg_1", "timeout", "60", true));
-      expect(updateOwners).toEqual([null]);
-      expect(timeout).toMatchObject({ trigger: { ownerPrincipal: "operator" } });
+      await expect(new TriggersCommands().set("trg_1", "timeout", "60", true)).rejects.toMatchObject({
+        code: "TRIGGER_SHELL_NOT_OPERATOR",
+      });
+      expect(updateOwners).toEqual([]);
     });
   });
 
@@ -1453,6 +1555,7 @@ describe("TriggersCommands owner", () => {
     });
 
     it("cannot be where a shell trigger reports its failures", async () => {
+      mockToolContext = { ...((mockToolContext as Record<string, unknown> | undefined) ?? {}), transport: "gateway" };
       const addShell = (onError: string) =>
         new TriggersCommands().add(
           "ticket shell",
