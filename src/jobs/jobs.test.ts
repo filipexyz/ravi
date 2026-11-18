@@ -226,11 +226,21 @@ describe("job runner", () => {
     expect(env.OPENAI_API_KEY).toBeUndefined();
     expect(env.DEVIN_API_KEY).toBeUndefined();
     expect(env.RAVI_AUTOMATION_PRINCIPAL).toBe("automation:job:job_any");
+  });
 
-    // A secret a job needs on purpose comes from the operator's passthrough list.
-    const passed = buildJobEnv({ id: "job_any" }, { ...daemonEnv, RAVI_AGENT_ENV_PASSTHROUGH: "DEVIN_API_KEY" });
-    expect(passed.DEVIN_API_KEY).toBe("canary-devin");
-    expect(passed.RAVI_ADMIN_TOKEN).toBeUndefined();
+  it("gets a secret only through the operator's passthrough list", () => {
+    // The documented way for a job to receive a daemon secret; nothing else opts one in.
+    const daemonEnv = {
+      PATH: "/usr/bin:/bin",
+      RAVI_ADMIN_TOKEN: "canary-admin",
+      DEVIN_API_KEY: "canary-devin",
+      ELEVENLABS_API_KEY: "canary-elevenlabs",
+      RAVI_AGENT_ENV_PASSTHROUGH: "DEVIN_API_KEY",
+    };
+    const env = buildJobEnv({ id: "job_passthrough" }, daemonEnv);
+    expect(env.DEVIN_API_KEY).toBe("canary-devin");
+    expect(env.ELEVENLABS_API_KEY).toBeUndefined();
+    expect(env.RAVI_ADMIN_TOKEN).toBeUndefined();
   });
 
   it("spawns an agent-owned job without the daemon env underneath", async () => {
