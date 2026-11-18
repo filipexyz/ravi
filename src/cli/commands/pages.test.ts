@@ -1348,6 +1348,8 @@ describe("pages agent-first contract", () => {
     expect(thrown).toBeInstanceOf(CliExpectedError);
     expect((thrown as CliExpectedError).code).toBe("PERMISSION_DENIED");
     expect((thrown as CliExpectedError).message).toContain("use:tool:Read");
+    // The way out that needs no permission is named.
+    expect((thrown as CliExpectedError).suggestedAction).toContain("--body");
     expect(client.requestJson).not.toHaveBeenCalled();
   });
 

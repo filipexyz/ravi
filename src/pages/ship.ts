@@ -14,6 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { resolveCallerPath } from "../cli/caller-cwd.js";
+import { CliExpectedError } from "../cli/expected-error.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 
 export type ShipContentKind = "body" | "html" | "dir";
@@ -287,11 +288,32 @@ export async function validateShipSourceInput(
     return kind;
   }
   if (kind === "html") {
-    await assertFile(requireText(input.html, "--html"));
+    await withShipReadHint(() => assertFile(requireText(input.html, "--html")));
     return kind;
   }
-  await assertDirectory(requireText(input.dir, "--dir"));
+  await withShipReadHint(() => assertDirectory(requireText(input.dir, "--dir")));
   return kind;
+}
+
+/**
+ * A context that may not read local files is refused on `--html`/`--dir` before
+ * any Console call. The refusal names the permission; ship adds the way out that
+ * needs none: `--body` carries the page in the command itself.
+ */
+async function withShipReadHint(run: () => Promise<void>): Promise<void> {
+  try {
+    await run();
+  } catch (error) {
+    if (error instanceof CliExpectedError && error.code === "PERMISSION_DENIED") {
+      throw new CliExpectedError(
+        error.message,
+        error.code,
+        error.exitCode,
+        "Pass the page with --body (no local file read), or ask the operator to give this context use:tool:Read",
+      );
+    }
+    throw error;
+  }
 }
 
 /**

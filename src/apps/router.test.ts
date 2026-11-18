@@ -1052,6 +1052,12 @@ describe("Ravi app router", () => {
     );
     expect(named).toEqual({ appId: "khal-tasks", operation: "list", args: [], json: true });
 
+    // The flag is the runtime branch's alone: without it the same caller is still filtered.
+    const filtered = runWithContext({ agentId: "app-agent" }, () =>
+      resolveAppAliasInvocation(["khal-tasks", "list", "--json"], { staticRootCommands: new Set(["apps"]) }),
+    );
+    expect(filtered).toBe(null);
+
     // Still not an app: a static root command and an unknown word stay out.
     expect(
       resolveAppAliasInvocation(["apps", "check"], { staticRootCommands: new Set(["apps"]), skipVisibility: true }),
