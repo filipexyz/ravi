@@ -17,7 +17,7 @@ individually to discover broken routing or missing agents.
 A shell job owned by a non-operator cannot run under the existing authority
 contract. Retrying it is not recovery. Disable it at load/cycle boundaries and
 leave the row intact for inspection. Use the same owner predicate as execution,
-including operator-bound contacts and legacy NULL; do not redefine ownership.
+including operator-bound contacts (a legacy NULL owner is nobody); do not redefine ownership.
 
 The atomic enabled-to-disabled update claims the notice without an in-memory
 dedup cache or schema migration. Existing run history is preserved. A failed

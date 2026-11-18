@@ -211,7 +211,7 @@ export interface PrivateDirectSessionInput {
   chatId: string;
 }
 
-/** Cron owner value meaning "the operator" (also what a legacy NULL means). */
+/** Cron owner value meaning "the operator". A NULL owner (a legacy row) means nobody. */
 export const CRON_OPERATOR_OWNER = "operator";
 
 const MAX_LINEAGE_DEPTH = 32;
@@ -997,10 +997,11 @@ function isOperatorRelay(actorPrincipal: string, metadata: Record<string, unknow
 /**
  * Whether a cron job with this owner acts as the operator when it runs: the
  * same test the classification applies to `automation:cron:<id>`. False when
- * the binding cannot be read.
+ * the binding cannot be read, and for a NULL owner (a legacy row runs as nobody).
  */
 export function cronOwnerActsAsOperator(ownerPrincipal: string | null, deps: ConnectorTurnDeps = {}): boolean {
-  if (ownerPrincipal === null || ownerPrincipal === CRON_OPERATOR_OWNER) return true;
+  if (ownerPrincipal === null) return false;
+  if (ownerPrincipal === CRON_OPERATOR_OWNER) return true;
   try {
     return cronOwnerIsOperator(ownerPrincipal, resolveOwner(deps, deps.env ?? process.env), deps);
   } catch {
@@ -1008,9 +1009,10 @@ export function cronOwnerActsAsOperator(ownerPrincipal: string | null, deps: Con
   }
 }
 
-/** Legacy NULL and `operator` are the operator; so is a contact bound to the active Console user. */
+/** `operator` is the operator; so is a contact bound to the active Console user. NULL is nobody. */
 function cronOwnerIsOperator(ownerPrincipal: string | null, owner: OwnerIdentity, deps: ConnectorTurnDeps): boolean {
-  if (ownerPrincipal === null || ownerPrincipal === CRON_OPERATOR_OWNER) return true;
+  if (ownerPrincipal === null) return false;
+  if (ownerPrincipal === CRON_OPERATOR_OWNER) return true;
   if (!ownerPrincipal.startsWith("contact:")) return false;
   const identity = (deps.getContactBinding ?? readContactBinding)(ownerPrincipal.slice("contact:".length));
   return isOwnerUser(owner, cleanString(identity?.consoleUserId), cleanString(identity?.consoleOrgId));

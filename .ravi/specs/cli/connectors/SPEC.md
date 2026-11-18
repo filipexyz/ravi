@@ -107,7 +107,7 @@ instead of inventing local suggestions that would require extra remote calls.
 | The same owner in a `dm:` compartment whose session other people's chats share (`dmScope: main`, a route by session name, another person's chat attached), or whose session is unknown | blocked `CONNECTOR_GROUP_BLOCKED` (`speakerIsOwner`, `sharedSession`) |
 | `contact:<id>` linked to another Console user, not linked, `missing_contact`, or `unknown` | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
 | `agent:<id>` (relay from another agent), `automation:session:*` | blocked `CONNECTOR_SPEAKER_NOT_OWNER` |
-| `automation:cron:<jobId>` (agent turn or the job's shell command) | allowed only with a valid admission snapshot eligible for operator authority, whose captured owner is `operator` (including normalized legacy NULL) or an existing, unblocked contact still linked to the active Console user and org: speaker `automation`, routine `cron`; missing snapshots and revoked owners block. Live ownership transfers never reclassify the run (see `cron`) |
+| `automation:cron:<jobId>` (agent turn or the job's shell command) | allowed only with a valid admission snapshot eligible for operator authority, whose captured owner is `operator` (a NULL owner is nobody) or an existing, unblocked contact still linked to the active Console user and org: speaker `automation`, routine `cron`; missing snapshots and revoked owners block. Live ownership transfers never reclassify the run (see `cron`) |
 | `automation:heartbeat` | allowed: speaker `automation`, routine `heartbeat` |
 | `automation:trigger:*`, `automation:job:*`, `automation:observer:*`, `session-followup`, `daemon-restart`, any other principal | blocked `CONNECTOR_SPEAKER_NOT_OWNER`. A trigger turn stays blocked whoever owns the trigger; the blocked result only carries the owner the runner admitted, whether the turn runs in the trigger's own session and whether its answer stays with that owner (`triggerOwner`), which Bases alone reads (cli/bases 6b) |
 | Compartment `chat:<id>` (group) for a contact turn, the owner included | blocked `CONNECTOR_GROUP_BLOCKED` |
@@ -331,7 +331,13 @@ MUST revalidate the human caller chain and contact before each protected call.
     owner (same table; also the owner blocked only by where the answer goes:
     a group, a shared session, a relay answering into a chat), else the
     creating turn's `actorPrincipal` (`unknown` when it cannot be resolved).
-    NULL means a legacy job and runs as the operator. `cron show`/`list` JSON
+    NULL means a legacy job and runs as **nobody** (`unknown`; its failure
+    reports stay in the inbox, settled with no direct message owed): enabled legacy
+    rows were made explicit `operator` once, at the daemon's first start with
+    this rule (`router_meta` key `migration:cron-owner-explicit-operator`, with
+    the migrated job ids), and disabled ones stay NULL so re-enabling one
+    never revives operator authority. Nothing is deleted or disabled by it.
+    `cron show`/`list` JSON
     expose it as `ownerPrincipal`, and `cron show` prints it as "Runs as".
     When a turn whose principal is not the job's owner (the operator
     included) changes a job with `cron set`, any key except `description`,
@@ -352,8 +358,8 @@ MUST revalidate the human caller chain and contact before each protected call.
     owner is not part of the `cron add` idempotency fingerprint, so a key
     recorded before owners existed, or an observer replay, still matches.
 13a. Every serialized job (`cron add`, `set`, `show`, `list` JSON) MUST carry
-    `runsAsOperator`: true when the owner acts as the operator (NULL,
-    `operator`, or a contact bound to the active Console user, the same test
+    `runsAsOperator`: true when the owner acts as the operator (`operator`,
+    or a contact bound to the active Console user; never NULL, the same test
     the turn classifier applies to `automation:cron:<id>`), else false. When
     it is false, `cron add` and `cron set` MUST print a `Runs as:` line and
     MUST add a warning to `warnings` (also printed in text output) that names
@@ -391,10 +397,31 @@ MUST revalidate the human caller chain and contact before each protected call.
       context with a `parentContextId` is not honored), with the run's
       `cronRunAuthority` snapshot and actor `automation:cron:<id>`, so it is
       classified exactly like a cron turn;
-    - its capabilities are the job's agent snapshot (the ceiling an agent
-      cron turn of that agent has); a job whose agent does not exist, or
-      whose owner does not act as the operator, gets no context and runs as
-      before;
+    - its capabilities are only the commands Bases (bases list/show; rows
+      query, get, history, export, add, update, archive, restore; views
+      list, show, query), Pages (list, read, ship) and `self whoami`. A
+      command is kept when the job's agent may run it by any grant the
+      gateway accepts for it (the semantic tuple, its wildcards or the
+      legacy `execute:group:*` grants), and the key carries only the narrow
+      `kind:resource:action` tuple, never the grant that qualified it: never
+      tools, sessions, tasks or anything else;
+    - a job whose agent does not exist gets no context, and its command runs
+      without a key. A shell job whose owner does not act as the operator
+      never reaches this point: the runner refuses it with
+      `CRON_SHELL_NOT_OPERATOR`, disables it, runs no command and schedules
+      no retry (13b);
+    - the context records the daemon process that issued it (`pid`, `host`).
+      When a daemon starts, before its gateway accepts any request, it
+      revokes (`cron_shell_daemon_restart`) every live `cron-shell` context
+      whose run is provably over: no issuer recorded, or an issuer on this
+      host whose process is gone. A context of a live process, or of another
+      host, is kept (its command's end and its TTL still bound it). Taking
+      over cron leadership revokes nothing, so a job another live daemon is
+      still running keeps its key;
+    - a shell job's `timeout` (which bounds the context's TTL) MAY be changed
+      only by a turn whose owner acts as the operator; anyone else's
+      `cron set <id> timeout` fails `CRON_SHELL_NOT_OPERATOR` (exit 3) with no
+      write, after an invalid value fails first as a usage error (exit 2);
     - it expires one minute after the command's timeout and MUST be revoked
       (`cron_shell_completed`) as soon as the command ends;
     - the key MUST NOT reach a log, `lastError` or a failure notice: captured
@@ -692,7 +719,8 @@ for the row (empty for connections made with the current connect flow).
 - Before the origin check, the session-goal wake (`execute`, no caller)
   looked like the operator's own `ravi sessions send`.
 - Open policy gaps: heartbeat turns have no owner (HEARTBEAT.md can be edited
-  from any turn), and legacy crons with a NULL owner run as the operator.
+  from any turn). Legacy crons with a NULL owner ran as the operator until
+  rule 13 made enabled ones explicit and NULL nobody.
 - Before the fix, `shared` mode sent the owner's own routines to agent exec
   with conversation `automation`, which no grant can list (grants hold only
   `dm`/`group`), so every cron or heartbeat Gmail call failed. They now keep

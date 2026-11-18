@@ -77,4 +77,21 @@ describe("cron failure notification", () => {
     await notifyCronFailure({ ...current, lastRunAt: 3000 }, "timeout", { owner: () => null, deliver: deps.deliver });
     expect(attempts).toBe(2);
   });
+
+  it("settles the report of a run no person owns instead of replaying it at every start", async () => {
+    let delivered = 0;
+    for (const ownerPrincipal of ["unknown", "agent:helper"]) {
+      const unowned = { ...job(), ownerPrincipal };
+      const deps = { owner: () => null, deliver: async () => void delivered++ };
+      expect(await notifyCronFailure(unowned, "timeout", deps)).toBe(true);
+      // A later start finds it already settled.
+      expect(await notifyCronFailure(unowned, "timeout", deps)).toBe(true);
+    }
+    expect(delivered).toBe(0);
+    expect(listLocalInboxItems({ sourceDomain: "cron" }).length).toBeGreaterThan(0);
+  });
+
+  it("keeps a report pending while an owned run has no delivery target yet", async () => {
+    expect(await notifyCronFailure(job(), "timeout", { owner: () => null, deliver: async () => {} })).toBe(false);
+  });
 });

@@ -64,7 +64,7 @@ const MAX_NOTIFY_OUTPUT_CHARS = 4000;
 function captureRunAuthority(job: CronJob): CronRunAuthority {
   return {
     jobId: job.id,
-    ownerPrincipal: job.ownerPrincipal ?? "operator",
+    ownerPrincipal: job.ownerPrincipal ?? "unknown",
     ownerIsOperator: cronOwnerActsAsOperator(job.ownerPrincipal ?? null),
     ...(job.creatorChat ? { creatorChat: job.creatorChat } : {}),
   };

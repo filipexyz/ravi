@@ -1375,6 +1375,17 @@ describe("CronCommands owner principal", () => {
     expect(warning).toContain("Knowledge refuse its runs");
   });
 
+  it("warns on enable when the job does not act as the operator, and not when it does", async () => {
+    cronJob = { ...cronJob, enabled: false, ownerPrincipal: undefined };
+    const unknown = (await new CronCommands().enable("cron-1", true)) as { warnings: string[] };
+    expect(unknown.warnings).toHaveLength(1);
+    expect(unknown.warnings[0]).toContain("runs as unknown, not the operator");
+
+    cronJob = { ...cronJob, enabled: false, ownerPrincipal: "operator" };
+    const operator = (await new CronCommands().enable("cron-1", true)) as { warnings: string[] };
+    expect(operator.warnings).toEqual([]);
+  });
+
   it("refuses a shell job from a turn that is not the operator's, and creates nothing", async () => {
     process.env.RAVI_SESSION_NAME = "someone-else";
     const before = cronJob;
@@ -1463,9 +1474,9 @@ describe("CronCommands owner principal", () => {
     expect(cronUpdatePatches).toHaveLength(0);
   });
 
-  it("shows legacy jobs (no owner) as running as the operator", async () => {
+  it("shows a legacy job (no owner) as running as nobody, never as the operator", async () => {
     const payload = await captureJson(async () => new CronCommands().show("cron-1", true));
-    expect(payload).toMatchObject({ job: { ownerPrincipal: "operator", runsAsOperator: true } });
+    expect(payload).toMatchObject({ job: { ownerPrincipal: "unknown", runsAsOperator: false } });
 
     const lines: string[] = [];
     const originalLog = console.log;
@@ -1475,7 +1486,43 @@ describe("CronCommands owner principal", () => {
     } finally {
       console.log = originalLog;
     }
-    expect(lines).toContain(`  ${"Runs as:".padEnd(16)}operator`);
+    expect(lines).toContain(`  ${"Runs as:".padEnd(16)}unknown`);
+  });
+
+  it("fails an invalid shell timeout as a usage error (exit 2) before the owner check", async () => {
+    process.env.RAVI_SESSION_NAME = "someone-else";
+    cronJob = { ...cronJob, executionType: "shell", shellCommand: "echo ok", message: "", ownerPrincipal: "operator" };
+    cronUpdatePatches = [];
+    const originalError = console.error;
+    console.error = () => {};
+    let thrown: unknown;
+    try {
+      await new CronCommands().set("cron-1", "timeout", "0", true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.error = originalError;
+    }
+    expect(thrown).toMatchObject({ code: "USAGE_ERROR", exitCode: 2 });
+    expect(cronUpdatePatches).toHaveLength(0);
+  });
+
+  it("refuses a shell job's timeout change from a turn that is not the operator's", async () => {
+    process.env.RAVI_SESSION_NAME = "someone-else";
+    cronJob = { ...cronJob, executionType: "shell", shellCommand: "echo ok", message: "", ownerPrincipal: "operator" };
+    cronUpdatePatches = [];
+    const originalError = console.error;
+    console.error = () => {};
+    let thrown: unknown;
+    try {
+      await new CronCommands().set("cron-1", "timeout", "3h", true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.error = originalError;
+    }
+    expect(thrown).toMatchObject({ code: "CRON_SHELL_NOT_OPERATOR", exitCode: 3 });
+    expect(cronUpdatePatches).toHaveLength(0);
   });
 
   it("re-owns the job when a non-operator turn rewrites what it runs", async () => {

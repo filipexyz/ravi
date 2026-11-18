@@ -43,6 +43,7 @@ import { getMainSession, getSession, getSessionByName } from "./router/sessions.
 import { closeAllRaviDbs } from "./db/close-all.js";
 import { startHeartbeatRunner, stopHeartbeatRunner } from "./heartbeat/index.js";
 import { startCronRunner, stopCronRunner } from "./cron/index.js";
+import { revokeOrphanedShellCronContexts } from "./cron/shell-context.js";
 import { startLocalWatchRunner, stopLocalWatchRunner } from "./watch/local-runner.js";
 import { startGhFollowMaintenanceRunner, stopGhFollowMaintenanceRunner } from "./hooks/gh-follow-sweep.js";
 import { startJobsRunner, stopJobsRunner } from "./jobs/index.js";
@@ -405,6 +406,16 @@ async function checkNatsExposureAtBoot(natsUrl: string): Promise<void> {
   }
 }
 
+function revokeOrphanedShellCronKeysAtBoot(): void {
+  try {
+    const revoked = revokeOrphanedShellCronContexts();
+    if (revoked > 0) log.info("Revoked shell cron keys whose run is over", { count: revoked });
+  } catch (error) {
+    // Boot continues: the keys still expire at their TTL and with their command.
+    log.error("Failed to revoke orphaned shell cron keys at boot", { error });
+  }
+}
+
 export async function startDaemon() {
   assertRuntimeMaintenanceInactive();
   acquireDaemonSchemaOwnership();
@@ -413,6 +424,9 @@ export async function startDaemon() {
     log.warn("Could not record process boot identity; runtime alignment will remain unverified");
   tightenStateDirAtBoot();
   await (await import("./db/runtime-state.js")).initializeRuntimeState();
+  // Before any gateway listens: a shell cron key whose issuing process is gone
+  // must not be usable against this daemon.
+  revokeOrphanedShellCronKeysAtBoot();
 
   // Step 1: Connect to NATS (with retry for PM2 parallel startup)
   const natsUrl = process.env.NATS_URL || "nats://127.0.0.1:4222";
