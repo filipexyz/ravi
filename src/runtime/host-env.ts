@@ -1,6 +1,7 @@
 import { delimiter, dirname, join } from "node:path";
 import { SANITIZED_ENV_VARS } from "../hooks/sanitize-bash.js";
 import { dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
+import { filterAgentRuntimeBaseEnv } from "./agent-env-policy.js";
 import type { RuntimeCapabilities } from "./types.js";
 
 const TASK_RUNTIME_ENV_VARS = [
@@ -33,14 +34,27 @@ function prependPathEntry(currentPath: string | undefined, entry: string): strin
   return [entry, ...parts].join(delimiter);
 }
 
+/**
+ * Env for a provider runtime process (Claude Code, Codex, Pi, Grok).
+ *
+ * The daemon env is not inherited wholesale: `filterAgentRuntimeBaseEnv` keeps
+ * only allowlisted names, the operator passthrough list and the provider's own
+ * login variables (`inheritedAuthEnvKeys`). Every command the agent runs
+ * inherits this env, so anything left here is readable by the agent. The Ravi
+ * turn env and the selected credential (`providerEnv`) are added on purpose
+ * after the filter.
+ */
 export function buildRuntimeEnv(
   baseEnv: Record<string, string>,
   raviEnv: Record<string, string>,
   providerEnv: Record<string, string> | undefined,
   capabilities: RuntimeCapabilities,
   forceSanitizeSecrets = false,
+  options: { inheritedAuthEnvKeys?: readonly string[] } = {},
 ): Record<string, string> {
-  const sanitizedBaseEnv = { ...baseEnv };
+  const sanitizedBaseEnv = filterAgentRuntimeBaseEnv(baseEnv, {
+    inheritedAuthEnvKeys: options.inheritedAuthEnvKeys,
+  });
   for (const key of TASK_RUNTIME_ENV_VARS) {
     delete sanitizedBaseEnv[key];
   }

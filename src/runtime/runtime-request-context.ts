@@ -36,6 +36,7 @@ import { materializeSubjectCapabilities } from "../permissions/provider-runtime.
 import { consoleIdentityFromBinding, readActorBindingForActiveLogin } from "../cloud-auth/actor-bindings.js";
 import { dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
+import { resolveProviderLoginEnvKeys } from "./agent-env-policy.js";
 import { buildRuntimeEnv, buildTaskRuntimeEnv } from "./host-env.js";
 import type { RuntimeMessageTarget } from "./host-session.js";
 import type { MessageActorMetadata, RuntimeLaunchPrompt, RuntimeTurnOriginMetadata } from "./message-types.js";
@@ -1245,6 +1246,8 @@ export function buildRuntimeRequestEnv(options: {
   providerEnv?: Record<string, string>;
   runtimeCapabilities: RuntimeCapabilities;
   forceSanitizeSecrets?: boolean;
+  /** Provider being started; selects which login variables it may inherit from the daemon env. */
+  runtimeProviderId?: string;
 }): Record<string, string> {
   const baseRuntimeEnv = Object.fromEntries(
     Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
@@ -1255,6 +1258,7 @@ export function buildRuntimeRequestEnv(options: {
     options.providerEnv,
     options.runtimeCapabilities,
     options.forceSanitizeSecrets,
+    { inheritedAuthEnvKeys: resolveProviderLoginEnvKeys(options.runtimeProviderId) },
   );
 }
 

@@ -113,6 +113,19 @@ Provider adapters MAY own provider-specific secret/env/profile mapping, but MUST
 
 Provider session ids and resume/fork state used with managed credentials MUST be credential-compatible. A provider adapter MUST NOT resume or fork native state across different account/profile credential boundaries unless it explicitly declares that the native provider session is account-independent.
 
+## Agent Runtime Env
+
+Every command an agent runs inherits the env of its provider process (Claude Code, Codex, Pi, Grok), and the agent can also read that process env directly (`ps -E`, `/proc/<pid>/environ`). The provider process env is therefore the agent's env, and the boundary is drawn where the process is spawned.
+
+- The env of a provider process MUST be built from an allowlist (`src/runtime/agent-env-policy.ts`, applied in `buildRuntimeEnv`). The daemon env MUST NOT be inherited wholesale.
+- A daemon env name reaches the provider only if it is on the exact-name list, or matches an allowed prefix and does not look like a secret (`TOKEN`, `SECRET`, `PASSWORD`, `_KEY`, `DSN`, database URLs, and similar). A value that is a URL with a password is dropped even under an allowed name.
+- After the filter, the request adds on purpose: the Ravi turn env (`RAVI_CONTEXT_KEY`, session and actor ids), the selected managed credential (`providerEnv`), and the provider's own login variables when it inherits them from the daemon env (Claude: `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`; Codex: `OPENAI_API_KEY`, `CODEX_API_KEY`; Grok: `XAI_API_KEY`; Pi: none). A provider MUST NOT receive another provider's login variables.
+- Extra names reach agents only when the operator lists them in `RAVI_AGENT_ENV_PASSTHROUGH` (comma or space separated) in the daemon env. Nothing else opts a secret in.
+- Every spawn of a provider process MUST go through the same filter, including stored-session control spawns (Codex `controlSession`). Spreading `process.env` into a provider spawn is a defect.
+- Secret stripping MUST NOT rely on rewriting the Bash command in a PreToolUse hook. Hooks that return `updatedInput` do not compose: each receives the original input, and the last rewrite wins (the job wrapper rewrites every command). A shell-level `unset` also leaves the provider process env readable.
+- `SANITIZED_ENV_VARS` stays as an extra layer on top of the allowlist where a runtime must not hold even its own provider key (model broker mode, the Pi RPC process). It is not the agent boundary.
+- Known limit: the daemon itself holds the secrets, and the agent runs as the same OS user. Same-user reads of the daemon process env or of `~/.ravi/.env` are out of reach of this rule and need OS-level isolation (separate user or sandbox) plus the credential broker.
+
 ## Canonical Events
 
 Providers MUST normalize native output into:
@@ -227,6 +240,7 @@ Before implementing the Pi adapter, Ravi SHOULD harden these generic runtime sur
 - `turn.steer` means “inject this into the active native run”; `turn.follow_up` means “run this after the active native run would otherwise stop”. CLIs and UIs MUST expose both semantics distinctly.
 - A provider MUST NOT report a skill as loaded unless it can expose observed evidence or Ravi completed an explicit provider injection flow.
 - A provider that cannot expose skill-loading evidence MUST declare that through `skillVisibility` and return conservative `session-visibility` state.
+- A provider process MUST be spawned with the allowlisted agent runtime env (see Agent Runtime Env), never with the daemon env as-is.
 
 ## Validation
 
@@ -248,6 +262,7 @@ Before implementing the Pi adapter, Ravi SHOULD harden these generic runtime sur
 - A provider with no control support receives `sessions runtime` commands and fails silently.
 - Model switching is implemented by provider name instead of handle strategy.
 - Provider capability data says skills are supported, but session visibility can only prove local sync or prompt advertisement.
+- Daemon secrets reach the agent shell because a provider spawn inherits `process.env` (found 18/11/2026: 27 secret names visible in a Claude turn, including `RAVI_ADMIN_TOKEN`; the PreToolUse `unset` hook never took effect because the job wrapper rewrote the command after it).
 
 ## Model Presets
 

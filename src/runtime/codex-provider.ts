@@ -1,3 +1,4 @@
+import { filterAgentRuntimeBaseEnv, resolveProviderLoginEnvKeys } from "./agent-env-policy.js";
 import type { RuntimeGoal, RuntimeGoalStatus } from "./types.js";
 import { RUNTIME_OPERATION_UNSUPPORTED } from "./runtime-control-errors.js";
 import { spawn } from "node:child_process";
@@ -412,8 +413,9 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
           throw new Error("Stored-session control is unavailable");
         await transport.initializeControl({
           cwd: input.cwd,
+          // Same boundary as a turn: never the whole daemon env (see agent-env-policy.ts).
           env: {
-            ...process.env,
+            ...filterAgentRuntimeBaseEnv(process.env, { inheritedAuthEnvKeys: resolveProviderLoginEnvKeys("codex") }),
             ...input.env,
             ...(typeof input.sessionParams?.codexHome === "string"
               ? { CODEX_HOME: input.sessionParams.codexHome }

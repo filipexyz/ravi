@@ -11,7 +11,6 @@ import { createPreCompactHook } from "../hooks/index.js";
 import { createRtkRewriteHook } from "../hooks/rtk-rewrite.js";
 import { createJobPromotionHook } from "../hooks/jobs-promote.js";
 import { createPagesLinkGuardHook } from "../hooks/pages-link-guard.js";
-import { createSanitizeBashHook } from "../hooks/sanitize-bash.js";
 import { nats } from "../nats.js";
 import type { AgentConfig } from "../router/index.js";
 import { getSpecState, isSpecModeActive } from "../spec/server.js";
@@ -87,7 +86,10 @@ export function createRuntimeHostHooks({
       createPagesLinkGuardHook(),
       createToolPermissionHook(hookOpts),
       createBashPermissionHook(hookOpts),
-      createSanitizeBashHook(),
+      // No secret-stripping hook here: rewriting the command cannot remove
+      // secrets (hooks' updatedInput does not compose, and the parent env stays
+      // readable with `ps -E`). The provider process env is filtered at spawn,
+      // in buildRuntimeEnv (see runtime/agent-env-policy.ts).
       createRtkRewriteHook(),
       // Comando que se declara longo vira job em background em vez de prender o turno.
       createJobPromotionHook({ sessionName, agentId: agent.id, cwd: sessionCwd }),

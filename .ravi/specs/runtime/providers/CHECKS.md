@@ -31,6 +31,16 @@
 - Native usage maps to `RuntimeUsage`.
 - Native session/thread id maps to `RuntimeSessionState`.
 
+## Agent Runtime Env Checks
+
+- A shell spawned with the env from `buildRuntimeEnv` MUST NOT show any daemon secret (admin token, webhook secrets, third-party API keys, other providers' keys, database URLs) by name or value (`src/runtime/agent-env-policy.test.ts`).
+- The Ravi turn env (`RAVI_CONTEXT_KEY`) and the selected managed credential MUST still reach the provider after the filter.
+- A provider MUST inherit only its own login variables from the daemon env: Claude gets `CLAUDE_CODE_OAUTH_TOKEN` and not `OPENAI_API_KEY`; Pi gets neither.
+- A name under an allowed prefix that looks like a secret (`RAVI_ADMIN_TOKEN`, `GH_TOKEN`, `NODE_AUTH_TOKEN`) MUST be dropped; `SSH_AUTH_SOCK`, `RAVI_STATE_DIR` and `CLAUDE_CODE_MAX_OUTPUT_TOKENS` MUST be kept.
+- An allowlisted name whose value is a URL with a password MUST be dropped.
+- Names in `RAVI_AGENT_ENV_PASSTHROUGH` MUST reach the provider; names not listed MUST NOT.
+- Codex stored-session control MUST spawn without daemon secrets (`src/runtime/codex-control-env.test.ts`).
+
 ## Negative Tests Needed
 
 - Provider emits tool failure then no terminal event.

@@ -522,10 +522,6 @@ mock.module("./hooks/index.js", () => ({
 
 mock.module("./hooks/sanitize-bash.js", () => ({
   SANITIZED_ENV_VARS: ["RAVI_SECRET"],
-  createSanitizeBashHook: () => ({
-    matcher: "Bash",
-    hooks: [async () => ({})],
-  }),
 }));
 
 mock.module("./costs/pricing-catalog.js", () => ({
