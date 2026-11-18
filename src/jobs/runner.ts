@@ -30,7 +30,6 @@ import {
 } from "./store.js";
 import { isJobTerminal, type JobRecord } from "./types.js";
 import { jobStatusFromExitCode, readJobExitState } from "./detach.js";
-import { jobInheritsDaemonEnv } from "./owner.js";
 
 const log = logger.child("jobs:runner");
 
@@ -76,25 +75,19 @@ export interface JobOutcomeDelivery {
 }
 
 /**
- * Env completo com que um job começa.
- *
- * Por padrão, o mesmo env filtrado de um runtime de agent
- * (`runtime/agent-env-policy.ts`): o comando roda no daemon, e herdar o env
- * dele devolveria, pela saída do job, os segredos que quem pediu não tem. Só o
- * job que o operador criou com o contexto dele verificado no daemon, sem sessão
- * e sem agent, herda o env do daemon (`jobInheritsDaemonEnv`). Em todos, o job
- * age em nome dele mesmo.
+ * Env completo com que um job começa: sempre o env filtrado de um runtime de
+ * agent (`runtime/agent-env-policy.ts`). O comando roda no daemon e a saída
+ * volta para quem pediu, então herdar o env do daemon devolveria os segredos
+ * dele. Não há exceção para o operador: o daemon não consegue provar quem
+ * pediu um job (o `ravi` do terminal roda local, e a credencial padrão é de um
+ * agent). Segredo que um job precisa vem do broker de credenciais ou de
+ * `RAVI_AGENT_ENV_PASSTHROUGH`. Em todos, o job age em nome dele mesmo.
  */
 export function buildJobEnv(
-  job: Pick<JobRecord, "id" | "agentId" | "sessionName" | "ownerPrincipal">,
+  job: Pick<JobRecord, "id">,
   baseEnv: NodeJS.ProcessEnv = process.env,
 ): Record<string, string> {
-  const inherited = jobInheritsDaemonEnv(job)
-    ? Object.fromEntries(
-        Object.entries(baseEnv).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-      )
-    : filterAgentRuntimeBaseEnv(baseEnv);
-  return { ...inherited, ...spawnedAutomationEnv("job", job.id) };
+  return { ...filterAgentRuntimeBaseEnv(baseEnv), ...spawnedAutomationEnv("job", job.id) };
 }
 
 export interface JobsRunnerOptions {

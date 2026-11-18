@@ -8,7 +8,6 @@ import { buildCliOffsetPagination } from "../pagination.js";
 import { nats } from "../../nats.js";
 import { getRaviStateDir } from "../../utils/paths.js";
 import { getContext } from "../context.js";
-import { resolveVerifiedJobOwner } from "../../jobs/owner.js";
 import { canAccessResource, canModifySession, getScopeContext, isScopeEnforced } from "../../permissions/scope.js";
 import {
   dbCreateJob,
@@ -227,8 +226,6 @@ O desfecho volta para a sessão automaticamente quando o job termina.`,
       cwd: cwd ?? null,
       logPath: join(getRaviStateDir(), "jobs", `${jobId}.log`),
       origin: "cli",
-      // Gravado só quando o daemon verificou quem pediu; decide se o job herda o env do daemon.
-      ownerPrincipal: resolveVerifiedJobOwner(),
     });
 
     const result = {

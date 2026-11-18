@@ -341,9 +341,10 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
      (`CONNECTOR_SPEAKER_NOT_OWNER`, unchanged), Knowledge, Pages access
      (`share`, invites, access requests) and cloud runs.
    - **Shell triggers.** A shell trigger runs only when its owner acts as
-     the operator (`TRIGGER_SHELL_NOT_OPERATOR`: refused on create and set,
-     turned off on fire), and its command starts from the allowlisted agent
-     env plus its env file. The turn that reports a shell trigger's failure
+     the operator (`TRIGGER_SHELL_NOT_OPERATOR`: refused on create and on any
+     edit not made by its owner from a daemon-verified turn, turned off on
+     fire), and its command starts from the allowlisted agent env plus its
+     env file, which may not sit inside the Ravi state dir. The turn that reports a shell trigger's failure
      carries no snapshot.
    - **Exposure.** A trigger's prompt carries event content other people
      wrote, so its owner lends their Bases authority to an agent reading it.
