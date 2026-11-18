@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -49,7 +50,7 @@ describe("the bunfig preload", () => {
 
   /** A child `bun test` from the repo root, as a contributor or the ravi-stress container would run it. */
   function runChild(home: string, stateDir: string | undefined) {
-    const marker = join(home, "marker.txt");
+    const marker = join(home, "marker.json");
     const env: Record<string, string> = {};
     for (const [key, value] of Object.entries(process.env)) {
       if (value !== undefined && !key.startsWith("RAVI_")) env[key] = value;
@@ -57,14 +58,16 @@ describe("the bunfig preload", () => {
     env.HOME = home;
     env.RAVI_STATE_ISOLATION_MARKER = marker;
     if (stateDir !== undefined) env.RAVI_STATE_DIR = stateDir;
-    const result = Bun.spawnSync([process.execPath, "test", "src/test/state-isolation.child.test.ts"], {
+    const result = spawnSync(process.execPath, ["test", "src/test/state-isolation.child.test.ts"], {
       cwd: repoRoot,
       env,
-      stdout: "pipe",
-      stderr: "pipe",
+      encoding: "utf8",
     });
-    const output = `${result.stdout.toString()}\n${result.stderr.toString()}`;
-    return { exitCode: result.exitCode, output, used: existsSync(marker) ? readFileSync(marker, "utf8") : null };
+    const output = `${result.stdout}\n${result.stderr}`;
+    const reported = existsSync(marker)
+      ? (JSON.parse(readFileSync(marker, "utf8")) as { dir: string; existed: boolean })
+      : null;
+    return { exitCode: result.status, output, used: reported?.dir ?? null, existed: reported?.existed ?? null };
   }
 
   it("isolates a process that sets no RAVI_STATE_DIR, without touching its home", () => {
@@ -72,6 +75,7 @@ describe("the bunfig preload", () => {
     const child = runChild(home, undefined);
     expect(child.exitCode, child.output).toBe(0);
     expect(child.used).toBeTruthy();
+    expect(child.existed).toBe(true);
     expect(isWithin(canonicalPath(child.used!), canonicalPath(join(home, ".ravi")))).toBe(false);
     expect(existsSync(join(home, ".ravi"))).toBe(false);
     // The generated directory is removed when the child exits.
@@ -85,6 +89,7 @@ describe("the bunfig preload", () => {
     expect(child.exitCode, child.output).toBe(0);
     expect(child.used).toBeTruthy();
     expect(child.used).not.toBe(real);
+    expect(child.existed).toBe(true);
     expect(existsSync(real)).toBe(false);
   });
 
