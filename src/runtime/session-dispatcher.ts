@@ -2932,6 +2932,7 @@ export class RuntimeSessionDispatcher {
     const source = prompt?.source ?? fallbackPrompt?.source ?? existing.currentSource;
     const barrier = successor.message.deliveryBarrier ?? DEFAULT_DELIVERY_BARRIER;
     existing.currentTurnSuperseded = true;
+    existing.supersededRuntimeContextKey = existing.currentRuntimeContextKey;
     existing.currentTurnYieldContinuationId = undefined;
     existing.interrupted = true;
     nats

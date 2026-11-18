@@ -2611,13 +2611,18 @@ describe("verified human work handoffs", () => {
     expect(accessFor(grandchild)).toMatchObject({ kind: "contact", contactId: contact.id });
   });
 
-  it.each(["turn_context_rotated", "turn_context_completed"])("admitted work survives %s", (reason) => {
-    const { caller, contact } = humanTurn();
-    revokeRuntimeContext(caller.contextId, { cascade: false, reason });
-    expect(accessFor(handoff(caller))).toMatchObject({ kind: "contact", contactId: contact.id });
-  });
+  // A newer message superseding the turn is not a withdrawal: the work it
+  // already handed off keeps its requester. An explicit stop is (below).
+  it.each(["turn_context_rotated", "turn_context_completed", "turn_context_superseded"])(
+    "admitted work survives %s",
+    (reason) => {
+      const { caller, contact } = humanTurn();
+      revokeRuntimeContext(caller.contextId, { cascade: false, reason });
+      expect(accessFor(handoff(caller))).toMatchObject({ kind: "contact", contactId: contact.id });
+    },
+  );
 
-  it.each(["turn_context_aborted", "agent_permissions_changed", "operator_revoked"])(
+  it.each(["turn_context_aborted", "agent_permissions_changed", "operator_revoked", "turn_context_not_live"])(
     "queued work does not retain human attribution after %s",
     (reason) => {
       const { caller } = humanTurn();
@@ -2708,6 +2713,40 @@ describe("verified human work handoffs", () => {
       stop();
     }
   });
+
+  it.each([
+    [true, "turn_context_superseded", true],
+    [false, "turn_context_aborted", false],
+  ] as const)(
+    "a lease aborted with abortedBySuccessor=%s records %s (handoff kept: %s)",
+    (bySuccessor, reason, kept) => {
+      const { caller, prompt, contact } = humanTurn();
+      const controller = new AbortController();
+      const stop = startActiveRuntimeRequestContextLease({
+        runtimeContext: caller,
+        agent: originAgent,
+        dbSessionKey: caller.sessionKey!,
+        sessionName: caller.sessionName!,
+        sessionCwd: originAgent.cwd,
+        prompt,
+        resolvedSource: prompt.source,
+        runtimeProviderId: "codex",
+        model: "gpt-5",
+        runtimeResolution,
+        signal: controller.signal,
+        isActive: () => true,
+        abortedBySuccessor: () => bySuccessor,
+      });
+      try {
+        controller.abort();
+        expect(dbGetContext(caller.contextId)?.metadata?.revocationReason).toBe(reason);
+        if (kept) expect(accessFor(handoff(caller))).toMatchObject({ kind: "contact", contactId: contact.id });
+        else expectHumanAuthorityRefused(handoff(caller));
+      } finally {
+        stop();
+      }
+    },
+  );
 
   it.each(["ancestor-revocation", "blocked-contact"] as const)(
     "an admitted child rechecks %s at every Bases call with cached or fresh context",

@@ -4,7 +4,7 @@ import { AGENT_IDENTITY_AUTHORITY_MODE } from "../permissions/agent-identity-per
 import { TURN_SCOPED_AUTHORITY_KIND } from "../permissions/delegation.js";
 import type { RuntimeLaunchPrompt, RuntimeTurnOriginMetadata } from "./message-types.js";
 import { resolveRuntimeTurnOrigin } from "./turn-origin.js";
-import { isOrdinaryTurnCompletionRevocation } from "./context-revocation.js";
+import { isHandoffPreservingRevocation } from "./context-revocation.js";
 
 export interface HumanRequestCaller {
   caller: ContextRecord;
@@ -25,8 +25,9 @@ export function isWorkHandoff(origin: RuntimeTurnOriginMetadata): boolean {
  * dispatching. Resolve that exact immutable turn, never the session's latest
  * speaker or a contact supplied in the new prompt. The internal prompt bus is
  * the authentication boundary for callerContextId (see turn-origin.ts).
- * Ordinary completion/rotation does not cancel admitted queued work; authority
- * revocation, missing ancestry and CLI-issued lookalikes fail closed.
+ * Ordinary completion/rotation and an aborted turn do not cancel admitted
+ * queued work; authority revocation, missing ancestry and CLI-issued
+ * lookalikes fail closed.
  */
 export function resolveHumanRequestCaller(prompt: Pick<RuntimeLaunchPrompt, "_turnOrigin">): HumanRequestCaller | null {
   let origin = resolveRuntimeTurnOrigin(prompt._turnOrigin);
@@ -49,7 +50,7 @@ export function resolveHumanRequestCaller(prompt: Pick<RuntimeLaunchPrompt, "_tu
       caller.agentId !== origin.principal.id ||
       (origin.producer === "session-relay" && origin.session?.key && origin.session.key !== caller.sessionKey) ||
       typeof meta.permissionProfileRevokedAt === "number" ||
-      (caller.revokedAt && !isOrdinaryTurnCompletionRevocation(meta.revocationReason))
+      (caller.revokedAt && !isHandoffPreservingRevocation(meta.revocationReason))
     )
       return null;
 

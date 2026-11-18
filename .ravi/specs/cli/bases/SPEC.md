@@ -146,7 +146,10 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
    A verified human work handoff follows the attribution contract in
    `contacts/identity-graph/message-session-attribution`: it MUST pass the
    human requester to Bases/access while retaining the agent producer for
-   audit. An agent-only relay remains refused. Remote transport MUST preserve
+   audit. Work delegated from a verified request (a Slack thread's later
+   handoffs from its own parent session, a task's dispatch turns) MUST act for
+   that requester under "Delegated Work Keeps Its Requester" in the same spec.
+   An agent-only relay remains refused. Remote transport MUST preserve
    the bounded public `ACTOR_UNKNOWN` message, suggested action, typed refusal
    reason and request correlation, never replace them with generic
    "Remote command was blocked by policy." Raw Console errors still pass
