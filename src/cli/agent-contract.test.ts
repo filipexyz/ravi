@@ -1,6 +1,8 @@
 import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { describe, expect, it } from "bun:test";
+import { Command } from "commander";
 import {
+  argsForRootUsageContract,
   ContractError,
   GENERIC_COMMAND_FAILED_MESSAGE,
   expectedErrorToContractError,
@@ -718,5 +720,39 @@ describe("diagnostic identifier egress", () => {
     expect(error.code).toBe("COMMAND_FAILED");
     expect(error.envelope().error.cause).toBe("provider unavailable");
     expect(JSON.stringify(error.envelope())).not.toMatch(/PRIVATE_OP|PRIVATE_CODE/);
+  });
+});
+
+describe("argsForRootUsageContract", () => {
+  const program = new Command("ravi");
+  program.command("tasks").alias("t");
+  program.command("secret", { hidden: true });
+  const argsFor = (...args: string[]) => argsForRootUsageContract(args, program);
+
+  it("drops the help flags after an unknown root command so the parser reaches its unknown-command error", () => {
+    expect(argsFor("task", "--help")).toEqual(["task"]);
+    expect(argsFor("task", "-h")).toEqual(["task"]);
+    expect(argsFor("task", "list", "--help", "--json")).toEqual(["task", "list", "--json"]);
+    expect(argsFor("task", "-h", "--help")).toEqual(["task"]);
+  });
+
+  it("leaves every other invocation as it is", () => {
+    expect(argsFor("task")).toEqual(["task"]);
+    expect(argsFor("tasks", "--help")).toEqual(["tasks", "--help"]);
+    expect(argsFor("t", "-h")).toEqual(["t", "-h"]);
+    expect(argsFor("secret", "--help")).toEqual(["secret", "--help"]);
+    expect(argsFor("help", "tasks")).toEqual(["help", "tasks"]);
+    expect(argsFor("help", "--help")).toEqual(["help", "--help"]);
+    expect(argsFor("--help")).toEqual(["--help"]);
+    expect(argsFor("-h")).toEqual(["-h"]);
+    expect(argsFor()).toEqual([]);
+  });
+
+  it("keeps a help flag that follows the end-of-options marker, and does not touch its input", () => {
+    expect(argsFor("task", "--", "--help")).toEqual(["task", "--", "--help"]);
+    expect(argsFor("task", "--help", "--", "-h")).toEqual(["task", "--", "-h"]);
+    const input = ["task", "--help"];
+    argsForRootUsageContract(input, program);
+    expect(input).toEqual(["task", "--help"]);
   });
 });

@@ -827,6 +827,32 @@ export function installRootUsageContract(program: CommanderCommand): void {
   program.exitOverride((error) => failUsage(program, error));
 }
 
+/**
+ * Arguments to hand the root parser so that an unknown root command is a usage error whatever follows it.
+ *
+ * Commander looks for a help flag before it looks for an unknown command, so `ravi task --help` printed the root
+ * help and exited 0 while `ravi task` was a usage error with a suggestion. When the first operand names no root
+ * command (or alias), the help flags are dropped: the parser then reaches its unknown-command error, with the same
+ * envelope, exit 2 and suggestion. `ravi tasks --help`, `ravi help` and `ravi --help` are untouched.
+ */
+export function argsForRootUsageContract(args: readonly string[], program: CommanderCommand): string[] {
+  const requested = args[0];
+  if (requested === undefined || requested.startsWith("-") || requested === "help") return [...args];
+  const isRootCommand = program.commands.some(
+    (command) => command.name() === requested || command.aliases().includes(requested),
+  );
+  if (isRootCommand) return [...args];
+
+  const kept: string[] = [];
+  let afterTerminator = false;
+  args.forEach((arg, index) => {
+    if (arg === "--") afterTerminator = true;
+    if (index > 0 && !afterTerminator && (arg === "--help" || arg === "-h")) return;
+    kept.push(arg);
+  });
+  return kept;
+}
+
 function commandTree(root: CommanderCommand): CommanderCommand[] {
   const nodes: CommanderCommand[] = [root];
   for (const child of root.commands) nodes.push(...commandTree(child));
