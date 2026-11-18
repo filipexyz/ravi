@@ -32,6 +32,7 @@ import {
   RaviAppPermissionDeniedError,
 } from "./permissions.js";
 import { enforceRaviAppRunResult } from "./error-contract.js";
+import { projectAppCliFailure } from "./failure.js";
 
 interface ResolvedOperation {
   id: string;
@@ -450,12 +451,15 @@ async function runCliOperation(
     ...(childContext ? { childContextId: childContext.contextId } : {}),
   };
   if (run.exitCode !== 0) {
+    // The child's output never crosses raw: only a redacted, bounded projection of its error does
+    // (spec apps/router, "Failed app output"). The child key is masked by value on top of the patterns.
     return {
       ...base,
       ok: false,
       status: "failed",
       errorCode: "APP_OPERATION_FAILED",
       error: "Ravi app operation failed.",
+      failure: projectAppCliFailure(run, { secrets: childContext?.contextKey ? [childContext.contextKey] : [] }),
     };
   }
   return {

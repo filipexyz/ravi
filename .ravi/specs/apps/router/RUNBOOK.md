@@ -115,3 +115,27 @@ static command collision, only the fallback `ravi apps run` form is expected.
 
 Repeat without `--json` and confirm the same routing and authorization path is
 used with human-readable output.
+
+## Diagnose A Failed App Operation
+
+A run whose CLI exited non-zero fails as `APP_OPERATION_FAILED` with exit `1`.
+The reason is in the failure itself:
+
+```bash
+ravi apps run <app-id> <operation> --json   # read error.message and error.cause
+```
+
+- `error.message` is `Ravi app operation failed: <the app's own message>`;
+- `error.cause` is the app's `CODE (reason): message` (or the redacted head of
+  its stderr);
+- `error.context.code` is the app's own error code, `error.appExitCode` its exit
+  status (absent when a signal ended it), and `error.suggestedAction` its next
+  step.
+
+If the message is only `Ravi app operation failed.`, the CLI printed no error
+object on stdout and nothing on stderr. Run the app's CLI by hand from its
+directory with its child context to see what it does, and make the CLI print
+`{ "ok": false, "error": { "code", "message", "suggestedAction" } }` on stdout
+before it exits non-zero. A local run without `--json` is the one case with
+nothing to project: the CLI inherits the terminal, so its own output is already
+on screen. A run through the gateway (every agent turn) always captures it.

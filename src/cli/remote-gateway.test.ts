@@ -1,6 +1,8 @@
 import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
+import { enforceRaviAppRunResult } from "../apps/error-contract.js";
+import { projectAppCliFailure } from "../apps/failure.js";
 import { resolveAccountHome } from "../utils/account-home.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import { TurnRefusalError } from "../cloud-auth/turn-refusal.js";
@@ -2867,6 +2869,117 @@ describe("thread command remote relay", () => {
       if (code === "toString") expect(remote?.message).toContain("without a valid error envelope");
       else expect(remote?.message).toBe("PRIVATE_8K2R");
       expect(remote?.message).not.toContain("Remote command failed");
+    }
+  });
+});
+
+describe("Ravi app CLI failures over the gateway", () => {
+  /** What `ravi apps run` raises locally for a CLI that exited non-zero, before the gateway and the relay. */
+  function appRunFailure(run: { exitCode: number | null; stdout: string; stderr: string }): ContractError {
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      enforceRaviAppRunResult(
+        {
+          ok: false,
+          appId: "vault",
+          operation: "get",
+          operationId: "vault.get",
+          interface: "cli",
+          mutating: false,
+          durationMs: 0,
+          status: "failed",
+          errorCode: "APP_OPERATION_FAILED",
+          error: "Ravi app operation failed.",
+          failure: projectAppCliFailure(run),
+        },
+        true,
+      );
+    } catch (error) {
+      if (error instanceof ContractError) return error;
+      throw error;
+    } finally {
+      console.log = originalLog;
+    }
+    throw new Error("The failed run did not raise a contract error.");
+  }
+
+  async function relayed(op: string, local: ContractError, edit?: (body: Record<string, any>) => void) {
+    const response = contractErrorResponse(local);
+    const body = (await response.json()) as Record<string, any>;
+    edit?.(body);
+    return remoteGatewayErrorToContractError(op, result({ status: response.status, body: JSON.stringify(body) }));
+  }
+
+  const jsonError = {
+    ok: false,
+    error: {
+      code: "NOT_AUTHORIZED",
+      reason: "turn_not_human",
+      message: "This secret needs a human to approve it.",
+      suggestedAction: "Ask the operator to run the command from their own session.",
+      retryable: true,
+      secretValue: "SECRET_FIELD_SENTINEL",
+    },
+  };
+
+  it("keeps the app's message, cause, code, exit status and next step across the gateway", async () => {
+    const remote = await relayed(
+      "apps run",
+      appRunFailure({ exitCode: 2, stdout: JSON.stringify(jsonError), stderr: "" }),
+    );
+    expect(remote).toMatchObject({
+      code: "APP_OPERATION_FAILED",
+      exitCode: 1,
+      message: "Ravi app operation failed: This secret needs a human to approve it.",
+      details: {
+        retryable: true,
+        appExitCode: 2,
+        suggestedAction: "Ask the operator to run the command from their own session.",
+        cause: "NOT_AUTHORIZED (turn_not_human): This secret needs a human to approve it.",
+        context: { operation: "apps run", code: "NOT_AUTHORIZED" },
+      },
+    });
+    expect(JSON.stringify(remote?.envelope())).not.toContain("SECRET_FIELD_SENTINEL");
+  });
+
+  it("keeps a stderr headline on one line and the multi-line explanation in the cause", async () => {
+    const remote = await relayed(
+      "apps run",
+      appRunFailure({
+        exitCode: 1,
+        stdout: "PRIVATE_STDOUT_SENTINEL",
+        stderr:
+          "upload refused: https://store.example.test/put?signature=SIGNED_QUERY_SENTINEL\nsecond line\nthird line",
+      }),
+    );
+    expect(remote?.message).toBe(
+      "Ravi app operation failed: upload refused: https://store.example.test/put?[redacted:url-query]",
+    );
+    expect(remote?.message).not.toContain("\n");
+    expect(remote?.details).toMatchObject({
+      appExitCode: 1,
+      cause: "upload refused: https://store.example.test/put?[redacted:url-query]\nsecond line\nthird line",
+    });
+    expect(JSON.stringify(remote?.envelope())).not.toMatch(/SIGNED_QUERY_SENTINEL|PRIVATE_STDOUT_SENTINEL/);
+  });
+
+  it("states that a signal ended the CLI without carrying an exit status", async () => {
+    const remote = await relayed("apps run", appRunFailure({ exitCode: null, stdout: "", stderr: "" }));
+    expect(remote?.message).toBe("Ravi app operation failed.");
+    expect(remote?.details.cause).toBe("The app CLI was terminated by a signal.");
+    expect(remote?.details).not.toHaveProperty("appExitCode");
+  });
+
+  it("carries the exit status only for `apps run`, and only as a non-negative integer", async () => {
+    const local = appRunFailure({ exitCode: 2, stdout: JSON.stringify(jsonError), stderr: "" });
+    expect((await relayed("apps run", local))?.details.appExitCode).toBe(2);
+    expect((await relayed("apps run", local, (body) => (body.error.appExitCode = 0)))?.details.appExitCode).toBe(0);
+    expect(await relayed("sessions report", local)).toBeDefined();
+    expect((await relayed("sessions report", local))?.details).not.toHaveProperty("appExitCode");
+    for (const bad of [-1, 1.5, "2", null, true, [2], { code: 2 }, Number.MAX_SAFE_INTEGER + 2]) {
+      const remote = await relayed("apps run", local, (body) => (body.error.appExitCode = bad));
+      expect(remote?.details).not.toHaveProperty("appExitCode");
     }
   });
 });

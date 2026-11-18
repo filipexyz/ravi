@@ -37,6 +37,25 @@ ravi specs sync --json
 - The blocked plan contains identifiers and argument count, never raw args.
 - Missing-app, provider, and subprocess failures remain one canonical envelope
   in CLI, tool, and gateway responses and expose no raw stdout/stderr.
+- A CLI that exits non-zero with a JSON error on stdout fails with
+  `APP_OPERATION_FAILED`, exit `1`; the envelope carries the app's message in
+  the headline, its code/reason/message in the `cause`, its code as
+  `context.code`, its exit status as `appExitCode`, and its `suggestedAction`
+  and `retryable`. Every other field the app printed is absent. (Fixture exits
+  `2` with a JSON error; asserted at the router, the local contract, and through
+  the gateway and the remote relay.)
+- A CLI that fails with no JSON error fails with the head of its stderr as the
+  headline and the redacted, bounded stderr as the `cause`; its stdout (data,
+  log, stack) is never projected. With neither, the cause is the exit status.
+- A long stderr is truncated to at most 2000 characters ending in
+  ` [truncated]`, the headline to at most 300, and a credential, bearer value,
+  URL query, or the child context key in it is redacted.
+- A CLI that a signal ended reports "terminated by a signal" and carries no
+  `appExitCode`; the app's exit status is never mapped onto contract exit `2`
+  or `3`.
+- `appExitCode` is a non-negative integer or absent, locally and across the
+  relay (and only for `apps run` across the relay).
+- The terminal audit of a failed app run carries no app text.
 - Provider `deny`, `needs_grant`, and `not_applicable` decisions remain
   `PERMISSION_DENIED`/`denied`; timeout, process failure, invalid JSON, and
   invalid schema remain `APP_PERMISSION_PROVIDER_FAILED`/`failed`.

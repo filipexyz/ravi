@@ -706,6 +706,19 @@ describe("diagnostic identifier egress", () => {
     expect(JSON.stringify(envelope)).not.toContain("PRIVATE_");
   });
 
+  it("keeps the exit status of a Ravi App CLI as a bare non-negative integer and nothing else", () => {
+    const withStatus = (appExitCode: unknown) =>
+      new ContractError("apps run", "APP_OPERATION_FAILED", "Ravi app operation failed.", 1, {
+        ...errorDiagnostic(new Error("Ravi app operation failed.")),
+        appExitCode,
+      }).envelope().error;
+    expect(withStatus(2).appExitCode).toBe(2);
+    expect(withStatus(0).appExitCode).toBe(0);
+    for (const bad of [-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 2, "2", null, true, [2], { code: 2 }]) {
+      expect(withStatus(bad)).not.toHaveProperty("appExitCode");
+    }
+  });
+
   it("rejects credential-bearing code and operation fields without discarding the cause", () => {
     const error = new ContractError(
       "upload?key=PRIVATE_OP",

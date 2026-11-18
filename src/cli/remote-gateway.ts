@@ -1305,6 +1305,16 @@ function projectRemoteContractDetails(
   }
   const inspectCommands = projectPermissionProfileInspectionCommands(remote.inspectCommands);
   if (inspectCommands) details.inspectCommands = inspectCommands;
+  // A Ravi App CLI that ran and failed: its exit status is a bare integer; its explanation travels as the
+  // already-redacted `message` and `cause` (spec apps/router, "Failed app output").
+  if (
+    op === "apps run" &&
+    typeof remote.appExitCode === "number" &&
+    Number.isSafeInteger(remote.appExitCode) &&
+    remote.appExitCode >= 0
+  ) {
+    details.appExitCode = remote.appExitCode;
+  }
   if (typeof remote.dryRun === "boolean") details.dryRun = remote.dryRun;
   const issues = projectPublicIssues(remote.issues);
   if (issues) details.issues = issues;

@@ -54,7 +54,9 @@ normative: false
 
 ## CLI Contract Checks
 
-- App invocation must preserve argv, stdout, stderr, and exit status.
+- App invocation must preserve argv, stdout, stderr, and exit status on success.
+  A failed run crosses as the redacted, bounded projection of the app's own
+  error (`apps/router`, "Failed App Output"), never as raw stdout or stderr.
 - The launcher must spawn executable plus argv with `shell: false`; shell-like
   input must remain literal data.
 - The child cwd must be bounded to the app/package root, and the environment

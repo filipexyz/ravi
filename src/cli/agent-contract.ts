@@ -381,7 +381,8 @@ function projectOperationalControls(details: unknown): Record<string, unknown> {
           redactDiagnosticText(item) === item,
       );
   }
-  for (const key of ["retryAfterMs", "schemaVersion", "liveBytes", "storedBytes"] as const) {
+  // `appExitCode` is the exit status of a Ravi App CLI that ran and failed (apps/router), a bare integer.
+  for (const key of ["retryAfterMs", "schemaVersion", "liveBytes", "storedBytes", "appExitCode"] as const) {
     const value = read(key);
     if (counter(value)) controls[key] = value;
   }

@@ -3,13 +3,15 @@ import { spawn } from "bun";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { CONTRACT_EXIT_ERROR, ContractError } from "../cli/agent-contract.js";
 import { runWithContext } from "../cli/context.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
 import { createRuntimeContext, getContextLineage, resolveRuntimeContext } from "../runtime/context-registry.js";
 import { cleanupIsolatedRaviState } from "../test/ravi-state.js";
-import { raviAppErrorToContractError } from "./error-contract.js";
+import { enforceRaviAppRunResult, raviAppErrorToContractError } from "./error-contract.js";
+import { projectAppCliFailure } from "./failure.js";
 import { maybeRunAppAliasRoute, resolveAppAliasInvocation, runAppOperation } from "./router.js";
-import { RaviAppError } from "./types.js";
+import { RaviAppError, type RaviAppRunResult } from "./types.js";
 
 declare const Bun: {
   serve(options: { hostname: string; port: number; fetch(request: Request): Response | Promise<Response> }): {
@@ -384,6 +386,45 @@ async function captureJson(fn: () => Promise<unknown>): Promise<unknown> {
 
 const hostGateways: Array<ReturnType<typeof spawn>> = [];
 
+/** A `khal-tasks.fail` operation whose CLI is the given script, run with `bun` from the app directory. */
+function writeFailingApp(root: string, script: string): void {
+  const body = manifest("khal-tasks");
+  (body.operations as Record<string, unknown>)["khal-tasks.fail"] = {
+    interface: "cli",
+    command: "bun fail.mjs --json",
+    mutating: false,
+  };
+  writeManifest(root, "khal-tasks", body);
+  writeFileSync(join(root, "src", "apps", "khal-tasks", "fail.mjs"), script);
+}
+
+/** What the caller of `ravi apps run` receives for a failed run: the contract error, and what it printed. */
+function raiseContractFailure(
+  result: RaviAppRunResult,
+  asJson: boolean,
+): { error: ContractError; stdout: string[]; stderr: string[] } {
+  const originalLog = console.log;
+  const originalError = console.error;
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  console.log = (value?: unknown) => {
+    stdout.push(String(value));
+  };
+  console.error = (value?: unknown) => {
+    stderr.push(String(value));
+  };
+  try {
+    enforceRaviAppRunResult(result, asJson);
+  } catch (error) {
+    if (error instanceof ContractError) return { error, stdout, stderr };
+    throw error;
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+  }
+  throw new Error("The failed run did not raise a contract error.");
+}
+
 async function startHostCliGatewayProcess(): Promise<void> {
   const child = spawn({
     cmd: [process.execPath, resolve(originalCwd, "src", "cli", "fixtures", "host-cli-gateway-server.ts")],
@@ -738,18 +779,13 @@ describe("Ravi app router", () => {
     expect(realpathSync((result.result as { cwd: string }).cwd)).toBe(realpathSync(appDir));
   });
 
-  it("does not expose subprocess output when an app operation fails", async () => {
+  it("projects a redacted failure and never the raw subprocess output when an app operation fails", async () => {
     const root = makeRepo();
-    const body = manifest("khal-tasks");
-    (body.operations as Record<string, unknown>)["khal-tasks.fail"] = {
-      interface: "cli",
-      command: "bun fail.mjs --json",
-      mutating: false,
-    };
-    writeManifest(root, "khal-tasks", body);
-    writeFileSync(
-      join(root, "src", "apps", "khal-tasks", "fail.mjs"),
-      'console.log("PRIVATE_STDOUT_SENTINEL"); console.error("SECRET_STDERR_SENTINEL"); process.exit(42);',
+    writeFailingApp(
+      root,
+      `console.log("PRIVATE_STDOUT_SENTINEL");
+console.error("quota exceeded for the tenant token=fixture-token");
+process.exit(42);`,
     );
 
     const result = await runAppOperation({
@@ -765,12 +801,173 @@ describe("Ravi app router", () => {
       status: "failed",
       errorCode: "APP_OPERATION_FAILED",
       error: "Ravi app operation failed.",
+      failure: {
+        exitCode: 42,
+        source: "stderr",
+        message: "quota exceeded for the tenant token=[redacted:token]",
+        cause: "quota exceeded for the tenant token=[redacted:token]",
+      },
     });
+    // The raw streams and the command line stay private: only the projection of the error crosses.
     expect(result).not.toHaveProperty("stdout");
     expect(result).not.toHaveProperty("stderr");
     expect(result).not.toHaveProperty("command");
     expect(JSON.stringify(result)).not.toContain("PRIVATE_STDOUT_SENTINEL");
-    expect(JSON.stringify(result)).not.toContain("SECRET_STDERR_SENTINEL");
+    expect(JSON.stringify(result)).not.toContain("fixture-token");
+  });
+
+  it("hands the caller the app's own JSON error and its exit status when the CLI exits non-zero", async () => {
+    const root = makeRepo();
+    writeFailingApp(
+      root,
+      `console.log(JSON.stringify({
+  ok: false,
+  error: {
+    code: "NOT_AUTHORIZED",
+    reason: "turn_not_human",
+    message: "This secret needs a human to approve it.",
+    suggestedAction: "Ask the operator to run the command from their own session.",
+    retryable: false,
+    secretValue: "SECRET_FIELD_SENTINEL",
+  },
+}));
+process.exit(2);`,
+    );
+
+    const result = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "fail",
+      json: true,
+    });
+
+    expect(result.failure).toEqual({
+      exitCode: 2,
+      source: "json",
+      code: "NOT_AUTHORIZED",
+      message: "This secret needs a human to approve it.",
+      cause: "NOT_AUTHORIZED (turn_not_human): This secret needs a human to approve it.",
+      retryable: false,
+      suggestedAction: "Ask the operator to run the command from their own session.",
+    });
+
+    // `--json`: the envelope names the code and message the app gave, and keeps the router's own contract code.
+    const json = raiseContractFailure(result, true);
+    expect(json.error.code).toBe("APP_OPERATION_FAILED");
+    expect(json.error.exitCode).toBe(CONTRACT_EXIT_ERROR);
+    expect(json.error.envelope().error).toMatchObject({
+      code: "APP_OPERATION_FAILED",
+      message: "Ravi app operation failed: This secret needs a human to approve it.",
+      retryable: false,
+      appExitCode: 2,
+      suggestedAction: "Ask the operator to run the command from their own session.",
+      cause: "NOT_AUTHORIZED (turn_not_human): This secret needs a human to approve it.",
+      context: { operation: "apps run", code: "NOT_AUTHORIZED" },
+    });
+    expect(JSON.parse(json.stdout.join("\n"))).toEqual(JSON.parse(JSON.stringify(json.error.envelope())));
+    // A field the app invented is not part of the public contract.
+    expect(JSON.stringify(result)).not.toContain("SECRET_FIELD_SENTINEL");
+    expect(json.stdout.join("\n")).not.toContain("SECRET_FIELD_SENTINEL");
+
+    // Text mode: the terminal gets the same message and cause.
+    const text = raiseContractFailure(result, false);
+    expect(text.stdout).toEqual([]);
+    expect(text.stderr).toEqual([
+      "Ravi app operation failed: This secret needs a human to approve it.",
+      "Cause: NOT_AUTHORIZED (turn_not_human): This secret needs a human to approve it.",
+      "operation: apps run",
+      "code: NOT_AUTHORIZED",
+    ]);
+  });
+
+  it("truncates and redacts a long stderr", async () => {
+    const root = makeRepo();
+    writeFailingApp(
+      root,
+      `console.error("upload refused: https://store.example.test/put?signature=SIGNED_QUERY_SENTINEL");
+console.error("Authorization: Bearer fixture-bearer-credential");
+console.error("the key sk-abcdefghijklmnop leaked into this line");
+for (let line = 0; line < 800; line += 1) console.error("retry " + line + ": the backend answered 503 while the lease was held");
+console.log("PRIVATE_STDOUT_SENTINEL");
+process.exit(3);`,
+    );
+
+    const result = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "fail",
+      json: true,
+    });
+
+    const failure = result.failure;
+    expect(failure).toMatchObject({ exitCode: 3, source: "stderr" });
+    expect(failure?.cause.length).toBeLessThanOrEqual(2_000);
+    expect(failure?.cause.endsWith(" [truncated]")).toBe(true);
+    // The head of the stream survives, the tail does not.
+    expect(failure?.cause).toContain("upload refused");
+    expect(failure?.cause).not.toContain("retry 799");
+    // The headline is one bounded line.
+    expect(failure?.message).toBe("upload refused: https://store.example.test/put?[redacted:url-query]");
+
+    const { error, stdout } = raiseContractFailure(result, true);
+    const envelope = error.envelope().error;
+    expect((envelope.cause as string).length).toBeLessThanOrEqual(2_000);
+    expect(envelope.suggestedAction).toBe("Resolve the reported cause and retry");
+    expect(envelope.message).toBe(
+      "Ravi app operation failed: upload refused: https://store.example.test/put?[redacted:url-query]",
+    );
+    for (const leaked of [
+      "SIGNED_QUERY_SENTINEL",
+      "fixture-bearer-credential",
+      "sk-abcdefghijklmnop",
+      "PRIVATE_STDOUT_SENTINEL",
+    ]) {
+      expect(JSON.stringify(result)).not.toContain(leaked);
+      expect(stdout.join("\n")).not.toContain(leaked);
+    }
+  });
+
+  it("drops a stdout that is data rather than an error", async () => {
+    const root = makeRepo();
+    writeFailingApp(
+      root,
+      'console.log(JSON.stringify({ ok: true, rows: [{ id: "ROW_SENTINEL" }] })); process.exit(2);',
+    );
+
+    const result = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "fail",
+      json: true,
+    });
+
+    expect(result.failure).toEqual({ exitCode: 2, source: "none", cause: "The app CLI exited with code 2." });
+    expect(JSON.stringify(result)).not.toContain("ROW_SENTINEL");
+    const { error } = raiseContractFailure(result, true);
+    expect(error.envelope().error).toMatchObject({
+      message: "Ravi app operation failed.",
+      appExitCode: 2,
+      cause: "The app CLI exited with code 2.",
+      suggestedAction: "Inspect redacted runtime logs and retry",
+    });
+  });
+
+  it("does not invent an exit status for a CLI that a signal ended", async () => {
+    const root = makeRepo();
+    writeFailingApp(root, 'process.kill(process.pid, "SIGKILL");');
+
+    const result = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "fail",
+      json: true,
+    });
+
+    expect(result.failure).toEqual({
+      exitCode: null,
+      source: "none",
+      cause: "The app CLI was terminated by a signal.",
+    });
+    const { error } = raiseContractFailure(result, true);
+    expect(error.envelope().error).not.toHaveProperty("appExitCode");
+    expect(error.envelope().error.cause).toBe("The app CLI was terminated by a signal.");
+    expect(error.envelope().error.suggestedAction).toBe("Inspect redacted runtime logs and retry");
   });
 
   it("runs an external CLI through the public alias with a least-privilege child context", async () => {
@@ -1508,6 +1705,220 @@ describe("Ravi app router", () => {
     expect(timeout.permissionProvider).toMatchObject({
       decision: "error",
       reasonCode: "provider_timeout",
+    });
+  });
+});
+
+describe("Ravi app CLI failure projection", () => {
+  const run = (overrides: Partial<{ exitCode: number | null; stdout: string; stderr: string }>) => ({
+    exitCode: 1,
+    stdout: "",
+    stderr: "",
+    ...overrides,
+  });
+
+  it("reads the first-party app shape: an error object with code, reason, message and a next step", () => {
+    const failure = projectAppCliFailure(
+      run({
+        exitCode: 4,
+        stdout: JSON.stringify({
+          ok: false,
+          error: {
+            code: "GRANT_EXPIRED",
+            reason: "ttl_elapsed",
+            message: "The grant expired.",
+            suggestedAction: "Request a new grant.",
+            retryable: true,
+            cause: "ttl was 3600s",
+            details: { rows: ["PRIVATE_ROW"] },
+          },
+        }),
+      }),
+    );
+    expect(failure).toEqual({
+      exitCode: 4,
+      source: "json",
+      code: "GRANT_EXPIRED",
+      message: "The grant expired.",
+      cause: "GRANT_EXPIRED (ttl_elapsed): The grant expired.\nCaused by: ttl was 3600s",
+      retryable: true,
+      suggestedAction: "Request a new grant.",
+    });
+    expect(JSON.stringify(failure)).not.toContain("PRIVATE_ROW");
+  });
+
+  it("reads a top-level failure object and an error given as plain text", () => {
+    expect(
+      projectAppCliFailure(
+        run({ stdout: JSON.stringify({ ok: false, code: "BAD_INPUT", message: "Missing --name." }) }),
+      ),
+    ).toEqual({
+      exitCode: 1,
+      source: "json",
+      code: "BAD_INPUT",
+      message: "Missing --name.",
+      cause: "BAD_INPUT: Missing --name.",
+    });
+    expect(
+      projectAppCliFailure(run({ stdout: JSON.stringify({ error: "disk is full", errorCode: "ENOSPC" }) })),
+    ).toEqual({
+      exitCode: 1,
+      source: "json",
+      code: "ENOSPC",
+      message: "disk is full",
+      cause: "ENOSPC: disk is full",
+    });
+    // A message alone is enough; a code alone is too.
+    expect(projectAppCliFailure(run({ stdout: JSON.stringify({ error: { message: "nope" } }) }))).toMatchObject({
+      source: "json",
+      message: "nope",
+      cause: "nope",
+    });
+    expect(projectAppCliFailure(run({ stdout: JSON.stringify({ error: { code: "E_ONLY" } }) }))).toMatchObject({
+      source: "json",
+      code: "E_ONLY",
+      message: "E_ONLY",
+      cause: "E_ONLY",
+    });
+  });
+
+  it("keeps an error code only when it is a plain identifier that redaction leaves untouched", () => {
+    for (const code of [
+      "has spaces",
+      "key=PRIVATE_VALUE",
+      "sk-abcdefghijklmnop",
+      "x".repeat(97),
+      "../../etc",
+      "",
+      42,
+      null,
+      { nested: "OBJECT" },
+    ]) {
+      const failure = projectAppCliFailure(run({ stdout: JSON.stringify({ error: { code, message: "Refused." } }) }));
+      expect(failure.code).toBeUndefined();
+      expect(failure.message).toBe("Refused.");
+      expect(failure.cause).toBe("Refused.");
+    }
+  });
+
+  it("ignores a retryable flag that is not a boolean and an exit status it was not given", () => {
+    const failure = projectAppCliFailure(
+      run({ stdout: JSON.stringify({ error: { code: "BUSY", message: "Busy.", retryable: "yes" } }) }),
+    );
+    expect(failure).not.toHaveProperty("retryable");
+    expect(failure).not.toHaveProperty("suggestedAction");
+  });
+
+  it("prefers the JSON error over stderr and falls back to stderr when the JSON says nothing", () => {
+    const withBoth = projectAppCliFailure(
+      run({
+        stdout: JSON.stringify({ error: { code: "REFUSED", message: "From stdout." } }),
+        stderr: "From stderr.",
+      }),
+    );
+    expect(withBoth.source).toBe("json");
+    expect(JSON.stringify(withBoth)).not.toContain("From stderr.");
+
+    for (const stdout of [
+      JSON.stringify({ error: {} }),
+      JSON.stringify({ error: { code: 7, message: 9 } }),
+      JSON.stringify({ ok: false }),
+      "not json at all",
+      "[1, 2, 3]",
+    ]) {
+      expect(projectAppCliFailure(run({ stdout, stderr: "From stderr.\nsecond line" }))).toEqual({
+        exitCode: 1,
+        source: "stderr",
+        message: "From stderr.",
+        cause: "From stderr.\nsecond line",
+      });
+    }
+  });
+
+  it("does not parse a stdout that is larger than an error object can be", () => {
+    const huge = JSON.stringify({ error: { code: "HUGE", message: "x".repeat(70 * 1024) } });
+    expect(projectAppCliFailure(run({ stdout: huge, stderr: "Short stderr." }))).toMatchObject({
+      source: "stderr",
+      cause: "Short stderr.",
+    });
+  });
+
+  it("masks the exact secret values it is given in every projected field", () => {
+    const secret = "opaque-credential-value";
+    const json = projectAppCliFailure(
+      run({
+        stdout: JSON.stringify({
+          error: {
+            code: secret,
+            reason: secret,
+            message: `login failed for ${secret}`,
+            cause: `${secret} was rejected`,
+            suggestedAction: `unset ${secret}`,
+          },
+        }),
+      }),
+      { secrets: [secret] },
+    );
+    expect(JSON.stringify(json)).not.toContain(secret);
+    expect(json.source).toBe("json");
+    expect(json.message).toContain("login failed for");
+
+    const stderr = projectAppCliFailure(run({ stderr: `login failed for ${secret}` }), { secrets: [secret] });
+    expect(JSON.stringify(stderr)).not.toContain(secret);
+    expect(stderr.source).toBe("stderr");
+  });
+
+  it("bounds the headline, the cause and the next step", () => {
+    // Each field is a single line under the redactor's own 2048-character line limit.
+    const longLine = "word ".repeat(300).trim();
+    const steps = Array.from({ length: 200 }, (_, step) => `step ${step} of the failing sequence`).join("\n");
+    const failure = projectAppCliFailure(
+      run({
+        stdout: JSON.stringify({
+          error: { code: "TOO_LONG", message: longLine, suggestedAction: longLine, cause: steps },
+        }),
+      }),
+    );
+    expect(failure.message?.length).toBeLessThanOrEqual(300);
+    expect(failure.message?.endsWith(" [truncated]")).toBe(true);
+    expect(failure.message).not.toContain("\n");
+    expect(failure.suggestedAction?.length).toBeLessThanOrEqual(300);
+    expect(failure.suggestedAction?.endsWith(" [truncated]")).toBe(true);
+    expect(failure.cause.length).toBeLessThanOrEqual(2_000);
+    expect(failure.cause.endsWith(" [truncated]")).toBe(true);
+    expect(failure.cause).toContain("Caused by: step 0 of the failing sequence");
+  });
+
+  it("leaves a line the redactor treats as an opaque payload out of the failure", () => {
+    // Redaction runs before the cut: a line over the redactor's limit is replaced whole, never half-masked,
+    // and a stream over its input limit keeps the lines before the cut and says so.
+    const oneLongLine = projectAppCliFailure(run({ stderr: `short head\n${"word ".repeat(500)}\nshort tail` }));
+    expect(oneLongLine.cause).toBe("short head\n[redacted:oversize]\nshort tail");
+    const longStream = projectAppCliFailure(run({ stderr: `short head\n${"word ".repeat(2_000)}\nshort tail` }));
+    expect(longStream.cause).toBe("short head\n[redacted:oversize]");
+  });
+
+  it("never cuts a character in half when it truncates", () => {
+    // A single 2040-unit line is under the redactor's line limit and over the cause limit.
+    const failure = projectAppCliFailure(run({ stderr: "ab😀 ".repeat(408) }));
+    expect(failure.cause.length).toBeLessThanOrEqual(2_000);
+    expect(failure.cause.endsWith(" [truncated]")).toBe(true);
+    expect(failure.message?.length).toBeLessThanOrEqual(300);
+    const loneSurrogate = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+    expect(loneSurrogate.test(failure.cause)).toBe(false);
+    expect(loneSurrogate.test(failure.message ?? "")).toBe(false);
+  });
+
+  it("says nothing the CLI did not say when there is no output to project", () => {
+    expect(projectAppCliFailure(run({ exitCode: 9, stderr: "  \n\t " }))).toEqual({
+      exitCode: 9,
+      source: "none",
+      cause: "The app CLI exited with code 9.",
+    });
+    expect(projectAppCliFailure(run({ exitCode: null }))).toEqual({
+      exitCode: null,
+      source: "none",
+      cause: "The app CLI was terminated by a signal.",
     });
   });
 });
