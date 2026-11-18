@@ -25,6 +25,8 @@ afterEach(async () => {
 function pagesContext(): ContextRecord {
   const capabilities: ContextCapability[] = [
     { permission: "execute", objectType: "group", objectId: "pages", source: "test" },
+    // `pages ship --html` reads a local file on the caller's behalf, which needs `use:tool:Read`.
+    { permission: "use", objectType: "tool", objectId: "Read", source: "test" },
   ];
   return {
     contextId: "ctx_pages_ship",
@@ -47,18 +49,21 @@ describe("remote pages ship cwd and error projection", () => {
     tempDirs.push(cwd);
     await writeFile(join(cwd, "index.html"), "<h1>OK</h1>");
 
-    const result = await dispatchPagesShip({ title: "Weekly report", html: "./index.html" }, cwd);
+    // `pages ship` needs a Console project and Console authentication before it reaches the dry-run gate. The
+    // sandbox has neither a saved scope nor a login: pass the project, and expect the command to get as far as
+    // authentication, which only happens once `--html` resolved against the caller cwd.
+    const result = await dispatchPagesShip({ title: "Weekly report", html: "./index.html", project: "proj_test" }, cwd);
     const body = (await result.response.json()) as {
       success: boolean;
       exitCode: number;
       error: { code: string };
     };
 
-    expect(result.response.status).toBe(409);
+    expect(result.response.status).toBe(422);
     expect(body).toMatchObject({
       success: false,
-      exitCode: 3,
-      error: { code: "WRITE_REQUIRES_EXECUTE" },
+      exitCode: 1,
+      error: { code: "AUTH_REQUIRED" },
     });
   });
 

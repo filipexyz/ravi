@@ -47,3 +47,19 @@ provider and follow-maintenance tests. Both fixture ownership and the release
 launcher need repair; weakening the storage guard or skipping the hook would
 hide the defect. Workflow regressions execute the real hook with cheap checkers
 so they can validate inheritance without running full builds on the live host.
+
+## Test files that no CI job ran, 2026-11-18
+
+The review of #873 found that `src/jobs/` and the env tests of #871 were in no
+shard: the shards are lists of paths, and nothing checked that a test file
+appeared in one. Measuring with the real scripts and Bun's real selection rule
+(not by grep) found 213 of 807 test files that no CI job ran, 63 of them under
+`src/runtime/`. Six had drifted from the code they test while nobody ran them: a
+gateway error shape (`{ error: "NotFound" }` became a contract envelope), a
+permission now required before a local file is read (`use:tool:Read`), a CLI that
+refuses to run in-process when a context key is in the environment, and a
+command that now needs Console authentication before its dry-run gate. Bun does
+not help: a filter that matches nothing is ignored as long as another filter of
+the same command matches, so a renamed path stops running its tests without a
+word. The gate now derives what CI runs from the commands themselves and fails
+for a file nothing selects, instead of relying on a person to remember the list.
