@@ -121,6 +121,13 @@ Expected:
 - `src/runtime/runtime-request-context.test.ts` covers queued and chained
   handoffs, speaker changes, spoofed/derived callers, revocations, authority
   ceilings and notification exclusion; personal/shared connectors remain denied.
+- `src/runtime/delegated-requester.test.ts` covers delegated work: a later
+  thread handoff from a parent turn no person started acts for the thread's
+  first requester; a thread nobody asked into and a non-thread session stay
+  `agent_relay`; a task created from a verified request (directly or from an
+  inheriting thread turn) acts for that person in its dispatch turn; a task
+  created from no verified request, a finished task, a foreign agent or a
+  forged task scope on a CLI child stay refused.
 - The same suite MUST reject an already admitted child after ancestor
   revocation or contact block, preserve explicit revocation across real lease
   shutdown, and preserve connector restrictions through actor projection.

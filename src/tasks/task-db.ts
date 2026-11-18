@@ -273,6 +273,9 @@ function applyTaskWorktreeSchemaMigrations(): void {
   if (!taskColumns.has("report_events")) {
     db.exec("ALTER TABLE tasks ADD COLUMN report_events TEXT");
   }
+  if (!taskColumns.has("requester_context_id")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN requester_context_id TEXT");
+  }
   if (!taskColumns.has("archived_at")) {
     db.exec("ALTER TABLE tasks ADD COLUMN archived_at INTEGER");
   }
@@ -1125,6 +1128,57 @@ export function dbSetTaskProfileState(taskId: string, profileState: TaskProfileS
     WHERE id = ?
   `).run(serializeTaskProfileState(profileState), taskId);
   return getTaskOrThrow(taskId);
+}
+
+/**
+ * Record the verified human request a task was created from (a turn-runtime
+ * context id). Set once: a later call never replaces the first requester.
+ */
+export function dbSetTaskRequesterContext(taskId: string, requesterContextId: string): void {
+  ensureTaskSchema();
+  getDb()
+    .prepare("UPDATE tasks SET requester_context_id = ? WHERE id = ? AND requester_context_id IS NULL")
+    .run(requesterContextId, taskId);
+}
+
+export interface TaskDispatchRequesterRow {
+  taskId: string;
+  taskStatus: string;
+  taskArchived: boolean;
+  assignmentAgentId: string;
+  assignmentStatus: string;
+  requesterContextId: string | null;
+}
+
+/** The task assignment a dispatch handoff belongs to, with the task's recorded requester. */
+export function dbGetTaskDispatchRequester(handoffId: string): TaskDispatchRequesterRow | null {
+  ensureTaskSchema();
+  const row = getDb()
+    .prepare(
+      `SELECT a.task_id, a.agent_id, a.status AS assignment_status, t.status AS task_status,
+        t.archived_at, t.requester_context_id
+       FROM task_assignments a JOIN tasks t ON t.id = a.task_id
+       WHERE a.handoff_id = ? LIMIT 1`,
+    )
+    .get(handoffId) as
+    | {
+        task_id: string;
+        agent_id: string;
+        assignment_status: string;
+        task_status: string;
+        archived_at: number | null;
+        requester_context_id: string | null;
+      }
+    | undefined;
+  if (!row) return null;
+  return {
+    taskId: row.task_id,
+    taskStatus: row.task_status,
+    taskArchived: row.archived_at != null,
+    assignmentAgentId: row.agent_id,
+    assignmentStatus: row.assignment_status,
+    requesterContextId: row.requester_context_id,
+  };
 }
 
 export function dbGetTask(id: string): TaskRecord | null {

@@ -141,6 +141,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/crash-recovery-store.test.ts",
     "src/runtime/observation-plane.test.ts",
     "src/runtime/runtime-request-context.test.ts",
+    // Slack thread and task turns keep the verified requester for Bases.
+    "src/runtime/delegated-requester.test.ts",
     "src/runtime/runtime-request-builder.context-key.test.ts",
     // A trigger fire through the real turn start: its session, where it answers, and what Bases decides.
     "src/runtime/runtime-request-builder.trigger-owner.test.ts",

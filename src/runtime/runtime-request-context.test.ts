@@ -2611,13 +2611,18 @@ describe("verified human work handoffs", () => {
     expect(accessFor(grandchild)).toMatchObject({ kind: "contact", contactId: contact.id });
   });
 
-  it.each(["turn_context_rotated", "turn_context_completed"])("admitted work survives %s", (reason) => {
-    const { caller, contact } = humanTurn();
-    revokeRuntimeContext(caller.contextId, { cascade: false, reason });
-    expect(accessFor(handoff(caller))).toMatchObject({ kind: "contact", contactId: contact.id });
-  });
+  // An abort is a newer message interrupting the turn (or the runtime stopping
+  // it): the work it already handed off still runs, so it keeps its requester.
+  it.each(["turn_context_rotated", "turn_context_completed", "turn_context_aborted"])(
+    "admitted work survives %s",
+    (reason) => {
+      const { caller, contact } = humanTurn();
+      revokeRuntimeContext(caller.contextId, { cascade: false, reason });
+      expect(accessFor(handoff(caller))).toMatchObject({ kind: "contact", contactId: contact.id });
+    },
+  );
 
-  it.each(["turn_context_aborted", "agent_permissions_changed", "operator_revoked"])(
+  it.each(["agent_permissions_changed", "operator_revoked", "turn_context_not_live"])(
     "queued work does not retain human attribution after %s",
     (reason) => {
       const { caller } = humanTurn();

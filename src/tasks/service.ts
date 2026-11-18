@@ -1,5 +1,6 @@
 import { publishTaskDispatch, taskDispatchSessionKey } from "./dispatch-admission.js";
 import { getContext } from "../cli/context.js";
+import { resolveRequesterContextIdFor } from "../runtime/delegated-requester.js";
 import { resolveSubject, type SubjectRef } from "../identity/subject.js";
 import { CliExpectedError } from "../cli/expected-error.js";
 import {
@@ -59,6 +60,7 @@ import {
   dbUnarchiveTask,
   dbCompleteTask,
   dbCreateTask,
+  dbSetTaskRequesterContext,
   dbFindTaskCreation,
   dbRollbackTaskCreation,
   dbDispatchTask,
@@ -2484,6 +2486,16 @@ function resolveTaskSubjectFromRuntime(): SubjectRef | undefined {
   });
 }
 
+/**
+ * Record the verified human request behind the turn creating this task, so
+ * the task's dispatch turns act for that person in Bases (see
+ * `src/runtime/delegated-requester.ts`). No verified request, no requester.
+ */
+function recordTaskRequester(taskId: string): void {
+  const requesterContextId = resolveRequesterContextIdFor(getContext()?.context);
+  if (requesterContextId) dbSetTaskRequesterContext(taskId, requesterContextId);
+}
+
 export function createTask(input: CreateTaskInput): {
   wasNoop?: boolean;
   task: TaskRecord;
@@ -2543,6 +2555,7 @@ export function createTask(input: CreateTaskInput): {
   );
 
   if (created.wasNoop) return { task: created.task, event: created.event, relatedEvents: [], wasNoop: true };
+  recordTaskRequester(created.task.id);
 
   try {
     const { task: profiledTask, profile: resolvedProfile } = ensureResolvedTaskProfile(created.task, {
