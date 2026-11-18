@@ -340,6 +340,7 @@ describe("dbGetOpenThreadHumanRequestTurns", () => {
     const thread = dbGetOpenThreadHumanRequestTurns(CHILD_KEY);
 
     expect(thread?.parentSessionKey).toBe(PARENT_KEY);
+    expect(thread?.parentAgentId).toBe(AGENT_ID);
     expect(thread?.humanRequestTurns.map((turn) => turn.contextId)).toEqual(["early", "late"]);
   });
 

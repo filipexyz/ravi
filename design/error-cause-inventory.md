@@ -1704,14 +1704,14 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | router | src/router/router-db.ts | 6995 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:a027472d886ff1c7e468a908 |
 | router | src/router/router-db.ts | 7003 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:a027472d886ff1c7e468a908 |
 | router | src/router/router-db.ts | 7011 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:a027472d886ff1c7e468a908 |
-| router | src/router/router-db.ts | 9312 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:b3899c33992830f470985efb |
-| router | src/router/router-db.ts | 9344 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:b3899c33992830f470985efb |
-| router | src/router/router-db.ts | 9696 | triaged-follow-up | cause-not-forwarded-at-surface | src/router/router-db.ts:6a1e1eedfc68e60affed72f0 |
-| router | src/router/router-db.ts | 9929 | triaged-follow-up | cause-not-forwarded-at-surface | src/router/router-db.ts:454c1d7739a0c56467723de6 |
-| router | src/router/router-db.ts | 10552 | triaged-follow-up | cause-not-forwarded-at-surface | src/router/router-db.ts:7d283c7fdec8206ee1c0ed64 |
-| router | src/router/router-db.ts | 10583 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:eb6c608285aac837be753ebb |
-| router | src/router/router-db.ts | 11904 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:f5c7494ddf693b7a4aa5bf9e |
-| router | src/router/router-db.ts | 11907 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:015f3a21ffe76e22671668bf |
+| router | src/router/router-db.ts | 9320 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:b3899c33992830f470985efb |
+| router | src/router/router-db.ts | 9352 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:b3899c33992830f470985efb |
+| router | src/router/router-db.ts | 9704 | triaged-follow-up | cause-not-forwarded-at-surface | src/router/router-db.ts:6a1e1eedfc68e60affed72f0 |
+| router | src/router/router-db.ts | 9937 | triaged-follow-up | cause-not-forwarded-at-surface | src/router/router-db.ts:454c1d7739a0c56467723de6 |
+| router | src/router/router-db.ts | 10560 | triaged-follow-up | cause-not-forwarded-at-surface | src/router/router-db.ts:7d283c7fdec8206ee1c0ed64 |
+| router | src/router/router-db.ts | 10591 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:eb6c608285aac837be753ebb |
+| router | src/router/router-db.ts | 11912 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:f5c7494ddf693b7a4aa5bf9e |
+| router | src/router/router-db.ts | 11915 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:015f3a21ffe76e22671668bf |
 | sessions | src/router/sessions.ts | 934 | fixed | binding retained / no recognized error surface | src/router/sessions.ts:7d1bb7744cf9f62680b55377 |
 | sessions | src/router/sessions.ts | 948 | triaged-follow-up | catch-without-binding | src/router/sessions.ts:4cea4fc40c424fe5e35e394b |
 | sessions | src/router/sessions.ts | 1570 | fixed | binding retained / no recognized error surface | src/router/sessions.ts:c6829bbd0def352b36c4b5d7 |

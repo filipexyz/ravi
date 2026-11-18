@@ -11,7 +11,7 @@ import { accessActorFromTurn } from "../access/actor.js";
 import { closeSlackThreadLifecycle, registerInboundSlackThread } from "../channels/slack/thread-lifecycle-store.js";
 import { runWithContext } from "../cli/context.js";
 import { blockContact, createContact } from "../contacts.js";
-import { resolveConnectorTurn } from "../link/connector-turn.js";
+import { resolveConnectorTurn, resolveCronOwnerPrincipalForCurrentTurn } from "../link/connector-turn.js";
 import { dbCreateAgent, dbGetContext, getDb, type ContextRecord } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/sessions.js";
 import { prepareTaskDispatch } from "../tasks/dispatch-admission.js";
@@ -276,6 +276,26 @@ describe("Slack thread turns keep the person who asked for the thread", () => {
     expect(accessFor(later)).toMatchObject({ kind: "refused", reason: { kind: "agent_relay" } });
   });
 
+  it("a parent-session turn recorded for another agent inherits nothing", () => {
+    const { first } = askedThread();
+    const foreign = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: workerAgent.id,
+      sessionKey: keyOf(mainAgent.id, PARENT_NAME),
+      sessionName: PARENT_NAME,
+      metadata: {
+        actorPrincipal: `agent:${workerAgent.id}`,
+        actorResolution: "resolved",
+        turnOrigin: buildSessionRelayTurnOrigin("inform", {
+          agentId: first.agentId,
+          sessionKey: first.sessionKey,
+          contextId: first.contextId,
+        }),
+      },
+    }) as Turn;
+    expect(accessFor(handToThread(foreign, "execute")).kind).toBe("refused");
+  });
+
   it("a handoff by another agent inherits nothing", () => {
     const { first } = askedThread();
     const worker = turnCausedBy(first, "inform", "worker-session", workerAgent);
@@ -313,19 +333,51 @@ describe("Slack thread turns keep the person who asked for the thread", () => {
 });
 
 describe("a thread handoff from a cron run acts for the cron's owner", () => {
-  function cronTurn(ownerPrincipal: string, ownerIsOperator: boolean, kind = "turn-runtime") {
+  function cronTurn(
+    ownerPrincipal: string,
+    ownerIsOperator: boolean,
+    kind = "turn-runtime",
+    at: { agentId?: string; sessionName?: string; snapshotJobId?: string } = {},
+  ) {
+    const agentId = at.agentId ?? mainAgent.id;
+    const sessionName = at.sessionName ?? PARENT_NAME;
+    // The session belongs to the parent's agent; `agentId` alone may differ.
+    getOrCreateSession(keyOf(mainAgent.id, sessionName), mainAgent.id, mainAgent.cwd, { name: sessionName });
     return createRuntimeContext({
       kind,
-      agentId: mainAgent.id,
-      sessionKey: keyOf(mainAgent.id, PARENT_NAME),
-      sessionName: PARENT_NAME,
+      agentId,
+      sessionKey: keyOf(mainAgent.id, sessionName),
+      sessionName,
       metadata: {
         actorPrincipal: "automation:cron:job-1",
         actorResolution: "resolved",
-        cronRunAuthority: { jobId: "job-1", ownerPrincipal, ownerIsOperator },
+        cronRunAuthority: { jobId: at.snapshotJobId ?? "job-1", ownerPrincipal, ownerIsOperator },
       },
     }) as Turn;
   }
+
+  it("a cron run of another session or another agent inherits nothing", () => {
+    askedThread();
+    const otherSession = cronTurn("operator", true, "turn-runtime", { sessionName: "other-session" });
+    expect(accessFor(handToThread(otherSession, "execute")).kind).toBe("refused");
+    const otherAgent = cronTurn("operator", true, "turn-runtime", { agentId: workerAgent.id });
+    expect(accessFor(handToThread(otherAgent, "execute")).kind).toBe("refused");
+  });
+
+  it("a snapshot that says operator but an owner the current binding does not confirm is not the operator", () => {
+    askedThread();
+    const owner = createContact({ phone: "5511900077052", name: "Unbound Owner" });
+    const later = handToThread(cronTurn(`contact:${owner.id}`, true), "execute");
+    const decision = accessFor(later);
+    expect(decision.kind).not.toBe("operator");
+    expect(decision).toMatchObject({ kind: "contact", contactId: owner.id });
+  });
+
+  it("a snapshot naming another job inherits nothing", () => {
+    askedThread();
+    const later = handToThread(cronTurn("operator", true, "turn-runtime", { snapshotJobId: "job-2" }), "execute");
+    expect(accessFor(later).kind).toBe("refused");
+  });
 
   it("an operator's cron acts as the operator, not as the thread's earlier requester", () => {
     askedThread();
@@ -379,6 +431,52 @@ describe("a thread handoff from a cron run acts for the cron's owner", () => {
     askedThread();
     const later = handToThread(cronTurn("operator", true, "cli-runtime"), "execute");
     expect(accessFor(later).kind).toBe("refused");
+  });
+});
+
+describe("a delegated turn never makes the operator the owner of a cron it creates or edits", () => {
+  function cronOwnerFor(turn: Turn) {
+    return resolveCronOwnerPrincipalForCurrentTurn({
+      env: {},
+      runtimeContext: { present: true, record: turn },
+      activeUserId: "operator-user",
+      activeOrgId: "test-org",
+      ownerName: "Operator",
+    });
+  }
+
+  it("a thread turn that acts for the operator in Bases owns its cron as the relaying agent", () => {
+    askedThread();
+    const run = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: mainAgent.id,
+      sessionKey: keyOf(mainAgent.id, PARENT_NAME),
+      sessionName: PARENT_NAME,
+      metadata: {
+        actorPrincipal: "automation:cron:job-1",
+        actorResolution: "resolved",
+        cronRunAuthority: { jobId: "job-1", ownerPrincipal: "operator", ownerIsOperator: true },
+      },
+    }) as Turn;
+    const later = handToThread(run, "execute");
+    expect(accessFor(later)).toMatchObject({ kind: "operator" });
+    const owner = cronOwnerFor(later);
+    expect(owner).not.toBe("operator");
+    expect(owner).toBe(`agent:${mainAgent.id}`);
+  });
+
+  it("a thread turn that acts for a contact owns its cron as the relaying agent", () => {
+    const { contact, first } = askedThread();
+    const later = handToThread(turnCausedBy(first, "inform"), "execute");
+    expect(accessFor(later)).toMatchObject({ kind: "contact", contactId: contact.id });
+    expect(cronOwnerFor(later)).toBe(`agent:${mainAgent.id}`);
+  });
+
+  it("a task dispatch turn that acts for its requester owns no operator cron", () => {
+    const { contact, turn } = humanTurn();
+    const { turn: taskTurn } = dispatchedTaskTurn(turn);
+    expect(accessFor(taskTurn)).toMatchObject({ kind: "contact", contactId: contact.id });
+    expect(cronOwnerFor(taskTurn)).not.toBe("operator");
   });
 });
 

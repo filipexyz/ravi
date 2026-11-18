@@ -81,7 +81,14 @@ export function resolveThreadInheritedRequester(
   const thread = (deps.getThread ?? dbGetOpenThreadHumanRequestTurns)(input.sessionKey);
   if (!thread) return null;
   const caller = getById(origin.callerContextId);
-  if (!caller || caller.agentId !== input.relayAgentId || caller.sessionKey !== thread.parentSessionKey) return null;
+  if (
+    !caller ||
+    caller.agentId !== input.relayAgentId ||
+    caller.sessionKey !== thread.parentSessionKey ||
+    !thread.parentAgentId ||
+    caller.agentId !== thread.parentAgentId
+  )
+    return null;
   const callerPrincipal = typeof caller.metadata?.actorPrincipal === "string" ? caller.metadata.actorPrincipal : "";
   if (callerPrincipal !== `agent:${input.relayAgentId}`) return null;
   if (!wasCausedByThread(caller, input.sessionKey, getById)) return null;
@@ -153,7 +160,9 @@ export function resolveThreadCronRequester(
     !cronTurn ||
     cronTurn.kind !== "turn-runtime" ||
     cronTurn.agentId !== input.relayAgentId ||
-    cronTurn.sessionKey !== thread.parentSessionKey
+    cronTurn.sessionKey !== thread.parentSessionKey ||
+    !thread.parentAgentId ||
+    cronTurn.agentId !== thread.parentAgentId
   )
     return null;
   const principal = typeof cronTurn.metadata?.actorPrincipal === "string" ? cronTurn.metadata.actorPrincipal : "";

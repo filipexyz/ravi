@@ -232,26 +232,41 @@ calls) for the person who asked, and only when that person is proven:
   carrying those fields MUST be ignored.
 - **Slack thread.** A turn in the child session of an *open* Slack thread that
   is a work handoff (`session.bootstrap`, `send`, `ask`, `execute`) from an
-  agent, made from a turn of the thread's own parent session by that same agent,
-  inherits the thread's *first* verified human request (the earliest turn of
-  that thread carrying `humanRequest`) only when that parent turn was caused by
+  agent, made from a turn of the thread's own parent session by that same agent
+  (which MUST also be the agent that owns the parent session), inherits the
+  thread's *first* verified human request (the earliest turn of that thread
+  carrying `humanRequest`, never a later or the most recent one) only when that
+  parent turn was caused by
   the thread itself: an `inform` or `answer` relayed from a turn of the
   thread's session, or the thread's `session.return` (proved by the parent
   turn's `turnOrigin` and the session of the context it names). A parent turn
   driven by another session's Ask/Inform, another thread's return, a trigger
   (a PR, an e-mail) or any other automation MUST inherit nothing.
 - **Cron in the parent.** A thread handoff made from a cron run of the
-  thread's own parent session (a host-issued `turn-runtime` context whose actor
+  thread's own parent session, by the agent that owns that session (a
+  host-issued `turn-runtime` context whose actor
   is `automation:cron:<id>` and whose `cronRunAuthority` snapshot names that
   job) acts for the cron's **owner**, never for the thread's earlier
   requester: an operator-owned cron acts as the operator, a contact-owned cron
   as that contact (refused when the contact is removed or blocked), and a cron
-  with no traceable human owner inherits nothing. The run is subject to the
-  same withdrawal and 72-hour rules. A person's
+  with no traceable human owner inherits nothing. The operator is decided by
+  the current binding, not by the snapshot alone: a snapshot that says
+  operator for an owner the active Console user no longer matches acts as
+  that contact. A snapshot naming another job, or a run of another session
+  or agent, inherits nothing. The run is subject to the same withdrawal and
+  72-hour rules.
+- **Cron ownership from delegated turns.** A thread or task turn that acts for
+  a requester in Bases MUST NOT make the operator the owner of a cron it
+  creates or edits: its cron owner is the turn's own actor principal (the
+  relaying agent, or `unknown` for a task turn), so such a cron never runs as
+  the operator and can never be a shell job. A person's
   own parent turn is authorized as theirs (the direct handoff above), never
   upgraded to the thread's requester. If the first request no longer resolves,
-  the turn MUST NOT fall through to a later, different requester. A thread no
-  person ever asked into inherits nothing.
+  the turn MUST NOT fall through to a later, different requester; in
+  particular, once that first request is more than 72 hours old the thread
+  inherits nobody again, and work that still needs the person's authority
+  needs a new thread opened from a fresh request. A thread no person ever
+  asked into inherits nothing.
 - **Task.** `ravi tasks create` MUST record on the task (`requester_context_id`,
   written once) the verified request behind the creating turn: the turn
   itself when it is a verified human request, the thread's requester when it

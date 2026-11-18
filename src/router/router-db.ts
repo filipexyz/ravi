@@ -7293,6 +7293,8 @@ export function dbGetThreadParentChat(
  */
 export function dbGetOpenThreadHumanRequestTurns(childSessionKey: string): {
   parentSessionKey: string;
+  /** The agent that owns the parent session (null when the session row is gone). */
+  parentAgentId: string | null;
   humanRequestTurns: ContextRecord[];
 } | null {
   const key = childSessionKey.trim();
@@ -7300,16 +7302,22 @@ export function dbGetOpenThreadHumanRequestTurns(childSessionKey: string): {
   const db = getDb();
   const thread = db
     .prepare(
-      "SELECT parent_session_key FROM slack_thread_lifecycle WHERE child_session_key = ? AND status = 'open' ORDER BY updated_at DESC LIMIT 1",
+      `SELECT l.parent_session_key, s.agent_id AS parent_agent_id
+       FROM slack_thread_lifecycle l LEFT JOIN sessions s ON s.session_key = l.parent_session_key
+       WHERE l.child_session_key = ? AND l.status = 'open' ORDER BY l.updated_at DESC LIMIT 1`,
     )
-    .get(key) as { parent_session_key: string } | undefined;
+    .get(key) as { parent_session_key: string; parent_agent_id: string | null } | undefined;
   if (!thread) return null;
   const rows = db
     .prepare(
       "SELECT * FROM contexts WHERE session_key = ? AND kind = 'turn-runtime' AND json_extract(metadata_json, '$.humanRequest') IS NOT NULL ORDER BY created_at ASC LIMIT 8",
     )
     .all(key) as ContextRow[];
-  return { parentSessionKey: thread.parent_session_key, humanRequestTurns: rows.map(rowToContext) };
+  return {
+    parentSessionKey: thread.parent_session_key,
+    parentAgentId: thread.parent_agent_id ?? null,
+    humanRequestTurns: rows.map(rowToContext),
+  };
 }
 
 export function dbFindChat(input: {
