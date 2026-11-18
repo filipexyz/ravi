@@ -58,7 +58,10 @@ appeared in one. Measuring with the real scripts and Bun's real selection rule
 gateway error shape (`{ error: "NotFound" }` became a contract envelope), a
 permission now required before a local file is read (`use:tool:Read`), a CLI that
 refuses to run in-process when a context key is in the environment, and a
-command that now needs Console authentication before its dry-run gate. Bun does
+command that now needs Console authentication before its dry-run gate. One more
+only passed alone: `server-log.test.ts` shares a module-level throttle with the
+other gateway tests, which log real requests through it, and failed as soon as it
+ran in the same process (it now owns its keys). Bun does
 not help: a filter that matches nothing is ignored as long as another filter of
 the same command matches, so a renamed path stops running its tests without a
 word. The gate now derives what CI runs from the commands themselves and fails

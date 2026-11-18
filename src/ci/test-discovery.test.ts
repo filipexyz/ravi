@@ -223,7 +223,12 @@ describe("reading CI commands", () => {
   });
 });
 
-describe("the repository's test files", () => {
+/**
+ * What CI runs, read from this checkout. Loaded inside the tests rather than while the file is collected, so a
+ * command the helper refuses to read fails the test that needs it, with its message, and not the whole file.
+ */
+let repoCache: ReturnType<typeof loadRepo> | undefined;
+function loadRepo() {
   const existing = listRepoFiles(root);
   const files = existing.filter((path) => TEST_FILE_PATTERN.test(path));
   const scripts = (
@@ -231,8 +236,16 @@ describe("the repository's test files", () => {
   ).scripts;
   const workflow = YAML.parse(readFileSync(resolve(root, ".github/workflows/ci.yml"), "utf8")) as Workflow;
   const coverage = ciCoverage(collectCiInvocations(scripts, workflow, files), files, root, existing);
+  return { files, scripts, coverage };
+}
+const repo = () => {
+  repoCache ??= loadRepo();
+  return repoCache;
+};
 
+describe("the repository's test files", () => {
   it("every test file runs in a CI job or is excluded with a reason", () => {
+    const { files, coverage } = repo();
     const unrun = files.filter((file) => !coverage.runBy.has(file) && !Object.hasOwn(TEST_EXCLUSIONS, file));
     expect(
       unrun,
@@ -246,6 +259,7 @@ describe("the repository's test files", () => {
   });
 
   it("every exclusion names a test file CI does not run, with a reason", () => {
+    const { files, scripts, coverage } = repo();
     for (const [file, exclusion] of Object.entries(TEST_EXCLUSIONS)) {
       expect(files, `${file} is excluded but is not a test file in the checkout: delete the exclusion`).toContain(file);
       expect(coverage.runBy.get(file) ?? [], `${file} is excluded but CI runs it: delete the exclusion`).toEqual([]);
@@ -260,6 +274,7 @@ describe("the repository's test files", () => {
   it("no filter of a CI command points at nothing", () => {
     // Bun only fails when no filter of a command matches, so a renamed or deleted path in a mixed command is
     // dropped without a word and the tests it used to name stop running.
+    const { coverage } = repo();
     expect(
       coverage.deadFilters.map((dead) => `${dead.origin}: ${dead.filter}`),
       "These filters select no test file; fix the path or delete the filter:",
@@ -267,6 +282,7 @@ describe("the repository's test files", () => {
   });
 
   it("each script that spawns bun test itself still names the files it runs", () => {
+    const { files } = repo();
     for (const [script, runnerFiles] of Object.entries(DEDICATED_RUNNERS)) {
       const source = readFileSync(resolve(root, script), "utf8");
       for (const file of runnerFiles) {
