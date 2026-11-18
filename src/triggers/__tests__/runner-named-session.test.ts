@@ -3,10 +3,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dbCreateAgent } from "../../router/router-db.js";
+import { buildSessionKey } from "../../router/session-key.js";
 import { deleteSession, getOrCreateSession, listSessions, updateSessionSource } from "../../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import type { WatchRecord } from "../../watch/types.js";
-import type { SessionTarget } from "../types.js";
+import type { SessionTarget, TriggerInput } from "../types.js";
 
 afterAll(() => mock.restore());
 
@@ -293,6 +294,92 @@ describe("thread follow handoff delivery", () => {
     });
     expect(dbGetTrigger(trigger.id)?.fireCount).toBe(1);
     expect(getSlackThreadLifecycle(record.requestId)?.status).toBe("closed");
+  });
+});
+
+describe("reply account follows the destination's channel", () => {
+  const topic = "ravi.watch.console.page.comment.created";
+  const comment = { payload: { routePath: "/blog/post", body: "looks good", url: "https://x.ravi.page/blog/post" } };
+  const whatsappDm = { channel: "whatsapp", accountId: "wa-main", chatId: "5511999990000@s.whatsapp.net" };
+
+  // What a follow armed from a Slack thread stores once it belongs to the thread's
+  // durable parent: the thread's account, and the Slack root chat as frozen source.
+  const handedOffFollow = (overrides: Partial<TriggerInput> = {}) =>
+    dbCreateTrigger({
+      name: "page-comment:site:/blog/post",
+      topic,
+      message: "A comment was added on {{data.payload.routePath}}: {{data.payload.body}}",
+      session: "main",
+      agentId: "trigger-test-agent",
+      accountId: "slack-account",
+      replySession: "parent",
+      replySource: { channel: "slack", accountId: "slack-account", chatId: "C123" },
+      cooldownMs: 0,
+      ...overrides,
+    });
+
+  const parentLastTalkedOn = (source: { channel: string; accountId: string; chatId: string }) => {
+    const parent = getOrCreateSession("parent-key", "trigger-test-agent", "/tmp/trigger-test-agent-real", {
+      name: "parent",
+    });
+    updateSessionSource(parent.sessionKey, source);
+  };
+
+  async function fireComment(): Promise<{ sessionName: string; payload: Record<string, unknown> }> {
+    await startRunner();
+    emit(topic, comment);
+    await waitFor(() => publishCalls.length === 1);
+    return publishCalls[0]!;
+  }
+
+  it("delivers a comment to a parent that last talked on another channel through that channel's own account", async () => {
+    parentLastTalkedOn(whatsappDm);
+    const trigger = handedOffFollow();
+
+    const fired = await fireComment();
+
+    expect(fired).toMatchObject({ sessionName: "parent", payload: { _triggerId: trigger.id } });
+    // The channel and chat are the parent's WhatsApp conversation: the account is
+    // too, never the Slack thread's account on a WhatsApp chat.
+    expect(fired.payload.source).toEqual(whatsappDm);
+    expect(dbGetTrigger(trigger.id)?.fireCount).toBe(1);
+  });
+
+  it("keeps the trigger's account when the parent last talked on that account's channel", async () => {
+    parentLastTalkedOn({ channel: "slack", accountId: "slack-other", chatId: "C999" });
+    handedOffFollow();
+
+    const fired = await fireComment();
+
+    expect(fired.payload.source).toEqual({ channel: "slack", accountId: "slack-account", chatId: "C999" });
+  });
+
+  it("applies an account set on its own on whatever channel the parent last talked on", async () => {
+    parentLastTalkedOn(whatsappDm);
+    // `--account` names the account to deliver through. It is not the frozen
+    // source's account, so it says nothing about a channel.
+    handedOffFollow({ accountId: "wa-explicit" });
+
+    const fired = await fireComment();
+
+    expect(fired.payload.source).toEqual({ ...whatsappDm, accountId: "wa-explicit" });
+  });
+
+  it("keeps the account of a source rebuilt from the session key when the trigger's account is for another channel", async () => {
+    // The reply session is gone, so the destination is derived from its key.
+    const key = buildSessionKey({
+      agentId: "trigger-test-agent",
+      channel: "whatsapp",
+      accountId: "wa-main",
+      peerKind: "dm",
+      peerId: "5511999990000",
+      dmScope: "per-account-channel-peer",
+    });
+    handedOffFollow({ replySession: key });
+
+    const fired = await fireComment();
+
+    expect(fired.payload.source).toEqual({ channel: "whatsapp", accountId: "wa-main", chatId: "5511999990000" });
   });
 });
 

@@ -7,6 +7,7 @@ import {
   planTriggerTopicRefresh,
   shouldRetryTriggerTopic,
   sourceFromSessionEntry,
+  triggerAccountChannel,
 } from "./runner.js";
 import { findTriggerTopicCatalogEntry } from "./topic-catalog.js";
 import {
@@ -297,5 +298,48 @@ describe("trigger reply source", () => {
   it("has no source when the session never talked to a chat", () => {
     expect(sourceFromSessionEntry({ lastChannel: "whatsapp" })).toBeUndefined();
     expect(sourceFromSessionEntry(null)).toBeUndefined();
+  });
+
+  it("keeps the trigger's account on the channel it belongs to", () => {
+    expect(
+      sourceFromSessionEntry(
+        { lastChannel: "whatsapp", lastAccountId: "main-account", lastTo: "chat-a" },
+        "other",
+        "whatsapp",
+      ),
+    ).toEqual({ channel: "whatsapp", accountId: "other", chatId: "chat-a" });
+  });
+
+  it("keeps the session's own account when the trigger's account belongs to another channel", () => {
+    expect(
+      sourceFromSessionEntry(
+        { lastChannel: "whatsapp", lastAccountId: "main-account", lastTo: "chat-a" },
+        "slack-account",
+        "slack",
+      ),
+    ).toEqual({ channel: "whatsapp", accountId: "main-account", chatId: "chat-a" });
+    // No account of its own to fall back on: the source is delivered without one.
+    expect(sourceFromSessionEntry({ lastChannel: "whatsapp", lastTo: "chat-a" }, "slack-account", "slack")).toEqual({
+      channel: "whatsapp",
+      accountId: "",
+      chatId: "chat-a",
+    });
+  });
+});
+
+describe("trigger account channel", () => {
+  const frozen = { channel: "slack", accountId: "slack-account", chatId: "C123" };
+
+  it("ties the account a trigger took from its reply source to that source's channel", () => {
+    expect(triggerAccountChannel({ accountId: "slack-account", replySource: frozen })).toBe("slack");
+  });
+
+  it("ties no channel to an account set on its own", () => {
+    expect(triggerAccountChannel({ accountId: "wa-explicit", replySource: frozen })).toBeUndefined();
+  });
+
+  it("ties no channel when the trigger froze no reply source or has no account", () => {
+    expect(triggerAccountChannel({ accountId: "slack-account" })).toBeUndefined();
+    expect(triggerAccountChannel({ replySource: frozen })).toBeUndefined();
   });
 });

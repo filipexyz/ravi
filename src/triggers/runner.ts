@@ -109,17 +109,38 @@ export function planTriggerTopicRefresh(
 }
 
 /**
+ * The channel a trigger's `accountId` is known to deliver on. The account a
+ * trigger took from its frozen reply source (the one its creator was talking
+ * through) belongs to that source's channel. One set on its own (`--account`)
+ * names no channel and applies on any.
+ */
+export function triggerAccountChannel(trigger: Pick<Trigger, "accountId" | "replySource">): string | undefined {
+  const frozen = trigger.replySource;
+  return frozen && trigger.accountId === frozen.accountId ? frozen.channel : undefined;
+}
+
+/** Whether an account tied to `accountChannel` (none: any channel) is a credential for `channel`. */
+function accountDeliversOn(accountChannel: string | undefined, channel: string): boolean {
+  return accountChannel === undefined || accountChannel === channel;
+}
+
+/**
  * Outbound source for a trigger turn, taken from where a session last talked.
+ * The trigger's own `accountId` replaces the session's account on the channel it
+ * belongs to (`accountChannel`, see `triggerAccountChannel`). On another channel
+ * it is a credential for the wrong provider, so the session keeps its own.
  * `undefined` when the session has never had a chat to reply to.
  */
 export function sourceFromSessionEntry(
   session: { lastChannel?: string; lastAccountId?: string; lastTo?: string } | null | undefined,
   accountId?: string,
+  accountChannel?: string,
 ): { channel: string; accountId: string; chatId: string } | undefined {
   if (!session?.lastChannel || !session.lastTo) return undefined;
+  const useTriggerAccount = accountId !== undefined && accountDeliversOn(accountChannel, session.lastChannel);
   return {
     channel: session.lastChannel,
-    accountId: accountId ?? session.lastAccountId ?? "",
+    accountId: (useTriggerAccount ? accountId : session.lastAccountId) ?? "",
     chatId: session.lastTo,
   };
 }
@@ -611,6 +632,9 @@ export class TriggerRunner {
     // The key of the trigger's own session, when this fire runs there. Only an
     // `isolated` trigger a person owns has one; nothing else enters it.
     let ownSessionKey: string | null = null;
+    // The trigger's own account is a credential for one channel: a destination
+    // on another channel keeps the account it already carries.
+    const accountChannel = triggerAccountChannel(trigger);
 
     if (trigger.session === "main") {
       // If replySession is set, resolve it for session name + source routing
@@ -619,7 +643,7 @@ export class TriggerRunner {
         // Another trigger's own session never stands in for the main session.
         if (resolved?.name && sessionAdmitsTriggerFire(resolved)) {
           sessionName = resolved.name;
-          source = sourceFromSessionEntry(resolved, trigger.accountId);
+          source = sourceFromSessionEntry(resolved, trigger.accountId, accountChannel);
         } else {
           // Fallback: derive source from session key and use main session
           source = deriveSourceFromSessionKey(trigger.replySession) ?? undefined;
@@ -634,7 +658,7 @@ export class TriggerRunner {
         // dropped by the gateway (2a728cd4).
         sessionName = this.resolveMainSessionName(agentId, agentCwd);
         if (!trigger.replySource) {
-          source = sourceFromSessionEntry(resolveSession(sessionName), trigger.accountId);
+          source = sourceFromSessionEntry(resolveSession(sessionName), trigger.accountId, accountChannel);
         }
       }
     } else if (trigger.session === "isolated") {
@@ -672,7 +696,7 @@ export class TriggerRunner {
       // Derive source from replySession for isolated sessions too
       if (trigger.replySession) {
         source =
-          sourceFromSessionEntry(resolveSession(trigger.replySession), trigger.accountId) ??
+          sourceFromSessionEntry(resolveSession(trigger.replySession), trigger.accountId, accountChannel) ??
           deriveSourceFromSessionKey(trigger.replySession) ??
           undefined;
       }
@@ -734,13 +758,13 @@ export class TriggerRunner {
 
       if (trigger.replySession) {
         source =
-          sourceFromSessionEntry(resolveSession(trigger.replySession), trigger.accountId) ??
+          sourceFromSessionEntry(resolveSession(trigger.replySession), trigger.accountId, accountChannel) ??
           deriveSourceFromSessionKey(trigger.replySession) ??
           undefined;
       } else if (!trigger.replySource) {
         // Like main-session triggers (2a728cd4): reply where the target
         // session last talked, unless a creator-time recipient is pinned.
-        source = sourceFromSessionEntry(existing, trigger.accountId);
+        source = sourceFromSessionEntry(existing, trigger.accountId, accountChannel);
       }
     }
 
@@ -754,8 +778,10 @@ export class TriggerRunner {
       };
     }
 
-    // Override accountId in source if trigger has explicit accountId
-    if (source && trigger.accountId) {
+    // Override accountId in source if trigger has explicit accountId, on the
+    // channel that account belongs to: a source on another channel (rebuilt from
+    // a session key, say) keeps the account it carries.
+    if (source && trigger.accountId && accountDeliversOn(accountChannel, source.channel)) {
       source.accountId = trigger.accountId;
     }
 

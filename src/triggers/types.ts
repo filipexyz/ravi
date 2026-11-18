@@ -59,7 +59,12 @@ export interface Trigger {
   id: string;
   name: string;
   agentId?: string;
-  /** Explicit account ID for outbound routing (overrides session.lastAccountId) */
+  /**
+   * Explicit account ID for outbound routing (overrides session.lastAccountId).
+   * It overrides on the channel it belongs to: the account a trigger took from its
+   * reply source belongs to that source's channel, so a session that last talked
+   * on another channel keeps its own account.
+   */
   accountId?: string;
   topic: string;
   message: string;
