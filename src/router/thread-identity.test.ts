@@ -6,6 +6,8 @@ import type { RuntimeLaunchPrompt } from "../runtime/message-types.js";
 import { recordSessionEvent, upsertSessionTurn } from "../session-trace/session-trace-db.js";
 import { closeSlackThreadLifecycle, registerInboundSlackThread } from "../channels/slack/thread-lifecycle-store.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { getThreadReturnWatch, markThreadParentReturn } from "../channels/slack/thread-parent-return.js";
+import { getDb } from "./router-db.js";
 import { deleteSession, getOrCreateSession, renameSessionName, resolveSession } from "./sessions.js";
 import { assessSessionThreadIdentity, findOpenThreadIdentity } from "./thread-identity.js";
 
@@ -133,5 +135,36 @@ describe("channel thread identity", () => {
 
     getOrCreateSession(CHILD_KEY, "dev", "/tmp/dev", { name: "dev-channel-thread" });
     expect(renameSessionName(CHILD_KEY, "dev-channel-thread").changed).toBe(false);
+  });
+});
+
+describe("thread parent return watch schema", () => {
+  it("keeps one return-watch row per thread in ravi.db and rejects unknown stages", () => {
+    const record = registerThread();
+    const db = getDb();
+    const columns = (db.prepare("PRAGMA table_info(slack_thread_return_watch)").all() as Array<{ name: string }>).map(
+      (column) => column.name,
+    );
+    expect(columns).toEqual([
+      "request_id",
+      "last_return_at",
+      "turn_id",
+      "turn_started_at",
+      "stage",
+      "nudge_event_id",
+      "nudged_at",
+      "followup_turn_id",
+      "resolved_at",
+      "updated_at",
+    ]);
+
+    // Returns only move forward: a late, older report never hides a newer one.
+    markThreadParentReturn(record.requestId, 2_000);
+    markThreadParentReturn(record.requestId, 1_000);
+    expect(getThreadReturnWatch(record.requestId)?.lastReturnAt).toBe(2_000);
+
+    expect(() =>
+      db.prepare("UPDATE slack_thread_return_watch SET stage = 'pending' WHERE request_id = ?").run(record.requestId),
+    ).toThrow();
   });
 });

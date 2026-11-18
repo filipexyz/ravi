@@ -60,6 +60,20 @@ import type { SlackThreadCardState } from "./thread-card.js";
 import { getLatestSessionTurn } from "../../session-trace/session-trace-db.js";
 import { observeThreadTurn } from "./thread-turn-health.js";
 import {
+  claimThreadReturnNudge,
+  decideThreadParentReturn,
+  getThreadReturnWatch,
+  markThreadParentReturn,
+  readThreadTurnOrigin,
+  readThreadTurnReplyPreview,
+  releaseThreadReturnNudge,
+  reopenThreadReturnWatch,
+  resolveThreadReturnWatch,
+  threadHasOpenDecision,
+  threadReturnedSince,
+  THREAD_RETURN_NUDGES_PER_TICK,
+} from "./thread-parent-return.js";
+import {
   claimThreadTurnNotice,
   finishThreadTurnNotice,
   getThreadTurnHealth,
@@ -282,6 +296,7 @@ function observedTurnCallerContextId(childSessionKey: string, turnId: string): s
 
 async function reconcileThreadTurnHealth(dependencies: SlackThreadLifecycleDependencies): Promise<number> {
   let failures = 0;
+  const returnBudget = { nudges: THREAD_RETURN_NUDGES_PER_TICK };
   for (const requestId of listThreadTurnHealthCandidates()) {
     let claimId: string | null = null;
     const now = dependencies.now?.() ?? Date.now();
@@ -289,6 +304,12 @@ async function reconcileThreadTurnHealth(dependencies: SlackThreadLifecycleDepen
       const record = getSlackThreadLifecycle(requestId);
       if (!record) continue;
       saveThreadTurnHealth(requestId, observeThreadTurn(record, now));
+      try {
+        await reconcileThreadParentReturn(record, now, dependencies, returnBudget);
+      } catch (error) {
+        failures++;
+        log.warn("Failed to reconcile Slack thread parent return rule", { requestId, error: errorMessage(error) });
+      }
       const health = getThreadTurnHealth(requestId)!;
       if (health.state !== "attention" || !health.turnId || !record.childSessionKey || !record.providerThreadId)
         continue;
@@ -349,6 +370,168 @@ async function reconcileThreadTurnHealth(dependencies: SlackThreadLifecycleDepen
     }
   }
   return failures;
+}
+
+/**
+ * Thread → parent return rule (thread-parent-return.ts). Runs in the gateway
+ * reconciliation, on Ravi's own turn records, for every provider runtime.
+ */
+async function reconcileThreadParentReturn(
+  record: SlackThreadLifecycleRecord,
+  now: number,
+  dependencies: SlackThreadLifecycleDependencies,
+  budget: { nudges: number },
+): Promise<void> {
+  if (!record.childSessionKey || !record.providerThreadId) return;
+  const childSessionKey = record.childSessionKey;
+  const providerThreadId = record.providerThreadId;
+  const turn = getLatestSessionTurn(childSessionKey);
+  const watch = getThreadReturnWatch(record.requestId);
+  if (!turn && watch?.stage !== "nudged") return;
+  const action = decideThreadParentReturn({
+    now,
+    threadOpen: record.status === "open",
+    turn,
+    turnOrigin: turn ? readThreadTurnOrigin(turn.turnId) : null,
+    turnReplied: turn ? turn.outputState === "final" || readThreadTurnReplyPreview(turn.turnId) !== null : false,
+    watch,
+    openDecision: threadHasOpenDecision(record.requestId),
+    returnedSince: (since) => threadReturnedSince(record.requestId, watch, since),
+  });
+
+  if (action.kind === "none") return;
+  if (action.kind === "settle") {
+    resolveThreadReturnWatch({
+      requestId: record.requestId,
+      turnId: action.turnId,
+      stage: action.stage,
+      followupTurnId: action.followupTurnId,
+      now,
+    });
+    return;
+  }
+
+  if (action.kind === "nudge") {
+    if (budget.nudges <= 0 || !record.threadCanonicalChatId) return;
+    const child = getSession(childSessionKey);
+    const parent = getSession(record.parentSessionKey);
+    if (!child || !parent) return;
+    const eventId = `slack-thread-return-nudge:${record.requestId}:${action.turnId}`;
+    if (
+      !claimThreadReturnNudge({
+        requestId: record.requestId,
+        turnId: action.turnId,
+        turnStartedAt: action.turnStartedAt,
+        eventId,
+        now,
+      })
+    ) {
+      return;
+    }
+    budget.nudges--;
+    try {
+      await dependencies.publishPrompt(
+        child.name ?? child.sessionKey,
+        {
+          prompt: buildThreadReturnNudgePrompt(parent.name ?? parent.sessionKey),
+          source: buildSlackThreadChildSource(record, record.threadCanonicalChatId, child.agentId),
+          context: buildSlackThreadMessageContext(record, record.threadCanonicalChatId, child.agentId),
+          // Never interrupt: the follow-up waits for the thread to be idle.
+          deliveryBarrier: "after_response",
+          deliveryBarrierSource: "default",
+          _slackThreadLifecycle: {
+            eventId,
+            eventType: "thread.return_nudge",
+            requestId: record.requestId,
+            parentSessionKey: record.parentSessionKey,
+            childSessionKey,
+            childSessionName: child.name ?? child.sessionKey,
+            providerThreadId,
+            turnId: action.turnId,
+          },
+          // Same authority as the parent's own `thread-send`, which started the watched work.
+          _turnOrigin: buildSessionRelayTurnOrigin("execute", {
+            agentId: parent.agentId,
+            sessionKey: parent.sessionKey,
+            sessionName: parent.name,
+          }),
+        },
+        { messageId: eventId },
+      );
+    } catch (error) {
+      releaseThreadReturnNudge(record.requestId, action.turnId, now);
+      throw error;
+    }
+    return;
+  }
+
+  // inform: claim the final stage first so two reconcilers cannot both tell the parent.
+  if (
+    !resolveThreadReturnWatch({
+      requestId: record.requestId,
+      turnId: action.turnId,
+      stage: "informed",
+      followupTurnId: action.followupTurnId,
+      now,
+    })
+  ) {
+    return;
+  }
+  try {
+    const parent = getSession(record.parentSessionKey);
+    if (!parent) throw new Error(`Slack thread parent session not found: ${record.parentSessionKey}`);
+    const lastMessage =
+      (action.followupTurnId ? readThreadTurnReplyPreview(action.followupTurnId) : null) ??
+      readThreadTurnReplyPreview(action.turnId) ??
+      "(nenhum texto de resposta registrado)";
+    const eventId = `slack-thread-unreturned:${record.requestId}:${action.turnId}`;
+    await publishChannelSessionPrompt(
+      {
+        sessionName: parent.name ?? parent.sessionKey,
+        action: "session.return",
+        principal: resolveChannelLifecyclePrincipal("session.return", childSessionKey),
+        callerContextId: observedTurnCallerContextId(childSessionKey, action.turnId),
+        payload: {
+          prompt: buildSlackThreadParentNotice(
+            record,
+            "terminou um turno sem retornar ao pai.",
+            "Última mensagem da thread",
+            lastMessage,
+          ),
+          source: buildSlackThreadParentSource(record, providerThreadId),
+          deliveryBarrier: "after_response",
+          deliveryBarrierSource: "default",
+          _slackThreadLifecycle: {
+            eventId,
+            eventType: "thread.unreturned",
+            requestId: record.requestId,
+            parentSessionKey: record.parentSessionKey,
+            childSessionKey,
+            childSessionName: record.childSessionName,
+            providerThreadId,
+            turnId: action.turnId,
+            followupTurnId: action.followupTurnId,
+            reason: action.reason,
+          },
+        },
+        options: { messageId: eventId },
+      },
+      dependencies.publishPrompt,
+    );
+  } catch (error) {
+    reopenThreadReturnWatch(record.requestId, action.turnId, now);
+    throw error;
+  }
+}
+
+function buildThreadReturnNudgePrompt(parentSessionName: string): string {
+  return [
+    `[System] Execute: [from: ravi runtime] Your last turn in this thread ended without returning anything to ${parentSessionName}, the session that owns this thread.`,
+    'If the work is done, run `ravi sessions close-thread --return "<result>"`.',
+    'If it continues, is blocked or waits on a decision from that session, run `ravi sessions report "<state in one or two lines>"`.',
+    "If you are waiting for a reply from a person in this thread, do nothing.",
+    "In every case, end this turn with @@SILENT@@ so nothing new is posted in the thread.",
+  ].join("\n");
 }
 
 export function registerSlackThreadInboundLifecycle(input: {
@@ -487,6 +670,7 @@ export async function closeSlackThreadRecord(
 
   let parentReturnDelivered = false;
   if (closed.record.parentReturnRequested) {
+    markThreadParentReturn(closed.record.requestId, dependencies.now?.() ?? Date.now());
     try {
       parentReturnDelivered = await deliverSlackThreadParentReturn(closed.record.requestId, dependencies);
     } catch (error) {
@@ -803,6 +987,7 @@ export async function reportSlackThreadProgress(
     },
     dependencies.publishPrompt,
   );
+  markThreadParentReturn(record.requestId, dependencies.now?.() ?? Date.now());
   await updateSlackThreadCard(record, { status: "open", note: text }, dependencies);
   return { record, messageId };
 }

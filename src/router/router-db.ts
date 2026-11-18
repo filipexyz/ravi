@@ -2037,6 +2037,22 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
       UNIQUE(request_id, turn_id)
     );
 
+    -- One row per thread: the last return it sent its parent, and the single follow-up
+    -- (nudge, then Inform) owed for the last turn that ended without one. Written only by
+    -- this release (thread-parent-return.ts); no legacy writer, so it is outside the fence.
+    CREATE TABLE IF NOT EXISTS slack_thread_return_watch (
+      request_id TEXT PRIMARY KEY REFERENCES slack_thread_lifecycle(request_id) ON DELETE CASCADE,
+      last_return_at INTEGER,
+      turn_id TEXT,
+      turn_started_at INTEGER,
+      stage TEXT CHECK(stage IN ('nudged','returned','informed','skipped')),
+      nudge_event_id TEXT,
+      nudged_at INTEGER,
+      followup_turn_id TEXT,
+      resolved_at INTEGER,
+      updated_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS runtime_turn_progress (
       attempt_id TEXT PRIMARY KEY,
       turn_id TEXT NOT NULL,
