@@ -64,7 +64,7 @@ ravi pages ship --project <projeto> --title "Docs" --route /docs --dir ./site --
 Regras:
 
 - Sem slug posicional, o ship usa o host default do projeto: o site com `isDefault`, ou o slug `<orgSlug>-<projectSlug>`. Se esse host ainda não existe, o CLI cria só esse, com `isDefault`. Não cria outro.
-- `--title` é obrigatório e não gera host. Conteúdo: exatamente um de `--body` (fragmento, wrap HTML5), `--html` (arquivo) ou `--dir` (diretório + entrypoint). `--html` e `--dir` leem arquivo local e exigem `use:tool:Read` no contexto: de dentro de um Ravi App ou contexto-filho sem essa permissão sai `PERMISSION_DENIED`, e o caminho é passar o conteúdo com `--body`.
+- `--title` é obrigatório e não gera host. Conteúdo: exatamente um de `--body` (fragmento, wrap HTML5), `--html` (arquivo) ou `--dir` (diretório + entrypoint). `--html` e `--dir` leem arquivo local e exigem `use:tool:Read` no contexto: de dentro de um Ravi App ou contexto-filho sem essa permissão sai `PERMISSION_DENIED` (runtime mais antigo mostrava `SERVER_UNAVAILABLE` para o mesmo caso), e o caminho é passar o conteúdo com `--body`.
 - Defaults: `--visibility private`, `--route /` (home do projeto), `--entrypoint index.html`.
 - Liste rotas com `ravi pages published` antes de publicar. `--route /` substitui a home. Outra página precisa de outra rota (`/relatorio`, `/docs`).
 - `[project]` posicional junto com um segundo argumento é host legado. O projeto entra por `--project` ou pelo scope do Console.

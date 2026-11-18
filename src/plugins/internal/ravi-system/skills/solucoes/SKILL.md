@@ -56,7 +56,8 @@ Cada verbo também tem quem faz o trabalho, e é essa escolha que decide em nome
 | Sessão da conversa | resposta curta, no turno | quem escreveu a mensagem |
 | Thread (`ravi sessions create-thread`) | trabalho que leva vários turnos e precisa voltar ao pai | quem pediu, por até 72 h |
 | Task (`ravi tasks create`) | trabalho com dono, estado, dependências e observer | quem criou a task, no dispatch |
-| Cron `--message` ou `--shell` | rotina com horário | o dono do job |
+| Cron `--message` | rotina com horário | o dono do job |
+| Cron `--shell` (só operador) | rotina determinística | o operador, pelo `RAVI_CONTEXT_KEY` do run; em runtime sem isso o `ravi` dentro do script recusa e o caminho é cron `--message` |
 | Trigger | reação a evento | o dono do trigger, em `--session isolated` |
 | Ravi App (`ravi <app> <op>`) | a mesma operação em vários lugares (CLI, página, agente) | quem chamou o app |
 | Observer | extrair calado de uma conversa | o agent do observer |
@@ -123,7 +124,7 @@ Mostre a ficha antes de expor dado ou mandar mensagem. Depois, carregue a skill 
 - Evento sem fila (reação, botão, e-mail): cooldown é do trigger todo; varra por cron.
 - Thread que entrega e registra: a thread faz o trabalho, publica o resultado com `ravi pages ship --body` (ou por um app) e grava uma linha na base com `--idempotency-key thread:<sessão>:<ação>`. Fecha com `ravi sessions close-thread --return "<resultado + link>"`. A escrita sai em nome de quem pediu.
 - Rotina que alimenta base e avisa: `ravi cron add --shell` com o script gravando linhas pelo `ravi bases` (o run recebe `RAVI_CONTEXT_KEY` do dono do job; se o `ravi` dentro do script recusar por falta de contexto, o runtime instalado ainda não tem isso: use cron `--message`). Avisa só em erro (`--on-error notify-session:<sessão>`), e uma página de dados sobre a view mostra o estado. Pronto é um `ravi cron run <id> --execute` que produziu a linha.
-- Fila de trabalho: base `fila` com status; `ravi bases subscribe fila --events row.created --trigger --agent <id> --session isolated` cria uma task por linha. A task grava o resultado na linha com `--expected-version`, e o observer da task decide o status final.
+- Fila de trabalho: base `fila` com status; `ravi bases subscribe fila --events row.created --trigger --agent <id> --session isolated` acorda o agente, que varre as linhas no estado inicial e cria uma task por linha (`ravi tasks create ... --idempotency-key row:<id>`). A task grava o resultado na linha com `--expected-version`, e o observer da task decide o status final.
 
 ## 10. Ousadia
 Considere pelo menos uma, construa no máximo uma, diga por quê: voz, imagem, ligação, observer, reunião, watch, heartbeat, Canvas, câmera (`getUserMedia`), asserção do viewer.

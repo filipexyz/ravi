@@ -11,6 +11,7 @@ Fonte única. As skills bases, pages, cron, triggers, tasks, sessions e apps apo
 | Thread de Slack | quem fez o pedido que abriu a thread, por até 72 h | sem pedido humano na origem: `ACTOR_UNKNOWN` | `sessions threads --json` |
 | Task | quem criou a task, no turno de dispatch, enquanto a task estiver aberta (até 72 h) | task criada por cron/agente/contato externo sem pessoa: `ACTOR_UNKNOWN` | `tasks show <id> --json` |
 | Cron `--message` | o dono do job (`Runs as`) | contato sem link: `ACTOR_NOT_LINKED` com `linkFlow: routine` | `cron show <id> --json` |
+| Cron `--shell` (só operador) | o operador, pelo `RAVI_CONTEXT_KEY` que o run injeta no script e revoga ao fim | runtime sem esse contexto: o `ravi` no script recusa; use cron `--message` | `cron show <id> --json` |
 | Trigger | o dono do trigger, só em `--session isolated` | ver skill triggers (`routine_shared_session`, `routine_answers_elsewhere`) | `triggers show <id> --json` |
 | Ravi App | herda o turno de quem chamou o app | idem ao turno de origem | `apps show <id>` |
 | Outro agente, `[System] Ask/Inform` de outra sessão, comentário de PR, e-mail recebido | ninguém | `ACTOR_UNKNOWN` (`agent_relay`) | — |
@@ -18,9 +19,9 @@ Fonte única. As skills bases, pages, cron, triggers, tasks, sessions e apps apo
 ## Trabalho delegado (thread, task, cron)
 
 - A thread herda o pedido humano verificado mais antigo dela. Ela não herda por turno que a sessão pai fez a pedido de outra sessão, de trigger ou de automação. Herda só pelo pedido original e pelos turnos que a própria thread causou (`report`, retorno).
-- Um handoff feito por um turno de cron age pelo dono do cron, nunca pelo requisitante anterior da thread.
+- Exceção: um handoff feito por um turno de cron age pelo dono do cron, nunca pelo requisitante anterior da thread.
 - O prazo é de 72 h contados do turno humano. Passou disso, abra uma thread nova a partir de um pedido novo; pedir de novo na mesma thread não reabre o prazo.
-- Uma parada explícita do operador revoga o que já foi repassado. Uma mensagem nova por cima não revoga.
+- Uma parada explícita (stop/interrupt do runtime, pela API) revoga o que já foi repassado. Mensagem nova por cima não revoga, e um "pare" digitado no chat também é mensagem nova.
 - Herdar é só atribuição: conectores pessoais e Knowledge continuam só no turno do operador.
 
 ## Recusas
