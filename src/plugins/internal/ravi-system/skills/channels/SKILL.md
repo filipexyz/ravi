@@ -12,6 +12,8 @@ description: |
 # Channels Manager
 
 > Verbos: CAPTAR. Compõe com: whatsapp, agents.
+
+Grupo de WhatsApp novo para um agent: `ravi whatsapp group create "<nome>" <fones> --agent <id> [--create-agent] --execute` cria o grupo e a rota de uma vez (skill whatsapp). Não crie grupo pelo `omni` direto.
 > Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
 
 Canais são gerenciados por adapters do Ravi. Para Slack, use a skill nativa

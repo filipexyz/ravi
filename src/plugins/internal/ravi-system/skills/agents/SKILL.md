@@ -115,7 +115,17 @@ ravi contacts set <phone> agent <agent>
 
 ### 3. Ativar em grupo WhatsApp
 
-Grupos novos precisam ser **aprovados** antes de funcionar.
+**Grupo novo para um agent: um comando só.** O Ravi cria o grupo, adiciona as pessoas e já roteia o chat para o agent. Não use o `omni` direto: assim o grupo nasce sem rota e sem contato.
+
+```bash
+ravi whatsapp group create "<nome>" "<fone1>,<fone2>" --agent <id> --execute
+# agent ainda não existe: cria antes, com runtime explícito
+ravi whatsapp group create "<nome>" "<fones>" --agent <id> --create-agent --agent-provider <p> --agent-model <m> --execute
+```
+
+Sem `--execute` é dry-run (exit 3). Confira depois com `ravi instances routes list <instância>`.
+
+**Grupo que já existe** precisa ser **aprovado** antes de funcionar.
 
 **Instrua o usuário a:**
 1. Criar um grupo no WhatsApp e adicionar o bot
