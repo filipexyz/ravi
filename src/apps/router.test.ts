@@ -1039,6 +1039,28 @@ describe("Ravi app router", () => {
     });
   });
 
+  it("names the app for a runtime context without the local visibility check; the gateway authorizes the run", () => {
+    const root = makeRepo();
+    writeManifest(root, "khal-tasks", manifest("khal-tasks"));
+
+    // The same caller that the visibility filter hides the app from.
+    const named = runWithContext({ agentId: "app-agent" }, () =>
+      resolveAppAliasInvocation(["khal-tasks", "list", "--json"], {
+        staticRootCommands: new Set(["apps"]),
+        skipVisibility: true,
+      }),
+    );
+    expect(named).toEqual({ appId: "khal-tasks", operation: "list", args: [], json: true });
+
+    // Still not an app: a static root command and an unknown word stay out.
+    expect(
+      resolveAppAliasInvocation(["apps", "check"], { staticRootCommands: new Set(["apps"]), skipVisibility: true }),
+    ).toBe(null);
+    expect(
+      resolveAppAliasInvocation(["unknown", "check"], { staticRootCommands: new Set(["apps"]), skipVisibility: true }),
+    ).toBe(null);
+  });
+
   it("requires app use permission in agent context", async () => {
     const root = makeRepo();
     writeManifest(root, "khal-tasks", manifest("khal-tasks"));

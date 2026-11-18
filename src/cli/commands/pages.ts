@@ -123,6 +123,7 @@ import {
 } from "../../pages/ship.js";
 import { CONTRACT_EXIT_USAGE, ContractError, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
 import { getContext } from "../context.js";
+import { CliExpectedError } from "../expected-error.js";
 import {
   type PageCustomDomain,
   pageCustomDomainLines,
@@ -2405,6 +2406,10 @@ async function runPagesCommand<T>(op: string, asJson: boolean | undefined, run: 
     // envelope (or legacy text) and carry the exit taxonomy (1/2/3). Never let
     // the legacy CloudAuthError funnel swallow them (model: mail.ts).
     if (error instanceof ContractError) throw error;
+    // A refusal the command raised itself (a context that may not read local
+    // files, for `--html`/`--dir`) is typed and public: the shared boundary turns
+    // it into its own contract error. It is not a Console outage.
+    if (error instanceof CliExpectedError) throw error;
     const cloudError = cloudAuthErrorFromUnknown(artifactInputToCloudError(error));
     failPagesNotFoundFromConsole(op, cloudError, asJson);
     throw cloudError;

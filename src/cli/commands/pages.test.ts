@@ -10,8 +10,9 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ra
 import { CloudAuthError } from "../../cloud-auth/errors.js";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
+import { CliExpectedError } from "../expected-error.js";
 import { getCliOnlyMetadata, getCommandsMetadata, getOptionsMetadata, getReturnsMetadata } from "../decorators.js";
-import { dbCreateAgent } from "../../router/router-db.js";
+import { type ContextRecord, dbCreateAgent } from "../../router/router-db.js";
 import { dbListTriggers } from "../../triggers/triggers-db.js";
 import { pageCommentFilter } from "../../pages/comment-follow.js";
 import { SHIP_LIVE_DATA_OVERRIDE_WARNING, SHIP_LIVE_DATA_REFUSAL_LINES, wrapHtml5Document } from "../../pages/ship.js";
@@ -1295,6 +1296,59 @@ describe("pages agent-first contract", () => {
       url: "https://acme-proj.ravi.page/",
     });
     expect(client.finalizeArtifactPublish).toHaveBeenCalledTimes(2);
+  });
+
+  it("ship --html from a context that cannot read local files is refused as PERMISSION_DENIED, not as a Console outage", async () => {
+    stateDir = await createIsolatedRaviState("ravi-pages-ship-read-denied-test-");
+    const dir = await mkdtemp(join(tmpdir(), "ravi-pages-ship-read-denied-"));
+    tempDirs.push(dir);
+    const htmlPath = join(dir, "index.html");
+    await writeFile(htmlPath, "<h1>OK</h1>", "utf8");
+    const client = {
+      me: mock(async () => ({ user: { email: "alice@example.com" }, organization: { id: "org_1" } })),
+      requestJson: mock(async () => {
+        throw new Error("a refused read must not reach the Console");
+      }),
+    } as unknown as ConsoleApiClient;
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+    // An app child context: it may run `pages` commands but holds no `use:tool:Read`.
+    const appContext: { agentId: string; context: ContextRecord } = {
+      agentId: "app-agent",
+      context: {
+        contextId: "ctx_pages_ship_read_denied",
+        contextKey: "ctx_key_pages_ship_read_denied",
+        kind: "app-runtime",
+        agentId: "app-agent",
+        capabilities: [{ permission: "execute", objectType: "group", objectId: "pages" }],
+        metadata: {},
+        createdAt: 0,
+      },
+    };
+
+    const thrown = await runWithContext(appContext, () =>
+      command.ship(
+        [],
+        "proj",
+        "Weekly report",
+        undefined,
+        htmlPath,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    expect(thrown).toBeInstanceOf(CliExpectedError);
+    expect((thrown as CliExpectedError).code).toBe("PERMISSION_DENIED");
+    expect((thrown as CliExpectedError).message).toContain("use:tool:Read");
+    expect(client.requestJson).not.toHaveBeenCalled();
   });
 
   it("ship with --execute wraps --body as HTML5, reuses an existing slug, and returns the JSON shape", async () => {
