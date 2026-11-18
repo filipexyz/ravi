@@ -62,9 +62,10 @@ delegated child context.
 - Under `--json`, a CLI that fails SHOULD print one error object on stdout,
   `{ "ok": false, "error": { "code", "message", "suggestedAction" } }` (with an
   optional `reason`, `retryable`, and `cause`), and exit non-zero. The App
-  Router reads exactly those fields and drops the rest of the failed run's
-  output (`apps/router`, "Failed App Output"). A CLI MUST NOT print credential
-  values on its error paths: the router's redaction is pattern-based.
+  Router reads exactly those fields, drops the rest of the failed run's output,
+  and hands them to the caller labeled as the app's, never as Ravi's own message
+  or next step (`apps/router`, "Failed App Output"). A CLI MUST NOT print
+  credential values on its error paths: the router's redaction is pattern-based.
 - A CLI command's transport contract is argv, optional documented stdin,
   stdout, stderr, and exit status.
 - Ravi MUST launch declared App CLI commands as executable plus argv with no

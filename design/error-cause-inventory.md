@@ -143,13 +143,13 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | permissions | src/approval/store.ts | 451 | triaged-follow-up | catch-without-binding | src/approval/store.ts:ac1d131e8f2f6d84c0becd00 |
 | permissions | src/approval/test-support.ts | 29 | fixed | binding retained / no recognized error surface | src/approval/test-support.ts:91490baeb1c5208fe14ef5fb |
 | apps | src/apps/contract-eval.ts | 154 | fixed | binding retained / no recognized error surface | src/apps/contract-eval.ts:88f261190366920f5482cf7b |
-| apps | src/apps/failure.ts | 97 | no-cause | A stdout that is not JSON is the ordinary case of a CLI that printed text, not an error object; stderr is read next. | src/apps/failure.ts:b06ba02a242615720f4a3313 |
+| apps | src/apps/failure.ts | 119 | no-cause | A stdout that is not JSON is the ordinary case of a CLI that printed text, not an error object; stderr is read next. | src/apps/failure.ts:b06ba02a242615720f4a3313 |
 | apps | src/apps/import-cli.ts | 230 | fixed | binding retained / no recognized error surface | src/apps/import-cli.ts:48915e7519f4de5520ada591 |
 | apps | src/apps/import-cli.ts | 480 | triaged-follow-up | catch-without-binding | src/apps/import-cli.ts:e9873d35b097f2130bab5398 |
 | apps | src/apps/import-cli.ts | 494 | triaged-follow-up | catch-without-binding | src/apps/import-cli.ts:a6b7f0a99cae3270e4ae02a8 |
 | apps | src/apps/router.ts | 77 | fixed | binding retained / no recognized error surface | src/apps/router.ts:d05d951b201e4eea1cd470e0 |
-| apps | src/apps/router.ts | 821 | triaged-follow-up | catch-without-binding | src/apps/router.ts:ccbdb880a3313f6d6887530a |
-| apps | src/apps/router.ts | 877 | triaged-follow-up | catch-without-binding | src/apps/router.ts:e39c75939f3bada55ce4bba9 |
+| apps | src/apps/router.ts | 824 | triaged-follow-up | catch-without-binding | src/apps/router.ts:ccbdb880a3313f6d6887530a |
+| apps | src/apps/router.ts | 880 | triaged-follow-up | catch-without-binding | src/apps/router.ts:e39c75939f3bada55ce4bba9 |
 | apps | src/apps/scaffold.ts | 566 | triaged-follow-up | catch-without-binding | src/apps/scaffold.ts:7539c3f22a40bad7711dec0c |
 | apps | src/apps/service.ts | 253 | fixed | binding retained / no recognized error surface | src/apps/service.ts:9af1f6f974fdf5c79d441a2b |
 | apps | src/apps/service.ts | 260 | fixed | binding retained / no recognized error surface | src/apps/service.ts:f786c25699f0041e2406547f |
@@ -896,15 +896,15 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/registry.ts | 271 | fixed | binding retained / no recognized error surface | src/cli/registry.ts:93655d78883a03d1fbd85a5e |
 | cli | src/cli/registry.ts | 376 | fixed | binding retained / no recognized error surface | src/cli/registry.ts:e75dd981fe9367c1cbd9478b |
 | cli | src/cli/registry.ts | 483 | fixed | binding retained / no recognized error surface | src/cli/registry.ts:7b1c42218079b4b73c93330c |
-| relay | src/cli/remote-gateway.ts | 153 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:950513833066c4a74bd40ca2 |
-| relay | src/cli/remote-gateway.ts | 193 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:7b442ec9c6f86f3ce4264b74 |
-| relay | src/cli/remote-gateway.ts | 308 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:1607538d1a25b7ef5066f1ea |
-| relay | src/cli/remote-gateway.ts | 347 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:184b15658d372cdd90140658 |
-| relay | src/cli/remote-gateway.ts | 373 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:ac623af48505defd94499ca8 |
-| relay | src/cli/remote-gateway.ts | 468 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:c41d6e44f3fc6e90b2094dde |
-| relay | src/cli/remote-gateway.ts | 947 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:266a824d891cb5d497d3ac3e |
-| relay | src/cli/remote-gateway.ts | 1014 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:b25c88a5d690b9855455a3a6 |
-| relay | src/cli/remote-gateway.ts | 1541 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:c189970f4ec710d509af0466 |
+| relay | src/cli/remote-gateway.ts | 154 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:950513833066c4a74bd40ca2 |
+| relay | src/cli/remote-gateway.ts | 194 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:7b442ec9c6f86f3ce4264b74 |
+| relay | src/cli/remote-gateway.ts | 309 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:1607538d1a25b7ef5066f1ea |
+| relay | src/cli/remote-gateway.ts | 348 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:184b15658d372cdd90140658 |
+| relay | src/cli/remote-gateway.ts | 374 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:ac623af48505defd94499ca8 |
+| relay | src/cli/remote-gateway.ts | 469 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:c41d6e44f3fc6e90b2094dde |
+| relay | src/cli/remote-gateway.ts | 948 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:266a824d891cb5d497d3ac3e |
+| relay | src/cli/remote-gateway.ts | 1015 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:b25c88a5d690b9855455a3a6 |
+| relay | src/cli/remote-gateway.ts | 1542 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:c189970f4ec710d509af0466 |
 | cli | src/cli/runtime-target.ts | 34 | triaged-follow-up | catch-without-binding | src/cli/runtime-target.ts:a330f4808d976b8052774005 |
 | cli | src/cli/runtime-target.ts | 86 | triaged-follow-up | catch-without-binding | src/cli/runtime-target.ts:863230d57a244c76b7fe3ddb |
 | cli | src/cli/skill-gates.ts | 264 | no-cause | Incomplete shell text is expected during best-effort skill discovery; retain only its visible command prefix, never an authorization verdict. | src/cli/skill-gates.ts:b60b7d61e8d7d344de5faa41 |

@@ -8,11 +8,10 @@ import {
 } from "../cli/agent-contract.js";
 import { RaviAppError, type RaviAppRunResult } from "./types.js";
 
-const APP_OPERATION_FAILED_HEADLINE = "Ravi app operation failed";
-const APP_OPERATION_FAILED_MESSAGE = `${APP_OPERATION_FAILED_HEADLINE}.`;
-/** The next step when the CLI named a reason and gave none of its own. */
+const APP_OPERATION_FAILED_MESSAGE = "Ravi app operation failed.";
+/** Ravi's next step when the CLI reported a cause. The app's own next step never takes its place. */
 const REPORTED_CAUSE_ACTION = "Resolve the reported cause and retry";
-/** The next step when the CLI said nothing, so there is no reported cause to resolve. */
+/** Ravi's next step when the CLI said nothing, so there is no reported cause to resolve. */
 const NO_REASON_ACTION = "Inspect redacted runtime logs and retry";
 
 export function raviAppErrorToContractError(op: string, error: RaviAppError): ContractError {
@@ -71,28 +70,28 @@ export function enforceRaviAppRunResult(result: RaviAppRunResult, asJson: boolea
   }
 
   const failure = result.failure;
-  // A CLI that ran and failed explains itself through the projection the router kept (never its raw output):
-  // the headline names the app's message, the cause carries the redacted explanation, `context.code` the app's
-  // own error code, and `appExitCode` its exit status. The contract code and exit stay the router's.
-  contractFail(
-    "apps run",
-    result.errorCode ?? "APP_OPERATION_FAILED",
-    failure?.message ? `${APP_OPERATION_FAILED_HEADLINE}: ${failure.message}` : APP_OPERATION_FAILED_MESSAGE,
-    {
-      ...{
-        asJson,
-        details: {
-          suggestedAction:
-            failure?.suggestedAction ??
-            (failure && failure.source !== "none" ? REPORTED_CAUSE_ACTION : NO_REASON_ACTION),
-          ...(failure?.retryable !== undefined ? { retryable: failure.retryable } : {}),
-          ...(failure && failure.exitCode !== null ? { appExitCode: failure.exitCode } : {}),
-        },
+  // A CLI that ran and failed explains itself through the projection the router kept (never its raw output). What it
+  // reported is the app's text, so it stays labeled as the app's: the headline and the next step are Ravi's own and
+  // never take it. It travels as `appReported` (its message and its next step), `cause` (the redacted explanation),
+  // `context.code` (its own error code) and `appExitCode`. The contract code and exit stay the router's.
+  // Spec apps/router, "Failed App Output".
+  const appReported = {
+    ...(failure?.message ? { message: failure.message } : {}),
+    ...(failure?.suggestedAction ? { suggestedAction: failure.suggestedAction } : {}),
+  };
+  contractFail("apps run", result.errorCode ?? "APP_OPERATION_FAILED", APP_OPERATION_FAILED_MESSAGE, {
+    ...{
+      asJson,
+      details: {
+        suggestedAction: failure && failure.source !== "none" ? REPORTED_CAUSE_ACTION : NO_REASON_ACTION,
+        ...(failure?.retryable !== undefined ? { retryable: failure.retryable } : {}),
+        ...(failure && failure.exitCode !== null ? { appExitCode: failure.exitCode } : {}),
+        ...(Object.keys(appReported).length > 0 ? { appReported } : {}),
       },
-      diagnostic: errorDiagnostic(failure?.cause ?? APP_OPERATION_FAILED_MESSAGE, {
-        operation: "apps run",
-        ...(failure?.code ? { code: failure.code } : {}),
-      }),
     },
-  );
+    diagnostic: errorDiagnostic(failure?.cause ?? APP_OPERATION_FAILED_MESSAGE, {
+      operation: "apps run",
+      ...(failure?.code ? { code: failure.code } : {}),
+    }),
+  });
 }

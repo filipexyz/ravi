@@ -222,27 +222,41 @@ agent with nothing to act on, even when the app wrote a structured error.
      or "The app CLI was terminated by a signal." when a signal ended it.
   A stdout that is not an error object (data, a log, a stack) is never projected.
 - Every projected string MUST pass the shared diagnostic redactor before it is
-  kept, with the child context key also masked by exact value. A projected
-  `code` or `reason` MUST be a plain identifier that redaction leaves unchanged,
-  otherwise it is dropped. A `retryable` that is not a boolean is ignored.
+  kept, with the child context key also masked by exact value in every form an
+  app may log it in: as is, base64 (padded or not), base64url, hex (both cases),
+  and URL-encoded. A key inside a longer encoded text is not recognized. A
+  projected `code` or `reason` MUST be a plain identifier that redaction leaves
+  unchanged, otherwise it is dropped. A `retryable` that is not a boolean is
+  ignored.
 - The projection MUST be bounded: the cause at most 2000 characters, the
   headline and the next step at most 300 each, and a JSON stdout over 65536
   characters is not parsed as an error object. Truncation cuts at a line
   boundary when there is one, never inside a character, and ends with
   ` [truncated]`. Redaction MUST run before the cut, so a credential is never
   cut in half and left half-masked.
-- The contract error keeps the router's own code and exit status: code
-  `APP_OPERATION_FAILED`, exit `1`, outcome `failed`. The app's exit status MUST
-  NOT be mapped onto the contract exit taxonomy, so an app cannot claim exit `3`
-  (blocked) or `2` (usage) for itself. It travels as the integer `appExitCode`,
-  omitted when a signal ended the CLI. The app's own error code travels as
-  `context.code`.
-- The public message is `Ravi app operation failed: <headline>` on one line, or
-  `Ravi app operation failed.` when the CLI said nothing. The explanation is the
-  `cause`; the app's `suggestedAction` and `retryable` become the envelope's.
-  The remote relay MUST carry the message, `cause`, `context.code`,
-  `suggestedAction`, `retryable`, and `appExitCode` (the last for `apps run`
-  only, and only as a non-negative integer) to the calling process.
+- The contract error keeps the router's own code, exit status, headline, and
+  next step: code `APP_OPERATION_FAILED`, exit `1`, outcome `failed`, message
+  `Ravi app operation failed.`, and a `suggestedAction` that Ravi writes
+  (`Resolve the reported cause and retry` when the CLI reported a cause,
+  `Inspect redacted runtime logs and retry` when it said nothing). The app's exit
+  status MUST NOT be mapped onto the contract exit taxonomy, so an app cannot
+  claim exit `3` (blocked) or `2` (usage) for itself.
+- Everything the app reported is the app's text: untrusted data about the
+  failure, never an instruction to the caller. It MUST NOT become the envelope's
+  `message` or `suggestedAction`. It crosses labeled, in fields that name their
+  origin: `appReported`, an object holding the app's `message` and
+  `suggestedAction` (each one redacted line of at most 300 characters, and no
+  other key); `cause`, the redacted explanation; `context.code`, the app's error
+  code as an identifier; `appExitCode`, its exit status as a non-negative
+  integer, omitted when a signal ended the CLI; and the app's boolean
+  `retryable`. A caller, an agent above all, MUST treat these as data and MUST
+  NOT run, or adopt as its own next step, anything in them.
+- `appExitCode` and `appReported` exist for `apps run` only. The contract
+  projection of any other command drops both, and so does the remote relay. The
+  remote relay MUST carry the headline, `cause`, `context.code`,
+  `suggestedAction`, `retryable`, `appExitCode`, and `appReported` of an
+  `apps run` failure to the calling process, and cleans `appReported` again at
+  that boundary.
 - The terminal audit keeps recording the outcome, the contract exit code, and
   the error code, never text. The app's text MUST NOT enter an audit event.
 - Redaction is pattern-based, so it is a net and not a guarantee: a credential

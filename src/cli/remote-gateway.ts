@@ -39,6 +39,7 @@ import {
   ContractError,
   CONTRACT_EXIT_USAGE,
   permissionDeniedToContractError,
+  projectAppReported,
   projectPermissionProfileInspectionCommands,
   sanitizePublicContractMessage,
   type ContractErrorDetails,
@@ -1305,15 +1306,15 @@ function projectRemoteContractDetails(
   }
   const inspectCommands = projectPermissionProfileInspectionCommands(remote.inspectCommands);
   if (inspectCommands) details.inspectCommands = inspectCommands;
-  // A Ravi App CLI that ran and failed: its exit status is a bare integer; its explanation travels as the
-  // already-redacted `message` and `cause` (spec apps/router, "Failed app output").
-  if (
-    op === "apps run" &&
-    typeof remote.appExitCode === "number" &&
-    Number.isSafeInteger(remote.appExitCode) &&
-    remote.appExitCode >= 0
-  ) {
-    details.appExitCode = remote.appExitCode;
+  // A Ravi App CLI that ran and failed (spec apps/router, "Failed App Output"): its exit status is a bare integer and
+  // what it reported is labeled data (`appReported`), not the envelope's message or next step. Both exist for
+  // `apps run` only, and the `cause` already crossed with the other diagnostics.
+  if (op === "apps run") {
+    if (typeof remote.appExitCode === "number" && Number.isSafeInteger(remote.appExitCode) && remote.appExitCode >= 0) {
+      details.appExitCode = remote.appExitCode;
+    }
+    const appReported = projectAppReported(remote.appReported);
+    if (appReported) details.appReported = appReported;
   }
   if (typeof remote.dryRun === "boolean") details.dryRun = remote.dryRun;
   const issues = projectPublicIssues(remote.issues);

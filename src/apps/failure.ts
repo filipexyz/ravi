@@ -38,8 +38,30 @@ export interface AppCliRun {
 }
 
 export interface AppFailureOptions {
-  /** Exact values to mask on top of the pattern redaction, such as the child context key. */
+  /** Exact values to mask on top of the pattern redaction, such as the child context key in its `maskedSecretForms`. */
   secrets?: readonly string[];
+}
+
+/**
+ * The forms an app may log a credential in: as it is, base64 (padded and not), base64url, hex in both cases, and
+ * URL-encoded. The redactor masks exact values, so each form is a value of its own. A credential inside a longer
+ * encoded text is not recognized.
+ */
+export function maskedSecretForms(secret: string): string[] {
+  // The redactor ignores a value this short, and its encodings could match ordinary text.
+  if (secret.length < 4) return [];
+  const bytes = Buffer.from(secret, "utf8");
+  const forms = [
+    secret,
+    bytes.toString("base64"),
+    bytes.toString("base64").replace(/=+$/, ""),
+    bytes.toString("base64url"),
+    bytes.toString("hex"),
+    bytes.toString("hex").toUpperCase(),
+    // encodeURIComponent throws on a lone surrogate; a credential has none.
+    /[\ud800-\udfff]/.test(secret) ? "" : encodeURIComponent(secret),
+  ];
+  return [...new Set(forms)].filter((form) => form.length >= 4);
 }
 
 type Redaction = { secrets: readonly string[] };

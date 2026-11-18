@@ -2923,7 +2923,7 @@ describe("Ravi app CLI failures over the gateway", () => {
     },
   };
 
-  it("keeps the app's message, cause, code, exit status and next step across the gateway", async () => {
+  it("keeps Ravi's headline and next step and labels what the app reported, across the gateway", async () => {
     const remote = await relayed(
       "apps run",
       appRunFailure({ exitCode: 2, stdout: JSON.stringify(jsonError), stderr: "" }),
@@ -2931,15 +2931,21 @@ describe("Ravi app CLI failures over the gateway", () => {
     expect(remote).toMatchObject({
       code: "APP_OPERATION_FAILED",
       exitCode: 1,
-      message: "Ravi app operation failed: This secret needs a human to approve it.",
+      message: "Ravi app operation failed.",
       details: {
         retryable: true,
         appExitCode: 2,
-        suggestedAction: "Ask the operator to run the command from their own session.",
+        suggestedAction: "Resolve the reported cause and retry",
         cause: "NOT_AUTHORIZED (turn_not_human): This secret needs a human to approve it.",
         context: { operation: "apps run", code: "NOT_AUTHORIZED" },
       },
     });
+    expect(remote?.details.appReported).toEqual({
+      message: "This secret needs a human to approve it.",
+      suggestedAction: "Ask the operator to run the command from their own session.",
+    });
+    // The app's next step is data under `appReported`; it is never the relayed `suggestedAction`.
+    expect(remote?.details.suggestedAction).not.toContain("Ask the operator");
     expect(JSON.stringify(remote?.envelope())).not.toContain("SECRET_FIELD_SENTINEL");
   });
 
@@ -2953,14 +2959,13 @@ describe("Ravi app CLI failures over the gateway", () => {
           "upload refused: https://store.example.test/put?signature=SIGNED_QUERY_SENTINEL\nsecond line\nthird line",
       }),
     );
-    expect(remote?.message).toBe(
-      "Ravi app operation failed: upload refused: https://store.example.test/put?[redacted:url-query]",
-    );
-    expect(remote?.message).not.toContain("\n");
+    expect(remote?.message).toBe("Ravi app operation failed.");
     expect(remote?.details).toMatchObject({
       appExitCode: 1,
+      appReported: { message: "upload refused: https://store.example.test/put?[redacted:url-query]" },
       cause: "upload refused: https://store.example.test/put?[redacted:url-query]\nsecond line\nthird line",
     });
+    expect(remote?.details.appReported).not.toHaveProperty("suggestedAction");
     expect(JSON.stringify(remote?.envelope())).not.toMatch(/SIGNED_QUERY_SENTINEL|PRIVATE_STDOUT_SENTINEL/);
   });
 
@@ -2969,6 +2974,7 @@ describe("Ravi app CLI failures over the gateway", () => {
     expect(remote?.message).toBe("Ravi app operation failed.");
     expect(remote?.details.cause).toBe("The app CLI was terminated by a signal.");
     expect(remote?.details).not.toHaveProperty("appExitCode");
+    expect(remote?.details).not.toHaveProperty("appReported");
   });
 
   it("carries the exit status only for `apps run`, and only as a non-negative integer", async () => {
@@ -2980,6 +2986,32 @@ describe("Ravi app CLI failures over the gateway", () => {
     for (const bad of [-1, 1.5, "2", null, true, [2], { code: 2 }, Number.MAX_SAFE_INTEGER + 2]) {
       const remote = await relayed("apps run", local, (body) => (body.error.appExitCode = bad));
       expect(remote?.details).not.toHaveProperty("appExitCode");
+    }
+  });
+
+  it("carries what the app reported only for `apps run`, as two redacted, bounded, single-line strings", async () => {
+    const local = appRunFailure({ exitCode: 2, stdout: JSON.stringify(jsonError), stderr: "" });
+    // Nothing but a message and a next step crosses, and each is cleaned again at the boundary.
+    const remote = await relayed("apps run", local, (body) => {
+      body.error.appReported = {
+        message: `relayed ${"x".repeat(500)} token=fixture-token\nsecond line`,
+        suggestedAction: "check   the app",
+        extra: "PRIVATE_EXTRA",
+      };
+    });
+    const reported = remote?.details.appReported as { message: string; suggestedAction: string };
+    expect(Object.keys(reported).sort()).toEqual(["message", "suggestedAction"]);
+    expect(reported.message.length).toBeLessThanOrEqual(300);
+    expect(reported.message.endsWith(" [truncated]")).toBe(true);
+    expect(reported.message).not.toContain("\n");
+    expect(reported.suggestedAction).toBe("check the app");
+    expect(JSON.stringify(remote?.envelope())).not.toMatch(/PRIVATE_EXTRA|fixture-token/);
+
+    expect(await relayed("sessions report", local)).toBeDefined();
+    expect((await relayed("sessions report", local))?.details).not.toHaveProperty("appReported");
+    for (const bad of ["text", ["a"], null, 42, {}, { message: 7, suggestedAction: {} }, { other: "PRIVATE_OTHER" }]) {
+      const dropped = await relayed("apps run", local, (body) => (body.error.appReported = bad));
+      expect(dropped?.details).not.toHaveProperty("appReported");
     }
   });
 });
