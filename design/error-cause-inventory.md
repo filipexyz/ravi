@@ -1050,17 +1050,17 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | crm | src/crm/pipeline-engines.ts | 91 | triaged-follow-up | catch-without-binding | src/crm/pipeline-engines.ts:8294632de396ae2e22ebf2dd |
 | cron | src/cron/authority.ts | 35 | triaged-follow-up | catch-without-binding | src/cron/authority.ts:e116ec0448fbb570f6475354 |
 | cron | src/cron/failure-notification.ts | 76 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:872eccb90cc73e208afc46cb |
-| cron | src/cron/runner.ts | 129 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:fc2cdecb2aeccf630df7a4a8 |
-| cron | src/cron/runner.ts | 177 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:c797d567e8c78c6703f0019a |
-| cron | src/cron/runner.ts | 249 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:f46da2fce5ae9ed844b1e742 |
-| cron | src/cron/runner.ts | 417 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:5330acdaef56e91c95ddf82c |
-| cron | src/cron/runner.ts | 438 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:c47c8a50008567bd304f8d72 |
-| cron | src/cron/runner.ts | 468 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:84c8fe96035d9d18e92887dc |
-| cron | src/cron/runner.ts | 498 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:235129936abfdfaef946e2c7 |
-| cron | src/cron/runner.ts | 719 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:a2be358361197f4a1e5cef9a |
-| cron | src/cron/runner.ts | 744 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:744bbd117084af26649ef29c |
-| cron | src/cron/runner.ts | 768 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:5a991c30aac091d8da223934 |
-| cron | src/cron/runner.ts | 774 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:eaecf8e2bd7d2885c9130909 |
+| cron | src/cron/runner.ts | 131 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:fc2cdecb2aeccf630df7a4a8 |
+| cron | src/cron/runner.ts | 179 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:c797d567e8c78c6703f0019a |
+| cron | src/cron/runner.ts | 251 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:f46da2fce5ae9ed844b1e742 |
+| cron | src/cron/runner.ts | 440 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:5330acdaef56e91c95ddf82c |
+| cron | src/cron/runner.ts | 461 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:c47c8a50008567bd304f8d72 |
+| cron | src/cron/runner.ts | 491 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:84c8fe96035d9d18e92887dc |
+| cron | src/cron/runner.ts | 521 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:235129936abfdfaef946e2c7 |
+| cron | src/cron/runner.ts | 742 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:a2be358361197f4a1e5cef9a |
+| cron | src/cron/runner.ts | 767 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:744bbd117084af26649ef29c |
+| cron | src/cron/runner.ts | 791 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:5a991c30aac091d8da223934 |
+| cron | src/cron/runner.ts | 797 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:eaecf8e2bd7d2885c9130909 |
 | cron | src/cron/schedule.ts | 42 | triaged-follow-up | catch-without-binding | src/cron/schedule.ts:2b46c8ca013c56a26edd2e09 |
 | cron | src/cron/schedule.ts | 63 | triaged-follow-up | catch-without-binding | src/cron/schedule.ts:613ff03ae8445d303ad9e180 |
 | cron | src/cron/shell-executor.ts | 92 | triaged-follow-up | catch-without-binding | src/cron/shell-executor.ts:ff2a0e370bcdc34b2a46f47b |
@@ -1450,20 +1450,20 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | link | src/link/client.ts | 98 | triaged-follow-up | catch-without-binding | src/link/client.ts:f47c9ac5ebbb9d36b270f6c9 |
 | link | src/link/client.ts | 157 | triaged-follow-up | catch-without-binding | src/link/client.ts:142fcfbb7c9568d5686e81a3 |
 | link | src/link/connector-mode.ts | 74 | triaged-follow-up | catch-without-binding | src/link/connector-mode.ts:1dba2a9a3f2aa4bda248910c |
-| link | src/link/connector-turn.ts | 463 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:32240cf9072fe876c000542b |
-| link | src/link/connector-turn.ts | 553 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:64ab8a22ae98c9bc153bb6af |
-| link | src/link/connector-turn.ts | 578 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:48e1be97cb9e1d4b51ba2c62 |
-| link | src/link/connector-turn.ts | 600 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:40b56210d2697d533a1ab492 |
-| link | src/link/connector-turn.ts | 954 | no-cause | a session that cannot be read cannot be shown to be the trigger's alone, so it is not | src/link/connector-turn.ts:21af7ef0b74c64585c70079a |
-| link | src/link/connector-turn.ts | 1000 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:1f43168c3fcdb77a16f9bc8b |
-| link | src/link/connector-turn.ts | 1020 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:c09b05b12bb5b71a49b5dd0a |
-| link | src/link/connector-turn.ts | 1047 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:353cbde6393f0276f55d759d |
-| link | src/link/connector-turn.ts | 1072 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:140204216fa0931bfaa4ea23 |
-| link | src/link/connector-turn.ts | 1180 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:f477353490ca689fd56056ff |
-| link | src/link/connector-turn.ts | 1188 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:f9a567d6b94c71b5a727504a |
-| link | src/link/connector-turn.ts | 1261 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:3676f94b18f57df591d022b2 |
-| link | src/link/connector-turn.ts | 1278 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:466003e4e23f1c1a20502846 |
-| link | src/link/connector-turn.ts | 1297 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:79ddfd14ef08e80cf0dd6d2c |
+| link | src/link/connector-turn.ts | 469 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:32240cf9072fe876c000542b |
+| link | src/link/connector-turn.ts | 559 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:64ab8a22ae98c9bc153bb6af |
+| link | src/link/connector-turn.ts | 584 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:48e1be97cb9e1d4b51ba2c62 |
+| link | src/link/connector-turn.ts | 606 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:40b56210d2697d533a1ab492 |
+| link | src/link/connector-turn.ts | 960 | no-cause | a session that cannot be read cannot be shown to be the trigger's alone, so it is not | src/link/connector-turn.ts:21af7ef0b74c64585c70079a |
+| link | src/link/connector-turn.ts | 1006 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:1f43168c3fcdb77a16f9bc8b |
+| link | src/link/connector-turn.ts | 1026 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:c09b05b12bb5b71a49b5dd0a |
+| link | src/link/connector-turn.ts | 1053 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:353cbde6393f0276f55d759d |
+| link | src/link/connector-turn.ts | 1078 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:140204216fa0931bfaa4ea23 |
+| link | src/link/connector-turn.ts | 1186 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:f477353490ca689fd56056ff |
+| link | src/link/connector-turn.ts | 1194 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:f9a567d6b94c71b5a727504a |
+| link | src/link/connector-turn.ts | 1267 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:3676f94b18f57df591d022b2 |
+| link | src/link/connector-turn.ts | 1284 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:466003e4e23f1c1a20502846 |
+| link | src/link/connector-turn.ts | 1303 | triaged-follow-up | catch-without-binding | src/link/connector-turn.ts:79ddfd14ef08e80cf0dd6d2c |
 | link | src/link/connectors.ts | 193 | fixed | binding retained / no recognized error surface | src/link/connectors.ts:061c62748854fb522ca5829b |
 | link | src/link/connectors.ts | 329 | fixed | binding retained / no recognized error surface | src/link/connectors.ts:eea2b71b32b52b092697cfc3 |
 | link | src/link/connectors.ts | 353 | fixed | binding retained / no recognized error surface | src/link/connectors.ts:2b0a87456edc35822950019d |

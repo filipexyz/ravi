@@ -310,3 +310,10 @@
 - `src/runtime/runtime-request-context.test.ts` checks delegated human requests stay refused for connector management and exec in owner, person_asking and shared modes, including explicit shared selection, while Bases preserves the requester.
 - Actor projections MUST preserve the source's connector refusal, and Bases
   MUST refuse already admitted children after ancestor revocation or contact block.
+- `src/cron/runner.test.ts` (13c): an operator-owned shell run carries a root
+  `cron-shell` context key that classifies as the job's cron routine and acts
+  as the operator in Bases while live, is revoked (`cron_shell_completed`)
+  when the command ends and then refuses; a command that prints the key
+  leaves it out of `lastError` and every notice; no context for a job whose
+  owner does not act as the operator or whose agent is missing; a
+  `cron-shell` context with a parent is not honored.
