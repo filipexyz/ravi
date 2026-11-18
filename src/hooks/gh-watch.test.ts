@@ -13,6 +13,7 @@ import {
   tokenizeShellCommand,
 } from "./gh-watch.js";
 import { evaluateFilter, validateFilter } from "../triggers/filter.js";
+import { resolveDurableFollowOwner } from "../triggers/follow-owner.js";
 import type { Trigger, TriggerInput } from "../triggers/index.js";
 import type { WatchRecord } from "../watch/types.js";
 
@@ -1044,6 +1045,18 @@ describe("durable PR follow owner", () => {
     expect(() => resolveGhFollowContext(childContext)).toThrow("parent session is missing");
     expect(() => resolveGhFollowContext({ sessionKey: "missing:thread:1.2" })).toThrow("lifecycle is missing");
     expect(resolveGhFollowContext({ sessionName: "normal" })).toEqual({ sessionName: "normal" });
+  });
+
+  it("resolves the owner through the shared helper and keeps the PR follow wording of its refusals", () => {
+    seed();
+    expect(resolveGhFollowContext(childContext)).toEqual(resolveDurableFollowOwner(childContext, "PR follow"));
+    expect(() => resolveGhFollowContext({ sessionKey: "missing:thread:1.2" })).toThrow(
+      "Cannot register PR follow: thread lifecycle is missing or ambiguous.",
+    );
+    deleteSession("parent-key");
+    expect(() => resolveGhFollowContext(childContext)).toThrow(
+      "Cannot register PR follow: durable parent session is missing.",
+    );
   });
 
   it("maintenance removes burst loss from existing follows once without changing owners or paused state", async () => {
