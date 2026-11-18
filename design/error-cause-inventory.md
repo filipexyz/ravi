@@ -878,7 +878,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/host-cli-gateway.ts | 68 | fixed | binding retained / no recognized error surface | src/cli/host-cli-gateway.ts:f7e094da98fed906069260b2 |
 | cli | src/cli/host-cli-gateway.ts | 87 | fixed | binding retained / no recognized error surface | src/cli/host-cli-gateway.ts:29b88bd8bfe16bd3923425e8 |
 | cli | src/cli/host-cli-gateway.ts | 105 | fixed | binding retained / no recognized error surface | src/cli/host-cli-gateway.ts:d9438d1bd650892274bb7f6b |
-| cli | src/cli/index.ts | 406 | fixed | binding retained / no recognized error surface | src/cli/index.ts:ec430f76c403612ecee9bdc8 |
+| cli | src/cli/index.ts | 407 | fixed | binding retained / no recognized error surface | src/cli/index.ts:ec430f76c403612ecee9bdc8 |
 | cli | src/cli/library-contract.ts | 105 | triaged-follow-up | catch-without-binding | src/cli/library-contract.ts:f2ec480a53ac6fd028da51f5 |
 | cli | src/cli/library-contract.ts | 254 | fixed | binding retained / no recognized error surface | src/cli/library-contract.ts:280aa53f39bb3a3515c61af8 |
 | cli | src/cli/listing.ts | 62 | fixed | binding retained / no recognized error surface | src/cli/listing.ts:e834d0161aadf77c47d58072 |
