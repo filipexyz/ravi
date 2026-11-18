@@ -160,7 +160,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
     steps:
       # Full history and tags: the fence adoption tests read legacy tags
