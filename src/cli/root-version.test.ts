@@ -114,19 +114,23 @@ describe("CLI root version", () => {
     expect(root.stdout).toContain("unlink [options]");
   });
 
-  it("suggests the plural tasks command for the singular task command", () => {
-    const stateDir = join(tmpdir(), `ravi-root-task-suggestion-${process.pid}`);
-    const result = spawnSync("bun", ["src/cli/index.ts", "task"], {
-      cwd: process.cwd(),
-      encoding: "utf8",
-      env: testEnv(stateDir),
-    });
-    rmSync(stateDir, { recursive: true, force: true });
+  it("suggests the plural tasks command for the singular task command, with or without a help flag", () => {
+    // `ravi task --help` used to print the root help and exit 0: Commander looks for help before it looks for an
+    // unknown command. The root usage contract makes it the same usage error as `ravi task`.
+    for (const args of [["task"], ["task", "--help"]]) {
+      const stateDir = join(tmpdir(), `ravi-root-task-suggestion-${process.pid}`);
+      const result = spawnSync("bun", ["src/cli/index.ts", ...args], {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        env: testEnv(stateDir),
+      });
+      rmSync(stateDir, { recursive: true, force: true });
 
-    // The root usage contract answers an unknown command with exit 2 and Commander's suggestion. `ravi task --help`
-    // no longer reaches it: it prints the root help and exits 0.
-    expect(result.status).toBe(2);
-    expect(result.stderr).toContain("unknown command 'task'");
-    expect(result.stderr).toContain("(Did you mean tasks?)");
+      const command = `ravi ${args.join(" ")}`;
+      expect(result.status, command).toBe(2);
+      expect(result.stdout, command).not.toContain("Usage: ravi [options] [command]");
+      expect(result.stderr, command).toContain("unknown command 'task'");
+      expect(result.stderr, command).toContain("(Did you mean tasks?)");
+    }
   });
 });
