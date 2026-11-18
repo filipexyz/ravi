@@ -51,6 +51,7 @@ import { readTurnReplyTarget } from "../runtime/turn-reply-target.js";
 import { resolveHumanRequestCaller } from "../runtime/human-request.js";
 import { resolveRuntimeTurnOrigin } from "../runtime/turn-origin.js";
 import { parseTriggerSessionKey, readTriggerRunAuthority } from "../triggers/authority.js";
+import { isShellCronRootContext } from "../cron/shell-context-kind.js";
 import { connectorModeArg, readAgentConnectorMode, type ConnectorUseMode } from "./connector-mode.js";
 
 export type ConnectorSpeakerKind = "terminal" | "owner" | "contact" | "agent" | "automation";
@@ -383,7 +384,12 @@ export function resolveConnectorTurn(deps: ConnectorTurnDeps = {}): ConnectorTur
       // CLI children may supply metadata, but only a host-issued turn owns admission.
       // A normal child inherits the turn through findActorContext; a forged actor
       // on the child itself must not substitute a new cron snapshot.
-      cronRunAuthority: actorContext.kind === "turn-runtime" ? metadata.cronRunAuthority : undefined,
+      // A shell cron run's own root context (issued by the cron runner) carries
+      // the same host snapshot as a cron turn.
+      cronRunAuthority:
+        actorContext.kind === "turn-runtime" || isShellCronRootContext(actorContext)
+          ? metadata.cronRunAuthority
+          : undefined,
       triggerRunAuthority: actorContext.kind === "turn-runtime" ? metadata.triggerRunAuthority : undefined,
     },
     { key: sameSessionKey(actorContext.sessionKey, runtime.record.sessionKey), name: base.sessionName ?? null },

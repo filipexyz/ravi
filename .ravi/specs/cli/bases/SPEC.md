@@ -111,8 +111,9 @@ writes only through a view, via the `ravi.bases.*` Pages connector actions
    `ACTOR_NOT_LINKED` without one), never as the operator who ran
    `ravi login`. A cron job no person owns (`unknown`, an agent) is refused.
    A shell cron the daemon spawned
-   (`RAVI_AUTOMATION_PRINCIPAL=automation:cron:<id>`, no context key) counts
-   as a runtime turn here; shell triggers and `ravi jobs run` are not
+   (`RAVI_AUTOMATION_PRINCIPAL=automation:cron:<id>`; an operator-owned run
+   also carries its short-lived `cron-shell` context key, connectors 13c)
+   counts as a runtime turn here; shell triggers and `ravi jobs run` are not
    covered (6b covers the agent turns a trigger fires). That marker is not a
    boundary: a shell command
    controls its own environment and runs with the machine's access, so only

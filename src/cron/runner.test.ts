@@ -56,6 +56,9 @@ const { dbCreateCronJob, dbGetCronJob, dbMarkJobDispatched, dbUpdateJobState, db
   "./cron-db.js"
 );
 const { CRON_RUNTIME_EVENTS_TOPIC } = await import("./turn-outcome.js");
+const { issueShellCronContext } = await import("./shell-context.js");
+const { createRuntimeContext } = await import("../runtime/context-registry.js");
+const { dbListContexts } = await import("../router/router-db.js");
 
 let stateDir: string | null = null;
 
@@ -604,8 +607,11 @@ describe("CronRunner shell jobs and personal connectors", () => {
     const operatorJob = await runShellJobEnv("operator");
     expect(operatorJob.env.RAVI_AUTOMATION_PRINCIPAL).toBe(`automation:cron:${operatorJob.jobId}`);
     // The spawned process retains admission authority after a live transfer.
+    // (The run's context key is revoked once the command ends; the env marker
+    // alone is what a process without a key falls back to.)
     dbUpdateCronJob(operatorJob.jobId, { ownerPrincipal: "unknown" });
-    const allowed = resolveConnectorTurn({ ...owner, env: operatorJob.env });
+    const { RAVI_CONTEXT_KEY: _revokedKey, ...markerOnly } = operatorJob.env;
+    const allowed = resolveConnectorTurn({ ...owner, env: markerOnly });
     expect(allowed.ok).toBe(true);
     if (allowed.ok) {
       expect(allowed.turn).toMatchObject({
@@ -613,6 +619,99 @@ describe("CronRunner shell jobs and personal connectors", () => {
         routine: { kind: "cron", id: operatorJob.jobId },
       });
     }
+  });
+
+  it("gives an operator's shell run a root cron-shell context, revoked when the command ends", async () => {
+    const operatorJob = await runShellJobEnv("operator");
+    const key = operatorJob.env.RAVI_CONTEXT_KEY;
+    expect(key).toBeTruthy();
+    const context = dbListContexts({ includeInactive: true, kind: "cron-shell" }).find((c) => c.contextKey === key);
+    expect(context?.metadata).toMatchObject({
+      actorPrincipal: `automation:cron:${operatorJob.jobId}`,
+      cronRunAuthority: { jobId: operatorJob.jobId, ownerPrincipal: "operator", ownerIsOperator: true },
+    });
+    expect(context?.metadata?.parentContextId).toBeUndefined();
+    expect(context?.revokedAt).toBeDefined();
+    expect(context?.metadata?.revocationReason).toBe("cron_shell_completed");
+    // Expired at the end: the key no longer classifies as the job's routine.
+    expect(resolveConnectorTurn({ ...owner, env: { RAVI_CONTEXT_KEY: key! } }).ok).toBe(false);
+  });
+
+  it("acts for the operator in Bases while the shell run's context is live", () => {
+    const job = dbCreateCronJob({
+      name: "shell-live",
+      schedule: { type: "every", every: 60_000 },
+      message: "",
+      executionType: "shell",
+      shellCommand: "true",
+      ownerPrincipal: "operator",
+    });
+    const authority = { jobId: job.id, ownerPrincipal: "operator", ownerIsOperator: true };
+    const issued = issueShellCronContext(job, authority, 1_000)!;
+    try {
+      const turn = resolveConnectorTurn({ ...owner, env: { RAVI_CONTEXT_KEY: issued.context.contextKey } });
+      expect(turn).toMatchObject({ ok: true, turn: { routine: { kind: "cron", id: job.id } } });
+      expect(accessActorFromTurn(turn)).toMatchObject({ kind: "operator" });
+    } finally {
+      issued.release();
+    }
+    expect(
+      accessActorFromTurn(resolveConnectorTurn({ ...owner, env: { RAVI_CONTEXT_KEY: issued.context.contextKey } }))
+        .kind,
+    ).toBe("refused");
+  });
+
+  it("never stores or notifies the run's context key, even when the command prints it", async () => {
+    const job = dbCreateCronJob({
+      name: "shell-leak",
+      schedule: { type: "every", every: 60_000 },
+      message: "",
+      executionType: "shell",
+      shellCommand: 'echo "out:$RAVI_CONTEXT_KEY"; echo "err:$RAVI_CONTEXT_KEY" >&2; exit 3',
+      ownerPrincipal: "operator",
+      onError: "notify-session:shell-leak-session",
+    });
+    await new CronRunner().triggerJob(job.id);
+    const key = dbListContexts({ includeInactive: true, kind: "cron-shell" }).at(-1)?.contextKey;
+    expect(key).toBeTruthy();
+    const after = dbGetCronJob(job.id)!;
+    expect(after.lastStatus).toBe("error");
+    expect(after.lastError).toContain("[REDACTED:context-key]");
+    expect(after.lastError).not.toContain(key!);
+    for (const call of publishCalls) expect(JSON.stringify(call.payload)).not.toContain(key!);
+  });
+
+  it("issues no context when the job's agent does not exist, and the command still runs", () => {
+    const authority = { jobId: "job-y", ownerPrincipal: "operator", ownerIsOperator: true };
+    expect(issueShellCronContext({ id: "job-y", agentId: "missing-agent" }, authority, 1_000)).toBeNull();
+  });
+
+  it("issues no context for a run whose owner does not act as the operator", () => {
+    const job = { id: "job-x", agentId: undefined };
+    expect(
+      issueShellCronContext(job, { jobId: "job-x", ownerPrincipal: "contact:c1", ownerIsOperator: false }, 1_000),
+    ).toBeNull();
+    expect(
+      issueShellCronContext(job, { jobId: "job-x", ownerPrincipal: "operator", ownerIsOperator: true }, 1_000, {
+        ownerActsAsOperator: () => false,
+      }),
+    ).toBeNull();
+    expect(
+      issueShellCronContext(job, { jobId: "other", ownerPrincipal: "operator", ownerIsOperator: true }, 1_000),
+    ).toBeNull();
+  });
+
+  it("does not honor a cron snapshot on a cron-shell context that has a parent", () => {
+    const forged = createRuntimeContext({
+      kind: "cron-shell",
+      agentId: "main",
+      metadata: {
+        parentContextId: "ctx_parent",
+        actorPrincipal: "automation:cron:job-forged",
+        cronRunAuthority: { jobId: "job-forged", ownerPrincipal: "operator", ownerIsOperator: true },
+      },
+    });
+    expect(resolveConnectorTurn({ ...owner, env: { RAVI_CONTEXT_KEY: forged.contextKey } }).ok).toBe(false);
   });
 
   it("does not run a shell job someone other than the operator owns", async () => {
