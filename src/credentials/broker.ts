@@ -1,5 +1,5 @@
 import { getContext } from "../cli/context.js";
-import { authorizeCredentialUse, type CredentialBrokerAuthority } from "./authorization.js";
+import { actorHoldsCredentialAction, authorizeCredentialUse, type CredentialBrokerAuthority } from "./authorization.js";
 export type { CredentialBrokerAuthority } from "./authorization.js";
 import { readSecret, redactSecretRef } from "./backends.js";
 import { CredentialBrokerError } from "./errors.js";
@@ -30,6 +30,12 @@ export async function resolveCredentialSecret(input: {
   provider: string;
   connection: string;
   action: string;
+  /**
+   * The caller knows this call removes content even though the provider
+   * method's name does not say so (for example a `canvases.edit` whose
+   * change is `delete`). It always asks for approval, like `*.delete`.
+   */
+  destructive?: boolean;
   authority?: CredentialBrokerAuthority;
   options?: CredentialStoreOptions;
 }): Promise<{ connection: CredentialConnectionRecord; secret: string; policy: CredentialPolicyExplanation }> {
@@ -66,11 +72,20 @@ export async function resolveCredentialSecret(input: {
     actorContextId = authorization.actorContextId;
     agentId = authorization.agentId;
     decision = "allow";
-    if (policy.approval.required && authorization.context) {
+    if (
+      policy.approval.required &&
+      authorization.context &&
+      input.destructive !== true &&
+      !isDestructiveAction(input.action) &&
+      actorHoldsCredentialAction(authorization.context, input)
+    ) {
+      // The card would ask the turn's author to approve their own request.
+      approvalStatus = "actor_authorized";
+    } else if (policy.approval.required && authorization.context) {
       decision = "needs_approval";
       approvalStatus = "pending";
       audit("approval_pending");
-      const { requestCascadingApproval } = await import("../approval/service.js");
+      const { isFixedApprovalRefusalReason, requestCascadingApproval } = await import("../approval/service.js");
       const context = authorization.context;
       const result = await requestCascadingApproval({
         resolvedSource: context.source,
@@ -88,7 +103,20 @@ export async function resolveCredentialSecret(input: {
       });
       if (!result.approved) {
         approvalStatus = "denied";
-        throw new CredentialBrokerError("approval_denied", "Credential action approval was not granted.");
+        // Keep only fixed text the approval service wrote: an exception
+        // message or a rejecting human's words never leave as `detail`.
+        const fixedReason =
+          result.reason &&
+          isFixedApprovalRefusalReason(result.reason, "permission", {
+            permission: "execute",
+            objectType: connection.provider,
+            objectId: input.action,
+          })
+            ? result.reason
+            : undefined;
+        throw new CredentialBrokerError("approval_denied", "Credential action approval was not granted.", {
+          ...(fixedReason ? { detail: fixedReason } : {}),
+        });
       }
       approvalStatus = "approved";
       // Approval cannot revive a revoked context, bypass a changed provider or
@@ -120,9 +148,16 @@ export async function resolveCredentialSecret(input: {
     audit("failed", code);
     // Backend/parser causes can contain the plaintext. Do not retain them on
     // an error that CLI diagnostics or a runner may serialize.
+    // An approval refusal keeps its reason only when it is fixed text the
+    // approval service wrote (checked where it was thrown), so the caller can
+    // show the way out without echoing an exception or a person's words.
+    const detail = error instanceof CredentialBrokerError && code === "approval_denied" ? error.detail : undefined;
     throw new CredentialBrokerError(
       code,
       `Credential operation failed (${code}): ${input.provider}:${input.connection}`,
+      {
+        ...(detail ? { detail } : {}),
+      },
     );
   }
 }
@@ -216,6 +251,36 @@ export function publicCredentialConnection(record: CredentialConnectionRecord): 
   };
 }
 
+// Provider reads that change nothing. Anything else is a write and asks a
+// human, unless the turn's own author already holds it.
+const READ_ONLY_ACTIONS = new Set([
+  "auth.check",
+  "whoami",
+  "channels.list",
+  "channels.info",
+  "conversations.list",
+  "conversations.info",
+  "conversations.history",
+  "conversations.replies",
+  "conversations.members",
+  "users.list",
+  "users.info",
+  "users.lookupByEmail",
+  "users.conversations",
+  "team.info",
+]);
+
 function isSensitiveAction(action: string): boolean {
-  return !/^(auth\.check|whoami|channels\.list|channels\.info|users\.list|users\.info)$/.test(action);
+  return !READ_ONLY_ACTIONS.has(action);
+}
+
+// Actions that remove something or someone. They ask a human every time,
+// even when the turn's own author holds them. A method whose name hides a
+// removal (`canvases.edit` with a `delete` change) is marked by its caller
+// with `destructive: true` instead.
+const DESTRUCTIVE_VERBS = new Set(["archive", "kick", "delete", "remove"]);
+
+export function isDestructiveAction(action: string): boolean {
+  const verb = action.split(".").pop() ?? "";
+  return DESTRUCTIVE_VERBS.has(verb);
 }

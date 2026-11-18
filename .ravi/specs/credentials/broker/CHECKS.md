@@ -45,6 +45,27 @@ Tests MUST cover:
 - Missing `execute:<provider>:<action>` denies before backend read.
 - Sensitive action requests approval before backend read.
 - Approval denial prevents backend read.
+- On the author's own human turn, with the contact holding both
+  capabilities, a non-destructive write reads without a card and is audited
+  as `actor_authorized` with `approval_required = 1`.
+- `*.archive`, `*.kick`, `*.delete` and `*.remove` still ask for approval on
+  the author's own turn.
+- A call marked `destructive: true` (`canvases.edit` with a `delete` change)
+  asks for approval on the author's own turn, while the same `canvases.edit`
+  without the mark passes; `ravi slack canvas-edit` sends the mark for
+  `delete` and for a whole-canvas `replace`, and not for a section
+  `replace`.
+- `src/channels/slack/credentials.ts` forwards `destructive` to the broker
+  only when set.
+- The exception never applies to a provider other than `slack`.
+- Agent, system and unknown turn origins never skip the card.
+- An approval refusal keeps `detail` only for fixed approval-service text;
+  an arbitrary reason (exception text) is dropped.
+- Cron/trigger provenance, missing provenance, agent relay, unresolved
+  speaker, thread projection, an author without the action and a blocked
+  author never skip the card.
+- Conversation reads (`conversations.history` and the rest of the read set)
+  ask nobody.
 - An invalid key never falls back to default credentials or operator-control.
 - Stale in-process context copies cannot survive revocation or capability removal.
 - A missing executor or blocked invocation actor cannot use a saved snapshot.

@@ -140,3 +140,48 @@ function validHostIntent(input: { provider: string; action: string; authority?: 
   };
   return actions[input.authority.service]?.includes(input.action) === true;
 }
+
+/**
+ * The person who wrote this turn may already hold what the action needs.
+ *
+ * A write through a provider credential asks a human to approve it on a card
+ * in the chat the turn came from. When the turn's own author is a resolved,
+ * active contact whose own capabilities allow both the credential and the
+ * provider action, that card asks the author to approve their own request:
+ * the answer is already known, so the broker records it as
+ * `actor_authorized` instead of asking.
+ *
+ * Only a direct turn counts. A turn without a resolved human author (an
+ * agent relay, a trigger, a cron, an unknown speaker) or one whose author was
+ * projected from another session (a thread acting for its parent) keeps the
+ * card, and so does an author who could not grant the action themselves.
+ * The broker never asks this for a destructive action (archive, kick,
+ * delete): those keep the card even on the author's own turn.
+ */
+export function actorHoldsCredentialAction(
+  context: ContextRecord,
+  input: { provider: string; connection: string; action: string },
+): boolean {
+  // Only Slack's actions are classified (read set, destructive verbs, the
+  // caller's destructive mark); any other provider keeps the card.
+  if (input.provider !== "slack") return false;
+  const metadata = context.metadata ?? {};
+  if (metadata.actorResolution !== "resolved" || metadata.actorProjection) return false;
+  // A cron, a trigger or an observer may carry its owner as the actor; only a
+  // message a person sent counts as that person asking.
+  const provenance = metadata.turnProvenance as { origin?: unknown } | undefined;
+  if (provenance?.origin !== "human") return false;
+  const principal = metadata.actorPrincipal;
+  if (typeof principal !== "string" || !principal.startsWith("contact:")) return false;
+  const contactId = principal.slice("contact:".length).trim();
+  if (!contactId) return false;
+  const contact = getContactById(contactId);
+  if (!contact || contact.status === "blocked" || contact.opt_out) return false;
+  // Subject grants only: a chat-scoped grant keeps the card (known limitation
+  // in .ravi/specs/credentials/broker/SPEC.md, Consumption Authority).
+  const capabilities = materializeSubjectCapabilities("contact", contact.id);
+  return (
+    canWithCapabilities(capabilities, "use", "credential", `${input.provider}:${input.connection}`) &&
+    canWithCapabilities(capabilities, "execute", input.provider, input.action)
+  );
+}

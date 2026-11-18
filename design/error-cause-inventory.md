@@ -127,17 +127,17 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | permissions | src/approval/grantor.ts | 143 | triaged-follow-up | catch-without-binding | src/approval/grantor.ts:4531760e0c3838364a258e83 |
 | permissions | src/approval/grantor.ts | 171 | triaged-follow-up | catch-without-binding | src/approval/grantor.ts:b6c47d5279cb74466f584953 |
 | permissions | src/approval/service.ts | 310 | fixed | binding retained / no recognized error surface | src/approval/service.ts:4113090bdfee8676e562b4a3 |
-| permissions | src/approval/service.ts | 450 | fixed | binding retained / no recognized error surface | src/approval/service.ts:5b38d947769e34f5d06100d8 |
-| permissions | src/approval/service.ts | 491 | triaged-follow-up | rejection-without-binding | src/approval/service.ts:1e5b2ada9e3eb6121bb823ad |
+| permissions | src/approval/service.ts | 473 | fixed | binding retained / no recognized error surface | src/approval/service.ts:5b38d947769e34f5d06100d8 |
 | permissions | src/approval/service.ts | 514 | triaged-follow-up | rejection-without-binding | src/approval/service.ts:1e5b2ada9e3eb6121bb823ad |
-| permissions | src/approval/service.ts | 624 | fixed | binding retained / no recognized error surface | src/approval/service.ts:cec06f9a9c66f6330b63f868 |
-| permissions | src/approval/service.ts | 846 | fixed | binding retained / no recognized error surface | src/approval/service.ts:f268eb99be81506853371f91 |
-| permissions | src/approval/service.ts | 883 | fixed | binding retained / no recognized error surface | src/approval/service.ts:3a7468362c542614807a743e |
-| permissions | src/approval/service.ts | 901 | fixed | binding retained / no recognized error surface | src/approval/service.ts:f645966f7ff5ceaa4ff9d49a |
-| permissions | src/approval/service.ts | 922 | fixed | binding retained / no recognized error surface | src/approval/service.ts:2ff5bafadd9c5191b11954a8 |
-| permissions | src/approval/service.ts | 937 | fixed | binding retained / no recognized error surface | src/approval/service.ts:02b6e0be80efebbe843d1f3e |
-| permissions | src/approval/service.ts | 982 | fixed | binding retained / no recognized error surface | src/approval/service.ts:0446c3e82195d3d0cb0b9e59 |
-| permissions | src/approval/service.ts | 1241 | fixed | binding retained / no recognized error surface | src/approval/service.ts:e75d2182c32380dcc097db58 |
+| permissions | src/approval/service.ts | 537 | triaged-follow-up | rejection-without-binding | src/approval/service.ts:1e5b2ada9e3eb6121bb823ad |
+| permissions | src/approval/service.ts | 647 | fixed | binding retained / no recognized error surface | src/approval/service.ts:cec06f9a9c66f6330b63f868 |
+| permissions | src/approval/service.ts | 869 | fixed | binding retained / no recognized error surface | src/approval/service.ts:f268eb99be81506853371f91 |
+| permissions | src/approval/service.ts | 906 | fixed | binding retained / no recognized error surface | src/approval/service.ts:3a7468362c542614807a743e |
+| permissions | src/approval/service.ts | 924 | fixed | binding retained / no recognized error surface | src/approval/service.ts:f645966f7ff5ceaa4ff9d49a |
+| permissions | src/approval/service.ts | 945 | fixed | binding retained / no recognized error surface | src/approval/service.ts:2ff5bafadd9c5191b11954a8 |
+| permissions | src/approval/service.ts | 960 | fixed | binding retained / no recognized error surface | src/approval/service.ts:02b6e0be80efebbe843d1f3e |
+| permissions | src/approval/service.ts | 1005 | fixed | binding retained / no recognized error surface | src/approval/service.ts:0446c3e82195d3d0cb0b9e59 |
+| permissions | src/approval/service.ts | 1264 | fixed | binding retained / no recognized error surface | src/approval/service.ts:e75d2182c32380dcc097db58 |
 | permissions | src/approval/slack-click-feedback.ts | 112 | fixed | binding retained / no recognized error surface | src/approval/slack-click-feedback.ts:bd781b46e5db4e6dd05bf998 |
 | permissions | src/approval/slack-click-feedback.ts | 118 | fixed | binding retained / no recognized error surface | src/approval/slack-click-feedback.ts:9b04d5b1beb41af8f4b7d658 |
 | permissions | src/approval/store.ts | 451 | triaged-follow-up | catch-without-binding | src/approval/store.ts:ac1d131e8f2f6d84c0becd00 |
@@ -359,8 +359,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels-slack | src/channels/slack/credential-intake.ts | 449 | no-cause | Failed interaction acknowledgment must not forward raw Slack payload or response diagnostics. | src/channels/slack/credential-intake.ts:8c2dadb0225522e81e0f8be6 |
 | channels-slack | src/channels/slack/credential-intake.ts | 453 | no-cause | Failure-view delivery is best effort; keep raw Slack diagnostics outside the intake response. | src/channels/slack/credential-intake.ts:8c2dadb0225522e81e0f8be6 |
 | channels-slack | src/channels/slack/credential-intake.ts | 465 | no-cause | Private denial feedback is best effort; do not expose raw Slack delivery diagnostics. | src/channels/slack/credential-intake.ts:8c2dadb0225522e81e0f8be6 |
-| channels-slack | src/channels/slack/credentials.ts | 125 | triaged-follow-up | catch-without-binding | src/channels/slack/credentials.ts:73a802c242ce1203be05eb48 |
-| channels-slack | src/channels/slack/credentials.ts | 164 | no-cause | JSON syntax errors can quote raw provider tokens; never retain the input or exception. | src/channels/slack/credentials.ts:73c77dbb1c2c5ec079b8d6c8 |
+| channels-slack | src/channels/slack/credentials.ts | 129 | triaged-follow-up | catch-without-binding | src/channels/slack/credentials.ts:73a802c242ce1203be05eb48 |
+| channels-slack | src/channels/slack/credentials.ts | 168 | no-cause | JSON syntax errors can quote raw provider tokens; never retain the input or exception. | src/channels/slack/credentials.ts:73c77dbb1c2c5ec079b8d6c8 |
 | channels-slack | src/channels/slack/driver.ts | 181 | fixed | binding retained / no recognized error surface | src/channels/slack/driver.ts:fe16f5839d057e9042355b51 |
 | channels-slack | src/channels/slack/gateway-mode.ts | 68 | triaged-follow-up | rejection-without-binding | src/channels/slack/gateway-mode.ts:1d126dff1a822d092a379ab6 |
 | channels-slack | src/channels/slack/gateway-mode.ts | 86 | triaged-follow-up | rejection-without-binding | src/channels/slack/gateway-mode.ts:a19caa7904cf9f3d0b63fb78 |
@@ -434,10 +434,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels | src/channels/terminal-projection-recovery.ts | 169 | fixed | binding retained / no recognized error surface | src/channels/terminal-projection-recovery.ts:b16c531362ec7ba4323b45f4 |
 | channels | src/channels/terminal-projection-recovery.ts | 200 | fixed | binding retained / no recognized error surface | src/channels/terminal-projection-recovery.ts:545c0a622bfd6a2bb7c8fbcc |
 | channels | src/channels/terminal-projection-recovery.ts | 368 | fixed | binding retained / no recognized error surface | src/channels/terminal-projection-recovery.ts:cec37543b58b49807dd44f1f |
-| ci | src/ci/quality-gate.ts | 435 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:35e920db0e1dc5d202263c0b |
-| ci | src/ci/quality-gate.ts | 446 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:3ca26f959f0fbb07f2541ae7 |
-| ci | src/ci/quality-gate.ts | 456 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:51a5a6018c77cc4a8a8aac22 |
-| ci | src/ci/quality-gate.ts | 465 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:4ef5158409736ec9a3bee50a |
+| ci | src/ci/quality-gate.ts | 437 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:35e920db0e1dc5d202263c0b |
+| ci | src/ci/quality-gate.ts | 448 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:3ca26f959f0fbb07f2541ae7 |
+| ci | src/ci/quality-gate.ts | 458 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:51a5a6018c77cc4a8a8aac22 |
+| ci | src/ci/quality-gate.ts | 467 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:4ef5158409736ec9a3bee50a |
 | ci | src/ci/run-quality-gate.ts | 37 | triaged-follow-up | catch-without-binding | src/ci/run-quality-gate.ts:5271b06f964c5c57249517e5 |
 | cli | src/cli/audit.ts | 55 | triaged-follow-up | rejection-without-binding | src/cli/audit.ts:66ccfbc7e8e1dda3b8608604 |
 | cli | src/cli/audit.ts | 58 | triaged-follow-up | rejection-without-binding | src/cli/audit.ts:66ccfbc7e8e1dda3b8608604 |
@@ -797,13 +797,13 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/skills.ts | 602 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/skills.ts:91561788503f4ec039ff70e4 |
 | cli | src/cli/commands/skills.ts | 2333 | fixed | binding retained / no recognized error surface | src/cli/commands/skills.ts:8a9f0453330a52261d46eb59 |
 | cli | src/cli/commands/skills.ts | 2388 | fixed | binding retained / no recognized error surface | src/cli/commands/skills.ts:920bb9fc0b0ebd544d4fce27 |
-| channels-slack | src/cli/commands/slack.ts | 328 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:66b5de83e6fd5acb8fb35160 |
-| channels-slack | src/cli/commands/slack.ts | 434 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:d99046dd6a6e969b9e90eb63 |
-| channels-slack | src/cli/commands/slack.ts | 445 | triaged-follow-up | catch-without-binding | src/cli/commands/slack.ts:8f52890620905e69730b310f |
-| channels-slack | src/cli/commands/slack.ts | 1384 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:bec1cbc6cec672c0b0e9be35 |
-| channels-slack | src/cli/commands/slack.ts | 2083 | triaged-follow-up | cause-not-forwarded-at-surface | src/cli/commands/slack.ts:2e7093676db6fe63f1ec32b3 |
-| channels-slack | src/cli/commands/slack.ts | 2573 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:ebb0b5ae5dcb6a742fd68cd4 |
-| channels-slack | src/cli/commands/slack.ts | 2593 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:4604cea8b89f11e71c8c24cb |
+| channels-slack | src/cli/commands/slack.ts | 340 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:0788acaba0330c98747ac78d |
+| channels-slack | src/cli/commands/slack.ts | 476 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:d99046dd6a6e969b9e90eb63 |
+| channels-slack | src/cli/commands/slack.ts | 487 | triaged-follow-up | catch-without-binding | src/cli/commands/slack.ts:8f52890620905e69730b310f |
+| channels-slack | src/cli/commands/slack.ts | 1426 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:bec1cbc6cec672c0b0e9be35 |
+| channels-slack | src/cli/commands/slack.ts | 2125 | triaged-follow-up | cause-not-forwarded-at-surface | src/cli/commands/slack.ts:2e7093676db6fe63f1ec32b3 |
+| channels-slack | src/cli/commands/slack.ts | 2615 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:ebb0b5ae5dcb6a742fd68cd4 |
+| channels-slack | src/cli/commands/slack.ts | 2635 | fixed | binding retained / no recognized error surface | src/cli/commands/slack.ts:4604cea8b89f11e71c8c24cb |
 | cli | src/cli/commands/specs.ts | 46 | triaged-follow-up | catch-without-binding | src/cli/commands/specs.ts:8806013e21fb2b560ad57403 |
 | cli | src/cli/commands/specs.ts | 100 | triaged-follow-up | catch-without-binding | src/cli/commands/specs.ts:577e5c29ebd7e3c53bb66da9 |
 | cli | src/cli/commands/specs.ts | 139 | fixed | binding retained / no recognized error surface | src/cli/commands/specs.ts:f2127fc5d6e51624c60be4d3 |
@@ -1021,7 +1021,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | costs | src/costs/pricing-catalog.ts | 255 | triaged-follow-up | catch-without-binding | src/costs/pricing-catalog.ts:6313c80f0e29a2794c3fc323 |
 | costs | src/costs/pricing-catalog.ts | 306 | triaged-follow-up | catch-without-binding | src/costs/pricing-catalog.ts:e2413b21d59a5ab0b644dddc |
 | credentials | src/credentials/backends.ts | 108 | no-cause | Process errors may echo secret stdin or arguments; only the fixed Keychain failure may escape. | src/credentials/backends.ts:167696ef3f8aa5396bfd9bae |
-| credentials | src/credentials/broker.ts | 112 | fixed | binding retained / no recognized error surface | src/credentials/broker.ts:d5f05fc82781c390376e91cd |
+| credentials | src/credentials/broker.ts | 140 | fixed | binding retained / no recognized error surface | src/credentials/broker.ts:857b7d636b7b1bdeb546bcfe |
 | credentials | src/credentials/file-backend.ts | 35 | fixed | binding retained / no recognized error surface | src/credentials/file-backend.ts:62ce46c69e26d756b02048f0 |
 | credentials | src/credentials/file-backend.ts | 86 | fixed | binding retained / no recognized error surface | src/credentials/file-backend.ts:6e4dd7f9ffb136fa659cfacb |
 | credentials | src/credentials/file-backend.ts | 98 | no-cause | Filesystem diagnostics may expose secret paths or payloads; only the fixed broker error may escape. | src/credentials/file-backend.ts:2fb81c4638a70c4b4ed77526 |

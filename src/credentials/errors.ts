@@ -14,13 +14,21 @@ export type CredentialBrokerErrorCode =
   | "secret_unavailable";
 
 export class CredentialBrokerError extends Error {
+  /**
+   * Non-secret, human-readable reason for a refusal (for example, why an
+   * approval could not be granted). Never derived from backend or parser
+   * output, so it may be shown to the caller.
+   */
+  readonly detail?: string;
+
   constructor(
     readonly code: CredentialBrokerErrorCode,
     message: string,
-    options?: { cause?: unknown },
+    options?: { cause?: unknown; detail?: string },
   ) {
     super(message, options);
     this.name = "CredentialBrokerError";
+    this.detail = options?.detail;
   }
 }
 

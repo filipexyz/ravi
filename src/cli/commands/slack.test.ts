@@ -15,6 +15,7 @@ import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CloudAuthError } from "../../cloud-auth/errors.js";
+import { CredentialBrokerError } from "../../credentials/errors.js";
 
 afterAll(() => {
   mock.restore();
@@ -29,7 +30,7 @@ const jsonFixturePath = fileURLToPath(import.meta.url);
 // ---------------------------------------------------------------------------
 
 const clientCalls: Array<{ method: string; args: unknown }> = [];
-const credentialResolutionCalls: Array<{ action?: string; channel?: string }> = [];
+const credentialResolutionCalls: Array<{ action?: string; channel?: string; destructive?: boolean }> = [];
 const replayEnvelopes: Array<Record<string, unknown>> = [];
 const interactionResponses: Array<Record<string, unknown>> = [];
 const createdArtifacts: Array<Record<string, unknown>> = [];
@@ -121,10 +122,11 @@ mock.module("../../channels/slack/credentials.js", () => ({
     channel?.enabled !== false && channel?.provider === "slack" && channel?.defaults?.transport === "hub_gateway_v1",
   resolveSlackCredentialConfigFromEnv: async (
     _env: NodeJS.ProcessEnv,
-    options?: { action?: string; channel?: { name?: string; credentialConnection?: string } },
+    options?: { action?: string; destructive?: boolean; channel?: { name?: string; credentialConnection?: string } },
   ) => {
     credentialResolutionCalls.push({
       ...(options?.action ? { action: options.action } : {}),
+      ...(options?.destructive ? { destructive: true } : {}),
       ...(options?.channel?.name ? { channel: options.channel.name } : {}),
     });
     if (credentialResolutionError !== undefined) throw credentialResolutionError;
@@ -1404,6 +1406,35 @@ describe("slack agent-first contract", () => {
     expect(payload).toMatchObject({ ok: true, dryRun: false, method: "canvases.access.delete" });
   });
 
+  it("canvas-edit marks a section delete and a whole-canvas replace as destructive, and a section replace as an ordinary write", async () => {
+    const commands = new SlackCommands();
+    const edit = (operation: string, sectionId?: string, markdown?: string) =>
+      silenced(() =>
+        commands.canvasEdit(
+          "F123",
+          operation,
+          "ravi-slack",
+          sectionId,
+          markdown,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          true,
+        ),
+      );
+
+    await edit("delete", "S1");
+    await edit("replace", undefined, "# Whole body");
+    await edit("replace", "S1", "# Updated");
+    expect(credentialResolutionCalls).toEqual([
+      { action: "canvases.edit", destructive: true, channel: "ravi-slack" },
+      { action: "canvases.edit", destructive: true, channel: "ravi-slack" },
+      { action: "canvases.edit", channel: "ravi-slack" },
+    ]);
+  });
+
   it("canvas-access-set still validates the access level BEFORE the brake", async () => {
     const commands = new SlackCommands();
     await silenced(async () => {
@@ -1517,6 +1548,40 @@ describe("slack agent-first contract", () => {
     expect(error.details.context).toMatchObject({ code: "SLACK_CREDENTIAL_CONNECTION_UNAVAILABLE" });
     expect(clientCalls).toHaveLength(0);
   });
+
+  it("a refused credential approval is PERMISSION_DENIED with the refusal reason, not a 500", async () => {
+    const reason = "Ninguém neste Slack pode aprovar execute:slack:conversations.create.";
+    credentialResolutionError = new CredentialBrokerError(
+      "approval_denied",
+      "Credential operation failed (approval_denied): slack:ravi-slack",
+      { detail: reason },
+    );
+    const error = await expectContractError(
+      () => new SlackCommands().permissionsList("ravi-slack", true),
+      "PERMISSION_DENIED",
+      1,
+    );
+    expect(error.message).toBe(reason);
+    expect(error.details.context).toMatchObject({ provider: "slack", code: "approval_denied" });
+    expect(String(error.details.suggestedAction)).toContain("ravi contacts merge");
+    expect(clientCalls).toHaveLength(0);
+  });
+
+  for (const code of ["authorization_denied", "caller_invalid"] as const) {
+    it(`a ${code} credential refusal is PERMISSION_DENIED`, async () => {
+      credentialResolutionError = new CredentialBrokerError(
+        code,
+        `Credential operation failed (${code}): slack:ravi-slack`,
+      );
+      const error = await expectContractError(
+        () => new SlackCommands().permissionsList("ravi-slack", true),
+        "PERMISSION_DENIED",
+        1,
+      );
+      expect(error.message).toContain(code);
+      expect(error.details.context).toMatchObject({ provider: "slack", code });
+    });
+  }
 
   for (const boundary of ["credential", "permissions"] as const) {
     it(`preserves_slack_${boundary}_failure_cause_and_redacts_credential`, async () => {
