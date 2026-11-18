@@ -23,6 +23,7 @@ import {
   dbMarkJobNotified,
   dbMarkJobRunning,
 } from "./store.js";
+import { resolveVerifiedJobOwner } from "./owner.js";
 import { isJobTerminal, type JobRecord } from "./types.js";
 
 const createdIds: string[] = [];
@@ -209,7 +210,7 @@ describe("job runner", () => {
     expect(envs[0]?.RAVI_AUTOMATION_PRINCIPAL).toBe(`automation:job:${job.id}`);
   });
 
-  it("gives a job owned by an agent or session the allowlisted env, never the daemon's secrets", () => {
+  it("starts every job with the allowlisted env unless the verified operator created it with no session or agent", () => {
     const daemonEnv = {
       PATH: "/usr/bin:/bin",
       RAVI_STATE_DIR: "/tmp/ravi-state",
@@ -219,22 +220,41 @@ describe("job runner", () => {
     };
 
     for (const owner of [
-      { agentId: "main", sessionName: null },
-      { agentId: null, sessionName: "main" },
+      // Owned by an agent or a session, whoever created it (`jobs run --session` from the terminal too).
+      { agentId: "main", sessionName: null, ownerPrincipal: null },
+      { agentId: null, sessionName: "main", ownerPrincipal: null },
+      { agentId: null, sessionName: "main", ownerPrincipal: "operator" },
+      // No verified owner: a local CLI without a context claims nothing.
+      { agentId: null, sessionName: null, ownerPrincipal: null },
+      // Verified, but not the operator.
+      { agentId: null, sessionName: null, ownerPrincipal: "contact:c_ana" },
     ]) {
-      const env = buildJobEnv({ id: "job_owned", ...owner }, daemonEnv);
+      const env = buildJobEnv({ id: "job_filtered", ...owner }, daemonEnv);
       expect(env.PATH).toBe("/usr/bin:/bin");
       expect(env.RAVI_STATE_DIR).toBe("/tmp/ravi-state");
       expect(env.RAVI_ADMIN_TOKEN).toBeUndefined();
       expect(env.OPENAI_API_KEY).toBeUndefined();
       expect(env.DEVIN_API_KEY).toBeUndefined();
-      expect(env.RAVI_AUTOMATION_PRINCIPAL).toBe("automation:job:job_owned");
+      expect(env.RAVI_AUTOMATION_PRINCIPAL).toBe("automation:job:job_filtered");
     }
 
-    // Only the operator's terminal creates a job with no owner; it keeps the daemon env.
-    const operator = buildJobEnv({ id: "job_operator", agentId: null, sessionName: null }, daemonEnv);
+    // Only the operator, verified in the daemon, with no session or agent, keeps the daemon env.
+    const operator = buildJobEnv(
+      { id: "job_operator", agentId: null, sessionName: null, ownerPrincipal: "operator" },
+      daemonEnv,
+    );
     expect(operator.DEVIN_API_KEY).toBe("canary-devin");
     expect(operator.RAVI_AUTOMATION_PRINCIPAL).toBe("automation:job:job_operator");
+  });
+
+  it("records no verified owner for a job created outside a daemon context", () => {
+    // A local CLI process (no gateway or tool context) cannot prove who it is.
+    expect(resolveVerifiedJobOwner()).toBeNull();
+  });
+
+  it("stores the verified owner with the job and leaves it empty by default", () => {
+    expect(makeJob().ownerPrincipal).toBeNull();
+    expect(makeJob({ ownerPrincipal: "operator" }).ownerPrincipal).toBe("operator");
   });
 
   it("spawns an agent-owned job without the daemon env underneath", async () => {

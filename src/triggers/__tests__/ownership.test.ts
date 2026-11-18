@@ -521,9 +521,17 @@ describe("whether a stored trigger is still the one the runner subscribed", () =
 });
 
 describe("the runs-as warning", () => {
-  it("says nothing for a trigger that acts as the operator, or a shell trigger", () => {
+  it("says nothing for a trigger that acts as the operator, agent or shell", () => {
     expect(triggerRunsAsWarning({ id: "trg_1", ownerPrincipal: "operator", executionType: "agent" })).toBeNull();
-    expect(triggerRunsAsWarning({ id: "trg_1", executionType: "shell" })).toBeNull();
+    expect(triggerRunsAsWarning({ id: "trg_1", ownerPrincipal: "operator", executionType: "shell" })).toBeNull();
+  });
+
+  it("says a shell trigger that does not act as the operator will not run", () => {
+    for (const ownerPrincipal of [undefined, "contact:c_ana"]) {
+      const warning = triggerRunsAsWarning({ id: "trg_1", ownerPrincipal, executionType: "shell" });
+      expect(warning).toContain("TRIGGER_SHELL_NOT_OPERATOR");
+      expect(warning).toContain("without running the command");
+    }
   });
 
   it("says a contact's trigger acts as that person and needs their link", () => {
@@ -558,6 +566,7 @@ describe("the warning for an edit that took the owner away", () => {
   it("does not talk about Bases for a shell trigger", () => {
     const lost = triggerOwnerLostWarning({ id: "trg_1", ownerPrincipal: "operator", executionType: "shell" }, {});
     expect(lost).toContain("now has no owner");
+    expect(lost).toContain("TRIGGER_SHELL_NOT_OPERATOR");
     expect(lost).not.toContain("ACTOR_UNKNOWN");
   });
 });

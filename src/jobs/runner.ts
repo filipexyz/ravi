@@ -30,6 +30,7 @@ import {
 } from "./store.js";
 import { isJobTerminal, type JobRecord } from "./types.js";
 import { jobStatusFromExitCode, readJobExitState } from "./detach.js";
+import { jobInheritsDaemonEnv } from "./owner.js";
 
 const log = logger.child("jobs:runner");
 
@@ -77,22 +78,22 @@ export interface JobOutcomeDelivery {
 /**
  * Env completo com que um job começa.
  *
- * Job com dono (agent ou sessão) recebe o mesmo env filtrado de um runtime de
- * agent (`runtime/agent-env-policy.ts`): o comando roda no daemon, e herdar o
- * env dele devolveria ao agent, pela saída do job, os segredos que o turno não
- * tem. Só o job sem dono, que nasce do terminal do operador sem contexto de
- * runtime, herda o env do daemon. Em todos, o job age em nome dele mesmo.
+ * Por padrão, o mesmo env filtrado de um runtime de agent
+ * (`runtime/agent-env-policy.ts`): o comando roda no daemon, e herdar o env
+ * dele devolveria, pela saída do job, os segredos que quem pediu não tem. Só o
+ * job que o operador criou com o contexto dele verificado no daemon, sem sessão
+ * e sem agent, herda o env do daemon (`jobInheritsDaemonEnv`). Em todos, o job
+ * age em nome dele mesmo.
  */
 export function buildJobEnv(
-  job: Pick<JobRecord, "id" | "agentId" | "sessionName">,
+  job: Pick<JobRecord, "id" | "agentId" | "sessionName" | "ownerPrincipal">,
   baseEnv: NodeJS.ProcessEnv = process.env,
 ): Record<string, string> {
-  const ownedByAgent = Boolean(job.agentId || job.sessionName);
-  const inherited = ownedByAgent
-    ? filterAgentRuntimeBaseEnv(baseEnv)
-    : Object.fromEntries(
+  const inherited = jobInheritsDaemonEnv(job)
+    ? Object.fromEntries(
         Object.entries(baseEnv).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-      );
+      )
+    : filterAgentRuntimeBaseEnv(baseEnv);
   return { ...inherited, ...spawnedAutomationEnv("job", job.id) };
 }
 

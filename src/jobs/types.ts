@@ -49,6 +49,12 @@ export interface JobRecord {
   signal: string | null;
   logPath: string;
   origin: JobOrigin;
+  /**
+   * Dono verificado no daemon quando o job foi criado: `operator` só quando o
+   * pedido chegou ao daemon com o contexto do operador. Null quando ninguém foi
+   * verificado (CLI local sem contexto, registro do detach, linha antiga).
+   */
+  ownerPrincipal: string | null;
   /** Quando o desfecho foi entregue na sessão. Null = ainda não avisado. */
   notifiedAt: number | null;
   /** Último motivo de falha ao entregar o desfecho; null quando nunca falhou. */
@@ -71,4 +77,6 @@ export interface JobCreateInput {
   cwd?: string | null;
   logPath: string;
   origin?: JobOrigin;
+  /** Só quem resolveu o dono num contexto verificado do daemon passa isto. */
+  ownerPrincipal?: string | null;
 }

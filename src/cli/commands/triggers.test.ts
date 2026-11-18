@@ -436,6 +436,44 @@ describe("TriggersCommands topic guidance", () => {
     });
   });
 
+  it("refuses a shell trigger from a turn that does not act as the operator", async () => {
+    const commands = new TriggersCommands();
+
+    for (const owner of ["contact:c_ana", "unknown"]) {
+      currentTurnOwner = owner;
+      await expect(
+        commands.add(
+          "contact shell",
+          "ravi.inbound.interaction",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          "printf ok",
+        ),
+      ).rejects.toMatchObject({ code: "TRIGGER_SHELL_NOT_OPERATOR" });
+    }
+    expect(createdTriggers).toEqual([]);
+  });
+
+  it("refuses to change a trigger's shell command or env file from a non-operator turn", async () => {
+    const commands = new TriggersCommands();
+    currentTurnOwner = "contact:c_ana";
+
+    await expect(commands.set("trg_1", "shell", "printf ok", true)).rejects.toMatchObject({
+      code: "TRIGGER_SHELL_NOT_OPERATOR",
+    });
+    triggerRecord = { ...buildTriggerRecord(), executionType: "shell", shellCommand: "true" };
+    await expect(commands.set("trg_1", "env-file", "/tmp/other.env", true)).rejects.toMatchObject({
+      code: "TRIGGER_SHELL_NOT_OPERATOR",
+    });
+    expect(updatedTriggers).toEqual([]);
+  });
+
   it("rejects shell triggers that also pass --message", async () => {
     const commands = new TriggersCommands();
 
@@ -1509,7 +1547,7 @@ describe("TriggersCommands owner", () => {
       expect(shell.text).toMatch(/Session: +main\n/);
     });
 
-    it("says a shell trigger is not held to its owner", async () => {
+    it("says a shell trigger that does not act as the operator does not run", async () => {
       triggerRecord = {
         ...buildTriggerRecord(),
         ownerPrincipal: "contact:c_ana",
@@ -1517,7 +1555,7 @@ describe("TriggersCommands owner", () => {
         shellCommand: "true",
       };
       expect(await captureText(() => new TriggersCommands().show("trg_1"))).toContain(
-        "contact:c_ana (not enforced on a shell trigger)",
+        "contact:c_ana (not the operator: a shell trigger does not run)",
       );
     });
   });

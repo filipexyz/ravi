@@ -68,6 +68,8 @@ Triggers shell recebem:
 
 Armadilhas do `--shell`:
 
+- Só o operador cria ou muda um trigger shell (`TRIGGER_SHELL_NOT_OPERATOR`, como no cron shell). Trigger shell cujo dono não é o operador não roda: o primeiro evento o desliga e avisa a sessão principal. De um turno de contato, use `--message`.
+- O comando começa com o env filtrado dos agents, não com os segredos do daemon. O que ele precisa de propósito vai no `--env-file`.
 - Roda no cwd do daemon, não no do agente. Use caminho absoluto no comando e dentro do script (`--html`, `--dir`, arquivos de estado), senão `bun scripts/x.ts` não acha nada.
 - Leia o evento de `$RAVI_TRIGGER_DATA_FILE`, não de texto colado no comando.
 - Script não tem chat de origem: `media send` precisa de `--account` e `--to`, `whatsapp dm send` de `--account`, e `ravi react send` não funciona ali.

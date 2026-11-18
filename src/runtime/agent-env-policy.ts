@@ -83,6 +83,9 @@ const ALLOWED_ENV_NAMES = new Set([
   ...RAVI_APP_GATEWAY_ENV_KEYS,
   "RAVI_BIN",
   "RAVI_BUNDLE",
+  // Read by `bin/ravi` (stale-bundle escape hatch) and by the Claude provider.
+  "RAVI_ALLOW_STALE_BUNDLE",
+  "RAVI_CLAUDE_CODE_EXECUTABLE",
   "RAVI_CLI_BIN",
   "RAVI_CLI_INSTALLATION_NAME",
   "RAVI_LOG_LEVEL",
@@ -221,7 +224,9 @@ export function isAgentRuntimeEnvNameAllowed(name: string, runtimeProviderId?: s
  * covers `user:pass@`, an empty user with a password (`:pass@`) and a token used
  * as the user name (`token@`): any of them can be a credential.
  */
-const URL_WITH_USERINFO = /[a-z][a-z0-9+.-]*:\/\/[^\s/?#@]*@/i;
+// The scheme is bounded (RFC 3986 schemes are short): an unbounded `[a-z0-9+.-]*`
+// retried from every position makes a long value cost quadratic time.
+const URL_WITH_USERINFO = /[a-z][a-z0-9+.-]{0,31}:\/\/[^\s/?#@]*@/i;
 
 /**
  * Values shaped like a credential, whatever the variable is called: provider
@@ -238,8 +243,24 @@ const TOKEN_SHAPED_VALUES = [
   /(^|[^A-Z0-9])AKIA[0-9A-Z]{16}($|[^A-Z0-9])/,
 ];
 
-export function isSecretShapedEnvValue(value: string): boolean {
-  return URL_WITH_USERINFO.test(value) || TOKEN_SHAPED_VALUES.some((pattern) => pattern.test(value));
+/**
+ * Variables that hold a list of directories (`PATH`, `MANPATH`,
+ * `PKG_CONFIG_PATH`, ...). A directory named like a token (`sk-...`) is not a
+ * credential, and dropping the variable would drop the whole search path, so
+ * the token-shape check does not apply to them.
+ */
+function isPathListEnvName(name: string): boolean {
+  return /(^|_)PATH$/.test(name) || name === "MANPATH" || name === "INFOPATH" || name === "CPATH";
+}
+
+/**
+ * True when the value carries a credential: a URL with userinfo, or (except
+ * for directory lists) a value shaped like a token.
+ */
+export function isSecretShapedEnvValue(value: string, name?: string): boolean {
+  if (URL_WITH_USERINFO.test(value)) return true;
+  if (name !== undefined && isPathListEnvName(name)) return false;
+  return TOKEN_SHAPED_VALUES.some((pattern) => pattern.test(value));
 }
 
 export function parseAgentEnvPassthrough(value: string | undefined): string[] {
@@ -291,7 +312,7 @@ export function filterAgentRuntimeBaseEnv(
       filtered[name] = value;
       continue;
     }
-    if (isAgentRuntimeEnvNameAllowed(name, runtimeProviderId) && !isSecretShapedEnvValue(value)) {
+    if (isAgentRuntimeEnvNameAllowed(name, runtimeProviderId) && !isSecretShapedEnvValue(value, name)) {
       filtered[name] = value;
     }
   }
