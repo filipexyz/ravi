@@ -2936,7 +2936,7 @@ describe("Ravi app CLI failures over the gateway", () => {
         retryable: true,
         appExitCode: 2,
         suggestedAction: "Resolve the reported cause and retry",
-        cause: "NOT_AUTHORIZED (turn_not_human): This secret needs a human to approve it.",
+        cause: "The app reported: NOT_AUTHORIZED (turn_not_human): This secret needs a human to approve it.",
         context: { operation: "apps run", code: "NOT_AUTHORIZED" },
       },
     });
@@ -2949,7 +2949,7 @@ describe("Ravi app CLI failures over the gateway", () => {
     expect(JSON.stringify(remote?.envelope())).not.toContain("SECRET_FIELD_SENTINEL");
   });
 
-  it("keeps a stderr headline on one line and the multi-line explanation in the cause", async () => {
+  it("keeps a stderr message on one line under appReported and the multi-line explanation in the cause", async () => {
     const remote = await relayed(
       "apps run",
       appRunFailure({
@@ -2963,7 +2963,8 @@ describe("Ravi app CLI failures over the gateway", () => {
     expect(remote?.details).toMatchObject({
       appExitCode: 1,
       appReported: { message: "upload refused: https://store.example.test/put?[redacted:url-query]" },
-      cause: "upload refused: https://store.example.test/put?[redacted:url-query]\nsecond line\nthird line",
+      cause:
+        "The app reported: upload refused: https://store.example.test/put?[redacted:url-query]\nsecond line\nthird line",
     });
     expect(remote?.details.appReported).not.toHaveProperty("suggestedAction");
     expect(JSON.stringify(remote?.envelope())).not.toMatch(/SIGNED_QUERY_SENTINEL|PRIVATE_STDOUT_SENTINEL/);

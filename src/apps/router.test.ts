@@ -805,7 +805,7 @@ process.exit(42);`,
         exitCode: 42,
         source: "stderr",
         message: "quota exceeded for the tenant token=[redacted:token]",
-        cause: "quota exceeded for the tenant token=[redacted:token]",
+        cause: "The app reported: quota exceeded for the tenant token=[redacted:token]",
       },
     });
     // The raw streams and the command line stay private: only the projection of the error crosses.
@@ -845,7 +845,7 @@ process.exit(2);`,
       source: "json",
       code: "NOT_AUTHORIZED",
       message: "This secret needs a human to approve it.",
-      cause: "NOT_AUTHORIZED (turn_not_human): This secret needs a human to approve it.",
+      cause: "The app reported: NOT_AUTHORIZED (turn_not_human): This secret needs a human to approve it.",
       retryable: false,
       suggestedAction: "Ask the operator to run the command from their own session.",
     });
@@ -862,7 +862,7 @@ process.exit(2);`,
       retryable: false,
       appExitCode: 2,
       suggestedAction: "Resolve the reported cause and retry",
-      cause: "NOT_AUTHORIZED (turn_not_human): This secret needs a human to approve it.",
+      cause: "The app reported: NOT_AUTHORIZED (turn_not_human): This secret needs a human to approve it.",
       context: { operation: "apps run", code: "NOT_AUTHORIZED" },
     });
     expect(envelope.appReported).toEqual({
@@ -879,7 +879,7 @@ process.exit(2);`,
     expect(text.stdout).toEqual([]);
     expect(text.stderr).toEqual([
       "Ravi app operation failed.",
-      "Cause: NOT_AUTHORIZED (turn_not_human): This secret needs a human to approve it.",
+      "Cause: The app reported: NOT_AUTHORIZED (turn_not_human): This secret needs a human to approve it.",
       "operation: apps run",
       "code: NOT_AUTHORIZED",
     ]);
@@ -961,7 +961,7 @@ process.exit(1);`,
     // Each of the six lines lost its value to a redaction marker, and nothing else of it is left.
     const lines = result.failure?.cause.split("\n") ?? [];
     expect(lines.map((line) => line.replace(/\[redacted:[a-z-]+\]/, "[R]"))).toEqual([
-      "plain [R]",
+      "The app reported: plain [R]",
       "base64 [R]",
       "base64url [R]",
       "hex [R]",
@@ -995,7 +995,7 @@ process.exit(3);`,
     // The head of the stream survives, the tail does not.
     expect(failure?.cause).toContain("upload refused");
     expect(failure?.cause).not.toContain("retry 799");
-    // The headline is one bounded line.
+    // The app's reported message is one bounded line.
     expect(failure?.message).toBe("upload refused: https://store.example.test/put?[redacted:url-query]");
 
     const { error, stdout } = raiseContractFailure(result, true);
@@ -1834,7 +1834,7 @@ describe("Ravi app CLI failure projection", () => {
       source: "json",
       code: "GRANT_EXPIRED",
       message: "The grant expired.",
-      cause: "GRANT_EXPIRED (ttl_elapsed): The grant expired.\nCaused by: ttl was 3600s",
+      cause: "The app reported: GRANT_EXPIRED (ttl_elapsed): The grant expired.\nCaused by: ttl was 3600s",
       retryable: true,
       suggestedAction: "Request a new grant.",
     });
@@ -1851,7 +1851,7 @@ describe("Ravi app CLI failure projection", () => {
       source: "json",
       code: "BAD_INPUT",
       message: "Missing --name.",
-      cause: "BAD_INPUT: Missing --name.",
+      cause: "The app reported: BAD_INPUT: Missing --name.",
     });
     expect(
       projectAppCliFailure(run({ stdout: JSON.stringify({ error: "disk is full", errorCode: "ENOSPC" }) })),
@@ -1860,19 +1860,19 @@ describe("Ravi app CLI failure projection", () => {
       source: "json",
       code: "ENOSPC",
       message: "disk is full",
-      cause: "ENOSPC: disk is full",
+      cause: "The app reported: ENOSPC: disk is full",
     });
     // A message alone is enough; a code alone is too.
     expect(projectAppCliFailure(run({ stdout: JSON.stringify({ error: { message: "nope" } }) }))).toMatchObject({
       source: "json",
       message: "nope",
-      cause: "nope",
+      cause: "The app reported: nope",
     });
     expect(projectAppCliFailure(run({ stdout: JSON.stringify({ error: { code: "E_ONLY" } }) }))).toMatchObject({
       source: "json",
       code: "E_ONLY",
       message: "E_ONLY",
-      cause: "E_ONLY",
+      cause: "The app reported: E_ONLY",
     });
   });
 
@@ -1891,7 +1891,7 @@ describe("Ravi app CLI failure projection", () => {
       const failure = projectAppCliFailure(run({ stdout: JSON.stringify({ error: { code, message: "Refused." } }) }));
       expect(failure.code).toBeUndefined();
       expect(failure.message).toBe("Refused.");
-      expect(failure.cause).toBe("Refused.");
+      expect(failure.cause).toBe("The app reported: Refused.");
     }
   });
 
@@ -1924,7 +1924,7 @@ describe("Ravi app CLI failure projection", () => {
         exitCode: 1,
         source: "stderr",
         message: "From stderr.",
-        cause: "From stderr.\nsecond line",
+        cause: "The app reported: From stderr.\nsecond line",
       });
     }
   });
@@ -1933,7 +1933,7 @@ describe("Ravi app CLI failure projection", () => {
     const huge = JSON.stringify({ error: { code: "HUGE", message: "x".repeat(70 * 1024) } });
     expect(projectAppCliFailure(run({ stdout: huge, stderr: "Short stderr." }))).toMatchObject({
       source: "stderr",
-      cause: "Short stderr.",
+      cause: "The app reported: Short stderr.",
     });
   });
 
@@ -1980,7 +1980,7 @@ describe("Ravi app CLI failure projection", () => {
       const failure = projectAppCliFailure(run({ stderr: `login failed: ${form}` }), {
         secrets: maskedSecretForms(secret),
       });
-      expect(failure.cause, name).toBe("login failed: [redacted:credential]");
+      expect(failure.cause, name).toBe("The app reported: login failed: [redacted:credential]");
     }
   });
 
@@ -1990,7 +1990,7 @@ describe("Ravi app CLI failure projection", () => {
     expect(maskedSecretForms("")).toEqual([]);
   });
 
-  it("bounds the headline, the cause and the next step", () => {
+  it("bounds the reported message, the cause and the next step", () => {
     // Each field is a single line under the redactor's own 2048-character line limit.
     const longLine = "word ".repeat(300).trim();
     const steps = Array.from({ length: 200 }, (_, step) => `step ${step} of the failing sequence`).join("\n");
@@ -2015,9 +2015,9 @@ describe("Ravi app CLI failure projection", () => {
     // Redaction runs before the cut: a line over the redactor's limit is replaced whole, never half-masked,
     // and a stream over its input limit keeps the lines before the cut and says so.
     const oneLongLine = projectAppCliFailure(run({ stderr: `short head\n${"word ".repeat(500)}\nshort tail` }));
-    expect(oneLongLine.cause).toBe("short head\n[redacted:oversize]\nshort tail");
+    expect(oneLongLine.cause).toBe("The app reported: short head\n[redacted:oversize]\nshort tail");
     const longStream = projectAppCliFailure(run({ stderr: `short head\n${"word ".repeat(2_000)}\nshort tail` }));
-    expect(longStream.cause).toBe("short head\n[redacted:oversize]");
+    expect(longStream.cause).toBe("The app reported: short head\n[redacted:oversize]");
   });
 
   it("never cuts a character in half when it truncates", () => {
@@ -2029,6 +2029,15 @@ describe("Ravi app CLI failure projection", () => {
     const loneSurrogate = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
     expect(loneSurrogate.test(failure.cause)).toBe(false);
     expect(loneSurrogate.test(failure.message ?? "")).toBe(false);
+  });
+
+  it("starts the cause with whose words follow, and leaves it bare when the app said nothing", () => {
+    expect(
+      projectAppCliFailure(run({ stdout: JSON.stringify({ error: { code: "X_ERR", message: "boom" } }) })).cause,
+    ).toBe("The app reported: X_ERR: boom");
+    expect(projectAppCliFailure(run({ stderr: "boom\nmore" })).cause).toBe("The app reported: boom\nmore");
+    expect(projectAppCliFailure(run({ exitCode: 3 })).cause).toBe("The app CLI exited with code 3.");
+    expect(projectAppCliFailure(run({ exitCode: null })).cause).toBe("The app CLI was terminated by a signal.");
   });
 
   it("says nothing the CLI did not say when there is no output to project", () => {

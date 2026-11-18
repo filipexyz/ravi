@@ -19,12 +19,14 @@ import type { RaviAppCliFailure } from "./types.js";
 /** The shared redactor's own truncation marker, so a second redaction pass leaves it alone. */
 const TRUNCATION_MARKER = " [truncated]";
 
-/** The explanation kept as the diagnostic `cause`. */
+/** The explanation kept as the diagnostic `cause`, prefix included. */
 export const APP_FAILURE_CAUSE_MAX_CHARS = 2_000;
-/** The one-line headline appended to the public message. The remote relay accepts up to 1200. */
+/** The app's own one-line message, kept as `appReported.message`. */
 export const APP_FAILURE_MESSAGE_MAX_CHARS = 300;
-/** The app's own next step. The remote relay accepts up to 600. */
+/** The app's own next step, kept as `appReported.suggestedAction`. */
 export const APP_FAILURE_ACTION_MAX_CHARS = 300;
+/** A cause that carries the app's words says so, so a reader never mistakes them for Ravi's own statement. */
+const APP_REPORTED_CAUSE_PREFIX = "The app reported: ";
 const APP_FAILURE_CODE_MAX_CHARS = 96;
 /** Larger than this, the stdout is a payload, not an error object. */
 const APP_FAILURE_JSON_MAX_CHARS = 64 * 1024;
@@ -150,17 +152,15 @@ function projectJsonFailure(
   const innerCause = redacted(info.cause, redaction);
   const head = [code, reason ? `(${reason})` : undefined].filter(Boolean).join(" ");
   const line = head && message ? `${head}: ${message}` : (head || message)!;
-  const cause = clamp(
-    innerCause && innerCause !== message ? `${line}\nCaused by: ${innerCause}` : line,
-    APP_FAILURE_CAUSE_MAX_CHARS,
-  );
-  const headline = oneLine(message ?? head, APP_FAILURE_MESSAGE_MAX_CHARS);
+  const reported = innerCause && innerCause !== message ? `${line}\nCaused by: ${innerCause}` : line;
+  const cause = clamp(`${APP_REPORTED_CAUSE_PREFIX}${reported}`, APP_FAILURE_CAUSE_MAX_CHARS);
+  const reportedMessage = oneLine(message ?? head, APP_FAILURE_MESSAGE_MAX_CHARS);
   const suggestedAction = oneLine(redacted(info.suggestedAction, redaction), APP_FAILURE_ACTION_MAX_CHARS);
   return {
     exitCode,
     source: "json",
     ...(code ? { code } : {}),
-    ...(headline ? { message: headline } : {}),
+    ...(reportedMessage ? { message: reportedMessage } : {}),
     cause,
     ...(typeof info.retryable === "boolean" ? { retryable: info.retryable } : {}),
     ...(suggestedAction ? { suggestedAction } : {}),
@@ -176,12 +176,12 @@ export function projectAppCliFailure(run: AppCliRun, options: AppFailureOptions 
   const text = redacted(run.stderr, redaction);
   if (text) {
     const firstLine = text.split("\n").find((line) => line.trim()) ?? text;
-    const headline = oneLine(firstLine, APP_FAILURE_MESSAGE_MAX_CHARS);
+    const reportedMessage = oneLine(firstLine, APP_FAILURE_MESSAGE_MAX_CHARS);
     return {
       exitCode: run.exitCode,
       source: "stderr",
-      ...(headline ? { message: headline } : {}),
-      cause: clamp(text, APP_FAILURE_CAUSE_MAX_CHARS),
+      ...(reportedMessage ? { message: reportedMessage } : {}),
+      cause: clamp(`${APP_REPORTED_CAUSE_PREFIX}${text}`, APP_FAILURE_CAUSE_MAX_CHARS),
     };
   }
 
