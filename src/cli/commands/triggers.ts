@@ -6,6 +6,7 @@ import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { CONTRACT_EXIT_POLICY, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { shellEnvFileInsideStateDir } from "../../triggers/shell-env-file.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -114,22 +115,74 @@ function assertShellTriggerOwnerActsAsOperator(op: string, ownerPrincipal: strin
   });
 }
 
-function failShellTriggerWouldLoseOwner(
+function failShellTrigger(
   op: string,
-  trigger: Pick<Trigger, "id" | "ownerPrincipal" | "executionType">,
+  code: string,
+  message: string,
+  details: Record<string, unknown>,
   asJson?: boolean,
 ): never {
-  const owner = triggerRunsAs(trigger);
-  const suggestedAction = `create a new shell trigger from this turn (ravi triggers add <name> --topic <topic> --shell <cmd>) and remove this one (ravi triggers rm ${trigger.id} --execute)`;
-  const message = `Trigger ${trigger.id} runs as ${owner}. Changing what it runs from this turn would leave it with no owner, and a shell trigger with no owner does not run. Next: ${suggestedAction}.`;
-  contractFail(op, "TRIGGER_SHELL_NOT_OPERATOR", message, {
-    ...{
-      asJson,
-      exitCode: CONTRACT_EXIT_POLICY,
-      details: { ownerPrincipal: owner, suggestedAction },
-    },
+  contractFail(op, code, message, {
+    ...{ asJson, exitCode: CONTRACT_EXIT_POLICY, details },
     diagnostic: errorDiagnostic(message, { operation: op }),
   });
+}
+
+/**
+ * Who may create or change a shell trigger. Its command runs with this
+ * machine's access, so all of these hold:
+ * - the request reached the daemon with a context it verified (a turn, through
+ *   the gateway or a tool call): a local `ravi` with no context cannot prove
+ *   who it is, since any process on the machine can run one;
+ * - the requester acts as the operator;
+ * - for an existing trigger, the requester is its owner: an edit by anyone
+ *   else would clear the owner, and an ownerless shell trigger never runs, so
+ *   that edit would turn the owner's trigger off.
+ */
+function assertShellTriggerChange(
+  op: string,
+  trigger: Pick<Trigger, "id" | "ownerPrincipal" | "executionType"> | null,
+  asJson?: boolean,
+): void {
+  const transport = getContext({ localOnly: true })?.transport;
+  if (transport !== "gateway" && transport !== "tool") {
+    const suggestedAction =
+      "ask the operator to do it from their own chat with Ravi, where the daemon verifies the request; an agent trigger (--message) is not held to this";
+    failShellTrigger(
+      op,
+      "TRIGGER_SHELL_NOT_OPERATOR",
+      `A shell trigger is created or changed only from a request the daemon verified, and this one came from a local ravi with no runtime context. Next: ${suggestedAction}.`,
+      { suggestedAction },
+      asJson,
+    );
+  }
+  const requester = resolveTriggerOwnerForCurrentTurn();
+  assertShellTriggerOwnerActsAsOperator(op, requester, asJson);
+  if (trigger && (trigger.ownerPrincipal ?? "") !== requester) {
+    const owner = triggerRunsAs(trigger);
+    const suggestedAction = `ask its owner to change it, or create a new shell trigger from this turn (ravi triggers add <name> --topic <topic> --shell <cmd>) and remove this one (ravi triggers rm ${trigger.id} --execute)`;
+    failShellTrigger(
+      op,
+      "TRIGGER_SHELL_NOT_OPERATOR",
+      `Trigger ${trigger.id} runs as ${owner}, and only its owner changes a shell trigger: an edit by anyone else would leave it with no owner, and a shell trigger with no owner does not run. Next: ${suggestedAction}.`,
+      { ownerPrincipal: owner, suggestedAction },
+      asJson,
+    );
+  }
+}
+
+/** The env file of a shell trigger may not sit inside the Ravi state dir (see `shell-env-file.ts`). */
+function assertShellEnvFileAllowed(op: string, envFile: string | null | undefined, asJson?: boolean): void {
+  if (!envFile || !shellEnvFileInsideStateDir(envFile)) return;
+  const suggestedAction =
+    "put only the variables the command needs in a file outside the Ravi state dir, given by a path without .., or let it reach Ravi through the credential broker";
+  failShellTrigger(
+    op,
+    "TRIGGER_SHELL_ENV_FILE_IN_STATE_DIR",
+    `The env file ${envFile} is inside the Ravi state dir, which holds the daemon's own secrets, or its path has a .. segment that could lead there. Next: ${suggestedAction}.`,
+    { envFile, suggestedAction },
+    asJson,
+  );
 }
 
 function failTriggerNotFound(op: string, id: string, asJson?: boolean): never {
@@ -689,7 +742,8 @@ export class TriggersCommands {
     }
     if (isShellTrigger) {
       assertShellAutomationAuthorized("triggers add");
-      assertShellTriggerOwnerActsAsOperator("triggers add", resolveTriggerOwnerForCurrentTurn(), asJson);
+      assertShellTriggerChange("triggers add", null, asJson);
+      assertShellEnvFileAllowed("triggers add", envFile, asJson);
     }
 
     const resolvedMessage = isShellTrigger
@@ -857,6 +911,7 @@ export class TriggersCommands {
     const trigger = dbGetTrigger(id);
     if (!trigger) failTriggerNotFound("triggers enable", id, asJson);
     assertTriggerMutable("triggers enable", id, trigger, asJson);
+    if ((trigger.executionType ?? "agent") === "shell") assertShellTriggerChange("triggers enable", trigger, asJson);
     assertNoUserOverlayAutomationWrite("triggers enable");
 
     try {
@@ -897,6 +952,7 @@ export class TriggersCommands {
     const trigger = dbGetTrigger(id);
     if (!trigger) failTriggerNotFound("triggers disable", id, asJson);
     assertTriggerMutable("triggers disable", id, trigger, asJson);
+    if ((trigger.executionType ?? "agent") === "shell") assertShellTriggerChange("triggers disable", trigger, asJson);
 
     try {
       const updated = dbUpdateTrigger(id, { enabled: false });
@@ -946,16 +1002,14 @@ export class TriggersCommands {
       assertTriggerTargetAuthorized("triggers set", { agentId: triggerOwnerId(trigger), replySession: value }, asJson);
     }
 
-    // What a shell trigger runs, and the env it gets on purpose (its env
-    // file), are the operator's to set. Checked before the edit so the refusal
+    // Any edit of a shell trigger, and turning a trigger into one, is its
+    // owner's (the operator's) to make. Checked before the edit so the refusal
     // keeps its code.
-    if (key === "shell" || key === "exec" || (key === "env-file" && (trigger.executionType ?? "agent") === "shell")) {
-      const setter = resolveTriggerOwnerForCurrentTurn();
-      assertShellTriggerOwnerActsAsOperator("triggers set", setter, asJson);
-      // This edit keeps the owner only when the owner makes it. On a trigger
-      // someone else owns, or nobody does, it would leave a shell trigger with
-      // no owner, which never runs: refuse instead of saving a dead trigger.
-      if ((trigger.ownerPrincipal ?? "") !== setter) failShellTriggerWouldLoseOwner("triggers set", trigger, asJson);
+    if (key === "shell" || key === "exec" || (trigger.executionType ?? "agent") === "shell") {
+      assertShellTriggerChange("triggers set", trigger, asJson);
+      if (key === "env-file" && value !== "null" && value !== "-") {
+        assertShellEnvFileAllowed("triggers set", value, asJson);
+      }
     }
 
     // The trigger keeps its owner only when the owner makes this change;

@@ -150,7 +150,9 @@ ravi channels restart
 
 ### What agents inherit
 
-Agent runtimes (Claude Code, Codex, Pi and Grok), every command an agent runs, the runtime probe, shell triggers and `ravi jobs run` jobs begin from an allowlisted copy of the daemon environment, not from the whole `.env`. The one exception is a job created with the operator's context verified by the daemon and no `--session` or `--agent`: the request reaches the daemon through its gateway (or an in-process tool call) and resolves to the operator, and the job keeps the daemon environment. For example, `ravi jobs run -- ./build.sh` from your terminal with the installed `ravi`, which sends the request with your credentials. A `ravi` run from a source checkout, or without a context, records no owner and gets the allowlisted environment.
+Agent runtimes (Claude Code, Codex, Pi and Grok), every command an agent runs, the runtime probe, shell triggers and every `ravi jobs run` job begin from an allowlisted copy of the daemon environment, not from the whole `.env`. There is no exception, not even for a job you start from your own terminal: the daemon cannot tell who asked for a job, so it never hands a job its own secrets.
+
+A job or a shell trigger that needs a secret gets it on purpose: through the credential broker (`ravi credentials`), by listing the variable in `RAVI_AGENT_ENV_PASSTHROUGH` (below), or, for a shell trigger, from its `--env-file`.
 
 - **Passed:** system and toolchain variables (`PATH`, `HOME`, `LANG`, proxies without credentials, `SSH_AUTH_SOCK`, `PM2_HOME`, `GIT_*`, `NODE_*` and similar), a fixed list of Ravi variables (state dir, gateway endpoint, logging, jobs, PM2), and each provider's own config and login: `CLAUDE_*`/`ANTHROPIC_*` to Claude, `CODEX_*` to Codex, `PI_*` to Pi, `GROK_*` to Grok.
 - **Not passed:** other providers' keys, `RAVI_ADMIN_TOKEN`, webhook secrets, third-party API keys, database URLs, git config injected through `GIT_CONFIG_*`, any name that looks like a secret (`TOKEN`, `SECRET`, `PASSWORD`, `_KEY`, `_PAT`, `HEADERS`) and any value that looks like a token.
@@ -163,12 +165,12 @@ RAVI_AGENT_ENV_PASSTHROUGH="MAX_THINKING_TOKENS,BASH_DEFAULT_TIMEOUT_MS"
 
 A provider's own config still reaches only that provider, even when listed. Naming `GIT_CONFIG_COUNT` passes the whole `GIT_CONFIG_*` set.
 
-A shell trigger runs only when its owner is the operator, like a shell cron (`TRIGGER_SHELL_NOT_OPERATOR`). It gets what it needs on purpose from its `--env-file`.
+A shell trigger runs only when its owner is the operator, like a shell cron (`TRIGGER_SHELL_NOT_OPERATOR`). It is created and changed only from a request the daemon verifies: from your own chat with Ravi, not from a local `ravi` in the terminal. Only its owner changes it, turns it on or off. Its `--env-file` may not sit inside the Ravi state dir (`TRIGGER_SHELL_ENV_FILE_IN_STATE_DIR`), which holds the daemon's own secrets.
 
 <Warning>
 Upgrading from a version before the agent env allowlist: Claude Code settings without a `CLAUDE_` or `ANTHROPIC_` prefix no longer reach agents. That includes `DISABLE_TELEMETRY`, `DISABLE_AUTOUPDATER`, `DISABLE_ERROR_REPORTING`, `MAX_THINKING_TOKENS`, `BASH_DEFAULT_TIMEOUT_MS`, `BASH_MAX_TIMEOUT_MS`, `MCP_TIMEOUT` and `USE_BUILTIN_RIPGREP`, and any other tool setting whose name is not on the list. If you set one in `~/.ravi/.env` for your agents, add it to `RAVI_AGENT_ENV_PASSTHROUGH`.
 
-`ravi jobs run --session` (or `--agent`) now starts from the allowlisted environment even when you run it from your terminal, and so does a shell trigger. A shell trigger created before this change with no owner is turned off on its next event; recreate it from your terminal.
+`ravi jobs run` now starts from the allowlisted environment, also when you run it from your terminal, and so does a shell trigger. A job that relied on a secret from `~/.ravi/.env` gets it through the credential broker or `RAVI_AGENT_ENV_PASSTHROUGH`. A shell trigger created before this change with no owner is turned off on its next event; recreate it from your own chat with Ravi.
 </Warning>
 
 ### Not used

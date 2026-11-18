@@ -21,7 +21,6 @@ interface JobRow {
   signal: string | null;
   log_path: string;
   origin: string;
-  owner_principal?: string | null;
   notified_at: number | null;
   delivery_error?: string | null;
   delivery_attempts?: number | null;
@@ -46,7 +45,6 @@ function rowToJob(row: JobRow): JobRecord {
     signal: row.signal,
     logPath: row.log_path,
     origin: row.origin as JobOrigin,
-    ownerPrincipal: row.owner_principal ?? null,
     notifiedAt: row.notified_at,
     deliveryError: row.delivery_error ?? null,
     deliveryAttempts: row.delivery_attempts ?? 0,
@@ -75,8 +73,8 @@ export function dbCreateJob(input: JobCreateInput): JobRecord {
   getDb()
     .prepare(
       `INSERT INTO jobs (id, session_name, agent_id, command, cwd, status, pid, exit_code, signal, log_path, origin,
-                         owner_principal, notified_at, started_at, finished_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'pending', NULL, NULL, NULL, ?, ?, ?, NULL, NULL, NULL, ?, ?)`,
+                         notified_at, started_at, finished_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'pending', NULL, NULL, NULL, ?, ?, NULL, NULL, NULL, ?, ?)`,
     )
     .run(
       id,
@@ -86,7 +84,6 @@ export function dbCreateJob(input: JobCreateInput): JobRecord {
       input.cwd ?? null,
       input.logPath,
       input.origin ?? "cli",
-      input.ownerPrincipal ?? null,
       now,
       now,
     );
@@ -350,6 +347,4 @@ function ensureJobsDeliveryColumns(): void {
   }
   if (!columns.has("delivery_state")) db.exec("ALTER TABLE jobs ADD COLUMN delivery_state TEXT");
   if (!columns.has("delivery_claimed_at")) db.exec("ALTER TABLE jobs ADD COLUMN delivery_claimed_at INTEGER");
-  // Linha antiga fica sem dono verificado: o job dela, se ainda rodar, começa com o env filtrado.
-  if (!columns.has("owner_principal")) db.exec("ALTER TABLE jobs ADD COLUMN owner_principal TEXT");
 }
