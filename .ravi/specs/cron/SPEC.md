@@ -48,7 +48,7 @@ target resolution, and operational inspection.
 
 - Immediately before execution, the runner MUST read the current job once and
   capture its owner principal, operator eligibility and creator chat together
-  with that job's instructions. Legacy NULL owners normalize to `operator` here.
+  with that job's instructions. A NULL owner captures as `unknown`, not the operator.
 - Agent prompts MUST carry this snapshot through durable queues, runtime context
   creation/refresh and host continuations. Shell commands and their error prompts
   MUST carry the same admission snapshot. It is trusted internal producer data,
@@ -78,7 +78,8 @@ target resolution, and operational inspection.
   load/cycles, manual execution and operator-visible status, not only creation.
 - Before arming timers (including load and config refresh), and immediately before
   execution, the scheduler MUST check shell ownership with `cronOwnerActsAsOperator`.
-  The existing meaning of operator, operator-bound contact and legacy NULL stays unchanged.
+  The meaning of operator and operator-bound contact stays unchanged; a legacy NULL
+  owner is nobody (cli/connectors 13).
 - An enabled shell job whose owner does not act as the operator MUST be disabled
   atomically and have its next run cleared. It MUST NOT execute, count as a run,
   overwrite past outcomes, be deleted, or automatically regain enabled state.

@@ -28,7 +28,7 @@ export function admitCronRun(
     id: job.id,
     name: job.name,
     agentId: job.agentId,
-    ownerPrincipal: job.ownerPrincipal ?? "operator",
+    ownerPrincipal: job.ownerPrincipal ?? "unknown",
     lastRunAt: admittedAt,
     updatedAt: job.updatedAt,
     runId: id,

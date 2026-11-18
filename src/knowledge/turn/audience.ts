@@ -141,11 +141,12 @@ function isOperatorRelay(origin: NonNullable<ReturnType<typeof resolveRuntimeTur
   return OPERATOR_RELAY_PRINCIPALS.has(`${origin.principal.type}:${origin.principal.id}`);
 }
 
-/** Legacy NULL and `operator` are the operator; so is a contact tagged as the owner. */
+/** `operator` is the operator; so is a contact tagged as the owner. A NULL owner is nobody. */
 function cronIsOperators(jobId: string, deps: KnowledgeAudienceDeps): boolean {
   const job = (deps.cronOwner ?? readCronOwner)(jobId);
   if (!job.found) return false;
-  if (job.ownerPrincipal === null || job.ownerPrincipal === CRON_OPERATOR_OWNER) return true;
+  if (job.ownerPrincipal === null) return false;
+  if (job.ownerPrincipal === CRON_OPERATOR_OWNER) return true;
   if (!job.ownerPrincipal.startsWith("contact:")) return false;
   return ownerIds(deps).has(job.ownerPrincipal.slice("contact:".length));
 }

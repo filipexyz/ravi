@@ -3541,7 +3541,8 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
   }
   // Who a job runs as for personal connectors: `operator`, or the actor
   // principal of the turn that created it. NULL (rows created before this
-  // column) means the operator.
+  // column) runs as nobody; enabled legacy rows were made explicit once
+  // (ensureCronOwnerExplicitMigration).
   if (!cronColumns.some((c) => c.name === "owner_principal")) {
     db.exec("ALTER TABLE cron_jobs ADD COLUMN owner_principal TEXT");
     log.info("Added owner_principal column to cron_jobs table");
@@ -3730,6 +3731,7 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
   `);
 
   ensureCostEventMigrations(db);
+  ensureCronOwnerExplicitMigration(db);
   ensureColumn(
     db,
     "channel_backend_runtime_state",
@@ -4260,6 +4262,37 @@ function ensureCliCommandAccessKindGrantMigration(database: Database): void {
   database
     .prepare("INSERT OR REPLACE INTO router_meta (key, value, updated_at) VALUES (?, ?, ?)")
     .run(CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS.router, "done", Date.now());
+}
+
+/** router_meta key of the one-time migration that made legacy cron owners explicit. */
+export const CRON_OWNER_EXPLICIT_MIGRATION_KEY = "migration:cron-owner-explicit-operator";
+
+/**
+ * Legacy cron rows have no owner (`owner_principal` NULL), which used to mean
+ * the operator. Once, and in one transaction: every *enabled* legacy row gets
+ * the explicit owner `operator` (what it ran as until now), and NULL stops
+ * meaning anyone. Disabled rows keep NULL, so re-enabling one later never
+ * revives operator authority. Nothing is deleted or disabled.
+ */
+export function ensureCronOwnerExplicitMigration(database: Database = getDb()): void {
+  const done = database.prepare("SELECT value FROM router_meta WHERE key = ?").get(CRON_OWNER_EXPLICIT_MIGRATION_KEY);
+  if (done) return;
+  database.transaction(() => {
+    const rows = database
+      .prepare("SELECT id FROM cron_jobs WHERE owner_principal IS NULL AND enabled = 1 ORDER BY id")
+      .all() as Array<{ id: string }>;
+    const now = Date.now();
+    // `updated_at` stays: this corrects who the row already ran as, it is not an edit.
+    database
+      .prepare("UPDATE cron_jobs SET owner_principal = 'operator' WHERE owner_principal IS NULL AND enabled = 1")
+      .run();
+    database
+      .prepare("INSERT OR REPLACE INTO router_meta (key, value, updated_at) VALUES (?, ?, ?)")
+      .run(CRON_OWNER_EXPLICIT_MIGRATION_KEY, JSON.stringify({ jobIds: rows.map((row) => row.id) }), now);
+    if (rows.length > 0) {
+      log.info("Made legacy cron owners explicit", { count: rows.length, jobIds: rows.map((row) => row.id) });
+    }
+  })();
 }
 
 function getDefaultAgentIdFromDatabase(database: Database): string {

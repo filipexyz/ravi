@@ -76,7 +76,7 @@ function snapshotFor(jobId: string) {
   return job
     ? {
         jobId,
-        ownerPrincipal: job.ownerPrincipal ?? "operator",
+        ownerPrincipal: job.ownerPrincipal ?? "unknown",
         ownerIsOperator: cronOwnerActsAsOperator(job.ownerPrincipal ?? null, OWNER),
       }
     : null;
@@ -420,10 +420,10 @@ describe("connector turn classification", () => {
       });
     });
 
-    it("treats a legacy job without owner as the operator's", () => {
+    it("treats a legacy job without owner as nobody's, never the operator's", () => {
       const job = createJob();
 
-      expect(classify(cronTurn(job.id)).ok).toBe(true);
+      expect(classify(cronTurn(job.id)).ok).toBe(false);
     });
 
     it("refuses a job created by a contact", () => {
@@ -444,7 +444,7 @@ describe("connector turn classification", () => {
         installationId: "inst_1",
       });
       const owners: Array<[string | null, boolean]> = [
-        [null, true],
+        [null, false],
         ["operator", true],
         ["contact:c_luis", true],
         ["contact:c_ana", false],

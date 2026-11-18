@@ -66,7 +66,7 @@
   blocked.
 - `automation:heartbeat` MUST be allowed with routine `heartbeat`.
 - `automation:cron:<jobId>` MUST be allowed only for a job whose
-  `owner_principal` is NULL, `operator`, or a contact linked to the active
+  `owner_principal` is `operator`, or a contact linked to the active
   user and org; a job owned by anyone else, or a missing job, MUST be blocked.
 - A cron or heartbeat that answers into a chat MUST be allowed only when that
   chat is a `dm` resolving to the owner's linked contact; a group, another
@@ -172,8 +172,11 @@
   contact-owned job MUST succeed and move the job to the operator.
 
 - `cron add` from the terminal MUST store `owner_principal = operator`;
-  `cron show` MUST report a legacy NULL as `operator` ("Runs as" and
-  `ownerPrincipal`).
+  `cron show` MUST report a legacy NULL as `unknown` ("Runs as" and
+  `ownerPrincipal`, `runsAsOperator: false`).
+- The one-time owner migration MUST set `operator` on enabled NULL rows only,
+  keep disabled NULL rows NULL, keep `enabled` and `updated_at`, record the
+  migrated ids, and never run again (a NULL row enabled later stays NULL).
 - Opening a database whose `cron_jobs` lacks `owner_principal` MUST add the
   column and keep existing rows NULL.
 - `cron set <id> <key> ...` from a turn whose principal is not the job's
@@ -185,7 +188,8 @@
   owner is not part of the fingerprint.
 - `cron add` from a contact's turn MUST return `runsAsOperator: false`, a
   `Runs as:` line and a warning worded by owner and `executionType` (a contact owner acts as that person through their link); from the terminal
-  or with a legacy NULL owner, `runsAsOperator: true` and no warning.
+  `runsAsOperator: true` and no warning; with a legacy NULL owner,
+  `runsAsOperator: false`.
   `cron set` that re-owns a job to a contact MUST warn the same way; an
   operator `cron set` of a contact-owned job's `message`, `shell` or `exec`
   MUST move it to the operator, and any other operator edit MUST keep it with the contact and
@@ -316,4 +320,8 @@
   when the command ends and then refuses; a command that prints the key
   leaves it out of `lastError` and every notice; no context for a job whose
   owner does not act as the operator or whose agent is missing; a
-  `cron-shell` context with a parent is not honored.
+  `cron-shell` context with a parent is not honored. The context's
+  capabilities are only the Bases/Pages/`self whoami` allowlist, intersected
+  with the agent's (never `use:tool:*`, sessions or tasks); starting the
+  runner revokes live `cron-shell` contexts; a non-operator `cron set <id>
+  timeout` on a shell job fails `CRON_SHELL_NOT_OPERATOR` with no write.

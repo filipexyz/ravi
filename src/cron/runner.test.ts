@@ -56,7 +56,7 @@ const { dbCreateCronJob, dbGetCronJob, dbMarkJobDispatched, dbUpdateJobState, db
   "./cron-db.js"
 );
 const { CRON_RUNTIME_EVENTS_TOPIC } = await import("./turn-outcome.js");
-const { issueShellCronContext } = await import("./shell-context.js");
+const { issueShellCronContext, CRON_SHELL_ALLOWED_CAPABILITIES } = await import("./shell-context.js");
 const { createRuntimeContext } = await import("../runtime/context-registry.js");
 const { dbListContexts } = await import("../router/router-db.js");
 
@@ -679,6 +679,70 @@ describe("CronRunner shell jobs and personal connectors", () => {
     expect(after.lastError).toContain("[REDACTED:context-key]");
     expect(after.lastError).not.toContain(key!);
     for (const call of publishCalls) expect(JSON.stringify(call.payload)).not.toContain(key!);
+  });
+
+  it("scopes the shell run's context to Bases, Pages and self whoami, within the agent's own capabilities", () => {
+    const job = { id: "job-scope", agentId: "main" };
+    const authority = { jobId: "job-scope", ownerPrincipal: "operator", ownerIsOperator: true };
+    const keys = (caps: Array<{ permission: string; objectType: string; objectId: string }>) =>
+      caps.map((c) => `${c.permission}:${c.objectType}:${c.objectId}`).sort();
+
+    // An agent with broad authority: the context still gets only the allowlist.
+    const broad = issueShellCronContext(job, authority, 1_000, {
+      agentExists: () => true,
+      capabilitiesFor: () => [
+        { permission: "admin", objectType: "system", objectId: "*" },
+        { permission: "use", objectType: "tool", objectId: "*" },
+      ],
+    })!;
+    try {
+      expect(keys(broad.context.capabilities)).toEqual(keys([...CRON_SHELL_ALLOWED_CAPABILITIES]));
+      for (const cap of broad.context.capabilities) {
+        expect(`${cap.permission}:${cap.objectType}`).not.toMatch(/^use:tool|sessions|tasks|admin:/);
+      }
+    } finally {
+      broad.release();
+    }
+
+    // An agent with less: never more than the agent has.
+    const narrow = issueShellCronContext(job, authority, 1_000, {
+      agentExists: () => true,
+      capabilitiesFor: () => [
+        { permission: "read", objectType: "bases", objectId: "list" },
+        { permission: "use", objectType: "tool", objectId: "*" },
+        { permission: "execute", objectType: "group", objectId: "sessions" },
+        { permission: "mutate", objectType: "task", objectId: "*" },
+      ],
+    })!;
+    try {
+      expect(keys(narrow.context.capabilities)).toEqual(["read:bases:list"]);
+    } finally {
+      narrow.release();
+    }
+  });
+
+  it("revokes shell cron contexts a previous process left live when the runner starts", async () => {
+    const leftover = createRuntimeContext({
+      kind: "cron-shell",
+      agentId: "main",
+      metadata: { actorPrincipal: "automation:cron:old", source: "cron-shell" },
+    });
+    const unrelated = createRuntimeContext({ kind: "cli-runtime", agentId: "main", metadata: {} });
+    const runner = new CronRunner();
+    await runner.start();
+    try {
+      const after = dbListContexts({ includeInactive: true, kind: "cron-shell" }).find(
+        (c) => c.contextId === leftover.contextId,
+      );
+      expect(after?.revokedAt).toBeDefined();
+      expect(after?.metadata?.revocationReason).toBe("cron_shell_daemon_restart");
+      const other = dbListContexts({ includeInactive: true, kind: "cli-runtime" }).find(
+        (c) => c.contextId === unrelated.contextId,
+      );
+      expect(other?.revokedAt).toBeUndefined();
+    } finally {
+      await runner.stop();
+    }
   });
 
   it("issues no context when the job's agent does not exist, and the command still runs", () => {

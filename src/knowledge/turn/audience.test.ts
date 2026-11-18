@@ -154,7 +154,8 @@ describe("knowledgeAudienceForPrompt", () => {
 
   it("gives operator only for the operator's own cron", () => {
     expect(knowledgeAudienceForPrompt({ prompt: "r", _cron: true, _jobId: "mine" }, ctx, deps())).toBe("operator");
-    expect(knowledgeAudienceForPrompt({ prompt: "r", _cron: true, _jobId: "legacy" }, ctx, deps())).toBe("operator");
+    // A legacy job without an owner runs as nobody.
+    expect(knowledgeAudienceForPrompt({ prompt: "r", _cron: true, _jobId: "legacy" }, ctx, deps())).toBe("none");
     expect(knowledgeAudienceForPrompt({ prompt: "r", _cron: true, _jobId: "theirs" }, ctx, deps())).toBe("none");
     expect(knowledgeAudienceForPrompt({ prompt: "r", _cron: true, _jobId: "gone" }, ctx, deps())).toBe("none");
     expect(

@@ -62,7 +62,7 @@ export async function notifyCronFailure(
       occurredAt: job.lastRunAt,
       // Raw provider errors may contain tokens, paths or prompts. Keep them in
       // the existing job diagnostics, never in the outbound message/inbox.
-      metadata: { jobId: job.id, category, ownerPrincipal: job.ownerPrincipal ?? "operator" },
+      metadata: { jobId: job.id, category, ownerPrincipal: job.ownerPrincipal ?? "unknown" },
       actorType: "system",
     });
     if (listLocalInboxEvents(item.id).some((event) => event.eventType === "cron.failure.notified")) return true;

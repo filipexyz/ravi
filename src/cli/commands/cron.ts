@@ -276,9 +276,9 @@ function assertCronTargetAuthorized(
   }
 }
 
-/** "Runs as" for personal connectors. Legacy rows without an owner run as the operator. */
+/** "Runs as" for personal connectors. A legacy row without an owner runs as nobody. */
 function cronJobRunsAs(job: Pick<CronJob, "ownerPrincipal">): string {
-  return job.ownerPrincipal ?? CRON_OPERATOR_OWNER;
+  return job.ownerPrincipal ?? "unknown";
 }
 
 /**
@@ -927,6 +927,13 @@ export class CronCommands {
       assertCronTargetAuthorized("cron set", { agentId: cronJobOwnerId(job), replySession: value }, asJson);
     }
     const ownerUpdate = cronOwnerUpdateForSet(key, job);
+    // A shell run's context lives as long as its timeout: only someone who
+    // acts as the operator may change how long a shell job's key stays valid.
+    if (job.executionType === "shell" && key === "timeout") {
+      // Invalid input fails before the owner refusal (exit 3).
+      if (value !== "null" && value !== "-") parseCronShellTimeout(value);
+      assertShellOwnerActsAsOperator("cron set", resolveCronOwnerPrincipalForCurrentTurn(), asJson);
+    }
     // Setting a command, or a change that moves a shell job to another owner,
     // must leave it with an owner that acts as the operator. Other edits of an
     // existing shell job stay possible: the runner refuses to run it anyway.

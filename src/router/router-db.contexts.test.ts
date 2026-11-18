@@ -6,6 +6,8 @@ import {
   dbCreateContext,
   dbGetContext,
   dbGetOpenThreadHumanRequestTurns,
+  ensureCronOwnerExplicitMigration,
+  CRON_OWNER_EXPLICIT_MIGRATION_KEY,
   dbListContexts,
   dbRenewActiveContext,
   dbRevokeContextCascade,
@@ -350,5 +352,60 @@ describe("dbGetOpenThreadHumanRequestTurns", () => {
     expect(dbGetOpenThreadHumanRequestTurns("  ")).toBeNull();
     closeSlackThreadLifecycle({ childSessionKey: CHILD_KEY });
     expect(dbGetOpenThreadHumanRequestTurns(CHILD_KEY)).toBeNull();
+  });
+});
+
+describe("ensureCronOwnerExplicitMigration (legacy NULL cron owners)", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-router-cron-owner-migration-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  function insertJob(id: string, enabled: boolean, ownerPrincipal: string | null, executionType = "agent") {
+    getDb()
+      .prepare(
+        `INSERT INTO cron_jobs (id, name, enabled, schedule_type, schedule_every, session_target, payload_text,
+          execution_type, shell_command, owner_principal, created_at, updated_at)
+         VALUES (?, ?, ?, 'every', 60000, 'main', 'x', ?, ?, ?, 1000, 2000)`,
+      )
+      .run(id, `job-${id}`, enabled ? 1 : 0, executionType, executionType === "shell" ? "true" : null, ownerPrincipal);
+  }
+
+  function ownerOf(id: string) {
+    return getDb().prepare("SELECT owner_principal, enabled, updated_at FROM cron_jobs WHERE id = ?").get(id) as {
+      owner_principal: string | null;
+      enabled: number;
+      updated_at: number;
+    };
+  }
+
+  it("makes enabled legacy owners explicit once, leaves disabled ones NULL and touches nothing else", () => {
+    getDb().prepare("DELETE FROM router_meta WHERE key = ?").run(CRON_OWNER_EXPLICIT_MIGRATION_KEY);
+    insertJob("legacy-on", true, null);
+    insertJob("legacy-shell-on", true, null, "shell");
+    insertJob("legacy-off", false, null);
+    insertJob("contact-job", true, "contact:c_ana");
+
+    ensureCronOwnerExplicitMigration();
+
+    expect(ownerOf("legacy-on")).toEqual({ owner_principal: "operator", enabled: 1, updated_at: 2000 });
+    expect(ownerOf("legacy-shell-on")).toEqual({ owner_principal: "operator", enabled: 1, updated_at: 2000 });
+    expect(ownerOf("legacy-off")).toEqual({ owner_principal: null, enabled: 0, updated_at: 2000 });
+    expect(ownerOf("contact-job").owner_principal).toBe("contact:c_ana");
+    const marker = getDb()
+      .prepare("SELECT value FROM router_meta WHERE key = ?")
+      .get(CRON_OWNER_EXPLICIT_MIGRATION_KEY) as {
+      value: string;
+    };
+    expect(JSON.parse(marker.value)).toEqual({ jobIds: ["legacy-on", "legacy-shell-on"] });
+
+    // One-shot: a NULL row enabled later never becomes the operator's.
+    insertJob("legacy-late", true, null);
+    ensureCronOwnerExplicitMigration();
+    expect(ownerOf("legacy-late").owner_principal).toBeNull();
   });
 });
