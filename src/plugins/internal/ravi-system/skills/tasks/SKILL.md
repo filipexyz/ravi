@@ -11,8 +11,10 @@ description: |
 
 # Tasks
 
-> Verbos: AGIR (trabalho longo) · REAGIR (`ravi.task.*.event`). Compõe com: bases (fila).
+> Verbos: AGIR (trabalho longo) · REAGIR (`ravi.task.*.event`). Compõe com: bases (fila e resultado), observers (veredito da task), decisions (pergunta que bloqueia), artifacts (evidência), sessions (thread quando o trabalho é conversa, task quando precisa de dono e estado).
 > Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
+
+Quem age: `tasks create` grava quem pediu. O turno de dispatch da task age por essa pessoa em Bases e Pages enquanto a task estiver aberta (até 72 h). Task criada por cron, por outro agente ou por contato externo sem pessoa por trás não herda ninguém. Comentário e retomada ainda não herdam. Detalhes: `ravi skills show bases --file references/autoria.md`.
 
 O `task runtime` é o control plane operacional do Ravi.
 

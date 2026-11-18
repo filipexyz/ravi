@@ -13,6 +13,9 @@ description: |
 
 # Ravi Apps
 
+> Verbos: AGIR (operação de app) · GUARDAR (storage do app). Compõe com: bases e pages (o app grava linha e publica página pelo CLI público), threads e tasks (quem chama o app define quem age), cron (rotina que chama o app).
+> Solução com mais de uma peça? `ravi skills show solucoes` primeiro.
+
 Ravi Apps sao a camada de aplicacoes do Ravi OS.
 
 Um app e um CLI real acompanhado de `ravi.app.json`. O App Router recebe uma
@@ -49,6 +52,13 @@ ravi <app-id> <operation> --json
 Use `ravi apps run <app-id> <operation> --json` apenas como superfície
 interna/debug quando houver colisao com comando estatico ou quando estiver
 testando o router.
+
+### App chamado por agente, thread, task ou cron
+
+- Quem age dentro do app é quem chamou: o app herda o turno de origem. Numa thread, num dispatch de task ou num cron, o app grava em Bases e publica em Pages por quem pediu ou pelo dono (`ravi skills show bases --file references/autoria.md`). Turno de outro agente ou de terceiro sai `ACTOR_UNKNOWN`.
+- Se o alias `ravi <app-id> <op>` falhar num turno de agente com `REAL_STATE_ACCESS_REFUSED` (runtime instalado mais antigo), use `ravi apps run <app-id> <op> --execute --json -- <args>`.
+- `ravi pages ship --html|--dir` de dentro do app precisa de `use:tool:Read` no `context.allow`. Prefira passar o conteúdo com `--body` (sem leitura de arquivo), que não pede essa permissão.
+- Operação que faz mais de um ship ou upload pode passar de 25 s e virar job destacado. Confira o resultado por uma operação de leitura do próprio app (ex.: `list --json`), sem repetir a escrita.
 
 ## Fluxo Para Operar Um App
 
