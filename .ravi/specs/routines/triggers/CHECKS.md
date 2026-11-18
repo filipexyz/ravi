@@ -113,7 +113,8 @@ A trigger with a valid filter, or with no filter, MUST behave exactly as before.
 ## Reply Account And Channel
 
 - A `page-comment` follow handed to a parent that last talked on WhatsApp MUST be delivered with the parent's WhatsApp channel, chat and its own account, never the Slack thread's account on that chat.
-- The same follow MUST keep the trigger's account when the parent last talked on the account's own channel, and an account set on its own (`--account`) MUST apply on any channel.
-- A source rebuilt from a session key on another channel than the trigger's account MUST keep the account the key carries.
+- A follow whose account was taken from its reply source MUST NOT replace the account of a parent that last talked on the same channel through another account (`ravi-slack` x `ravi-rbbt-slack`), and MUST be used when the parent carries none.
+- An account set on its own (`--account`) MUST apply on the channel of its instance, including when the session records the Omni name of the channel (`whatsapp-baileys` for `whatsapp`), and MUST NOT be sent to a destination on another channel: a trigger with `accountId: main` (a WhatsApp instance) replying in a session that last talked on Slack keeps the session's Slack account.
+- A source rebuilt from a session key on another channel than the trigger's account, and a frozen reply source used as the destination, MUST keep the account they carry. An account no instance goes by names no channel and MUST still apply.
 
-- [ ] `bun test src/triggers/__tests__/runner-named-session.test.ts src/triggers/triggers.test.ts` covers each case above, in the runner and in `sourceFromSessionEntry` / `triggerAccountChannel`.
+- [ ] `bun test src/triggers/__tests__/runner-named-session.test.ts src/triggers/triggers.test.ts` covers each case above, in the runner and in `triggerSourceAccount` / `accountChannel` / `sourceFromSessionEntry`.

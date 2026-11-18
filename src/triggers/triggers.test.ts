@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { dbUpsertInstance } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { resolveTriggerActivation } from "./activation.js";
 import { compileFilter } from "./filter.js";
 import {
+  accountChannel,
   isTriggerOriginatedEvent,
   planTriggerTopicRefresh,
   shouldRetryTriggerTopic,
   sourceFromSessionEntry,
-  triggerAccountChannel,
+  triggerSourceAccount,
 } from "./runner.js";
 import { findTriggerTopicCatalogEntry } from "./topic-catalog.js";
 import {
@@ -289,57 +291,104 @@ describe("trigger reply source", () => {
     ).toEqual({ channel: "whatsapp", accountId: "main-account", chatId: "chat-a" });
   });
 
-  it("lets the trigger's explicit account win", () => {
-    expect(
-      sourceFromSessionEntry({ lastChannel: "whatsapp", lastAccountId: "main-account", lastTo: "chat-a" }, "other"),
-    ).toEqual({ channel: "whatsapp", accountId: "other", chatId: "chat-a" });
-  });
-
-  it("has no source when the session never talked to a chat", () => {
-    expect(sourceFromSessionEntry({ lastChannel: "whatsapp" })).toBeUndefined();
-    expect(sourceFromSessionEntry(null)).toBeUndefined();
-  });
-
-  it("keeps the trigger's account on the channel it belongs to", () => {
-    expect(
-      sourceFromSessionEntry(
-        { lastChannel: "whatsapp", lastAccountId: "main-account", lastTo: "chat-a" },
-        "other",
-        "whatsapp",
-      ),
-    ).toEqual({ channel: "whatsapp", accountId: "other", chatId: "chat-a" });
-  });
-
-  it("keeps the session's own account when the trigger's account belongs to another channel", () => {
-    expect(
-      sourceFromSessionEntry(
-        { lastChannel: "whatsapp", lastAccountId: "main-account", lastTo: "chat-a" },
-        "slack-account",
-        "slack",
-      ),
-    ).toEqual({ channel: "whatsapp", accountId: "main-account", chatId: "chat-a" });
-    // No account of its own to fall back on: the source is delivered without one.
-    expect(sourceFromSessionEntry({ lastChannel: "whatsapp", lastTo: "chat-a" }, "slack-account", "slack")).toEqual({
+  it("carries no account when the session has none, and has no source when it never talked to a chat", () => {
+    expect(sourceFromSessionEntry({ lastChannel: "whatsapp", lastTo: "chat-a" })).toEqual({
       channel: "whatsapp",
       accountId: "",
       chatId: "chat-a",
     });
+    expect(sourceFromSessionEntry({ lastChannel: "whatsapp" })).toBeUndefined();
+    expect(sourceFromSessionEntry(null)).toBeUndefined();
   });
 });
 
-describe("trigger account channel", () => {
-  const frozen = { channel: "slack", accountId: "slack-account", chatId: "C123" };
+describe("trigger source account", () => {
+  const frozenSlack = { channel: "slack", accountId: "ravi-slack", chatId: "C123" };
+  const instanceChannels: Record<string, string> = {
+    "ravi-slack": "slack",
+    "ravi-rbbt-slack": "slack",
+    main: "whatsapp",
+    "wa-explicit": "whatsapp",
+  };
+  const channelOf = (account: string) => instanceChannels[account];
+  const accountFor = (
+    trigger: Parameters<typeof triggerSourceAccount>[0],
+    source: Parameters<typeof triggerSourceAccount>[1],
+  ) => triggerSourceAccount(trigger, source, channelOf);
 
-  it("ties the account a trigger took from its reply source to that source's channel", () => {
-    expect(triggerAccountChannel({ accountId: "slack-account", replySource: frozen })).toBe("slack");
+  it("keeps the account the source carries when the trigger's account is another channel's credential", () => {
+    // `main` is a WhatsApp instance: three triggers of the main session carried it onto a Slack chat.
+    expect(accountFor({ accountId: "main" }, { channel: "slack", accountId: "ravi-slack" })).toBe("ravi-slack");
+    expect(
+      accountFor({ accountId: "ravi-slack", replySource: frozenSlack }, { channel: "whatsapp", accountId: "main" }),
+    ).toBe("main");
+    // With no account of its own the source goes out without one, not with the wrong provider's.
+    expect(accountFor({ accountId: "main" }, { channel: "slack", accountId: "" })).toBe("");
   });
 
-  it("ties no channel to an account set on its own", () => {
-    expect(triggerAccountChannel({ accountId: "wa-explicit", replySource: frozen })).toBeUndefined();
+  it("reads whatsapp-baileys and whatsapp as one channel", () => {
+    expect(accountFor({ accountId: "main" }, { channel: "whatsapp-baileys", accountId: "wa-session" })).toBe("main");
+    expect(accountFor({ accountId: "main" }, { channel: "WhatsApp", accountId: "wa-session" })).toBe("main");
   });
 
-  it("ties no channel when the trigger froze no reply source or has no account", () => {
-    expect(triggerAccountChannel({ accountId: "slack-account" })).toBeUndefined();
-    expect(triggerAccountChannel({ replySource: frozen })).toBeUndefined();
+  it("applies an account set on its own when it is a credential for the source's channel", () => {
+    // Even over the account the source carries: it was asked for.
+    expect(accountFor({ accountId: "ravi-slack" }, { channel: "slack", accountId: "ravi-rbbt-slack" })).toBe(
+      "ravi-slack",
+    );
+    expect(
+      accountFor({ accountId: "wa-explicit", replySource: frozenSlack }, { channel: "whatsapp", accountId: "main" }),
+    ).toBe("wa-explicit");
+  });
+
+  it("does not replace the account a source carries with the one taken from the reply source", () => {
+    // Same channel, another workspace: the chat belongs to the account the session reached it through.
+    expect(
+      accountFor(
+        { accountId: "ravi-slack", replySource: frozenSlack },
+        { channel: "slack", accountId: "ravi-rbbt-slack" },
+      ),
+    ).toBe("ravi-rbbt-slack");
+  });
+
+  it("uses the account taken from the reply source when the source carries none", () => {
+    expect(accountFor({ accountId: "ravi-slack", replySource: frozenSlack }, { channel: "slack", accountId: "" })).toBe(
+      "ravi-slack",
+    );
+  });
+
+  it("applies an account no instance goes by, which names no channel", () => {
+    expect(accountFor({ accountId: "gone" }, { channel: "whatsapp", accountId: "main" })).toBe("gone");
+  });
+
+  it("leaves the source's account alone when the trigger has none", () => {
+    expect(accountFor({}, { channel: "slack", accountId: "ravi-slack" })).toBe("ravi-slack");
+  });
+});
+
+describe("account channel from the instances table", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-triggers-account-channel-test-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("is the channel of the instance that goes by the account, as Ravi names channels", () => {
+    dbUpsertInstance({ name: "ravi-slack", channel: "slack" });
+    dbUpsertInstance({ name: "main", channel: "whatsapp-baileys" });
+    expect(accountChannel("ravi-slack")).toBe("slack");
+    expect(accountChannel("main")).toBe("whatsapp");
+    expect(accountChannel("nobody")).toBeUndefined();
+  });
+
+  it("is what the trigger's account is judged by, with no lookup passed", () => {
+    dbUpsertInstance({ name: "main", channel: "whatsapp" });
+    expect(triggerSourceAccount({ accountId: "main" }, { channel: "slack", accountId: "ravi-slack" })).toBe(
+      "ravi-slack",
+    );
+    expect(triggerSourceAccount({ accountId: "main" }, { channel: "whatsapp-baileys", accountId: "wa" })).toBe("main");
   });
 });

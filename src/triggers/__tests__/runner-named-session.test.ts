@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { dbCreateAgent } from "../../router/router-db.js";
+import { dbCreateAgent, dbUpsertInstance } from "../../router/router-db.js";
 import { buildSessionKey } from "../../router/session-key.js";
 import { deleteSession, getOrCreateSession, listSessions, updateSessionSource } from "../../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -297,10 +297,19 @@ describe("thread follow handoff delivery", () => {
   });
 });
 
-describe("reply account follows the destination's channel", () => {
+describe("reply account follows the destination", () => {
   const topic = "ravi.watch.console.page.comment.created";
   const comment = { payload: { routePath: "/blog/post", body: "looks good", url: "https://x.ravi.page/blog/post" } };
   const whatsappDm = { channel: "whatsapp", accountId: "wa-main", chatId: "5511999990000@s.whatsapp.net" };
+
+  beforeEach(() => {
+    // The channel an account delivers on is its instance's.
+    dbUpsertInstance({ name: "slack-account", channel: "slack" });
+    dbUpsertInstance({ name: "slack-other", channel: "slack" });
+    dbUpsertInstance({ name: "wa-main", channel: "whatsapp" });
+    dbUpsertInstance({ name: "wa-explicit", channel: "whatsapp" });
+    dbUpsertInstance({ name: "main", channel: "whatsapp" });
+  });
 
   // What a follow armed from a Slack thread stores once it belongs to the thread's
   // durable parent: the thread's account, and the Slack root chat as frozen source.
@@ -332,7 +341,7 @@ describe("reply account follows the destination's channel", () => {
     return publishCalls[0]!;
   }
 
-  it("delivers a comment to a parent that last talked on another channel through that channel's own account", async () => {
+  it("delivers a follow handed to a parent that last talked on another channel through that channel's own account", async () => {
     parentLastTalkedOn(whatsappDm);
     const trigger = handedOffFollow();
 
@@ -345,8 +354,18 @@ describe("reply account follows the destination's channel", () => {
     expect(dbGetTrigger(trigger.id)?.fireCount).toBe(1);
   });
 
-  it("keeps the trigger's account when the parent last talked on that account's channel", async () => {
+  it("keeps the parent's own account when it last talked on the same channel through another account", async () => {
+    // Two Slack workspaces: the chat belongs to the account the parent reached it through.
     parentLastTalkedOn({ channel: "slack", accountId: "slack-other", chatId: "C999" });
+    handedOffFollow();
+
+    const fired = await fireComment();
+
+    expect(fired.payload.source).toEqual({ channel: "slack", accountId: "slack-other", chatId: "C999" });
+  });
+
+  it("uses the account the follow took from its source when the parent carries none", async () => {
+    parentLastTalkedOn({ channel: "slack", accountId: "", chatId: "C999" });
     handedOffFollow();
 
     const fired = await fireComment();
@@ -354,15 +373,38 @@ describe("reply account follows the destination's channel", () => {
     expect(fired.payload.source).toEqual({ channel: "slack", accountId: "slack-account", chatId: "C999" });
   });
 
-  it("applies an account set on its own on whatever channel the parent last talked on", async () => {
+  it("applies an account set on its own on the channel it belongs to", async () => {
     parentLastTalkedOn(whatsappDm);
-    // `--account` names the account to deliver through. It is not the frozen
-    // source's account, so it says nothing about a channel.
+    // `--account` is not the frozen source's account: it is asked for, so it replaces the parent's.
     handedOffFollow({ accountId: "wa-explicit" });
 
     const fired = await fireComment();
 
     expect(fired.payload.source).toEqual({ ...whatsappDm, accountId: "wa-explicit" });
+  });
+
+  it("reads the Omni name of a channel as the channel", async () => {
+    // Sessions record `whatsapp-baileys`; the instance of the account is `whatsapp`.
+    const omniDm = { ...whatsappDm, channel: "whatsapp-baileys" };
+    parentLastTalkedOn(omniDm);
+    handedOffFollow({ accountId: "wa-explicit" });
+
+    const fired = await fireComment();
+
+    expect(fired.payload.source).toEqual({ ...omniDm, accountId: "wa-explicit" });
+  });
+
+  it("does not send an account set on its own to a destination on another channel", async () => {
+    // The shape of three triggers of the main session: `main` is a WhatsApp instance, the
+    // session they reply in last talked on Slack, and the reply was lost on a Slack chat.
+    const slackDm = { channel: "slack", accountId: "slack-account", chatId: "D0C8BEV8QUR" };
+    parentLastTalkedOn(slackDm);
+    const trigger = handedOffFollow({ accountId: "main", replySource: undefined });
+
+    const fired = await fireComment();
+
+    expect(fired.payload.source).toEqual(slackDm);
+    expect(dbGetTrigger(trigger.id)?.fireCount).toBe(1);
   });
 
   it("keeps the account of a source rebuilt from the session key when the trigger's account is for another channel", async () => {
@@ -380,6 +422,15 @@ describe("reply account follows the destination's channel", () => {
     const fired = await fireComment();
 
     expect(fired.payload.source).toEqual({ channel: "whatsapp", accountId: "wa-main", chatId: "5511999990000" });
+  });
+
+  it("keeps the frozen source's account when an account set on its own is another channel's", async () => {
+    // No reply session: the creator's chat is the destination, and `wa-explicit` is no Slack credential.
+    handedOffFollow({ replySession: undefined, accountId: "wa-explicit" });
+
+    const fired = await fireComment();
+
+    expect(fired.payload.source).toEqual({ channel: "slack", accountId: "slack-account", chatId: "C123" });
   });
 });
 
