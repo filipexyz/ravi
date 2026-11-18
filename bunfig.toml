@@ -1,0 +1,5 @@
+[test]
+# Every `bun test` process gets a private RAVI_STATE_DIR unless the caller already chose an isolated one
+# (CI exports its own). Without this, tests fall back to the operator's real ~/.ravi and the state boundary
+# refuses them: "Refusing the real Ravi state database".
+preload = ["./src/test/state-isolation-preload.ts"]
