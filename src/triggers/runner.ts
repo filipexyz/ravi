@@ -56,6 +56,7 @@ import { buildTriggerPrompt } from "./prompt.js";
 import { TriggerDebouncer, type TriggerBatch } from "./debounce.js";
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS, runShellCronCommand, type ShellCronRunResult } from "../cron/shell-executor.js";
 import { filterAgentRuntimeBaseEnv } from "../runtime/agent-env-policy.js";
+import { shellEnvFileInsideStateDir } from "./shell-env-file.js";
 
 const log = logger.child("triggers:runner");
 const EVENT_DEDUPE_TTL_MS = 60_000;
@@ -1055,7 +1056,7 @@ export class TriggerRunner {
     const agentId = getDefaultAgentId();
     const sessionName = getMainSession(agentId)?.name ?? agentId;
     void publishSessionPrompt(sessionName, {
-      prompt: `[System] Inform: [from: trigger:${trigger.id}] Shell trigger disabled (${code}). It runs as ${triggerRunsAs(trigger)}, not the operator, and a shell command runs with this machine's access. No command was executed. Inspect with ravi triggers show ${trigger.id}. The operator can recreate it, or turn it into an agent trigger.`,
+      prompt: `[System] Inform: [from: trigger:${trigger.id}] Shell trigger disabled (${code}). It runs as ${triggerRunsAs(trigger)}, not the operator, and a shell command runs with this machine's access. No command was executed. Inspect with ravi triggers show ${trigger.id}. The operator can recreate it from their own chat with Ravi and remove this one.`,
       deliveryBarrier: "after_response",
       deliveryBarrierSource: "default",
     }).catch((error) => {
@@ -1074,20 +1075,29 @@ export class TriggerRunner {
     batch: TriggerBatch | undefined,
     current: { stored: Trigger | null; ownerFire: boolean },
   ): Promise<void> {
-    if (!trigger.shellCommand?.trim()) {
-      throw new Error("Shell trigger is missing shellCommand");
-    }
-    // The trigger as stored now decides, never the copy the runner loaded: an
-    // edit since then (a new command, a lost owner, turned off) skips this
-    // fire, and the refresh it emitted reloads the trigger.
+    // The trigger as stored now decides, never the copy the runner loaded. A
+    // change to what `sameTriggerDefinition` compares (topic, filter, enabled,
+    // execution type, ...) or a deleted row skips this fire, and the refresh
+    // reloads the trigger. Everything this fire runs comes from the stored row:
+    // its owner, command, env file and timeout.
     if (!current.ownerFire || !current.stored) {
       log.warn("Skipping shell trigger fire: its stored definition changed or is gone", { triggerId: trigger.id });
       return;
     }
+    const stored = current.stored;
+    if (!stored.shellCommand?.trim()) {
+      throw new Error("Shell trigger is missing shellCommand");
+    }
     // Same rule as shell cron jobs: a shell command runs with this machine's
     // access, so it runs only when its current owner acts as the operator.
-    if (!triggerOwnerActsAsOperator(current.stored.ownerPrincipal)) {
-      this.refuseShellTriggerOwner(current.stored);
+    if (!triggerOwnerActsAsOperator(stored.ownerPrincipal)) {
+      this.refuseShellTriggerOwner(stored);
+      return;
+    }
+    // The env file is what the command gets on purpose. One inside the Ravi
+    // state dir (the daemon's own `.env`, for example) would hand it every secret.
+    if (stored.shellEnvFile && shellEnvFileInsideStateDir(stored.shellEnvFile)) {
+      log.error("Shell trigger not run: its env file is inside the Ravi state dir", { triggerId: stored.id });
       return;
     }
 
@@ -1127,13 +1137,13 @@ export class TriggerRunner {
         hasSource: !!source,
       });
 
-      const result = await runShellCronCommand(trigger.shellCommand, {
-        timeoutMs: trigger.shellTimeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS,
+      const result = await runShellCronCommand(stored.shellCommand, {
+        timeoutMs: stored.shellTimeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS,
         // An event decides when this runs, so the command starts from the
         // allowlisted agent env, never the daemon's secrets. What the command
         // needs on purpose comes from its env file.
         baseEnv: filterAgentRuntimeBaseEnv(process.env),
-        envFile: trigger.shellEnvFile,
+        envFile: stored.shellEnvFile,
         env: {
           ...this.buildShellEnv(trigger, event, source, eventFile, dataFile),
           RAVI_TRIGGER_EVENTS_FILE: eventsFile,
@@ -1159,7 +1169,7 @@ export class TriggerRunner {
 
       if (!ok && errorMessage) {
         try {
-          await this.notifyShellTriggerError(trigger, result, errorMessage);
+          await this.notifyShellTriggerError(stored, result, errorMessage);
         } catch (notifyError) {
           log.error("Failed to notify session about trigger shell error", {
             triggerId: trigger.id,

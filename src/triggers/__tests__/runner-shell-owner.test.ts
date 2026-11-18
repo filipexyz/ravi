@@ -208,4 +208,33 @@ describe("shell trigger owner and env", () => {
     expect(existsSync(markerPath())).toBe(false);
     expect(dbGetTrigger(trigger.id)?.fireCount).toBe(0);
   });
+
+  it("runs the command stored now when it changed after the runner loaded the trigger", async () => {
+    const topic = "ravi.test.shell-swap";
+    const trigger = createShellTrigger({ name: "swapped-command", topic, ownerPrincipal: "operator" });
+    await startRunner();
+
+    // The owner changes the command; the runner still holds the old copy until a refresh.
+    getDb()
+      .prepare("UPDATE triggers SET shell_command = ? WHERE id = ?")
+      .run(`printf 'new-command\\n' > '${markerPath()}'`, trigger.id);
+    emit(topic, { eventId: "evt-swap" });
+    await waitFor(() => existsSync(markerPath()));
+
+    // The stored command ran, not the loaded one (which would have written the env).
+    expect(readFileSync(markerPath(), "utf8")).toBe("new-command\n");
+  });
+
+  it("does not run a shell trigger whose env file is inside the Ravi state dir", async () => {
+    const topic = "ravi.test.shell-state-env";
+    const stateEnvFile = join(stateDir!, ".env");
+    writeFileSync(stateEnvFile, "RAVI_ADMIN_TOKEN=canary-state-env\n");
+    createShellTrigger({ name: "state-env", topic, ownerPrincipal: "operator", envFile: stateEnvFile });
+    await startRunner();
+
+    emit(topic, { eventId: "evt-state-env" });
+    await sleep(500);
+
+    expect(existsSync(markerPath())).toBe(false);
+  });
 });
