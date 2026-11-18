@@ -13,6 +13,8 @@ import { runWithContext } from "../context.js";
 import { CliExpectedError } from "../expected-error.js";
 import { getCliOnlyMetadata, getCommandsMetadata, getOptionsMetadata, getReturnsMetadata } from "../decorators.js";
 import { type ContextRecord, dbCreateAgent } from "../../router/router-db.js";
+import { closeSlackThreadLifecycle, registerInboundSlackThread } from "../../channels/slack/thread-lifecycle-store.js";
+import { getOrCreateSession } from "../../router/sessions.js";
 import { dbListTriggers } from "../../triggers/triggers-db.js";
 import { pageCommentFilter } from "../../pages/comment-follow.js";
 import { SHIP_LIVE_DATA_OVERRIDE_WARNING, SHIP_LIVE_DATA_REFUSAL_LINES, wrapHtml5Document } from "../../pages/ship.js";
@@ -1572,6 +1574,125 @@ describe("pages agent-first contract", () => {
     expect(triggers[0]?.filter).toBe(
       pageCommentFilter({ pageId: "site_1", routePath: "/", orgId: "org_1", projectId: "proj_real" }),
     );
+  });
+
+  describe("ship from a Slack thread", () => {
+    const THREAD_PARENT_KEY = "agent:creator:main";
+    const THREAD_CHILD_KEY = `${THREAD_PARENT_KEY}:thread:1.2`;
+
+    function threadShipClient(): ConsoleApiClient {
+      return {
+        me: mock(async () => ({ user: { email: "alice@example.com" }, organization: { id: "org_1" } })),
+        requestJson: mock(async (method: string, path: string, body?: unknown) => {
+          if (method === "GET" && path === "/api/cli/projects/proj/pages") {
+            return [{ id: "site_1", slug: "acme-proj", isDefault: true, defaultHostname: "acme-proj.ravi.page" }];
+          }
+          if (method === "POST" && path === KIT_PATH) return kitUnchanged(body);
+          throw new Error(`unexpected ${method} ${path}`);
+        }),
+        createPageUploadSession: mock(async () => ({
+          uploadSession: { id: "upl_thread" },
+          uploadPolicy: { directUpload: false },
+        })),
+        finalizeArtifactPublish: mock(async () => ({
+          artifact: { id: "cloud_art_thread", projectId: "proj_real" },
+          site: { id: "site_1", slug: "acme-proj", isDefault: true, projectId: "proj_real" },
+          url: "https://acme-proj.ravi.page/blog/post",
+        })),
+      } as unknown as ConsoleApiClient;
+    }
+
+    const shipFromThread = (command: PagesCommands) =>
+      runWithContext(
+        {
+          agentId: "creator",
+          sessionName: "creator-thread",
+          sessionKey: THREAD_CHILD_KEY,
+          source: { channel: "slack", accountId: "slack-account", chatId: "C123#1.2", threadId: "1.2" },
+        },
+        () =>
+          command.ship(
+            [],
+            "proj",
+            "Post",
+            "<h1>OK</h1>",
+            undefined,
+            undefined,
+            undefined,
+            "/blog/post",
+            undefined,
+            undefined,
+            undefined,
+            true,
+            undefined,
+            undefined,
+            true,
+          ),
+      );
+
+    it("arms the comment trigger on the thread's durable parent, so the thread can close", async () => {
+      stateDir = await createIsolatedRaviState("ravi-pages-ship-thread-owner-");
+      dbCreateAgent({ id: "creator", cwd: "/tmp/page-creator-home" });
+      getOrCreateSession(THREAD_PARENT_KEY, "creator", "/tmp/page-creator-home", { name: "creator-main" });
+      getOrCreateSession(THREAD_CHILD_KEY, "creator", "/tmp/page-creator-home", { name: "creator-thread" });
+      registerInboundSlackThread({
+        parentSessionKey: THREAD_PARENT_KEY,
+        parentSessionName: "creator-main",
+        childSessionKey: THREAD_CHILD_KEY,
+        childSessionName: "creator-thread",
+        accountId: "slack-account",
+        instanceId: "slack-instance",
+        platformChatId: "C123",
+        threadCanonicalChatId: "thread-chat",
+        providerThreadId: "1.2",
+      });
+      const command = new PagesCommands({
+        client: threadShipClient(),
+        readCredentials: makeReadCredentials(),
+        pageCommentFollow: { emitTriggersRefresh: async () => {} },
+      });
+
+      const { output } = await captureConsole(() => shipFromThread(command));
+      const payload = JSON.parse(output);
+
+      expect(payload.commentFollow).toMatchObject({
+        ok: true,
+        agentId: "creator",
+        routePath: "/blog/post",
+        replySession: "creator-main",
+      });
+      expect(dbListTriggers()).toHaveLength(1);
+      expect(dbListTriggers()[0]).toMatchObject({
+        name: "page-comment:site_1:/blog/post",
+        replySession: "creator-main",
+        replySource: { channel: "slack", accountId: "slack-account", chatId: "C123" },
+      });
+      expect(closeSlackThreadLifecycle({ childSessionKey: THREAD_CHILD_KEY }).changed).toBe(true);
+    });
+
+    it("still publishes, and says why no trigger was armed, when the thread's lifecycle is missing", async () => {
+      stateDir = await createIsolatedRaviState("ravi-pages-ship-thread-orphan-");
+      dbCreateAgent({ id: "creator", cwd: "/tmp/page-creator-home" });
+      getOrCreateSession(THREAD_PARENT_KEY, "creator", "/tmp/page-creator-home", { name: "creator-main" });
+      getOrCreateSession(THREAD_CHILD_KEY, "creator", "/tmp/page-creator-home", { name: "creator-thread" });
+      const command = new PagesCommands({
+        client: threadShipClient(),
+        readCredentials: makeReadCredentials(),
+        pageCommentFollow: { emitTriggersRefresh: async () => {} },
+      });
+
+      const { output } = await captureConsole(() => shipFromThread(command));
+      const payload = JSON.parse(output);
+
+      expect(payload.success).toBe(true);
+      expect(payload.url).toBe("https://acme-proj.ravi.page/blog/post");
+      expect(payload.commentFollow).toMatchObject({
+        ok: false,
+        warning:
+          "Page comment trigger failed: Cannot register page comment follow: thread lifecycle is missing or ambiguous.",
+      });
+      expect(dbListTriggers()).toHaveLength(0);
+    });
   });
 
   it("ship with --execute creates the legacy host when an explicit slug is new", async () => {
