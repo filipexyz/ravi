@@ -8872,8 +8872,14 @@ export class RaviClient {
     },
     /** Create a Slack channel; dry-run unless --execute is set */
     channelsCreate: async (name: string, options?: {
+      agent?: string;
+      agentCwd?: string;
+      agentModel?: string;
+      agentProvider?: string;
       channel?: string;
+      createAgent?: boolean;
       execute?: boolean;
+      invite?: string;
       private?: boolean;
     }): Promise<SlackChannelsCreateReturn> => {
       return this.transport.call({

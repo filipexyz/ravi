@@ -33218,28 +33218,64 @@ public struct SlackCanvasShowcaseReturn: Codable, Sendable {
 }
 
 public struct SlackChannelsCreateOptions: Codable, Sendable {
+  public var agent: String?
+  public var agentCwd: String?
+  public var agentModel: String?
+  public var agentProvider: String?
   public var channel: String?
+  public var createAgent: Bool?
   public var execute: Bool?
+  public var invite: String?
   public var private_: Bool?
 
-  public init(channel: String? = nil, execute: Bool? = nil, private_: Bool? = nil) {
+  public init(agent: String? = nil, agentCwd: String? = nil, agentModel: String? = nil, agentProvider: String? = nil, channel: String? = nil, createAgent: Bool? = nil, execute: Bool? = nil, invite: String? = nil, private_: Bool? = nil) {
+    self.agent = agent
+    self.agentCwd = agentCwd
+    self.agentModel = agentModel
+    self.agentProvider = agentProvider
     self.channel = channel
+    self.createAgent = createAgent
     self.execute = execute
+    self.invite = invite
     self.private_ = private_
   }
 
   enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case agentCwd = "agentCwd"
+    case agentModel = "agentModel"
+    case agentProvider = "agentProvider"
     case channel = "channel"
+    case createAgent = "createAgent"
     case execute = "execute"
+    case invite = "invite"
     case private_ = "private"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agent {
+      body["agent"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.agentCwd {
+      body["agentCwd"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.agentModel {
+      body["agentModel"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.agentProvider {
+      body["agentProvider"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.channel {
       body["channel"] = try RaviJSON.fromEncodable(value)
     }
+    if let value = self.createAgent {
+      body["createAgent"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.execute {
       body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.invite {
+      body["invite"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.private_ {
       body["private"] = try RaviJSON.fromEncodable(value)

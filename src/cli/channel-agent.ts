@@ -90,13 +90,18 @@ export function assertChannelAgentRequest(agentId?: string, createIfMissing?: bo
   }
 }
 
-export type ChannelRouteResult =
-  | { status: "created"; pattern: string; agent: string; accountId: string; route: unknown }
-  | { status: "failed"; pattern: string; agent: string; accountId: string; error: string };
+export interface ChannelRouteResult {
+  status: "created";
+  pattern: string;
+  agent: string;
+  accountId: string;
+  route: unknown;
+}
 
 /**
  * Route one chat (exact `group:<id>` pattern) to an agent and notify the daemon
- * so the live router picks it up before the first message arrives.
+ * so the live router picks it up before the first message arrives. A failed
+ * route write throws: the caller must not report a routed chat that is not.
  */
 export function routeChatToAgent(input: {
   pattern: string;
@@ -104,23 +109,16 @@ export function routeChatToAgent(input: {
   accountId: string;
   channel: string;
 }): ChannelRouteResult {
-  try {
-    const route = dbCreateRoute({
-      pattern: input.pattern,
-      agent: input.agent,
-      accountId: input.accountId,
-      priority: 0,
-      channel: input.channel,
-    });
-    nats.emit("ravi.config.changed", {}).catch(() => {});
-    return { status: "created", pattern: input.pattern, agent: input.agent, accountId: input.accountId, route };
-  } catch (error) {
-    return {
-      status: "failed",
-      pattern: input.pattern,
-      agent: input.agent,
-      accountId: input.accountId,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
+  const route = dbCreateRoute({
+    pattern: input.pattern,
+    agent: input.agent,
+    accountId: input.accountId,
+    priority: 0,
+    channel: input.channel,
+  });
+  void nats.emit("ravi.config.changed", {}).catch((error: unknown) => {
+    // The route row is already committed; the daemon also reloads on its own cadence.
+    console.warn("ravi.config.changed notification failed after routing the channel:", error);
+  });
+  return { status: "created", pattern: input.pattern, agent: input.agent, accountId: input.accountId, route };
 }

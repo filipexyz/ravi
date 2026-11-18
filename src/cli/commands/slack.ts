@@ -2594,9 +2594,8 @@ export class SlackCommands {
     if (asJson) printJson(payload);
     else {
       console.log(JSON.stringify(raw.channel, null, 2));
-      const route = payload.route as { status?: string; agent?: string; error?: string } | undefined;
+      const route = payload.route as { status?: string; agent?: string } | undefined;
       if (route?.status === "created") console.log(`Route: ${route.agent}`);
-      else if (route?.status === "failed") console.log(`Route: failed (${route.error})`);
       else if (route?.status === "none") console.log("Route: none — add --agent <id> to route this channel");
     }
     return payload;
