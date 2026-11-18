@@ -455,7 +455,12 @@ async function bootstrapCli(): Promise<void> {
   // `apps run`, which the gateway authorizes (command access, write-after-read).
   if (runsForRuntimeContext()) {
     const argv = process.argv.slice(2);
-    const invocation = resolveAppAliasInvocation(argv, { staticRootCommands: rootCommandNames(program) });
+    const invocation = resolveAppAliasInvocation(argv, {
+      staticRootCommands: rootCommandNames(program),
+      // Visibility is the gateway's call on `apps run`; asking the local store here
+      // is refused for a process that holds only a runtime context.
+      skipVisibility: true,
+    });
     if (invocation) {
       await program.parseAsync(
         [

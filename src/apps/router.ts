@@ -119,6 +119,14 @@ export function resolveAppAliasInvocation(
     staticRootCommands?: Set<string>;
     cwd?: string;
     env?: NodeJS.ProcessEnv;
+    /**
+     * Name the app without asking the local permission store which apps this
+     * caller may use. A process that carries a runtime context only rewrites
+     * the alias into `apps run`; the gateway (the daemon that owns the context)
+     * authorizes that run. The local store is real state, which such a process
+     * may not open (`REAL_STATE_ACCESS_REFUSED`).
+     */
+    skipVisibility?: boolean;
   } = {},
 ): RaviAppAliasInvocation | null {
   if (argv.length === 0) return null;
@@ -126,8 +134,9 @@ export function resolveAppAliasInvocation(
   if (!first || first.startsWith("-")) return null;
   if (mergeStaticRootCommands(options.staticRootCommands).has(first)) return null;
 
+  const discovered = discoverAppManifests({ cwd: options.cwd, env: options.env });
   const appIds = new Set(
-    filterVisibleAppManifests(discoverAppManifests({ cwd: options.cwd, env: options.env }))
+    (options.skipVisibility === true ? discovered : filterVisibleAppManifests(discovered))
       .map((record) => record.manifest?.id ?? record.id)
       .filter((id): id is string => typeof id === "string" && id.length > 0),
   );

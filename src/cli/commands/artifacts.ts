@@ -19,6 +19,7 @@ import {
 } from "../agent-contract.js";
 import { resolveCallerPath } from "../caller-cwd.js";
 import { fail, getContext } from "../context.js";
+import { CliExpectedError } from "../expected-error.js";
 import { buildCliOffsetPagination, parseCliListLimit, parseCliListOffset } from "../pagination.js";
 import { redactAbsolutePathsInText } from "../payload-error-message.js";
 import {
@@ -1238,7 +1239,7 @@ export class ArtifactsCommands {
       // Manual v2: contractFail/contractDryRun already emitted their envelope
       // and carry the exit taxonomy — never let the CloudAuthError funnel
       // swallow them (model: mail.ts).
-      if (error instanceof ContractError) throw error;
+      if (error instanceof ContractError || error instanceof CliExpectedError) throw error;
       throw cloudAuthErrorFromUnknown(error);
     }
   }
