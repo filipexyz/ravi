@@ -1059,6 +1059,13 @@ describe("durable PR follow owner", () => {
     );
   });
 
+  it("keeps refusing a thread-like key that is not a Slack timestamp: only the page comment follow takes the narrower rule", () => {
+    // A task's own thread key. `ravi pr publish` validates the publisher's lineage through this same resolver.
+    expect(() => resolveGhFollowContext({ sessionKey: "agent:agent-test:thread:thr_m3k2x9_a1b2c3d4e5" })).toThrow(
+      "Cannot register PR follow: thread lifecycle is missing or ambiguous.",
+    );
+  });
+
   it("maintenance removes burst loss from existing follows once without changing owners or paused state", async () => {
     seed();
     const input = buildGhFollowTriggerInput("o/r", 833, { sessionName: "parent", source: childContext.source });
