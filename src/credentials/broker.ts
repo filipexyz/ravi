@@ -30,6 +30,12 @@ export async function resolveCredentialSecret(input: {
   provider: string;
   connection: string;
   action: string;
+  /**
+   * The caller knows this call removes content even though the provider
+   * method's name does not say so (for example a `canvases.edit` whose
+   * change is `delete`). It always asks for approval, like `*.delete`.
+   */
+  destructive?: boolean;
   authority?: CredentialBrokerAuthority;
   options?: CredentialStoreOptions;
 }): Promise<{ connection: CredentialConnectionRecord; secret: string; policy: CredentialPolicyExplanation }> {
@@ -69,6 +75,7 @@ export async function resolveCredentialSecret(input: {
     if (
       policy.approval.required &&
       authorization.context &&
+      input.destructive !== true &&
       !isDestructiveAction(input.action) &&
       actorHoldsCredentialAction(authorization.context, input)
     ) {
@@ -256,8 +263,10 @@ function isSensitiveAction(action: string): boolean {
 }
 
 // Actions that remove something or someone. They ask a human every time,
-// even when the turn's own author holds them.
-const DESTRUCTIVE_VERBS = new Set(["archive", "kick", "delete"]);
+// even when the turn's own author holds them. A method whose name hides a
+// removal (`canvases.edit` with a `delete` change) is marked by its caller
+// with `destructive: true` instead.
+const DESTRUCTIVE_VERBS = new Set(["archive", "kick", "delete", "remove"]);
 
 export function isDestructiveAction(action: string): boolean {
   const verb = action.split(".").pop() ?? "";

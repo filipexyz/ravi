@@ -154,6 +154,8 @@ interface SlackOpsTarget {
 interface SlackMutationContextInput {
   channelName?: string;
   action: string;
+  /** The mutation removes content although `action` does not say so. */
+  destructive?: boolean;
   op: string;
   method: string;
   request: Record<string, unknown>;
@@ -323,12 +325,14 @@ async function resolveSlackCredentialContext(
   target: SlackOpsTarget,
   action: string,
   contract: SlackContractContext,
+  options: { destructive?: boolean } = {},
 ): Promise<SlackCredentialConfig> {
   const { channel, channels } = target;
   let config: SlackCredentialConfig | null;
   try {
     config = await resolveSlackCredentialConfigFromEnv(process.env, {
       action,
+      ...(options.destructive ? { destructive: true } : {}),
       channel,
       channels,
       authority: { kind: "local-operator" },
@@ -381,6 +385,14 @@ async function resolveSlackCredentialContext(
     );
   }
   return config;
+}
+
+/**
+ * A canvas change that removes content without putting anything in its place.
+ * `replace`, `rename` and inserts write new content and stay ordinary writes.
+ */
+export function isSlackCanvasRemovalChange(change: { operation: string }): boolean {
+  return change.operation === "delete";
 }
 
 /** Resolve credentials and construct a Slack client for an executing/read operation. */
@@ -3294,6 +3306,9 @@ export class SlackCommands {
     const { client, config } = await this.mutationOpsContext({
       channelName: raviChannel,
       action: "canvases.edit",
+      // Deleting a section removes content: always ask, even on the author's
+      // own turn (the broker cannot see the change inside canvases.edit).
+      destructive: isSlackCanvasRemovalChange(change),
       op,
       method: "canvases.edit",
       request,
@@ -3613,7 +3628,9 @@ export class SlackCommands {
     if (!input.execute) {
       this.brakeDryRun(input.op, target.summary, input.method, input.request, input.asJson, input.item);
     }
-    return resolveSlackCredentialContext(target, input.action, contract);
+    return resolveSlackCredentialContext(target, input.action, contract, {
+      ...(input.destructive ? { destructive: true } : {}),
+    });
   }
 
   private async mutationOpsContext(input: SlackMutationContextInput): Promise<SlackOpsContext> {

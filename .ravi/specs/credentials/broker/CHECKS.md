@@ -48,8 +48,12 @@ Tests MUST cover:
 - On the author's own human turn, with the contact holding both
   capabilities, a non-destructive write reads without a card and is audited
   as `actor_authorized` with `approval_required = 1`.
-- `*.archive`, `*.kick` and `*.delete` still ask for approval on the
-  author's own turn.
+- `*.archive`, `*.kick`, `*.delete` and `*.remove` still ask for approval on
+  the author's own turn.
+- A call marked `destructive: true` (`canvases.edit` with a `delete` change)
+  asks for approval on the author's own turn, while the same `canvases.edit`
+  without the mark passes; `ravi slack canvas-edit` sends the mark for
+  `delete` and not for `replace`.
 - Cron/trigger provenance, missing provenance, agent relay, unresolved
   speaker, thread projection, an author without the action and a blocked
   author never skip the card.

@@ -30,7 +30,7 @@ const jsonFixturePath = fileURLToPath(import.meta.url);
 // ---------------------------------------------------------------------------
 
 const clientCalls: Array<{ method: string; args: unknown }> = [];
-const credentialResolutionCalls: Array<{ action?: string; channel?: string }> = [];
+const credentialResolutionCalls: Array<{ action?: string; channel?: string; destructive?: boolean }> = [];
 const replayEnvelopes: Array<Record<string, unknown>> = [];
 const interactionResponses: Array<Record<string, unknown>> = [];
 const createdArtifacts: Array<Record<string, unknown>> = [];
@@ -122,10 +122,11 @@ mock.module("../../channels/slack/credentials.js", () => ({
     channel?.enabled !== false && channel?.provider === "slack" && channel?.defaults?.transport === "hub_gateway_v1",
   resolveSlackCredentialConfigFromEnv: async (
     _env: NodeJS.ProcessEnv,
-    options?: { action?: string; channel?: { name?: string; credentialConnection?: string } },
+    options?: { action?: string; destructive?: boolean; channel?: { name?: string; credentialConnection?: string } },
   ) => {
     credentialResolutionCalls.push({
       ...(options?.action ? { action: options.action } : {}),
+      ...(options?.destructive ? { destructive: true } : {}),
       ...(options?.channel?.name ? { channel: options.channel.name } : {}),
     });
     if (credentialResolutionError !== undefined) throw credentialResolutionError;
@@ -1403,6 +1404,44 @@ describe("slack agent-first contract", () => {
     expect(credentialResolutionCalls).toEqual([{ action: "canvases.access.delete", channel: "ravi-slack" }]);
     expect(clientConstructionCount).toBe(1);
     expect(payload).toMatchObject({ ok: true, dryRun: false, method: "canvases.access.delete" });
+  });
+
+  it("canvas-edit marks a section delete as destructive for the broker, and a replace as an ordinary write", async () => {
+    const commands = new SlackCommands();
+    await silenced(() =>
+      commands.canvasEdit(
+        "F123",
+        "delete",
+        "ravi-slack",
+        "S1",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
+    );
+    expect(credentialResolutionCalls).toEqual([{ action: "canvases.edit", destructive: true, channel: "ravi-slack" }]);
+
+    credentialResolutionCalls.length = 0;
+    await silenced(() =>
+      commands.canvasEdit(
+        "F123",
+        "replace",
+        "ravi-slack",
+        "S1",
+        "# Updated",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
+    );
+    expect(credentialResolutionCalls).toEqual([{ action: "canvases.edit", channel: "ravi-slack" }]);
   });
 
   it("canvas-access-set still validates the access level BEFORE the brake", async () => {

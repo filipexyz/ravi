@@ -94,10 +94,20 @@ audit surfaces while still allowing Ravi to perform approved external actions.
   the exception removes only the card that would ask the author to approve
   their own request.
 - Destructive actions MUST always obtain operation approval, including on the
-  author's own turn. An action is destructive when its last dotted segment is
-  `archive`, `kick` or `delete` (for example `conversations.archive`,
-  `conversations.kick`, `chat.delete`, `canvases.delete`,
-  `canvases.access.delete`).
+  author's own turn. An action is destructive when either:
+  - its last dotted segment is `archive`, `kick`, `delete` or `remove` (for
+    example `conversations.archive`, `conversations.kick`, `chat.delete`,
+    `canvases.delete`, `canvases.access.delete`, `reactions.remove`,
+    `pins.remove`, `bookmarks.remove`); or
+  - its caller passes `destructive: true` to the broker because the method
+    name hides a removal. Callers MUST set it for every change that removes
+    content without writing new content in its place. Today that is
+    `ravi slack canvas-edit` with `operation = delete` (sent as
+    `canvases.edit`).
+  Writes that replace content with new content stay ordinary writes:
+  `canvases.edit` with `replace`, `rename` or an insert, and `chat.update`
+  (its payload always carries non-empty text and validated blocks, so it
+  cannot empty a message).
 - Read-only actions do not require operation approval: `auth.check`,
   `whoami`, `channels.list`, `channels.info`, `conversations.list`,
   `conversations.info`, `conversations.history`, `conversations.replies`,

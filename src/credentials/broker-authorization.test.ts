@@ -471,6 +471,10 @@ describe("credential approval on the author's own turn", () => {
     "conversations.create",
     "conversations.archive",
     "conversations.kick",
+    "canvases.edit",
+    "reactions.remove",
+    "pins.remove",
+    "bookmarks.remove",
     "chat.delete",
   ].map((objectId) => ({
     permission: "execute",
@@ -494,6 +498,50 @@ describe("credential approval on the author's own turn", () => {
   });
 
   for (const action of ["conversations.archive", "conversations.kick", "chat.delete"]) {
+    it(`still asks for ${action} on the author's own turn`, async () => {
+      author();
+      const approval = spyOn(approvalService, "requestCascadingApproval").mockResolvedValue({
+        approved: false,
+        isDelegated: false,
+      } as never);
+      await denied(
+        asCaller(turn(humanTurn), () => resolve(action)),
+        "approval_denied",
+      );
+      expect(approval).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  it("asks for a write its caller marks destructive even on the author's own turn", async () => {
+    author();
+    const approval = spyOn(approvalService, "requestCascadingApproval").mockResolvedValue({
+      approved: false,
+      isDelegated: false,
+    } as never);
+    await denied(
+      asCaller(turn(humanTurn), () =>
+        resolveCredentialSecret({
+          provider: "slack",
+          connection: "fixture",
+          action: "canvases.edit",
+          destructive: true,
+        }),
+      ),
+      "approval_denied",
+    );
+    expect(approval).toHaveBeenCalledTimes(1);
+    expect(audits().some((row) => row.approval_status === "actor_authorized")).toBe(false);
+  });
+
+  it("lets the same canvases.edit through on the author's own turn when nothing is removed", async () => {
+    author();
+    const approval = spyOn(approvalService, "requestCascadingApproval");
+    await asCaller(turn(humanTurn), () => resolve("canvases.edit"));
+    expect(approval).not.toHaveBeenCalled();
+    expect(audits().at(-1)).toMatchObject({ action: "canvases.edit", approval_status: "actor_authorized" });
+  });
+
+  for (const action of ["reactions.remove", "pins.remove", "bookmarks.remove"]) {
     it(`still asks for ${action} on the author's own turn`, async () => {
       author();
       const approval = spyOn(approvalService, "requestCascadingApproval").mockResolvedValue({
