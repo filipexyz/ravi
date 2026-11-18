@@ -165,3 +165,14 @@ Audit rows MUST NOT include:
 - `items`
 
 All commands MUST have `@CommandAccess` metadata.
+
+## Slack action classification
+
+```bash
+bun test src/cli/commands/slack-credential-actions.test.ts
+```
+
+Fails when `ravi slack` sends an action the table does not classify, when
+the broker's class for an action differs from the table, or when a
+whole-canvas publisher loses its literal `destructive: true`.
+

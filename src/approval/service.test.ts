@@ -26,6 +26,7 @@ import {
   type ApprovalFinalizeSlackInput,
   type ApprovalRespondSlackInput,
   type ApprovalServiceDependencies,
+  APPROVAL_REFUSAL_REASON,
   isFixedApprovalRefusalReason,
 } from "./service.js";
 import { setApprovalGrantorRouterConfigForTest } from "./grantor.js";
@@ -1834,6 +1835,13 @@ describe("isFixedApprovalRefusalReason", () => {
     const noGrantor =
       "Ninguém neste Slack pode aprovar execute:slack:conversations.create: nenhuma pessoa vinculada a um usuário do Slack tem a permissão execute:slack:conversations.create. Nenhum pedido foi enviado. Quem tem essa permissão precisa vincular o próprio usuário do Slack ao seu contato, ou conceder a permissão direto ao agente.";
     expect(isFixedApprovalRefusalReason(noGrantor, "permission", options)).toBe(true);
+  });
+
+  it("accepts every shared refusal constant and nothing else fixed", () => {
+    for (const reason of Object.values(APPROVAL_REFUSAL_REASON)) {
+      expect(isFixedApprovalRefusalReason(reason, "permission", options)).toBe(true);
+    }
+    expect(isFixedApprovalRefusalReason(`${APPROVAL_REFUSAL_REASON.timeout} `, "permission", options)).toBe(false);
   });
 
   it("rejects exception text, a person's words and a no-grantor reason for another request", () => {

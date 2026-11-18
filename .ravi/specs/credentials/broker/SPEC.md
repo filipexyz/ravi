@@ -116,10 +116,11 @@ audit surfaces while still allowing Ravi to perform approved external actions.
   (`isFixedApprovalRefusalReason`). Exception messages and a rejecting
   person's words MUST NOT leave the broker.
 - Read-only actions do not require operation approval: `auth.check`,
-  `whoami`, `channels.list`, `channels.info`, `conversations.list`,
+  `auth.test`, `whoami`, `blocks.validate`, `canvases.sections.lookup`,
+  `channels.list`, `channels.info`, `conversations.list`,
   `conversations.info`, `conversations.history`, `conversations.replies`,
-  `conversations.members`, `users.list`, `users.info`,
-  `users.lookupByEmail`, `users.conversations`, `team.info`. Every other
+  `conversations.members`, `files.list`, `slack.topology`, `users.list`,
+  `users.info`, `users.lookupByEmail`, `users.conversations`, `team.info`. Every other
   action is sensitive.
 - Known limitation: the exception reads the author's subject capabilities
   (`materializeSubjectCapabilities("contact", id)`), not grants scoped to a
@@ -140,9 +141,11 @@ audit surfaces while still allowing Ravi to perform approved external actions.
   through `actor_context_id` (context metadata `actorPrincipal`) while the
   context exists. Recording `contact_id` needs a credentials-DB column
   migration and is deferred.
-- Follow-up: a table test over every `action:` that `src/cli/commands/slack.ts`
-  sends, asserting read / write / destructive, so a new command cannot be
-  misclassified silently.
+- Every action `src/cli/commands/slack.ts` sends to the broker MUST be listed
+  in `src/cli/commands/slack-credential-actions.test.ts` as read, write or
+  destructive. The test extracts the calls from the source and fails on an
+  unlisted action, a non-literal action, a class the broker does not
+  produce, or a non-literal `destructive` mark the table does not expect.
 - Trusted host entrypoints MAY explicitly select operator-control for direct
   local operator commands or named Slack infrastructure services. Internal
   service authority MUST be limited to its provider/action allowlist, MUST NOT
