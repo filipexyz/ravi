@@ -382,6 +382,23 @@ MUST revalidate the human caller chain and contact before each protected call.
     agent job (`--message`, which acts as its creator) or the operator
     creating it. The runner MUST NOT spawn a shell job whose owner does not
     act as the operator: it records `lastStatus: error` with that reason.
+13c. A shell job whose owner acts as the operator MUST run with a
+    short-lived root context in `RAVI_CONTEXT_KEY` (kind `cron-shell`), so
+    `ravi ...` in its command reaches the installed daemon's gateway and acts
+    for the owner (Bases, Pages and every other command) instead of a local
+    CLI that cannot open the real state:
+    - the cron runner creates it per run (never a CLI child; a `cron-shell`
+      context with a `parentContextId` is not honored), with the run's
+      `cronRunAuthority` snapshot and actor `automation:cron:<id>`, so it is
+      classified exactly like a cron turn;
+    - its capabilities are the job's agent snapshot (the ceiling an agent
+      cron turn of that agent has); a job whose agent does not exist, or
+      whose owner does not act as the operator, gets no context and runs as
+      before;
+    - it expires one minute after the command's timeout and MUST be revoked
+      (`cron_shell_completed`) as soon as the command ends;
+    - the key MUST NOT reach a log, `lastError` or a failure notice: captured
+      stdout/stderr are redacted (`[REDACTED:context-key]`) before use.
 
 ### Agent-first contract
 

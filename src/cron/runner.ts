@@ -23,6 +23,7 @@ import {
 } from "../router/index.js";
 import { getAgent } from "../router/config.js";
 import { spawnedAutomationEnv } from "../runtime/turn-origin.js";
+import { RAVI_CONTEXT_KEY_ENV } from "../runtime/context-registry.js";
 import { cronOwnerActsAsOperator } from "../link/connector-turn.js";
 import { CRON_RUN_AUTHORITY_ENV, type CronRunAuthority } from "./authority.js";
 import { cronOwnershipError } from "./ownership.js";
@@ -36,6 +37,7 @@ import {
   dbDisableShellJobForOwner,
 } from "./cron-db.js";
 import { classifyDiskPressureHint } from "./disk-pressure.js";
+import { issueShellCronContext, redactContextKey } from "./shell-context.js";
 import { calculateNextRun } from "./schedule.js";
 import { markCronSourceAsBackground, type CronPromptSource } from "./source.js";
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS, runShellCronCommand, type ShellCronRunResult } from "./shell-executor.js";
@@ -383,13 +385,34 @@ export class CronRunner {
       if (!job.shellCommand?.trim()) {
         throw new Error("Shell cron job is missing shellCommand");
       }
-      const result = await runShellCronCommand(job.shellCommand, {
-        timeoutMs: job.shellTimeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS,
-        envFile: job.shellEnvFile,
-        // Wins over the env file: the command acts for this job (and its
-        // owner), never as the operator's terminal.
-        env: { ...spawnedAutomationEnv("cron", job.id), [CRON_RUN_AUTHORITY_ENV]: JSON.stringify(authority) },
-      });
+      const timeoutMs = job.shellTimeoutMs ?? DEFAULT_CRON_SHELL_TIMEOUT_MS;
+      // An operator-owned run gets a short-lived context, so `ravi ...` in the
+      // command reaches the daemon's gateway and acts for the job's owner.
+      const shellContext = issueShellCronContext(job, authority, timeoutMs);
+      const contextKey = shellContext?.context.contextKey;
+      let result: ShellCronRunResult;
+      try {
+        result = await runShellCronCommand(job.shellCommand, {
+          timeoutMs,
+          envFile: job.shellEnvFile,
+          // Wins over the env file: the command acts for this job (and its
+          // owner), never as the operator's terminal.
+          env: {
+            ...spawnedAutomationEnv("cron", job.id),
+            [CRON_RUN_AUTHORITY_ENV]: JSON.stringify(authority),
+            ...(contextKey ? { [RAVI_CONTEXT_KEY_ENV]: contextKey } : {}),
+          },
+        });
+      } finally {
+        shellContext?.release();
+      }
+      // The key never reaches a log, a stored error or a notice, even if the
+      // command printed its environment.
+      result = {
+        ...result,
+        stdout: redactContextKey(result.stdout, contextKey),
+        stderr: redactContextKey(result.stderr, contextKey),
+      };
 
       if (result.stdout.trim()) {
         log.info("Shell job stdout", { jobId: job.id, output: this.truncateForPrompt(result.stdout.trim()) });
