@@ -174,6 +174,8 @@ export function actorHoldsCredentialAction(
   if (!contactId) return false;
   const contact = getContactById(contactId);
   if (!contact || contact.status === "blocked" || contact.opt_out) return false;
+  // Subject grants only: a chat-scoped grant keeps the card (known limitation
+  // in .ravi/specs/credentials/broker/SPEC.md, Consumption Authority).
   const capabilities = materializeSubjectCapabilities("contact", contact.id);
   return (
     canWithCapabilities(capabilities, "use", "credential", `${input.provider}:${input.connection}`) &&

@@ -78,6 +78,38 @@ audit surfaces while still allowing Ravi to perform approved external actions.
 - Sensitive runtime actions MUST obtain operation approval without adding a
   capability grant. After waiting, the broker MUST revalidate caller, current
   permissions, provider decision and unchanged active connection before reading.
+- Exception, the author's own turn: a non-destructive sensitive action MAY
+  skip the approval card, and MUST then be audited with
+  `approval_status = actor_authorized` and `approval_required = 1`, only when
+  all of these hold for the invoking context:
+  - `turnProvenance.origin` is `human` (a message a person sent; cron,
+    trigger, observer and other automation turns never qualify);
+  - `actorResolution` is `resolved` and `actorPrincipal` is `contact:<id>`;
+  - `actorProjection` is absent (a thread acting for its parent never
+    qualifies);
+  - the contact exists, is not `blocked` and has not opted out;
+  - the contact's own materialized capabilities allow both
+    `use:credential:<provider>:<connection>` and `execute:<provider>:<action>`.
+  The agent's own context MUST still pass every check above this exception;
+  the exception removes only the card that would ask the author to approve
+  their own request.
+- Destructive actions MUST always obtain operation approval, including on the
+  author's own turn. An action is destructive when its last dotted segment is
+  `archive`, `kick` or `delete` (for example `conversations.archive`,
+  `conversations.kick`, `chat.delete`, `canvases.delete`,
+  `canvases.access.delete`).
+- Read-only actions do not require operation approval: `auth.check`,
+  `whoami`, `channels.list`, `channels.info`, `conversations.list`,
+  `conversations.info`, `conversations.history`, `conversations.replies`,
+  `conversations.members`, `users.list`, `users.info`,
+  `users.lookupByEmail`, `users.conversations`, `team.info`. Every other
+  action is sensitive.
+- Known limitation: the exception reads the author's subject capabilities
+  (`materializeSubjectCapabilities("contact", id)`), not grants scoped to a
+  chat. An author who holds the action only through a chat-scoped grant keeps
+  the approval card. This is deliberate: falling back to the card is the safe
+  side, and lending a chat-scoped grant to a credential that acts outside that
+  chat would widen it.
 - Trusted host entrypoints MAY explicitly select operator-control for direct
   local operator commands or named Slack infrastructure services. Internal
   service authority MUST be limited to its provider/action allowlist, MUST NOT
@@ -92,7 +124,8 @@ audit surfaces while still allowing Ravi to perform approved external actions.
   boundary MUST derive targets, terminal state and grant outcome from persisted
   approval records, never arbitrary text or destinations from an event payload.
 - Audit MUST distinguish denied authorization, pending provider approval,
-  operation approval and explicit operator-control. It MUST NOT manufacture an
+  operation approval, the author's own turn (`actor_authorized`) and explicit
+  operator-control. It MUST NOT manufacture an
   `allow` decision or retain backend exceptions that could contain plaintext.
 - The current diagnostic `broker exec` MUST remain `@CliOnly` until it executes
   a real provider adapter. This fix does not make it a generic agent tool.

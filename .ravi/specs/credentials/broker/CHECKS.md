@@ -45,6 +45,16 @@ Tests MUST cover:
 - Missing `execute:<provider>:<action>` denies before backend read.
 - Sensitive action requests approval before backend read.
 - Approval denial prevents backend read.
+- On the author's own human turn, with the contact holding both
+  capabilities, a non-destructive write reads without a card and is audited
+  as `actor_authorized` with `approval_required = 1`.
+- `*.archive`, `*.kick` and `*.delete` still ask for approval on the
+  author's own turn.
+- Cron/trigger provenance, missing provenance, agent relay, unresolved
+  speaker, thread projection, an author without the action and a blocked
+  author never skip the card.
+- Conversation reads (`conversations.history` and the rest of the read set)
+  ask nobody.
 - An invalid key never falls back to default credentials or operator-control.
 - Stale in-process context copies cannot survive revocation or capability removal.
 - A missing executor or blocked invocation actor cannot use a saved snapshot.
