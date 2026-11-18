@@ -28,6 +28,22 @@ an inner fixture removed the launcher's `RAVI_STATE_DIR`. The final assertion
 also reports blocked opens swallowed by recovery code. Fix the isolation; do
 not remove the preload or point the test at production to make it pass.
 
+## When The Gate Says A Test File Runs In No CI Job
+
+`src/ci/test-discovery.test.ts` lists test files that no CI command selects. Decide for each:
+
+1. It should run in CI: add its path to a `test:shard-N` script in `package.json`. A directory filter such as `src/watch/` also covers files added later, so prefer it when every test under the directory belongs together; where the directory mixes files with different needs (a preload, a process of their own), list the file in the segment of its neighbours. A file that mocks a shared module with `mock.module` gets its own `bun test` segment, because the mock outlives the file. So does a file that only passes alone because it relies on module state other files also touch (a throttle, a cache, a singleton): the first CI run of several files in one process finds it, and the cheaper fix is to give the test keys of its own. Run `bun test src/ci/test-discovery.test.ts` again. Do not run the whole suite on the production host: CI runs the shard.
+2. It must not run in CI (a live test that needs real credentials, a retired gate kept as inert material): add it to `src/ci/test-discovery-exclusions.ts` with the reason, and `runBy` when a package script runs it outside CI (`test:live`). A file that fails today is not a reason by itself: fix it, or link the issue that tracks the fix in the reason.
+3. The gate also fails for the reverse: an exclusion whose file is gone or that CI runs now (delete the line), and a filter that selects nothing (fix the path or delete it).
+
+To see what CI runs without opening every script, print the model's view:
+
+```bash
+bun -e 'import {YAML} from "bun"; import {readFileSync} from "node:fs"; import {collectCiInvocations, listTestFiles} from "./src/ci/test-discovery.ts"; const files = listTestFiles("."); const scripts = JSON.parse(readFileSync("package.json","utf8")).scripts; for (const i of collectCiInvocations(scripts, YAML.parse(readFileSync(".github/workflows/ci.yml","utf8")), files)) console.log(i.origin, "=>", i.filters.join(" ") || i.files.join(" "))'
+```
+
+If the test throws on a command it cannot read, teach `src/ci/test-discovery.ts` about the construct (and add a case to its test) instead of rewording the command to dodge it.
+
 ## When CI Fails On Spec Validation
 
 1. Read the CI output for the failing spec id and the specific error.
