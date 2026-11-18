@@ -14,7 +14,7 @@
  * tricks: `..`, symlinks and hard links.
  */
 
-import { existsSync, realpathSync, statSync } from "node:fs";
+import { existsSync, realpathSync, type Stats, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { getRaviStateDir } from "../utils/paths.js";
@@ -31,16 +31,29 @@ function absoluteRaw(path: string): string {
 }
 
 /**
- * The real path, so a symlink cannot hide the state dir. An existing path is
- * resolved by `realpath` as given, the way the OS opens it (symlinks first,
- * then `..`). For a path that does not exist yet (it has no `..`, see below),
- * the nearest existing ancestor is resolved and the rest is appended, so both
- * sides of the comparison share the same real prefix (on macOS `/var` is
- * `/private/var`).
+ * `stat` of a path, which follows symlinks but never opens the file, or null
+ * when it does not exist. Every check looks at this before any `realpath`:
+ * Bun's `realpathSync` opens the path on macOS, and opening a FIFO blocks the
+ * daemon's thread until someone writes to it.
+ */
+function statWithoutOpening(path: string): Stats | null {
+  return existsSync(path) ? statSync(path) : null;
+}
+
+/**
+ * The real path, so a symlink cannot hide the state dir. `realpath` runs only
+ * on a regular file or a directory (see `statWithoutOpening`); an existing path
+ * of any other type is resolved lexically and is refused elsewhere. An existing
+ * path is resolved as given, the way the OS opens it (symlinks first, then
+ * `..`). For a path that does not exist yet (it has no `..`, see below), the
+ * nearest existing ancestor is resolved, only when it is a directory, and the
+ * rest is appended, so both sides of the comparison share the same real prefix
+ * (on macOS `/var` is `/private/var`).
  */
 function realOrResolved(path: string): string {
   const raw = absoluteRaw(path);
-  if (existsSync(raw)) return realpathSync(raw);
+  const stats = statWithoutOpening(raw);
+  if (stats) return stats.isFile() || stats.isDirectory() ? realpathSync(raw) : resolve(raw);
   let existing = resolve(raw);
   const rest: string[] = [];
   while (!existsSync(existing)) {
@@ -49,7 +62,8 @@ function realOrResolved(path: string): string {
     rest.unshift(basename(existing));
     existing = parent;
   }
-  return join(existsSync(existing) ? realpathSync(existing) : existing, ...rest);
+  const ancestor = statWithoutOpening(existing);
+  return join(ancestor?.isDirectory() ? realpathSync(existing) : existing, ...rest);
 }
 
 /**
@@ -75,25 +89,39 @@ export function shellEnvFileInsideStateDir(envFile: string, stateDir: string = g
   return !outside;
 }
 
-/**
- * True when the env file exists with more than one hard link. A hard link to
- * the daemon's `.env` placed outside the state dir has its own path, so no
- * path check can see where its content lives; a file with one link cannot be
- * that.
- */
-export function shellEnvFileHasHardLinks(envFile: string): boolean {
-  const raw = absoluteRaw(envFile);
-  return existsSync(raw) && statSync(raw).nlink > 1;
+/** True when the env file exists and is not a regular file (a FIFO, a device, a directory, a socket). */
+export function shellEnvFileNotRegular(envFile: string): boolean {
+  const stats = statWithoutOpening(absoluteRaw(envFile));
+  return stats !== null && !stats.isFile();
 }
 
 /**
- * Why a shell trigger may not use this env file, or null when it may:
- * `in_state_dir` (inside, or a `..` that may lead there) or `hard_link`.
+ * True when the env file is a regular file with more than one hard link. A
+ * hard link to the daemon's `.env` placed outside the state dir has its own
+ * path, so no path check can see where its content lives; a file with one
+ * link cannot be that.
  */
-export function shellEnvFileRefusal(
-  envFile: string,
-  stateDir: string = getRaviStateDir(),
-): "in_state_dir" | "hard_link" | null {
+export function shellEnvFileHasHardLinks(envFile: string): boolean {
+  const stats = statWithoutOpening(absoluteRaw(envFile));
+  return stats !== null && stats.isFile() && stats.nlink > 1;
+}
+
+export type ShellEnvFileRefusal = "in_state_dir" | "not_regular_file" | "hard_link";
+
+/**
+ * Why a shell trigger may not use this env file, or null when it may. The
+ * type is checked first, without opening anything, so a FIFO or a device is
+ * refused before any `realpath`: `in_state_dir` (inside, or a `..` that may
+ * lead there), `not_regular_file`, or `hard_link`.
+ */
+export function shellEnvFileRefusal(envFile: string, stateDir: string = getRaviStateDir()): ShellEnvFileRefusal | null {
+  if (
+    expandHome(envFile)
+      .split(/[\\/]+/)
+      .includes("..")
+  )
+    return "in_state_dir";
+  if (shellEnvFileNotRegular(envFile)) return "not_regular_file";
   if (shellEnvFileInsideStateDir(envFile, stateDir)) return "in_state_dir";
   if (shellEnvFileHasHardLinks(envFile)) return "hard_link";
   return null;

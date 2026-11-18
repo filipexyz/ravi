@@ -172,8 +172,9 @@ function assertShellTriggerChange(
 }
 
 /**
- * The env file of a shell trigger may not sit inside the Ravi state dir, nor
- * be a hard link (see `shell-env-file.ts`). A path check, not an access boundary.
+ * The env file of a shell trigger must be a regular file outside the Ravi
+ * state dir with a single hard link (see `shell-env-file.ts`). A path check,
+ * not an access boundary.
  */
 function assertShellEnvFileAllowed(op: string, envFile: string | null | undefined, asJson?: boolean): void {
   if (!envFile) return;
@@ -181,6 +182,15 @@ function assertShellEnvFileAllowed(op: string, envFile: string | null | undefine
   if (!refusal) return;
   const suggestedAction =
     "put only the variables the command needs in a regular file of its own outside the Ravi state dir, given by a path without ..";
+  if (refusal === "not_regular_file") {
+    failShellTrigger(
+      op,
+      "TRIGGER_SHELL_ENV_FILE_NOT_REGULAR",
+      `The env file ${envFile} is not a regular file (a FIFO, a device or a directory). Next: ${suggestedAction}.`,
+      { envFile, suggestedAction },
+      asJson,
+    );
+  }
   if (refusal === "hard_link") {
     failShellTrigger(
       op,

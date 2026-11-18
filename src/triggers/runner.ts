@@ -57,7 +57,7 @@ import { buildTriggerPrompt } from "./prompt.js";
 import { TriggerDebouncer, type TriggerBatch } from "./debounce.js";
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS, runShellCronCommand, type ShellCronRunResult } from "../cron/shell-executor.js";
 import { filterAgentRuntimeBaseEnv } from "../runtime/agent-env-policy.js";
-import { shellEnvFileRefusal } from "./shell-env-file.js";
+import { type ShellEnvFileRefusal, shellEnvFileRefusal } from "./shell-env-file.js";
 
 const log = logger.child("triggers:runner");
 const EVENT_DEDUPE_TTL_MS = 60_000;
@@ -1056,7 +1056,41 @@ export class TriggerRunner {
    * off. The notice never carries the command, its env or any event data.
    */
   private refuseShellTriggerOwner(trigger: Trigger): void {
-    const code = "TRIGGER_SHELL_NOT_OPERATOR";
+    this.turnOffRefusedShellTrigger(
+      trigger,
+      "TRIGGER_SHELL_NOT_OPERATOR",
+      `It runs as ${triggerRunsAs(trigger)}, not the operator, and a shell command runs with this machine's access.`,
+      "The operator can recreate it from their own chat with Ravi and remove this one.",
+    );
+  }
+
+  /**
+   * A shell trigger whose env file is refused never runs either: turned off
+   * once, one notice to the main session (its owner is the operator). The
+   * notice names the reason, never the file's content or the command.
+   */
+  private refuseShellTriggerEnvFile(trigger: Trigger, reason: ShellEnvFileRefusal): void {
+    const codes: Record<ShellEnvFileRefusal, string> = {
+      in_state_dir: "TRIGGER_SHELL_ENV_FILE_IN_STATE_DIR",
+      not_regular_file: "TRIGGER_SHELL_ENV_FILE_NOT_REGULAR",
+      hard_link: "TRIGGER_SHELL_ENV_FILE_HARD_LINK",
+    };
+    const why: Record<ShellEnvFileRefusal, string> = {
+      in_state_dir:
+        "Its env file is inside the Ravi state dir, which holds the daemon's own secrets, or its path has a .. segment.",
+      not_regular_file: "Its env file is not a regular file (a FIFO, a device or a directory).",
+      hard_link: "Its env file has more than one hard link, so its content may be a file inside the Ravi state dir.",
+    };
+    this.turnOffRefusedShellTrigger(
+      trigger,
+      codes[reason],
+      why[reason],
+      `Give it a regular file of its own outside the Ravi state dir (ravi triggers set ${trigger.id} env-file <path>) and turn it back on (ravi triggers enable ${trigger.id}), from the owner's chat with Ravi.`,
+    );
+  }
+
+  private turnOffRefusedShellTrigger(trigger: Trigger, code: string, why: string, next: string): void {
+    log.error("Shell trigger not run: refused", { triggerId: trigger.id, triggerName: trigger.name, code });
     if (!dbDisableShellTriggerForOwner(trigger)) return;
     trigger.enabled = false;
     // Drop the copy this runner holds, so later events stop reaching it.
@@ -1066,15 +1100,14 @@ export class TriggerRunner {
         error: error instanceof Error ? error.message : String(error),
       });
     });
-    log.error("Shell trigger disabled: owner is not the operator", { triggerId: trigger.id, code });
     const agentId = getDefaultAgentId();
     const sessionName = getMainSession(agentId)?.name ?? agentId;
     void publishSessionPrompt(sessionName, {
-      prompt: `[System] Inform: [from: trigger:${trigger.id}] Shell trigger disabled (${code}). It runs as ${triggerRunsAs(trigger)}, not the operator, and a shell command runs with this machine's access. No command was executed. Inspect with ravi triggers show ${trigger.id}. The operator can recreate it from their own chat with Ravi and remove this one.`,
+      prompt: `[System] Inform: [from: trigger:${trigger.id}] Shell trigger disabled (${code}). ${why} No command was executed. Inspect with ravi triggers show ${trigger.id}. ${next}`,
       deliveryBarrier: "after_response",
       deliveryBarrierSource: "default",
     }).catch((error) => {
-      log.error("Failed to publish shell trigger ownership notice; trigger remains disabled", {
+      log.error("Failed to publish shell trigger refusal notice; trigger remains disabled", {
         triggerId: trigger.id,
         code,
         error: error instanceof Error ? error.message : String(error),
@@ -1114,11 +1147,7 @@ export class TriggerRunner {
     // can change after the trigger was saved.
     const envFileRefusal = stored.shellEnvFile ? shellEnvFileRefusal(stored.shellEnvFile) : null;
     if (envFileRefusal) {
-      log.error("Shell trigger not run: its env file is refused", {
-        triggerId: stored.id,
-        triggerName: stored.name,
-        reason: envFileRefusal,
-      });
+      this.refuseShellTriggerEnvFile(stored, envFileRefusal);
       return;
     }
 

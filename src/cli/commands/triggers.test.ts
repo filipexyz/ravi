@@ -540,6 +540,10 @@ describe("TriggersCommands topic guidance", () => {
       await expect(commands.set("trg_1", "env-file", join(outside, "linked.env"), true)).rejects.toMatchObject({
         code: "TRIGGER_SHELL_ENV_FILE_HARD_LINK",
       });
+      // A directory is refused for what it is, not as a hard link (its link count is above one).
+      await expect(commands.set("trg_1", "env-file", outside, true)).rejects.toMatchObject({
+        code: "TRIGGER_SHELL_ENV_FILE_NOT_REGULAR",
+      });
     } finally {
       rmSync(outside, { recursive: true, force: true });
     }

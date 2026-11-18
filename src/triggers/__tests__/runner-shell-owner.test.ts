@@ -244,12 +244,20 @@ describe("shell trigger owner and env", () => {
     writeFileSync(stateEnvFile, "RAVI_ADMIN_TOKEN=canary-hard-link\n");
     const linked = join(markerDir!, "innocent.env");
     linkSync(stateEnvFile, linked);
-    createShellTrigger({ name: "hard-link-env", topic, ownerPrincipal: "operator", envFile: linked });
+    const trigger = createShellTrigger({ name: "hard-link-env", topic, ownerPrincipal: "operator", envFile: linked });
     await startRunner();
 
     emit(topic, { eventId: "evt-hard-link" });
-    await sleep(500);
+    await waitFor(() => !dbGetTrigger(trigger.id)?.enabled);
+    emit(topic, { eventId: "evt-hard-link-2" });
+    await sleep(300);
 
     expect(existsSync(markerPath())).toBe(false);
+    // Turned off once, with one notice that names the reason and not the file's content.
+    const notices = publishCalls.filter(({ payload }) =>
+      String(payload.prompt).includes("TRIGGER_SHELL_ENV_FILE_HARD_LINK"),
+    );
+    expect(notices).toHaveLength(1);
+    expect(String(notices[0]!.payload.prompt)).not.toContain("canary-hard-link");
   });
 });

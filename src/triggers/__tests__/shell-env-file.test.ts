@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -84,5 +85,31 @@ describe("shell trigger env file location", () => {
     expect(shellEnvFileRefusal(join(base, "innocent.env"), stateDir)).toBe("hard_link");
     expect(shellEnvFileRefusal(join(base, "own.env"), stateDir)).toBeNull();
     expect(shellEnvFileRefusal(join(stateDir, ".env"), stateDir)).toBe("in_state_dir");
+  });
+
+  it("refuses a FIFO without opening it, also below a FIFO, and never blocks", () => {
+    // Bun's realpathSync opens the path on macOS; on a FIFO that would block until a writer shows up.
+    const base = makeRoot();
+    const stateDir = join(base, ".ravi");
+    mkdirSync(stateDir);
+    const fifo = join(base, "pipe.env");
+    expect(spawnSync("mkfifo", [fifo]).status).toBe(0);
+
+    const started = performance.now();
+    expect(shellEnvFileRefusal(fifo, stateDir)).toBe("not_regular_file");
+    expect(shellEnvFileInsideStateDir(fifo, stateDir)).toBe(false);
+    // A missing path under a FIFO: no realpath of the FIFO while walking up.
+    expect(shellEnvFileRefusal(join(fifo, "child.env"), stateDir)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+
+  it("refuses a device and a directory as not a regular file, not as a hard link", () => {
+    const base = makeRoot();
+    const stateDir = join(base, ".ravi");
+    mkdirSync(stateDir);
+    mkdirSync(join(base, "a-directory"));
+
+    expect(shellEnvFileRefusal("/dev/zero", stateDir)).toBe("not_regular_file");
+    expect(shellEnvFileRefusal(join(base, "a-directory"), stateDir)).toBe("not_regular_file");
   });
 });
