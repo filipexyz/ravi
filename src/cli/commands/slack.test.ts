@@ -35,6 +35,8 @@ const interactionResponses: Array<Record<string, unknown>> = [];
 const createdArtifacts: Array<Record<string, unknown>> = [];
 const schemaInitializingArtifactCalls: string[] = [];
 const commandAccessMetadata = new Map<string, { redactions?: string[] }>();
+const channelAgentCalls: Array<{ fn: string; args: Record<string, unknown> }> = [];
+const knownAgents = new Set<string>(["existing-agent"]);
 
 let conversationsListResult: Record<string, unknown> = { ok: true, channels: [] };
 let conversationsHistoryResult: Record<string, unknown> = { ok: true, messages: [] };
@@ -302,6 +304,24 @@ mock.module("../../contacts.js", () => ({
   getContactDetails: () => null,
 }));
 
+mock.module("../channel-agent.js", () => ({
+  assertChannelAgentRequest: (agentId?: string, createIfMissing?: boolean) => {
+    if (!agentId && createIfMissing) throw new Error("--create-agent requires --agent <id>");
+    if (agentId && !createIfMissing && !knownAgents.has(agentId)) throw new Error(`Agent not found: ${agentId}`);
+  },
+  ensureChannelAgent: (args: Record<string, unknown>) => {
+    channelAgentCalls.push({ fn: "ensureChannelAgent", args });
+    const agentId = String(args.agentId);
+    const status = knownAgents.has(agentId) ? "existing" : "created";
+    knownAgents.add(agentId);
+    return { status, agentId, cwd: `/tmp/${agentId}` };
+  },
+  routeChatToAgent: (args: Record<string, unknown>) => {
+    channelAgentCalls.push({ fn: "routeChatToAgent", args });
+    return { status: "created", ...args, route: { id: 1 } };
+  },
+}));
+
 mock.module("../../router/router-db.js", () => ({
   dbCreateContext: () => null,
   dbGetSetting: () => null,
@@ -434,6 +454,9 @@ async function expectContractError(
 
 beforeEach(() => {
   clientCalls.length = 0;
+  channelAgentCalls.length = 0;
+  knownAgents.clear();
+  knownAgents.add("existing-agent");
   credentialResolutionCalls.length = 0;
   clientConstructionCount = 0;
   replayEnvelopes.length = 0;
@@ -1045,6 +1068,64 @@ describe("slack agent-first contract", () => {
     await silenced(() => commands.channelsCreate("novo-canal", "ravi-slack", undefined, true, true));
     expect(callsTo("conversationsCreate")).toHaveLength(1);
     expect(callsTo("conversationsCreate")[0]?.args).toMatchObject({ name: "novo-canal" });
+  });
+
+  it("channels-create --agent creates the channel, invites, and routes it in one call", async () => {
+    const commands = new SlackCommands();
+    const payload = (await silenced(() =>
+      commands.channelsCreate(
+        "novo-canal",
+        "ravi-slack",
+        true,
+        true,
+        true,
+        "U1,U2",
+        "new-agent",
+        true,
+        "/tmp/new-agent",
+        "claude",
+        "opus",
+      ),
+    )) as Record<string, unknown>;
+    expect(callsTo("conversationsCreate")).toHaveLength(1);
+    expect(callsTo("conversationsInvite")[0]?.args).toMatchObject({ channel: "C_NEW", userIds: ["U1", "U2"] });
+    expect(channelAgentCalls.map((call) => call.fn)).toEqual(["ensureChannelAgent", "routeChatToAgent"]);
+    expect(channelAgentCalls[0]?.args).toMatchObject({ agentId: "new-agent", createIfMissing: true, model: "opus" });
+    expect(channelAgentCalls[1]?.args).toMatchObject({ pattern: "group:c_new", agent: "new-agent", channel: "slack" });
+    expect(payload.route).toMatchObject({ status: "created", agent: "new-agent" });
+    expect(payload.invite).toMatchObject({ status: "invited", count: 2 });
+  });
+
+  it("channels-create refuses an unknown --agent before any Slack call, even with --execute", async () => {
+    const commands = new SlackCommands();
+    await expect(
+      commands.channelsCreate("novo-canal", "ravi-slack", true, true, true, undefined, "ghost-agent"),
+    ).rejects.toThrow("Agent not found");
+    await expect(
+      commands.channelsCreate("novo-canal", "ravi-slack", true, true, true, undefined, undefined, true),
+    ).rejects.toThrow("--create-agent requires --agent");
+    expect(clientCalls).toHaveLength(0);
+    expect(channelAgentCalls).toHaveLength(0);
+  });
+
+  it("channels-create without --agent reports that no route was created", async () => {
+    const commands = new SlackCommands();
+    const payload = (await silenced(() =>
+      commands.channelsCreate("novo-canal", "ravi-slack", true, true, true),
+    )) as Record<string, unknown>;
+    expect(channelAgentCalls).toHaveLength(0);
+    expect(payload.route).toMatchObject({ status: "none" });
+  });
+
+  it("channels-create dry-run names the route agent without calling Slack", async () => {
+    const commands = new SlackCommands();
+    await expectContractError(
+      () => commands.channelsCreate("novo-canal", "ravi-slack", true, true, undefined, "U1", "existing-agent"),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+    expect(clientCalls).toHaveLength(0);
+    expect(channelAgentCalls).toHaveLength(0);
   });
 
   it("channel and Canvas access dry-runs describe the material effect without serializing identifiers", async () => {

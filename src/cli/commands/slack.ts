@@ -54,6 +54,7 @@ import {
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { CONTRACT_EXIT_USAGE, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
+import { assertChannelAgentRequest, ensureChannelAgent, routeChatToAgent } from "../channel-agent.js";
 import { resolveCallerPath } from "../caller-cwd.js";
 import { CliExpectedError } from "../expected-error.js";
 import { CloudAuthError, isCloudAuthError } from "../../cloud-auth/errors.js";
@@ -202,6 +203,8 @@ function summarizeSlackDryRunRequest(request: Record<string, unknown>): Record<s
       ? { accessTargetKind: accessTargetIds.kind, accessTargetCount: accessTargetIds.count }
       : {}),
     ...(request.payload && typeof request.payload === "object" ? { payloadProvided: true } : {}),
+    ...(typeof request.routeAgent === "string" ? { routeAgent: request.routeAgent } : {}),
+    ...(request.createAgent === true ? { createAgent: true } : {}),
     fieldCount: Object.keys(request).length,
   };
 }
@@ -2503,22 +2506,99 @@ export class SlackCommands {
       description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
     })
     execute?: boolean,
+    @Option({ flags: "--invite <users>", description: "Comma-separated Slack user IDs to invite after creating" })
+    inviteValue?: string,
+    @Option({
+      flags: "--agent <id>",
+      description: "Agent to route this channel to (route is created in the same call)",
+    })
+    agent?: string,
+    @Option({ flags: "--create-agent", description: "Create --agent first when it does not exist" })
+    createAgentIfMissing?: boolean,
+    @Option({ flags: "--agent-cwd <path>", description: "CWD for --create-agent (default: ~/ravi/<agent>)" })
+    agentCwd?: string,
+    @Option({ flags: "--agent-provider <provider>", description: "Runtime provider id for --create-agent" })
+    agentProvider?: string,
+    @Option({ flags: "--agent-model <model>", description: "Runtime model selector for --create-agent" })
+    agentModel?: string,
   ) {
     const op = "slack channels-create";
     const request = { name, isPrivate: Boolean(isPrivate) };
+    const inviteUserIds = inviteValue ? parseRequiredCsvOption(inviteValue, "Slack user ids") : [];
+    const routeAgent = agent?.trim() || undefined;
+    // Validate the route target BEFORE the brake and before any Slack call, so the
+    // dry-run never promises a route to an agent that cannot exist.
+    assertChannelAgentRequest(routeAgent, createAgentIfMissing);
+    const plan = {
+      ...request,
+      ...(inviteUserIds.length > 0 ? { userIds: inviteUserIds } : {}),
+      ...(routeAgent ? { routeAgent, createAgent: createAgentIfMissing === true } : {}),
+    };
     const { client, config } = await this.mutationOpsContext({
       channelName: raviChannel,
       action: "conversations.create",
       op,
       method: "conversations.create",
-      request,
+      request: plan,
       asJson,
       execute,
     });
     const raw = await client.conversationsCreate(request);
-    const payload = this.mutationPayload(config, false, "conversations.create", request, raw.channel, raw);
+    const payload: Record<string, unknown> = this.mutationPayload(
+      config,
+      false,
+      "conversations.create",
+      request,
+      raw.channel,
+      raw,
+    );
+    const createdChannel = raw.channel as { id?: unknown } | undefined;
+    const channelId = typeof createdChannel?.id === "string" ? createdChannel.id : undefined;
+
+    if (inviteUserIds.length > 0 && channelId) {
+      try {
+        await client.conversationsInvite({ channel: channelId, userIds: inviteUserIds });
+        payload.invite = { status: "invited", count: inviteUserIds.length };
+      } catch (error) {
+        payload.invite = {
+          status: "failed",
+          count: inviteUserIds.length,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+
+    const routeAccountId = config.routeAccountId ?? config.accountId;
+    if (routeAgent && channelId) {
+      const prepared = ensureChannelAgent({
+        agentId: routeAgent,
+        createIfMissing: createAgentIfMissing,
+        cwd: agentCwd,
+        provider: agentProvider,
+        model: agentModel,
+      });
+      payload.agent = prepared;
+      payload.route = routeChatToAgent({
+        pattern: `group:${channelId.toLowerCase()}`,
+        agent: prepared.agentId,
+        accountId: routeAccountId,
+        channel: "slack",
+      });
+    } else if (channelId) {
+      payload.route = {
+        status: "none",
+        hint: "Pass --agent <id> to route this channel in the same call; without a route its first message goes to the instance default.",
+      };
+    }
+
     if (asJson) printJson(payload);
-    else console.log(JSON.stringify(raw.channel, null, 2));
+    else {
+      console.log(JSON.stringify(raw.channel, null, 2));
+      const route = payload.route as { status?: string; agent?: string; error?: string } | undefined;
+      if (route?.status === "created") console.log(`Route: ${route.agent}`);
+      else if (route?.status === "failed") console.log(`Route: failed (${route.error})`);
+      else if (route?.status === "none") console.log("Route: none — add --agent <id> to route this channel");
+    }
     return payload;
   }
 
