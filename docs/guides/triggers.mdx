@@ -67,7 +67,7 @@ Ravi publishes events on its event bus (NATS, `nats://127.0.0.1:4222` by default
 | `--filter <expression>` | Only fire when the event matches. See [Filters](#filters). |
 | `--cooldown <duration>` | Minimum time between fires; events inside it are dropped. Default `5s`; `off` disables it. See [Cooldown](#cooldown). |
 | `--debounce <duration>` | Batch a burst of events into one fire, this long after the last event, carrying every event. Default off. See [Debounce](#debounce). |
-| `--account <name>` | Account set on the reply source, when you have more than one. It does not route the answer to another chat. |
+| `--account <name>` | Account set on the reply source, when you have more than one. It does not route the answer to another chat, and it applies only where that account delivers: an answer in a chat on another channel keeps the account of that chat. |
 | `--timeout`, `--env-file`, `--on-error` | Shell triggers only. |
 | `--json` | Machine-readable output. |
 
