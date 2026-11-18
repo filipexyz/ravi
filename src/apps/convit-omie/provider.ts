@@ -98,6 +98,7 @@ export async function executeApi(host: FullHost, id: string, input: ApiInput): P
             signal: AbortSignal.timeout(20000),
           });
         } catch (error) {
+          // no-cause: Transport diagnostics may echo authenticated request bodies; preserve only typed safe host denials.
           if (error instanceof AppError) throw error;
           throw new AppError("OMIE_OUTCOME_UNKNOWN", "Falha de rede. Não repetir escrita sem conferir o resultado.");
         }
@@ -111,6 +112,7 @@ export async function executeApi(host: FullHost, id: string, input: ApiInput): P
           if (raw.length > 10_000_000) throw new Error();
           data = JSON.parse(raw);
         } catch {
+          // no-cause: Response parser diagnostics may quote provider payload secrets; return only the fixed response code.
           throw new AppError(
             "OMIE_RESPONSE_INVALID",
             "Resposta do provider inválida. Em escrita, conferir resultado antes de repetir.",
@@ -143,6 +145,7 @@ export async function executeApi(host: FullHost, id: string, input: ApiInput): P
       ? effect()
       : host.once(`omie:api:${input.idempotencyKey}`, digest, effect));
   } catch (e) {
+    // no-cause: Untyped broker/provider exceptions may contain credentials; propagate safe AppError codes only.
     if (e instanceof AppError) throw e;
     throw new AppError(
       "OMIE_HOST_ERROR",

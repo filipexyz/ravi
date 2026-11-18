@@ -95,6 +95,7 @@ export function createOmieHostAction(runtime: ProtectedRuntime, ledger: Pick<Dur
       };
       return await executeApi(host, id, input);
     } catch (e) {
+      // no-cause: Unknown host failures can contain broker secrets; expose only the fixed boundary code.
       if (e instanceof AppError) throw e;
       throw new AppError("OMIE_HOST_BOUNDARY_UNAVAILABLE", "Fronteira protegida do host indisponível.");
     }

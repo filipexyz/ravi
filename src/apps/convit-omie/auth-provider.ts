@@ -41,6 +41,7 @@ export async function executeManagedAuthentication(host: ManagedBoundary, id: st
         });
         data = await res.json();
       } catch {
+        // no-cause: Authentication transport/parser errors can echo token bodies; expose only the fixed failure code.
         throw new AppError(
           "OMIE_AUTH_OUTCOME_UNKNOWN",
           "Falha no serviço de autenticação; não repetir renovação sem verificar o estado protegido.",
@@ -70,6 +71,7 @@ export async function executeManagedAuthentication(host: ManagedBoundary, id: st
       return send(headers, body);
     });
   } catch (e) {
+    // no-cause: Unknown session/storage diagnostics can expose tokens and protected paths; retain only safe AppError codes.
     if (e instanceof AppError) throw e;
     throw new AppError(
       "OMIE_AUTH_BOUNDARY_UNAVAILABLE",

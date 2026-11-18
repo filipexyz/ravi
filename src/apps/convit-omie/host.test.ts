@@ -176,7 +176,7 @@ test("ledger persists completed results and strips secrets across restarts", asy
     digest = revision({ example: true });
   let n = 0;
   expect(
-    await l.store.once(key, digest, async () => {
+    await l.store.once<unknown>(key, digest, async () => {
       n++;
       return { success: true, token: "do-not-store", nested: { app_secret: "do-not-store" } };
     }),

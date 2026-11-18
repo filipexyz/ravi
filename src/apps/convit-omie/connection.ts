@@ -16,6 +16,7 @@ export function parseProtectedOmieConnection(serialized: string): {
       typeof value.app_hash === "string" && /^[A-Za-z0-9_-]{1,100}$/.test(value.app_hash) ? value.app_hash : null;
     return { auth: bearer ? { bearer } : { app_key: key, app_secret: secret }, applicationHash };
   } catch {
+    // no-cause: JSON parser diagnostics may quote the serialized credential; never forward the parser message.
     throw new AppError("OMIE_CONNECTION_FORMAT_INVALID", "Formato da conexão protegida inválido; valor omitido.");
   }
 }

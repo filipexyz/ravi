@@ -52,7 +52,7 @@ function fixture() {
     ownerType: "contact",
     ownerId: "person",
     channel: "slack",
-    instanceId: SCOPE.account,
+    instanceId: SCOPE.account as string,
     platformUserId: "USYNTHETIC1",
   };
   const store: IdentityStore = {
@@ -268,7 +268,7 @@ for (const change of [
       fetch: (async () => {
         requests++;
         return Response.json({ pagina: 1, total_de_paginas: 1, echo: "synthetic-secret" });
-      }) as typeof fetch,
+      }) as unknown as typeof fetch,
     });
     const action = createOmieHostAction(runtime, {
       once: async () => {

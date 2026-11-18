@@ -58,6 +58,7 @@ export class DurableLedger {
         .run(Date.now(), JSON.stringify(result), key, digest);
       return result as T;
     } catch (e) {
+      // no-cause: Provider/storage exception text may contain secrets; persist only the safe error code and unknown outcome.
       const code = e instanceof AppError ? e.code : "OMIE_EFFECT_UNKNOWN";
       this.db
         .query(

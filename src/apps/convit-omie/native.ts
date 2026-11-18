@@ -213,6 +213,7 @@ export async function runConvitOmieHost(appId: string, mode: "read" | "write", a
   try {
     input = JSON.parse(args[1]);
   } catch {
+    // no-cause: Invalid input JSON can contain rejected credentials; expose only the fixed validation code.
     throw new AppError("OMIE_HOST_INPUT_INVALID", "JSON inválido.");
   }
   if (
