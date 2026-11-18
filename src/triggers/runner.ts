@@ -760,7 +760,7 @@ export class TriggerRunner {
     }
 
     if ((trigger.executionType ?? "agent") === "shell") {
-      await this.fireShellTrigger(trigger, event, source, opts.batch);
+      await this.fireShellTrigger(trigger, event, source, opts.batch, { stored, ownerFire });
       return;
     }
 
@@ -1018,6 +1018,13 @@ export class TriggerRunner {
     const code = "TRIGGER_SHELL_NOT_OPERATOR";
     if (!dbDisableShellTriggerForOwner(trigger)) return;
     trigger.enabled = false;
+    // Drop the copy this runner holds, so later events stop reaching it.
+    void nats.emit("ravi.triggers.refresh", {}).catch((error) => {
+      log.warn("Failed to request a trigger refresh after turning off a shell trigger", {
+        triggerId: trigger.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
     log.error("Shell trigger disabled: owner is not the operator", { triggerId: trigger.id, code });
     const agentId = getDefaultAgentId();
     const sessionName = getMainSession(agentId)?.name ?? agentId;
@@ -1038,15 +1045,23 @@ export class TriggerRunner {
     trigger: Trigger,
     event: { topic: string; data: unknown },
     source: { channel: string; accountId: string; chatId: string } | undefined,
-    batch?: TriggerBatch,
+    batch: TriggerBatch | undefined,
+    current: { stored: Trigger | null; ownerFire: boolean },
   ): Promise<void> {
     if (!trigger.shellCommand?.trim()) {
       throw new Error("Shell trigger is missing shellCommand");
     }
+    // The trigger as stored now decides, never the copy the runner loaded: an
+    // edit since then (a new command, a lost owner, turned off) skips this
+    // fire, and the refresh it emitted reloads the trigger.
+    if (!current.ownerFire || !current.stored) {
+      log.warn("Skipping shell trigger fire: its stored definition changed or is gone", { triggerId: trigger.id });
+      return;
+    }
     // Same rule as shell cron jobs: a shell command runs with this machine's
-    // access, so it runs only when its owner acts as the operator.
-    if (!triggerOwnerActsAsOperator(trigger.ownerPrincipal)) {
-      this.refuseShellTriggerOwner(trigger);
+    // access, so it runs only when its current owner acts as the operator.
+    if (!triggerOwnerActsAsOperator(current.stored.ownerPrincipal)) {
+      this.refuseShellTriggerOwner(current.stored);
       return;
     }
 

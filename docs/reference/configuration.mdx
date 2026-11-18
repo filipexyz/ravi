@@ -150,7 +150,7 @@ ravi channels restart
 
 ### What agents inherit
 
-Agent runtimes (Claude Code, Codex, Pi and Grok), every command an agent runs, the runtime probe, shell triggers and `ravi jobs run` jobs begin from an allowlisted copy of the daemon environment, not from the whole `.env`. The one exception is a job you start from your own terminal with no `--session` or `--agent`: the daemon verifies it is you, and the job keeps the daemon environment.
+Agent runtimes (Claude Code, Codex, Pi and Grok), every command an agent runs, the runtime probe, shell triggers and `ravi jobs run` jobs begin from an allowlisted copy of the daemon environment, not from the whole `.env`. The one exception is a job you start from your own terminal, with the installed `ravi` and no `--session` or `--agent`: that `ravi` sends the request to the daemon with your credentials, the daemon verifies it is you, and the job keeps the daemon environment. A `ravi` run from a source checkout, or without a context, records no owner and gets the allowlisted environment.
 
 - **Passed:** system and toolchain variables (`PATH`, `HOME`, `LANG`, proxies without credentials, `SSH_AUTH_SOCK`, `PM2_HOME`, `GIT_*`, `NODE_*` and similar), a fixed list of Ravi variables (state dir, gateway endpoint, logging, jobs, PM2), and each provider's own config and login: `CLAUDE_*`/`ANTHROPIC_*` to Claude, `CODEX_*` to Codex, `PI_*` to Pi, `GROK_*` to Grok.
 - **Not passed:** other providers' keys, `RAVI_ADMIN_TOKEN`, webhook secrets, third-party API keys, database URLs, git config injected through `GIT_CONFIG_*`, any name that looks like a secret (`TOKEN`, `SECRET`, `PASSWORD`, `_KEY`, `_PAT`, `HEADERS`) and any value that looks like a token.

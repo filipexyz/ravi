@@ -3,9 +3,10 @@
  *
  * O env inteiro do daemon só vai para um job que o operador criou com o
  * contexto dele verificado no daemon: o pedido chegou pelo gateway (ou por uma
- * tool no processo) com a chave do operador. Um CLI local sem contexto não
- * prova nada, porque qualquer processo da máquina consegue rodar
- * `ravi jobs run` sem `RAVI_CONTEXT_KEY`.
+ * tool no processo) com a chave do operador. É o caminho do `ravi` instalado
+ * no terminal do operador, que despacha para o gateway com a credencial dele.
+ * Um CLI local sem contexto (checkout de dev, ou `env -u RAVI_CONTEXT_KEY`) não
+ * prova nada e grava o job sem dono.
  */
 
 import { getContext } from "../cli/context.js";
@@ -18,10 +19,12 @@ export const JOB_OPERATOR_OWNER = CRON_OPERATOR_OWNER;
  * O dono verificado do pedido atual, ou null quando nada foi verificado.
  * `operator` só sai quando o pedido carrega o contexto do operador no daemon.
  */
-export function resolveVerifiedJobOwner(): string | null {
-  const store = getContext({ localOnly: true });
-  if (store?.transport !== "gateway" && store?.transport !== "tool") return null;
-  const owner = resolveCronOwnerPrincipalForCurrentTurn();
+export function resolveVerifiedJobOwner(
+  deps: { transport?: () => string | undefined; resolveOwner?: () => string } = {},
+): string | null {
+  const transport = deps.transport ? deps.transport() : getContext({ localOnly: true })?.transport;
+  if (transport !== "gateway" && transport !== "tool") return null;
+  const owner = (deps.resolveOwner ?? resolveCronOwnerPrincipalForCurrentTurn)();
   return owner && owner !== "unknown" ? owner : null;
 }
 

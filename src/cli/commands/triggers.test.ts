@@ -474,6 +474,23 @@ describe("TriggersCommands topic guidance", () => {
     expect(updatedTriggers).toEqual([]);
   });
 
+  it("refuses an operator edit that would leave a shell trigger with no owner", async () => {
+    const commands = new TriggersCommands();
+    currentTurnOwner = "operator";
+
+    for (const ownerPrincipal of ["contact:c_ana", undefined]) {
+      triggerRecord = { ...buildTriggerRecord(), ...(ownerPrincipal ? { ownerPrincipal } : {}) };
+      await expect(commands.set("trg_1", "shell", "printf ok", true)).rejects.toMatchObject({
+        code: "TRIGGER_SHELL_NOT_OPERATOR",
+      });
+    }
+    triggerRecord = { ...buildTriggerRecord(), ownerPrincipal: "contact:c_ana", executionType: "shell" };
+    await expect(commands.set("trg_1", "env-file", "/tmp/other.env", true)).rejects.toMatchObject({
+      code: "TRIGGER_SHELL_NOT_OPERATOR",
+    });
+    expect(updatedTriggers).toEqual([]);
+  });
+
   it("rejects shell triggers that also pass --message", async () => {
     const commands = new TriggersCommands();
 
@@ -671,6 +688,8 @@ describe("TriggersCommands topic guidance", () => {
 
   it("sets shell execution on existing trigger", async () => {
     const commands = new TriggersCommands();
+    // The operator's own trigger: the edit keeps its owner, so the shell trigger can run.
+    triggerRecord = { ...buildTriggerRecord(), ownerPrincipal: "operator" };
 
     const payload = await captureJson(() => commands.set("trg_1", "shell", "printf ok", true));
 

@@ -114,6 +114,24 @@ function assertShellTriggerOwnerActsAsOperator(op: string, ownerPrincipal: strin
   });
 }
 
+function failShellTriggerWouldLoseOwner(
+  op: string,
+  trigger: Pick<Trigger, "id" | "ownerPrincipal" | "executionType">,
+  asJson?: boolean,
+): never {
+  const owner = triggerRunsAs(trigger);
+  const suggestedAction = `create a new shell trigger from this turn (ravi triggers add <name> --topic <topic> --shell <cmd>) and remove this one (ravi triggers rm ${trigger.id} --execute)`;
+  const message = `Trigger ${trigger.id} runs as ${owner}. Changing what it runs from this turn would leave it with no owner, and a shell trigger with no owner does not run. Next: ${suggestedAction}.`;
+  contractFail(op, "TRIGGER_SHELL_NOT_OPERATOR", message, {
+    ...{
+      asJson,
+      exitCode: CONTRACT_EXIT_POLICY,
+      details: { ownerPrincipal: owner, suggestedAction },
+    },
+    diagnostic: errorDiagnostic(message, { operation: op }),
+  });
+}
+
 function failTriggerNotFound(op: string, id: string, asJson?: boolean): never {
   const scopeCtx = getScopeContext();
   const candidates = dbListTriggers()
@@ -932,7 +950,12 @@ export class TriggersCommands {
     // file), are the operator's to set. Checked before the edit so the refusal
     // keeps its code.
     if (key === "shell" || key === "exec" || (key === "env-file" && (trigger.executionType ?? "agent") === "shell")) {
-      assertShellTriggerOwnerActsAsOperator("triggers set", resolveTriggerOwnerForCurrentTurn(), asJson);
+      const setter = resolveTriggerOwnerForCurrentTurn();
+      assertShellTriggerOwnerActsAsOperator("triggers set", setter, asJson);
+      // This edit keeps the owner only when the owner makes it. On a trigger
+      // someone else owns, or nobody does, it would leave a shell trigger with
+      // no owner, which never runs: refuse instead of saving a dead trigger.
+      if ((trigger.ownerPrincipal ?? "") !== setter) failShellTriggerWouldLoseOwner("triggers set", trigger, asJson);
     }
 
     // The trigger keeps its owner only when the owner makes this change;

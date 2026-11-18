@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { dbCreateAgent } from "../../router/router-db.js";
+import { dbCreateAgent, getDb } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 
 afterAll(() => mock.restore());
@@ -193,5 +193,19 @@ describe("shell trigger owner and env", () => {
       if (previous === undefined) delete process.env.RAVI_TRIGGER_TEST_CANARY_SECRET;
       else process.env.RAVI_TRIGGER_TEST_CANARY_SECRET = previous;
     }
+  });
+
+  it("does not run an operator's shell trigger whose stored owner changed after the runner loaded it", async () => {
+    const topic = "ravi.test.shell-stale";
+    const trigger = createShellTrigger({ name: "stale-owner", topic, ownerPrincipal: "operator" });
+    await startRunner();
+
+    // An edit by someone else clears the owner in the database; the runner still holds the old copy.
+    getDb().prepare("UPDATE triggers SET owner_principal = NULL WHERE id = ?").run(trigger.id);
+    emit(topic, { eventId: "evt-stale" });
+    await sleep(500);
+
+    expect(existsSync(markerPath())).toBe(false);
+    expect(dbGetTrigger(trigger.id)?.fireCount).toBe(0);
   });
 });

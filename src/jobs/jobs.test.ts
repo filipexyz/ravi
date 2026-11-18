@@ -250,6 +250,18 @@ describe("job runner", () => {
   it("records no verified owner for a job created outside a daemon context", () => {
     // A local CLI process (no gateway or tool context) cannot prove who it is.
     expect(resolveVerifiedJobOwner()).toBeNull();
+    const operatorClaim = () => "operator";
+    expect(resolveVerifiedJobOwner({ transport: () => undefined, resolveOwner: operatorClaim })).toBeNull();
+  });
+
+  it("records the owner the daemon resolved for a gateway or tool request", () => {
+    for (const transport of ["gateway", "tool"]) {
+      expect(resolveVerifiedJobOwner({ transport: () => transport, resolveOwner: () => "operator" })).toBe("operator");
+      expect(resolveVerifiedJobOwner({ transport: () => transport, resolveOwner: () => "contact:c_ana" })).toBe(
+        "contact:c_ana",
+      );
+      expect(resolveVerifiedJobOwner({ transport: () => transport, resolveOwner: () => "unknown" })).toBeNull();
+    }
   });
 
   it("stores the verified owner with the job and leaves it empty by default", () => {
