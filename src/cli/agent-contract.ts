@@ -321,8 +321,36 @@ function projectRuntimeUpdateControl(value: unknown): Record<string, unknown> | 
   };
 }
 
+const APPS_RUN_OP = "apps run";
+const APP_REPORTED_MAX_CHARS = 300;
+const APP_REPORTED_TRUNCATION = " [truncated]";
+
+function boundedAppReportedLine(text: string): string {
+  if (text.length <= APP_REPORTED_MAX_CHARS) return text;
+  let end = APP_REPORTED_MAX_CHARS - APP_REPORTED_TRUNCATION.length;
+  // Never end on half of a surrogate pair.
+  if (/[\ud800-\udbff]/.test(text[end - 1] ?? "")) end -= 1;
+  return `${text.slice(0, end).trimEnd()}${APP_REPORTED_TRUNCATION}`;
+}
+
+/**
+ * What a Ravi App CLI said about its own failure: its message and its next step, each one redacted line. They are
+ * labeled as the app's and are data about the failure, never the envelope's own message or `suggestedAction`
+ * (spec apps/router, "Failed App Output"). Every other key of the object is dropped.
+ */
+export function projectAppReported(value: unknown): { message?: string; suggestedAction?: string } | undefined {
+  const projected: { message?: string; suggestedAction?: string } = {};
+  for (const key of ["message", "suggestedAction"] as const) {
+    const raw = safeDiagnosticField(value, key);
+    if (typeof raw !== "string") continue;
+    const line = redactDiagnosticText(raw).replace(/\s+/g, " ").trim();
+    if (line) projected[key] = boundedAppReportedLine(line);
+  }
+  return projected.message || projected.suggestedAction ? projected : undefined;
+}
+
 /** Domain controls describe the next action, never the underlying provider payload. */
-function projectOperationalControls(details: unknown): Record<string, unknown> {
+function projectOperationalControls(details: unknown, op: string): Record<string, unknown> {
   const controls: Record<string, unknown> = {};
   const read = (key: string) => safeDiagnosticField(details, key);
   const contrast = projectContrastControl(read("contrast"));
@@ -385,6 +413,14 @@ function projectOperationalControls(details: unknown): Record<string, unknown> {
     const value = read(key);
     if (counter(value)) controls[key] = value;
   }
+  // A Ravi App CLI that ran and failed (apps/router): its exit status is a bare integer and what it reported is
+  // labeled data. No other command has either control.
+  if (op === APPS_RUN_OP) {
+    const appExitCode = read("appExitCode");
+    if (counter(appExitCode)) controls.appExitCode = appExitCode;
+    const appReported = projectAppReported(read("appReported"));
+    if (appReported) controls.appReported = appReported;
+  }
   const missingScopes = read("missingScopes");
   if (Array.isArray(missingScopes)) {
     const scopes = missingScopes
@@ -425,8 +461,8 @@ function projectOperationalControls(details: unknown): Record<string, unknown> {
   return controls;
 }
 
-function projectFailureDetails(details: ContractErrorDetails & ErrorDiagnostic): ContractErrorDetails {
-  const controls = projectOperationalControls(details);
+function projectFailureDetails(op: string, details: ContractErrorDetails & ErrorDiagnostic): ContractErrorDetails {
+  const controls = projectOperationalControls(details, op);
   for (const field of CONTROL_FIELDS) {
     if (Object.hasOwn(details, field)) controls[field] = sanitizePublicValue(details[field], field);
   }
@@ -470,7 +506,7 @@ export class ContractError extends Error {
     this.code =
       /^[A-Za-z][A-Za-z0-9_]{0,95}$/.test(code) && redactDiagnosticText(code) === code ? code : "COMMAND_FAILED";
     this.exitCode = canonicalExitCode;
-    this.details = projectFailureDetails(details);
+    this.details = projectFailureDetails(this.op, details);
   }
 
   envelope(): ContractErrorEnvelope {
