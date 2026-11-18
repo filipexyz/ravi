@@ -10,6 +10,10 @@
 - A ship MUST delete the v0 `page-comment:<pageId>` trigger of that site and report `replacedTriggerId`.
 - Ship without an agent in context MUST return `commentFollow.skipped: missing_creator` and MUST NOT insert a trigger.
 - Follow failure MUST NOT fail the ship that already published.
+- A ship from a Slack thread MUST arm the trigger on the thread's durable parent (`replySession` the parent's name, `agentId` the parent's agent, `replySource` the parent's chat without `threadId`), MUST NOT leave an active trigger addressing the child, and the child MUST then close without `THREAD_TRIGGERS_PENDING`.
+- Two threads of one parent shipping the same route MUST keep one trigger on the parent and MUST NOT report `rebound`.
+- A ship from a thread whose lifecycle or parent cannot be resolved MUST publish, return `commentFollow.ok: false` with a warning naming the unresolved thread, and MUST NOT insert or move a trigger.
+- `repairThreadBoundPageCommentFollows` MUST move every `page-comment:*` trigger addressed to an open, closed or pruned thread child to that thread's durable parent, MUST be idempotent, MUST leave unverifiable triggers untouched and report them, and MUST NOT touch triggers whose name does not start with `page-comment:`. The daemon MUST run it at boot before the trigger runner loads and MUST NOT stop boot when it fails.
 
 ## Filters
 
@@ -35,5 +39,5 @@
 ## Commands
 
 ```bash
-bun test src/pages/comment-follow.test.ts src/pages/ship.test.ts src/cli/commands/pages.test.ts src/watch/events.test.ts src/inbox/inbox-runner.test.ts src/triggers/triggers.test.ts src/triggers/__tests__/activation.test.ts src/triggers/__tests__/runner-filter.test.ts src/triggers/__tests__/topic-catalog.test.ts
+bun test src/triggers/page-comment-owner.test.ts src/pages/comment-follow.test.ts src/pages/ship.test.ts src/cli/commands/pages.test.ts src/watch/events.test.ts src/inbox/inbox-runner.test.ts src/triggers/triggers.test.ts src/triggers/__tests__/activation.test.ts src/triggers/__tests__/runner-filter.test.ts src/triggers/__tests__/topic-catalog.test.ts
 ```

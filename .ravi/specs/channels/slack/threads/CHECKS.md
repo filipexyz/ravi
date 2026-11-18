@@ -101,6 +101,7 @@ bun run build
 ## Durable subscribers at close
 
 - [ ] `bun test src/channels/slack/thread-lifecycle.test.ts` refuses close for active triggers addressed by name/key and after pruning; handoff permits closure without prior side effects.
+- [ ] `bun test src/triggers/page-comment-owner.test.ts` arms a follow from a thread on the durable parent with the parent's chat and no thread id, fails closed when the lifecycle or parent is missing, and lets a thread whose only triggers were `page-comment:*` close after the boot repair; a non-`page-comment:*` trigger on the child still blocks close.
 - [ ] Inactive activation verdicts and unrelated reply sessions do not block close.
 - [ ] `bun test src/cli/commands/sessions.test.ts src/cli/remote-gateway.test.ts` preserves the refusal code, ids and repoint guidance across CLI/gateway.
 - [ ] `bun test src/triggers/__tests__/runner-named-session.test.ts` reloads the repointed trigger, closes the child, and delivers a CI event to the parent with the root source and incremented fire count.

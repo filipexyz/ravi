@@ -2,6 +2,7 @@ import { getContext, type ToolContext } from "../cli/context.js";
 import { getAgent } from "../router/config.js";
 import { getAccountForAgent } from "../router/router-db.js";
 import { evaluateFilter, validateFilter } from "../triggers/filter.js";
+import { resolveDurableFollowOwner } from "../triggers/follow-owner.js";
 import { findTriggerTopicCatalogEntry } from "../triggers/topic-catalog.js";
 import { dbCreateTrigger, dbDeleteTrigger, dbListTriggers, dbUpdateTrigger } from "../triggers/triggers-db.js";
 import type { Trigger, TriggerInput, TriggerReplySource } from "../triggers/types.js";
@@ -167,6 +168,15 @@ export function pageCommentBindingFromShip(input: PageCommentShipSource): PageCo
   };
 }
 
+/**
+ * The session a comment should wake for a ship made from the current context.
+ *
+ * A ship from a Slack thread arms the route's trigger on the thread's durable
+ * parent, not on the thread: the thread closes, the page does not. A trigger
+ * left on the child would also block `sessions close-thread`. When the thread's
+ * lifecycle or parent cannot be resolved this throws, and `pages ship` reports
+ * it as a `commentFollow` warning without failing the publish.
+ */
 export function pageCommentCreatorFromContext(readContext?: () => ToolContext | undefined): PageCommentCreator | null {
   const ctx = (readContext ?? getContext)();
   const agentId = cleanId(ctx?.agentId) ?? cleanId(process.env.RAVI_AGENT_ID);
@@ -180,13 +190,83 @@ export function pageCommentCreatorFromContext(readContext?: () => ToolContext | 
           ...(ctx.source.threadId ? { threadId: ctx.source.threadId } : {}),
         }
       : undefined;
+  return resolveDurableFollowOwner(
+    {
+      agentId,
+      accountId: ctx?.source?.accountId,
+      sessionName: ctx?.sessionName,
+      sessionKey: ctx?.sessionKey,
+      source,
+    },
+    "page comment follow",
+  );
+}
+
+/**
+ * Where a stored route trigger should point so that it survives its session.
+ * Empty when it already points at a durable session. Used to repair triggers
+ * armed before a thread's ships moved to its parent.
+ */
+export function pageCommentReplyTargetPatch(trigger: Trigger): PageCommentTriggerUpdate {
+  if (!trigger.replySession) return {};
+  const resolved = resolveDurableFollowOwner(
+    {
+      agentId: trigger.agentId,
+      accountId: trigger.accountId,
+      sessionName: trigger.replySession,
+      source: trigger.replySource,
+    },
+    "page comment follow",
+  );
+  if (resolved.sessionName === trigger.replySession) return {};
   return {
-    agentId,
-    accountId: ctx?.source?.accountId,
-    sessionName: ctx?.sessionName,
-    sessionKey: ctx?.sessionKey,
-    source,
+    ...(resolved.agentId ? { agentId: resolved.agentId } : {}),
+    ...(resolved.accountId ? { accountId: resolved.accountId } : {}),
+    replySession: resolved.sessionName ?? null,
+    ...(resolved.source ? { replySource: resolved.source } : {}),
   };
+}
+
+export interface PageCommentOwnerRepairDeps {
+  listTriggers?: () => Trigger[];
+  updateTrigger?: (id: string, updates: PageCommentTriggerUpdate) => unknown;
+}
+
+export interface PageCommentOwnerRepairResult {
+  /** Route triggers moved from a Slack thread to its durable parent. */
+  repaired: number;
+  /** Route triggers that could not be resolved or written; they are left as they were. */
+  failures: Array<{ triggerId: string; error: unknown }>;
+}
+
+/**
+ * One-time reconciliation of triggers armed while a thread's ships still woke the
+ * thread itself. Every `page-comment:*` trigger addressed to a Slack thread child
+ * moves to that thread's durable parent, whether the thread is open, closed or
+ * pruned. Idempotent: a trigger already on a durable session is not touched. When
+ * a thread cannot be resolved the trigger is left alone, because moving a trigger
+ * that was not verified is worse than leaving it.
+ *
+ * `sessions close-thread` itself never rewrites a trigger's recipient: these
+ * triggers are the product's own and are repaired here, not by the close.
+ */
+export function repairThreadBoundPageCommentFollows(
+  deps: PageCommentOwnerRepairDeps = {},
+): PageCommentOwnerRepairResult {
+  const result: PageCommentOwnerRepairResult = { repaired: 0, failures: [] };
+  const update = deps.updateTrigger ?? ((id, updates) => dbUpdateTrigger(id, updates));
+  for (const trigger of (deps.listTriggers ?? dbListTriggers)()) {
+    if (!(trigger.name ?? "").startsWith("page-comment:")) continue;
+    try {
+      const patch = pageCommentReplyTargetPatch(trigger);
+      if (Object.keys(patch).length === 0) continue;
+      update(trigger.id, patch);
+      result.repaired += 1;
+    } catch (error) {
+      result.failures.push({ triggerId: trigger.id, error });
+    }
+  }
+  return result;
 }
 
 export function buildPageCommentTriggerInput(binding: PageCommentBinding, creator: PageCommentCreator): TriggerInput {
