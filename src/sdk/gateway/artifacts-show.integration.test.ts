@@ -148,8 +148,9 @@ describe("gateway piloto — artifacts.show", () => {
       body: "{}",
     });
     expect(res.status).toBe(404);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("NotFound");
+    // Gateway failures are contract envelopes: the transport reason `NotFound` surfaces as ROUTE_NOT_FOUND.
+    const body = (await res.json()) as { success: boolean; error: { code: string } };
+    expect(body).toMatchObject({ success: false, error: { code: "ROUTE_NOT_FOUND" } });
   });
 
   it("/api/v1/_meta/registry surfaces the artifacts.show command path", async () => {
