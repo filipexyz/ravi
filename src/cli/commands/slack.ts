@@ -2501,11 +2501,6 @@ export class SlackCommands {
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
     @Option({ flags: "--private", description: "Create a private channel" }) isPrivate?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-    @Option({
-      flags: "--execute",
-      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
-    })
-    execute?: boolean,
     @Option({ flags: "--invite <users>", description: "Comma-separated Slack user IDs to invite after creating" })
     inviteValue?: string,
     @Option({
@@ -2521,6 +2516,11 @@ export class SlackCommands {
     agentProvider?: string,
     @Option({ flags: "--agent-model <model>", description: "Runtime model selector for --create-agent" })
     agentModel?: string,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const op = "slack channels-create";
     const request = { name, isPrivate: Boolean(isPrivate) };
@@ -2543,6 +2543,17 @@ export class SlackCommands {
       asJson,
       execute,
     });
+    // Past the brake: prepare the agent BEFORE touching Slack, so a failed agent
+    // creation never leaves an unrouted channel behind.
+    const prepared = routeAgent
+      ? ensureChannelAgent({
+          agentId: routeAgent,
+          createIfMissing: createAgentIfMissing,
+          cwd: agentCwd,
+          provider: agentProvider,
+          model: agentModel,
+        })
+      : undefined;
     const raw = await client.conversationsCreate(request);
     const payload: Record<string, unknown> = this.mutationPayload(
       config,
@@ -2569,21 +2580,27 @@ export class SlackCommands {
     }
 
     const routeAccountId = config.routeAccountId ?? config.accountId;
-    if (routeAgent && channelId) {
-      const prepared = ensureChannelAgent({
-        agentId: routeAgent,
-        createIfMissing: createAgentIfMissing,
-        cwd: agentCwd,
-        provider: agentProvider,
-        model: agentModel,
-      });
+    if (prepared && channelId) {
       payload.agent = prepared;
-      payload.route = routeChatToAgent({
-        pattern: `group:${channelId.toLowerCase()}`,
-        agent: prepared.agentId,
-        accountId: routeAccountId,
-        channel: "slack",
-      });
+      const pattern = `group:${channelId.toLowerCase()}`;
+      try {
+        payload.route = routeChatToAgent({
+          pattern,
+          agent: prepared.agentId,
+          accountId: routeAccountId,
+          channel: "slack",
+        });
+      } catch (routeError) {
+        // The channel exists; say so and give the exact command that routes it.
+        payload.route = {
+          status: "failed",
+          pattern,
+          agent: prepared.agentId,
+          accountId: routeAccountId,
+          reason: routeError instanceof Error ? routeError.message : String(routeError),
+          recovery: `ravi instances routes add ${routeAccountId} ${pattern} ${prepared.agentId} --channel slack`,
+        };
+      }
     } else if (channelId) {
       payload.route = {
         status: "none",
@@ -2594,9 +2611,15 @@ export class SlackCommands {
     if (asJson) printJson(payload);
     else {
       console.log(JSON.stringify(raw.channel, null, 2));
-      const route = payload.route as { status?: string; agent?: string } | undefined;
+      if (channelId) console.log(`Channel: ${channelId}`);
+      const route = payload.route as
+        | { status?: string; agent?: string; reason?: string; recovery?: string }
+        | undefined;
       if (route?.status === "created") console.log(`Route: ${route.agent}`);
-      else if (route?.status === "none") console.log("Route: none — add --agent <id> to route this channel");
+      else if (route?.status === "failed") {
+        console.log(`Route: failed (${route.reason}) — channel ${channelId} exists unrouted`);
+        console.log(`  Fix: ${route.recovery}`);
+      } else if (route?.status === "none") console.log("Route: none — add --agent <id> to route this channel");
     }
     return payload;
   }
