@@ -174,7 +174,9 @@ bun test src/cli/commands/slack-credential-actions.test.ts
 
 Reads the TypeScript AST of `src/cli/commands/slack.ts` and fails when: a
 credential entry point is called outside the four known forwarding calls and
-the classified sites; a site's action is not a string literal (or a
+the classified sites; a forwarding call's arguments differ from the pinned
+text; an entry-point name is used other than as its declaration or a direct
+call (alias, other receiver, value); a mutation call's object has a spread; a site's action is not a string literal (or a
 conditional / same-function `const` of literals); the number of sites for an
 action or in total differs from the table; the broker's read/write/destructive
 class differs from the table; a whole-canvas publisher's top-level

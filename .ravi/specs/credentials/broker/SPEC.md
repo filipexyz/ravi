@@ -155,8 +155,16 @@ audit surfaces while still allowing Ravi to perform approved external actions.
   - every call to `createSlackOpsContext`, `this.mutationOpsContext`,
     `this.mutationCredentialContext`, `resolveSlackCredentialContext` and
     `resolveSlackCredentialConfigFromEnv` is either one of the four known
-    forwarding calls inside those helpers or a classified site; any other
-    call fails;
+    forwarding calls inside those helpers, with its arguments pinned as
+    source text, or a classified site; any other call fails;
+  - every identifier spelling one of those five names is its single
+    declaration (or the import of `resolveSlackCredentialConfigFromEnv`) or
+    the callee of a direct call (`name(...)` or `this.name(...)`); an alias,
+    another receiver, `.bind`/`.call` or passing the function as a value
+    fails;
+  - the object passed to `this.mutationOpsContext` and
+    `this.mutationCredentialContext` has no spread; every property is
+    written in the call;
   - a site's action is a string literal, a conditional of string literals, or
     a `const` in the same function initialized to one of those; anything else
     fails;
