@@ -71,12 +71,21 @@ and transport names follow [`SPEC.md`](./SPEC.md).
   operation path.
 - Exit `0/1/2/3` survives handler, root/domain parser, bootstrap, tool and
   gateway paths; an unknown root command is `USAGE_ERROR`, exit `2`.
-- `ravi task`, `ravi task --help` and `ravi task -h` exit `2` with
-  `unknown command 'task'` and the suggestion `(Did you mean tasks?)`, and never
-  print the root help. `ravi tasks --help`, `ravi help tasks` and `ravi --help`
-  still print help with exit `0`.
-  `bun test src/cli/root-version.test.ts src/cli/agent-contract.test.ts` covers
-  both the spawned CLI and the argument rewrite.
+- An unknown command exits `2` and never prints help, with or without a help
+  flag after it. The spawned CLI (`src/cli/root-version.test.ts`) checks:
+  `ravi task` and `ravi task --help` (`unknown command 'task'`, `(Did you mean
+  tasks?)`, no root help); `ravi tasks lsit --help` and
+  `ravi tasks profiles lsit -h` (`unknown command 'lsit'`, `(Did you mean
+  list?)`, no group help); `ravi task --foo -- --help` (`unknown command
+  'task'`); `ravi --json task --help` (`USAGE_ERROR`, `unknown option
+  '--json'`, as without the help flag). The same file checks that
+  `ravi tasks --help`, `ravi tasks list --help`, `ravi crm contact <id> --help`
+  and `ravi --help` still print help with exit `0`.
+- `argsForUsageContract` (`src/cli/agent-contract.test.ts`) alone covers the
+  other shapes: `task -h`, an alias, `help`, a help flag in front of the unknown
+  command, `--` in front of the operand, and a node with an argument or an
+  option of its own. Run both files with
+  `bun test src/cli/root-version.test.ts src/cli/agent-contract.test.ts`.
 - Tool and gateway adapters preserve known `ContractError` values; neither
   appends a generic error nor replaces the envelope with a generic HTTP 500
   body. `UNHANDLED_ERROR` and `RETURN_SHAPE_ERROR` may retain HTTP status `500`.

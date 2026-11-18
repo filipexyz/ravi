@@ -864,29 +864,53 @@ export function installRootUsageContract(program: CommanderCommand): void {
 }
 
 /**
- * Arguments to hand the root parser so that an unknown root command is a usage error whatever follows it.
+ * Arguments to hand the parser so that an unknown command is a usage error whatever follows it.
  *
  * Commander looks for a help flag before it looks for an unknown command, so `ravi task --help` printed the root
- * help and exited 0 while `ravi task` was a usage error with a suggestion. When the first operand names no root
- * command (or alias), the help flags are dropped: the parser then reaches its unknown-command error, with the same
- * envelope, exit 2 and suggestion. `ravi tasks --help`, `ravi help` and `ravi --help` are untouched.
+ * help and exited 0 while `ravi task` was a usage error with a suggestion, and `ravi tasks lsit --help` printed the
+ * help of `tasks` the same way. This walks the operands down the command tree. At a node that has subcommands and
+ * nothing of its own (no arguments, no options) the next operand either names a subcommand, and the walk goes down,
+ * or names none: an unknown command. Nothing runs then, so every help flag after it is dropped, wherever it sits, and
+ * the parser reaches its unknown-command error with the same envelope, exit code and suggestion as without the flag.
+ * Options in front of the operand are unknown to such a node (it declares none) and do not move the operand.
+ *
+ * Everything else is left to Commander: a help flag in front of the operand (`ravi --help task`, `ravi tasks -h
+ * lsit`) asks for the help of the node it follows; `help` and `--`; a known command (`ravi tasks list --help`); and a
+ * node that takes an argument or options of its own (`ravi crm contact <id> --help`), where the next operand may be
+ * that argument and not a command.
  */
-export function argsForRootUsageContract(args: readonly string[], program: CommanderCommand): string[] {
-  const requested = args[0];
-  if (requested === undefined || requested.startsWith("-") || requested === "help") return [...args];
-  const isRootCommand = program.commands.some(
-    (command) => command.name() === requested || command.aliases().includes(requested),
-  );
-  if (isRootCommand) return [...args];
+export function argsForUsageContract(args: readonly string[], program: CommanderCommand): string[] {
+  let node = program;
+  let index = 0;
+  while (hasOnlySubcommands(node)) {
+    let operand = args[index];
+    while (operand !== undefined && operand !== "--" && isOptionLike(operand)) {
+      if (isHelpFlag(operand)) return [...args];
+      index += 1;
+      operand = args[index];
+    }
+    if (operand === undefined || operand === "--" || operand === "help") return [...args];
+    const requested = operand;
+    const next = node.commands.find((command) => command.name() === requested || command.aliases().includes(requested));
+    if (!next) return args.filter((arg, position) => position <= index || !isHelpFlag(arg));
+    node = next;
+    index += 1;
+  }
+  return [...args];
+}
 
-  const kept: string[] = [];
-  let afterTerminator = false;
-  args.forEach((arg, index) => {
-    if (arg === "--") afterTerminator = true;
-    if (index > 0 && !afterTerminator && (arg === "--help" || arg === "-h")) return;
-    kept.push(arg);
-  });
-  return kept;
+/** A node whose only job is to dispatch: an operand that is not one of its subcommands is an unknown command. */
+function hasOnlySubcommands(node: CommanderCommand): boolean {
+  return node.commands.length > 0 && node.registeredArguments.length === 0 && node.options.length === 0;
+}
+
+/** Commander's own test for an option: a lone `-` is an operand. */
+function isOptionLike(arg: string): boolean {
+  return arg.length > 1 && arg.startsWith("-");
+}
+
+function isHelpFlag(arg: string): boolean {
+  return arg === "--help" || arg === "-h";
 }
 
 function commandTree(root: CommanderCommand): CommanderCommand[] {
