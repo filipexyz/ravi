@@ -321,13 +321,13 @@ export async function requestApproval(
   if (!messageId) {
     expireApprovalRequest(requestId, approvalServiceDependencies.now());
     log.warn("Approval request returned without messageId");
-    return { approved: false, reason: "Falha ao enviar mensagem de aprovação." };
+    return { approved: false, reason: APPROVAL_REFUSAL_REASON.sendFailed };
   }
 
   const pending = attachApprovalRequestMessageId(requestId, messageId) ?? getApprovalRequest(requestId);
   if (!pending?.messageId) {
     expireApprovalRequest(requestId, approvalServiceDependencies.now());
-    return { approved: false, reason: "Falha ao correlacionar pedido de aprovação." };
+    return { approved: false, reason: APPROVAL_REFUSAL_REASON.correlationFailed };
   }
 
   log.info("Waiting for approval response", {
@@ -401,28 +401,36 @@ async function waitForExistingApproval(
       };
     }
     if (current.status === "expired") {
-      return { approved: false, reason: "Timeout — nenhuma resposta em 5 minutos." };
+      return { approved: false, reason: APPROVAL_REFUSAL_REASON.timeout };
     }
     if (Date.now() - startedAt >= timeoutMs) {
-      return { approved: false, reason: "Timeout — nenhuma resposta em 5 minutos." };
+      return { approved: false, reason: APPROVAL_REFUSAL_REASON.timeout };
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 }
 
 /**
+ * Fixed refusal texts this service returns. Every refusal site uses these
+ * constants, and `isFixedApprovalRefusalReason` accepts exactly them (plus
+ * the no-grantor text built for the same request), so a new site cannot
+ * drift from the allowlist.
+ */
+export const APPROVAL_REFUSAL_REASON = {
+  sendFailed: "Falha ao enviar mensagem de aprovação.",
+  correlationFailed: "Falha ao correlacionar pedido de aprovação.",
+  timeout: "Timeout — nenhuma resposta em 5 minutos.",
+  noSource: "No approval source available.",
+  grantNotRecorded: "The permission grant result could not be recorded.",
+  grantNotApplied: "The permission grant could not be applied.",
+} as const;
+
+/**
  * Refusal reasons this service writes from fixed text. Any other reason may
  * carry an exception message or the text a human typed when rejecting, so a
  * caller that shows the reason outside the approval flow keeps only these.
  */
-const FIXED_APPROVAL_REFUSAL_REASONS: ReadonlySet<string> = new Set([
-  "Falha ao enviar mensagem de aprovação.",
-  "Falha ao correlacionar pedido de aprovação.",
-  "Timeout — nenhuma resposta em 5 minutos.",
-  "No approval source available.",
-  "The permission grant result could not be recorded.",
-  "The permission grant could not be applied.",
-]);
+const FIXED_APPROVAL_REFUSAL_REASONS: ReadonlySet<string> = new Set(Object.values(APPROVAL_REFUSAL_REASON));
 
 /** True when `reason` is fixed text this service wrote for this request. */
 export function isFixedApprovalRefusalReason(
@@ -493,7 +501,7 @@ export async function requestCascadingApproval(
       log.info(`${opts.type} auto-approved (no source available)`, { sessionName: opts.sessionName });
       return { approved: true, isDelegated: false };
     }
-    return { approved: false, reason: "No approval source available.", isDelegated: false };
+    return { approved: false, reason: APPROVAL_REFUSAL_REASON.noSource, isDelegated: false };
   }
 
   const isDelegated = !opts.resolvedSource && !!opts.approvalSource;
@@ -871,7 +879,7 @@ async function waitForApprovalResponse(
         });
       }
       log.warn("Approval timed out", { requestId });
-      finish({ approved: false, reason: "Timeout — nenhuma resposta em 5 minutos." });
+      finish({ approved: false, reason: APPROVAL_REFUSAL_REASON.timeout });
     }, timeoutMs);
 
     (async () => {
@@ -933,7 +941,7 @@ async function waitForApprovalResponse(
           if (claimed.grant && claimed.decision === "approved") {
             const outcome = grantFailed ? "failed" : "applied";
             if (!recordApprovalGrantOutcome(claimed.id, outcome)) {
-              finish({ approved: false, reason: "The permission grant result could not be recorded." });
+              finish({ approved: false, reason: APPROVAL_REFUSAL_REASON.grantNotRecorded });
               return;
             }
           }
@@ -948,7 +956,7 @@ async function waitForApprovalResponse(
           // A grant click that could not write the grant does not let the
           // blocked call through: the next denial opens a fresh card.
           if (grantFailed) {
-            finish({ approved: false, reason: "The permission grant could not be applied." });
+            finish({ approved: false, reason: APPROVAL_REFUSAL_REASON.grantNotApplied });
             return;
           }
           finish({

@@ -255,6 +255,9 @@ export function publicCredentialConnection(record: CredentialConnectionRecord): 
 // human, unless the turn's own author already holds it.
 const READ_ONLY_ACTIONS = new Set([
   "auth.check",
+  "auth.test",
+  "blocks.validate",
+  "canvases.sections.lookup",
   "whoami",
   "channels.list",
   "channels.info",
