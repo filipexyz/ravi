@@ -148,6 +148,25 @@ ravi channels restart
 | `E2B_API_KEY` | `ravi sandbox run`. |
 | `GITHUB_TOKEN` | `ravi sandbox run`, only to clone private `https://github.com/...` repos. |
 
+### What agents inherit
+
+Agent runtimes (Claude Code, Codex, Pi and Grok), every command an agent runs, the runtime probe and jobs started from a turn begin from an allowlisted copy of the daemon environment, not from the whole `.env`.
+
+- **Passed:** system and toolchain variables (`PATH`, `HOME`, `LANG`, proxies without credentials, `SSH_AUTH_SOCK`, `PM2_HOME`, `GIT_*`, `NODE_*` and similar), a fixed list of Ravi variables (state dir, gateway endpoint, logging, jobs, PM2), and each provider's own config and login: `CLAUDE_*`/`ANTHROPIC_*` to Claude, `CODEX_*` to Codex, `PI_*` to Pi, `GROK_*` to Grok.
+- **Not passed:** other providers' keys, `RAVI_ADMIN_TOKEN`, webhook secrets, third-party API keys, database URLs, git config injected through `GIT_CONFIG_*`, any name that looks like a secret (`TOKEN`, `SECRET`, `PASSWORD`, `_KEY`, `_PAT`, `HEADERS`) and any value that looks like a token.
+
+To give agents a variable on purpose, list it in `RAVI_AGENT_ENV_PASSTHROUGH` and restart the daemon:
+
+```bash
+RAVI_AGENT_ENV_PASSTHROUGH="MAX_THINKING_TOKENS,BASH_DEFAULT_TIMEOUT_MS"
+```
+
+A provider's own config still reaches only that provider, even when listed. Naming `GIT_CONFIG_COUNT` passes the whole `GIT_CONFIG_*` set.
+
+<Warning>
+Upgrading from a version before the agent env allowlist: Claude Code settings without a `CLAUDE_` or `ANTHROPIC_` prefix no longer reach agents. That includes `DISABLE_TELEMETRY`, `DISABLE_AUTOUPDATER`, `DISABLE_ERROR_REPORTING`, `MAX_THINKING_TOKENS`, `BASH_DEFAULT_TIMEOUT_MS`, `BASH_MAX_TIMEOUT_MS`, `MCP_TIMEOUT` and `USE_BUILTIN_RIPGREP`, and any other tool setting whose name is not on the list. If you set one in `~/.ravi/.env` for your agents, add it to `RAVI_AGENT_ENV_PASSTHROUGH`.
+</Warning>
+
 ### Not used
 
 Older docs list `OMNI_DIR`, `DATABASE_URL`, `OMNI_API_PORT` and `NATS_PORT`. Ravi does not read them. Omni's database and ports are Omni's configuration; Ravi reaches NATS through `NATS_URL`.

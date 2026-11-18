@@ -159,6 +159,51 @@ describe("agent runtime env policy", () => {
     }
   });
 
+  it("passes Ravi and Omni names only from the explicit list", () => {
+    const env = filterAgentRuntimeBaseEnv({
+      RAVI_STATE_DIR: "/Users/operator/.ravi",
+      RAVI_GATEWAY_URL: "http://127.0.0.1:4211",
+      RAVI_PM2_EXECUTABLE: "/opt/homebrew/bin/pm2",
+      OMNI_API_URL: "http://127.0.0.1:8882",
+      // Not listed: daemon-only config, internal markers, and names that do not look secret.
+      RAVI_WEBHOOK_PUBLIC_BASE_URL: "https://hooks.example",
+      RAVI_GATEWAY_INTERNAL: "1",
+      RAVI_IDENTITYD_RUNTIME_SOCKET: "/run/ravi/identityd.sock",
+      RAVI_SIGNING_SALT: "canary-salt",
+      OMNI_SIGNING_SALT: "canary-omni-salt",
+    });
+
+    expect(env).toEqual({
+      RAVI_STATE_DIR: "/Users/operator/.ravi",
+      RAVI_GATEWAY_URL: "http://127.0.0.1:4211",
+      RAVI_PM2_EXECUTABLE: "/opt/homebrew/bin/pm2",
+      OMNI_API_URL: "http://127.0.0.1:8882",
+    });
+  });
+
+  it("drops personal access tokens and token-shaped values under allowed names", () => {
+    expect(isAgentRuntimeEnvNameAllowed("GITHUB_PAT")).toBe(false);
+    expect(isAgentRuntimeEnvNameAllowed("GH_PAT")).toBe(false);
+    expect(isAgentRuntimeEnvNameAllowed("COLOSSEUM_COPILOT_PAT")).toBe(false);
+
+    const tokenShaped = {
+      NODE_OPTIONS: "--header=sk-ant-api03-canaryCanaryCanary1234",
+      GIT_TRACE: "ghp_canaryCanaryCanaryCanary1234",
+      GH_PAGER: "github_pat_canaryCanaryCanary_1234567890",
+      PAGER: "xoxb-1234567890-canary-token",
+      LANG: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJjYW5hcnkifQ.signature",
+      EDITOR: "-----BEGIN OPENSSH PRIVATE KEY-----",
+      VISUAL: "AKIACANARYCANARY1234",
+    };
+    const benign = {
+      PATH: "/opt/task-runner-sk-tools/bin:/usr/bin",
+      XDG_DATA_HOME: "/Users/operator/.local/share",
+      GIT_EDITOR: "vi",
+    };
+
+    expect(filterAgentRuntimeBaseEnv({ ...tokenShaped, ...benign })).toEqual(benign);
+  });
+
   it("passes names the operator lists in RAVI_AGENT_ENV_PASSTHROUGH", () => {
     const env = filterAgentRuntimeBaseEnv({
       ...DAEMON_SECRETS,

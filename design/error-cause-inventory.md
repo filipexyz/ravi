@@ -1254,13 +1254,13 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | jobs | src/jobs/detach-script.ts | 88 | triaged-follow-up | catch-without-binding | src/jobs/detach-script.ts:55fc73ecc04df177cb3133ff |
 | jobs | src/jobs/detach-script.ts | 97 | triaged-follow-up | catch-without-binding | src/jobs/detach-script.ts:574c6e8d0596721b5c6ac6f9 |
 | jobs | src/jobs/detach.ts | 111 | triaged-follow-up | catch-without-binding | src/jobs/detach.ts:6964bd49b50ec68e6fd88f8b |
-| jobs | src/jobs/runner.ts | 151 | fixed | binding retained / no recognized error surface | src/jobs/runner.ts:60347111391e1ef9e90a7a9b |
-| jobs | src/jobs/runner.ts | 196 | fixed | binding retained / no recognized error surface | src/jobs/runner.ts:a05b8543d6abe2286621396c |
-| jobs | src/jobs/runner.ts | 371 | triaged-follow-up | catch-without-binding | src/jobs/runner.ts:fa392636c1cf04e02dc07bcb |
-| jobs | src/jobs/runner.ts | 415 | triaged-follow-up | catch-without-binding | src/jobs/runner.ts:cba5f0c5ec544b4c0307aca4 |
-| jobs | src/jobs/runner.ts | 426 | triaged-follow-up | catch-without-binding | src/jobs/runner.ts:f6697741e4a972122eaa1214 |
-| jobs | src/jobs/runner.ts | 432 | triaged-follow-up | catch-without-binding | src/jobs/runner.ts:fb2e66cc8566b8c3166bd36a |
-| jobs | src/jobs/runner.ts | 454 | fixed | binding retained / no recognized error surface | src/jobs/runner.ts:db5e1793ed8fe894a35b9e0e |
+| jobs | src/jobs/runner.ts | 174 | fixed | binding retained / no recognized error surface | src/jobs/runner.ts:60347111391e1ef9e90a7a9b |
+| jobs | src/jobs/runner.ts | 219 | fixed | binding retained / no recognized error surface | src/jobs/runner.ts:a05b8543d6abe2286621396c |
+| jobs | src/jobs/runner.ts | 394 | triaged-follow-up | catch-without-binding | src/jobs/runner.ts:fa392636c1cf04e02dc07bcb |
+| jobs | src/jobs/runner.ts | 439 | triaged-follow-up | catch-without-binding | src/jobs/runner.ts:cba5f0c5ec544b4c0307aca4 |
+| jobs | src/jobs/runner.ts | 450 | triaged-follow-up | catch-without-binding | src/jobs/runner.ts:f6697741e4a972122eaa1214 |
+| jobs | src/jobs/runner.ts | 456 | triaged-follow-up | catch-without-binding | src/jobs/runner.ts:fb2e66cc8566b8c3166bd36a |
+| jobs | src/jobs/runner.ts | 478 | fixed | binding retained / no recognized error surface | src/jobs/runner.ts:db5e1793ed8fe894a35b9e0e |
 | knowledge | src/knowledge/client.ts | 114 | triaged-follow-up | catch-without-binding | src/knowledge/client.ts:8ce657243d52e3d113abe333 |
 | knowledge | src/knowledge/client.ts | 234 | fixed | binding retained / no recognized error surface | src/knowledge/client.ts:973f89b13d0d7c68fe971cdc |
 | knowledge | src/knowledge/client.ts | 244 | fixed | binding retained / no recognized error surface | src/knowledge/client.ts:973f89b13d0d7c68fe971cdc |
@@ -1961,15 +1961,15 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/ravi-rules.ts | 289 | triaged-follow-up | catch-without-binding | src/runtime/ravi-rules.ts:d1548e705d2c1cc203c2b699 |
 | runtime-chat | src/runtime/runtime-defaults.ts | 47 | triaged-follow-up | catch-without-binding | src/runtime/runtime-defaults.ts:19599e9fe08de7d2a93a5188 |
 | runtime-chat | src/runtime/runtime-defaults.ts | 88 | triaged-follow-up | catch-without-binding | src/runtime/runtime-defaults.ts:8cdcd933953e255901103de8 |
-| runtime-chat | src/runtime/runtime-probe.ts | 153 | fixed | binding retained / no recognized error surface | src/runtime/runtime-probe.ts:08c59af4134df02f4a00727c |
-| runtime-chat | src/runtime/runtime-probe.ts | 185 | no-cause | The deadline branch reports the probe's own timeout sentinel, whose only content is the stage already named in the message; every other error is forwarded by message below. | src/runtime/runtime-probe.ts:76d7d91145aebbeb8040cef8 |
-| runtime-chat | src/runtime/runtime-probe.ts | 197 | fixed | binding retained / no recognized error surface | src/runtime/runtime-probe.ts:899cecea88f47a5d9af523b7 |
-| runtime-chat | src/runtime/runtime-probe.ts | 274 | no-cause | The probe result already reports the timeout; a failed interrupt must not replace it and the abort below still tears the turn down. | src/runtime/runtime-probe.ts:8796ea59c022c1f5f8547cb8 |
-| runtime-chat | src/runtime/runtime-probe.ts | 303 | fixed | binding retained / no recognized error surface | src/runtime/runtime-probe.ts:a3f273c41b40645011513a3c |
-| runtime-chat | src/runtime/runtime-probe.ts | 317 | no-cause | Teardown of an already-settled probe; a close failure or a close that outlives its grace must not replace the recorded probe outcome. | src/runtime/runtime-probe.ts:edd247697d9f5424811990d6 |
-| runtime-chat | src/runtime/runtime-probe.ts | 328 | no-cause | The deadline branch reports the probe's own timeout sentinel as the timeout result; every other error is forwarded by message below. | src/runtime/runtime-probe.ts:ab916f7af2f5ea7faba96b03 |
-| runtime-chat | src/runtime/runtime-probe.ts | 340 | fixed | binding retained / no recognized error surface | src/runtime/runtime-probe.ts:9c10d7c6eae4d8d26a44d8a3 |
-| runtime-chat | src/runtime/runtime-probe.ts | 360 | fixed | binding retained / no recognized error surface | src/runtime/runtime-probe.ts:2b99b59f89a84989b0bf1201 |
+| runtime-chat | src/runtime/runtime-probe.ts | 148 | fixed | binding retained / no recognized error surface | src/runtime/runtime-probe.ts:08c59af4134df02f4a00727c |
+| runtime-chat | src/runtime/runtime-probe.ts | 180 | no-cause | The deadline branch reports the probe's own timeout sentinel, whose only content is the stage already named in the message; every other error is forwarded by message below. | src/runtime/runtime-probe.ts:76d7d91145aebbeb8040cef8 |
+| runtime-chat | src/runtime/runtime-probe.ts | 192 | fixed | binding retained / no recognized error surface | src/runtime/runtime-probe.ts:899cecea88f47a5d9af523b7 |
+| runtime-chat | src/runtime/runtime-probe.ts | 271 | no-cause | The probe result already reports the timeout; a failed interrupt must not replace it and the abort below still tears the turn down. | src/runtime/runtime-probe.ts:8796ea59c022c1f5f8547cb8 |
+| runtime-chat | src/runtime/runtime-probe.ts | 300 | fixed | binding retained / no recognized error surface | src/runtime/runtime-probe.ts:a3f273c41b40645011513a3c |
+| runtime-chat | src/runtime/runtime-probe.ts | 314 | no-cause | Teardown of an already-settled probe; a close failure or a close that outlives its grace must not replace the recorded probe outcome. | src/runtime/runtime-probe.ts:edd247697d9f5424811990d6 |
+| runtime-chat | src/runtime/runtime-probe.ts | 325 | no-cause | The deadline branch reports the probe's own timeout sentinel as the timeout result; every other error is forwarded by message below. | src/runtime/runtime-probe.ts:ab916f7af2f5ea7faba96b03 |
+| runtime-chat | src/runtime/runtime-probe.ts | 337 | fixed | binding retained / no recognized error surface | src/runtime/runtime-probe.ts:9c10d7c6eae4d8d26a44d8a3 |
+| runtime-chat | src/runtime/runtime-probe.ts | 357 | fixed | binding retained / no recognized error surface | src/runtime/runtime-probe.ts:2b99b59f89a84989b0bf1201 |
 | runtime-chat | src/runtime/runtime-recovery-alert.ts | 70 | fixed | binding retained / no recognized error surface | src/runtime/runtime-recovery-alert.ts:1af4a0589a1041ffeccf4ee1 |
 | runtime-chat | src/runtime/runtime-recovery-alert.ts | 102 | fixed | binding retained / no recognized error surface | src/runtime/runtime-recovery-alert.ts:93f2b3d2b18f3fa43b75229f |
 | runtime-chat | src/runtime/runtime-request-builder.ts | 231 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:028234050a59a66edab09af2 |

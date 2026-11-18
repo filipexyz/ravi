@@ -16,6 +16,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { filterAgentRuntimeBaseEnv } from "./agent-env-policy.js";
 import { resolveRuntimeCredentialAttemptBinding } from "./credential-resolver.js";
 import { isolateSelectedClaudeAuthEnv } from "./credential-secret-shape.js";
 import { completeRuntimeCredentialAttempt, markRuntimeCredentialAttemptStarted } from "./credential-store.js";
@@ -122,12 +123,6 @@ function createProbePrompt(text: string): AsyncGenerator<RuntimePromptMessage> {
       parent_tool_use_id: null,
     } as RuntimePromptMessage;
   })();
-}
-
-function stringEnv(env: NodeJS.ProcessEnv): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-  );
 }
 
 export async function probeRuntimeTurn(request: RuntimeProbeRequest): Promise<RuntimeProbeResult> {
@@ -241,8 +236,10 @@ export async function probeRuntimeTurn(request: RuntimeProbeRequest): Promise<Ru
       remainingMs(),
       "preparing the provider session",
     );
+    // Credential resolution above reads the whole env (`env:` secret refs); the
+    // provider process gets the same allowlisted env as a real turn.
     const runtimeEnv: Record<string, string> = {
-      ...stringEnv(baseEnv),
+      ...filterAgentRuntimeBaseEnv(baseEnv, { runtimeProviderId: request.provider }),
       ...(bootstrap?.env ?? {}),
       ...(buildRuntimeCredentialProfileEnv(request.provider, binding ?? undefined, baseEnv) ?? {}),
       ...(binding?.resolvedEnv ?? {}),

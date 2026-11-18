@@ -64,6 +64,40 @@ describe("probeRuntimeTurn", () => {
     expect(seen?.allowedTools).toEqual([]);
   });
 
+  it("starts the provider with the allowlisted env, not the daemon's secrets", async () => {
+    let seen: RuntimeStartRequest | undefined;
+    const provider = fakeProvider(
+      async function* () {
+        yield { type: "turn.complete", usage: { inputTokens: 1, outputTokens: 1 } } as unknown as RuntimeEvent;
+      },
+      (request) => {
+        seen = request;
+      },
+    );
+
+    const result = await probeRuntimeTurn({
+      provider: "claude",
+      model: "sonnet",
+      env: {
+        PATH: "/usr/bin:/bin",
+        CLAUDE_CODE_OAUTH_TOKEN: "canary-claude-login",
+        RAVI_ADMIN_TOKEN: "canary-admin",
+        OPENAI_API_KEY: "canary-openai",
+        DEVIN_API_KEY: "canary-devin",
+      },
+      createProvider: () => provider,
+      resolveCredential: async () => NO_POOL,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(seen?.env?.PATH).toBe("/usr/bin:/bin");
+    // Claude inherits its own login, and only that.
+    expect(seen?.env?.CLAUDE_CODE_OAUTH_TOKEN).toBe("canary-claude-login");
+    expect(seen?.env?.RAVI_ADMIN_TOKEN).toBeUndefined();
+    expect(seen?.env?.OPENAI_API_KEY).toBeUndefined();
+    expect(seen?.env?.DEVIN_API_KEY).toBeUndefined();
+  });
+
   it("fails with the provider error on a failed turn", async () => {
     const provider = fakeProvider(async function* () {
       yield {
