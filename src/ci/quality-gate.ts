@@ -45,6 +45,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/runner-liveness.test.ts",
     // Runner left on the previous release after a daemon restart: refused by the state guard, relaunches once.
     "src/channels/runner-release-guard.test.ts",
+    // What status and doctor say about it: runner and daemon on different releases, or a runner its guard refuses.
+    "src/channels/runner-release-status.test.ts",
     // `sessions attach` seeds a routed Slack channel's chat before its first message.
     "src/channels/slack/route-seeded-chat.test.ts",
     // Direct Slack sends: `ravi link` private links go out unfurl-free; author email lookup.

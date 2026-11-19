@@ -46,6 +46,7 @@ import type { ChannelRuntimeEventSink } from "./runtime-events.js";
 import { createSlackNativeChannelDriver } from "./slack/driver.js";
 import type { ChannelOutboundJob } from "./outbound-stream.js";
 import { buildRunnerPm2Env } from "./pm2-env.js";
+import { RUNNER_RELEASE_GUARD_ADAPTER_ID } from "./runner-release-status.js";
 
 describe("channel runner PM2 environment", () => {
   it("does not use Slack connection env as runner configuration", () => {
@@ -892,6 +893,7 @@ describe("channel runner release drift", () => {
       }
     ).outboundPublishReconciler;
     return {
+      runner,
       reconciler: reconciler.options,
       restore: () => {
         for (const spy of spies) spy.mockRestore();
@@ -916,6 +918,38 @@ describe("channel runner release drift", () => {
       reconciler.onLoopFailure(refusal());
       reconciler.onLoopFailure(refusal());
       expect(drifts).toEqual([{ runningVersion: "3.261119.6", installedVersion: "3.261119.9", refusals: 3 }]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("reports a refused state guard as a degraded adapter until a pass is accepted", async () => {
+    const { runner, reconciler, restore } = await startStubbedRunner({
+      releaseGuard: { runningVersion: "3.261119.9", readInstalledVersion: () => "3.261119.9" },
+    });
+    const guardEntries = () =>
+      runner.status().adapters.filter((adapter) => adapter.id === RUNNER_RELEASE_GUARD_ADAPTER_ID);
+    try {
+      expect(guardEntries()).toEqual([]);
+
+      // A failure that is not a state refusal is the reconcile loop's own business, not the guard's.
+      reconciler.onLoopFailure(new Error("NATS unavailable"));
+      expect(guardEntries()).toEqual([]);
+
+      // One refusal is enough: a refused pass is a pass that did not reconcile, whatever the releases are.
+      reconciler.onLoopFailure(refusal());
+      expect(guardEntries()).toEqual([
+        {
+          id: RUNNER_RELEASE_GUARD_ADAPTER_ID,
+          channelId: "runner",
+          status: "degraded",
+          reason: "state_refused",
+          detail: "STATE_SCHEMA_NOT_READY",
+        },
+      ]);
+
+      reconciler.onLoopSuccess();
+      expect(guardEntries()).toEqual([]);
     } finally {
       restore();
     }

@@ -103,6 +103,27 @@ describe("RunnerReleaseGuard", () => {
     });
     expect(guard.recordFailure(new Error("reconcile failed", { cause: refusal() }))).not.toBeNull();
   });
+
+  it("says it is refused from the first refusal, whatever the releases are, until a pass is accepted", () => {
+    // Matching releases: it never relaunches, and it still must not look healthy.
+    const guard = new RunnerReleaseGuard({
+      runningVersion: "3.261119.9",
+      readInstalledVersion: () => "3.261119.9",
+    });
+    expect(guard.isRefused()).toBe(false);
+
+    guard.recordFailure(new Error("NATS_TIMEOUT"));
+    expect(guard.isRefused()).toBe(false);
+
+    guard.recordFailure(refusal());
+    expect(guard.isRefused()).toBe(true);
+    // Not-state failures in between neither clear nor extend it.
+    guard.recordFailure(new Error("NATS_TIMEOUT"));
+    expect(guard.isRefused()).toBe(true);
+
+    guard.recordSuccess();
+    expect(guard.isRefused()).toBe(false);
+  });
 });
 
 describe("readInstalledRunnerVersion", () => {

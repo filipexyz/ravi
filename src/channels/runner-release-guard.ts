@@ -63,6 +63,15 @@ export class RunnerReleaseGuard {
     this.refusals = 0;
   }
 
+  /**
+   * The state guard is refusing this runner now: a refused reconciliation has not
+   * been followed by an accepted one. Health reports it so the condition is visible
+   * from `ravi channels status` and `ravi doctor` without reading the runner's log.
+   */
+  isRefused(): boolean {
+    return this.refusals > 0;
+  }
+
   /** A reconciliation failed. Only a state refusal counts toward a relaunch. */
   recordFailure(error: unknown): RunnerReleaseRelaunch | null {
     if (!isStateNotReadyError(error)) return null;

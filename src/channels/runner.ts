@@ -57,6 +57,7 @@ import {
   type RunnerReleaseRelaunch,
   drainAndExitForRelaunch,
 } from "./runner-release-guard.js";
+import { runnerReleaseGuardAdapter } from "./runner-release-status.js";
 import {
   startChannelBackendEgressResponder,
   type ChannelBackendEgressResponder,
@@ -151,6 +152,7 @@ export class ChannelRunner {
   private nativeChannelManager: NativeChannelDriverManager | null = null;
   private inboundActionResponder: NativeInboundChannelActionResponder | null = null;
   private adapterStatuses = new Map<string, AdapterStatus>();
+  private releaseGuard: RunnerReleaseGuard | null = null;
   private stopReceiptPruner: (() => void) | null = null;
   private healthResponder: ChannelRunnerHealthResponder | null = null;
   private backendEgressResponder: ChannelBackendEgressResponder | null = null;
@@ -177,6 +179,7 @@ export class ChannelRunner {
     this.startedAt = null;
     this.outboundInfrastructureReady = false;
     this.adapterStatuses.clear();
+    this.releaseGuard = null;
 
     const env = this.options.env ?? process.env;
     // Stores resolve paths from process.env, even when a driver has custom options.
@@ -237,6 +240,7 @@ export class ChannelRunner {
           this.options.onReleaseDrift?.(relaunch);
         },
       });
+      this.releaseGuard = releaseGuard;
       this.outboundPublishReconciler = new ChannelOutboundPublishReconciler({
         isRunning: () => this.running,
         onLoopSuccess: () => releaseGuard.recordSuccess(),
@@ -406,6 +410,11 @@ export class ChannelRunner {
     const statuses = new Map(this.adapterStatuses);
     for (const health of this.nativeChannelManager?.health() ?? []) {
       statuses.set(health.id, health);
+    }
+    // Derived at read time from the guard, so it clears on the first accepted pass and has no copy to keep in sync.
+    if (this.releaseGuard?.isRefused()) {
+      const refused = runnerReleaseGuardAdapter();
+      statuses.set(refused.id, refused);
     }
     return Array.from(statuses.values()).sort((a, b) => a.id.localeCompare(b.id));
   }

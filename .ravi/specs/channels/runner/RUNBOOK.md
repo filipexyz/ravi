@@ -76,3 +76,11 @@ On shutdown the runner must:
    the daemon has not prepared state yet: start the installed daemon; the runner
    does not restart. Still run `ravi channels restart` after installing a
    release rather than waiting for the relaunch.
+7. The same drift is readable without the log. `ravi channels status` reports
+   health `degraded (release_drift)` and the restart command in its warnings, and
+   `ravi doctor --domain channels` fails `channels.runner_release`. A
+   `degraded (state_refused)` health is the runner saying its guard refuses it
+   while the releases match: prepare state with the daemon
+   (`ravi daemon restart -m "prepare state"`), not by restarting the runner.
+   `unverified` (doctor `skip`) means a process has no boot receipt yet, as in a
+   status read right after a restart: read it again before acting.

@@ -59,3 +59,29 @@ refused pass: `stop()` stops every component and then rejects
 Nothing durable is at risk: accepted inbound envelopes are persisted before the
 Slack ack, and unpublished outbound jobs stay pending until the new process
 publishes them.
+
+## Health says so too
+
+A runner the relaunch cannot reach still has to be visible. The relaunch only
+helps a runner that runs this code: the runner stuck on 2026-11-19 ran the
+previous release, which has no relaunch, and a refusal with matching releases is
+one a restart could not end. `ravi channels status` printed its stale-code
+warning that day, but its health stayed `ready` (PM2 online, socket connected)
+and `ravi doctor` had no check on the runner, so nothing an operator reads after
+an install said the runner was refused.
+
+Two signals cover it. The release each process booted with (the boot receipt
+bound to its PID and start time) shows drift for any runner, an old one
+included, because it needs nothing from the runner. The runner's own state guard
+shows what receipts cannot: a refusal while the releases match. The runner
+reports it as a `degraded` entry of `adapters`, not as a new snapshot field: the
+snapshot's return schema is strict and is generated into six files (two OpenAPI
+documents, the Swift and Dart schemas, two TypeScript SDK files), and the health
+classification already treats a `degraded` entry as unhealthy and the status
+output already prints it.
+
+A release that cannot be verified is never called drift: a status read right
+after a restart finds no receipt for the new process yet, and a healthy runner
+must not be called broken for that. Stale code alone stays a warning for the same
+reason as before: a rebuilt bundle at the same release does not make the guard
+refuse anything.

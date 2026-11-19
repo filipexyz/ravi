@@ -115,3 +115,30 @@ still reports it online. The runner MUST NOT stay in that state:
   so it cannot loop.
 - Only non-`STATE_SCHEMA_NOT_READY` failures and stale-but-accepted runners keep
   the explicit-restart behaviour above.
+
+## Release drift is visible where operators look
+
+The relaunch only helps a runner that already runs this code, and only when a
+restart can help. The same condition MUST also be visible without reading the
+runner's log:
+
+- `ravi channels status` MUST report health `degraded` with reason
+  `release_drift` when the runner and the daemon booted with different releases,
+  comparing the `runningVersion` of their boot receipts, and MUST put both
+  releases, why it matters and the restart command in `warnings`. A release that
+  cannot be verified (no receipt for the PID and start time yet) MUST be treated
+  as unknown, never as drift.
+- A runner whose state guard refuses its reconcile passes MUST report that in its
+  health snapshot as a `degraded` entry of `adapters` with id
+  `runner:release-guard` and reason `state_refused`, from the first refused pass
+  until the first accepted one. `ravi channels status` MUST report health
+  `degraded` with reason `state_refused` for it, whether the releases match or
+  not. The snapshot MUST NOT gain a field for it.
+- `ravi doctor` MUST report `channels.runner_release`: `fail` when the releases
+  differ, `warn` when only the runner reports a refused guard, `skip` when a
+  release cannot be verified or a process is not online. The runner's own report
+  comes from a bounded NATS probe; a runner that does not answer MUST NOT hold
+  the doctor.
+- Process liveness, stale code on its own and a connected socket MUST NOT turn
+  this verdict on or off: they stay reported as `stale`, `codeStale` and adapter
+  status.
