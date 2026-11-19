@@ -866,13 +866,13 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/update.ts | 546 | triaged-follow-up | catch-without-binding | src/cli/commands/update.ts:93e288a912d18b45a71a8cd0 |
 | cli | src/cli/commands/update.ts | 597 | no-cause | Optional intake warning must not initialize local state or fail a completed update when the gateway is unavailable. | src/cli/commands/update.ts:8c7f44f7e8c1d5096b50084a |
 | cli | src/cli/commands/update.ts | 649 | triaged-follow-up | catch-without-binding | src/cli/commands/update.ts:4182d0cbe2f493f2d9b69f88 |
-| cli | src/cli/commands/update.ts | 775 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:474caae717eddaa7c894e6f1 |
-| cli | src/cli/commands/update.ts | 807 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:956532064255dadc3dee0348 |
-| cli | src/cli/commands/update.ts | 848 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:a9c6d086c3ce450848169299 |
-| cli | src/cli/commands/update.ts | 1046 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:1314e4fbd85b4898447778eb |
-| cli | src/cli/commands/update.ts | 1085 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:de4e17f1bd9bee37fd1b5125 |
-| cli | src/cli/commands/update.ts | 1105 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:74bbfa2976253cbe237bad91 |
-| cli | src/cli/commands/update.ts | 1134 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:c33f18a27e6494675a063425 |
+| cli | src/cli/commands/update.ts | 770 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:474caae717eddaa7c894e6f1 |
+| cli | src/cli/commands/update.ts | 811 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:956532064255dadc3dee0348 |
+| cli | src/cli/commands/update.ts | 852 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:a9c6d086c3ce450848169299 |
+| cli | src/cli/commands/update.ts | 1050 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:1314e4fbd85b4898447778eb |
+| cli | src/cli/commands/update.ts | 1089 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:de4e17f1bd9bee37fd1b5125 |
+| cli | src/cli/commands/update.ts | 1109 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:74bbfa2976253cbe237bad91 |
+| cli | src/cli/commands/update.ts | 1138 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:c33f18a27e6494675a063425 |
 | cli | src/cli/commands/watch.ts | 558 | fixed | binding retained / no recognized error surface | src/cli/commands/watch.ts:fbff794a5bddadc3ca9ea59f |
 | cli | src/cli/commands/widgets.ts | 68 | triaged-follow-up | catch-without-binding | src/cli/commands/widgets.ts:8c447b55c38f008aa381b929 |
 | cli | src/cli/commands/widgets.ts | 80 | triaged-follow-up | catch-without-binding | src/cli/commands/widgets.ts:13d9ce0b17bf6fda14a722e3 |
@@ -890,8 +890,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/youtube.ts | 1391 | fixed | binding retained / no recognized error surface | src/cli/commands/youtube.ts:0b0b9c6c742bfed563ca0775 |
 | cli | src/cli/context.ts | 199 | triaged-follow-up | catch-without-binding | src/cli/context.ts:9e7eca8e26d51a8350e4f5f9 |
 | cli | src/cli/daemon-process-tree.ts | 18 | no-cause | No /proc entry (macOS, or the process exited): the caller falls back to ps. | src/cli/daemon-process-tree.ts:61057a3a7392186f0787c07e |
-| cli | src/cli/daemon-process-tree.ts | 36 | no-cause | An unreadable parent ends the walk; the caller treats the chain as outside the daemon. | src/cli/daemon-process-tree.ts:ff7a07a3b9a49493213628db |
-| cli | src/cli/daemon-process-tree.ts | 122 | no-cause | An unreadable PM2 is an unknown position, so it counts as inside and the worker keeps waiting. | src/cli/daemon-process-tree.ts:417f82de02c714008e49f383 |
+| cli | src/cli/daemon-process-tree.ts | 37 | no-cause | An unreadable parent ends the walk; the caller treats the chain as outside the daemon. | src/cli/daemon-process-tree.ts:ff7a07a3b9a49493213628db |
+| cli | src/cli/daemon-process-tree.ts | 123 | no-cause | An unreadable PM2 is an unknown position, so it counts as inside and the worker keeps waiting. | src/cli/daemon-process-tree.ts:417f82de02c714008e49f383 |
 | cli | src/cli/env.ts | 67 | fixed | binding retained / no recognized error surface | src/cli/env.ts:b76b7cc01882eb319d11a188 |
 | cli | src/cli/host-cli-gateway.ts | 62 | fixed | binding retained / no recognized error surface | src/cli/host-cli-gateway.ts:fbf979b7648feaf37ce0e087 |
 | cli | src/cli/host-cli-gateway.ts | 68 | fixed | binding retained / no recognized error surface | src/cli/host-cli-gateway.ts:f7e094da98fed906069260b2 |

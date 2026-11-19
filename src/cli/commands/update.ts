@@ -207,13 +207,13 @@ function fail(message: string, code = "UPDATE_FAILED", exitCode = 1): never {
   throw new UpdateFailure(message, code, exitCode);
 }
 
-function updateConfigPath(): string {
-  return join(getRaviStateDir(), "update.json");
+function updateConfigPath(stateDir: string = getRaviStateDir()): string {
+  return join(stateDir, "update.json");
 }
 
-function readUpdateConfig(): RaviUpdateConfig {
+function readUpdateConfig(stateDir: string = getRaviStateDir()): RaviUpdateConfig {
   try {
-    const raw = readFileSync(updateConfigPath(), "utf8");
+    const raw = readFileSync(updateConfigPath(stateDir), "utf8");
     return JSON.parse(raw) as RaviUpdateConfig;
   } catch {
     return {};
@@ -740,9 +740,10 @@ export function updateCommandArgs(options: RaviUpdateOptions): string[] {
   return args;
 }
 
-function describeRequested(options: RaviUpdateOptions): string {
+/** `stateDir` is the directory the run will use: the saved channel is read from there, not from the caller's cwd. */
+function describeRequested(options: RaviUpdateOptions, stateDir?: string): string {
   if (options.version) return normalizeExactVersion(options.version);
-  return resolveUpdateChannel(options);
+  return resolveUpdateChannel(options, readUpdateConfig(stateDir));
 }
 
 function envRecord(env: NodeJS.ProcessEnv): Record<string, string> {
@@ -763,12 +764,6 @@ async function handOffUpdate(
 ): Promise<RaviUpdateHandoff> {
   assertUpdateSelectors(options);
   const env = deps.env ?? process.env;
-  const requested = describeRequested(options);
-  // The worker installs what the caller was told: a channel resolved here is passed on, not resolved again.
-  const request: RaviUpdateOptions = options.version
-    ? options
-    : { ...options, next: requested === "next", stable: requested === "latest" };
-  const runId = createUpdateRunId(deps.now?.());
   let stateDir: string | undefined;
   try {
     stateDir = resolveDetachedUpdateStateDir(env, daemonCwd);
@@ -782,7 +777,16 @@ async function handOffUpdate(
       { cause },
     );
   }
-  const paths = updateRunPaths(runId, stateDir ?? getRaviStateDir(env));
+  const runStateDir = stateDir ?? getRaviStateDir(env);
+  // The saved channel lives in the daemon's state directory, which a relative RAVI_STATE_DIR only names from the
+  // daemon's cwd: read it there, not from the caller's cwd.
+  const requested = describeRequested(options, runStateDir);
+  // The worker installs what the caller was told: a channel resolved here is passed on, not resolved again.
+  const request: RaviUpdateOptions = options.version
+    ? options
+    : { ...options, next: requested === "next", stable: requested === "latest" };
+  const runId = createUpdateRunId(deps.now?.());
+  const paths = updateRunPaths(runId, runStateDir);
   try {
     const script = (deps.argv ?? process.argv)[1];
     if (!script) throw new Error("the CLI entry point is unknown");
