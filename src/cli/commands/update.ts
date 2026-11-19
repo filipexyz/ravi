@@ -19,13 +19,18 @@ import { CHANNELS_PM2_PROCESS_NAME, getPm2Processes, PM2_PROCESS_NAME, type Pm2P
 import type { ChannelConfig } from "../../router/router-db.js";
 import { getRaviStateDir } from "../../utils/paths.js";
 import { CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
-import { isInsideDaemonProcessTree, waitUntilOutsideDaemonProcessTree } from "../daemon-process-tree.js";
+import {
+  type DaemonTreePosition,
+  locateInDaemonProcessTree,
+  waitUntilOutsideDaemonProcessTree,
+} from "../daemon-process-tree.js";
 import { dispatchRemote, resolveContextKeyForRemote, resolveRemoteGatewayConfig } from "../remote-gateway.js";
 import {
   buildDetachedUpdateEnv,
   createUpdateRunId,
   decideUpdateExecution,
   prepareUpdateRunDir,
+  resolveDetachedUpdateStateDir,
   spawnDetachedUpdateProcess,
   UPDATE_HANDOFF_ENV,
   UPDATE_HANDOFF_WORKER_ENV,
@@ -116,6 +121,8 @@ export interface UpdateExecutionDeps {
   cwd?: string;
   now?: () => Date;
   insideDaemonTree?: () => boolean;
+  /** cwd of the running daemon, read with `insideDaemonTree` (test seam; the default reads PM2 once for both). */
+  daemonCwd?: string | null;
   waitUntilDetached?: () => Promise<boolean>;
   spawnDetached?: DetachedSpawn;
   exit?: (code: number) => never;
@@ -757,12 +764,29 @@ function envRecord(env: NodeJS.ProcessEnv): Record<string, string> {
  * detached child takes the request; if it cannot be started, the update is
  * refused, never run inline.
  */
-async function handOffUpdate(options: RaviUpdateOptions, deps: UpdateExecutionDeps): Promise<RaviUpdateHandoff> {
+async function handOffUpdate(
+  options: RaviUpdateOptions,
+  deps: UpdateExecutionDeps,
+  daemonCwd: string | null,
+): Promise<RaviUpdateHandoff> {
   assertUpdateSelectors(options);
   const env = deps.env ?? process.env;
   const requested = describeRequested(options);
   const runId = createUpdateRunId(deps.now?.());
-  const paths = updateRunPaths(runId, getRaviStateDir(env));
+  let stateDir: string | undefined;
+  try {
+    stateDir = resolveDetachedUpdateStateDir(env, daemonCwd);
+  } catch (cause) {
+    throw new UpdateFailure(
+      "ravi update was started inside the daemon's process tree with a relative RAVI_STATE_DIR, and the daemon's " +
+        "working directory could not be read, so nothing was installed or stopped. Set RAVI_STATE_DIR to an " +
+        "absolute path or run ravi update from a terminal.",
+      "UPDATE_DETACH_FAILED",
+      1,
+      { cause },
+    );
+  }
+  const paths = updateRunPaths(runId, stateDir ?? getRaviStateDir(env));
   try {
     const script = (deps.argv ?? process.argv)[1];
     if (!script) throw new Error("the CLI entry point is unknown");
@@ -778,7 +802,7 @@ async function handOffUpdate(options: RaviUpdateOptions, deps: UpdateExecutionDe
       {
         command: deps.execPath ?? process.execPath,
         args: [script, ...updateCommandArgs(options)],
-        env: buildDetachedUpdateEnv(env, runId),
+        env: buildDetachedUpdateEnv(env, runId, stateDir),
         cwd: deps.cwd ?? process.cwd(),
         logPath: paths.log,
       },
@@ -1028,23 +1052,74 @@ function recordRunOutcome(env: NodeJS.ProcessEnv, runId: string | undefined, out
   }
 }
 
+function failUpdate(options: RaviUpdateOptions, error: unknown): never {
+  if (!(error instanceof UpdateFailure)) throw error;
+  return contractFail("ravi update", error.code, error.message, {
+    ...{
+      asJson: options.json,
+      exitCode: error.exitCode,
+      details: {
+        retryable: error.code === "REGISTRY_UNAVAILABLE" || error.code === "UPDATE_FAILED",
+        suggestedAction:
+          error.code === "UPDATE_DETACH_FAILED"
+            ? "Run ravi update from a terminal."
+            : "Verify the requested release and retry.",
+      },
+    },
+    diagnostic: errorDiagnostic(error, { operation: "ravi update" }),
+  });
+}
+
+/**
+ * Only a readable "outside" lets the update run inline: a PM2 that cannot be read refuses the update instead of
+ * answering "outside". Usage errors still come first, and the run markers decide without reading PM2.
+ */
+function readDaemonTreePosition(
+  options: RaviUpdateOptions,
+  deps: UpdateExecutionDeps,
+  env: NodeJS.ProcessEnv,
+): DaemonTreePosition {
+  if (env[UPDATE_HANDOFF_ENV] === "1" || env[UPDATE_HANDOFF_WORKER_ENV] === "1") {
+    return { inside: false, daemonCwd: null };
+  }
+  assertUpdateSelectors(options);
+  try {
+    if (deps.insideDaemonTree) return { inside: deps.insideDaemonTree(), daemonCwd: deps.daemonCwd ?? null };
+    return locateInDaemonProcessTree();
+  } catch (cause) {
+    throw new UpdateFailure(
+      "Could not read PM2 runtime status, so Ravi cannot tell whether this update runs inside the daemon's " +
+        "process tree. Check `pm2 jlist` and retry.",
+      "UPDATE_FAILED",
+      1,
+      { cause },
+    );
+  }
+}
+
 export async function runUpdate(
   options: RaviUpdateOptions = {},
   deps: UpdateExecutionDeps = {},
 ): Promise<RaviUpdateResult | RaviUpdateHandoff> {
   const reporter = createReporter(options.json === true);
   const env = deps.env ?? process.env;
+  let position: DaemonTreePosition = { inside: false, daemonCwd: null };
+  try {
+    position = readDaemonTreePosition(options, deps, env);
+  } catch (error) {
+    failUpdate(options, error);
+  }
   const execution = decideUpdateExecution({
     handoffEnv: env[UPDATE_HANDOFF_ENV],
     workerEnv: env[UPDATE_HANDOFF_WORKER_ENV],
-    insideDaemonTree: (deps.insideDaemonTree ?? (() => isInsideDaemonProcessTree()))(),
+    insideDaemonTree: position.inside,
   });
   // The detached child only starts the worker; its own outcome is not the run's.
   if (execution === "reparent") return await reparentUpdate(deps);
   const run: { runId?: string; worker: boolean } = execution === "inline" ? takeUpdateRun(env) : { worker: false };
   try {
     if (execution === "handoff") {
-      const handoff = await handOffUpdate(options, deps);
+      const handoff = await handOffUpdate(options, deps, position.daemonCwd);
       if (reporter.json) console.log(JSON.stringify(handoff));
       else reporter.ok(`${handoff.message} Log: ${handoff.logPath}`);
       return handoff;
@@ -1066,17 +1141,6 @@ export async function runUpdate(
       code: error instanceof UpdateFailure ? error.code : "UPDATE_FAILED",
       message: error instanceof Error ? error.message : String(error),
     });
-    if (!(error instanceof UpdateFailure)) throw error;
-    contractFail("ravi update", error.code, error.message, {
-      ...{
-        asJson: options.json,
-        exitCode: error.exitCode,
-        details: {
-          retryable: error.code === "REGISTRY_UNAVAILABLE" || error.code === "UPDATE_FAILED",
-          suggestedAction: "Verify the requested release and retry.",
-        },
-      },
-      diagnostic: errorDiagnostic(error, { operation: "ravi update" }),
-    });
+    failUpdate(options, error);
   }
 }

@@ -277,11 +277,21 @@ Initial checks:
 - `channels.provider_health_unavailable`
 - `channels.inbound_actor_unresolved`
 - `channels.inbound_contact_unresolved`
+- `channels.runner_release`
 
 Enabled production instances that are disconnected SHOULD be `error`.
 
 Provider health missing SHOULD be `warn` unless a provider is known required
 for the active runtime.
+
+`channels.runner_release` MUST be `error` when the channel runner and the daemon
+booted with different releases (PM2 reports the runner online while the state
+guard refuses it) and `warn` when only the runner reports a refused guard on
+matching releases. A release that cannot be verified, or a process that is not
+online, MUST be `skip`, never an error, unless the runner itself reports a
+refused guard: that is evidence on its own and is a `warn` when the releases do
+not verifiably differ. Verified different releases are the error above, with or
+without a refusal.
 
 Recent inbound messages without resolved actor metadata SHOULD be `error`.
 Recent inbound messages without contact or agent metadata SHOULD be `error`

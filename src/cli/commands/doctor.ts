@@ -60,8 +60,11 @@ import {
   getDefaultAgentId,
   getRaviDbPath,
 } from "../../router/router-db.js";
+import { probeChannelRunnerHealth, type ChannelAdapterHealth } from "../../channels/health.js";
 import { inspectNativeChannelRuntime, type NativeChannelRuntimeSnapshot } from "../../channels/native-readiness.js";
-import { CHANNELS_PM2_PROCESS_NAME, getPm2Process, isPm2Available } from "../../pm2.js";
+import { describeRunnerRelease, inspectRunnerRelease } from "../../channels/runner-release-status.js";
+import { buildManagedRuntimeIdentity, type ManagedRuntimeIdentity } from "../../managed-runtime.js";
+import { CHANNELS_PM2_PROCESS_NAME, getPm2Process, getPm2Processes, isPm2Available } from "../../pm2.js";
 import {
   currentCliOnlyCommands,
   currentWeakPublicReturnCommands,
@@ -271,12 +274,20 @@ type DoctorDeps = {
   codexKnowledgeParityHolds: typeof codexKnowledgeParityHolds;
   listInboxSubscriptions: (opts?: { enabledOnly?: boolean }) => unknown[];
   inspectNativeChannelRuntime: () => NativeChannelRuntimeSnapshot;
+  /** The daemon and the channel runner as PM2 and their boot receipts show them; null when PM2 is unavailable. */
+  inspectManagedRuntime: () => Pick<ManagedRuntimeIdentity, "daemon" | "channels"> | null;
+  /** The adapter health the runner with this PM2 PID reports over NATS; null when it does not answer. */
+  probeChannelRunnerAdapters: (pid: number) => Promise<readonly ChannelAdapterHealth[] | null>;
 };
 
 export interface InspectDoctorOptions {
   domain?: string | null;
   /** Async NATS probe result; inspectDoctor is synchronous, so runDoctor probes first. */
   natsExposure?: NatsExposureReport | null;
+  /** The runner's adapter health, probed by runDoctor for the same reason. */
+  runnerAdapters?: readonly ChannelAdapterHealth[] | null;
+  /** The PM2 read runDoctor already made to find the runner's PID, so the check and the probe agree and PM2 is read once. */
+  managedRuntime?: ReturnType<DoctorDeps["inspectManagedRuntime"]>;
 }
 
 export interface RunDoctorOptions extends InspectDoctorOptions {
@@ -345,7 +356,17 @@ const DEFAULT_DEPS: DoctorDeps = {
       listChannels: dbListChannels,
       runnerStatus: () => (isPm2Available() ? (getPm2Process(CHANNELS_PM2_PROCESS_NAME)?.status ?? "missing") : null),
     }),
+  inspectManagedRuntime: () =>
+    isPm2Available()
+      ? buildManagedRuntimeIdentity(getPm2Processes({ strict: true }), process.env.RAVI_BUNDLE ?? process.argv[1])
+      : null,
+  probeChannelRunnerAdapters: probeRunnerAdapters,
 };
+
+async function probeRunnerAdapters(pid: number): Promise<readonly ChannelAdapterHealth[] | null> {
+  const result = await probeChannelRunnerHealth({ pid });
+  return result.reachable ? result.snapshot.adapters : null;
+}
 
 function defaultStatDisk(path: string): DiskUsageStat | null {
   try {
@@ -603,6 +624,17 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
     });
     addCheck(checks, () => buildInboundIdentityResolutionCheck(deps));
     addCheck(checks, () => buildNativeChannelRuntimeCheck(deps.inspectNativeChannelRuntime()));
+    addCheck(checks, () => {
+      try {
+        return buildChannelRunnerReleaseCheck({
+          runtime: options.managedRuntime !== undefined ? options.managedRuntime : deps.inspectManagedRuntime(),
+          adapters: options.runnerAdapters ?? null,
+        });
+      } catch (error) {
+        // addCheck's own fallback belongs to the runtime domain and `--domain channels` would filter it out.
+        return buildChannelRunnerReleaseReadFailureCheck(error);
+      }
+    });
     addCheck(checks, () => buildCostPricingCoverageCheck(deps));
     addCheck(checks, () => buildCostCompletenessCheck(deps));
   }
@@ -639,7 +671,18 @@ export async function runDoctor(
 ): Promise<DoctorReport> {
   const deps = { ...DEFAULT_DEPS, ...overrides };
   const natsExposure = await probeDoctorNatsExposure(deps, options.domain);
-  const report = inspectDoctor(overrides, { domain: options.domain, natsExposure });
+  const managedRuntime = readDoctorManagedRuntime(deps, options.domain);
+  const runnerAdapters = await probeDoctorRunnerAdapters(
+    deps.probeChannelRunnerAdapters,
+    managedRuntime?.channels ?? null,
+    options.domain,
+  );
+  const report = inspectDoctor(overrides, {
+    domain: options.domain,
+    natsExposure,
+    runnerAdapters,
+    ...(managedRuntime !== undefined ? { managedRuntime } : {}),
+  });
   if (options.json) {
     console.log(JSON.stringify(report, null, 2));
   } else {
@@ -662,6 +705,58 @@ async function probeDoctorNatsExposure(
     return await deps.probeNatsExposure();
   } catch {
     return null;
+  }
+}
+
+/**
+ * PM2 is read once, here, for the channels domain: the runner's PID for the probe and the release
+ * check in `inspectDoctor` come from the same read. Undefined means "not read" (another domain, or the
+ * read threw), so `inspectDoctor` reads it itself and reports a failed read as a failed check.
+ */
+function readDoctorManagedRuntime(
+  deps: DoctorDeps,
+  domain: string | null | undefined,
+): ReturnType<DoctorDeps["inspectManagedRuntime"]> | undefined {
+  const normalized = domain?.trim();
+  if (normalized && normalized !== "channels") return undefined;
+  try {
+    return deps.inspectManagedRuntime();
+  } catch {
+    // no-cause: inspectDoctor reads it again inside a check, which reports the failure with its cause.
+    return undefined;
+  }
+}
+
+/** Doctor is what runs when things are broken: a runner or NATS that does not answer must not hold it. */
+const RUNNER_PROBE_BUDGET_MS = 3_000;
+
+/**
+ * Asks the online runner for its adapter health. Everything it does after the PM2 read is async, so the
+ * budget bounds it: the runner (or NATS) not answering returns null after `budgetMs`, never holds the doctor.
+ */
+export async function probeDoctorRunnerAdapters(
+  probe: (pid: number) => Promise<readonly ChannelAdapterHealth[] | null>,
+  runner: { online: boolean; pid: number | null } | null,
+  domain: string | null | undefined,
+  budgetMs = RUNNER_PROBE_BUDGET_MS,
+): Promise<readonly ChannelAdapterHealth[] | null> {
+  const normalized = domain?.trim();
+  if (normalized && normalized !== "channels") return null;
+  if (!runner?.online || runner.pid === null || !Number.isSafeInteger(runner.pid) || runner.pid <= 0) return null;
+  const pid = runner.pid;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      probe(pid),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), budgetMs);
+      }),
+    ]);
+  } catch {
+    // no-cause: a runner that cannot be probed is reported as "no runner evidence" by the check, never as a doctor failure.
+    return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -1509,6 +1604,94 @@ export function buildNativeChannelRuntimeCheck(snapshot: NativeChannelRuntimeSna
       problems.length > 0
         ? "add or enable the broker connection with `ravi credentials add` (keychain needs macOS; elsewhere use vault with VAULT_ADDR and VAULT_TOKEN), then `ravi channels restart`"
         : "start the runner with `ravi channels start`",
+    data,
+  };
+}
+
+/** A PM2 that cannot be read leaves the releases uncompared; say so in the channels domain, where it is looked for. */
+function buildChannelRunnerReleaseReadFailureCheck(error: unknown): LegacyDoctorCheck {
+  return {
+    id: "channels.runner_release",
+    title: "Channel runner release",
+    status: "skip",
+    severity: "warn",
+    summary: `PM2 could not be read, so the ${CHANNELS_PM2_PROCESS_NAME} and daemon releases could not be compared: ${error instanceof Error ? error.message : String(error)}`,
+    fixHint: "check PM2 with `pm2 jlist`, then compare the releases with `ravi channels status`",
+    data: { state: "unverified", why: "pm2_unreadable" },
+  };
+}
+
+/**
+ * After a daemon restart onto a new release, `ravi-channels` can keep running the old one:
+ * PM2 reports it online and its Slack socket stays connected while the state guard refuses
+ * it and its replies queue (observed 2026-11-19). Only the release each process booted with,
+ * and what the runner reports about its own guard, show it.
+ */
+export function buildChannelRunnerReleaseCheck(input: {
+  runtime: Pick<ManagedRuntimeIdentity, "daemon" | "channels"> | null;
+  adapters: readonly ChannelAdapterHealth[] | null;
+}): LegacyDoctorCheck {
+  const id = "channels.runner_release";
+  const title = "Channel runner release";
+  if (!input.runtime) {
+    return {
+      id,
+      title,
+      status: "skip",
+      summary: `PM2 is not available, so the ${CHANNELS_PM2_PROCESS_NAME} and daemon releases could not be compared`,
+      fixHint: "compare them from a host terminal with `ravi channels status`",
+      data: { state: "unverified", why: "pm2_unavailable" },
+    };
+  }
+
+  const { daemon, channels } = input.runtime;
+  const verdict = inspectRunnerRelease(input.runtime, input.adapters);
+  const details = [
+    `${CHANNELS_PM2_PROCESS_NAME}: ${channels.runningVersion ?? "unknown"}`,
+    `daemon: ${daemon.runningVersion ?? "unknown"}`,
+  ];
+  const data = { state: verdict.state, runnerVersion: channels.runningVersion, daemonVersion: daemon.runningVersion };
+
+  if (verdict.state === "aligned") {
+    return {
+      id,
+      title,
+      status: "ok",
+      summary: `${CHANNELS_PM2_PROCESS_NAME} and the daemon run ${verdict.version}`,
+      details,
+      data,
+    };
+  }
+  if (verdict.state === "unverified") {
+    const summary = {
+      runner_not_online: `${CHANNELS_PM2_PROCESS_NAME} is not online, so there is no runner release to compare`,
+      daemon_not_online: `the daemon is not online, so the ${CHANNELS_PM2_PROCESS_NAME} release could not be compared`,
+      version_unknown: `the release ${CHANNELS_PM2_PROCESS_NAME} or the daemon booted with is not verified (no boot receipt for its PID and start time)`,
+    }[verdict.why];
+    return {
+      id,
+      title,
+      status: "skip",
+      ...(verdict.why === "version_unknown" ? { severity: "warn" as const } : {}),
+      summary,
+      details,
+      ...(verdict.why === "version_unknown"
+        ? { fixHint: "restart the unverified process so it records its release; `ravi channels status` names it" }
+        : {}),
+      data: { ...data, why: verdict.why },
+    };
+  }
+
+  // A drifted runner is an outage with a healthy-looking process; a refusal with matching
+  // releases is usually a daemon still preparing state, which clears on the next pass.
+  const described = describeRunnerRelease(verdict);
+  return {
+    id,
+    title,
+    status: verdict.state === "drift" ? "fail" : "warn",
+    summary: described?.problem ?? `${CHANNELS_PM2_PROCESS_NAME} release is not aligned with the daemon`,
+    details,
+    ...(described ? { fixHint: described.fix } : {}),
     data,
   };
 }

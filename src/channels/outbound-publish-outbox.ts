@@ -810,6 +810,10 @@ export class ChannelOutboundPublishReconciler {
       limit?: number;
       now?: () => number;
       reconcile?: typeof reconcileDueChannelOutboundPublishes;
+      /** A pass threw (the loop logs it and retries). Lets the runner see a state refusal. */
+      onLoopFailure?: (error: unknown) => void;
+      /** A pass completed without throwing. */
+      onLoopSuccess?: () => void;
     } = {},
   ) {}
 
@@ -847,10 +851,21 @@ export class ChannelOutboundPublishReconciler {
           const result = await (this.options.reconcile ?? reconcileDueChannelOutboundPublishes)(this.options);
           if (result.failed > 0) this.workDrain.recordFailure("outbound-publication-reconciliation-record");
         });
+        this.callHook(() => this.options.onLoopSuccess?.());
       } catch (error) {
         log.warn("Channel outbound publish reconcile loop failed; retrying", { error });
+        this.callHook(() => this.options.onLoopFailure?.(error));
       }
       await delayWhileRunning(intervalMs, () => this.shouldContinue());
+    }
+  }
+
+  /** An observer must never be able to end the loop it observes. */
+  private callHook(hook: () => void): void {
+    try {
+      hook();
+    } catch (error) {
+      log.warn("Channel outbound publish reconcile hook failed", { error });
     }
   }
 }

@@ -528,12 +528,24 @@ export function refuseRebindInsideDaemonTree(
   insideDaemonTree: () => boolean,
   stateDir: string = getRaviStateDir(),
 ): void {
-  if (!insideDaemonTree()) return;
+  // An unreadable PM2 is an unknown position: refused like "inside", never taken for "outside".
+  let readFailure: unknown;
+  try {
+    if (!insideDaemonTree()) return;
+  } catch (cause) {
+    readFailure = cause;
+  }
+  const where =
+    readFailure === undefined
+      ? "was started inside the daemon's process tree"
+      : `could not read PM2 to tell whether it runs inside the daemon's process tree (${
+          readFailure instanceof Error ? readFailure.message : String(readFailure)
+        })`;
   const message =
-    `${UPDATE_SUPERVISOR_IN_DAEMON_TREE}: the update supervisor was started inside the daemon's process tree, ` +
+    `${UPDATE_SUPERVISOR_IN_DAEMON_TREE}: the update supervisor ${where}, ` +
     "where stopping the daemon would kill it before the new runtime starts. Nothing was stopped. " +
     "Run ravi update again: the CLI it installed detaches first.";
-  throw recordSupervisorRefusal(UPDATE_SUPERVISOR_IN_DAEMON_TREE, message, stateDir);
+  throw recordSupervisorRefusal(UPDATE_SUPERVISOR_IN_DAEMON_TREE, message, stateDir, readFailure);
 }
 
 const SUPERVISOR_REFUSAL_FILE = "supervisor-refused.json";
@@ -544,16 +556,21 @@ export type SupervisorRefusal = { code: string; pid: number; at: string; message
  * A supervisor's stdout/stderr may go nowhere (older CLIs ignore them), so a
  * refusal before any stop is also left on disk for whoever started it.
  */
-export function recordSupervisorRefusal(code: string, message: string, stateDir: string = getRaviStateDir()): Error {
+export function recordSupervisorRefusal(
+  code: string,
+  message: string,
+  stateDir: string = getRaviStateDir(),
+  cause?: unknown,
+): Error {
   try {
     const dir = join(stateDir, "updates");
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const refusal: SupervisorRefusal = { code, pid: process.pid, at: new Date().toISOString(), message };
     writeFileSync(join(dir, SUPERVISOR_REFUSAL_FILE), `${JSON.stringify(refusal, null, 2)}\n`, { mode: 0o600 });
-  } catch (cause) {
-    return new Error(message, { cause });
+  } catch (writeFailure) {
+    return new Error(message, { cause: writeFailure });
   }
-  return new Error(message);
+  return cause === undefined ? new Error(message) : new Error(message, { cause });
 }
 
 /** The refusal a supervisor recorded at or after `sinceMs`, if any. */
@@ -577,7 +594,7 @@ export function readSupervisorRefusal(sinceMs: number, stateDir: string = getRav
 }
 
 export async function maybeRunManagedRuntimeRebindFromEnv(
-  insideDaemonTree: () => boolean = () => isInsideDaemonProcessTree(),
+  insideDaemonTree: () => boolean = () => isInsideDaemonProcessTree({ strict: true }),
 ): Promise<boolean> {
   const encoded = process.env[MANAGED_RUNTIME_REBIND_ENV];
   if (!encoded) return false;

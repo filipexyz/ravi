@@ -58,7 +58,12 @@
     check);
   - run ids validated before use as paths;
   - a detached environment without runtime context and with an absolute state
-    directory;
+    directory; a relative `RAVI_STATE_DIR` anchored at the daemon's cwd (not
+    the caller's) for the environment and the run directory, and refused when
+    that cwd is unknown;
+  - an unreadable PM2 that refuses with `UPDATE_FAILED` before anything is
+    detached, installed or stopped, a usage error that still comes first, and
+    a worker that counts a failed read during its wait as still inside;
   - a caller inside the tree that installs nothing and returns the run;
   - refusal when the child cannot start, including a launch failure reported
     as an `error` event by the real spawn (missing executable or working
@@ -69,7 +74,8 @@
   - a worker that removes its run markers before installing, PM2
     registrations that clear them, and an inline update with an inherited run
     id that leaves that run's result alone;
-  - a supervisor that refuses before reading its request.
+  - a supervisor that refuses before reading its request, also when it cannot
+    read PM2, with the reason in `supervisor-refused.json`.
 - `bun test src/update-preflight.test.ts` MUST prove:
   - numeric release order, ignoring a prerelease suffix or a `v` prefix;
   - the release that last prepared the state, read from its readiness markers,
