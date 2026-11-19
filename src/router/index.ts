@@ -31,6 +31,7 @@ export {
   matchRoute,
   resolveRoute,
   commitMatchedRoute,
+  previewCommittedSessionKey,
   RouteSessionAgentConflictError,
   generateThreadForkSessionName,
   expandHome,

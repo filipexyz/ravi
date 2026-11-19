@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { attachChatToSession, getOrCreateSession, updateSessionName } from "../router/sessions.js";
 import { dbUpsertChat, getDb, closeRouterDb } from "../router/router-db.js";
-import { recordDeliveryTrace, recordResponseEmittedTrace } from "./channel-trace.js";
+import { recordDeliveryTrace, recordResponseEmittedTrace, recordRouteRejectedTrace } from "./channel-trace.js";
 import { querySessionTrace } from "./query.js";
 import { recordAdapterRequestTrace, recordTerminalTurnTrace, summarizeRuntimeCapabilities } from "./runtime-trace.js";
 import {
@@ -38,6 +38,21 @@ describe("session trace query", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("records a DM held by the owner guard as a route rejection keyed by the candidate session", () => {
+    const event = recordRouteRejectedTrace({
+      sessionKey: "agent:main:main",
+      sessionName: null,
+      agentId: "main",
+      source: { channel: "whatsapp", accountId: "main", chatId: "5511988887777@s.whatsapp.net" } as never,
+      reason: "dm_owner_session_non_owner",
+      payloadJson: { senderPhone: "5511988887777", sessionKey: "agent:main:main" },
+    });
+
+    expect(event.eventType).toBe("route.rejected");
+    expect(event.status).toBe("rejected");
+    expect(event.payloadJson).toMatchObject({ reason: "dm_owner_session_non_owner", senderPhone: "5511988887777" });
   });
 
   it("persists only normalized failure diagnostics in trace events and artifacts", () => {
