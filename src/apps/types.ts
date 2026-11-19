@@ -338,7 +338,12 @@ export interface RaviAppRunOptions extends RaviAppDiscoveryOptions {
   };
 }
 
-export type RaviAppDependencyUnavailableReason = "not_installed" | "invalid" | "not_provided" | "version_mismatch";
+export type RaviAppDependencyUnavailableReason =
+  | "not_installed"
+  | "invalid"
+  | "not_provided"
+  | "version_mismatch"
+  | "insufficient_authority";
 
 /**
  * A `requires` entry the router could not satisfy when it was about to run an app. Every field is a validated
@@ -353,6 +358,8 @@ export interface RaviAppUnavailableDependency {
   reason: RaviAppDependencyUnavailableReason;
   /** The version the provider offers, when it is installed and the range rejects it. */
   installedVersion?: string;
+  /** For `insufficient_authority`: the provider's `context.allow` entries that the requiring app does not declare. */
+  missing?: string[];
 }
 
 /**

@@ -2221,7 +2221,8 @@ function writeConsumer(root: string, id: string, extra: Record<string, unknown> 
     root,
     id,
     compositionManifest(id, {
-      context: { allow: ["execute:group:context"] },
+      // It declares what it delegates: the provider's `execute:group:pages` is in its own allow, not added for it.
+      context: { allow: ["execute:group:context", "execute:group:pages"] },
       operations: {
         [`${id}.render`]: { interface: "cli", command: "bun cli.mjs render {args}", json: true, mutating: false },
         [`${id}.check`]: { interface: "builtin", handler: "apps.manifest.check", mutating: false },
@@ -2451,6 +2452,69 @@ describe("Ravi app composition", () => {
     expect((served.result as ConsumerReport).outcome).toMatchObject({ ok: true, operationId: "md-render.html" });
     expect(existsSync(join(root, "started"))).toBe(true);
     expect(blogFiles()).toEqual(blogBefore);
+  }, 30_000);
+
+  it("refuses a provider that asks for more than the consumer declares, so an upgrade cannot widen the consumer", async () => {
+    const root = makeRepo();
+    writeMdRender(root);
+    writeConsumer(root, "blog");
+    const GROUP_BASES: ContextCapability = { permission: "execute", objectType: "group", objectId: "bases" };
+    // The invoker holds more than either manifest declares, so only the manifests decide below.
+    const turn = compositionTurn([
+      appCapability("use", "blog"),
+      appCapability("use", "md-render"),
+      APPS_RUN,
+      GROUP_CONTEXT,
+      GROUP_PAGES,
+      GROUP_BASES,
+    ]);
+    const started = join(root, "started");
+    expect(await callAsContext(root, turn, "blog", "render", [consumerConfig(root)])).toMatchObject({ ok: true });
+    rmSync(started);
+
+    // The provider is upgraded inside the range and now also asks for bases. The consumer's manifest did not change.
+    writeMdRender(root, {
+      version: "1.1.0",
+      context: { allow: ["execute:group:pages", "execute:group:bases"] },
+      provides: { "md-render/html": { version: "1.1.0", operations: ["md-render.html"] } },
+    });
+    const refused = await callAsContext(root, turn, "blog", "render", [consumerConfig(root)]);
+    expect(refused).toMatchObject({
+      ok: false,
+      status: "failed",
+      errorCode: "APP_DEPENDENCY_UNAVAILABLE",
+      unavailableDependencies: [
+        {
+          requires: "md-render/html",
+          range: "^1",
+          requiredBy: "blog",
+          reason: "insufficient_authority",
+          missing: ["execute:group:bases"],
+        },
+      ],
+    });
+    expect(existsSync(started)).toBe(false);
+    expect(getContextLineage(turn.contextId)?.descendants).toHaveLength(2);
+    expect(raiseContractFailure(refused, true).error.envelope().error.cause).toBe(
+      "blog requires md-render/html@^1: the provider asks for execute:group:bases which blog does not declare in context.allow.",
+    );
+
+    // Declaring it in the consumer's own manifest is what makes it run again, and the context it gets is that declaration.
+    writeConsumer(root, "blog", {
+      context: { allow: ["execute:group:context", "execute:group:pages", "execute:group:bases"] },
+    });
+    const served = await callAsContext(root, turn, "blog", "render", [consumerConfig(root)]);
+    expect(served).toMatchObject({ ok: true });
+    const blogChild = getContextLineage(turn.contextId)?.descendants.find(
+      (context) => context.contextId === served.childContextId,
+    ) as ContextRecord;
+    expect(capabilityNames(blogChild)).toEqual([
+      "execute:group:bases",
+      "execute:group:context",
+      "execute:group:pages",
+      "mutate:apps:run",
+      "use:app:md-render",
+    ]);
   }, 30_000);
 
   it("answers a mutating operation with the dependency error while the provider is missing, and with its preview once it is there", async () => {

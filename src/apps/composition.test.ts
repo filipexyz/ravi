@@ -380,11 +380,18 @@ describe("discovery filtered by source", () => {
 
 describe("what a composed app may ask for", () => {
   function setup(root: string): Map<string, RaviAppManifestRecord> {
-    writeApp(root, appManifest("top", { context: { allow: ["read:context:whoami"] }, requires: { "mid/html": "^1" } }));
+    // Each app declares what the apps it requires declare, because it delegates that to them.
+    writeApp(
+      root,
+      appManifest("top", {
+        context: { allow: ["read:context:whoami", "execute:group:pages", "read:bases:show"] },
+        requires: { "mid/html": "^1" },
+      }),
+    );
     writeApp(
       root,
       appManifest("mid", {
-        context: { allow: ["execute:group:pages"] },
+        context: { allow: ["execute:group:pages", "read:bases:show"] },
         provides: provides("mid"),
         requires: { "base/html": "^1" },
       }),
@@ -419,7 +426,7 @@ describe("what a composed app may ask for", () => {
     ]);
   });
 
-  it("is the union of every allow in the chain, plus the right to call each provider", () => {
+  it("is the app's own allow plus the right to call each provider, and nothing a provider declares", () => {
     const found = setup(makeRepo());
     const top = found.get("top")!;
     const allow = composedContextAllow(top, resolveDependencyClosure(top, [...found.values()]));
@@ -436,6 +443,87 @@ describe("what a composed app may ask for", () => {
     );
     // `mid` offers only a read operation: no execute on it.
     expect(allow).not.toContain("execute:app:mid");
+
+    // The same chain with a top that declares less: the ceiling is its own declaration, so a provider's allow does not
+    // top it up. The chain is refused instead (below).
+    const narrow = found.get("mid")!;
+    expect(composedContextAllow(narrow, resolveDependencyClosure(narrow, [...found.values()])).sort()).toEqual(
+      ["execute:group:pages", "read:bases:show", "use:app:base", "execute:app:base"].sort(),
+    );
+  });
+
+  it("refuses a provider that asks for more than the app requiring it declares, and says what", () => {
+    const root = makeRepo();
+    writeApp(
+      root,
+      appManifest("blog", { context: { allow: ["read:context:whoami"] }, requires: { "md-render/html": "^1" } }),
+    );
+    writeApp(
+      root,
+      appManifest("md-render", {
+        context: { allow: ["execute:group:pages", "read:context:whoami", "read:bases:show"] },
+        provides: provides("md-render"),
+      }),
+    );
+    const found = records();
+    const blog = found.get("blog")!;
+    const closure = resolveDependencyClosure(blog, [...found.values()]);
+    expect(closure.providers).toEqual([]);
+    expect(closure.unavailable).toEqual([
+      {
+        requires: "md-render/html",
+        range: "^1",
+        requiredBy: "blog",
+        reason: "insufficient_authority",
+        missing: ["execute:group:pages", "read:bases:show"],
+      },
+    ]);
+    // The same gap is a warning at discovery, so `apps check` shows it before anything runs.
+    expect(blog.warnings).toContain(
+      "blog requires md-render/html@^1: the provider asks for execute:group:pages, read:bases:show which blog does not declare in context.allow.",
+    );
+    expect(blog.valid).toBe(true);
+  });
+
+  it("lets a wildcard in the requiring app's allow cover what the provider asks for", () => {
+    const root = makeRepo();
+    writeApp(
+      root,
+      appManifest("blog", { context: { allow: ["execute:group:*"] }, requires: { "md-render/html": "^1" } }),
+    );
+    writeApp(
+      root,
+      appManifest("md-render", { context: { allow: ["execute:group:pages"] }, provides: provides("md-render") }),
+    );
+    const found = records();
+    const blog = found.get("blog")!;
+    expect(resolveDependencyClosure(blog, [...found.values()]).unavailable).toEqual([]);
+    expect(blog.warnings.filter((warning) => warning.includes("requires"))).toEqual([]);
+    // And a specific grant never covers a different one.
+    writeApp(
+      root,
+      appManifest("blog", { context: { allow: ["execute:group:context"] }, requires: { "md-render/html": "^1" } }),
+    );
+    expect(records().get("blog")?.warnings.join("\n")).toContain("which blog does not declare in context.allow");
+  });
+
+  it("turns back to normal when the requiring app declares what its provider asks, with no change to the provider", () => {
+    const root = makeRepo();
+    writeApp(
+      root,
+      appManifest("md-render", { context: { allow: ["execute:group:pages"] }, provides: provides("md-render") }),
+    );
+    writeApp(root, appManifest("blog", { requires: { "md-render/html": "^1" } }));
+    expect(records().get("blog")?.warnings.join("\n")).toContain("execute:group:pages which blog does not declare");
+    writeApp(
+      root,
+      appManifest("blog", { context: { allow: ["execute:group:pages"] }, requires: { "md-render/html": "^1" } }),
+    );
+    expect(
+      records()
+        .get("blog")
+        ?.warnings.filter((warning) => warning.includes("requires")),
+    ).toEqual([]);
   });
 
   it("adds the public routing access to a consumer that has providers, and to nobody else", () => {

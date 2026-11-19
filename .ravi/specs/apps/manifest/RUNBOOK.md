@@ -67,9 +67,13 @@ To make an app offer a service:
 2. Declare `provides` with the key `<app-id>/<service>`, an exact version and
    the operation ids.
 3. Keep the app's `context.allow` to what those operations need: every app that
-   requires the service will hold it as part of its own ceiling.
+   requires the service has to declare it in its own `context.allow`, and a
+   provider that starts asking for more breaks its consumers until they do.
 4. Bump the major version when an offered operation changes in a way an
    existing caller would notice.
+5. An existing app that starts offering a service changes two things: apps that
+   already call it are refused until they declare `requires`, and its own
+   credential then ends with its process. Tell the apps that call it first.
 
 To make an app need a service:
 
@@ -77,7 +81,9 @@ To make an app need a service:
 2. Run `ravi apps check <app-id> --json`: a requirement that nothing satisfies
    shows as a warning with the reason. The app still lists and shows; its CLI
    operations are what the router holds back (spec `apps/router`).
-3. A validation error naming `requires cycle` means two or more apps need each
+3. Declare in your own `context.allow` what the providers declare in theirs; a
+   warning that names entries as missing (`insufficient_authority`) tells which.
+4. A validation error naming `requires cycle` means two or more apps need each
    other. Break the cycle by moving the shared part into a third app that both
    require.
 4. An error about a range means the text is not one the runtime can read. Use

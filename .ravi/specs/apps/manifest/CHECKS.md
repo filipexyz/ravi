@@ -124,6 +124,9 @@
   - Confirm a source filter does not change what is satisfied: a state app that
     requires a repo or plugin app has no warning in the `--source state` view, and a
     cycle across two sources is an error in every view.
+  - Warn, naming the missing entries, when a required provider's `context.allow`
+    asks for something the requiring app's own `context.allow` does not cover
+    (wildcards cover); no warning once it does.
   - Warn `the provider's manifest is invalid or ambiguous` (not `no app with that id
     is installed`) when the required app's manifest does not parse.
   - Confirm an app with neither field is validated and reported exactly as

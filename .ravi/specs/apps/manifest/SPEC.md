@@ -390,6 +390,13 @@ the router, with its own child context (spec `apps/router`, "Composition").
   and the error MUST name the path (`requires cycle: a -> b -> a.`). An app that
   only leads into a cycle stays valid; it is told, as a warning, that what it
   needs is invalid.
+- An app that requires a service MUST declare, in its own `context.allow`,
+  everything the providers of that service (and the providers they require)
+  declare in theirs: their contexts are issued from its own, so it delegates
+  that authority and the manifest is where it is written. Wildcards count. A
+  provider that asks for more is reported like any other unsatisfied
+  requirement (`insufficient_authority`, with the entries missing), as a
+  discovery warning, and the run is refused.
 - A requirement that nothing satisfies (no app with that id, an invalid or
   duplicated one, one that does not offer the service, an offered version outside
   the range) MUST NOT make the manifest invalid. It MUST be a discovery warning
@@ -575,5 +582,7 @@ the router, with its own child context (spec `apps/router`, "Composition").
   turns listing apps into running them.
 - Finding a cycle only at run time, when both apps are already running and each
   is waiting on the other.
+- Adding a provider's `context.allow` to its consumer's at run time, so the
+  consumer grows with every provider upgrade and its manifest never shows it.
 - Making a missing provider invalidate the consumer's manifest, which forces an
   install order on the ecosystem instead of holding the run back.

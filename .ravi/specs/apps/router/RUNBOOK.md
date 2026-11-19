@@ -163,7 +163,11 @@ The reasons and what each one asks for:
 - `not_provided`: the provider does not offer that service key. The provider is
   an older or different version, or the consumer names the wrong key.
 - `version_mismatch`: the provider offers a version outside the consumer's
-  range. Update the provider, or the consumer's range when the new major is
+  range.
+- `insufficient_authority`: the provider's `context.allow` asks for entries the
+  consumer's own `context.allow` does not cover (the entries are listed). Add them
+  to the consumer's `context.allow` if it should delegate them, or ask the provider
+  for less. The consumer is not widened for you, including after a provider upgrade. Update the provider, or the consumer's range when the new major is
   compatible.
 
 Once the provider is back, run the same command again. The consumer needs no

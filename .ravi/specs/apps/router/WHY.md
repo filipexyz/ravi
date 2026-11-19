@@ -85,10 +85,17 @@ child context is revoked when the process ends, and the revocation cascades).
 - A provider's context is born from the consumer's context, not from the turn,
   so authority only narrows down the chain and the audit reads turn → consumer
   → provider.
-- That requires the consumer's context to hold what its providers may do. The
-  cost is a wider ceiling for apps that have `requires`, bounded by what the
-  invoker holds. The alternative (sibling contexts, both from the turn) keeps
-  the ceilings apart and loses the lineage, which is the thing being asked for.
+- That requires the consumer's context to hold what its provider is issued, so
+  the consumer has to be allowed it. The first design added every provider's
+  `context.allow` to the consumer's ceiling. The independent review rejected it:
+  the consumer then grows with every provider upgrade, its manifest does not
+  show it, and declaring `requires` is enough to get it. The decision is that
+  the consumer declares what it delegates: its own `context.allow` has to cover
+  its provider's, checked before anything starts, and a provider that asks for
+  more fails closed (`insufficient_authority`). The lineage stays, and so does
+  provider ⊆ consumer ⊆ invoker. The alternative (sibling contexts, both from the
+  turn) keeps the ceilings apart and loses the lineage, which is the thing being
+  asked for.
 - Only operations listed under `provides` pass between apps, and only for
   callers that declared the requirement. That is a contract between apps, not a
   permission system for people who hold the app: a turn calling a provider

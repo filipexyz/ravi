@@ -7,7 +7,9 @@
  */
 
 import { semver } from "bun";
-import type { ContextRecord } from "../router/router-db.js";
+import { canWithCapabilities } from "../permissions/capability-snapshot.js";
+import type { ContextCapability, ContextRecord } from "../router/router-db.js";
+import { parseRaviAppCapability } from "./command.js";
 import type {
   RaviAppDependencyUnavailableReason,
   RaviAppManifest,
@@ -251,6 +253,8 @@ const REASON_TEXT: Record<RaviAppDependencyUnavailableReason, (dependency: RaviA
   invalid: () => "the provider's manifest is invalid or ambiguous",
   not_provided: () => "the provider does not offer that service",
   version_mismatch: (dependency) => `the provider offers ${dependency.installedVersion ?? "another version"}`,
+  insufficient_authority: (dependency) =>
+    `the provider asks for ${(dependency.missing ?? []).join(", ") || "more than"} which ${dependency.requiredBy} does not declare in context.allow`,
 };
 
 export function describeUnavailableDependency(dependency: RaviAppUnavailableDependency): string {
@@ -264,9 +268,8 @@ export function describeUnavailableDependency(dependency: RaviAppUnavailableDepe
 export function markUnavailableDependencies(records: RaviAppManifestRecord[]): void {
   for (const record of records) {
     if (!record.valid || !record.manifest) continue;
-    const appId = record.manifest.id;
     for (const requirement of requiredServices(record.manifest)) {
-      const { unavailable } = resolveRequirement(requirement, appId, records);
+      const { unavailable } = resolveRequirement(requirement, record, records);
       if (unavailable) record.warnings.push(describeUnavailableDependency(unavailable));
     }
   }
@@ -277,10 +280,14 @@ export function markUnavailableDependencies(records: RaviAppManifestRecord[]): v
 
 function resolveRequirement(
   requirement: RaviAppRequirement,
-  requiredBy: string,
+  requiredBy: RaviAppManifestRecord,
   records: RaviAppManifestRecord[],
 ): { provider?: RaviAppManifestRecord; unavailable?: RaviAppUnavailableDependency } {
-  const base = { requires: requirement.key.key, range: requirement.range, requiredBy };
+  const base = {
+    requires: requirement.key.key,
+    range: requirement.range,
+    requiredBy: requiredBy.manifest?.id ?? requiredBy.id,
+  };
   // A manifest that did not parse has no id of its own: it is known by the directory it sits in, and it is still the
   // app the requirement names, only a broken one. Saying "not installed" would send the operator to install it again.
   const matches = records.filter((record) => (record.manifest?.id ?? record.id) === requirement.key.appId);
@@ -292,7 +299,42 @@ function resolveRequirement(
   if (!satisfiesRange(offered.version, requirement.range)) {
     return { unavailable: { ...base, reason: "version_mismatch", installedVersion: offered.version } };
   }
+  // The provider's context is issued from the requiring app's, so what the provider is allowed has to be something the
+  // requiring app declares it holds. It is the requiring app's manifest that says what it delegates, and a provider
+  // that starts asking for more has to fail closed here, not widen the requiring app.
+  const missing = uncoveredAllow(provider, requiredBy);
+  if (missing.length > 0) return { unavailable: { ...base, reason: "insufficient_authority", missing } };
   return { provider };
+}
+
+/** The entries of `provider`'s `context.allow` that `holder`'s own `context.allow` does not cover. */
+function uncoveredAllow(provider: RaviAppManifestRecord, holder: RaviAppManifestRecord): string[] {
+  const held = declaredCapabilities(holder.manifest);
+  const asked = provider.manifest?.context?.allow;
+  return (Array.isArray(asked) ? asked : []).filter((entry) => {
+    if (typeof entry !== "string") return false;
+    try {
+      const capability = parseRaviAppCapability(entry);
+      return !canWithCapabilities(held, capability.permission, capability.objectType, capability.objectId);
+    } catch {
+      // A malformed entry is the provider's own validation error; it is not a gap in the holder's declaration.
+      return false;
+    }
+  });
+}
+
+function declaredCapabilities(manifest: RaviAppManifest | null | undefined): ContextCapability[] {
+  const allow = manifest?.context?.allow;
+  const out: ContextCapability[] = [];
+  for (const entry of Array.isArray(allow) ? allow : []) {
+    if (typeof entry !== "string") continue;
+    try {
+      out.push(parseRaviAppCapability(entry));
+    } catch {
+      // Skipped: validation already reports it.
+    }
+  }
+  return out;
 }
 
 export interface RaviAppDependencyEdge {
@@ -318,9 +360,8 @@ export function resolveDependencyClosure(
   const queue: RaviAppManifestRecord[] = [root];
   while (queue.length > 0) {
     const current = queue.shift()!;
-    const currentId = current.manifest?.id ?? current.id;
     for (const requirement of requiredServices(current.manifest)) {
-      const { provider, unavailable } = resolveRequirement(requirement, currentId, records);
+      const { provider, unavailable } = resolveRequirement(requirement, current, records);
       if (unavailable) {
         closure.unavailable.push(unavailable);
         continue;
@@ -337,11 +378,13 @@ export function resolveDependencyClosure(
 }
 
 /**
- * The capabilities the composed app may ask for: its own `context.allow`, plus what each provider it needs (and
- * theirs) declares, plus the right to call each provider (`use:app:<id>`, and the public `apps run` access that
- * `routing` names). A provider's context is issued from its consumer's, and the
- * registry refuses any capability the issuing context does not hold, so this union is the ceiling that lets the
- * chain exist. It never exceeds the invoker: the consumer's own context is issued from the invoker's.
+ * The capabilities a composed app is issued: its own `context.allow` (what its manifest says it holds, and so what it
+ * delegates to its providers), plus the right to call each provider it needs, directly or through another provider
+ * (`use:app:<id>`, and `execute:app:<id>` when a required service offers a mutating operation), plus the public
+ * `apps run` access that `routing` names. The providers' own `context.allow` is NOT added: a provider's context is
+ * issued from this one and the registry refuses what it does not hold, and `resolveDependencyClosure` has already
+ * refused a provider that asks for more than its requirer declares. The ceiling never exceeds the invoker either: this
+ * app's own context is issued from the invoker's.
  */
 export function composedContextAllow(
   root: RaviAppManifestRecord,
@@ -352,9 +395,6 @@ export function composedContextAllow(
   // A call to a provider through the public CLI is `apps run`, and the gateway asks for access to that command
   // before the router sees the call. Without it the requirement could be declared and never used.
   if (routing && closure.edges.length > 0) allow.add(routing);
-  for (const provider of closure.providers) {
-    for (const entry of provider.manifest?.context?.allow ?? []) allow.add(entry);
-  }
   for (const edge of closure.edges) {
     const providerId = edge.provider.manifest!.id;
     allow.add(`use:app:${providerId}`);

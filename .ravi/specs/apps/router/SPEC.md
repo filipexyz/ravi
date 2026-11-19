@@ -347,8 +347,10 @@ provider can still be diagnosed:
   before the mutation brake, so a preview never promises a run that cannot
   happen (the brake keeps its place for every app whose requirements hold). The reasons
   are `not_installed`, `invalid` (an invalid or duplicated manifest),
-  `not_provided` (the app is there and does not offer the service) and
-  `version_mismatch` (the offered version is outside the range).
+  `not_provided` (the app is there and does not offer the service),
+  `version_mismatch` (the offered version is outside the range) and
+  `insufficient_authority` (the provider asks for more than the requiring app
+  declares, below).
 - The run result of that failure MUST carry `unavailableDependencies`: the
   requirement, its range, the app that requires it, the reason and, when there
   is one, the installed version. The public contract error carries the cause
@@ -358,17 +360,26 @@ provider can still be diagnosed:
   edited to make it run again. The check reads the manifests on every run and
   keeps no state.
 - The child context of an app that has `requires` MUST be issued with the app's
-  own `context.allow`, the `context.allow` of every provider in the closure,
-  `use app:<provider>` (plus `execute app:<provider>` for a provider that offers
-  a mutating operation), and the access the gateway asks for before `apps run`,
-  because a call to a provider through the public command is `apps run`. That
-  last one MUST be the form the invoker holds (`mutate:apps:run`, its wildcards,
-  or the legacy `execute:group:apps_run` / `execute:group:apps`), so an invoker
-  that could not have run an app through the gateway gets no composed child
-  either. That union is the most the chain below the app can ever hold. The registry rule that a child holds no capability its parent does not
-  hold applies unchanged, so an invoker that does not hold all of it gets no
-  child context and no process (`child-context issuance failure spawns no
-  process`).
+  own `context.allow` (what its manifest says it holds, and so what it
+  delegates), `use app:<provider>` for every provider in the closure (plus
+  `execute app:<provider>` for a provider that offers a mutating operation), and
+  the access the gateway asks for before `apps run`, because a call to a provider
+  through the public command is `apps run`. That last one MUST be the form the
+  invoker holds (`mutate:apps:run`, its wildcards, or the legacy
+  `execute:group:apps_run` / `execute:group:apps`), so an invoker that could not
+  have run an app through the gateway gets no composed child either. A
+  provider's own `context.allow` MUST NOT be added to it. The registry rule that
+  a child holds no capability its parent does not hold applies unchanged, so an
+  invoker that does not hold all of it gets no child context and no process
+  (`child-context issuance failure spawns no process`).
+- Every edge of the closure MUST satisfy the delegation rule before anything
+  starts: what the provider's `context.allow` declares is covered, entry by
+  entry (wildcards count), by the `context.allow` of the app that requires it.
+  An edge that does not fails the run with `APP_DEPENDENCY_UNAVAILABLE`, reason
+  `insufficient_authority`, and `missing` lists the entries. So the authority a
+  consumer delegates is written in its own manifest, a provider that starts
+  asking for more fails closed instead of widening its consumers, and
+  provider ⊆ consumer ⊆ invoker holds along the whole chain.
 
 When the caller is a process another app's operation started (a context of kind
 `app-runtime` issued by this router for an app, or a credential that process
@@ -429,9 +440,9 @@ other, not a second permission system for whoever already holds the app.
 - Composition mediates Ravi authority: what a context may ask of Ravi, who
   issued it, and when it ends. It is not OS-level isolation. A consumer's process
   and its provider's process run as the same OS user, and the consumer's context
-  holds the union of what its providers may do (the ceiling above), so a
-  consumer that is compromised can use those capabilities directly. Keep a
-  provider's `context.allow` to what the provider's offered operations need.
+  holds what its own manifest declares, which is what it delegated to its
+  providers, so a consumer that is compromised can use that. Declare no more in
+  a consumer, and ask no more in a provider, than the offered operations need.
 
 ## Validation
 
@@ -512,6 +523,10 @@ other, not a second permission system for whoever already holds the app.
   half-run with side effects. Check the requirements before the process starts.
 - Leaving the credential of a composed app alive until its TTL leaves a key
   that a finished process handed to a provider usable by anyone who kept it.
+- Adding the providers' `context.allow` to the consumer's ceiling makes a
+  consumer grow with every provider upgrade without its manifest showing it, and
+  needs no compromise to be abused: declaring `requires` is enough. The consumer
+  declares what it delegates, and a provider that asks for more is refused.
 - Identifying the calling app only by the kind of the context in hand lets an
   app that may derive credentials call, with a derived one, what `provides` does
   not list. The identity follows the lineage, which a process cannot erase.

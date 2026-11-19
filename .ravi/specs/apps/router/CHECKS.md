@@ -110,8 +110,14 @@ offers it) and the real context registry.
   step), and the provider's context carries `composition: { service,
   consumerAppId }`. The audit follows the same `contextId` and `parentContextId`.
 - Each context holds no more than the one above it: the provider holds exactly
-  its own `context.allow`, the consumer holds the union of the chain
-  (its own, the provider's, and `use app:<provider>`), and the turn held all of it.
+  its own `context.allow`, the consumer holds its own `context.allow` plus
+  `use app:<provider>` and the `apps run` access (never the provider's allow), and
+  the turn held all of it.
+- A provider that asks for more than the consumer declares (including after an
+  upgrade inside the range) fails the consumer with `APP_DEPENDENCY_UNAVAILABLE`,
+  reason `insufficient_authority` and `missing` naming the entries, starts no
+  process and issues no context; once the consumer's own manifest declares them it
+  runs again with the provider untouched.
 - An invoker that does not hold what the chain needs fails with
   `APP_OPERATION_FAILED`, starts no process and issues no context.
 - A consumer reaches its provider through the public command and the real gateway
