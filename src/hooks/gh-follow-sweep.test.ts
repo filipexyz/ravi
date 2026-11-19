@@ -33,6 +33,10 @@ afterEach(async () => {
 const LEGACY_UNQUOTED_FILTER = (repo: string, prNumber: number) =>
   `data.payload.repository == ${JSON.stringify(repo)} && (data.payload.number == ${prNumber} || data.payload.pull_request.number == ${prNumber})`;
 
+/** What the release before the noise exclusion wrote: valid, but it hears every duplicate and PR Description run. */
+const SUPERSEDED_FILTER = (repo: string, prNumber: number) =>
+  `data.payload.repository == ${JSON.stringify(repo)} && (data.payload.number == ${JSON.stringify(String(prNumber))} || data.payload.pull_request.number == ${JSON.stringify(String(prNumber))})`;
+
 /**
  * Em produção a manutenção garante watch por repo acompanhado. Nos testes esse
  * default criaria watch de verdade (banco/Console), então o wrapper injeta no-op e
@@ -256,22 +260,27 @@ describe("gh follow maintenance", () => {
     expect(refreshes).toBe(1);
   });
 
-  it("selects only follows whose filter does not compile", () => {
+  it("selects follows whose filter does not compile or is a superseded canonical form", () => {
     expect(validateFilter(LEGACY_UNQUOTED_FILTER("o/r", 1)).ok).toBe(false);
+    expect(validateFilter(SUPERSEDED_FILTER("o/r", 4)).ok).toBe(true);
 
     const repairs = selectGhFollowFilterRepairs([
       { ...trigger("gh-follow:o/r#1", "legacy"), filter: LEGACY_UNQUOTED_FILTER("o/r", 1) },
       { ...trigger("gh-follow:o/r#2", "canonical"), filter: ghFollowFilter("o/r", 2) },
       { ...trigger("gh-follow:o/r#3", "custom"), filter: `data.payload.repository == "o/r"` },
+      { ...trigger("gh-follow:o/r#4", "superseded"), filter: SUPERSEDED_FILTER("o/r", 4) },
+      // The previous canonical filter of another PR is somebody's own filter on this one.
+      { ...trigger("gh-follow:o/r#5", "other-pr"), filter: SUPERSEDED_FILTER("o/r", 6) },
       { ...trigger("bug-follow:x", "not-ours"), filter: "data.bugId == broken" },
     ]);
 
     expect(repairs.map(({ trigger: item, filter }) => [item.id, filter])).toEqual([
       ["legacy", ghFollowFilter("o/r", 1)],
+      ["superseded", ghFollowFilter("o/r", 4)],
     ]);
   });
 
-  it("repairs invalid follow filters on live PRs and refreshes once", async () => {
+  it("repairs invalid and superseded follow filters on live PRs and refreshes once", async () => {
     const updates: Array<[string, string]> = [];
     const deleted: string[] = [];
     let refreshes = 0;
@@ -282,6 +291,9 @@ describe("gh follow maintenance", () => {
         { ...trigger("gh-follow:o/r#1", "open_legacy"), filter: LEGACY_UNQUOTED_FILTER("o/r", 1) },
         { ...trigger("gh-follow:o/r#2", "merged_legacy"), filter: LEGACY_UNQUOTED_FILTER("o/r", 2) },
         { ...trigger("gh-follow:o/r#3", "open_canonical"), filter: ghFollowFilter("o/r", 3) },
+        { ...trigger("gh-follow:o/r#4", "open_superseded"), filter: SUPERSEDED_FILTER("o/r", 4) },
+        { ...trigger("gh-follow:o/r#5", "merged_superseded"), filter: SUPERSEDED_FILTER("o/r", 5) },
+        { ...trigger("gh-follow:o/r#6", "open_custom"), filter: `data.payload.repository == "o/r"` },
       ],
       deleteTrigger: (id) => {
         deleted.push(id);
@@ -295,6 +307,9 @@ describe("gh follow maintenance", () => {
           [1, "OPEN"],
           [2, "MERGED"],
           [3, "OPEN"],
+          [4, "OPEN"],
+          [5, "CLOSED"],
+          [6, "OPEN"],
         ]),
       listWatches: () => [],
       emitTriggersRefresh: async () => {
@@ -302,11 +317,55 @@ describe("gh follow maintenance", () => {
       },
     });
 
-    // PR morta é removida, não reparada; filtro canônico não é reescrito.
-    expect(deleted).toEqual(["merged_legacy"]);
-    expect(updates).toEqual([["open_legacy", ghFollowFilter("o/r", 1)]]);
-    expect(result.triggersRepaired).toBe(1);
-    expect(result.triggersRemoved).toBe(1);
+    // PR morta é removida, não reparada; filtro canônico e filtro customizado não são reescritos.
+    expect(deleted).toEqual(["merged_legacy", "merged_superseded"]);
+    expect(updates).toEqual([
+      ["open_legacy", ghFollowFilter("o/r", 1)],
+      ["open_superseded", ghFollowFilter("o/r", 4)],
+    ]);
+    expect(result.triggersRepaired).toBe(2);
+    expect(result.triggersRemoved).toBe(2);
+    expect(refreshes).toBe(1);
+  });
+
+  it("moves a follow created before the noise exclusion onto the current filter once, then leaves it alone", async () => {
+    // A stateful store: the second pass must see what the first one wrote.
+    const store: Trigger[] = [
+      { ...trigger("gh-follow:o/r#4", "old"), filter: SUPERSEDED_FILTER("o/r", 4) },
+      {
+        ...trigger("gh-follow:o/r#6", "hand_made"),
+        filter: `data.payload.repository == "o/r" && data.eventType == "x"`,
+      },
+    ];
+    let refreshes = 0;
+    const deps = {
+      readPending: () => [],
+      listTriggers: () => store,
+      updateTrigger: (id: string, patch: { filter?: string }) => {
+        const row = store.find((item) => item.id === id)!;
+        if (patch.filter) row.filter = patch.filter;
+      },
+      listPrStates: () =>
+        new Map([
+          [4, "OPEN"],
+          [6, "OPEN"],
+        ]),
+      listWatches: () => [],
+      emitTriggersRefresh: async () => {
+        refreshes += 1;
+      },
+    };
+
+    const first = await runMaintenance(deps);
+    expect(first.triggersRepaired).toBe(1);
+    expect(store.find((item) => item.id === "old")!.filter).toBe(ghFollowFilter("o/r", 4));
+    expect(store.find((item) => item.id === "hand_made")!.filter).toBe(
+      `data.payload.repository == "o/r" && data.eventType == "x"`,
+    );
+    expect(refreshes).toBe(1);
+
+    const second = await runMaintenance(deps);
+    expect(second.triggersRepaired).toBe(0);
     expect(refreshes).toBe(1);
   });
 
