@@ -1278,6 +1278,54 @@ describe("OmniConsumer channel context", () => {
       expect(promptCalls).toHaveLength(1);
       expect(commitMatchedRouteCalls).toHaveLength(1);
     }, 20_000);
+
+    it("holds a non-owner that a wildcard route forces into the owner's shared session", async () => {
+      seedOwner();
+      actualRouterSessionsModule.updateSessionName("agent:main:main", "main");
+      configuredRoutes = [{ pattern: "*", accountId: "main", agent: "main", dmScope: "per-peer", session: "main" }];
+
+      await consumer()["handleMessageEvent"](
+        "message.received.whatsapp-baileys.instance-1",
+        dmEvent("evt-dm-forced-session", "5511988887777") as never,
+      );
+
+      expect(promptCalls).toHaveLength(0);
+      expect(commitMatchedRouteCalls).toHaveLength(0);
+    }, 20_000);
+
+    it("admits a non-owner whose literal route forces a session on purpose", async () => {
+      seedOwner();
+      actualRouterSessionsModule.updateSessionName("agent:main:main", "main");
+      configuredRoutes = [{ pattern: "5511988887777", accountId: "main", agent: "main", session: "main" }];
+
+      await consumer()["handleMessageEvent"](
+        "message.received.whatsapp-baileys.instance-1",
+        dmEvent("evt-dm-literal-forced", "5511988887777") as never,
+      );
+
+      expect(commitMatchedRouteCalls).toHaveLength(1);
+      expect(commitMatchedRouteCalls[0]?.matched.route?.pattern).toBe("5511988887777");
+    }, 20_000);
+
+    it("does not let a literal route vouch for a DM that routing's earlier attach sends to the shared session", async () => {
+      const omni = consumer();
+      // Before the owner is tagged, routing attaches the colleague's chat to the shared session.
+      await omni["handleMessageEvent"](
+        "message.received.whatsapp-baileys.instance-1",
+        dmEvent("evt-dm-before-owner", "5511988887777") as never,
+      );
+      expect(commitMatchedRouteCalls).toHaveLength(1);
+
+      seedOwner();
+      configuredRoutes = [{ pattern: "5511988887777", accountId: "main", agent: "john" }];
+      await omni["handleMessageEvent"](
+        "message.received.whatsapp-baileys.instance-1",
+        dmEvent("evt-dm-after-owner", "5511988887777") as never,
+      );
+
+      expect(commitMatchedRouteCalls).toHaveLength(1);
+      expect(promptCalls).toHaveLength(1);
+    }, 20_000);
   });
 
   it("lets the link flow answer a private message of a person who must link, before any route or agent turn", async () => {

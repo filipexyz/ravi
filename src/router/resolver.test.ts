@@ -4,12 +4,22 @@
  * Tests pure routing functions (matchRoute, findRoute, matchPattern) and
  * the thread: pattern priority introduced in the instances architecture.
  *
- * No DB access — all tests use in-memory RouterConfig.
+ * The routing functions use an in-memory RouterConfig. Only
+ * previewCommittedSessionKey reads the session table (it never writes), so its
+ * block runs on an isolated state dir.
  */
 
-import { describe, it, expect } from "bun:test";
-import { matchPattern, findRoute, matchRoute, resolveCommittedSessionKey } from "./resolver.js";
+import { afterEach, beforeEach, describe, it, expect } from "bun:test";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import {
+  matchPattern,
+  findRoute,
+  matchRoute,
+  previewCommittedSessionKey,
+  resolveCommittedSessionKey,
+} from "./resolver.js";
 import { parseSessionKey } from "./session-key.js";
+import { getOrCreateSession, listSessions } from "./sessions.js";
 import type { RouterConfig, RouteConfig, AgentConfig } from "./types.js";
 
 // ============================================================================
@@ -461,6 +471,66 @@ describe("resolveCommittedSessionKey", () => {
         forcedRouteSessionName: "ravi-hil",
       }),
     ).toBe("agent:main:dm:5511999999999");
+  });
+});
+
+// ============================================================================
+// previewCommittedSessionKey — the key commitMatchedRoute will land in
+// ============================================================================
+// The commit side is checked in src/channels/owner-dm-guard.routing.test.ts:
+// in this process `src/omni/consumer-context.test.ts` mocks commitMatchedRoute.
+
+describe("previewCommittedSessionKey", () => {
+  let previewState: string | null = null;
+  const thread = "1783200000.000001";
+  const peer = { phone: "U0PEER", accountId: "acc", channel: "slack", isGroup: false, peerKind: "dm" };
+
+  function configForcing(session?: string): RouterConfig {
+    return {
+      agents: { main: { id: "main", cwd: "/tmp/main", dmScope: "per-peer" } },
+      routes: [{ pattern: "*", accountId: "acc", agent: "main", ...(session ? { session } : {}) }],
+      defaultAgent: "main",
+      defaultDmScope: "per-peer",
+      accountAgents: { acc: "main" },
+      instanceToAccount: {},
+      instances: {},
+    };
+  }
+
+  beforeEach(async () => {
+    previewState = await createIsolatedRaviState("ravi-preview-session-key-");
+    getOrCreateSession("agent:main:main", "main", "/tmp/main", { name: "main" });
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(previewState);
+    previewState = null;
+  });
+
+  it("keeps the matched key when the route forces no session", () => {
+    const matched = matchRoute(configForcing(), peer)!;
+    expect(previewCommittedSessionKey(matched, {})).toBe(matched.sessionKey);
+    expect(previewCommittedSessionKey(matched, { threadId: thread })).toBe(matched.sessionKey);
+  });
+
+  it("names the existing session a route forces, and its thread fork", () => {
+    const matched = matchRoute(configForcing("main"), peer)!;
+    expect(matched.sessionKey).not.toBe("agent:main:main");
+    expect(previewCommittedSessionKey(matched, {})).toBe("agent:main:main");
+    expect(previewCommittedSessionKey(matched, { threadId: thread })).toBe(`agent:main:main:thread:${thread}`);
+  });
+
+  it("follows the commit for a forced session that does not exist yet", () => {
+    const matched = matchRoute(configForcing("not-created-yet"), peer)!;
+    expect(previewCommittedSessionKey(matched, {})).toBe(matched.sessionKey);
+    expect(previewCommittedSessionKey(matched, { threadId: ` ${thread} ` })).toBe(`not-created-yet:thread:${thread}`);
+  });
+
+  it("writes nothing", () => {
+    const before = listSessions().length;
+    previewCommittedSessionKey(matchRoute(configForcing("main"), peer)!, { threadId: thread });
+    previewCommittedSessionKey(matchRoute(configForcing("not-created-yet"), peer)!, {});
+    expect(listSessions()).toHaveLength(before);
   });
 });
 

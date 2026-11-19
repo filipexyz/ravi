@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { evaluateOwnerDmGuard, isSharedOwnerSessionKey } from "./owner-dm-guard.js";
+import {
+  evaluateOwnerDmGuard,
+  isOperatorChosenDestination,
+  isPeerNamingRoutePattern,
+  isSharedOwnerSessionKey,
+} from "./owner-dm-guard.js";
 
 const OWNER = "contact-owner";
 const PEER = "contact-peer";
@@ -98,5 +103,48 @@ describe("owner DM guard", () => {
         },
       ),
     ).toEqual({ blocked: true, reason: "non_owner_dm_to_owner_session", ownerCount: 0 });
+  });
+});
+
+describe("owner DM guard: what counts as the operator's choice", () => {
+  const SHARED = "agent:main:main";
+  const BRIDGE = "agent:ponte:slack:ravi-slack:dm:U0PEER";
+
+  it("counts only a literal route pattern as naming the peer; any glob is a wildcard", () => {
+    for (const pattern of ["U0PEER001", "5511999999999", "thread:1763555555.000100"]) {
+      expect(isPeerNamingRoutePattern(pattern)).toBe(true);
+    }
+    for (const pattern of ["*", "U0*", "*999", "*99*", "", "  ", null, undefined]) {
+      expect(isPeerNamingRoutePattern(pattern)).toBe(false);
+    }
+  });
+
+  it("lets a literal route vouch only for the session it sends the message to", () => {
+    const literal = { routePattern: "U0PEER", attachExplicit: false, attachSessionKey: null };
+    expect(isOperatorChosenDestination({ ...literal, routeSessionKey: SHARED, landingSessionKey: SHARED })).toBe(true);
+    // Routing's earlier attach reroutes the DM to the shared session: the route chose the bridge.
+    expect(isOperatorChosenDestination({ ...literal, routeSessionKey: BRIDGE, landingSessionKey: SHARED })).toBe(false);
+    expect(
+      isOperatorChosenDestination({
+        ...literal,
+        routePattern: "U0*",
+        routeSessionKey: SHARED,
+        landingSessionKey: SHARED,
+      }),
+    ).toBe(false);
+  });
+
+  it("lets an explicit attach vouch only for the attached session", () => {
+    const attach = { routePattern: "*", routeSessionKey: SHARED, attachSessionKey: SHARED };
+    expect(isOperatorChosenDestination({ ...attach, attachExplicit: true, landingSessionKey: SHARED })).toBe(true);
+    expect(isOperatorChosenDestination({ ...attach, attachExplicit: false, landingSessionKey: SHARED })).toBe(false);
+    expect(
+      isOperatorChosenDestination({
+        ...attach,
+        attachExplicit: true,
+        attachSessionKey: BRIDGE,
+        landingSessionKey: SHARED,
+      }),
+    ).toBe(false);
   });
 });
