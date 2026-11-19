@@ -28,6 +28,10 @@ an inner fixture removed the launcher's `RAVI_STATE_DIR`. The final assertion
 also reports blocked opens swallowed by recovery code. Fix the isolation; do
 not remove the preload or point the test at production to make it pass.
 
+## When A macOS Job Is Cancelled After 15 Minutes
+
+A job `cancelled` at almost exactly 15 minutes with no steps is not a hung test: the hosted macOS runner was never assigned. Confirm with `gh api repos/<repo>/actions/runs/<run_id>/jobs --jq '.jobs[] | [.name, .created_at, .started_at, .completed_at, (.runner_name // "none"), (.steps | length)] | @tsv'`: `runner_name` is empty and `steps` is 0. Re-running the job usually works. Pushes to `dev` and `main` do not run the macOS jobs for this reason; to run them on `dev`, use `workflow_dispatch` on the CI workflow. If a macOS job fails with steps present, that is a real failure: read its log.
+
 ## When The Gate Says A Test File Runs In No CI Job
 
 `src/ci/test-discovery.test.ts` lists test files that no CI command selects. Decide for each:

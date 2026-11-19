@@ -52,6 +52,7 @@ The incident that motivated this capability: PR #131 passed GitHub CI but failed
   rejects production state paths before opening them. Even a caught rejection
   MUST fail the test run. This harness does not replace the production storage
   access policy.
+- The hosted macOS jobs (`Managed runtime launcher / macos-latest` and `Retained preload guard contracts`) are not part of `Quality Gate` and MUST NOT run on `push` to `dev` or `main`: they run for pull requests and `workflow_dispatch`. A hosted macOS runner is sometimes never assigned; the job then sits queued with no runner and no steps and is cancelled after 15 minutes, which turns the run on `dev` red (6 times on 18-19/11/2026, against 15-40 s of work when a runner exists). `Managed runtime launcher` keeps its Linux leg on every event.
 - Docs-only changes MAY skip runtime coverage but MUST NOT skip spec validation when `.ravi/specs/**` changed.
 - The quality gate MUST be deterministic from the diff and path mapping, not from subjective PR author/source judgement.
 - Devin-authored deliveries MUST pass the same gate as any PR; if PR touches `src/devin/**`, run existing Devin coverage.
@@ -97,4 +98,5 @@ The production-host publication path is `ravi pr publish`, governed by `cli/pr`;
 - `.ravi/specs/**` changes are excluded from CI via `paths-ignore`, making spec errors invisible.
 - A runtime/consumer file changes but no focused test exists or runs, hiding regressions.
 - A test file is added without a path in any `test:shard-N` script, or its path is renamed in the repository but not in the script. CI stays green and the file never runs: 213 of 807 test files, 63 of them under `src/runtime/`, were in that state on 2026-11-18, and some had drifted from the code they test.
+- A macOS job queued without a runner is cancelled after exactly 15 minutes and the push run on `dev` ends `failure` although nothing failed and no step ran.
 - The gate requires external secrets or live APIs, causing CI to fail in forks or offline environments.

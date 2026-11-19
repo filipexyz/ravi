@@ -21,6 +21,13 @@ status: active
 - The same test fails when the job named `Quality Gate` loses `if: always()`, drops a `needs` entry, is renamed, or stops requiring `success` from every dependency (failed, cancelled and skipped all fail it).
 - A new CI job that is neither gated nor listed as deliberately not gated fails the same test until someone decides.
 
+## macOS Job Placement Checks
+
+- `actionlint .github/workflows/ci.yml` passes with the dynamic `matrix.os` of `managed-runtime-launcher`.
+- `retained-preload` carries `if: github.event_name != 'push'`, and the `os` matrix of `managed-runtime-launcher` is `ubuntu-latest` alone when the event is `push` and `ubuntu-latest` plus `macos-latest` otherwise. A push run of `dev` or `main` therefore contains no macOS job.
+- A pull request run still shows `Managed runtime launcher / macos-latest` and `Retained preload guard contracts`; neither is in the `needs` of `Quality Gate` (`bun test src/ci/quality-gate-shards.test.ts` lists them as deliberately not gated).
+- Evidence for the cause: in a cancelled run, `gh api repos/<repo>/actions/runs/<id>/jobs` lists the macOS job with `started_at` equal to `created_at`, an empty `runner_name`, zero `steps` and a `completed_at` 15 minutes later; in a green run the same jobs have eight steps and finish in 15-40 s.
+
 ## Test Discovery Checks
 
 - `bun test src/ci/test-discovery.test.ts` fails when a test file is selected by no CI command and is not in `src/ci/test-discovery-exclusions.ts`, naming the file and where to add it.

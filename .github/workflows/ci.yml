@@ -20,6 +20,8 @@ on:
       - "LICENSE"
   # Stacked PRs must run the same checks when targeting another feature branch.
   pull_request: {}
+  # The macOS jobs stay off pushes (see `managed-runtime-launcher`); this runs them on demand.
+  workflow_dispatch: {}
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -231,7 +233,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # A hosted macOS runner is sometimes never assigned: the job sits queued with no runner and
+        # no steps, and is cancelled after exactly 15 minutes, which turns the whole run on `dev`
+        # red (6 times in 2 days, 18-19/11/2026; the same jobs take 15-40 s when a runner exists).
+        # Pushes to dev/main therefore stay on Linux; pull requests and manual runs keep macOS.
+        # Neither macOS job is part of `Quality Gate`. See quality/ci-gates.
+        os: ${{ fromJSON(github.event_name == 'push' && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}
     steps:
       - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
@@ -249,6 +256,9 @@ jobs:
 
   retained-preload:
     name: Retained preload guard contracts
+    # macOS only, so a push to dev/main would wait on the hosted macOS queue and be cancelled after
+    # 15 minutes whenever no runner is assigned. Pull requests and manual runs still run it.
+    if: github.event_name != 'push'
     runs-on: macos-latest
     timeout-minutes: 10
     steps:
