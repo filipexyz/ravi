@@ -1,4 +1,5 @@
 import { getRecentHistory } from "../db.js";
+import { reopenThreadsForDeliveredInstructions } from "../channels/slack/thread-instruction-delivery.js";
 import { DEFAULT_DELIVERY_BARRIER } from "../delivery-barriers.js";
 import { getSessionByName, type AgentConfig, type SessionEntry } from "../router/index.js";
 import { dbGetChat, dbGetSessionDefaultChatId, dbGetSetting } from "../router/router-db.js";
@@ -1022,6 +1023,9 @@ async function buildRuntimeStartRequestInternal(
     beforeTurnStart: (input) => {
       stopActiveContextLease?.();
       stopActiveContextLease = undefined;
+      // A parent's instruction that waited behind this thread's last turn starts work here: a thread that
+      // closed itself in that turn is reopened, so the close that ends this work reaches the parent.
+      reopenThreadsForDeliveredInstructions(input.deliverableMessages.map((message) => message.launchPrompt));
       const queuedTurnPrompt = findRuntimeTurnPrompt(input.deliverableMessages);
       // A trigger's owner goes only with the one fire it was published with.
       let turnPrompt = withoutSharedTriggerAuthority(queuedTurnPrompt ?? prompt, input.deliverableMessages.length);

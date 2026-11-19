@@ -27,7 +27,9 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ra
 import { canWithCapabilities } from "../../permissions/provider-runtime.js";
 import {
   attachChatToSession,
+  detachChatFromSession,
   getOrCreateSession,
+  getSession,
   getSessionByName,
   listSessionSubscriptions,
   loadRouterConfig,
@@ -2288,6 +2290,75 @@ describe("Slack Socket Mode routing", () => {
       expect(published).toHaveLength(1);
       expect(published[0]?.sessionName).toBe("main-agent-c777");
       expect(listSessionSubscriptions(mainSession.sessionKey)).toEqual([expect.objectContaining({ chatId: chat.id })]);
+    });
+
+    // The commit gives the session it lands in the route's forced name. The
+    // Omni consumer once renamed an attached session this way; the decision is
+    // now shared (src/channels/subscription-precedence.ts), and these pin the
+    // Slack side of it.
+    it("never renames an explicit attach's session to a forced name that no session has yet", async () => {
+      const { chat, mainSession } = setupResidualSubscription("user");
+      const published: Array<{ sessionName: string; payload: unknown }> = [];
+
+      await service(config("main-agent", "fresh-room"), published).handleEnvelope(
+        envelope("env-a2d9-missing-explicit"),
+      );
+
+      expect(published).toHaveLength(1);
+      expect(published[0]?.sessionName).toBe("main-agent-c777");
+      expect(getSessionByName("main-agent-c777")?.sessionKey).toBe(mainSession.sessionKey);
+      expect(getSessionByName("fresh-room")).toBeNull();
+      expect(listSessionSubscriptions(mainSession.sessionKey)).toEqual([expect.objectContaining({ chatId: chat.id })]);
+    });
+
+    it("gives an automatic subscription's chat to the route's own session when the forced name is new", async () => {
+      const { chat, mainSession } = setupResidualSubscription("system");
+      // The chat's automatic subscription sits on a session that is not the one the route computes.
+      const elsewhere = getOrCreateSession("agent:main-agent:elsewhere", "main-agent", "/tmp/main-agent", {
+        name: "elsewhere",
+      });
+      detachChatFromSession(mainSession.sessionKey, chat.id);
+      attachChatToSession({
+        sessionKey: elsewhere.sessionKey,
+        chatId: chat.id,
+        role: "primary",
+        attachedByType: "system",
+        attachedReason: "slack-socket-mode",
+        setOutputTarget: true,
+      });
+      const published: Array<{ sessionName: string; payload: unknown }> = [];
+
+      await service(config("main-agent", "fresh-room"), published).handleEnvelope(envelope("env-a2d9-missing-system"));
+
+      expect(published).toHaveLength(1);
+      expect(published[0]?.sessionName).toBe("fresh-room");
+      // The route's own session takes the forced name; the session the stale
+      // subscription pointed at keeps its own and releases the chat.
+      expect(getSessionByName("fresh-room")?.sessionKey).toBe(MAIN_KEY);
+      expect(getSession(elsewhere.sessionKey)?.name).toBe("elsewhere");
+      expect(listSessionSubscriptions(elsewhere.sessionKey)).toEqual([]);
+      expect(listSessionSubscriptions(MAIN_KEY)).toEqual([expect.objectContaining({ chatId: chat.id })]);
+    });
+
+    it("keeps an automatic subscription when the route's forced session lives on another instance", async () => {
+      const { chat, mainSession } = setupResidualSubscription("system");
+      // attach refuses a session on another instance, so releasing the stale
+      // subscription first would leave the chat with no subscription at all.
+      const farSession = getOrCreateSession("agent:main-agent:far-room", "main-agent", "/tmp/main-agent", {
+        name: "far-room",
+        channel: "slack",
+        accountId: "other-workspace",
+      });
+      const published: Array<{ sessionName: string; payload: unknown }> = [];
+
+      await service(config("main-agent", "far-room"), published).handleEnvelope(envelope("env-a2d9-cross-instance"));
+
+      // The route cannot take the chat, so the subscription keeps it and the
+      // inbound lands in the subscribed session, not in the foreign one.
+      expect(published).toHaveLength(1);
+      expect(published[0]?.sessionName).toBe("main-agent-c777");
+      expect(listSessionSubscriptions(mainSession.sessionKey)).toEqual([expect.objectContaining({ chatId: chat.id })]);
+      expect(listSessionSubscriptions(farSession.sessionKey)).toEqual([]);
     });
 
     it("settles the envelope instead of retrying when the route's session belongs to another agent", async () => {

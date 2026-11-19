@@ -43,6 +43,10 @@ canal com `ravi sessions report "..."` sem fechar e termina com
 `ravi sessions close-thread [--return "..."]`. Progresso e resultado chegam como
 `[System] Inform: Slack thread "<titulo>" (<sessao-da-thread>) ...`.
 
+`thread-send` entra na fila atras do turno atual da thread, sem derrubar o
+turno; `--steer` e `--immediate` sao as escolhas explicitas de steer e
+interrupcao.
+
 Follow-up no canal sobre o assunto de uma thread aberta vai para ela com
 `thread-send`, sem abrir outra. Threads nao falam entre si: a thread pede com
 `report` e a sessao do canal repassa com `thread-send`.

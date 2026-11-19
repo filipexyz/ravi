@@ -35,6 +35,7 @@ import type {
 } from "../../runtime/message-types.js";
 import { buildSessionRelayTurnOrigin, type SessionRelayOriginContext } from "../../runtime/turn-origin.js";
 import { getContext } from "../../cli/context.js";
+import type { DeliveryBarrier, DeliveryBarrierSource } from "../../delivery-barriers.js";
 import { applyProviderModelRule } from "../../runtime/model-catalog.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
 import { logger } from "../../utils/logger.js";
@@ -993,8 +994,19 @@ export async function reportSlackThreadProgress(
 }
 
 /**
+ * A parent's instruction waits for the thread's next pause (follow-up). The
+ * old default, `after_tool`, steers a working turn: the runtime aborts a turn
+ * that is generating, or one whose tool has run for 15 s, and discards it, so
+ * every `thread-send` to a busy thread cost the thread its turn. Steering and
+ * interrupting stay available as explicit choices.
+ */
+export const THREAD_SEND_DEFAULT_DELIVERY_BARRIER: DeliveryBarrier = "after_response";
+
+/**
  * The channel-root session sends new instructions to one of its threads. The
- * thread answers inside the Slack thread; a closed thread reopens.
+ * thread answers inside the Slack thread; a closed thread reopens. By default
+ * the instruction is queued behind the thread's current turn instead of
+ * interrupting it; `deliveryBarrier` opts into steering or interrupting.
  */
 export async function sendSlackThreadMessage(
   input: {
@@ -1003,6 +1015,10 @@ export async function sendSlackThreadMessage(
     message: string;
     /** Who is sending, for turn provenance; defaults to the parent session itself. */
     origin?: SessionRelayOriginContext;
+    /** Explicit delivery choice; omitted means the follow-up default. */
+    deliveryBarrier?: DeliveryBarrier;
+    /** Where `deliveryBarrier` came from; only meaningful with an explicit barrier. */
+    deliveryBarrierSource?: DeliveryBarrierSource;
   },
   dependencies: SlackThreadLifecycleDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<SlackThreadSendResult> {
@@ -1043,14 +1059,18 @@ export async function sendSlackThreadMessage(
   const record = reopened ? reopenSlackThreadLifecycle(found.requestId) : found;
   const parentName = parent.name ?? parent.sessionKey;
   const messageId = `slack-thread-send:${record.requestId}:${randomUUID()}`;
+  const deliveryBarrier = input.deliveryBarrier ?? THREAD_SEND_DEFAULT_DELIVERY_BARRIER;
+  const deliveryBarrierSource: DeliveryBarrierSource = input.deliveryBarrier
+    ? (input.deliveryBarrierSource ?? "explicit")
+    : "default";
   await dependencies.publishPrompt(
     child.name ?? child.sessionKey,
     {
       prompt: `[System] Execute: [from: ${parentName}] ${text}`,
       source: buildSlackThreadChildSource(record, found.threadCanonicalChatId, child.agentId),
       context: buildSlackThreadMessageContext(record, found.threadCanonicalChatId, child.agentId),
-      deliveryBarrier: "after_tool",
-      deliveryBarrierSource: "default",
+      deliveryBarrier,
+      deliveryBarrierSource,
       _slackThreadLifecycle: {
         eventId: messageId,
         eventType: "thread.message",
@@ -1070,6 +1090,14 @@ export async function sendSlackThreadMessage(
   );
   if (reopened) await updateSlackThreadCard(record, { status: "reopened" }, dependencies);
   return { record, reopened, messageId };
+}
+
+/** The root card of a thread reopened by the delivery of a parent's queued instruction. Best effort. */
+export async function updateReopenedSlackThreadCard(
+  record: SlackThreadLifecycleRecord,
+  dependencies: SlackThreadLifecycleDependencies = DEFAULT_DEPENDENCIES,
+): Promise<void> {
+  await updateSlackThreadCard(record, { status: "reopened" }, dependencies);
 }
 
 /**

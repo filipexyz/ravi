@@ -25472,21 +25472,34 @@ class SessionsThreadConfigureReturn {
 SessionsThreadConfigureReturn sessionsThreadConfigureReturnFromJson(Object? json) => SessionsThreadConfigureReturn.fromJsonValue(json);
 
 class SessionsThreadSendOptions {
-  const SessionsThreadSendOptions({this.session});
+  const SessionsThreadSendOptions({this.barrier, this.immediate, this.session, this.steer});
 
+  final String? barrier;
+  final bool? immediate;
   final String? session;
+  final bool? steer;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (barrier != null) {
+      into["barrier"] = RaviJson.from(barrier);
+    }
+    if (immediate != null) {
+      into["immediate"] = RaviJson.from(immediate);
+    }
     if (session != null) {
       into["session"] = RaviJson.from(session);
+    }
+    if (steer != null) {
+      into["steer"] = RaviJson.from(steer);
     }
   }
 }
 
 class SessionsThreadSendReturn {
-  const SessionsThreadSendReturn({required this.actionId, required this.messageId, required this.reopened, required this.requestId, required this.status, required this.thread});
+  const SessionsThreadSendReturn({required this.actionId, this.delivery, required this.messageId, required this.reopened, required this.requestId, required this.status, required this.thread});
 
   final String actionId;
+  final RaviJson? delivery;
   final String messageId;
   final bool reopened;
   final String requestId;
@@ -25496,6 +25509,7 @@ class SessionsThreadSendReturn {
   factory SessionsThreadSendReturn.fromJson(Map<String, Object?> json) {
     return SessionsThreadSendReturn(
       actionId: raviJsonAsString(json["actionId"]),
+      delivery: json["delivery"] == null ? null : RaviJson.from(json["delivery"]),
       messageId: raviJsonAsString(json["messageId"]),
       reopened: raviJsonAsBool(json["reopened"]),
       requestId: raviJsonAsString(json["requestId"]),

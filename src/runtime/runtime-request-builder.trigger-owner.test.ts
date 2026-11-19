@@ -4,6 +4,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { resolveAccessActor } from "../access/actor.js";
+import {
+  closeSlackThreadLifecycle,
+  getSlackThreadLifecycle,
+  registerInboundSlackThread,
+} from "../channels/slack/thread-lifecycle-store.js";
 import { writeCachedActorBinding } from "../cloud-auth/actor-bindings.js";
 import { type AgentConfig } from "../router/index.js";
 import { dbCanonicalizeDmChatForContact, dbUpsertChat } from "../router/router-db.js";
@@ -428,5 +433,91 @@ describe("a trigger fire that lends nothing, from the start of its turn", () => 
     expect(turn.streaming.suppressChatEmit).toBe(false);
     expect(turn.bases()).toMatchObject({ kind: "refused", reason: { kind: "unknown" } });
     await turn.end();
+  });
+});
+
+describe("a parent's queued thread instruction through the real turn start", () => {
+  const PARENT_KEY = `agent:${AGENT_ID}:slack:ravi-slack:C123`;
+  const THREAD_TS = "1713000000.000100";
+  const CHILD_KEY = `${PARENT_KEY}:thread:${THREAD_TS}`;
+  const CHILD_NAME = "slack-thread-child";
+
+  function seedThread() {
+    getOrCreateSession(PARENT_KEY, AGENT_ID, stateDir!, { name: "slack-thread-parent" });
+    getOrCreateSession(CHILD_KEY, AGENT_ID, stateDir!, { name: CHILD_NAME });
+    return registerInboundSlackThread({
+      parentSessionKey: PARENT_KEY,
+      parentSessionName: "slack-thread-parent",
+      childSessionKey: CHILD_KEY,
+      childSessionName: CHILD_NAME,
+      accountId: "ravi-slack",
+      instanceId: "slack-instance",
+      platformChatId: "C123",
+      threadCanonicalChatId: "thread-chat",
+      providerThreadId: THREAD_TS,
+    });
+  }
+
+  function instruction(requestId: string, eventType = "thread.message"): RuntimeLaunchPrompt {
+    return {
+      prompt: "[System] Execute: [from: slack-thread-parent] next step",
+      _agentId: AGENT_ID,
+      deliveryBarrier: "after_response",
+      _slackThreadLifecycle: {
+        eventType,
+        requestId,
+        parentSessionKey: PARENT_KEY,
+        childSessionKey: CHILD_KEY,
+        childSessionName: CHILD_NAME,
+        providerThreadId: THREAD_TS,
+      },
+    };
+  }
+
+  it("reopens a thread that closed itself in the turn the instruction waited behind", async () => {
+    const record = seedThread();
+    // The thread closed with its own return while the parent's instruction sat in the queue.
+    closeSlackThreadLifecycle({ childSessionKey: CHILD_KEY, returnResult: "R1" });
+    expect(getSlackThreadLifecycle(record.requestId)?.status).toBe("closed");
+
+    const turn = await startTurn({
+      sessionKey: CHILD_KEY,
+      sessionName: CHILD_NAME,
+      prompt: instruction(record.requestId),
+    });
+
+    // Delivery is when the thread starts working on it again, so the next close reports its return.
+    expect(getSlackThreadLifecycle(record.requestId)?.status).toBe("open");
+    await turn.end();
+  });
+
+  it("leaves an open thread, a closed thread's other prompts and another child's instruction alone", async () => {
+    const record = seedThread();
+    const openTurn = await startTurn({
+      sessionKey: CHILD_KEY,
+      sessionName: CHILD_NAME,
+      prompt: instruction(record.requestId),
+    });
+    expect(getSlackThreadLifecycle(record.requestId)?.status).toBe("open");
+    await openTurn.end();
+
+    closeSlackThreadLifecycle({ childSessionKey: CHILD_KEY });
+    const reportTurn = await startTurn({
+      sessionKey: CHILD_KEY,
+      sessionName: CHILD_NAME,
+      prompt: instruction(record.requestId, "thread.report"),
+    });
+    // Only a parent's instruction reopens: a progress report or a reminder does not.
+    expect(getSlackThreadLifecycle(record.requestId)?.status).toBe("closed");
+    await reportTurn.end();
+
+    const elsewhere = instruction(record.requestId);
+    elsewhere._slackThreadLifecycle = {
+      ...elsewhere._slackThreadLifecycle!,
+      childSessionKey: `${PARENT_KEY}:thread:9.9`,
+    };
+    const otherTurn = await startTurn({ sessionKey: CHILD_KEY, sessionName: CHILD_NAME, prompt: elsewhere });
+    expect(getSlackThreadLifecycle(record.requestId)?.status).toBe("closed");
+    await otherTurn.end();
   });
 });

@@ -15,6 +15,7 @@ import { expandRaviCommandPrompt, RaviCommandError } from "../commands/index.js"
 import { channelMessagePrefixDelivery, parseChannelMessagePrefix } from "../channels/message-prefix.js";
 import { evaluateOwnerDmGuard, isOperatorChosenDestination } from "../channels/owner-dm-guard.js";
 import { type PendingReviewInput, pendingReviewEvents } from "../channels/pending-review-event.js";
+import { resolveSubscriptionPrecedence } from "../channels/subscription-precedence.js";
 import { isExplicitSessionAttach } from "../router/route-sticky-attach.js";
 import { handleSlashCommand } from "../slash/index.js";
 import {
@@ -34,6 +35,7 @@ const unregisteredCooldowns = new Map<string, number>();
 import {
   attachChatToSession,
   commitMatchedRoute,
+  detachChatFromSession,
   expandHome,
   findSessionByAttachedChat,
   getSession,
@@ -1253,10 +1255,16 @@ export class OmniConsumer {
 
     // sessions/attach: if the canonical chat is already subscribed to a
     // session, route the inbound there instead of to the route-derived
-    // session. The subscription is an explicit operator decision and
-    // overrides the default route resolution.
-    // See .ravi/specs/sessions/attach/SPEC.md (Instance Isolation)
+    // session, with one exception: an automatic subscription (routing's own
+    // bookkeeping) loses to a route that forces another session, and is
+    // released after the commit. An explicit attach (user or agent) keeps the
+    // chat on its session and drops the route's forced session for that chat,
+    // so the commit neither redirects away from it nor renames it to the
+    // route's name. The decision is shared with the Slack path.
+    // See .ravi/specs/sessions/attach/SPEC.md (Instance Isolation) and
+    // src/channels/subscription-precedence.ts
     const existingSubscription = findSessionByAttachedChat(canonicalChat.id);
+    let staleSubscription: typeof existingSubscription = null;
     // Where the route alone sends the message, before a subscription reroutes it.
     const routeMatched = matched;
     // Whether the chat's subscription was honored and was made by a person or
@@ -1266,7 +1274,10 @@ export class OmniConsumer {
         existingSubscription.sessionKey === matched.sessionKey &&
         isExplicitSessionAttach(existingSubscription.attachedByType),
     );
-    if (existingSubscription && existingSubscription.sessionKey !== matched.sessionKey) {
+    if (
+      existingSubscription &&
+      (existingSubscription.sessionKey !== matched.sessionKey || Boolean(matched.route?.session?.trim()))
+    ) {
       const ownerSession = getSession(existingSubscription.sessionKey);
       const ownerAgent = ownerSession ? routerConfig.agents[ownerSession.agentId] : undefined;
       // Instance isolation: never let the subscription override jump
@@ -1284,22 +1295,39 @@ export class OmniConsumer {
           routeSessionKey: matched.sessionKey,
         });
       } else if (ownerSession && ownerAgent) {
-        log.info("Inbound rerouted by session subscription", {
+        const precedence = resolveSubscriptionPrecedence({
+          matched,
+          subscription: existingSubscription,
+          ownerAgentId: ownerSession.agentId,
+          ownerAgent,
           chatId: canonicalChat.id,
-          fromSessionKey: matched.sessionKey,
-          toSessionKey: existingSubscription.sessionKey,
+          threadId,
+          defaultDmScope: routerConfig.defaultDmScope,
         });
-        matched = {
-          agentId: ownerSession.agentId,
-          agent: ownerAgent,
-          sessionKey: existingSubscription.sessionKey,
-          dmScope: matched.dmScope,
-          // The original route stays so policy lookups can still consult
-          // its `policy` override. The subscription doesn't expose a
-          // route — instance-level policy is the next fallback.
-          route: matched.route,
-        };
-        subscriptionAttachIsExplicit = isExplicitSessionAttach(existingSubscription.attachedByType);
+        if (precedence.kind === "route-wins") {
+          log.info("Route session replaces automatic chat subscription", {
+            chatId: canonicalChat.id,
+            subscriptionSessionKey: existingSubscription.sessionKey,
+            subscriptionAgentId: ownerSession.agentId,
+            routeSession: precedence.routeSession,
+            routeAgentId: matched.agentId,
+          });
+          staleSubscription = existingSubscription;
+        } else {
+          if (precedence.rerouted) {
+            log.info("Inbound rerouted by session subscription", {
+              chatId: canonicalChat.id,
+              fromSessionKey: matched.sessionKey,
+              toSessionKey: existingSubscription.sessionKey,
+            });
+          }
+          // The original route stays (minus a forced session that is not the
+          // subscription's) so policy lookups can still consult its `policy`
+          // override. The subscription doesn't expose a route — instance-level
+          // policy is the next fallback.
+          matched = precedence.matched;
+          subscriptionAttachIsExplicit = isExplicitSessionAttach(existingSubscription.attachedByType);
+        }
       } else {
         log.warn("Subscription points to a missing session or agent — falling back to route resolution", {
           chatId: canonicalChat.id,
@@ -1623,6 +1651,14 @@ export class OmniConsumer {
     // re-routing the same chat. Inbound never writes legacy bindings.
     // See .ravi/specs/sessions/attach/SPEC.md
     try {
+      // The route's forced session beat an automatic subscription: release it
+      // so the chat is rebound to the session the commit landed in. The decision
+      // only lets the route win when the chat can be attached to that session
+      // (the forced session, or the route's own key while the forced name does
+      // not exist yet), so the attach below is not refused after this release.
+      if (staleSubscription && staleSubscription.sessionKey !== resolved.sessionKey) {
+        detachChatFromSession(staleSubscription.sessionKey, canonicalChat.id);
+      }
       const existingSubscriptions = listSessionSubscriptions(resolved.sessionKey);
       const existingSubscription = existingSubscriptions.find((s) => s.chatId === canonicalChat.id);
       const hasPrimary = existingSubscriptions.some((s) => s.role === "primary");
