@@ -377,7 +377,8 @@ provider can still be diagnosed:
   (`child-context issuance failure spawns no process`).
 - Every edge of the closure MUST satisfy the delegation rule before anything
   starts: what the provider's `context.allow` declares is covered, entry by
-  entry (wildcards count), by the `context.allow` of the app that requires it.
+  entry, by the `context.allow` of the app that requires it (`context.allow` is
+  explicit and takes no wildcards).
   An edge that does not fails the run with `APP_DEPENDENCY_UNAVAILABLE`, reason
   `insufficient_authority`, and `missing` lists the entries. So the authority a
   consumer delegates is written in its own manifest, a provider that starts

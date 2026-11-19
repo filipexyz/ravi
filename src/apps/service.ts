@@ -104,16 +104,25 @@ export function discoverAppManifests(options: RaviAppListOptions = {}): RaviAppM
   // Every source is read, whatever `options.source` asks to see: a requirement is satisfied by an app from any
   // installed source, and a circle of `requires` can pass through all of them. The filter only decides what is returned.
   const roots = discoverAppRoots(options);
-  const files = new Map<string, RaviAppDiscoveryRoot>();
+  // Every manifest file once, with every root it was found under, in root order. Roots can overlap (a state directory
+  // inside the repository), and then one file sits under more than one.
+  const found = new Map<string, RaviAppDiscoveryRoot[]>();
 
   for (const root of roots) {
     for (const filePath of findManifestFiles(root.rootPath)) {
-      if (!files.has(filePath)) files.set(filePath, root);
+      const under = found.get(filePath);
+      if (under) under.push(root);
+      else found.set(filePath, [root]);
     }
   }
 
-  const everything = Array.from(files.entries())
-    .map(([filePath, root]) => readManifestRecord(filePath, root))
+  const everything = Array.from(found.entries())
+    .map(([filePath, under]) => {
+      // A file belongs to the source the listing asks for when it sits under one of that source's roots, so a filter
+      // never makes an app vanish; otherwise to the first root, as in a listing of every source.
+      const requested = options.source ? under.find((root) => root.source === options.source) : undefined;
+      return readManifestRecord(filePath, requested ?? under[0]!);
+    })
     .sort((left, right) => left.id.localeCompare(right.id) || left.path.localeCompare(right.path));
   const records = options.source ? everything.filter((record) => record.source === options.source) : everything;
 

@@ -393,7 +393,8 @@ the router, with its own child context (spec `apps/router`, "Composition").
 - An app that requires a service MUST declare, in its own `context.allow`,
   everything the providers of that service (and the providers they require)
   declare in theirs: their contexts are issued from its own, so it delegates
-  that authority and the manifest is where it is written. Wildcards count. A
+  that authority and the manifest is where it is written. `context.allow` is
+  explicit and takes no wildcards, so coverage is by the same entry. A
   provider that asks for more is reported like any other unsatisfied
   requirement (`insufficient_authority`, with the entries missing), as a
   discovery warning, and the run is refused.
@@ -533,7 +534,8 @@ the router, with its own child context (spec `apps/router`, "Composition").
 - Manifest validation MUST fail when builtin operations use handlers outside
   the router allowlist.
 - Manifest validation MUST fail when `provides` or `requires` is malformed, when
-  a service key does not start with the app's own id, when an offered version is
+  a `provides` service key does not start with the app's own id (a `requires` key
+  names another app's service), when an offered version is
   not an exact `x.y.z`, when an offered operation is undeclared, duplicated or
   the permission provider operation, when a range cannot be read, when an app
   requires its own service, and when `requires` forms a cycle.

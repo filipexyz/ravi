@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ContextRecord } from "../router/router-db.js";
@@ -378,6 +378,23 @@ describe("discovery filtered by source", () => {
   });
 });
 
+describe("discovery when the roots overlap", () => {
+  it("still lists an app that sits under both the repo root and the state root, in every view", () => {
+    const root = makeRepo();
+    // A state directory inside the repository makes `<repo>/src/apps` the repo root and the state root at once.
+    process.env.RAVI_STATE_DIR = join(realpathSync(root), "src");
+    writeApp(root, appManifest("plain"));
+
+    for (const source of [undefined, "repo", "state"] as const) {
+      const shown = discoverAppManifests({ source });
+      expect(shown.map((record) => record.manifest?.id)).toEqual(["plain"]);
+      expect(shown[0]?.valid).toBe(true);
+      // The file belongs to the source the listing asks for, as it did before composition read every source.
+      if (source) expect(shown[0]?.source).toBe(source);
+    }
+  });
+});
+
 describe("duplicate ids across sources", () => {
   it("are flagged the same way whichever source a listing shows", () => {
     const root = makeRepo();
@@ -506,26 +523,36 @@ describe("what a composed app may ask for", () => {
     expect(blog.valid).toBe(true);
   });
 
-  it("lets a wildcard in the requiring app's allow cover what the provider asks for", () => {
+  it("covers an entry only with the same entry, because context.allow is explicit", () => {
     const root = makeRepo();
-    writeApp(
-      root,
-      appManifest("blog", { context: { allow: ["execute:group:*"] }, requires: { "md-render/html": "^1" } }),
-    );
     writeApp(
       root,
       appManifest("md-render", { context: { allow: ["execute:group:pages"] }, provides: provides("md-render") }),
     );
+    writeApp(
+      root,
+      appManifest("blog", { context: { allow: ["execute:group:pages"] }, requires: { "md-render/html": "^1" } }),
+    );
     const found = records();
     const blog = found.get("blog")!;
+    expect(blog.valid).toBe(true);
     expect(resolveDependencyClosure(blog, [...found.values()]).unavailable).toEqual([]);
     expect(blog.warnings.filter((warning) => warning.includes("requires"))).toEqual([]);
-    // And a specific grant never covers a different one.
+
+    // A different entry does not stand in for it, and a wildcard is no way to say "everything": a manifest that tries
+    // is invalid.
     writeApp(
       root,
       appManifest("blog", { context: { allow: ["execute:group:context"] }, requires: { "md-render/html": "^1" } }),
     );
-    expect(records().get("blog")?.warnings.join("\n")).toContain("which blog does not declare in context.allow");
+    const other = records().get("blog")!;
+    expect(other.valid).toBe(true);
+    expect(other.warnings.join("\n")).toContain("which blog does not declare in context.allow");
+    writeApp(
+      root,
+      appManifest("blog", { context: { allow: ["execute:group:*"] }, requires: { "md-render/html": "^1" } }),
+    );
+    expect(records().get("blog")?.valid).toBe(false);
   });
 
   it("turns back to normal when the requiring app declares what its provider asks, with no change to the provider", () => {
@@ -540,11 +567,9 @@ describe("what a composed app may ask for", () => {
       root,
       appManifest("blog", { context: { allow: ["execute:group:pages"] }, requires: { "md-render/html": "^1" } }),
     );
-    expect(
-      records()
-        .get("blog")
-        ?.warnings.filter((warning) => warning.includes("requires")),
-    ).toEqual([]);
+    const declared = records().get("blog");
+    expect(declared?.valid).toBe(true);
+    expect(declared?.warnings.filter((warning) => warning.includes("requires"))).toEqual([]);
   });
 
   it("adds the public routing access to a consumer that has providers, and to nobody else", () => {
