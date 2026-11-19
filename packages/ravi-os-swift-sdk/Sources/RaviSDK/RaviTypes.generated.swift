@@ -28187,6 +28187,7 @@ public struct SessionsCreateThreadReturn: Codable, Sendable {
   public var idempotencyKey: String
   public var initiatorSession: RaviJSON
   public var nextAttemptAt: Double?
+  public var origin: RaviJSON
   public var parentSession: RaviJSON
   public var publishPending: Bool
   public var publishedNow: Bool
@@ -28196,13 +28197,14 @@ public struct SessionsCreateThreadReturn: Codable, Sendable {
   public var status: String
   public var title: RaviJSON
 
-  public init(actionId: String, child: RaviJSON, executionMode: String, idempotencyKey: String, initiatorSession: RaviJSON, nextAttemptAt: Double? = nil, parentSession: RaviJSON, publishPending: Bool, publishedNow: Bool, queued: Bool, requestId: String, slack: RaviJSON, status: String, title: RaviJSON) {
+  public init(actionId: String, child: RaviJSON, executionMode: String, idempotencyKey: String, initiatorSession: RaviJSON, nextAttemptAt: Double? = nil, origin: RaviJSON, parentSession: RaviJSON, publishPending: Bool, publishedNow: Bool, queued: Bool, requestId: String, slack: RaviJSON, status: String, title: RaviJSON) {
     self.actionId = actionId
     self.child = child
     self.executionMode = executionMode
     self.idempotencyKey = idempotencyKey
     self.initiatorSession = initiatorSession
     self.nextAttemptAt = nextAttemptAt
+    self.origin = origin
     self.parentSession = parentSession
     self.publishPending = publishPending
     self.publishedNow = publishedNow
@@ -28220,6 +28222,7 @@ public struct SessionsCreateThreadReturn: Codable, Sendable {
     case idempotencyKey = "idempotencyKey"
     case initiatorSession = "initiatorSession"
     case nextAttemptAt = "nextAttemptAt"
+    case origin = "origin"
     case parentSession = "parentSession"
     case publishPending = "publishPending"
     case publishedNow = "publishedNow"

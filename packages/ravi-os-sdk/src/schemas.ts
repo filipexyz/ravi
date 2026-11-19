@@ -104222,6 +104222,36 @@ export const SessionsCreateThreadReturnSchema = {
     "nextAttemptAt": {
       "type": "number"
     },
+    "origin": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "canonicalChatId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "channel": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "channel",
+            "canonicalChatId"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "parentSession": {
       "additionalProperties": false,
       "properties": {
@@ -104310,6 +104340,7 @@ export const SessionsCreateThreadReturnSchema = {
     "parentSession",
     "initiatorSession",
     "slack",
+    "origin",
     "child"
   ],
   "type": "object"

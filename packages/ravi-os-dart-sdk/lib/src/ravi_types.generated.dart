@@ -24094,7 +24094,7 @@ class SessionsCreateThreadOptions {
 }
 
 class SessionsCreateThreadReturn {
-  const SessionsCreateThreadReturn({required this.actionId, required this.child, required this.executionMode, required this.idempotencyKey, required this.initiatorSession, this.nextAttemptAt, required this.parentSession, required this.publishPending, required this.publishedNow, required this.queued, required this.requestId, required this.slack, required this.status, required this.title});
+  const SessionsCreateThreadReturn({required this.actionId, required this.child, required this.executionMode, required this.idempotencyKey, required this.initiatorSession, this.nextAttemptAt, required this.origin, required this.parentSession, required this.publishPending, required this.publishedNow, required this.queued, required this.requestId, required this.slack, required this.status, required this.title});
 
   final String actionId;
   final RaviJson child;
@@ -24102,6 +24102,7 @@ class SessionsCreateThreadReturn {
   final String idempotencyKey;
   final RaviJson initiatorSession;
   final double? nextAttemptAt;
+  final RaviJson origin;
   final RaviJson parentSession;
   final bool publishPending;
   final bool publishedNow;
@@ -24119,6 +24120,7 @@ class SessionsCreateThreadReturn {
       idempotencyKey: raviJsonAsString(json["idempotencyKey"]),
       initiatorSession: RaviJson.from(json["initiatorSession"]),
       nextAttemptAt: json["nextAttemptAt"] == null ? null : raviJsonAsDouble(json["nextAttemptAt"]),
+      origin: RaviJson.from(json["origin"]),
       parentSession: RaviJson.from(json["parentSession"]),
       publishPending: raviJsonAsBool(json["publishPending"]),
       publishedNow: raviJsonAsBool(json["publishedNow"]),

@@ -625,7 +625,8 @@ mock.module("../../tags/service.js", () => ({
 
 import { getOptionsMetadata } from "../decorators.js";
 
-const { SessionCommands, sessionThreadSendReturnSchema, sessionThreadsReturnSchema } = await import("./sessions.js");
+const { SessionCommands, sessionCreateThreadReturnSchema, sessionThreadSendReturnSchema, sessionThreadsReturnSchema } =
+  await import("./sessions.js");
 const {
   buildCurrentSessionActionsCommand,
   buildCurrentSessionDeleteMessageCommand,
@@ -2123,9 +2124,13 @@ describe("SessionCommands attach hints", () => {
       true,
     )) as Record<string, any>;
 
+    // The schema is strict and the gateway checks it only after the thread exists: a field the
+    // handler emits and the schema does not declare turns a call that did its work into a 500.
+    expectReturnShape(sessionCreateThreadReturnSchema, result);
     expect(result).toMatchObject({
       status: "queued",
       actionId: "thread.create",
+      origin: null,
       title: "Investigate this branch",
       parentSession: { sessionKey, sessionName: "dev-slack" },
       child: {
@@ -2237,6 +2242,7 @@ describe("SessionCommands attach hints", () => {
       true,
     )) as Record<string, any>;
 
+    expectReturnShape(sessionCreateThreadReturnSchema, result);
     expect(result).toMatchObject({
       status: "queued",
       slack: { accountId: "ravi-slack", instanceId: "ravi-slack", channelId: "D0C8BEV8QUR" },
@@ -2268,8 +2274,18 @@ describe("SessionCommands attach hints", () => {
   it("keeps a thread asked for in a WhatsApp group in Slack only (no origin)", async () => {
     seedWhatsAppTurnInSlackAttachedSession("group");
 
-    await new SessionCommands().createThread("Resumo", "gpt-5.6", "codex", undefined, undefined, undefined, true);
+    const result = await new SessionCommands().createThread(
+      "Resumo",
+      "gpt-5.6",
+      "codex",
+      undefined,
+      undefined,
+      undefined,
+      true,
+    );
 
+    expectReturnShape(sessionCreateThreadReturnSchema, result);
+    expect((result as Record<string, unknown>).origin).toBeNull();
     expect(createdSlackThreadLifecycles).toHaveLength(1);
     expect(createdSlackThreadLifecycles[0]).toMatchObject({ accountId: "ravi-slack", instanceId: "ravi-slack" });
     expect((createdSlackThreadLifecycles[0] as any).origin).toBeUndefined();
