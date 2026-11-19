@@ -109,7 +109,7 @@ function createSourceUpdateScenario(
     join(seed, "supervisor.js"),
     options.supervisor === "noop"
       ? "// Deliberately exits zero without implementing the rebind protocol.\n"
-      : `import { decodeManagedRuntimeRebindRequest, rebindManagedRuntimeProcesses } from ${JSON.stringify(join(process.cwd(), "src/managed-runtime-rebind.ts"))};\nconst request = decodeManagedRuntimeRebindRequest(process.env.RAVI_INTERNAL_UPDATE_RUNTIME_REBIND);\ndelete process.env.RAVI_INTERNAL_UPDATE_RUNTIME_REBIND;\nif (!(await rebindManagedRuntimeProcesses(request.previousProcesses, request.target, { pidAlive: () => true, assertPrepared: () => "ready" }))) throw new Error("Fixture reconciliation failed");\n`,
+      : `import { decodeManagedRuntimeRebindRequest, rebindManagedRuntimeProcesses } from ${JSON.stringify(join(process.cwd(), "src/managed-runtime-rebind.ts"))};\nconst request = decodeManagedRuntimeRebindRequest(process.env.RAVI_INTERNAL_UPDATE_RUNTIME_REBIND);\ndelete process.env.RAVI_INTERNAL_UPDATE_RUNTIME_REBIND;\nif (!(await rebindManagedRuntimeProcesses(request.previousProcesses, request.target, { pidAlive: () => true, assertPrepared: () => "ready", stabilityWindowMs: 0 }))) throw new Error("Fixture reconciliation failed");\n`,
   );
   writeFileSync(join(seed, ".gitignore"), "dist/\nnode_modules/\nbun.lock\n", "utf8");
   writeExecutable(join(seed, "bin", "ravi"), "#!/usr/bin/env bash\necho checkout\n");
@@ -777,6 +777,8 @@ describe("update command helpers", () => {
           stateDir,
           bunPath: process.execPath,
           assertPrepared: () => "adopt-on-start" as const,
+          // A state the waypoint prepared: the adoption path, not the waypoint refusal.
+          preparedStateRelease: () => "3.261113.2",
           runnerEnv: () => ({}),
           pidAlive: () => true,
           // The new daemon refuses at its entry (for example, broker down): it never reports ready.
@@ -858,6 +860,8 @@ describe("update command helpers", () => {
             {
               bunPath: process.execPath,
               assertPrepared: () => "ready" as const,
+              // Real clock here; the window has its own tests (src/update-preflight.test.ts).
+              stabilityWindowMs: 0,
               runnerEnv: () => ({ RAVI_CHANNELS_CONSUME_OUTBOUND: "1" }),
               pidAlive: () => true,
               schemaPhase: (process) => (process.pid === 11 ? "ready" : null),

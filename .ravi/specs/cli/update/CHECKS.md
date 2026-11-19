@@ -70,3 +70,18 @@
     registrations that clear them, and an inline update with an inherited run
     id that leaves that run's result alone;
   - a supervisor that refuses before reading its request.
+- `bun test src/update-preflight.test.ts` MUST prove:
+  - numeric release order, ignoring a prerelease suffix or a `v` prefix;
+  - the release that last prepared the state, read from its readiness markers,
+    and null without a database or markers;
+  - the waypoint refusal for a pre-fence state from a release older than
+    3.261113.2 or without markers, with the exact commands, and no refusal for
+    a fenced state or one prepared by the waypoint or later;
+  - a supervisor that refuses such a state before any stop, records the
+    refusal, and consumes its request and budget variables;
+  - the stability window: success when the same processes stay online,
+    failure on a new PID or start time or a runtime that stops converging, a
+    window bounded by the CLI's deadline, and a 90 s budget when the CLI
+    declares none;
+  - a refusal read back only when recorded since the supervisor started, and
+    its code kept only when it looks like one.
