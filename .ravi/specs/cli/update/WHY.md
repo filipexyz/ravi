@@ -25,3 +25,20 @@ from other consumers. Separately, requiring a default manager PID file refused
 an installed daemon even after the banner was removed. The shared parser and
 the state-boundary parent verification address these independent dependencies;
 the installed launcher remains direct, with the same identity checks.
+
+## Detached execution (19/11/2026)
+
+`pm2 delete ravi` tree-kills every descendant of the daemon. A `detached`
+child does not escape that: it still has a parent inside the tree. On
+19/11/2026 an agent ran `ravi update` from inside its session on a client's
+server. The supervisor deleted `ravi-channels` and `ravi`, died with the
+daemon before starting the replacements, and left PM2 with neither process.
+`ravi daemon restart` already solved this with a two-step handoff, where the
+intermediate exits so the worker is reparented. The update now uses the same
+shape. The env-based `CLI_ONLY` refusal did not prevent this, because a caller
+inside the tree does not always carry `RAVI_CONTEXT_KEY` (a provider that
+filters `RAVI_*`, a cron shell job, a hook). The tree check is the precise
+condition. The supervisor's own refusal covers a CLI installed before this
+change: that CLI starts the supervisor wherever it runs. Refusing leaves the
+previous runtime running, and the next run uses the CLI that was just
+installed.

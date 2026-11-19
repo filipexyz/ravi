@@ -52,3 +52,34 @@
   timestamp, independently of wall-clock precision or skew. Boot observations
   MUST use the same fixture clock as PM2 start times. Replacement tests MUST
   prove the replacement receipt is valid before testing incarnation rejection.
+- `bun test src/cli/update-run.test.ts src/cli/commands/update-detach.test.ts`
+  MUST prove:
+  - the execution decision (handoff inside the tree, markers before the tree
+    check);
+  - run ids validated before use as paths;
+  - a detached environment without runtime context and with an absolute state
+    directory; a relative `RAVI_STATE_DIR` anchored at the daemon's cwd (not
+    the caller's) for the environment and the run directory, and refused when
+    that cwd is unknown;
+  - an unreadable PM2 that refuses with `UPDATE_FAILED` before anything is
+    detached, installed or stopped, a usage error that still comes first, and
+    a worker that counts a failed read during its wait as still inside;
+  - every `ravi` registration tested for ancestry; an unreadable, looping or
+    too deep ancestry refused in strict mode; the `/proc/<pid>/stat` parser,
+    and on Linux the parent read from `/proc` with no `ps` in `PATH`;
+  - the saved channel read from the run's resolved state directory (relative
+    `RAVI_STATE_DIR` included) and passed to the worker;
+  - messages written to `result.json` (worker failure, failed worker launch)
+    redacted like the CLI's output;
+  - a caller inside the tree that installs nothing and returns the run;
+  - refusal when the child cannot start, including a launch failure reported
+    as an `error` event by the real spawn (missing executable or working
+    directory);
+  - a usage error reported to the caller;
+  - a child that starts the worker and exits;
+  - a worker still inside the tree that refuses and records the result;
+  - a worker that removes its run markers before installing, PM2
+    registrations that clear them, and an inline update with an inherited run
+    id that leaves that run's result alone;
+  - a supervisor that refuses before reading its request, also when it cannot
+    read PM2, with the reason in `supervisor-refused.json`.

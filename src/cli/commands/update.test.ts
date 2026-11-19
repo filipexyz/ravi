@@ -607,7 +607,8 @@ describe("update command helpers", () => {
       expect(payload.error.cause).toContain("Unable to read the managed PM2 processes");
       expect(payload.error.cause).toContain("pm2 jlist");
       expect(JSON.parse(readFileSync(join(scenario.checkout, "package.json"), "utf8")).version).toBe(OLD_VERSION);
-      expect(readFileSync(scenario.pm2Calls, "utf8").trim().split("\n")).toEqual(["jlist"]);
+      // Reads only (the daemon-tree check reads PM2 too): no delete, start or save.
+      expect(new Set(readFileSync(scenario.pm2Calls, "utf8").trim().split("\n"))).toEqual(new Set(["jlist"]));
     } finally {
       scenario.cleanup();
     }

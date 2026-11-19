@@ -19,7 +19,26 @@ import { CHANNELS_PM2_PROCESS_NAME, getPm2Processes, PM2_PROCESS_NAME, type Pm2P
 import type { ChannelConfig } from "../../router/router-db.js";
 import { getRaviStateDir } from "../../utils/paths.js";
 import { CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
+import {
+  type DaemonTreePosition,
+  locateInDaemonProcessTree,
+  waitUntilOutsideDaemonProcessTree,
+} from "../daemon-process-tree.js";
 import { dispatchRemote, resolveContextKeyForRemote, resolveRemoteGatewayConfig } from "../remote-gateway.js";
+import {
+  buildDetachedUpdateEnv,
+  createUpdateRunId,
+  decideUpdateExecution,
+  prepareUpdateRunDir,
+  resolveDetachedUpdateStateDir,
+  spawnDetachedUpdateProcess,
+  UPDATE_HANDOFF_ENV,
+  UPDATE_HANDOFF_WORKER_ENV,
+  UPDATE_RUN_ID_ENV,
+  updateRunPaths,
+  writeUpdateRunFile,
+  type DetachedSpawn,
+} from "../update-run.js";
 
 export type UpdateChannel = "latest" | "next";
 export type InstallationType = "source" | "bun" | "npm" | "unknown";
@@ -81,6 +100,32 @@ export interface RaviUpdateResult {
   staleInstalls: RaviInstallSnapshot[];
   runtime: ManagedRuntimeState;
   warnings: string[];
+}
+
+/** Returned to a caller inside the daemon tree: the update runs in a detached worker. */
+export interface RaviUpdateHandoff {
+  success: true;
+  mode: "handoff";
+  package: typeof PACKAGE_NAME;
+  requested: string;
+  runId: string;
+  logPath: string;
+  resultPath: string;
+  message: string;
+}
+
+export interface UpdateExecutionDeps {
+  env?: NodeJS.ProcessEnv;
+  argv?: string[];
+  execPath?: string;
+  cwd?: string;
+  now?: () => Date;
+  insideDaemonTree?: () => boolean;
+  /** cwd of the running daemon, read with `insideDaemonTree` (test seam; the default reads PM2 once for both). */
+  daemonCwd?: string | null;
+  waitUntilDetached?: () => Promise<boolean>;
+  spawnDetached?: DetachedSpawn;
+  exit?: (code: number) => never;
 }
 
 export interface SourceUpdateOutcomeInput {
@@ -162,13 +207,13 @@ function fail(message: string, code = "UPDATE_FAILED", exitCode = 1): never {
   throw new UpdateFailure(message, code, exitCode);
 }
 
-function updateConfigPath(): string {
-  return join(getRaviStateDir(), "update.json");
+function updateConfigPath(stateDir: string = getRaviStateDir()): string {
+  return join(stateDir, "update.json");
 }
 
-function readUpdateConfig(): RaviUpdateConfig {
+function readUpdateConfig(stateDir: string = getRaviStateDir()): RaviUpdateConfig {
   try {
-    const raw = readFileSync(updateConfigPath(), "utf8");
+    const raw = readFileSync(updateConfigPath(stateDir), "utf8");
     return JSON.parse(raw) as RaviUpdateConfig;
   } catch {
     return {};
@@ -671,7 +716,7 @@ function reportSourceUpdate(
   }
 }
 
-async function performUpdate(options: RaviUpdateOptions, reporter: UpdateReporter): Promise<RaviUpdateResult> {
+function assertUpdateSelectors(options: RaviUpdateOptions): void {
   const selectorCount =
     Number(Boolean(options.next)) + Number(Boolean(options.stable)) + Number(Boolean(options.version));
   if (selectorCount > 1) {
@@ -680,6 +725,145 @@ async function performUpdate(options: RaviUpdateOptions, reporter: UpdateReporte
   if (options.expectedIntegrity && !options.version) {
     fail("--expected-integrity requires --version.", "USAGE_ERROR", CONTRACT_EXIT_USAGE);
   }
+  if (options.version) normalizeExactVersion(options.version);
+  if (options.expectedIntegrity) validateExpectedIntegrity(options.expectedIntegrity);
+}
+
+/** The same request, for the detached worker. Always JSON: the worker's output is the run log. */
+export function updateCommandArgs(options: RaviUpdateOptions): string[] {
+  const args = ["update"];
+  if (options.version) args.push("--version", options.version);
+  if (options.expectedIntegrity) args.push("--expected-integrity", options.expectedIntegrity);
+  if (options.next) args.push("--next");
+  if (options.stable) args.push("--stable");
+  args.push("--json");
+  return args;
+}
+
+/** `stateDir` is the directory the run will use: the saved channel is read from there, not from the caller's cwd. */
+function describeRequested(options: RaviUpdateOptions, stateDir?: string): string {
+  if (options.version) return normalizeExactVersion(options.version);
+  return resolveUpdateChannel(options, readUpdateConfig(stateDir));
+}
+
+function envRecord(env: NodeJS.ProcessEnv): Record<string, string> {
+  const record: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) if (value !== undefined) record[key] = value;
+  return record;
+}
+
+/**
+ * Caller inside the daemon tree: nothing is installed or stopped here. A
+ * detached child takes the request; if it cannot be started, the update is
+ * refused, never run inline.
+ */
+async function handOffUpdate(
+  options: RaviUpdateOptions,
+  deps: UpdateExecutionDeps,
+  daemonCwd: string | null,
+): Promise<RaviUpdateHandoff> {
+  assertUpdateSelectors(options);
+  const env = deps.env ?? process.env;
+  let stateDir: string | undefined;
+  try {
+    stateDir = resolveDetachedUpdateStateDir(env, daemonCwd);
+  } catch (cause) {
+    throw new UpdateFailure(
+      "ravi update was started inside the daemon's process tree with a relative RAVI_STATE_DIR, and the daemon's " +
+        "working directory could not be read, so nothing was installed or stopped. Set RAVI_STATE_DIR to an " +
+        "absolute path or run ravi update from a terminal.",
+      "UPDATE_DETACH_FAILED",
+      1,
+      { cause },
+    );
+  }
+  const runStateDir = stateDir ?? getRaviStateDir(env);
+  // The saved channel lives in the daemon's state directory, which a relative RAVI_STATE_DIR only names from the
+  // daemon's cwd: read it there, not from the caller's cwd.
+  const requested = describeRequested(options, runStateDir);
+  // The worker installs what the caller was told: a channel resolved here is passed on, not resolved again.
+  const request: RaviUpdateOptions = options.version
+    ? options
+    : { ...options, next: requested === "next", stable: requested === "latest" };
+  const runId = createUpdateRunId(deps.now?.());
+  const paths = updateRunPaths(runId, runStateDir);
+  try {
+    const script = (deps.argv ?? process.argv)[1];
+    if (!script) throw new Error("the CLI entry point is unknown");
+    prepareUpdateRunDir(paths);
+    writeUpdateRunFile(paths.request, {
+      runId,
+      requested,
+      args: updateCommandArgs(request),
+      reason: "daemon-process-tree",
+      createdAt: (deps.now?.() ?? new Date()).toISOString(),
+    });
+    await spawnDetachedUpdateProcess(
+      {
+        command: deps.execPath ?? process.execPath,
+        args: [script, ...updateCommandArgs(request)],
+        env: buildDetachedUpdateEnv(env, runId, stateDir),
+        cwd: deps.cwd ?? process.cwd(),
+        logPath: paths.log,
+      },
+      deps.spawnDetached,
+    );
+  } catch (cause) {
+    throw new UpdateFailure(
+      "ravi update was started inside the daemon's process tree and could not detach from it, so nothing was " +
+        "installed or stopped. Stopping the daemon would kill this process before the new runtime starts. " +
+        "Run ravi update from a terminal.",
+      "UPDATE_DETACH_FAILED",
+      1,
+      { cause },
+    );
+  }
+  return {
+    success: true,
+    mode: "handoff",
+    package: PACKAGE_NAME,
+    requested,
+    runId,
+    logPath: paths.log,
+    resultPath: paths.result,
+    message:
+      "Update handed off to a worker outside the daemon's process tree. This session may be interrupted when the " +
+      `daemon restarts; the outcome is written to ${paths.result}.`,
+  };
+}
+
+/** The detached child: start the worker and exit, so the worker leaves the daemon tree. */
+async function reparentUpdate(deps: UpdateExecutionDeps): Promise<never> {
+  const env = deps.env ?? process.env;
+  const exit = deps.exit ?? ((code: number) => process.exit(code));
+  const paths = updateRunPaths(env[UPDATE_RUN_ID_ENV] ?? "", getRaviStateDir(env));
+  prepareUpdateRunDir(paths);
+  try {
+    await spawnDetachedUpdateProcess(
+      {
+        command: deps.execPath ?? process.execPath,
+        args: (deps.argv ?? process.argv).slice(1),
+        env: { ...envRecord(env), [UPDATE_HANDOFF_WORKER_ENV]: "1" },
+        cwd: deps.cwd ?? process.cwd(),
+        logPath: paths.log,
+      },
+      deps.spawnDetached,
+    );
+  } catch (cause) {
+    writeUpdateRunFile(paths.result, {
+      runId: env[UPDATE_RUN_ID_ENV],
+      status: "failed",
+      code: "UPDATE_DETACH_FAILED",
+      message: `The update worker could not be started: ${errorDiagnostic(cause, { operation: "ravi update" }).cause}`,
+      finishedAt: new Date().toISOString(),
+    });
+    return exit(1);
+  }
+  return exit(0);
+}
+
+async function performUpdate(options: RaviUpdateOptions, reporter: UpdateReporter): Promise<RaviUpdateResult> {
+  assertUpdateSelectors(options);
 
   const exactVersion = options.version ? normalizeExactVersion(options.version) : null;
   const expectedIntegrity = options.expectedIntegrity ? validateExpectedIntegrity(options.expectedIntegrity) : null;
@@ -837,24 +1021,127 @@ async function performUpdate(options: RaviUpdateOptions, reporter: UpdateReporte
   };
 }
 
-export async function runUpdate(options: RaviUpdateOptions = {}): Promise<RaviUpdateResult> {
-  const reporter = createReporter(options.json === true);
+/**
+ * Clears the run markers from the environment of an inline update and returns
+ * the run it records its outcome under: only the worker owns a run. Nothing
+ * the update starts afterwards (installers, PM2, the supervisor, the restarted
+ * services) inherits a marker, so a later update from inside the restarted
+ * daemon hands off as a fresh run instead of writing over this one.
+ */
+function takeUpdateRun(env: NodeJS.ProcessEnv): { runId?: string; worker: boolean } {
+  const worker = env[UPDATE_HANDOFF_WORKER_ENV] === "1";
+  const runId = worker ? env[UPDATE_RUN_ID_ENV] : undefined;
+  delete env[UPDATE_HANDOFF_ENV];
+  delete env[UPDATE_HANDOFF_WORKER_ENV];
+  delete env[UPDATE_RUN_ID_ENV];
+  return { runId, worker };
+}
+
+function recordRunOutcome(env: NodeJS.ProcessEnv, runId: string | undefined, outcome: Record<string, unknown>): void {
+  if (!runId) return;
   try {
+    const paths = updateRunPaths(runId, getRaviStateDir(env));
+    prepareUpdateRunDir(paths);
+    writeUpdateRunFile(paths.result, {
+      runId,
+      ...outcome,
+      finishedAt: new Date().toISOString(),
+    });
+  } catch (cause) {
+    console.error(errorDiagnostic(cause, { operation: "ravi update: record run result" }));
+  }
+}
+
+function failUpdate(options: RaviUpdateOptions, error: unknown): never {
+  if (!(error instanceof UpdateFailure)) throw error;
+  return contractFail("ravi update", error.code, error.message, {
+    ...{
+      asJson: options.json,
+      exitCode: error.exitCode,
+      details: {
+        retryable: error.code === "REGISTRY_UNAVAILABLE" || error.code === "UPDATE_FAILED",
+        suggestedAction:
+          error.code === "UPDATE_DETACH_FAILED"
+            ? "Run ravi update from a terminal."
+            : "Verify the requested release and retry.",
+      },
+    },
+    diagnostic: errorDiagnostic(error, { operation: "ravi update" }),
+  });
+}
+
+/**
+ * Only a readable "outside" lets the update run inline: a PM2 that cannot be read refuses the update instead of
+ * answering "outside". Usage errors still come first, and the run markers decide without reading PM2.
+ */
+function readDaemonTreePosition(
+  options: RaviUpdateOptions,
+  deps: UpdateExecutionDeps,
+  env: NodeJS.ProcessEnv,
+): DaemonTreePosition {
+  if (env[UPDATE_HANDOFF_ENV] === "1" || env[UPDATE_HANDOFF_WORKER_ENV] === "1") {
+    return { inside: false, daemonCwd: null };
+  }
+  assertUpdateSelectors(options);
+  try {
+    if (deps.insideDaemonTree) return { inside: deps.insideDaemonTree(), daemonCwd: deps.daemonCwd ?? null };
+    return locateInDaemonProcessTree();
+  } catch (cause) {
+    throw new UpdateFailure(
+      "Could not read PM2 runtime status or the process ancestry, so Ravi cannot tell whether this update runs " +
+        "inside the daemon's process tree. Nothing ran. Check `pm2 jlist` and retry.",
+      "UPDATE_FAILED",
+      1,
+      { cause },
+    );
+  }
+}
+
+export async function runUpdate(
+  options: RaviUpdateOptions = {},
+  deps: UpdateExecutionDeps = {},
+): Promise<RaviUpdateResult | RaviUpdateHandoff> {
+  const reporter = createReporter(options.json === true);
+  const env = deps.env ?? process.env;
+  let position: DaemonTreePosition = { inside: false, daemonCwd: null };
+  try {
+    position = readDaemonTreePosition(options, deps, env);
+  } catch (error) {
+    failUpdate(options, error);
+  }
+  const execution = decideUpdateExecution({
+    handoffEnv: env[UPDATE_HANDOFF_ENV],
+    workerEnv: env[UPDATE_HANDOFF_WORKER_ENV],
+    insideDaemonTree: position.inside,
+  });
+  // The detached child only starts the worker; its own outcome is not the run's.
+  if (execution === "reparent") return await reparentUpdate(deps);
+  const run: { runId?: string; worker: boolean } = execution === "inline" ? takeUpdateRun(env) : { worker: false };
+  try {
+    if (execution === "handoff") {
+      const handoff = await handOffUpdate(options, deps, position.daemonCwd);
+      if (reporter.json) console.log(JSON.stringify(handoff));
+      else reporter.ok(`${handoff.message} Log: ${handoff.logPath}`);
+      return handoff;
+    }
+    if (run.worker && !(await (deps.waitUntilDetached ?? waitUntilOutsideDaemonProcessTree)())) {
+      fail(
+        "The update worker is still inside the daemon's process tree, so nothing was installed or stopped. " +
+          "Run ravi update from a terminal.",
+        "UPDATE_DETACH_FAILED",
+      );
+    }
     const result = await performUpdate(options, reporter);
+    recordRunOutcome(env, run.runId, { status: "succeeded", result });
     if (reporter.json) console.log(JSON.stringify(result));
     return result;
   } catch (error) {
-    if (!(error instanceof UpdateFailure)) throw error;
-    contractFail("ravi update", error.code, error.message, {
-      ...{
-        asJson: options.json,
-        exitCode: error.exitCode,
-        details: {
-          retryable: error.code === "REGISTRY_UNAVAILABLE" || error.code === "UPDATE_FAILED",
-          suggestedAction: "Verify the requested release and retry.",
-        },
-      },
-      diagnostic: errorDiagnostic(error, { operation: "ravi update" }),
+    recordRunOutcome(env, run.runId, {
+      status: "failed",
+      code: error instanceof UpdateFailure ? error.code : "UPDATE_FAILED",
+      // result.json is read by whoever started the run: the message goes through the same redaction as the CLI's.
+      message: errorDiagnostic(error, { operation: "ravi update" }).cause,
     });
+    failUpdate(options, error);
   }
 }
