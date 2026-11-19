@@ -6133,7 +6133,7 @@ describe("Slack owner DM guard", () => {
           dmPolicy: "open",
           createdAt: 1,
           updatedAt: 1,
-        },
+        } as InstanceConfig,
       },
     };
   }
