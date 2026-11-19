@@ -615,6 +615,16 @@ async function reconcileManagedRuntime(
   const supervisor = await runManagedRuntimeRebindSupervisor(target, previousProcesses);
   // The supervisor refused before stopping anything: its reason is the result.
   if (supervisor.refusal) fail(supervisor.refusal.message, supervisorRefusalCode(supervisor.refusal.code));
+  // The target did not converge and the supervisor rolled back (or tried): that is the result.
+  const result = supervisor.converged ? null : supervisor.result;
+  if (result?.outcome === "rolled-back") fail(result.message, "UPDATE_ROLLED_BACK");
+  if (result?.outcome === "rollback-failed") {
+    fail(
+      `${result.message}${result.commands.length ? ` Next: ${result.commands.join(" ; ")}` : ""}` +
+        (supervisor.logPath ? ` Supervisor log: ${supervisor.logPath}.` : ""),
+      "UPDATE_ROLLBACK_FAILED",
+    );
+  }
   // A successfully exited bundle may not implement this supervisor protocol.
   // Independently verify the live successors before claiming convergence.
   const currentProcesses = readManagedProcesses();

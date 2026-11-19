@@ -78,7 +78,9 @@ normative: true
   processes, and wait for the new daemon's exact-release readiness before
   starting channel consumers. A failed candidate MUST NOT be reported as
   recovered based only on PM2 online or a boot receipt. Recovery MUST preserve
-  schema ownership and MUST NOT imply a database rollback.
+  schema ownership. A database is rolled back only together with its package,
+  from a snapshot taken while no process owned the stores ("Snapshot and
+  rollback" below); nothing else rolls a database back.
 
 ## Waypoint and stability (supervisor)
 
@@ -114,8 +116,53 @@ they also hold for an update started by an older CLI.
   supervisor log.
 - Still open: the waypoint is checked after the package is installed, and a
   process that was stopped stays stopped (the CLI that verifies the result
-  predates a change to that rule). Automatic waypoints and rollback replace
-  both later.
+  predates a change to that rule). Automatic waypoints replace the first later.
+
+## Snapshot and rollback (supervisor)
+
+- An update can roll back when the target is a global install (bun or npm),
+  the daemon that was running proved its release with a boot receipt and ran
+  from that same install, and that release is not the target. Any other update
+  MUST run as before: no snapshot, no rollback, coordinated replacement where
+  it applied. Source checkouts keep that behaviour.
+- Before any stop, an update that can roll back MUST plan its snapshot. The
+  stores are `runtimeStateDatabasePaths` with each database's `-wal` and
+  `-journal`. It MUST refuse with `UPDATE_SNAPSHOT_SPACE` before any stop when
+  free space plus earlier snapshots is below what the copy needs: on a
+  filesystem without copy-on-write clones, the stores' size plus the larger of
+  10% and 256 MiB; with clones, 256 MiB. The refusal is recorded and read back
+  like the waypoint's.
+- Such an update MUST stop both processes before it starts the target, with no
+  coordinated overlap. After the stop it MUST confirm the stopped PIDs exited,
+  and it MUST hold every lock a daemon takes before opening a store
+  (`daemon-schema-owner.lock` and each `<store>.schema.lock`) while it copies.
+  The manifest is written last. Only the latest update's snapshot is kept, in
+  `<state>/updates/snapshots/<id>/`.
+- A snapshot that cannot be taken after the stop MUST NOT stop the update. The
+  update then runs without a rollback, and its result says why.
+- When the target does not converge, does not stay up for the stability
+  window, or the rebind fails after the snapshot, the supervisor MUST roll
+  back:
+  - remove both processes from PM2 and confirm they exited;
+  - under the store locks, move the live store files (including `-shm` and any
+    store the target created) to `<snapshot>/candidate/`, and rename the
+    snapshot files into place;
+  - settle thread fence leftovers;
+  - reinstall the previous exact release with the same installer;
+  - start the daemon, then the channel runner if it was online, through that
+    release's own CLI (`daemon start`, `channels start`), without target
+    routing or runtime context;
+  - save PM2 and verify both identities against that release.
+- A rollback MUST NOT delete what the target wrote: its files stay in
+  `candidate/` until the next update. One snapshot MUST NOT be restored twice
+  (`restore.json`).
+- The supervisor MUST record `<state>/updates/supervisor-result.json`
+  (`converged`, `rolled-back`, `rollback-failed` or `failed`) with the snapshot
+  time, the restore time and where the target's files are. A failed rollback
+  also records its step and the manual commands for the state it left. The CLI
+  waits up to 15 min and fails with `UPDATE_ROLLED_BACK` or
+  `UPDATE_ROLLBACK_FAILED` from that record. A CLI that stops waiting earlier
+  reports a generic failure, and the record still holds the outcome.
 
 ## Detached execution
 

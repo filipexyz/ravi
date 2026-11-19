@@ -34,9 +34,9 @@ isolated state; a runtime context has no operator fallback.
 During coordinated replacement, the predecessor remains available until the
 successor reaches the ownership barrier. Native intake stops before ownership
 transfers, and resumes only after exact-release readiness. Older daemons without
-the ownership protocol require a stop-first upgrade. A failed migration never
-authorizes an automatic database or package downgrade; inspect the failure and
-recover with the same release or a separately validated recovery plan.
+the ownership protocol require a stop-first upgrade. A failed migration
+authorizes no database or package downgrade by hand: the update's own rollback
+(below) restores both together from its snapshot.
 
 ## Detached runs
 
@@ -50,3 +50,25 @@ recover with the same release or a separately validated recovery plan.
   run the previous release, with `~/.ravi/updates/supervisor-refused.json`
   present, hit the supervisor's refusal inside the daemon tree. Nothing was
   stopped. Run `ravi update` again: the CLI it installed detaches first.
+
+## Rollback
+
+- `UPDATE_ROLLED_BACK`: the target did not converge, and the previous release
+  runs again on its state as of the snapshot. `~/.ravi/updates/supervisor-result.json`
+  names the window that left the live state and where the target's files are
+  (`candidateDir`). Report the failure with `~/.ravi/updates/supervisor.log`
+  before trying that target again.
+- `UPDATE_ROLLBACK_FAILED`: run the commands in the message, in order. The step
+  says what the rollback left:
+  - `stop`: nothing was restored. Do not start the previous release on this
+    state.
+  - `restore`: do not start any release; `restore.json` and `manifest.json` in
+    the snapshot directory say which files moved.
+  - `reinstall`, `start`, `verify`: the state is restored. Install and start
+    the previous release.
+- A CLI older than this change may report "did not converge" while the
+  supervisor is still rolling back. Wait for `supervisor-result.json` before
+  acting.
+- `UPDATE_SNAPSHOT_SPACE`: nothing was stopped. Free the space the message
+  names and run the update again. Do not delete `~/.ravi/updates/snapshots/`
+  while an update runs.

@@ -87,3 +87,27 @@
     declares none;
   - a refusal read back only when recorded since the supervisor started, and
     its code kept only when it looks like one.
+- `bun test src/update-snapshot.test.ts` MUST prove:
+  - a plan that needs only the margin with clones, the full size without them,
+    and a refusal before any stop when that does not fit, counting earlier
+    snapshots as freed space;
+  - a snapshot that keeps committed WAL frames, a restore that brings the
+    previous rows back, moves the target's files and the stores it created to
+    `candidate/`, and refuses a second restore;
+  - nothing moved when a snapshot file is missing, only the latest snapshot
+    kept, and clones where the filesystem has them;
+  - store ownership refused while a process holds the daemon's schema lock and
+    granted once it is gone.
+- `bun test src/update-rollback.test.ts` MUST prove:
+  - a plan only from a proven previous release in the same global install,
+    and none without a receipt, to the same release or from a checkout;
+  - the previous release's CLI environment without target routing or runtime
+    context;
+  - a rollback that stops the target, restores under the locks, reinstalls the
+    exact previous release and starts the daemon, then the runner, through its
+    CLI; the manual commands when the reinstall fails; nothing restored while
+    a stopped process is alive;
+  - a supervisor with a rollback plan that stops both before starting the
+    target, snapshots, rolls back and records `rolled-back` when the target
+    never gets ready, records `converged` and keeps the snapshot otherwise, and
+    refuses `UPDATE_SNAPSHOT_SPACE` before any PM2 mutation.

@@ -1,4 +1,8 @@
-import { assertRuntimeMaintenanceInactive, runtimeReplacementReadiness } from "./runtime-maintenance.js";
+import {
+  assertRuntimeMaintenanceInactive,
+  processExitState,
+  runtimeReplacementReadiness,
+} from "./runtime-maintenance.js";
 import { spawn } from "node:child_process";
 import { which } from "bun";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
@@ -25,10 +29,35 @@ import { buildChannelsPm2Env, buildChannelsPm2StartArgs, buildDaemonPm2StartArgs
 import { readDaemonSchemaPhase } from "./db/daemon-schema-owner.js";
 import { performSupervisedDaemonRestart, type ManagedDaemonProcess } from "./cli/daemon-restart-supervision.js";
 import { buildPm2Env, CHANNELS_PM2_PROCESS_NAME, getPm2Processes, PM2_PROCESS_NAME, type Pm2Process } from "./pm2.js";
+import {
+  acquireStateStoreOwnership,
+  planUpdateSnapshot,
+  takeUpdateSnapshot,
+  UPDATE_SNAPSHOT_SPACE,
+  updateSnapshotsDir,
+  updateStorePaths,
+  type UpdateSnapshotManifest,
+  type UpdateSnapshotPlan,
+} from "./update-snapshot.js";
+import {
+  readUpdateSupervisorResult,
+  recordUpdateSupervisorResult,
+  resolveUpdateRollbackPlan,
+  rollBackUpdate,
+  type UpdateRollbackDependencies,
+  type UpdateRollbackOutcome,
+  type UpdateRollbackPlan,
+  type UpdateSupervisorResult,
+} from "./update-rollback.js";
 
 const MANAGED_RUNTIME_REBIND_ENV = "RAVI_INTERNAL_UPDATE_RUNTIME_REBIND";
-/** Covers the rebind plus the stability window. CLIs before this change wait 90 s. */
-export const MANAGED_RUNTIME_REBIND_TIMEOUT_MS = 180_000;
+/**
+ * How long the CLI waits for the supervisor: the rebind, the stability window
+ * and, when the target does not converge, the automatic rollback (which
+ * reinstalls a release). CLIs before the window wait 90 s, before the
+ * rollback 180 s; the supervisor records its result for them.
+ */
+export const MANAGED_RUNTIME_REBIND_TIMEOUT_MS = 900_000;
 /**
  * How long the CLI that started the supervisor waits for it, in ms. A CLI
  * that predates the stability window sets nothing and gives up after 90 s:
@@ -94,7 +123,25 @@ type ManagedRuntimeRebindDependencies = {
   stabilityWindowMs?: number;
   /** The window ends by this time (`now()` clock): the CLI waiting for the supervisor stops soon after. */
   stabilityDeadlineMs?: number;
+  /** Whether this update can roll back (`resolveUpdateRollbackPlan`); null keeps it without a snapshot. */
+  rollbackPlan?: (input: {
+    target: ManagedRuntimeTarget;
+    processes: Pm2Process[];
+    stateDir: string;
+  }) => UpdateRollbackPlan | null;
+  planSnapshot?: (input: { stateDir: string; stores: string[] }) => UpdateSnapshotPlan;
+  takeSnapshot?: typeof takeUpdateSnapshot;
+  acquireOwnership?: (stateDir: string, stores: string[], timeoutMs: number) => { release(): void };
+  rollBack?: (dependencies: UpdateRollbackDependencies) => Promise<UpdateRollbackOutcome>;
+  /** Overrides the rollback's own dependencies (tests). */
+  rollbackOverrides?: Partial<UpdateRollbackDependencies>;
+  storePaths?: (stateDir: string) => string[];
 };
+
+/** What the rebind ended with, for the result left to the CLI. */
+function describeRollbackFailure(outcome: Extract<UpdateRollbackOutcome, { ok: false }>): string {
+  return `the automatic rollback stopped at ${outcome.step}: ${outcome.message}`;
+}
 
 function resolveStabilityWindowMs(dependencies: ManagedRuntimeRebindDependencies): number {
   if (dependencies.stabilityWindowMs !== undefined) return Math.max(0, dependencies.stabilityWindowMs);
@@ -354,6 +401,17 @@ export async function rebindManagedRuntimeProcesses(
       return false;
   }
 
+  // Before any stop: whether this update can roll back, and room on the disk for its snapshot.
+  const rollbackPlan = (dependencies.rollbackPlan ?? resolveUpdateRollbackPlan)({
+    target,
+    processes: initial,
+    stateDir,
+  });
+  const stores = rollbackPlan ? (dependencies.storePaths ?? updateStorePaths)(stateDir) : [];
+  const snapshotPlan = rollbackPlan ? (dependencies.planSnapshot ?? planUpdateSnapshot)({ stateDir, stores }) : null;
+  const gone = (pid: number): boolean =>
+    dependencies.pidAlive ? !dependencies.pidAlive(pid) : processExitState(pid) === "exited";
+
   // Prepare launch arguments and runner settings before any PM2 mutation.
   const plan = buildManagedRuntimeRebindPlan(previousProcesses, target, bunPath, initial);
   const runtimeEnv = buildPm2Env({
@@ -386,8 +444,13 @@ export async function rebindManagedRuntimeProcesses(
   const predecessor = initial.find((process) => process.name === PM2_PROCESS_NAME);
   // A pre-fence database is adopted by the new daemon at its entry, which refuses while a
   // legacy writer runs: no overlap, the predecessors are removed before it starts.
+  // An update that can roll back stops both first too: the snapshot needs a moment with no
+  // owner, after the predecessor's last write and before the target's first.
   const coordinated =
-    readiness === "ready" && predecessor?.status === "online" && phase(asManaged(predecessor)) === "ready";
+    !rollbackPlan &&
+    readiness === "ready" &&
+    predecessor?.status === "online" &&
+    phase(asManaged(predecessor)) === "ready";
   let readyDaemon: ManagedDaemonProcess | undefined;
   const daemonStillReady = (processes: Pm2Process[]): boolean => {
     const expected = readyDaemon;
@@ -418,78 +481,248 @@ export async function rebindManagedRuntimeProcesses(
     if ((await remove(PM2_PROCESS_NAME)) !== 0) return false;
   }
 
-  const daemonStart = plan.find((step) => step.action === "start" && step.processName === PM2_PROCESS_NAME);
-  if (daemonStart) {
-    const result = await performSupervisedDaemonRestart({
-      list: () =>
-        getProcesses()
-          .filter((process) => process.name === PM2_PROCESS_NAME)
-          .map(asManaged),
-      start: ({ force }) => {
-        const args = [...daemonStart.args];
-        if (force) args.splice(args.indexOf("--"), 0, "--force");
-        return execute(args, runtimeEnv, target.cwd);
-      },
-      deletePmId: (pmId) => execute(["delete", String(pmId)]),
-      save,
-      beforePredecessorStop: () => remove(CHANNELS_PM2_PROCESS_NAME),
-      pidAlive:
-        dependencies.pidAlive ??
-        ((pid) => {
-          try {
-            process.kill(pid, 0);
-            return true;
-          } catch {
-            // no-cause: A failed liveness probe cannot prove a supervised successor, so preserve the predecessor.
-            return false;
-          }
-        }),
-      schemaPhase: (candidate) => {
-        const current = getProcesses().find(
-          (process) => process.pm_id === candidate.pmId && process.pid === candidate.pid,
-        );
-        if (
-          !current ||
-          normalizeRuntimePath(managedRuntimeBundlePath(current)) !== normalizeRuntimePath(target.bundlePath)
-        )
-          return null;
-        return phase(candidate);
-      },
+  const warnings: string[] = [];
+  // Nothing owns the state and the target has not started: the snapshot is the previous release's state.
+  const snapshot =
+    rollbackPlan && snapshotPlan
+      ? await snapshotStoppedState({
+          stateDir,
+          stores,
+          plan: snapshotPlan,
+          rollbackPlan,
+          target,
+          pids: initial
+            .filter((process) => process.name === PM2_PROCESS_NAME || process.name === CHANNELS_PM2_PROCESS_NAME)
+            .map((process) => process.pid),
+          gone,
+          warnings,
+          dependencies,
+        })
+      : null;
+
+  const replace = async (): Promise<boolean> => {
+    const daemonStart = plan.find((step) => step.action === "start" && step.processName === PM2_PROCESS_NAME);
+    if (daemonStart) {
+      const result = await performSupervisedDaemonRestart({
+        list: () =>
+          getProcesses()
+            .filter((process) => process.name === PM2_PROCESS_NAME)
+            .map(asManaged),
+        start: ({ force }) => {
+          const args = [...daemonStart.args];
+          if (force) args.splice(args.indexOf("--"), 0, "--force");
+          return execute(args, runtimeEnv, target.cwd);
+        },
+        deletePmId: (pmId) => execute(["delete", String(pmId)]),
+        save,
+        beforePredecessorStop: () => remove(CHANNELS_PM2_PROCESS_NAME),
+        pidAlive:
+          dependencies.pidAlive ??
+          ((pid) => {
+            try {
+              process.kill(pid, 0);
+              return true;
+            } catch {
+              // no-cause: A failed liveness probe cannot prove a supervised successor, so preserve the predecessor.
+              return false;
+            }
+          }),
+        schemaPhase: (candidate) => {
+          const current = getProcesses().find(
+            (process) => process.pm_id === candidate.pmId && process.pid === candidate.pid,
+          );
+          if (
+            !current ||
+            normalizeRuntimePath(managedRuntimeBundlePath(current)) !== normalizeRuntimePath(target.bundlePath)
+          )
+            return null;
+          return phase(candidate);
+        },
+        now: dependencies.now,
+        wait: dependencies.wait,
+        readyTimeoutMs: dependencies.readyTimeoutMs,
+      });
+      if (!result.ok || !result.readySuccessor) return false;
+      readyDaemon = result.readySuccessor;
+      if (!daemonStillReady(getProcesses())) return false;
+    }
+
+    const channelStart = plan.find((step) => step.action === "start" && step.processName === CHANNELS_PM2_PROCESS_NAME);
+    if (channelsViaDaemon) {
+      if (!(await waitForChannelsAfterUpgrade(stateDir, getProcesses, dependencies))) return false;
+    } else if (
+      channelStart &&
+      (await execute(channelStart.args, buildPm2Env({ ...runtimeEnv, ...runnerEnv }), target.cwd)) !== 0
+    )
+      return false;
+    if (!(await waitForManagedRuntimeTarget(previousProcesses, target, getProcesses))) return false;
+    if (!daemonStillReady(getProcesses())) return false;
+    if ((await save()) !== 0) return false;
+    const converged = (processes: Pm2Process[]) =>
+      daemonStillReady(processes) && managedRuntimeMatchesTarget(previousProcesses, processes, target);
+    if (!converged(getProcesses())) return false;
+    const clock = dependencies.now ?? Date.now;
+    return observeStableManagedRuntime({
+      getProcesses,
+      isConverged: converged,
+      windowMs: boundedStabilityWindowMs({
+        windowMs: resolveStabilityWindowMs(dependencies),
+        deadlineMs: dependencies.stabilityDeadlineMs,
+        now: clock(),
+      }),
+      now: clock,
+      wait: dependencies.wait ?? ((ms: number) => delay(ms)),
+    });
+  };
+
+  if (!rollbackPlan) return replace();
+  const record = (
+    outcome: UpdateSupervisorResult["outcome"],
+    message: string,
+    extra: Partial<Pick<UpdateSupervisorResult, "restoredAt" | "candidateDir" | "commands">> = {},
+  ) => {
+    console.error(`ravi update: ${message}`);
+    try {
+      recordUpdateSupervisorResult(stateDir, {
+        outcome,
+        targetRelease: target.version,
+        previousRelease: rollbackPlan.previousRelease,
+        snapshotId: snapshot?.id ?? null,
+        snapshotAt: snapshot?.createdAt ?? null,
+        restoredAt: extra.restoredAt ?? null,
+        candidateDir: extra.candidateDir ?? null,
+        message,
+        commands: extra.commands ?? [],
+        warnings,
+      });
+    } catch (cause) {
+      console.error(`ravi update: could not record the supervisor result: ${(cause as Error).message}`);
+    }
+  };
+  const rollBack = async (reason: string, manifest: UpdateSnapshotManifest): Promise<void> => {
+    const outcome = await (dependencies.rollBack ?? rollBackUpdate)({
+      stateDir,
+      plan: rollbackPlan,
+      manifest,
+      previousProcesses,
+      bunPath,
+      run,
+      getProcesses,
+      pidAlive: (pid) => !gone(pid),
       now: dependencies.now,
       wait: dependencies.wait,
-      readyTimeoutMs: dependencies.readyTimeoutMs,
+      ...dependencies.rollbackOverrides,
     });
-    if (!result.ok || !result.readySuccessor) return false;
-    readyDaemon = result.readySuccessor;
-    if (!daemonStillReady(getProcesses())) return false;
-  }
+    if (outcome.ok) {
+      record(
+        "rolled-back",
+        `Ravi ${target.version} did not converge (${reason}). The update rolled back: Ravi ${rollbackPlan.previousRelease} ` +
+          `runs again on its state as of ${manifest.createdAt}. What Ravi ${target.version} wrote between ` +
+          `${manifest.createdAt} and ${outcome.restoredAt} is not in the live state; its files are kept in ` +
+          `${outcome.candidateDir}.`,
+        { restoredAt: outcome.restoredAt, candidateDir: outcome.candidateDir },
+      );
+      return;
+    }
+    record(
+      "rollback-failed",
+      `Ravi ${target.version} did not converge (${reason}), and ${describeRollbackFailure(outcome)}`,
+      {
+        restoredAt: outcome.restoredAt,
+        candidateDir: outcome.candidateDir,
+        commands: outcome.commands,
+      },
+    );
+  };
+  const unprotected = (reason: string) =>
+    `Ravi ${target.version} did not converge (${reason}). No snapshot was taken (${warnings.join("; ") || "unknown reason"}), ` +
+    "so nothing was rolled back.";
 
-  const channelStart = plan.find((step) => step.action === "start" && step.processName === CHANNELS_PM2_PROCESS_NAME);
-  if (channelsViaDaemon) {
-    if (!(await waitForChannelsAfterUpgrade(stateDir, getProcesses, dependencies))) return false;
-  } else if (
-    channelStart &&
-    (await execute(channelStart.args, buildPm2Env({ ...runtimeEnv, ...runnerEnv }), target.cwd)) !== 0
-  )
-    return false;
-  if (!(await waitForManagedRuntimeTarget(previousProcesses, target, getProcesses))) return false;
-  if (!daemonStillReady(getProcesses())) return false;
-  if ((await save()) !== 0) return false;
-  const converged = (processes: Pm2Process[]) =>
-    daemonStillReady(processes) && managedRuntimeMatchesTarget(previousProcesses, processes, target);
-  if (!converged(getProcesses())) return false;
-  const clock = dependencies.now ?? Date.now;
-  return observeStableManagedRuntime({
-    getProcesses,
-    isConverged: converged,
-    windowMs: boundedStabilityWindowMs({
-      windowMs: resolveStabilityWindowMs(dependencies),
-      deadlineMs: dependencies.stabilityDeadlineMs,
-      now: clock(),
-    }),
-    now: clock,
-    wait: dependencies.wait ?? ((ms: number) => delay(ms)),
-  });
+  let converged: boolean;
+  try {
+    converged = await replace();
+  } catch (error) {
+    const reason = `the rebind failed: ${(error as Error).message}`;
+    if (snapshot) await rollBack(reason, snapshot);
+    else record("failed", unprotected(reason));
+    throw error;
+  }
+  if (converged) {
+    record(
+      "converged",
+      `Ravi ${target.version} converged and stayed up for the stability window.` +
+        (snapshot
+          ? ` The snapshot of Ravi ${rollbackPlan.previousRelease}'s state is kept in ${join(updateSnapshotsDir(stateDir), snapshot.id)} until the next update.`
+          : ""),
+    );
+    return true;
+  }
+  const reason = "it did not converge, or did not stay up for the stability window";
+  if (snapshot) await rollBack(reason, snapshot);
+  else record("failed", unprotected(reason));
+  return false;
+}
+
+/**
+ * The predecessors are gone and no daemon owns the stores: copy them. A
+ * snapshot that cannot be taken leaves the update without a rollback, as
+ * before this existed, and says why.
+ */
+async function snapshotStoppedState(input: {
+  stateDir: string;
+  stores: string[];
+  plan: UpdateSnapshotPlan;
+  rollbackPlan: UpdateRollbackPlan;
+  target: ManagedRuntimeTarget;
+  pids: number[];
+  gone: (pid: number) => boolean;
+  warnings: string[];
+  dependencies: ManagedRuntimeRebindDependencies;
+}): Promise<UpdateSnapshotManifest | null> {
+  const now = input.dependencies.now ?? Date.now;
+  const wait = input.dependencies.wait ?? ((ms: number) => delay(ms));
+  const pids = input.pids.filter((pid) => pid > 0);
+  const deadline = now() + 30_000;
+  while (!pids.every(input.gone) && now() < deadline) {
+    const before = now();
+    await wait(250);
+    if (now() <= before) break;
+  }
+  if (!pids.every(input.gone)) {
+    input.warnings.push("a stopped process did not exit, so no snapshot was taken");
+    return null;
+  }
+  let ownership: { release(): void };
+  try {
+    ownership = (input.dependencies.acquireOwnership ?? acquireStateStoreOwnership)(
+      input.stateDir,
+      input.stores,
+      30_000,
+    );
+  } catch (cause) {
+    input.warnings.push(
+      `a process still owns the state stores (${(cause as Error).message}), so no snapshot was taken`,
+    );
+    return null;
+  }
+  try {
+    const snapshot = (input.dependencies.takeSnapshot ?? takeUpdateSnapshot)({
+      stateDir: input.stateDir,
+      stores: input.stores,
+      method: input.plan.method,
+      previousRelease: input.rollbackPlan.previousRelease,
+      targetRelease: input.target.version,
+    });
+    console.error(
+      `ravi update: snapshot ${snapshot.id} of Ravi ${input.rollbackPlan.previousRelease}'s state taken (${input.plan.method})`,
+    );
+    return snapshot;
+  } catch (cause) {
+    input.warnings.push(`the snapshot failed (${(cause as Error).message})`);
+    return null;
+  } finally {
+    ownership.release();
+  }
 }
 
 export function buildManagedRuntimeRebindSupervisorInvocation(
@@ -594,8 +827,10 @@ export async function maybeRunManagedRuntimeRebindFromEnv(
       stabilityDeadlineMs: startedAt + budgetMs - SUPERVISOR_EXIT_MARGIN_MS,
     });
   } catch (error) {
-    if ((error as { code?: unknown } | null)?.code === UPDATE_WAYPOINT_REQUIRED) {
-      throw recordSupervisorRefusal(UPDATE_WAYPOINT_REQUIRED, (error as Error).message);
+    // Refusals before any stop: the running release keeps serving, and the reason reaches the CLI.
+    const code = (error as { code?: unknown } | null)?.code;
+    if (code === UPDATE_WAYPOINT_REQUIRED || code === UPDATE_SNAPSHOT_SPACE) {
+      throw recordSupervisorRefusal(code, (error as Error).message);
     }
     throw error;
   }
@@ -609,6 +844,8 @@ export type ManagedRuntimeSupervisorOutcome = {
   converged: boolean;
   /** What the supervisor recorded when it refused before stopping anything. */
   refusal: SupervisorRefusal | null;
+  /** What a supervisor that could roll back recorded: converged, rolled back, or why not. */
+  result: UpdateSupervisorResult | null;
   /** The supervisor's stdout and stderr (last run only); null when it could not be opened. */
   logPath: string | null;
 };
@@ -637,6 +874,7 @@ export async function runManagedRuntimeRebindSupervisor(
     converged,
     // A refusal is recorded before any stop, so only an unconverged run can carry one.
     refusal: converged ? null : readSupervisorRefusal(startedAt, stateDir),
+    result: readUpdateSupervisorResult(startedAt, stateDir),
     logPath: log?.path ?? null,
   };
 }
