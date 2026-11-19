@@ -52,3 +52,16 @@
   timestamp, independently of wall-clock precision or skew. Boot observations
   MUST use the same fixture clock as PM2 start times. Replacement tests MUST
   prove the replacement receipt is valid before testing incarnation rejection.
+- `bun test src/cli/update-run.test.ts src/cli/commands/update-detach.test.ts`
+  MUST prove:
+  - the execution decision (handoff inside the tree, markers before the tree
+    check);
+  - run ids validated before use as paths;
+  - a detached environment without runtime context and with an absolute state
+    directory;
+  - a caller inside the tree that installs nothing and returns the run;
+  - refusal when the child cannot start;
+  - a usage error reported to the caller;
+  - a child that starts the worker and exits;
+  - a worker still inside the tree that refuses and records the result;
+  - a supervisor that refuses before reading its request.

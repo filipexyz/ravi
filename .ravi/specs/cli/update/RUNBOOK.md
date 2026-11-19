@@ -37,3 +37,16 @@ transfers, and resumes only after exact-release readiness. Older daemons without
 the ownership protocol require a stop-first upgrade. A failed migration never
 authorizes an automatic database or package downgrade; inspect the failure and
 recover with the same release or a separately validated recovery plan.
+
+## Detached runs
+
+- Run inside the daemon's process tree, `ravi update` answers at once with
+  `mode: "handoff"`, a `runId`, and the paths of the log and the result. The
+  session that asked may be interrupted when the daemon restarts. Read the
+  outcome in `~/.ravi/updates/<runId>/result.json`, and the detail in `log`.
+- `UPDATE_DETACH_FAILED` means nothing was installed or stopped. Run
+  `ravi update` from a terminal.
+- An older CLI that reports "PM2 did not converge" while both processes still
+  run the previous release, with `~/.ravi/updates/supervisor-refused.json`
+  present, hit the supervisor's refusal inside the daemon tree. Nothing was
+  stopped. Run `ravi update` again: the CLI it installed detaches first.

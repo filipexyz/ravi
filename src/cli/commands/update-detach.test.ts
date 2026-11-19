@@ -1,0 +1,230 @@
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  maybeRunManagedRuntimeRebindFromEnv,
+  refuseRebindInsideDaemonTree,
+  UPDATE_SUPERVISOR_IN_DAEMON_TREE,
+} from "../../managed-runtime-rebind.js";
+import {
+  UPDATE_HANDOFF_ENV,
+  UPDATE_HANDOFF_WORKER_ENV,
+  UPDATE_RUN_ID_ENV,
+  updateRunPaths,
+  type DetachedSpawn,
+} from "../update-run.js";
+import { runUpdate, type RaviUpdateHandoff } from "./update.js";
+
+const RUN_ID = "20261119T191542Z-a1b2c3";
+const SCRIPT = "/opt/ravi/node_modules/ravi.bot/dist/bundle/index.js";
+
+class ExitSignal extends Error {
+  constructor(readonly code: number) {
+    super(`exit ${code}`);
+  }
+}
+
+type SpawnCall = { command: string; args: string[]; env: Record<string, string>; cwd: string };
+
+function recordingSpawn(calls: SpawnCall[], pid: number | null = 4242): DetachedSpawn {
+  return (command, args, options) => {
+    calls.push({ command, args, env: options.env, cwd: options.cwd });
+    return { pid: pid ?? undefined, unref: () => {} };
+  };
+}
+
+describe("ravi update inside the daemon process tree", () => {
+  let stateDir: string;
+  let inheritedStateDir: string | undefined;
+
+  beforeEach(() => {
+    stateDir = mkdtempSync(join(tmpdir(), "ravi-update-detach-"));
+    inheritedStateDir = process.env.RAVI_STATE_DIR;
+    // updateConfigPath() reads the process environment: an update that ran
+    // inline would persist the channel here.
+    process.env.RAVI_STATE_DIR = stateDir;
+  });
+
+  afterEach(() => {
+    if (inheritedStateDir === undefined) delete process.env.RAVI_STATE_DIR;
+    else process.env.RAVI_STATE_DIR = inheritedStateDir;
+    rmSync(stateDir, { recursive: true, force: true });
+  });
+
+  const baseEnv = () => ({
+    PATH: "/usr/bin",
+    HOME: "/home/op",
+    RAVI_STATE_DIR: stateDir,
+    RAVI_CONTEXT_KEY: "ctx-from-agent-turn",
+    RAVI_SESSION_NAME: "main",
+  });
+
+  it("hands the request to a detached child and installs or stops nothing itself", async () => {
+    const calls: SpawnCall[] = [];
+    const result = (await runUpdate(
+      { next: true, json: true },
+      {
+        env: baseEnv(),
+        argv: ["/usr/bin/bun", SCRIPT, "update", "--next", "--json"],
+        execPath: "/usr/bin/bun",
+        cwd: "/work",
+        now: () => new Date("2026-11-19T19:15:42.000Z"),
+        insideDaemonTree: () => true,
+        spawnDetached: recordingSpawn(calls),
+      },
+    )) as RaviUpdateHandoff;
+
+    expect(result.mode).toBe("handoff");
+    expect(result.requested).toBe("next");
+    expect(result.runId).toMatch(/^20261119T191542Z-[0-9a-f]{6}$/);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.command).toBe("/usr/bin/bun");
+    expect(calls[0]!.args).toEqual([SCRIPT, "update", "--next", "--json"]);
+    expect(calls[0]!.cwd).toBe("/work");
+    expect(calls[0]!.env[UPDATE_HANDOFF_ENV]).toBe("1");
+    expect(calls[0]!.env[UPDATE_RUN_ID_ENV]).toBe(result.runId);
+    expect(calls[0]!.env[UPDATE_HANDOFF_WORKER_ENV]).toBeUndefined();
+    expect(calls[0]!.env.RAVI_CONTEXT_KEY).toBeUndefined();
+    expect(calls[0]!.env.RAVI_SESSION_NAME).toBeUndefined();
+
+    const paths = updateRunPaths(result.runId, stateDir);
+    expect(result.resultPath).toBe(paths.result);
+    expect(JSON.parse(readFileSync(paths.request, "utf8"))).toMatchObject({
+      runId: result.runId,
+      requested: "next",
+      args: ["update", "--next", "--json"],
+      reason: "daemon-process-tree",
+    });
+    // Nothing of the update itself ran in the caller.
+    expect(existsSync(join(stateDir, "update.json"))).toBe(false);
+    expect(existsSync(paths.result)).toBe(false);
+  });
+
+  it("refuses instead of running inline when the detached child cannot start", async () => {
+    const calls: SpawnCall[] = [];
+    await expect(
+      runUpdate(
+        { next: true, json: true },
+        {
+          env: baseEnv(),
+          argv: ["/usr/bin/bun", SCRIPT, "update", "--next", "--json"],
+          insideDaemonTree: () => true,
+          spawnDetached: recordingSpawn(calls, null),
+        },
+      ),
+    ).rejects.toMatchObject({ code: "UPDATE_DETACH_FAILED" });
+    expect(calls).toHaveLength(1);
+    expect(existsSync(join(stateDir, "update.json"))).toBe(false);
+  });
+
+  it("reports a usage error to the caller instead of detaching it", async () => {
+    const calls: SpawnCall[] = [];
+    await expect(
+      runUpdate(
+        { next: true, stable: true, json: true },
+        {
+          env: baseEnv(),
+          argv: ["/usr/bin/bun", SCRIPT],
+          insideDaemonTree: () => true,
+          spawnDetached: recordingSpawn(calls),
+        },
+      ),
+    ).rejects.toMatchObject({ code: "USAGE_ERROR" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("the detached child starts the worker with the same request and exits at once", async () => {
+    const calls: SpawnCall[] = [];
+    const argv = ["/usr/bin/bun", SCRIPT, "update", "--next", "--json"];
+    await expect(
+      runUpdate(
+        { next: true, json: true },
+        {
+          env: { PATH: "/usr/bin", RAVI_STATE_DIR: stateDir, [UPDATE_HANDOFF_ENV]: "1", [UPDATE_RUN_ID_ENV]: RUN_ID },
+          argv,
+          execPath: "/usr/bin/bun",
+          cwd: "/work",
+          // Still inside the tree: the marker decides, not the tree check.
+          insideDaemonTree: () => true,
+          spawnDetached: recordingSpawn(calls),
+          exit: (code) => {
+            throw new ExitSignal(code);
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ code: 0 });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.args).toEqual(argv.slice(1));
+    expect(calls[0]!.env[UPDATE_HANDOFF_ENV]).toBe("1");
+    expect(calls[0]!.env[UPDATE_HANDOFF_WORKER_ENV]).toBe("1");
+    expect(calls[0]!.env[UPDATE_RUN_ID_ENV]).toBe(RUN_ID);
+    expect(existsSync(join(stateDir, "update.json"))).toBe(false);
+  });
+
+  it("a worker that never leaves the tree refuses before installing and records why", async () => {
+    await expect(
+      runUpdate(
+        { next: true, json: true },
+        {
+          env: {
+            PATH: "/usr/bin",
+            RAVI_STATE_DIR: stateDir,
+            [UPDATE_HANDOFF_ENV]: "1",
+            [UPDATE_HANDOFF_WORKER_ENV]: "1",
+            [UPDATE_RUN_ID_ENV]: RUN_ID,
+          },
+          insideDaemonTree: () => true,
+          waitUntilDetached: async () => false,
+        },
+      ),
+    ).rejects.toMatchObject({ code: "UPDATE_DETACH_FAILED" });
+    expect(JSON.parse(readFileSync(updateRunPaths(RUN_ID, stateDir).result, "utf8"))).toMatchObject({
+      runId: RUN_ID,
+      status: "failed",
+      code: "UPDATE_DETACH_FAILED",
+    });
+    expect(existsSync(join(stateDir, "update.json"))).toBe(false);
+  });
+});
+
+describe("update supervisor inside the daemon process tree", () => {
+  let stateDir: string;
+  let inheritedStateDir: string | undefined;
+  const REBIND_ENV = "RAVI_INTERNAL_UPDATE_RUNTIME_REBIND";
+
+  beforeEach(() => {
+    stateDir = mkdtempSync(join(tmpdir(), "ravi-update-supervisor-"));
+    inheritedStateDir = process.env.RAVI_STATE_DIR;
+    process.env.RAVI_STATE_DIR = stateDir;
+  });
+
+  afterEach(() => {
+    delete process.env[REBIND_ENV];
+    if (inheritedStateDir === undefined) delete process.env.RAVI_STATE_DIR;
+    else process.env.RAVI_STATE_DIR = inheritedStateDir;
+    rmSync(stateDir, { recursive: true, force: true });
+  });
+
+  it("refuses before reading the request or touching PM2, and leaves evidence", async () => {
+    // An undecodable request proves the refusal comes first.
+    process.env[REBIND_ENV] = "not-a-request";
+    await expect(maybeRunManagedRuntimeRebindFromEnv(() => true)).rejects.toThrow(UPDATE_SUPERVISOR_IN_DAEMON_TREE);
+    expect(process.env[REBIND_ENV]).toBeUndefined();
+    const evidence = JSON.parse(readFileSync(join(stateDir, "updates", "supervisor-refused.json"), "utf8"));
+    expect(evidence.code).toBe(UPDATE_SUPERVISOR_IN_DAEMON_TREE);
+  });
+
+  it("proceeds outside the tree", async () => {
+    expect(() => refuseRebindInsideDaemonTree(() => false, stateDir)).not.toThrow();
+    process.env[REBIND_ENV] = "not-a-request";
+    await expect(maybeRunManagedRuntimeRebindFromEnv(() => false)).rejects.toThrow(
+      "Invalid managed runtime rebind request",
+    );
+    expect(existsSync(join(stateDir, "updates", "supervisor-refused.json"))).toBe(false);
+  });
+
+  it("is not a supervisor without the request", async () => {
+    expect(await maybeRunManagedRuntimeRebindFromEnv(() => true)).toBe(false);
+  });
+});

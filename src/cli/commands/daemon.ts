@@ -5,6 +5,7 @@ import {
   runtimeStartReadiness,
 } from "../../runtime-maintenance.js";
 import { performUpgradeRestart } from "../daemon-upgrade-restart.js";
+import { isInsideDaemonProcessTree } from "../daemon-process-tree.js";
 import { settleThreadFenceLeftovers } from "../../threads/fence-adoption.js";
 import { getRaviStateDir } from "../../utils/paths.js";
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
@@ -97,48 +98,8 @@ function newRestartEpoch(createdAt = Date.now()): string {
   return `restart_${createdAt}_${randomUUID().replace(/-/g, "").slice(0, 8)}`;
 }
 
-function nativeParentPid(pid: number): number | null {
-  try {
-    const out = execSync(`ps -o ppid= -p ${pid}`, {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    const parsed = Number.parseInt(out, 10);
-    return Number.isFinite(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * True when this process lives inside the daemon's own process tree -- cron
- * shell jobs, agent bash tools and hook scripts all do.
- *
- * Those callers cannot run the inline restart sequence: it starts with
- * `pm2 delete ravi`, which kills the daemon, and pm2's treekill takes the caller
- * with it. The following `pm2 start` never runs and the daemon stays offline.
- */
-export function isInsideDaemonProcessTree(
-  options: { daemonPid?: number | null; startPid?: number; readParentPid?: (pid: number) => number | null } = {},
-): boolean {
-  const daemonPid = options.daemonPid === undefined ? getRaviPid() : options.daemonPid;
-  if (!daemonPid) return false;
-
-  const readParentPid = options.readParentPid ?? nativeParentPid;
-  const seen = new Set<number>();
-  let pid = options.startPid ?? process.ppid;
-
-  for (let depth = 0; depth < 24; depth += 1) {
-    if (!pid || pid <= 1 || seen.has(pid)) return false;
-    if (pid === daemonPid) return true;
-    seen.add(pid);
-    const parent = readParentPid(pid);
-    if (parent === null) return false;
-    pid = parent;
-  }
-
-  return false;
-}
+// Shared with `ravi update`, which has the same tree-kill hazard.
+export { isInsideDaemonProcessTree };
 
 function readRestartReason(file = RESTART_REASON_FILE): RestartReasonFile | null {
   if (!existsSync(file)) return null;

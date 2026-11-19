@@ -1,8 +1,9 @@
 import { assertRuntimeMaintenanceInactive, runtimeReplacementReadiness } from "./runtime-maintenance.js";
 import { spawn } from "node:child_process";
 import { which } from "bun";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { isInsideDaemonProcessTree } from "./cli/daemon-process-tree.js";
 import { setTimeout as delay } from "node:timers/promises";
 import { buildRunnerPm2Env } from "./channels/pm2-env.js";
 import {
@@ -401,10 +402,46 @@ export function buildManagedRuntimeRebindSupervisorInvocation(
   return { command: process.execPath, args: [target.bundlePath], cwd: target.cwd, env };
 }
 
-export async function maybeRunManagedRuntimeRebindFromEnv(): Promise<boolean> {
+export const UPDATE_SUPERVISOR_IN_DAEMON_TREE = "UPDATE_REFUSED_IN_DAEMON_TREE";
+
+/**
+ * The rebind deletes `ravi`, and PM2 tree-kills every descendant of the daemon.
+ * A supervisor started by a CLI inside that tree (an agent tool, a cron shell
+ * job) would die between the stop and the start and leave PM2 without either
+ * process. Refuse before touching PM2: the predecessors keep running. Current
+ * CLIs detach before starting a supervisor, so only an older installed CLI
+ * reaches this; running the update again uses the CLI it just installed.
+ */
+export function refuseRebindInsideDaemonTree(
+  insideDaemonTree: () => boolean,
+  stateDir: string = getRaviStateDir(),
+): void {
+  if (!insideDaemonTree()) return;
+  const message =
+    `${UPDATE_SUPERVISOR_IN_DAEMON_TREE}: the update supervisor was started inside the daemon's process tree, ` +
+    "where stopping the daemon would kill it before the new runtime starts. Nothing was stopped. " +
+    "Run ravi update again: the CLI it installed detaches first.";
+  try {
+    const dir = join(stateDir, "updates");
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    writeFileSync(
+      join(dir, "supervisor-refused.json"),
+      `${JSON.stringify({ code: UPDATE_SUPERVISOR_IN_DAEMON_TREE, pid: process.pid, at: new Date().toISOString(), message }, null, 2)}\n`,
+      { mode: 0o600 },
+    );
+  } catch (cause) {
+    throw new Error(message, { cause });
+  }
+  throw new Error(message);
+}
+
+export async function maybeRunManagedRuntimeRebindFromEnv(
+  insideDaemonTree: () => boolean = () => isInsideDaemonProcessTree(),
+): Promise<boolean> {
   const encoded = process.env[MANAGED_RUNTIME_REBIND_ENV];
   if (!encoded) return false;
   delete process.env[MANAGED_RUNTIME_REBIND_ENV];
+  refuseRebindInsideDaemonTree(insideDaemonTree);
   const request = decodeManagedRuntimeRebindRequest(encoded);
   if (!(await rebindManagedRuntimeProcesses(request.previousProcesses, request.target))) {
     throw new Error("Managed Ravi runtime did not converge on the updated bundle");

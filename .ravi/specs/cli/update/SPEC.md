@@ -79,3 +79,30 @@ normative: true
   starting channel consumers. A failed candidate MUST NOT be reported as
   recovered based only on PM2 online or a boot receipt. Recovery MUST preserve
   schema ownership and MUST NOT imply a database rollback.
+
+## Detached execution
+
+- `ravi update` started inside the daemon's process tree (an agent tool, a
+  cron shell job, a hook) MUST NOT install, stop or rebind anything in that
+  process. It MUST hand the request to a detached child, which starts a worker
+  and exits at once, so the worker is reparented outside the tree. The caller
+  returns the run id, the log path and the result path.
+- If the detached child cannot be started, the update MUST be refused with
+  `UPDATE_DETACH_FAILED`. It MUST NOT fall back to running inline.
+- The worker MUST confirm it is outside the daemon's process tree before it
+  installs anything. If it is still inside after the wait, it MUST refuse with
+  `UPDATE_DETACH_FAILED` and record that result.
+- The detached run MUST NOT carry runtime context. Every `RAVI_*` key except
+  `RAVI_HOME`, `RAVI_REPO` and `RAVI_SUPPRESS_AUDIT_EVENTS` MUST be removed;
+  `RAVI_STATE_DIR` MUST be passed as an absolute path.
+- Each detached run MUST keep `request.json`, `log` and `result.json` under
+  `<state>/updates/<runId>/`. The run id MUST match
+  `^\d{8}T\d{6}Z-[0-9a-f]{6}$` before it is used as a path. Results MUST be
+  written atomically.
+- The update supervisor (`RAVI_INTERNAL_UPDATE_RUNTIME_REBIND`) MUST refuse
+  with `UPDATE_REFUSED_IN_DAEMON_TREE` when it runs inside the daemon's process
+  tree. The refusal MUST happen before it reads its request or touches PM2, and
+  it MUST leave `<state>/updates/supervisor-refused.json`. Only a CLI that
+  predates detached execution starts a supervisor there.
+- The refusal of the root command in a runtime context (`CLI_ONLY`) is
+  unchanged by detached execution.
