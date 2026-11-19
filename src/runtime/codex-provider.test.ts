@@ -127,9 +127,15 @@ function findEventsByType<T extends RuntimeEvent["type"]>(
 
 const CODEX_DYNAMIC_TOOL_DISABLED_TEXT = "No Ravi dynamic tool handler is available for this Codex request.";
 
-// A test that writes a fake app-server script starts it as a child process. Most take about 1 s on a CI runner; the
-// first one in the file took 4.7 s in one run and hit Bun's 5 s default timeout (5001 ms) in another. Those tests say
-// how long they may take; the CI segment that runs the file keeps the default.
+// A test that writes a fake app-server script starts it as a child process, so it says how long it may take: a runner
+// stall of a few seconds took one of them to 4.7 s in one CI run and to 5001 ms (Bun's 5 s default timeout) in another.
+// The CI segment that runs the file keeps the default.
+//
+// The time of those tests is not the process start. After a resume or a fork the provider asks `thread/goal/get` and
+// waits at most 1 s for the answer (`timeoutMs: 1_000` in codex-provider.ts), and a fake that stays silent makes its
+// test wait out the whole second: that was the 1 s of every resume and fork test below. Their fakes answer with no
+// goal, and "resumes a thread when the app-server never answers thread/goal/get" is the one test that stays silent on
+// purpose, so the bound itself stays covered.
 describe("createCodexRuntimeProvider", () => {
   it("exposes explicit transport cleanup on the runtime session handle", async () => {
     let closeCalls = 0;
@@ -349,6 +355,10 @@ rl.on("line", (line) => {
     send({ id: message.id, result: {} });
     return;
   }
+  if (message.id && message.method === "thread/goal/get") {
+    send({ id: message.id, result: { goal: null } });
+    return;
+  }
   if (message.method === "initialized") {
     return;
   }
@@ -398,6 +408,53 @@ rl.on("line", (line) => {
     expect(threadRequests[0]?.method).toBe("thread/resume");
     expect(threadRequests[0]?.params.threadId).toBe("thread_prev");
     expect(threadRequests[0]?.params.dynamicTools).toBeNull();
+  }, 20_000);
+
+  it("resumes a thread when the app-server never answers thread/goal/get", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-resume-silent-goal-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+
+createInterface({ input: process.stdin }).on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id) appendFileSync(requestsPath, JSON.stringify({ method: message.method }) + "\\n");
+  if (message.id && message.method === "initialize") send({ id: message.id, result: {} });
+  // thread/goal/get gets no answer on purpose: an older app-server may not implement it.
+  if (message.id && message.method === "thread/resume") {
+    send({ id: message.id, result: { thread: { id: "thread_prev" }, model: "gpt-5.4", modelProvider: "openai" } });
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({ method: "turn/started", params: { threadId: "thread_prev", turn: { id: "turn_resume", status: "inProgress" } } });
+    send({ method: "turn/completed", params: { threadId: "thread_prev", turn: { id: "turn_resume", status: "completed" } } });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const events = await collectEvents(
+      provider.startSession(makeStartRequest(["resume"], { cwd, resume: "thread_prev" })).events,
+    );
+    const methods = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line).method);
+
+    // The probe was sent, nobody answered it, and the turn still started and completed.
+    expect(methods).toContain("thread/goal/get");
+    expect(methods.indexOf("turn/start")).toBeGreaterThan(methods.indexOf("thread/goal/get"));
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(1);
   }, 20_000);
 
   it("binds the turn from the turn/start response and forwards the stable client message id", async () => {
@@ -480,6 +537,10 @@ rl.on("line", (line) => {
     send({ id: message.id, result: {} });
     return;
   }
+  if (message.id && message.method === "thread/goal/get") {
+    send({ id: message.id, result: { goal: null } });
+    return;
+  }
   if (message.method === "initialized") return;
   if (message.id && message.method === "thread/resume") {
     appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
@@ -556,6 +617,10 @@ rl.on("line", (line) => {
     send({ id: message.id, result: {} });
     return;
   }
+  if (message.id && message.method === "thread/goal/get") {
+    send({ id: message.id, result: { goal: null } });
+    return;
+  }
   if (message.method === "initialized") return;
   if (message.id && message.method === "thread/resume") {
     appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
@@ -629,6 +694,10 @@ rl.on("line", (line) => {
   const message = JSON.parse(line);
   if (message.id && message.method === "initialize") {
     send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.id && message.method === "thread/goal/get") {
+    send({ id: message.id, result: { goal: null } });
     return;
   }
   if (message.method === "initialized") return;
@@ -716,6 +785,10 @@ rl.on("line", (line) => {
     send({ id: message.id, result: {} });
     return;
   }
+  if (message.id && message.method === "thread/goal/get") {
+    send({ id: message.id, result: { goal: null } });
+    return;
+  }
   if (message.method === "initialized") return;
   if (message.id && message.method === "thread/resume") {
     appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
@@ -780,6 +853,10 @@ rl.on("line", (line) => {
   const message = JSON.parse(line);
   if (message.id && message.method === "initialize") {
     send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.id && message.method === "thread/goal/get") {
+    send({ id: message.id, result: { goal: null } });
     return;
   }
   if (message.method === "initialized") return;
@@ -1112,6 +1189,10 @@ rl.on("line", (line) => {
     send({ id: message.id, result: {} });
     return;
   }
+  if (message.id && message.method === "thread/goal/get") {
+    send({ id: message.id, result: { goal: null } });
+    return;
+  }
   if (message.method === "initialized") return;
   if (message.id && ["thread/fork", "thread/resume", "thread/start", "turn/start"].includes(message.method)) {
     appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
@@ -1192,6 +1273,10 @@ rl.on("line", (line) => {
     send({ id: message.id, result: {} });
     return;
   }
+  if (message.id && message.method === "thread/goal/get") {
+    send({ id: message.id, result: { goal: null } });
+    return;
+  }
   if (message.method === "initialized") return;
   if (message.id && ["thread/fork", "thread/resume", "thread/start", "turn/start"].includes(message.method)) {
     appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
@@ -1261,6 +1346,10 @@ rl.on("line", (line) => {
   const message = JSON.parse(line);
   if (message.id && message.method === "initialize") {
     send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.id && message.method === "thread/goal/get") {
+    send({ id: message.id, result: { goal: null } });
     return;
   }
   if (message.method === "initialized") return;
@@ -1405,6 +1494,10 @@ const server = Bun.serve({
       const message = JSON.parse(String(payload));
       if (message.id && message.method === "initialize") {
         send(ws, { id: message.id, result: {} });
+        return;
+      }
+      if (message.id && message.method === "thread/goal/get") {
+        send(ws, { id: message.id, result: { goal: null } });
         return;
       }
       if (message.method === "initialized") return;
@@ -4126,13 +4219,15 @@ describe("Codex native capacity admission failures", () => {
     { mode: "nonempty", expectedProof: false },
     { mode: "unavailable", expectedProof: false },
     { mode: "ordinary400", expectedProof: false },
-  ])("preserves structured errors and proves pre-execution rejection: $mode", async ({ mode, expectedProof }) => {
-    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-capacity-"));
-    const command = join(cwd, "fake-capacity.mjs");
-    const readbackSecret = ["fixture", "readback", "credential"].join("-");
-    writeFileSync(
-      command,
-      `#!/usr/bin/env node
+  ])(
+    "preserves structured errors and proves pre-execution rejection: $mode",
+    async ({ mode, expectedProof }) => {
+      const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-capacity-"));
+      const command = join(cwd, "fake-capacity.mjs");
+      const readbackSecret = ["fixture", "readback", "credential"].join("-");
+      writeFileSync(
+        command,
+        `#!/usr/bin/env node
 import { createInterface } from "node:readline";
 const mode = ${JSON.stringify(mode)};
 const send = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
@@ -4160,33 +4255,35 @@ createInterface({input: process.stdin}).on("line", (line) => {
   }
 });
 `,
-    );
-    chmodSync(command, 0o755);
-    const provider = createCodexRuntimeProvider({ command, syncSkills: () => [] });
-    const debug = mode === "unavailable" ? spyOn(Object.getPrototypeOf(logger), "debug") : undefined;
-    try {
-      const events = await collectEvents(provider.startSession(makeStartRequest(["run"], { cwd })).events);
-      const failures = findEventsByType(events, "turn.failed");
-      expect(failures).toHaveLength(1);
-      expect(failures[0]?.error).toBe("Selected model is at capacity. Please try a different model.");
-      expect(failures[0]?.rawEvent).toMatchObject({
-        status: mode === "ordinary400" ? 400 : 503,
-        headers: { "retry-after": "4" },
-      });
-      expect(failures[0]?.preExecutionRejected === true).toBe(expectedProof);
-      expect(failures[0]?.providerSessionId).toBe("thread_capacity");
-      expect(failures[0]?.session?.displayId).toBe("thread_capacity");
-      if (debug) {
-        expect(debug).toHaveBeenCalledWith("Codex capacity readback unavailable; replay remains unproven", {
-          cause: expect.stringContaining("readback unavailable"),
-          context: { provider: "codex", operation: "thread/read" },
+      );
+      chmodSync(command, 0o755);
+      const provider = createCodexRuntimeProvider({ command, syncSkills: () => [] });
+      const debug = mode === "unavailable" ? spyOn(Object.getPrototypeOf(logger), "debug") : undefined;
+      try {
+        const events = await collectEvents(provider.startSession(makeStartRequest(["run"], { cwd })).events);
+        const failures = findEventsByType(events, "turn.failed");
+        expect(failures).toHaveLength(1);
+        expect(failures[0]?.error).toBe("Selected model is at capacity. Please try a different model.");
+        expect(failures[0]?.rawEvent).toMatchObject({
+          status: mode === "ordinary400" ? 400 : 503,
+          headers: { "retry-after": "4" },
         });
-        expect(JSON.stringify(debug.mock.calls)).not.toContain(readbackSecret);
+        expect(failures[0]?.preExecutionRejected === true).toBe(expectedProof);
+        expect(failures[0]?.providerSessionId).toBe("thread_capacity");
+        expect(failures[0]?.session?.displayId).toBe("thread_capacity");
+        if (debug) {
+          expect(debug).toHaveBeenCalledWith("Codex capacity readback unavailable; replay remains unproven", {
+            cause: expect.stringContaining("readback unavailable"),
+            context: { provider: "codex", operation: "thread/read" },
+          });
+          expect(JSON.stringify(debug.mock.calls)).not.toContain(readbackSecret);
+        }
+      } finally {
+        debug?.mockRestore();
       }
-    } finally {
-      debug?.mockRestore();
-    }
-  });
+    },
+    20_000,
+  );
 
   it("preserves a newly created thread across failure and the next attempt", async () => {
     const mock = createMockTransport([
@@ -4263,5 +4360,6 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       expect(processes).toHaveLength(rejectedMethod === "turn/start" ? 1 : 2);
       if (rejectedMethod !== "turn/start") expect(processes[0]).not.toBe(processes[1]);
     },
+    20_000,
   );
 });
