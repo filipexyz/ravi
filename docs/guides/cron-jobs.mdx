@@ -151,7 +151,7 @@ ravi cron add "ETL batch" \
 - `--shell` and `--exec` are the same flag. They cannot be combined with `--message`, `--isolated` or `--account`.
 - The command runs through the system shell with the daemon's environment and working directory. Use absolute paths.
 - `--timeout` takes seconds (`60`) or a duration (`30s`, `5m`, `1h`). The default is 10 minutes.
-- `--env-file` reads `KEY=value` lines (blank lines, `#` comments and a leading `export` are allowed) and adds them to the command's environment.
+- `--env-file` reads `KEY=value` lines (blank lines, `#` comments and a leading `export` are allowed) and adds them to the command's environment. The file must belong to the OS user Ravi runs as, and its group and other users must not be able to write it (`chmod 600`), because whoever can write it decides what the command runs. Otherwise the run fails with that reason.
 - Output goes to the daemon log, not to a chat.
 - On success the run records `ok`, the exit code and the duration. Nothing is sent to any agent.
 - On failure (non-zero exit or timeout) the run records `error`, `lastError` with stderr, and `lastExitCode`. With `--on-error notify-session:<session>`, that session receives a `[System] Inform:` message with the command, exit code, stderr and stdout, and its agent decides what to do.

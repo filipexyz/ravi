@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { existsSync, linkSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, linkSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dbCreateAgent, getDb } from "../../router/router-db.js";
@@ -175,7 +175,8 @@ describe("shell trigger owner and env", () => {
   it("runs an operator's shell trigger with the allowlisted env plus its env file", async () => {
     const topic = "ravi.test.shell-env";
     const envFile = join(markerDir!, "trigger.env");
-    writeFileSync(envFile, "TRIGGER_ON_PURPOSE=from-env-file\n");
+    // Explicit mode: a file its group can write (umask 002) is refused.
+    writeFileSync(envFile, "TRIGGER_ON_PURPOSE=from-env-file\n", { mode: 0o600 });
     const previous = process.env.RAVI_TRIGGER_TEST_CANARY_SECRET;
     process.env.RAVI_TRIGGER_TEST_CANARY_SECRET = "canary-trigger-secret";
     try {
@@ -278,6 +279,27 @@ describe("shell trigger owner and env", () => {
     expect(existsSync(markerPath())).toBe(false);
     const notices = publishCalls.filter(({ payload }) =>
       String(payload.prompt).includes("TRIGGER_SHELL_ENV_FILE_TOO_LARGE"),
+    );
+    expect(notices).toHaveLength(1);
+  });
+
+  it("turns off a shell trigger whose env file became writable by others, with one notice", async () => {
+    const topic = "ravi.test.shell-writable";
+    const envFile = join(markerDir!, "shared.env");
+    writeFileSync(envFile, "TICKET_QUEUE=ops\n", { mode: 0o600 });
+    const trigger = createShellTrigger({ name: "writable-env", topic, ownerPrincipal: "operator", envFile });
+    await startRunner();
+
+    // Saved as its owner's file, then opened to everyone.
+    chmodSync(envFile, 0o666);
+    emit(topic, { eventId: "evt-writable" });
+    await waitFor(() => !dbGetTrigger(trigger.id)?.enabled);
+    emit(topic, { eventId: "evt-writable-2" });
+    await sleep(300);
+
+    expect(existsSync(markerPath())).toBe(false);
+    const notices = publishCalls.filter(({ payload }) =>
+      String(payload.prompt).includes("TRIGGER_SHELL_ENV_FILE_WRITABLE_BY_OTHERS"),
     );
     expect(notices).toHaveLength(1);
   });

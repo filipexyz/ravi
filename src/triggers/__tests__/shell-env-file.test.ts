@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, linkSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MAX_ENV_FILE_BYTES } from "../../cron/shell-executor.js";
@@ -12,6 +12,26 @@ function makeRoot(): string {
   root = mkdtempSync(join(tmpdir(), "ravi-shell-env-file-"));
   return root;
 }
+
+/**
+ * Runs `code` in a child bun with a time limit. A check that opens a FIFO
+ * blocks until a writer shows up; in the child it is killed there and fails the
+ * test, instead of hanging the whole run.
+ */
+function runInChild(code: string): { status: number | null; signal: NodeJS.Signals | null; stdout: string } {
+  const result = spawnSync(process.execPath, ["-e", code], {
+    encoding: "utf8",
+    timeout: 10_000,
+    killSignal: "SIGKILL",
+  });
+  return { status: result.status, signal: result.signal, stdout: result.stdout };
+}
+
+/** A regular file with one link that another user owns and nobody else can write, when there is one (not as root). */
+const foreignFile = ["/etc/hosts", "/etc/passwd"].find((path) => {
+  const stats = statSync(path, { throwIfNoEntry: false });
+  return stats?.isFile() && stats.nlink === 1 && stats.uid !== process.getuid?.() && (stats.mode & 0o022) === 0;
+});
 
 afterEach(() => {
   if (root) rmSync(root, { recursive: true, force: true });
@@ -80,7 +100,7 @@ describe("shell trigger env file location", () => {
     mkdirSync(stateDir);
     writeFileSync(join(stateDir, ".env"), "RAVI_ADMIN_TOKEN=canary\n");
     linkSync(join(stateDir, ".env"), join(base, "innocent.env"));
-    writeFileSync(join(base, "own.env"), "TICKET_QUEUE=ops\n");
+    writeFileSync(join(base, "own.env"), "TICKET_QUEUE=ops\n", { mode: 0o600 });
 
     expect(shellEnvFileInsideStateDir(join(base, "innocent.env"), stateDir)).toBe(false);
     expect(shellEnvFileRefusal(join(base, "innocent.env"), stateDir)).toBe("hard_link");
@@ -88,7 +108,7 @@ describe("shell trigger env file location", () => {
     expect(shellEnvFileRefusal(join(stateDir, ".env"), stateDir)).toBe("in_state_dir");
   });
 
-  it("refuses a FIFO without opening it, also below a FIFO, and never blocks", () => {
+  it("refuses a FIFO without opening it, also below a FIFO, in a child process with a time limit", () => {
     // Bun's realpathSync opens the path on macOS; on a FIFO that would block until a writer shows up.
     const base = makeRoot();
     const stateDir = join(base, ".ravi");
@@ -96,13 +116,22 @@ describe("shell trigger env file location", () => {
     const fifo = join(base, "pipe.env");
     expect(spawnSync("mkfifo", [fifo]).status).toBe(0);
 
-    const started = performance.now();
-    expect(shellEnvFileRefusal(fifo, stateDir)).toBe("not_regular_file");
-    expect(shellEnvFileInsideStateDir(fifo, stateDir)).toBe(false);
-    // A missing path under a FIFO: no realpath of the FIFO while walking up.
-    expect(shellEnvFileRefusal(join(fifo, "child.env"), stateDir)).toBeNull();
-    expect(performance.now() - started).toBeLessThan(1_000);
-  });
+    const child = runInChild(`
+      const { shellEnvFileInsideStateDir, shellEnvFileRefusal } = await import(${JSON.stringify(join(import.meta.dir, "..", "shell-env-file.ts"))});
+      const fifo = ${JSON.stringify(fifo)};
+      const stateDir = ${JSON.stringify(stateDir)};
+      console.log(JSON.stringify({
+        refusal: shellEnvFileRefusal(fifo, stateDir),
+        inside: shellEnvFileInsideStateDir(fifo, stateDir),
+        // A missing path under a FIFO (ENOTDIR): no realpath of the FIFO while walking up.
+        below: shellEnvFileRefusal(fifo + "/child.env", stateDir),
+      }));
+    `);
+    // A check that opened the FIFO ends at the time limit with SIGKILL and no output.
+    expect(child.signal).toBeNull();
+    expect(child.status).toBe(0);
+    expect(JSON.parse(child.stdout)).toEqual({ refusal: "not_regular_file", inside: false, below: null });
+  }, 20_000);
 
   it("refuses a device and a directory as not a regular file, not as a hard link", () => {
     const base = makeRoot();
@@ -118,10 +147,33 @@ describe("shell trigger env file location", () => {
     const base = makeRoot();
     const stateDir = join(base, ".ravi");
     mkdirSync(stateDir);
-    writeFileSync(join(base, "at-limit.env"), "x".repeat(MAX_ENV_FILE_BYTES));
-    writeFileSync(join(base, "over-limit.env"), "x".repeat(MAX_ENV_FILE_BYTES + 1));
+    writeFileSync(join(base, "at-limit.env"), "x".repeat(MAX_ENV_FILE_BYTES), { mode: 0o600 });
+    writeFileSync(join(base, "over-limit.env"), "x".repeat(MAX_ENV_FILE_BYTES + 1), { mode: 0o600 });
 
     expect(shellEnvFileRefusal(join(base, "at-limit.env"), stateDir)).toBeNull();
     expect(shellEnvFileRefusal(join(base, "over-limit.env"), stateDir)).toBe("too_large");
+  });
+
+  it("refuses a file its group or others can write, as the loader does, so the error comes on create (review of #884)", () => {
+    const base = makeRoot();
+    const stateDir = join(base, ".ravi");
+    mkdirSync(stateDir);
+    const envFile = join(base, "ticket.env");
+    writeFileSync(envFile, "TICKET_QUEUE=ops\n", { mode: 0o600 });
+
+    expect(shellEnvFileRefusal(envFile, stateDir)).toBeNull();
+    for (const mode of [0o666, 0o620, 0o602]) {
+      chmodSync(envFile, mode);
+      expect(shellEnvFileRefusal(envFile, stateDir)).toBe("writable_by_others");
+    }
+    chmodSync(envFile, 0o644);
+    expect(shellEnvFileRefusal(envFile, stateDir)).toBeNull();
+  });
+
+  it.skipIf(!foreignFile)("refuses a file another user owns", () => {
+    const stateDir = join(makeRoot(), ".ravi");
+    mkdirSync(stateDir);
+
+    expect(shellEnvFileRefusal(foreignFile!, stateDir)).toBe("not_owned");
   });
 });

@@ -115,7 +115,7 @@ Opções:
 - `--description <text>` - Descrição do job
 - `--shell <cmd>` / `--exec <cmd>` - Executa comando shell direto sem prompt LLM
 - `--timeout <seconds|duration>` - Timeout para shell jobs, ex: `60`, `30s`, `10m`
-- `--env-file <path>` - Arquivo dotenv simples para shell jobs
+- `--env-file <path>` - Arquivo dotenv simples para shell jobs; tem que ser do usuário que roda o Ravi e sem escrita para grupo ou outros (`chmod 600`), senão a execução falha com o motivo
 - `--on-error notify-session:<session>` - Notifica sessão só quando shell job falhar
 - `--idempotency-key <key>` - Reutiliza duravelmente a mesma criação em retries; a mesma key não pode representar outro job
 

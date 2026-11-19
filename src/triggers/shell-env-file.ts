@@ -7,17 +7,23 @@
  * allowlist keeps out, so it is refused on create and edit, and the runner
  * does not run a trigger that points at one.
  *
- * This is a path check at create and at fire time, not an access boundary.
- * The file can change between the check and the read, and the daemon and the
- * command run as the same OS user, so whoever can write the file system can
- * still reach the state dir. The check stops the plain mistakes and the known
- * tricks: `..`, symlinks and hard links.
+ * The file must also belong to the user Ravi runs as and must not be writable
+ * by its group or by others: whoever can write an env file decides what the
+ * command runs (`envFileTrustRefusal`). The loader checks that again on the
+ * descriptor it reads; here it is checked so the refusal comes when the
+ * trigger is saved.
+ *
+ * The location part is a path check at create and at fire time, not an access
+ * boundary. The file can change between the check and the read, and the daemon
+ * and the command run as the same OS user, so whoever can write the file system
+ * can still reach the state dir. The check stops the plain mistakes and the
+ * known tricks: `..`, symlinks and hard links.
  */
 
-import { existsSync, realpathSync, type Stats, statSync } from "node:fs";
+import { realpathSync, type Stats, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { MAX_ENV_FILE_BYTES } from "../cron/shell-executor.js";
+import { type EnvFileTrustRefusal, envFileTrustRefusal, MAX_ENV_FILE_BYTES } from "../cron/shell-executor.js";
 import { getRaviStateDir } from "../utils/paths.js";
 
 function expandHome(path: string): string {
@@ -33,12 +39,20 @@ function absoluteRaw(path: string): string {
 
 /**
  * `stat` of a path, which follows symlinks but never opens the file, or null
- * when it does not exist. Every check looks at this before any `realpath`:
- * Bun's `realpathSync` opens the path on macOS, and opening a FIFO blocks the
- * daemon's thread until someone writes to it.
+ * when nothing is there: the path is missing, or it sits below something that
+ * is not a directory (`ENOTDIR`, a path under a FIFO or a file), which cannot
+ * exist either. One `stat` call, so a file removed between an existence check
+ * and the `stat` cannot throw. Every check looks at this before any
+ * `realpath`: Bun's `realpathSync` opens the path on macOS, and opening a FIFO
+ * blocks the daemon's thread until someone writes to it.
  */
 function statWithoutOpening(path: string): Stats | null {
-  return existsSync(path) ? statSync(path) : null;
+  try {
+    return statSync(path, { throwIfNoEntry: false }) ?? null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOTDIR") return null;
+    throw error;
+  }
 }
 
 /**
@@ -57,13 +71,14 @@ function realOrResolved(path: string): string {
   if (stats) return stats.isFile() || stats.isDirectory() ? realpathSync(raw) : resolve(raw);
   let existing = resolve(raw);
   const rest: string[] = [];
-  while (!existsSync(existing)) {
+  let ancestor = statWithoutOpening(existing);
+  while (!ancestor) {
     const parent = dirname(existing);
     if (parent === existing) break;
     rest.unshift(basename(existing));
     existing = parent;
+    ancestor = statWithoutOpening(existing);
   }
-  const ancestor = statWithoutOpening(existing);
   return join(ancestor?.isDirectory() ? realpathSync(existing) : existing, ...rest);
 }
 
@@ -117,14 +132,25 @@ export function shellEnvFileTooLarge(envFile: string): boolean {
   return stats !== null && stats.isFile() && stats.size > MAX_ENV_FILE_BYTES;
 }
 
-export type ShellEnvFileRefusal = "in_state_dir" | "not_regular_file" | "hard_link" | "too_large";
+/**
+ * Why the loader would not trust this env file, when it is a regular file:
+ * `not_owned` (another user owns it) or `writable_by_others` (its group or
+ * other users can write it). See `envFileTrustRefusal`.
+ */
+function shellEnvFileUntrusted(envFile: string): EnvFileTrustRefusal | null {
+  const stats = statWithoutOpening(absoluteRaw(envFile));
+  return stats?.isFile() ? envFileTrustRefusal(stats) : null;
+}
+
+export type ShellEnvFileRefusal = "in_state_dir" | "not_regular_file" | "hard_link" | "too_large" | EnvFileTrustRefusal;
 
 /**
  * Why a shell trigger may not use this env file, or null when it may. The
  * type is checked first, without opening anything, so a FIFO or a device is
  * refused before any `realpath`: `in_state_dir` (inside, or a `..` that may
- * lead there), `not_regular_file`, `hard_link`, or `too_large` (more than the
- * loader reads).
+ * lead there), `not_regular_file`, `hard_link`, `too_large` (more than the
+ * loader reads), `not_owned` or `writable_by_others` (the loader would not
+ * trust it).
  */
 export function shellEnvFileRefusal(envFile: string, stateDir: string = getRaviStateDir()): ShellEnvFileRefusal | null {
   if (
@@ -137,5 +163,5 @@ export function shellEnvFileRefusal(envFile: string, stateDir: string = getRaviS
   if (shellEnvFileInsideStateDir(envFile, stateDir)) return "in_state_dir";
   if (shellEnvFileHasHardLinks(envFile)) return "hard_link";
   if (shellEnvFileTooLarge(envFile)) return "too_large";
-  return null;
+  return shellEnvFileUntrusted(envFile);
 }

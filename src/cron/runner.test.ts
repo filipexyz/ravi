@@ -586,10 +586,12 @@ describe("CronRunner shell jobs and personal connectors", () => {
   async function runShellJobEnv(ownerPrincipal: string): Promise<{ jobId: string; env: Record<string, string> }> {
     const out = join(stateDir!, `env-${Math.random().toString(36).slice(2, 8)}.txt`);
     const envFile = join(stateDir!, "job.env");
-    // The env file cannot rename the automation the command acts for.
+    // The env file cannot rename the automation the command acts for. Explicit
+    // mode: the loader refuses a file its group can write (umask 002).
     writeFileSync(
       envFile,
       `RAVI_AUTOMATION_PRINCIPAL=automation:cron:someone-else\n${CRON_RUN_AUTHORITY_ENV}=invalid\n`,
+      { mode: 0o600 },
     );
     const job = dbCreateCronJob({
       name: `shell-env-${Math.random().toString(36).slice(2, 8)}`,
