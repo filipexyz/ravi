@@ -2221,6 +2221,8 @@ describe("Pi runtime provider", () => {
     expect(promptCommands[0]).not.toHaveProperty("streamingBehavior");
   });
 
+  // The provider waits 100 + 250 + 500 + 1000 + 2000 ms between the six prompts, so this test cannot finish in under
+  // 3.85 s. On CI runners it measured 3.85-3.86 s against Bun's 5 s default; it says how long it may take.
   it("surfaces turn.failed after exhausting busy retries", async () => {
     const transport = new FakePiRpcTransport();
     transport.responseFor = (command) => {
@@ -2245,7 +2247,7 @@ describe("Pi runtime provider", () => {
       failureKind: "transport",
       recoverable: true,
     });
-  });
+  }, 20_000);
 
   it("does not treat leftover agent_end after interrupt as the next turn's complete", async () => {
     const transport = new FakePiRpcTransport();

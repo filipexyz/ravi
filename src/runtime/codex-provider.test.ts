@@ -127,6 +127,9 @@ function findEventsByType<T extends RuntimeEvent["type"]>(
 
 const CODEX_DYNAMIC_TOOL_DISABLED_TEXT = "No Ravi dynamic tool handler is available for this Codex request.";
 
+// A test that writes a fake app-server script starts it as a child process. Most take about 1 s on a CI runner; the
+// first one in the file took 4.7 s in one run and hit Bun's 5 s default timeout (5001 ms) in another. Those tests say
+// how long they may take; the CI segment that runs the file keeps the default.
 describe("createCodexRuntimeProvider", () => {
   it("exposes explicit transport cleanup on the runtime session handle", async () => {
     let closeCalls = 0;
@@ -395,7 +398,7 @@ rl.on("line", (line) => {
     expect(threadRequests[0]?.method).toBe("thread/resume");
     expect(threadRequests[0]?.params.threadId).toBe("thread_prev");
     expect(threadRequests[0]?.params.dynamicTools).toBeNull();
-  });
+  }, 20_000);
 
   it("binds the turn from the turn/start response and forwards the stable client message id", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-turn-response-"));
@@ -454,7 +457,7 @@ rl.on("line", (line) => {
     expect(findEventsByType(events, "turn.complete")).toEqual([
       expect.objectContaining({ providerSessionId: "thread_response" }),
     ]);
-  });
+  }, 20_000);
 
   it("reconciles an already completed replay without submitting the prompt again", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-completed-replay-"));
@@ -530,7 +533,7 @@ rl.on("line", (line) => {
     expect(findEventsByType(events, "turn.complete")).toEqual([
       expect.objectContaining({ providerSessionId: "thread_existing" }),
     ]);
-  });
+  }, 20_000);
 
   it("reattaches to an accepted in-progress replay instead of duplicating turn/start", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-active-replay-"));
@@ -605,7 +608,7 @@ rl.on("line", (line) => {
     expect(findEventsByType(events, "turn.complete")).toEqual([
       expect.objectContaining({ providerSessionId: "thread_active" }),
     ]);
-  });
+  }, 20_000);
 
   it("forks before an interrupted replay and preserves the prior thread history", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-interrupted-replay-"));
@@ -690,7 +693,7 @@ rl.on("line", (line) => {
     expect(findEventsByType(events, "turn.complete")).toEqual([
       expect.objectContaining({ providerSessionId: "thread_recovered" }),
     ]);
-  });
+  }, 20_000);
 
   it("reconciles an unsafe interrupted turn without forking or resubmitting it", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-suppressed-terminal-replay-"));
@@ -756,7 +759,7 @@ rl.on("line", (line) => {
     expect(findEventsByType(events, "turn.interrupted")).toHaveLength(1);
     expect(findEventsByType(events, "turn.failed")).toHaveLength(0);
     expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
-  });
+  }, 20_000);
 
   it("recovers a resumed multi-agent sub-agent thread into a fresh top-level thread", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-sub-agent-resume-"));
@@ -846,7 +849,7 @@ rl.on("line", (line) => {
         (event) => (event.rawEvent as { type?: string })?.type === "thread.resume_recovered",
       ),
     ).toBe(true);
-  });
+  }, 20_000);
 
   it("switches the thread's model per turn through turn/start", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-turn-model-"));
@@ -936,7 +939,7 @@ rl.on("line", (line) => {
     ]);
     expect(requests[0]?.params.model).toBe("gpt-5.5");
     expect(requests.slice(1).map((request) => request.params.model)).toEqual([null, "gpt-5.4-mini", null, "gpt-5.5"]);
-  });
+  }, 20_000);
 
   it("keeps multi-agent child notifications from replacing the top-level thread", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-sub-agent-notifications-"));
@@ -1086,7 +1089,7 @@ rl.on("line", (line) => {
         (event) => (event.rawEvent as { type?: string })?.type === "thread.resume_recovered",
       ),
     ).toBe(false);
-  });
+  }, 20_000);
 
   it("forks an app-server thread before the first turn when forkSession is requested", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-fork-appserver-"));
@@ -1166,7 +1169,7 @@ rl.on("line", (line) => {
         }),
       }),
     ]);
-  });
+  }, 20_000);
 
   it("switches a fork to the requested model on its first turn/start", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-fork-model-"));
@@ -1235,7 +1238,7 @@ rl.on("line", (line) => {
     expect(requests[0]?.params.model).toBeNull();
     // The fork inherited gpt-5, so its first turn switches to the requested model.
     expect(requests[1]?.params.model).toBe("gpt-5.5");
-  });
+  }, 20_000);
 
   it("passes max/ultra effort as model_reasoning_effort in app-server thread/start and thread/resume", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-effort-appserver-"));
@@ -1299,7 +1302,7 @@ rl.on("line", (line) => {
 
     expect(startRequest?.params.config.model_reasoning_effort).toBe("max");
     expect(resumeRequest?.params.config.model_reasoning_effort).toBe("ultra");
-  });
+  }, 20_000);
 
   it("passes Ravi runtime env to the Codex app-server process", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-env-"));
@@ -1374,7 +1377,7 @@ rl.on("line", (line) => {
     expect(args).toContain(
       'shell_environment_policy.include_only=["RAVI_*","CODEX_HOME","PATH","HOME","USER","LOGNAME","SHELL","TMPDIR","TMP","TEMP","LANG","LC_*"]',
     );
-  });
+  }, 20_000);
 
   it("respawns the app-server when Ravi runtime env changes between turns", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-env-refresh-"));
@@ -1465,7 +1468,7 @@ process.on("SIGTERM", () => {
         .split("\n")
         .map((line) => JSON.parse(line).RAVI_CONTEXT_KEY),
     ).toEqual(["rctx_first", "rctx_second"]);
-  });
+  }, 20_000);
 
   it("classifies a clean exit without a terminal event as a recoverable transport failure", async () => {
     const { transport } = createMockTransport([
@@ -2660,7 +2663,7 @@ rl.on("line", (line) => {
     });
     expect(completions[0]?.metadata?.thread?.id).toBe("thread_app");
     expect(completions[0]?.metadata?.turn?.id).toBe("turn_app");
-  });
+  }, 20_000);
 
   it("executes app-server thread control requests through runtime control", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-thread-control-"));
@@ -2815,7 +2818,7 @@ rl.on("line", (line) => {
       releasePrompt();
       await iterator.return?.();
     }
-  });
+  }, 20_000);
 
   it("steers and interrupts an active app-server turn through runtime control", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-turn-control-"));
@@ -2958,7 +2961,7 @@ rl.on("line", (line) => {
       releasePrompt();
       await iterator.return?.();
     }
-  });
+  }, 20_000);
 
   it("does not let a late interrupt fallback kill the process running the next turn", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-stale-interrupt-"));
@@ -3262,7 +3265,7 @@ rl.on("line", (line) => {
     expect(approvalResponses.file_req.reason).toBe("file changes require review");
     expect(approvalResponses.perm_req.permissions).toEqual({ Bash: true });
     expect(approvalResponses.input_req.answers).toEqual({ choice: "A" });
-  });
+  }, 20_000);
 
   it("rejects unexpected app-server dynamic tool calls without native CLI execution", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-tool-call-"));
@@ -3406,7 +3409,7 @@ rl.on("line", (line) => {
       success: true,
       contentItems: [{ type: "inputText", text: CODEX_DYNAMIC_TOOL_DISABLED_TEXT }],
     });
-  });
+  }, 20_000);
 
   it("emits synthetic tool completion immediately so the agent never hangs when codex's item/completed never arrives", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-tool-call-no-complete-"));
@@ -3529,7 +3532,7 @@ rl.on("line", (line) => {
       success: true,
       contentItems: [{ type: "inputText", text: CODEX_DYNAMIC_TOOL_DISABLED_TEXT }],
     });
-  });
+  }, 20_000);
 
   it("answers unexpected app-server dynamic tool calls with protocol success and semantic failure", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-tool-call-fail-"));
@@ -3657,7 +3660,7 @@ rl.on("line", (line) => {
       success: true,
       contentItems: [{ type: "inputText", text: CODEX_DYNAMIC_TOOL_DISABLED_TEXT }],
     });
-  });
+  }, 20_000);
 
   it("denies app-server command approvals when no runtime approval handler is available", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-approval-deny-"));
@@ -3735,7 +3738,7 @@ rl.on("line", (line) => {
     expect(response.decision).toBe("deny");
     expect(response.reason).toContain("No Ravi approval handler");
     expect(findEventsByType(events, "approval.resolved")[0]?.approval.approved).toBe(false);
-  });
+  }, 20_000);
 
   it("emits turn.interrupted and continues with the next turn", async () => {
     let rejectInterruptedTurn: ((error: Error) => void) | undefined;
@@ -3900,7 +3903,7 @@ createInterface({input:process.stdin}).on("line", (line) => {
       ) {
         expect(terminal.usage).toMatchObject({ inputTokens: 22, outputTokens: 6, cacheReadTokens: 8 });
       }
-    });
+    }, 20_000);
   }
 
   it("binds resumed goal notifications to the accepted input turn before consuming them", async () => {
@@ -3948,7 +3951,7 @@ createInterface({input:process.stdin}).on("line", line => {
     ]);
     expect(findEventsByType(events, "turn.complete")).toHaveLength(1);
     expect(findEventsByType(events, "turn.interrupted")).toHaveLength(0);
-  });
+  }, 20_000);
 });
 
 describe("Codex app-server token accounting", () => {
@@ -3991,7 +3994,7 @@ createInterface({input:process.stdin}).on("line", (line) => {
       cacheReadTokens: 130,
       cacheCreationTokens: 0,
     });
-  });
+  }, 20_000);
 });
 
 describe("Codex thread security (Knowledge parity)", () => {
@@ -4109,7 +4112,7 @@ rl.on("line", (line) => {
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }
-  });
+  }, 20_000);
 });
 
 describe("Codex native capacity admission failures", () => {

@@ -145,6 +145,9 @@ function runWrapper(root: string, env: Record<string, string> = {}) {
   return runWrapperBinary(join(root, "bin", "ravi"), env);
 }
 
+// Every test below runs bin/ravi through bash, and a rebuild starts Bun three times (build:cli, gen:plugins, then the
+// bundle). That takes 5-30 ms on a CI runner and once took 5.1 s, against Bun's 5 s default timeout. Each test says how
+// long it may take; the CI segment that runs the file keeps the default.
 describe("bin/ravi single execution path", () => {
   it("runs the bundle without rebuilding when it is current", () => {
     const root = makeCheckout();
@@ -153,7 +156,7 @@ describe("bin/ravi single execution path", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("BUNDLE-OK");
     expect(result.stderr).not.toContain("rebuilding");
-  });
+  }, 20_000);
 
   it("rebuilds and runs the bundle when src/ moved on", () => {
     const root = makeCheckout({ staleSrc: true });
@@ -164,7 +167,7 @@ describe("bin/ravi single execution path", () => {
     expect(result.stderr).toContain("rebuilding dist/bundle");
     // The artifact on disk is now current, not just what we ran.
     expect(readFileSync(join(root, "dist", "bundle", "index.js"), "utf8")).toContain("REBUILT-OK");
-  });
+  }, 20_000);
 
   it("rebuilds when package.json moved on in a source checkout", () => {
     const root = makeCheckout({ stalePackageJson: true });
@@ -174,7 +177,7 @@ describe("bin/ravi single execution path", () => {
     expect(result.stdout).toContain("REBUILT-OK");
     expect(result.stderr).toContain("bundle is older than");
     expect(result.stderr).toContain("package.json");
-  });
+  }, 20_000);
 
   it("rebuilds when there is no bundle at all", () => {
     const root = makeCheckout({ withBundle: false });
@@ -183,7 +186,7 @@ describe("bin/ravi single execution path", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("REBUILT-OK");
     expect(result.stderr).toContain("no bundle at dist/bundle/index.js");
-  });
+  }, 20_000);
 
   it("refuses to run instead of falling back when the rebuild fails", () => {
     const root = makeCheckout({ staleSrc: true, buildFails: true });
@@ -193,14 +196,14 @@ describe("bin/ravi single execution path", () => {
     expect(result.stderr).toContain("build failed");
     expect(result.stderr).toContain("refusing to run a stale bundle");
     expect(result.stdout).not.toContain("BUNDLE-OK");
-  });
+  }, 20_000);
 
   it("leaves no build lock behind after a successful rebuild", () => {
     const root = makeCheckout({ staleSrc: true });
     runWrapper(root);
 
     expect(existsSync(join(root, "dist", ".build.lock"))).toBe(false);
-  });
+  }, 20_000);
 
   it("lets RAVI_ALLOW_STALE_BUNDLE skip the freshness check", () => {
     const root = makeCheckout({ staleSrc: true });
@@ -209,7 +212,7 @@ describe("bin/ravi single execution path", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("BUNDLE-OK");
     expect(result.stderr).not.toContain("rebuilding");
-  });
+  }, 20_000);
 });
 
 describe("bin/ravi from an installed package", () => {
@@ -223,7 +226,7 @@ describe("bin/ravi from an installed package", () => {
     // `build:cli` was never invoked: there is no src/ to build from in a global install.
     expect(existsSync(join(install.pkg, "dist", ".build-invoked"))).toBe(false);
     expect(existsSync(join(install.pkg, "dist", ".build.lock"))).toBe(false);
-  });
+  }, 20_000);
 
   it("refuses with a reinstall hint when the package has no bundle, instead of trying to build", () => {
     const install = makeGlobalInstall({ withBundle: false });
@@ -236,5 +239,5 @@ describe("bin/ravi from an installed package", () => {
     expect(result.stderr).not.toContain("rebuilding");
     expect(result.stdout).toBe("");
     expect(existsSync(join(install.pkg, "dist", ".build-invoked"))).toBe(false);
-  });
+  }, 20_000);
 });

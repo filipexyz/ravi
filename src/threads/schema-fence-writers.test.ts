@@ -426,13 +426,15 @@ function productionSources(): string[] {
 describe("thread fence writer coverage", () => {
   const tables = protectedTables();
 
+  // Lists the repository with `git ls-files` and audits every production source file, so the time grows with the
+  // repository. On CI runners it measured 2.4-3.2 s against Bun's 5 s default; it says how long it may take.
   it("discovers protected DML across all production source files and rejects unwrapped writers", () => {
     expect(tables.size).toBeGreaterThan(0);
     const findings = productionSources().flatMap((file) =>
       audit(file, readFileSync(join(repository, file), "utf8"), tables),
     );
     expect(findings).toEqual([]);
-  });
+  }, 20_000);
 
   it.each([
     "INSERT INTO threads VALUES (?)",
