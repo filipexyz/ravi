@@ -80,8 +80,11 @@ export interface JobOutcomeDelivery {
  * volta para quem pediu, então herdar o env do daemon devolveria os segredos
  * dele. Não há exceção para o operador: o daemon não consegue provar quem
  * pediu um job (o `ravi` do terminal roda local, e a credencial padrão é de um
- * agent). Segredo que um job precisa vem do broker de credenciais ou de
- * `RAVI_AGENT_ENV_PASSTHROUGH`. Em todos, o job age em nome dele mesmo.
+ * agent). Segredo que um job precisa vem de `RAVI_AGENT_ENV_PASSTHROUGH`, só
+ * para nome sem prefixo de provedor: `CLAUDE_*`, `ANTHROPIC_*`, `CODEX_*`,
+ * `PI_*` e `GROK_*` são do runtime do agente e nunca chegam a job, nem pela
+ * passthrough (o filtro roda sem provedor). O broker de credenciais ainda não
+ * tem caminho testado para job. Em todos, o job age em nome dele mesmo.
  */
 export function buildJobEnv(
   job: Pick<JobRecord, "id">,

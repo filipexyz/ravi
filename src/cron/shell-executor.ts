@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, constants as fsConstants, fstatSync, openSync, readSync } from "node:fs";
 import { homedir } from "node:os";
 
 export const DEFAULT_CRON_SHELL_TIMEOUT_MS = 10 * 60 * 1000;
@@ -59,13 +59,41 @@ export function parseEnvFile(content: string): Record<string, string> {
   return env;
 }
 
+/** An env file holds a few variables; anything bigger is a mistake or a trick. */
+export const MAX_ENV_FILE_BYTES = 1024 * 1024;
+
+/**
+ * Reads an env file for a shell cron job or a shell trigger. The file is opened
+ * once without blocking (a FIFO would otherwise hang the daemon's thread until
+ * someone writes to it), checked on that same descriptor to be a regular file,
+ * and read from it up to `MAX_ENV_FILE_BYTES`, so a device such as `/dev/zero`
+ * or a swapped-in file cannot make the daemon read without end.
+ */
 function loadEnvFile(path: string | undefined): Record<string, string> {
   if (!path) return {};
   const resolvedPath = path === "~" ? homedir() : path.startsWith("~/") ? `${homedir()}${path.slice(1)}` : path;
   if (!existsSync(resolvedPath)) {
     throw new Error(`Env file not found: ${path}`);
   }
-  return parseEnvFile(readFileSync(resolvedPath, "utf8"));
+  const fd = openSync(resolvedPath, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK);
+  try {
+    if (!fstatSync(fd).isFile()) {
+      throw new Error(`Env file is not a regular file: ${path}`);
+    }
+    const buffer = Buffer.alloc(MAX_ENV_FILE_BYTES + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const read = readSync(fd, buffer, length, buffer.length - length, null);
+      if (read === 0) break;
+      length += read;
+    }
+    if (length > MAX_ENV_FILE_BYTES) {
+      throw new Error(`Env file is larger than ${MAX_ENV_FILE_BYTES} bytes: ${path}`);
+    }
+    return parseEnvFile(buffer.toString("utf8", 0, length));
+  } finally {
+    closeSync(fd);
+  }
 }
 
 export async function runShellCronCommand(

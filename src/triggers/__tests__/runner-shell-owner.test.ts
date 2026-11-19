@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dbCreateAgent, getDb } from "../../router/router-db.js";
@@ -236,5 +236,49 @@ describe("shell trigger owner and env", () => {
     await sleep(500);
 
     expect(existsSync(markerPath())).toBe(false);
+  });
+
+  it("does not run a shell trigger whose env file is a hard link", async () => {
+    const topic = "ravi.test.shell-hard-link";
+    const stateEnvFile = join(stateDir!, ".env");
+    writeFileSync(stateEnvFile, "RAVI_ADMIN_TOKEN=canary-hard-link\n");
+    const linked = join(markerDir!, "innocent.env");
+    linkSync(stateEnvFile, linked);
+    const trigger = createShellTrigger({ name: "hard-link-env", topic, ownerPrincipal: "operator", envFile: linked });
+    await startRunner();
+
+    emit(topic, { eventId: "evt-hard-link" });
+    await waitFor(() => !dbGetTrigger(trigger.id)?.enabled);
+    emit(topic, { eventId: "evt-hard-link-2" });
+    await sleep(300);
+
+    expect(existsSync(markerPath())).toBe(false);
+    // Turned off once, with one notice that names the reason and not the file's content.
+    const notices = publishCalls.filter(({ payload }) =>
+      String(payload.prompt).includes("TRIGGER_SHELL_ENV_FILE_HARD_LINK"),
+    );
+    expect(notices).toHaveLength(1);
+    expect(String(notices[0]!.payload.prompt)).not.toContain("canary-hard-link");
+  });
+
+  it("turns off a shell trigger whose env file grew over the loader's limit, with one notice", async () => {
+    const topic = "ravi.test.shell-too-large";
+    const envFile = join(markerDir!, "grown.env");
+    writeFileSync(envFile, "TICKET_QUEUE=ops\n");
+    const trigger = createShellTrigger({ name: "grown-env", topic, ownerPrincipal: "operator", envFile });
+    await startRunner();
+
+    // Saved within the limit, then grown past it.
+    writeFileSync(envFile, `A=${"x".repeat(1024 * 1024)}\n`);
+    emit(topic, { eventId: "evt-too-large" });
+    await waitFor(() => !dbGetTrigger(trigger.id)?.enabled);
+    emit(topic, { eventId: "evt-too-large-2" });
+    await sleep(300);
+
+    expect(existsSync(markerPath())).toBe(false);
+    const notices = publishCalls.filter(({ payload }) =>
+      String(payload.prompt).includes("TRIGGER_SHELL_ENV_FILE_TOO_LARGE"),
+    );
+    expect(notices).toHaveLength(1);
   });
 });

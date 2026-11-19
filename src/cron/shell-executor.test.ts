@@ -1,9 +1,10 @@
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "bun:test";
 import { classifyDiskPressureHint, isDiskPressureFailure } from "./disk-pressure.js";
-import { parseEnvFile, runShellCronCommand } from "./shell-executor.js";
+import { MAX_ENV_FILE_BYTES, parseEnvFile, runShellCronCommand } from "./shell-executor.js";
 
 describe("parseEnvFile", () => {
   it("parses simple dotenv-style assignments", () => {
@@ -76,5 +77,33 @@ describe("classifyDiskPressureHint", () => {
     expect(isDiskPressureFailure("command not found: foo")).toBe(false);
     expect(classifyDiskPressureHint("exit code 1: assertion failed")).toBeUndefined();
     expect(classifyDiskPressureHint(null, undefined, "")).toBeUndefined();
+  });
+});
+
+describe("env file loading", () => {
+  it("refuses a FIFO without blocking, a device, a directory and an oversized file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-cron-env-file-"));
+    try {
+      const fifo = join(dir, "pipe.env");
+      expect(spawnSync("mkfifo", [fifo]).status).toBe(0);
+      const started = performance.now();
+      await expect(runShellCronCommand("printf ok", { timeoutMs: 5_000, envFile: fifo })).rejects.toThrow(
+        "not a regular file",
+      );
+      expect(performance.now() - started).toBeLessThan(1_000);
+
+      await expect(runShellCronCommand("printf ok", { timeoutMs: 5_000, envFile: "/dev/zero" })).rejects.toThrow(
+        "not a regular file",
+      );
+      await expect(runShellCronCommand("printf ok", { timeoutMs: 5_000, envFile: dir })).rejects.toThrow(
+        "not a regular file",
+      );
+
+      const big = join(dir, "big.env");
+      writeFileSync(big, `A=${"x".repeat(MAX_ENV_FILE_BYTES)}\n`);
+      await expect(runShellCronCommand("printf ok", { timeoutMs: 5_000, envFile: big })).rejects.toThrow("larger than");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
