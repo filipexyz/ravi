@@ -276,8 +276,8 @@ type DoctorDeps = {
   inspectNativeChannelRuntime: () => NativeChannelRuntimeSnapshot;
   /** The daemon and the channel runner as PM2 and their boot receipts show them; null when PM2 is unavailable. */
   inspectManagedRuntime: () => Pick<ManagedRuntimeIdentity, "daemon" | "channels"> | null;
-  /** The runner's own adapter health over NATS; null when there is no online runner or it does not answer. */
-  probeChannelRunnerAdapters: () => Promise<readonly ChannelAdapterHealth[] | null>;
+  /** The adapter health the runner with this PM2 PID reports over NATS; null when it does not answer. */
+  probeChannelRunnerAdapters: (pid: number) => Promise<readonly ChannelAdapterHealth[] | null>;
 };
 
 export interface InspectDoctorOptions {
@@ -286,6 +286,8 @@ export interface InspectDoctorOptions {
   natsExposure?: NatsExposureReport | null;
   /** The runner's adapter health, probed by runDoctor for the same reason. */
   runnerAdapters?: readonly ChannelAdapterHealth[] | null;
+  /** The PM2 read runDoctor already made to find the runner's PID, so the check and the probe agree and PM2 is read once. */
+  managedRuntime?: ReturnType<DoctorDeps["inspectManagedRuntime"]>;
 }
 
 export interface RunDoctorOptions extends InspectDoctorOptions {
@@ -358,14 +360,11 @@ const DEFAULT_DEPS: DoctorDeps = {
     isPm2Available()
       ? buildManagedRuntimeIdentity(getPm2Processes(), process.env.RAVI_BUNDLE ?? process.argv[1])
       : null,
-  probeChannelRunnerAdapters: probeOnlineRunnerAdapters,
+  probeChannelRunnerAdapters: probeRunnerAdapters,
 };
 
-async function probeOnlineRunnerAdapters(): Promise<readonly ChannelAdapterHealth[] | null> {
-  if (!isPm2Available()) return null;
-  const runner = getPm2Process(CHANNELS_PM2_PROCESS_NAME);
-  if (!runner || runner.status !== "online" || !Number.isSafeInteger(runner.pid) || runner.pid <= 0) return null;
-  const result = await probeChannelRunnerHealth({ pid: runner.pid });
+async function probeRunnerAdapters(pid: number): Promise<readonly ChannelAdapterHealth[] | null> {
+  const result = await probeChannelRunnerHealth({ pid });
   return result.reachable ? result.snapshot.adapters : null;
 }
 
@@ -627,7 +626,7 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
     addCheck(checks, () => buildNativeChannelRuntimeCheck(deps.inspectNativeChannelRuntime()));
     addCheck(checks, () =>
       buildChannelRunnerReleaseCheck({
-        runtime: deps.inspectManagedRuntime(),
+        runtime: options.managedRuntime !== undefined ? options.managedRuntime : deps.inspectManagedRuntime(),
         adapters: options.runnerAdapters ?? null,
       }),
     );
@@ -667,8 +666,18 @@ export async function runDoctor(
 ): Promise<DoctorReport> {
   const deps = { ...DEFAULT_DEPS, ...overrides };
   const natsExposure = await probeDoctorNatsExposure(deps, options.domain);
-  const runnerAdapters = await probeDoctorRunnerAdapters(deps.probeChannelRunnerAdapters, options.domain);
-  const report = inspectDoctor(overrides, { domain: options.domain, natsExposure, runnerAdapters });
+  const managedRuntime = readDoctorManagedRuntime(deps, options.domain);
+  const runnerAdapters = await probeDoctorRunnerAdapters(
+    deps.probeChannelRunnerAdapters,
+    managedRuntime?.channels ?? null,
+    options.domain,
+  );
+  const report = inspectDoctor(overrides, {
+    domain: options.domain,
+    natsExposure,
+    runnerAdapters,
+    ...(managedRuntime !== undefined ? { managedRuntime } : {}),
+  });
   if (options.json) {
     console.log(JSON.stringify(report, null, 2));
   } else {
@@ -694,20 +703,46 @@ async function probeDoctorNatsExposure(
   }
 }
 
+/**
+ * PM2 is read once, here, for the channels domain: the runner's PID for the probe and the release
+ * check in `inspectDoctor` come from the same read. Undefined means "not read" (another domain, or the
+ * read threw), so `inspectDoctor` reads it itself and reports a failed read as a failed check.
+ */
+function readDoctorManagedRuntime(
+  deps: DoctorDeps,
+  domain: string | null | undefined,
+): ReturnType<DoctorDeps["inspectManagedRuntime"]> | undefined {
+  const normalized = domain?.trim();
+  if (normalized && normalized !== "channels") return undefined;
+  try {
+    return deps.inspectManagedRuntime();
+  } catch {
+    // no-cause: inspectDoctor reads it again inside a check, which reports the failure with its cause.
+    return undefined;
+  }
+}
+
 /** Doctor is what runs when things are broken: a runner or NATS that does not answer must not hold it. */
 const RUNNER_PROBE_BUDGET_MS = 3_000;
 
+/**
+ * Asks the online runner for its adapter health. Everything it does after the PM2 read is async, so the
+ * budget bounds it: the runner (or NATS) not answering returns null after `budgetMs`, never holds the doctor.
+ */
 export async function probeDoctorRunnerAdapters(
-  probe: () => Promise<readonly ChannelAdapterHealth[] | null>,
+  probe: (pid: number) => Promise<readonly ChannelAdapterHealth[] | null>,
+  runner: { online: boolean; pid: number | null } | null,
   domain: string | null | undefined,
   budgetMs = RUNNER_PROBE_BUDGET_MS,
 ): Promise<readonly ChannelAdapterHealth[] | null> {
   const normalized = domain?.trim();
   if (normalized && normalized !== "channels") return null;
+  if (!runner?.online || runner.pid === null || !Number.isSafeInteger(runner.pid) || runner.pid <= 0) return null;
+  const pid = runner.pid;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
-      probe(),
+      probe(pid),
       new Promise<null>((resolve) => {
         timer = setTimeout(() => resolve(null), budgetMs);
       }),

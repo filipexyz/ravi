@@ -136,8 +136,9 @@ runner's log:
   `degraded` with reason `state_refused` for it, whether the releases match or
   not. The snapshot MUST NOT gain a field for it.
 - `ravi doctor` MUST report `channels.runner_release`: `fail` when the releases
-  differ, `warn` when only the runner reports a refused guard, `skip` when a
-  release cannot be verified or a process is not online. The runner's own report
+  differ, `warn` when only the runner reports a refused guard (evidence on its
+  own, whatever the releases are), `skip` otherwise when a release cannot be
+  verified or a process is not online. The runner's own report
   comes from a bounded NATS probe; a runner that does not answer MUST NOT hold
   the doctor.
 - Process liveness, stale code on its own and a connected socket MUST NOT turn

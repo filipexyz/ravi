@@ -1268,6 +1268,25 @@ describe("channels.runner_release", () => {
     );
   });
 
+  it("treats the runner's own report of a refused guard as evidence on its own, whatever the releases are", () => {
+    // Unknown runner release, and a daemon that is down: still a warning, never a skip.
+    const unknownRelease = buildChannelRunnerReleaseCheck({
+      runtime: runtime({}, { runningVersion: null }),
+      adapters: [runnerReleaseGuardAdapter()],
+    });
+    expect(unknownRelease).toMatchObject({
+      status: "warn",
+      data: { state: "refused" },
+      fixHint: PREPARE_STATE_COMMAND,
+    });
+
+    const daemonDown = buildChannelRunnerReleaseCheck({
+      runtime: runtime({ online: false, status: "stopped", runningVersion: null }),
+      adapters: [runnerReleaseGuardAdapter()],
+    });
+    expect(daemonDown).toMatchObject({ status: "warn", data: { state: "refused" }, fixHint: "ravi daemon start" });
+  });
+
   it("skips what it cannot verify instead of calling it drift", () => {
     expect(buildChannelRunnerReleaseCheck({ runtime: null, adapters: null })).toMatchObject({
       status: "skip",
@@ -1317,9 +1336,25 @@ describe("channels.runner_release", () => {
     });
   });
 
-  it("runDoctor probes the runner for the channels domain only, and survives a probe that fails", async () => {
+  it("uses the PM2 read runDoctor already made instead of reading it again", () => {
+    const report = inspectDoctor(
+      {
+        ...makeHealthyDeps(),
+        inspectManagedRuntime: () => {
+          throw new Error("PM2 must not be read a second time");
+        },
+      },
+      { domain: "channels", managedRuntime: runtime({}, { runningVersion: "3.261119.6" }) },
+    );
+    expect(report.checks.find((entry) => entry.id === "channels.runner_release")).toMatchObject({
+      status: "fail",
+      severity: "error",
+    });
+  });
+
+  it("runDoctor probes the runner by its PM2 PID for the channels domain only, and survives a probe that fails", async () => {
     const deps = makeHealthyDeps();
-    let probes = 0;
+    const probed: number[] = [];
     const originalLog = console.log;
     console.log = () => {};
     try {
@@ -1328,8 +1363,8 @@ describe("channels.runner_release", () => {
         {
           ...deps,
           inspectManagedRuntime: () => runtime(),
-          probeChannelRunnerAdapters: async () => {
-            probes++;
+          probeChannelRunnerAdapters: async (pid) => {
+            probed.push(pid);
             return [runnerReleaseGuardAdapter()];
           },
         },
@@ -1340,8 +1375,20 @@ describe("channels.runner_release", () => {
         { json: true, domain: "apps" },
         {
           ...deps,
-          probeChannelRunnerAdapters: async () => {
-            probes++;
+          probeChannelRunnerAdapters: async (pid) => {
+            probed.push(pid);
+            return [];
+          },
+        },
+      );
+      // A runner that is not online has nothing to ask.
+      await runDoctor(
+        { json: true, domain: "channels" },
+        {
+          ...deps,
+          inspectManagedRuntime: () => runtime({}, { online: false, status: "stopped", pid: null }),
+          probeChannelRunnerAdapters: async (pid) => {
+            probed.push(pid);
             return [];
           },
         },
@@ -1360,20 +1407,67 @@ describe("channels.runner_release", () => {
     } finally {
       console.log = originalLog;
     }
-    expect(probes).toBe(1);
+    expect(probed).toEqual([200]);
+  });
+
+  it("runDoctor lets inspectDoctor report a failed PM2 read as a failed check instead of crashing", async () => {
+    const deps = makeHealthyDeps();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      // No domain filter: the unexpected-failure check belongs to the runtime domain.
+      const report = await runDoctor(
+        { json: true },
+        {
+          ...deps,
+          inspectManagedRuntime: () => {
+            throw new Error("pm2 jlist failed");
+          },
+        },
+      );
+      expect(report.checks.find((entry) => entry.id === "doctor.check")?.status).toBe("fail");
+    } finally {
+      console.log = originalLog;
+    }
   });
 });
 
 describe("probeDoctorRunnerAdapters", () => {
+  const onlineRunner = { online: true, pid: 200 };
+
   it("does not let a runner or NATS that never answers hold the doctor", async () => {
     const started = Date.now();
-    const adapters = await probeDoctorRunnerAdapters(() => new Promise(() => {}), undefined, 20);
+    const adapters = await probeDoctorRunnerAdapters(() => new Promise(() => {}), onlineRunner, undefined, 20);
     expect(adapters).toBeNull();
     expect(Date.now() - started).toBeLessThan(1_000);
   });
 
-  it("returns what the runner reported when it answers in time", async () => {
+  it("asks the runner by PID and returns what it reported when it answers in time", async () => {
     const reported = [runnerReleaseGuardAdapter()];
-    expect(await probeDoctorRunnerAdapters(async () => reported, null)).toEqual(reported);
+    const pids: number[] = [];
+    const adapters = await probeDoctorRunnerAdapters(
+      async (pid) => {
+        pids.push(pid);
+        return reported;
+      },
+      onlineRunner,
+      null,
+    );
+    expect(adapters).toEqual(reported);
+    expect(pids).toEqual([200]);
+  });
+
+  it("has nothing to ask a runner that is not online or has no PID, or outside the channels domain", async () => {
+    let probes = 0;
+    const probe = async () => {
+      probes++;
+      return [];
+    };
+    expect(await probeDoctorRunnerAdapters(probe, null, undefined)).toBeNull();
+    expect(await probeDoctorRunnerAdapters(probe, { online: false, pid: 200 }, undefined)).toBeNull();
+    expect(await probeDoctorRunnerAdapters(probe, { online: true, pid: null }, undefined)).toBeNull();
+    expect(await probeDoctorRunnerAdapters(probe, { online: true, pid: 0 }, undefined)).toBeNull();
+    expect(await probeDoctorRunnerAdapters(probe, onlineRunner, "runtime")).toBeNull();
+    expect(probes).toBe(0);
   });
 });

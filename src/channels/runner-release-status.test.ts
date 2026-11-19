@@ -89,6 +89,21 @@ describe("inspectRunnerRelease", () => {
     }
   });
 
+  it("does not restart one side onto a release the other may not run: an unreadable installed release is not a match", () => {
+    // Daemon runs .7 and its installed release cannot be read; restarting only the runner onto .9 could leave them different.
+    const verdict = inspectRunnerRelease(
+      runtime(
+        { runningVersion: "3.261119.7", diskVersion: null },
+        { runningVersion: "3.261119.6", diskVersion: "3.261119.9" },
+      ),
+    );
+
+    expect(verdict).toMatchObject({
+      state: "drift",
+      fix: 'ravi daemon restart -m "reconcile runtime", then ravi channels restart',
+    });
+  });
+
   it("reports drift as the cause even when the runner also says it is refused", () => {
     const verdict = inspectRunnerRelease(runtime({}, { runningVersion: "3.261119.6" }), refusedRunner);
 

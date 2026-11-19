@@ -1,5 +1,5 @@
 import { PREPARE_STATE_COMMAND } from "../db/state-readiness.js";
-import type { ManagedRuntimeIdentity } from "../managed-runtime.js";
+import type { ManagedRuntimeIdentity, ManagedRuntimeMemberIdentity } from "../managed-runtime.js";
 import { CHANNELS_PM2_PROCESS_NAME } from "../pm2.js";
 import type { ChannelAdapterHealth } from "./health.js";
 
@@ -83,12 +83,20 @@ export function inspectRunnerRelease(
   return { state: "aligned", version: runnerVersion };
 }
 
-/** Restart the side that is not on the installed release; when that cannot be told, reconcile both in order. */
+/**
+ * Restart the side that is behind the installed release, but only when the other side is known
+ * to be on it. An installed release that cannot be read is not evidence of a match: restarting one
+ * side onto a release the other does not run would leave them different, so when that cannot be
+ * told, reconcile both, daemon first.
+ */
 function driftFix({ daemon, channels }: RunnerReleaseRuntime): string {
-  const runnerBehind = Boolean(channels.diskVersion && channels.runningVersion !== channels.diskVersion);
-  const daemonBehind = Boolean(daemon.diskVersion && daemon.runningVersion !== daemon.diskVersion);
-  if (runnerBehind && !daemonBehind) return RUNNER_RESTART_COMMAND;
-  if (daemonBehind && !runnerBehind) return DAEMON_RECONCILE_COMMAND;
+  const known = (member: ManagedRuntimeMemberIdentity) => Boolean(member.diskVersion);
+  const behind = (member: ManagedRuntimeMemberIdentity) =>
+    known(member) && member.runningVersion !== member.diskVersion;
+  const onInstalled = (member: ManagedRuntimeMemberIdentity) =>
+    known(member) && member.runningVersion === member.diskVersion;
+  if (behind(channels) && onInstalled(daemon)) return RUNNER_RESTART_COMMAND;
+  if (behind(daemon) && onInstalled(channels)) return DAEMON_RECONCILE_COMMAND;
   return `${DAEMON_RECONCILE_COMMAND}, then ${RUNNER_RESTART_COMMAND}`;
 }
 
