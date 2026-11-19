@@ -1,19 +1,33 @@
 import { describe, expect, it } from "bun:test";
+import { EventEmitter } from "node:events";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { buildPm2Env, clearedPm2ContextEnv } from "../pm2.js";
 import { waitUntilOutsideDaemonProcessTree } from "./daemon-process-tree.js";
 import {
   buildDetachedUpdateEnv,
   createUpdateRunId,
+  type DetachedChild,
   decideUpdateExecution,
   prepareUpdateRunDir,
   spawnDetachedUpdateProcess,
   UPDATE_HANDOFF_ENV,
+  UPDATE_HANDOFF_WORKER_ENV,
   UPDATE_RUN_ID_ENV,
   UPDATE_RUN_ID_PATTERN,
   updateRunPaths,
 } from "./update-run.js";
+
+/** Like node:child_process, the launch outcome arrives as an event after spawn() returns. */
+function fakeChild(pid: number | null, onUnref: () => void = () => {}): DetachedChild {
+  const child = Object.assign(new EventEmitter(), { pid: pid ?? undefined, unref: onUnref });
+  queueMicrotask(() => {
+    if (pid === null) child.emit("error", new Error("spawn /missing ENOENT"));
+    else child.emit("spawn");
+  });
+  return child;
+}
 
 describe("update execution decision", () => {
   it("hands off from inside the daemon tree and runs inline elsewhere", () => {
@@ -82,18 +96,18 @@ describe("update run identity", () => {
 });
 
 describe("detached update process", () => {
-  it("starts detached with output appended to the run log", () => {
+  it("starts detached with output appended to the run log", async () => {
     const stateDir = mkdtempSync(join(tmpdir(), "ravi-update-run-"));
     try {
       const paths = updateRunPaths("20261119T191542Z-a1b2c3", stateDir);
       prepareUpdateRunDir(paths);
       const calls: Array<{ command: string; args: string[]; options: Record<string, unknown> }> = [];
       let unrefs = 0;
-      const pid = spawnDetachedUpdateProcess(
+      const pid = await spawnDetachedUpdateProcess(
         { command: "/bin/bun", args: ["cli.js", "update", "--json"], env: { A: "1" }, cwd: "/tmp", logPath: paths.log },
         (command, args, options) => {
           calls.push({ command, args, options });
-          return { pid: 4242, unref: () => void unrefs++ };
+          return fakeChild(4242, () => void unrefs++);
         },
       );
       expect(pid).toBe(4242);
@@ -107,19 +121,80 @@ describe("detached update process", () => {
     }
   });
 
-  it("fails when the process manager returns no pid", () => {
+  it("rejects when the launch reports an error event", async () => {
     const stateDir = mkdtempSync(join(tmpdir(), "ravi-update-run-"));
     try {
       const paths = updateRunPaths("20261119T191542Z-a1b2c3", stateDir);
       prepareUpdateRunDir(paths);
-      expect(() =>
-        spawnDetachedUpdateProcess({ command: "/missing", args: [], env: {}, cwd: "/tmp", logPath: paths.log }, () => ({
-          pid: undefined,
-          unref: () => {},
-        })),
-      ).toThrow("could not start /missing");
+      await expect(
+        spawnDetachedUpdateProcess({ command: "/missing", args: [], env: {}, cwd: "/tmp", logPath: paths.log }, () =>
+          fakeChild(null),
+        ),
+      ).rejects.toThrow("spawn /missing ENOENT");
     } finally {
       rmSync(stateDir, { recursive: true, force: true });
+    }
+  });
+
+  // The real spawn: a failed launch is an asynchronous error event, which used
+  // to escape as an unhandled event after the caller had already refused.
+  it("rejects a missing executable or working directory with the real spawn", async () => {
+    const stateDir = mkdtempSync(join(tmpdir(), "ravi-update-run-"));
+    try {
+      const paths = updateRunPaths("20261119T191542Z-a1b2c3", stateDir);
+      prepareUpdateRunDir(paths);
+      const missingCommand = join(stateDir, "missing-binary");
+      await expect(
+        spawnDetachedUpdateProcess({ command: missingCommand, args: [], env: {}, cwd: stateDir, logPath: paths.log }),
+      ).rejects.toThrow("ENOENT");
+      await expect(
+        spawnDetachedUpdateProcess({
+          command: process.execPath,
+          args: ["--version"],
+          env: {},
+          cwd: join(stateDir, "gone"),
+          logPath: paths.log,
+        }),
+      ).rejects.toThrow("ENOENT");
+      const pid = await spawnDetachedUpdateProcess({
+        command: process.execPath,
+        args: ["--version"],
+        env: {},
+        cwd: stateDir,
+        logPath: paths.log,
+      });
+      expect(pid).toBeGreaterThan(0);
+    } finally {
+      rmSync(stateDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("run markers and the services the update starts", () => {
+  it("PM2 registrations clear every update marker, so a restarted daemon hands off as a fresh run", () => {
+    const keys = [UPDATE_HANDOFF_ENV, UPDATE_HANDOFF_WORKER_ENV, UPDATE_RUN_ID_ENV];
+    const saved = keys.map((key) => [key, process.env[key]] as const);
+    try {
+      process.env[UPDATE_HANDOFF_ENV] = "1";
+      process.env[UPDATE_HANDOFF_WORKER_ENV] = "1";
+      process.env[UPDATE_RUN_ID_ENV] = "20261119T191542Z-a1b2c3";
+      const serviceEnv = buildPm2Env({ RAVI_STATE_DIR: "/state" });
+      for (const key of keys) {
+        expect(serviceEnv[key]).toBe("");
+        expect(clearedPm2ContextEnv()[key]).toBe("");
+      }
+      expect(
+        decideUpdateExecution({
+          handoffEnv: serviceEnv[UPDATE_HANDOFF_ENV],
+          workerEnv: serviceEnv[UPDATE_HANDOFF_WORKER_ENV],
+          insideDaemonTree: true,
+        }),
+      ).toBe("handoff");
+    } finally {
+      for (const [key, value] of saved) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
     }
   });
 });

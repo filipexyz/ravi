@@ -96,17 +96,31 @@ export function buildDetachedUpdateEnv(env: NodeJS.ProcessEnv, runId: string): R
   return clean;
 }
 
+/** The part of `ChildProcess` the detached launch uses. */
+export type DetachedChild = {
+  pid?: number;
+  unref(): void;
+  once(event: "spawn", listener: () => void): unknown;
+  on(event: "error", listener: (error: Error) => void): unknown;
+};
+
 export type DetachedSpawn = (
   command: string,
   args: string[],
   options: { cwd: string; env: Record<string, string>; stdio: ["ignore", number, number]; detached: true },
-) => { pid?: number; unref(): void };
+) => DetachedChild;
 
-/** Starts a detached process with stdout/stderr appended to the run log. Returns its pid. */
-export function spawnDetachedUpdateProcess(
+/**
+ * Starts a detached process with stdout/stderr appended to the run log and
+ * resolves with its pid once it is running. A launch that fails (missing
+ * executable or working directory) reports it as an asynchronous `error`
+ * event, not as a throw: it rejects here, so the caller refuses the update
+ * instead of crashing on an unhandled event after reporting.
+ */
+export async function spawnDetachedUpdateProcess(
   input: { command: string; args: string[]; env: Record<string, string>; cwd: string; logPath: string },
   spawnImpl: DetachedSpawn = spawn as unknown as DetachedSpawn,
-): number {
+): Promise<number> {
   const fd = openSync(input.logPath, "a", 0o600);
   try {
     const child = spawnImpl(input.command, input.args, {
@@ -114,6 +128,12 @@ export function spawnDetachedUpdateProcess(
       env: input.env,
       stdio: ["ignore", fd, fd],
       detached: true,
+    });
+    await new Promise<void>((resolve, reject) => {
+      // Stays attached after the launch settles: a later error event changes
+      // nothing here and must not surface as an unhandled one.
+      child.on("error", reject);
+      child.once("spawn", resolve);
     });
     if (!child.pid) throw new Error(`could not start ${input.command}`);
     child.unref();

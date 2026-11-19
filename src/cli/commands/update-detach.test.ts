@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { EventEmitter } from "node:events";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -27,10 +28,16 @@ class ExitSignal extends Error {
 
 type SpawnCall = { command: string; args: string[]; env: Record<string, string>; cwd: string };
 
+/** A failed launch reports itself the way node:child_process does: an error event after spawn() returns. */
 function recordingSpawn(calls: SpawnCall[], pid: number | null = 4242): DetachedSpawn {
   return (command, args, options) => {
     calls.push({ command, args, env: options.env, cwd: options.cwd });
-    return { pid: pid ?? undefined, unref: () => {} };
+    const child = Object.assign(new EventEmitter(), { pid: pid ?? undefined, unref: () => {} });
+    queueMicrotask(() => {
+      if (pid === null) child.emit("error", new Error(`spawn ${command} ENOENT`));
+      else child.emit("spawn");
+    });
+    return child;
   };
 }
 
@@ -185,6 +192,54 @@ describe("ravi update inside the daemon process tree", () => {
       code: "UPDATE_DETACH_FAILED",
     });
     expect(existsSync(join(stateDir, "update.json"))).toBe(false);
+  });
+
+  it("a worker takes its run markers out of the environment before installing anything", async () => {
+    const markers = [UPDATE_HANDOFF_ENV, UPDATE_HANDOFF_WORKER_ENV, UPDATE_RUN_ID_ENV];
+    const env: NodeJS.ProcessEnv = {
+      PATH: "/usr/bin",
+      RAVI_STATE_DIR: stateDir,
+      [UPDATE_HANDOFF_ENV]: "1",
+      [UPDATE_HANDOFF_WORKER_ENV]: "1",
+      [UPDATE_RUN_ID_ENV]: RUN_ID,
+    };
+    let seenWhileWaiting: NodeJS.ProcessEnv = {};
+    await expect(
+      runUpdate(
+        { next: true, json: true },
+        {
+          env,
+          insideDaemonTree: () => true,
+          waitUntilDetached: async () => {
+            seenWhileWaiting = { ...env };
+            return false;
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ code: "UPDATE_DETACH_FAILED" });
+    // Installers, PM2 and the services it restarts all start after this wait.
+    for (const key of markers) {
+      expect(seenWhileWaiting[key]).toBeUndefined();
+      expect(env[key]).toBeUndefined();
+    }
+    expect(seenWhileWaiting.RAVI_STATE_DIR).toBe(stateDir);
+    expect(JSON.parse(readFileSync(updateRunPaths(RUN_ID, stateDir).result, "utf8"))).toMatchObject({
+      runId: RUN_ID,
+      status: "failed",
+    });
+  });
+
+  it("an inline update that inherited only a run id leaves that run's result alone", async () => {
+    await expect(
+      runUpdate(
+        { next: true, stable: true, json: true },
+        {
+          env: { PATH: "/usr/bin", RAVI_STATE_DIR: stateDir, [UPDATE_RUN_ID_ENV]: RUN_ID },
+          insideDaemonTree: () => false,
+        },
+      ),
+    ).rejects.toMatchObject({ code: "USAGE_ERROR" });
+    expect(existsSync(updateRunPaths(RUN_ID, stateDir).result)).toBe(false);
   });
 });
 

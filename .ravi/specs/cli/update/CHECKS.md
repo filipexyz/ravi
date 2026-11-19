@@ -60,8 +60,13 @@
   - a detached environment without runtime context and with an absolute state
     directory;
   - a caller inside the tree that installs nothing and returns the run;
-  - refusal when the child cannot start;
+  - refusal when the child cannot start, including a launch failure reported
+    as an `error` event by the real spawn (missing executable or working
+    directory);
   - a usage error reported to the caller;
   - a child that starts the worker and exits;
   - a worker still inside the tree that refuses and records the result;
+  - a worker that removes its run markers before installing, PM2
+    registrations that clear them, and an inline update with an inherited run
+    id that leaves that run's result alone;
   - a supervisor that refuses before reading its request.

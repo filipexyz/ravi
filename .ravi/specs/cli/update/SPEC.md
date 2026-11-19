@@ -88,7 +88,10 @@ normative: true
   and exits at once, so the worker is reparented outside the tree. The caller
   returns the run id, the log path and the result path.
 - If the detached child cannot be started, the update MUST be refused with
-  `UPDATE_DETACH_FAILED`. It MUST NOT fall back to running inline.
+  `UPDATE_DETACH_FAILED`. It MUST NOT fall back to running inline. A launch
+  counts as started only after the process reports `spawn`; a launch failure
+  reported as an `error` event MUST take the same refusal path and MUST NOT
+  escape as an unhandled event.
 - The worker MUST confirm it is outside the daemon's process tree before it
   installs anything. If it is still inside after the wait, it MUST refuse with
   `UPDATE_DETACH_FAILED` and record that result.
@@ -99,6 +102,12 @@ normative: true
   `<state>/updates/<runId>/`. The run id MUST match
   `^\d{8}T\d{6}Z-[0-9a-f]{6}$` before it is used as a path. Results MUST be
   written atomically.
+- The run markers (`RAVI_UPDATE_HANDOFF`, `RAVI_UPDATE_HANDOFF_WORKER`,
+  `RAVI_UPDATE_RUN_ID`) MUST NOT reach anything the worker starts: the worker
+  MUST remove them from its environment before it installs anything, and PM2
+  registrations MUST clear them like runtime context. Only the worker writes a
+  run's `result.json`; an inline update that inherited a run id MUST NOT write
+  to that run.
 - The update supervisor (`RAVI_INTERNAL_UPDATE_RUNTIME_REBIND`) MUST refuse
   with `UPDATE_REFUSED_IN_DAEMON_TREE` when it runs inside the daemon's process
   tree. The refusal MUST happen before it reads its request or touches PM2, and

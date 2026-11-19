@@ -863,8 +863,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/update.ts | 642 | triaged-follow-up | catch-without-binding | src/cli/commands/update.ts:4182d0cbe2f493f2d9b69f88 |
 | cli | src/cli/commands/update.ts | 779 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:956532064255dadc3dee0348 |
 | cli | src/cli/commands/update.ts | 820 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:03a774c8328512e5d93ca210 |
-| cli | src/cli/commands/update.ts | 1003 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:1314e4fbd85b4898447778eb |
-| cli | src/cli/commands/update.ts | 1042 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:57f116815f2ef91854907cdd |
+| cli | src/cli/commands/update.ts | 1018 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:1314e4fbd85b4898447778eb |
+| cli | src/cli/commands/update.ts | 1055 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:ee225f78a85dffa01ec7496c |
 | cli | src/cli/commands/watch.ts | 558 | fixed | binding retained / no recognized error surface | src/cli/commands/watch.ts:fbff794a5bddadc3ca9ea59f |
 | cli | src/cli/commands/widgets.ts | 68 | triaged-follow-up | catch-without-binding | src/cli/commands/widgets.ts:8c447b55c38f008aa381b929 |
 | cli | src/cli/commands/widgets.ts | 80 | triaged-follow-up | catch-without-binding | src/cli/commands/widgets.ts:13d9ce0b17bf6fda14a722e3 |
@@ -1646,9 +1646,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | plugins | src/plugins/index.ts | 77 | fixed | binding retained / no recognized error surface | src/plugins/index.ts:dc3b3a79ee6c0a3ab8a6f08d |
 | plugins | src/plugins/index.ts | 101 | triaged-follow-up | catch-without-binding | src/plugins/index.ts:e78c9d2c89aa565a815b2652 |
 | plugins | src/plugins/index.ts | 188 | fixed | binding retained / no recognized error surface | src/plugins/index.ts:603d01a868ca1c68d14dcafd |
-| pm2.ts | src/pm2.ts | 64 | triaged-follow-up | catch-without-binding | src/pm2.ts:2a2f85c9a2eb78c2bcd0180d |
-| pm2.ts | src/pm2.ts | 97 | fixed | binding retained / no recognized error surface | src/pm2.ts:4352afcdb59390b880f3b901 |
-| pm2.ts | src/pm2.ts | 170 | fixed | binding retained / no recognized error surface | src/pm2.ts:2ef6c550ff1b5370c2c3e2f1 |
+| pm2.ts | src/pm2.ts | 70 | triaged-follow-up | catch-without-binding | src/pm2.ts:2a2f85c9a2eb78c2bcd0180d |
+| pm2.ts | src/pm2.ts | 103 | fixed | binding retained / no recognized error surface | src/pm2.ts:4352afcdb59390b880f3b901 |
+| pm2.ts | src/pm2.ts | 176 | fixed | binding retained / no recognized error surface | src/pm2.ts:2ef6c550ff1b5370c2c3e2f1 |
 | policy | src/policy/reaction-actions.ts | 104 | triaged-follow-up | catch-without-binding | src/policy/reaction-actions.ts:53ffd706658bef6705b7af7c |
 | pr | src/pr/context.ts | 81 | fixed | binding retained / no recognized error surface | src/pr/context.ts:c7632444ba16235f461f7a36 |
 | pr | src/pr/context.ts | 103 | fixed | binding retained / no recognized error surface | src/pr/context.ts:52623f27d5b9dac648b331af |

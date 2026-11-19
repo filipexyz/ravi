@@ -749,7 +749,7 @@ function envRecord(env: NodeJS.ProcessEnv): Record<string, string> {
  * detached child takes the request; if it cannot be started, the update is
  * refused, never run inline.
  */
-function handOffUpdate(options: RaviUpdateOptions, deps: UpdateExecutionDeps): RaviUpdateHandoff {
+async function handOffUpdate(options: RaviUpdateOptions, deps: UpdateExecutionDeps): Promise<RaviUpdateHandoff> {
   assertUpdateSelectors(options);
   const env = deps.env ?? process.env;
   const requested = describeRequested(options);
@@ -766,7 +766,7 @@ function handOffUpdate(options: RaviUpdateOptions, deps: UpdateExecutionDeps): R
       reason: "daemon-process-tree",
       createdAt: (deps.now?.() ?? new Date()).toISOString(),
     });
-    spawnDetachedUpdateProcess(
+    await spawnDetachedUpdateProcess(
       {
         command: deps.execPath ?? process.execPath,
         args: [script, ...updateCommandArgs(options)],
@@ -801,13 +801,13 @@ function handOffUpdate(options: RaviUpdateOptions, deps: UpdateExecutionDeps): R
 }
 
 /** The detached child: start the worker and exit, so the worker leaves the daemon tree. */
-function reparentUpdate(deps: UpdateExecutionDeps): never {
+async function reparentUpdate(deps: UpdateExecutionDeps): Promise<never> {
   const env = deps.env ?? process.env;
   const exit = deps.exit ?? ((code: number) => process.exit(code));
   const paths = updateRunPaths(env[UPDATE_RUN_ID_ENV] ?? "", getRaviStateDir(env));
   prepareUpdateRunDir(paths);
   try {
-    spawnDetachedUpdateProcess(
+    await spawnDetachedUpdateProcess(
       {
         command: deps.execPath ?? process.execPath,
         args: (deps.argv ?? process.argv).slice(1),
@@ -989,8 +989,23 @@ async function performUpdate(options: RaviUpdateOptions, reporter: UpdateReporte
   };
 }
 
-function recordRunOutcome(env: NodeJS.ProcessEnv, outcome: Record<string, unknown>): void {
-  const runId = env[UPDATE_RUN_ID_ENV];
+/**
+ * Clears the run markers from the environment of an inline update and returns
+ * the run it records its outcome under: only the worker owns a run. Nothing
+ * the update starts afterwards (installers, PM2, the supervisor, the restarted
+ * services) inherits a marker, so a later update from inside the restarted
+ * daemon hands off as a fresh run instead of writing over this one.
+ */
+function takeUpdateRun(env: NodeJS.ProcessEnv): { runId?: string; worker: boolean } {
+  const worker = env[UPDATE_HANDOFF_WORKER_ENV] === "1";
+  const runId = worker ? env[UPDATE_RUN_ID_ENV] : undefined;
+  delete env[UPDATE_HANDOFF_ENV];
+  delete env[UPDATE_HANDOFF_WORKER_ENV];
+  delete env[UPDATE_RUN_ID_ENV];
+  return { runId, worker };
+}
+
+function recordRunOutcome(env: NodeJS.ProcessEnv, runId: string | undefined, outcome: Record<string, unknown>): void {
   if (!runId) return;
   try {
     const paths = updateRunPaths(runId, getRaviStateDir(env));
@@ -1017,18 +1032,16 @@ export async function runUpdate(
     insideDaemonTree: (deps.insideDaemonTree ?? (() => isInsideDaemonProcessTree()))(),
   });
   // The detached child only starts the worker; its own outcome is not the run's.
-  if (execution === "reparent") return reparentUpdate(deps);
+  if (execution === "reparent") return await reparentUpdate(deps);
+  const run: { runId?: string; worker: boolean } = execution === "inline" ? takeUpdateRun(env) : { worker: false };
   try {
     if (execution === "handoff") {
-      const handoff = handOffUpdate(options, deps);
+      const handoff = await handOffUpdate(options, deps);
       if (reporter.json) console.log(JSON.stringify(handoff));
       else reporter.ok(`${handoff.message} Log: ${handoff.logPath}`);
       return handoff;
     }
-    if (
-      env[UPDATE_HANDOFF_WORKER_ENV] === "1" &&
-      !(await (deps.waitUntilDetached ?? waitUntilOutsideDaemonProcessTree)())
-    ) {
+    if (run.worker && !(await (deps.waitUntilDetached ?? waitUntilOutsideDaemonProcessTree)())) {
       fail(
         "The update worker is still inside the daemon's process tree, so nothing was installed or stopped. " +
           "Run ravi update from a terminal.",
@@ -1036,11 +1049,11 @@ export async function runUpdate(
       );
     }
     const result = await performUpdate(options, reporter);
-    recordRunOutcome(env, { status: "succeeded", result });
+    recordRunOutcome(env, run.runId, { status: "succeeded", result });
     if (reporter.json) console.log(JSON.stringify(result));
     return result;
   } catch (error) {
-    recordRunOutcome(env, {
+    recordRunOutcome(env, run.runId, {
       status: "failed",
       code: error instanceof UpdateFailure ? error.code : "UPDATE_FAILED",
       message: error instanceof Error ? error.message : String(error),
