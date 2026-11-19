@@ -149,6 +149,7 @@ describe("thread follow handoff delivery", () => {
     "delivers API-published CI to the parent after child closure and pruning %s",
     async (timing) => {
       const { publishGhPr, verifyPublicationFollow } = await import("../../hooks/gh-pr-publish.js");
+      const { handOffClosingThreadFollows } = await import("../follow-owner.js");
       const { registerInboundSlackThread, closeSlackThreadLifecycle, getSlackThreadLifecycle } = await import(
         "../../channels/slack/thread-lifecycle-store.js"
       );
@@ -228,10 +229,26 @@ describe("thread follow handoff delivery", () => {
         },
       );
       expect(result.ready).toBe(true);
-      const trigger = dbGetTrigger(result.follow.triggerId!)!;
+      let trigger = dbGetTrigger(result.follow.triggerId!)!;
+      if (timing === "after publication") {
+        // The open thread that published owns the follow, in that thread. Closing it hands the follow to the parent.
+        expect(trigger).toMatchObject({
+          replySession: "api-child",
+          replySource: { ...source, threadId: "1.2" },
+          enabled: true,
+        });
+        expect(() => closeSlackThreadLifecycle({ childSessionKey: child.sessionKey })).toThrow(
+          "Thread still receives active triggers",
+        );
+        expect(
+          handOffClosingThreadFollows({ childSessionKey: child.sessionKey, childSessionName: child.name! }),
+        ).toEqual([trigger.id]);
+        closeAndPrune();
+        trigger = dbGetTrigger(trigger.id)!;
+      }
+      // A thread that closed during the publication never owned the follow: it was registered on the parent.
       expect(trigger).toMatchObject({ replySession: "api-parent", replySource: source, enabled: true });
       expect(trigger.replySource?.threadId).toBeUndefined();
-      if (timing === "after publication") closeAndPrune();
       await startRunner();
       emit(trigger.topic, { payload: { repository: "o/r", number: 9, conclusion: "success" } });
       await waitFor(() => publishCalls.length === 1);
