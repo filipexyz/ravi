@@ -764,6 +764,10 @@ async function handOffUpdate(
   assertUpdateSelectors(options);
   const env = deps.env ?? process.env;
   const requested = describeRequested(options);
+  // The worker installs what the caller was told: a channel resolved here is passed on, not resolved again.
+  const request: RaviUpdateOptions = options.version
+    ? options
+    : { ...options, next: requested === "next", stable: requested === "latest" };
   const runId = createUpdateRunId(deps.now?.());
   let stateDir: string | undefined;
   try {
@@ -786,14 +790,14 @@ async function handOffUpdate(
     writeUpdateRunFile(paths.request, {
       runId,
       requested,
-      args: updateCommandArgs(options),
+      args: updateCommandArgs(request),
       reason: "daemon-process-tree",
       createdAt: (deps.now?.() ?? new Date()).toISOString(),
     });
     await spawnDetachedUpdateProcess(
       {
         command: deps.execPath ?? process.execPath,
-        args: [script, ...updateCommandArgs(options)],
+        args: [script, ...updateCommandArgs(request)],
         env: buildDetachedUpdateEnv(env, runId, stateDir),
         cwd: deps.cwd ?? process.cwd(),
         logPath: paths.log,
@@ -846,7 +850,7 @@ async function reparentUpdate(deps: UpdateExecutionDeps): Promise<never> {
       runId: env[UPDATE_RUN_ID_ENV],
       status: "failed",
       code: "UPDATE_DETACH_FAILED",
-      message: `The update worker could not be started: ${cause instanceof Error ? cause.message : String(cause)}`,
+      message: `The update worker could not be started: ${errorDiagnostic(cause, { operation: "ravi update" }).cause}`,
       finishedAt: new Date().toISOString(),
     });
     return exit(1);
@@ -1080,8 +1084,8 @@ function readDaemonTreePosition(
     return locateInDaemonProcessTree();
   } catch (cause) {
     throw new UpdateFailure(
-      "Could not read PM2 runtime status, so Ravi cannot tell whether this update runs inside the daemon's " +
-        "process tree. Check `pm2 jlist` and retry.",
+      "Could not read PM2 runtime status or the process ancestry, so Ravi cannot tell whether this update runs " +
+        "inside the daemon's process tree. Nothing ran. Check `pm2 jlist` and retry.",
       "UPDATE_FAILED",
       1,
       { cause },
@@ -1131,7 +1135,8 @@ export async function runUpdate(
     recordRunOutcome(env, run.runId, {
       status: "failed",
       code: error instanceof UpdateFailure ? error.code : "UPDATE_FAILED",
-      message: error instanceof Error ? error.message : String(error),
+      // result.json is read by whoever started the run: the message goes through the same redaction as the CLI's.
+      message: errorDiagnostic(error, { operation: "ravi update" }).cause,
     });
     failUpdate(options, error);
   }
