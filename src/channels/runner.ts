@@ -532,6 +532,35 @@ export function resolveChannelRunnerLogLevel(env: NodeJS.ProcessEnv = process.en
   return raw && RUNNER_LOG_LEVELS.has(raw as LogLevel) ? (raw as LogLevel) : "info";
 }
 
+/** Same pause as the daemon's refused entry (`src/cli/env.ts`), so PM2 does not spin a refused runner. */
+export const RUNNER_STATE_REFUSAL_PAUSE_MS = 30_000;
+
+function isRealStateRefusal(error: unknown): boolean {
+  for (let current = error, depth = 0; current && depth < 8; depth++) {
+    if ((current as { code?: unknown }).code === "REAL_STATE_ACCESS_REFUSED") return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/**
+ * A runner the state guard refused exits; PM2 restarts it at once, and every
+ * start runs `pm2 jlist` again. On a 1-vCPU host that loop is load that slows
+ * the very query the guard waits on. Under PM2, pause before exiting.
+ */
+export async function pauseAfterRunnerStateRefusal(
+  error: unknown,
+  env: NodeJS.ProcessEnv = process.env,
+  wait: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<boolean> {
+  if (!isRealStateRefusal(error) || env.pm_id === undefined) return false;
+  log.error("Channel runner refused by the state guard; pausing before exit so PM2 does not restart it in a loop", {
+    pauseMs: RUNNER_STATE_REFUSAL_PAUSE_MS,
+  });
+  await wait(RUNNER_STATE_REFUSAL_PAUSE_MS);
+  return true;
+}
+
 export async function runChannelRunnerFromEnv(): Promise<void> {
   assertRuntimeMaintenanceInactive();
   logger.setLevel(resolveChannelRunnerLogLevel());
@@ -540,11 +569,17 @@ export async function runChannelRunnerFromEnv(): Promise<void> {
   // `stop` needs the runner and the runner's drift callback needs `stop`; the callback
   // cannot fire before the first reconcile passes have been refused, long after both exist.
   let stopRunner: ((signal: string, exitCode?: number) => Promise<void>) | null = null;
-  const runner = await startChannelRunner({
-    consumeOutbound: process.env.RAVI_CHANNELS_CONSUME_OUTBOUND !== "0",
-    // Not awaited: the reconcile loop that reported the drift has to be free to finish its drain.
-    onReleaseDrift: () => void stopRunner?.("release-drift", RUNNER_RELEASE_DRIFT_EXIT_CODE),
-  });
+  let runner: ChannelRunner;
+  try {
+    runner = await startChannelRunner({
+      consumeOutbound: process.env.RAVI_CHANNELS_CONSUME_OUTBOUND !== "0",
+      // Not awaited: the reconcile loop that reported the drift has to be free to finish its drain.
+      onReleaseDrift: () => void stopRunner?.("release-drift", RUNNER_RELEASE_DRIFT_EXIT_CODE),
+    });
+  } catch (cause) {
+    await pauseAfterRunnerStateRefusal(cause);
+    throw cause;
+  }
 
   let stopping = false;
   const stop = async (signal: string, exitCode = 0) => {

@@ -23,14 +23,19 @@ import {
   isSchemaConsumer,
   isSchemaConsumerOf,
   openStateDatabase,
+  MANAGED_RUNTIME_READY_TIMEOUT_MS,
   PM2_JLIST_ATTEMPT_TIMEOUTS_MS,
+  PM2_REGISTRY_QUERY_BOUND_MS,
   readPm2Registry,
+  readPm2RegistryOutcome,
   type DatabaseBoundaryOptions,
   type Pm2JlistResult,
   type Pm2JlistRunner,
 } from "../db/state-boundary.js";
 import { buildChannelsPm2Env, buildDaemonPm2StartArgs } from "../daemon-stdin.js";
-import { buildManagedRuntimeRebindPlan } from "../managed-runtime-rebind.js";
+import { DEFAULT_READY_TIMEOUT_MS } from "../cli/daemon-restart-supervision.js";
+import { CHANNELS_WAIT_MS } from "../cli/daemon-upgrade-restart.js";
+import { buildManagedRuntimeRebindPlan, MANAGED_RUNTIME_REBIND_TIMEOUT_MS } from "../managed-runtime-rebind.js";
 import { OUTDATED_PM2_BANNER } from "../test/pm2-jlist.js";
 
 const dirs: string[] = [];
@@ -286,8 +291,11 @@ it("retries a slow or failed `pm2 jlist` within a finite bound and refuses when 
   };
   expect(readPm2Registry(slowThenAnswers)).toEqual(JSON.parse(registry));
   expect(limits).toEqual([...PM2_JLIST_ATTEMPT_TIMEOUTS_MS]);
-  expect(PM2_JLIST_ATTEMPT_TIMEOUTS_MS[0]).toBeGreaterThan(2_000);
-  expect(PM2_JLIST_ATTEMPT_TIMEOUTS_MS.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(20_000);
+  // The first attempt carries most of the budget: the field case is a slow answer.
+  expect(PM2_JLIST_ATTEMPT_TIMEOUTS_MS[0]).toBeGreaterThanOrEqual(10_000);
+  expect(PM2_JLIST_ATTEMPT_TIMEOUTS_MS[0]).toBeGreaterThan(PM2_JLIST_ATTEMPT_TIMEOUTS_MS[1]);
+  expect(PM2_REGISTRY_QUERY_BOUND_MS).toBe(PM2_JLIST_ATTEMPT_TIMEOUTS_MS.reduce((a, b) => a + b, 0));
+  expect(PM2_REGISTRY_QUERY_BOUND_MS).toBeLessThanOrEqual(20_000);
 
   // Never answering, or answering garbage, can only refuse.
   let calls = 0;
@@ -298,7 +306,42 @@ it("retries a slow or failed `pm2 jlist` within a finite bound and refuses when 
     }),
   ).toEqual([]);
   expect(calls).toBe(PM2_JLIST_ATTEMPT_TIMEOUTS_MS.length);
-  expect(readPm2Registry(() => ({ stdout: "not json", status: 0 }))).toEqual([]);
+  // A failed exit never authorizes, even with a plausible registry on stdout.
+  calls = 0;
+  expect(
+    readPm2Registry(() => {
+      calls++;
+      return { stdout: registry, status: 1 };
+    }),
+  ).toEqual([]);
+  expect(calls).toBe(PM2_JLIST_ATTEMPT_TIMEOUTS_MS.length);
+  // Garbage refuses at once, with no second call.
+  calls = 0;
+  expect(
+    readPm2Registry(() => {
+      calls++;
+      return { stdout: "not json", status: 0 };
+    }),
+  ).toEqual([]);
+  expect(calls).toBe(1);
+  // The PM2 parent is re-checked before each call: once the manager is gone, the
+  // CLI would start a new one, so the retry does not run.
+  calls = 0;
+  let parentChecks = 0;
+  expect(
+    readPm2Registry(
+      () => {
+        calls++;
+        return timedOut();
+      },
+      () => ++parentChecks === 1,
+    ),
+  ).toEqual([]);
+  expect([calls, parentChecks]).toEqual([1, 2]);
+  // An outage is reported as one, so the refusal names PM2 instead of "not registered".
+  const outage = readPm2RegistryOutcome(timedOut).outage;
+  expect(outage).toEqual({ attempts: 2, limitsMs: [...PM2_JLIST_ATTEMPT_TIMEOUTS_MS], reason: "timeout" });
+  expect(readPm2RegistryOutcome(() => ({ stdout: registry, status: 0 })).outage).toBeNull();
   // No pm2 binary: no point waiting for a retry.
   calls = 0;
   expect(
@@ -322,6 +365,58 @@ it("retries a slow or failed `pm2 jlist` within a finite bound and refuses when 
     assertDatabaseTargetAllowed(path, { ...registered, registeredProcesses: () => readPm2Registry(timedOut) }),
   ).toThrow("Refusing the real Ravi state");
 });
+
+it("supervisors wait at least the guard's PM2 bound before calling a successor failed", () => {
+  // A successor reports in only after the guard; a 15 s window deleted one still
+  // waiting on a slow `pm2 jlist` (restart, upgrade restart and `ravi update`).
+  expect(MANAGED_RUNTIME_READY_TIMEOUT_MS).toBeGreaterThanOrEqual(PM2_REGISTRY_QUERY_BOUND_MS + 15_000);
+  expect(DEFAULT_READY_TIMEOUT_MS).toBe(MANAGED_RUNTIME_READY_TIMEOUT_MS);
+  expect(CHANNELS_WAIT_MS).toBe(MANAGED_RUNTIME_READY_TIMEOUT_MS);
+  // `ravi update` runs the daemon restart and then waits for the runner, each up to the window.
+  expect(MANAGED_RUNTIME_REBIND_TIMEOUT_MS).toBeGreaterThan(2 * MANAGED_RUNTIME_READY_TIMEOUT_MS);
+});
+
+it("a daemon refused because `pm2 jlist` failed says PM2 did not answer, not that it is unregistered", () => {
+  const options = fixture();
+  const realState = join(options.homeDir, ".ravi");
+  mkdirSync(realState);
+  installRelease(options);
+  const entry = options.argv[1];
+  const target = join(realState, "ravi.db");
+  writeFileSync(
+    entry,
+    `import { openStateDatabase } from '../db/state-boundary.ts';
+    openStateDatabase(${JSON.stringify(target)}, undefined, { homeDir: ${JSON.stringify(options.homeDir)} });`,
+  );
+  const bin = join(options.homeDir, "bin");
+  mkdirSync(bin);
+  const pm2Home = join(options.homeDir, "pm2");
+  mkdirSync(pm2Home);
+  writeFileSync(join(pm2Home, "pm2.pid"), String(process.pid));
+  const calls = join(options.homeDir, "pm2-calls");
+  writeFileSync(
+    join(bin, "pm2"),
+    `#!/usr/bin/env bun\nrequire('node:fs').appendFileSync(${JSON.stringify(calls)}, 'x');\nconsole.error('connect ECONNREFUSED');\nprocess.exit(1);\n`,
+  );
+  chmodSync(join(bin, "pm2"), 0o755);
+  const launch = () =>
+    spawnSync(process.execPath, [entry, "daemon", "run"], {
+      env: { PATH: `${bin}:${process.env.PATH}`, PM2_HOME: pm2Home },
+      encoding: "utf8",
+      timeout: 15_000,
+    });
+  const refused = launch();
+  expect(refused.status).not.toBe(0);
+  expect(refused.stderr).toContain("Refusing the real Ravi state");
+  expect(refused.stderr).toContain("PM2 failed or returned unusable output on `pm2 jlist` (2 attempt(s)");
+  expect(readFileSync(calls, "utf8")).toBe("xx");
+  // A PM2 that answers without this PID keeps the plain refusal.
+  writeFileSync(join(bin, "pm2"), "#!/usr/bin/env bun\nconsole.log('[]');\n");
+  const unregistered = launch();
+  expect(unregistered.stderr).toContain("Refusing the real Ravi state");
+  expect(unregistered.stderr).not.toContain("pm2 jlist");
+  expect(existsSync(target)).toBe(false);
+}, 30_000);
 
 it("leaves schema/data intact when a non-daemon attempts destructive initialization", () => {
   const options = fixture();

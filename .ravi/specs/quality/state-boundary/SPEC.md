@@ -70,11 +70,27 @@ applies_to:
 - PM2 registry parsing MUST tolerate leading version/diagnostic banners while
   rejecting malformed, truncated or non-array JSON. A failed registry query
   MUST NOT authorize real state or expose the secret-bearing registry output.
-- The registry query MUST tolerate a slow PM2 (`pm2 jlist` takes 2–4 s on a
-  loaded 1-vCPU host) and MUST stay bounded: it allows 5 s, retries once with
-  15 s after a timeout or failure, and refuses when neither answers. A slow
-  answer MUST NOT read as "not registered" (the 2 s limit refused the
-  registered daemon and channels runner on boot and during `ravi update`).
+- The registry query MUST tolerate a slow PM2 and MUST stay bounded. On a
+  loaded 1-vCPU host `pm2 jlist` was reported at 2.0–3.6 s (siqueira, 19/11,
+  measured on that host and recorded in PR #908; not reproduced here), and the
+  former 2 s limit refused the registered daemon and channels runner on boot
+  and during `ravi update`. The first attempt gets most of the budget (15 s,
+  for a slow answer), one retry gets 5 s (for a call that hung), and no answer
+  refuses. A slow answer MUST NOT read as "not registered".
+- The PM2 parent MUST be re-checked before every registry attempt: the `pm2`
+  CLI starts a new manager when it finds none, so a retry after the manager
+  died must not call it.
+- A refusal because PM2 did not answer (timeout, failure, unusable output)
+  MUST say so, with the attempts and limits, instead of the generic "not
+  registered" text. It carries no registry content.
+- Any supervisor that waits for a daemon or channels runner to report in
+  (`ravi daemon restart`, the upgrade restart, `ravi update`'s rebind) MUST
+  wait at least the guard's PM2 bound plus boot
+  (`MANAGED_RUNTIME_READY_TIMEOUT_MS`), or it deletes a successor that is
+  only waiting on a slow `pm2 jlist`.
+- A channels runner refused by the guard under PM2 MUST pause (30 s, like the
+  daemon's entry) before exiting, so PM2 does not restart it in a loop that
+  loads the host and slows `pm2 jlist` further.
 - Identity validation MUST match the canonical launcher for each role: daemon registers the bundle with `daemon run`; channels registers the running Bun executable with `<bundle> channels run`. The exact arguments, bundle and executable MUST be checked; launcher-generated channel registration MUST be covered by regression tests.
 - The identity check MUST use the code's location. A package containing `src` or `.git`, unknown code provenance, CLI, build, worktree or test execution MUST NOT gain real-state access by inheriting runtime environment or explicitly naming the real directory.
 - A source checkout, worktree, build or test MUST select isolated state explicitly, normally with `RAVI_STATE_DIR` on the command. Losing that variable MUST refuse real-state access instead of silently opening the default. Errors MUST show the variable, a command example and the installed daemon gateway alternative.

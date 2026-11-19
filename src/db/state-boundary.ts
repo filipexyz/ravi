@@ -100,10 +100,23 @@ function hasPm2Parent(): boolean {
  * Per-attempt limits for `pm2 jlist`. The command takes ~1 s on an idle 1-vCPU
  * host and 2–4 s under load (a boot or an update), so a single 2 s limit
  * refused the daemon and the channels runner as if PM2 had not registered
- * them. A slow answer is retried once with a longer limit; the bound stays
- * finite (20 s in total) and an answer that never arrives still refuses.
+ * them. The first attempt gets most of the budget, because the case seen in
+ * the field is a slow answer, not a fast failure; the second covers a call
+ * that hung while a fresh one would answer. The bound stays finite and an
+ * answer that never arrives still refuses.
  */
-export const PM2_JLIST_ATTEMPT_TIMEOUTS_MS = [5_000, 15_000] as const;
+export const PM2_JLIST_ATTEMPT_TIMEOUTS_MS = [15_000, 5_000] as const;
+
+/** The longest the guard can wait on PM2 before it refuses. */
+export const PM2_REGISTRY_QUERY_BOUND_MS = PM2_JLIST_ATTEMPT_TIMEOUTS_MS.reduce((total, ms) => total + ms, 0);
+
+/**
+ * How long a supervisor (restart, `ravi update`) waits for a new daemon or
+ * channels runner to report in. It must cover the guard's PM2 bound plus the
+ * bundle's own boot, or a successor still waiting on a slow `pm2 jlist` is
+ * deleted as failed before the guard answers.
+ */
+export const MANAGED_RUNTIME_READY_TIMEOUT_MS = PM2_REGISTRY_QUERY_BOUND_MS + 25_000;
 
 export interface Pm2JlistResult {
   stdout: string;
@@ -117,34 +130,81 @@ export type Pm2JlistRunner = (timeoutMs: number) => Pm2JlistResult;
 const runPm2Jlist: Pm2JlistRunner = (timeoutMs) =>
   spawnSync("pm2", ["jlist"], { encoding: "utf8", timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 });
 
+/** PM2 did not give a usable answer: the refusal says so instead of "not registered". */
+export interface Pm2RegistryOutage {
+  attempts: number;
+  limitsMs: number[];
+  reason: "timeout" | "failed";
+}
+
+export interface Pm2RegistryOutcome {
+  processes: RegisteredRuntimeProcess[];
+  outage: Pm2RegistryOutage | null;
+}
+
 /**
- * PM2's process registry, or `[]` when PM2 does not answer in time. Callers
- * treat `[]` as "not registered" and refuse access, so a failure here can only
- * refuse, never grant.
+ * PM2's process registry, or no processes when PM2 does not answer in time.
+ * Callers treat an empty registry as "not registered" and refuse access, so a
+ * failure here can only refuse, never grant. `beforeAttempt` is checked before
+ * every call: the CLI starts a new PM2 when it finds no manager, so it is only
+ * called while the PM2 manager is still this process's parent.
  */
-export function readPm2Registry(run: Pm2JlistRunner = runPm2Jlist): RegisteredRuntimeProcess[] {
+export function readPm2RegistryOutcome(
+  run: Pm2JlistRunner = runPm2Jlist,
+  beforeAttempt: () => boolean = () => true,
+): Pm2RegistryOutcome {
+  let attempts = 0;
+  let reason: Pm2RegistryOutage["reason"] = "failed";
   for (const timeoutMs of PM2_JLIST_ATTEMPT_TIMEOUTS_MS) {
+    if (!beforeAttempt()) return { processes: [], outage: null };
+    attempts++;
     const result = run(timeoutMs);
     if (result.error || result.status !== 0) {
+      const code = (result.error as NodeJS.ErrnoException | undefined)?.code;
       // A missing pm2 binary will not appear on retry.
-      if ((result.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") return [];
+      if (code === "ENOENT") return { processes: [], outage: { attempts, limitsMs: limits(attempts), reason } };
+      reason = code === "ETIMEDOUT" ? "timeout" : "failed";
       continue;
     }
     try {
-      return parsePm2Jlist(result.stdout) as RegisteredRuntimeProcess[];
+      return { processes: parsePm2Jlist(result.stdout) as RegisteredRuntimeProcess[], outage: null };
     } catch {
       // no-cause: Unavailable PM2 identity refuses access; do not expose secret-bearing registry data.
-      return [];
+      return { processes: [], outage: { attempts, limitsMs: limits(attempts), reason: "failed" } };
     }
   }
-  return [];
+  return { processes: [], outage: { attempts, limitsMs: limits(attempts), reason } };
 }
 
+function limits(attempts: number): number[] {
+  return PM2_JLIST_ATTEMPT_TIMEOUTS_MS.slice(0, attempts);
+}
+
+export function readPm2Registry(
+  run: Pm2JlistRunner = runPm2Jlist,
+  beforeAttempt?: () => boolean,
+): RegisteredRuntimeProcess[] {
+  return readPm2RegistryOutcome(run, beforeAttempt).processes;
+}
+
+/** Set by the last real registry query of `runtimeRole`; read by the refusal message. */
+let lastRegistryOutage: Pm2RegistryOutage | null = null;
+
 function readRegisteredProcesses(): RegisteredRuntimeProcess[] {
-  if (!hasPm2Parent()) return [];
   // Query the process manager, not inherited pm_id/name environment variables.
   // Bounded and read-only; stdout contains env secrets, so it never gets logged.
-  return readPm2Registry();
+  const outcome = readPm2RegistryOutcome(runPm2Jlist, hasPm2Parent);
+  lastRegistryOutage = outcome.outage;
+  return outcome.processes;
+}
+
+/** The refusal's reason when PM2 itself did not answer, so the log names the real cause. */
+export function describePm2RegistryOutage(outage: Pm2RegistryOutage): string {
+  const what = outage.reason === "timeout" ? "did not answer" : "failed or returned unusable output";
+  return (
+    `PM2 ${what} on \`pm2 jlist\` (${outage.attempts} attempt(s), limits ${outage.limitsMs.map((ms) => `${ms / 1000} s`).join(" + ")}), ` +
+    "so this process's PM2 registration could not be confirmed. On a loaded host, check `pm2 jlist` latency and PM2 health before anything else. "
+  );
 }
 
 export interface DatabaseBoundaryOptions {
@@ -165,6 +225,7 @@ type RuntimeRole = "daemon" | "channels";
 
 /** Process role requires installed code AND the current PID registered by PM2. */
 function runtimeRole(options: DatabaseBoundaryOptions): RuntimeRole | null {
+  lastRegistryOutage = null;
   const env = options.env ?? process.env;
   const argv = options.argv ?? process.argv;
   if (env.NODE_ENV === "test" || argv.some((arg) => /\.(test|spec)\.[cm]?[jt]sx?$/.test(arg))) return null;
@@ -350,8 +411,10 @@ export function assertDatabaseTargetAllowed(path: string, options: DatabaseBound
   if (!within(target, realState) && !legacy) return;
   if (runtimeRole(options)) return;
   if (isInstalledOperatorCli(options)) return;
+  const outage = lastRegistryOutage;
+  lastRegistryOutage = null;
   throw new StateDatabaseError(
-    `Refusing the real Ravi state database: ${target}. Only the installed Ravi runtime may open it: the daemon registered in PM2, which prepares its schema, and the installed ravi CLI in the operator's terminal. ` +
+    `Refusing the real Ravi state database: ${target}. ${outage ? describePm2RegistryOutage(outage) : ""}Only the installed Ravi runtime may open it: the daemon registered in PM2, which prepares its schema, and the installed ravi CLI in the operator's terminal. ` +
       'A source checkout, worktree, build or test must pass an isolated state directory on that command: RAVI_STATE_DIR="$(mktemp -d)" bun <command>. ' +
       "Selecting the real directory explicitly does not authorize a worktree or test. A process that carries a runtime context uses the installed daemon gateway. No launcher setting or confirmation variable is required.",
   );

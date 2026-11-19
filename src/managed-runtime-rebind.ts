@@ -4,6 +4,7 @@ import { which } from "bun";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isInsideDaemonProcessTree } from "./cli/daemon-process-tree.js";
+import { MANAGED_RUNTIME_READY_TIMEOUT_MS } from "./db/state-boundary.js";
 import { setTimeout as delay } from "node:timers/promises";
 import { buildRunnerPm2Env } from "./channels/pm2-env.js";
 import {
@@ -26,7 +27,8 @@ import { performSupervisedDaemonRestart, type ManagedDaemonProcess } from "./cli
 import { buildPm2Env, CHANNELS_PM2_PROCESS_NAME, getPm2Processes, PM2_PROCESS_NAME, type Pm2Process } from "./pm2.js";
 
 const MANAGED_RUNTIME_REBIND_ENV = "RAVI_INTERNAL_UPDATE_RUNTIME_REBIND";
-const MANAGED_RUNTIME_REBIND_TIMEOUT_MS = 90_000;
+/** The rebind waits for the daemon and then the channels runner, each up to the ready window. */
+export const MANAGED_RUNTIME_REBIND_TIMEOUT_MS = 2 * MANAGED_RUNTIME_READY_TIMEOUT_MS + 30_000;
 
 type RunResult = {
   success: boolean;
@@ -215,7 +217,7 @@ async function waitForChannelsAfterUpgrade(
 ): Promise<boolean> {
   const now = dependencies.now ?? Date.now;
   const wait = dependencies.wait ?? ((ms: number) => delay(ms));
-  const deadline = now() + (dependencies.readyTimeoutMs ?? 30_000);
+  const deadline = now() + (dependencies.readyTimeoutMs ?? MANAGED_RUNTIME_READY_TIMEOUT_MS);
   for (;;) {
     const online = getProcesses().some(
       (process) => process.name === CHANNELS_PM2_PROCESS_NAME && process.status === "online",
