@@ -38,6 +38,7 @@ import {
   listWatchRecords,
   removeWatch as removeWatchOperation,
 } from "../watch/index.js";
+import { WORKFLOW_CONCLUSIONS_WITH_OUTCOME_EVENT } from "../watch/local-events.js";
 import type { WatchRecord } from "../watch/types.js";
 import { addPendingGhFollow, type PendingGhFollow } from "./gh-follow-pending.js";
 
@@ -580,9 +581,69 @@ export function ghFollowTriggerName(repo: string, prNumber: number): string {
 /**
  * Filtra por repo *e* número: número de PR sozinho colide entre repositórios.
  */
-export function ghFollowFilter(repo: string, prNumber: number): string {
+function ghFollowScope(repo: string, prNumber: number): string {
   const number = JSON.stringify(String(prNumber));
   return `data.payload.repository == ${JSON.stringify(repo)} && (data.payload.number == ${number} || data.payload.pull_request.number == ${number})`;
+}
+
+/** The workflow that checks the PR body. It reports on every body edit, and none of it is a merge gate. */
+const GH_FOLLOW_PR_DESCRIPTION_WORKFLOW = "PR Description";
+
+/**
+ * Events a PR follow does not wake its owner for.
+ *
+ * - A `workflow_run.completed` that the local derivation (`placement == "local"`)
+ *   emits beside the outcome event of the same run (`succeeded`, `failed`,
+ *   `cancelled`): the derivation emits both for every such run, so the owner heard
+ *   each CI result twice. `completed` stays for the conclusions that have no outcome
+ *   event (`action_required`, `neutral`, `skipped`, `stale`), where it is the only
+ *   signal.
+ * - Every run of the PR Description workflow, whatever its outcome.
+ *
+ * The exclusion is scoped to the local producer because only it emits the pair. The
+ * Console reports `workflow_run.completed` and no outcome event, so a Console
+ * `completed` is the only CI signal when the local poller produces nothing (the repo
+ * watch was deactivated by someone else, `gh` cannot read the repo, the watch could
+ * not be created). Dropping it would leave the follow deaf to every CI result. The
+ * cost: with both sources active the owner can hear a run twice, the local outcome
+ * and the Console completion.
+ *
+ * Written as `!(path == value)`, never `path != value`: a path the event does not
+ * carry makes every comparison false, `!=` included, so `data.payload.name != "x"`
+ * would drop each PR lifecycle and comment event (they have no `payload.name`).
+ * Negating the equality keeps every event that lacks the field, a missing
+ * `placement` included.
+ */
+function ghFollowNoiseExclusion(): string {
+  const repeated = WORKFLOW_CONCLUSIONS_WITH_OUTCOME_EVENT.map(
+    (conclusion) => `data.payload.conclusion == ${JSON.stringify(conclusion)}`,
+  ).join(" || ");
+  return [
+    `!(data.placement == "local" && data.eventType == "workflow_run.completed" && (${repeated}))`,
+    `!(data.payload.name == ${JSON.stringify(GH_FOLLOW_PR_DESCRIPTION_WORKFLOW)})`,
+  ].join(" && ");
+}
+
+export function ghFollowFilter(repo: string, prNumber: number): string {
+  return `${ghFollowScope(repo, prNumber)} && ${ghFollowNoiseExclusion()}`;
+}
+
+/**
+ * Canonical filters earlier releases generated for this PR.
+ *
+ * A follow still carrying one is stale, not customised: maintenance moves it to the
+ * current form. Any other valid filter is somebody's own and stays as it is.
+ *
+ * Generation 1 listened to the PR and nothing else, so it heard the duplicate
+ * `workflow_run.completed` of every run and the PR Description workflow.
+ */
+export function supersededGhFollowFilters(repo: string, prNumber: number): string[] {
+  return [ghFollowScope(repo, prNumber)];
+}
+
+export function isSupersededGhFollowFilter(filter: string | undefined, repo: string, prNumber: number): boolean {
+  const current = filter?.trim();
+  return Boolean(current) && supersededGhFollowFilters(repo, prNumber).includes(current as string);
 }
 
 export function buildGhFollowTriggerInput(

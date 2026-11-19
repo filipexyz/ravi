@@ -7,11 +7,16 @@ import {
   ensureRepoWatch,
   findExistingGhFollowTrigger,
   ghFollowFilter,
+  isSupersededGhFollowFilter,
   observeGhBashCommand,
   parseGhWatchIntent,
   resetGhWatchCaches,
+  supersededGhFollowFilters,
   tokenizeShellCommand,
 } from "./gh-watch.js";
+import type { InboxNatsPayload } from "../inbox/types.js";
+import { watchEventFromInboxPayload } from "../watch/events.js";
+import { deriveLocalGitHubEvents, WORKFLOW_CONCLUSIONS_WITH_OUTCOME_EVENT } from "../watch/local-events.js";
 import { evaluateFilter, validateFilter } from "../triggers/filter.js";
 import { resolveDurableFollowOwner } from "../triggers/follow-owner.js";
 import type { Trigger, TriggerInput } from "../triggers/index.js";
@@ -585,6 +590,276 @@ describe("gh watch follow", () => {
   it("finds the existing trigger by name", () => {
     expect(findExistingGhFollowTrigger("o/r", 7, [trigger()])?.id).toBe("trig_1");
     expect(findExistingGhFollowTrigger("o/r", 8, [trigger()])).toBeUndefined();
+  });
+});
+
+describe("gh follow filter: which events wake the owner", () => {
+  const filter = ghFollowFilter("o/r", 7);
+  const hears = (event: unknown) => evaluateFilter(filter, event);
+
+  // The envelope a watch publishes: the event type and the placement sit beside the payload.
+  // The local runner sets `placement: "local"` (its own test, "publishes the derived event with
+  // the watch contract on change", pins it); the Console sends the placement of the watch.
+  type Placement = "local" | "console";
+  const event = (eventType: string, payload: Record<string, unknown> = {}, placement: Placement = "local") => ({
+    eventType,
+    placement,
+    payload: { repository: "o/r", number: 7, ...payload },
+  });
+  const run = (eventType: string, conclusion: string | null, name = "CI", placement: Placement = "local") =>
+    event(eventType, { runId: 1, name, status: "completed", conclusion, branch: "feat/x" }, placement);
+
+  const OUTCOMES: Array<[conclusion: string, outcomeEvent: string]> = [
+    ["success", "workflow_run.succeeded"],
+    ["failure", "workflow_run.failed"],
+    ["timed_out", "workflow_run.failed"],
+    ["startup_failure", "workflow_run.failed"],
+    ["cancelled", "workflow_run.cancelled"],
+  ];
+
+  it("hears each CI result once from the local producer: the outcome event, not the completed event repeating it", () => {
+    for (const [conclusion, outcomeEvent] of OUTCOMES) {
+      expect(hears(run(outcomeEvent, conclusion))).toBe(true);
+      expect(hears(run("workflow_run.completed", conclusion))).toBe(false);
+    }
+  });
+
+  it("keeps workflow_run.completed when it is the only event the run produces", () => {
+    // action_required is a CI run waiting for approval: nothing else reports it.
+    for (const conclusion of ["action_required", "neutral", "skipped", "stale", null, "a_conclusion_added_later"]) {
+      expect(hears(run("workflow_run.completed", conclusion))).toBe(true);
+    }
+  });
+
+  it("keeps the Console's workflow_run.completed whatever its conclusion: it is the only CI event the Console sends", () => {
+    // The Console reports `completed` and no outcome event. Dropping it for `success` or `failure`
+    // would leave a follow whose local poller produces nothing deaf to every CI result.
+    for (const conclusion of [
+      ...OUTCOMES.map(([name]) => name),
+      "action_required",
+      "neutral",
+      "skipped",
+      "stale",
+      null,
+    ]) {
+      expect(hears(run("workflow_run.completed", conclusion, "CI", "console"))).toBe(true);
+    }
+  });
+
+  it("hears an event that does not say where it comes from", () => {
+    // A missing `placement` makes `placement == "local"` false, so the exclusion does not apply.
+    const unplaced = { eventType: "workflow_run.completed", payload: run("workflow_run.completed", "success").payload };
+    expect(hears(unplaced)).toBe(true);
+  });
+
+  it("drops the PR Description workflow, whatever its outcome and wherever it was reported", () => {
+    for (const placement of ["local", "console"] as const) {
+      for (const [conclusion, outcomeEvent] of OUTCOMES) {
+        expect(hears(run(outcomeEvent, conclusion, "PR Description", placement))).toBe(false);
+        expect(hears(run("workflow_run.completed", conclusion, "PR Description", placement))).toBe(false);
+      }
+      expect(hears(run("workflow_run.completed", "action_required", "PR Description", placement))).toBe(false);
+    }
+    // Another workflow with a similar name is still CI.
+    expect(hears(run("workflow_run.failed", "failure", "PR Description Required Sections"))).toBe(true);
+  });
+
+  it("never drops a PR lifecycle or comment event, which carry no workflow name or conclusion", () => {
+    for (const eventType of [
+      "pull_request.opened",
+      "pull_request.synchronize",
+      "pull_request.ready_for_review",
+      "pull_request.converted_to_draft",
+      "pull_request.merged",
+      "pull_request.closed",
+      "pull_request_comment.created",
+    ]) {
+      expect(hears(event(eventType))).toBe(true);
+      expect(hears(event(eventType, {}, "console"))).toBe(true);
+    }
+    // The Console delivers lifecycle with the number under pull_request and no event type at all.
+    expect(hears({ payload: { repository: "o/r", pull_request: { number: 7 } } })).toBe(true);
+  });
+
+  it("still listens only to that repository and PR", () => {
+    expect(hears(run("workflow_run.succeeded", "success"))).toBe(true);
+    expect(hears(event("workflow_run.succeeded", { number: 8, conclusion: "success", name: "CI" }))).toBe(false);
+    expect(hears(event("workflow_run.succeeded", { repository: "o/other", conclusion: "success", name: "CI" }))).toBe(
+      false,
+    );
+    expect(hears(event("pull_request_comment.created", { number: 8 }))).toBe(false);
+  });
+
+  it("negates an equality because a missing path makes every comparison false, `!=` included", () => {
+    // Why the exclusions read `!(x == y)`: `data.payload.name != "PR Description"` would be
+    // false for an event that has no payload.name and silently drop every lifecycle event.
+    const notEqual = `data.payload.name != "PR Description"`;
+    const negatedEqual = `!(data.payload.name == "PR Description")`;
+    const lifecycle = event("pull_request.synchronize");
+    expect(evaluateFilter(notEqual, lifecycle)).toBe(false);
+    expect(evaluateFilter(negatedEqual, lifecycle)).toBe(true);
+    expect(filter).not.toContain("!=");
+  });
+
+  describe("against what the watch derivation really emits", () => {
+    function derive(name: string, conclusion: string | null) {
+      const pullRequest = {
+        number: 7,
+        title: "t",
+        url: "https://github.com/o/r/pull/7",
+        draft: false,
+        headSha: "a",
+        headRefName: "feat/x",
+      };
+      const base = { version: 1 as const, pullRequests: { "7": pullRequest }, comments: {} };
+      const running = { id: 1, name, status: "in_progress", conclusion: null, branch: "feat/x" };
+      const derived = deriveLocalGitHubEvents("o/r", {
+        previous: { ...base, workflowRuns: { "1": running } },
+        current: { ...base, workflowRuns: { "1": { ...running, status: "completed", conclusion } } },
+        departed: {},
+      }).events;
+      // What the local runner publishes: the derived event inside its watch envelope.
+      return derived.map((emitted) => ({ ...emitted, placement: "local" as const }));
+    }
+
+    it("lets exactly one event of a finished run reach the follow, whatever its conclusion", () => {
+      const conclusions = [
+        "success",
+        "failure",
+        "timed_out",
+        "startup_failure",
+        "cancelled",
+        "action_required",
+        "neutral",
+        "skipped",
+        "stale",
+        null,
+      ];
+      for (const conclusion of conclusions) {
+        const events = derive("CI", conclusion);
+        // The derivation may emit the outcome event and `completed`, or `completed` alone.
+        expect(events.length).toBeGreaterThanOrEqual(1);
+        expect(events.filter((emitted) => hears(emitted))).toHaveLength(1);
+      }
+    });
+
+    it("lets nothing of a PR Description run reach the follow", () => {
+      for (const conclusion of ["success", "failure", "cancelled", "action_required", null]) {
+        expect(derive("PR Description", conclusion).filter((emitted) => hears(emitted))).toEqual([]);
+      }
+    });
+
+    // The Console reports `workflow_run.completed` and none of the outcome events, so a Console
+    // completion is the only CI signal of its run whenever the local poller produces nothing.
+    function consoleRun(conclusion: string | null, name = "CI") {
+      const inbox: InboxNatsPayload = {
+        version: 1,
+        eventId: "item_1",
+        sequence: 1,
+        dedupeKey: "watch:watch_c:github:delivery_1",
+        eventType: "watch.github.workflow_run.completed",
+        category: "source_control",
+        severity: "info",
+        sensitivity: "private",
+        title: null,
+        summary: null,
+        organization: { id: "org_1" },
+        project: null,
+        source: { type: "github_webhook", provider: "github", providerEventType: "workflow_run" },
+        actor: { type: "github_user", id: "octocat", login: "octocat" },
+        target: { type: "github_repository", id: "repo_1", ref: "o/r" },
+        payload: {
+          watch: { id: "watch_c", provider: "github", placement: "console", resourceRef: "o/r" },
+          repository: "o/r",
+          number: 7,
+          name,
+          status: "completed",
+          conclusion,
+        },
+        links: null,
+        delivery: {
+          subscriptionId: "sub_1",
+          installationId: "cli_1",
+          pollId: "poll_1",
+          leaseId: null,
+          localDeliveredAt: "2026-11-19T17:00:00.000Z",
+        },
+        occurredAt: "2026-11-19T17:00:00.000Z",
+        createdAt: "2026-11-19T17:00:00.000Z",
+      };
+      return watchEventFromInboxPayload(inbox);
+    }
+
+    const CONCLUSIONS = [
+      "success",
+      "failure",
+      "timed_out",
+      "startup_failure",
+      "cancelled",
+      "action_required",
+      "neutral",
+      "skipped",
+      "stale",
+      null,
+    ];
+
+    it("hears a repo that only the Console reports on exactly once per finished run, whatever the conclusion", () => {
+      // No local poller output: the Console's `completed` is all the follow can ever hear.
+      for (const conclusion of CONCLUSIONS) {
+        expect(consoleRun(conclusion)).toMatchObject({ placement: "console", eventType: "workflow_run.completed" });
+        expect([consoleRun(conclusion)].filter((emitted) => hears(emitted))).toHaveLength(1);
+      }
+    });
+
+    it("drops the PR Description workflow from the Console as well", () => {
+      for (const conclusion of CONCLUSIONS) {
+        expect(hears(consoleRun(conclusion, "PR Description"))).toBe(false);
+      }
+    });
+
+    it("hears a run twice when the Console and the local poller both report it: the cost of keeping the Console signal", () => {
+      // The local derivation emits the outcome event and `completed` (the follow drops the second);
+      // the Console adds its own `completed`. Two events, down from the three before the exclusion.
+      for (const [conclusion, outcomeEvent] of OUTCOMES) {
+        const reported = [...derive("CI", conclusion), consoleRun(conclusion)!];
+        const heard = reported.filter((emitted) => hears(emitted));
+        expect(reported).toHaveLength(3);
+        expect(heard.map((emitted) => [emitted.placement, emitted.eventType])).toEqual([
+          ["local", outcomeEvent],
+          ["console", "workflow_run.completed"],
+        ]);
+      }
+    });
+
+    it("drops the repeat for exactly the conclusions that have their own event", () => {
+      expect([...WORKFLOW_CONCLUSIONS_WITH_OUTCOME_EVENT].sort()).toEqual(
+        OUTCOMES.map(([conclusion]) => conclusion).sort(),
+      );
+    });
+  });
+});
+
+describe("gh follow filter generations", () => {
+  // The literal an earlier release wrote: it listened to the PR and nothing else.
+  const GENERATION_1 = `data.payload.repository == "o/r" && (data.payload.number == "7" || data.payload.pull_request.number == "7")`;
+
+  it("recognises the filter the previous release generated, and only that", () => {
+    expect(supersededGhFollowFilters("o/r", 7)).toEqual([GENERATION_1]);
+    expect(isSupersededGhFollowFilter(GENERATION_1, "o/r", 7)).toBe(true);
+    expect(isSupersededGhFollowFilter(`  ${GENERATION_1}\n`, "o/r", 7)).toBe(true);
+  });
+
+  it("does not take the current filter, a customised one, or another PR's for superseded", () => {
+    expect(isSupersededGhFollowFilter(ghFollowFilter("o/r", 7), "o/r", 7)).toBe(false);
+    expect(isSupersededGhFollowFilter(`data.payload.repository == "o/r"`, "o/r", 7)).toBe(false);
+    expect(isSupersededGhFollowFilter(GENERATION_1, "o/r", 8)).toBe(false);
+    expect(isSupersededGhFollowFilter(GENERATION_1, "o/other", 7)).toBe(false);
+    expect(isSupersededGhFollowFilter(undefined, "o/r", 7)).toBe(false);
+    expect(isSupersededGhFollowFilter("", "o/r", 7)).toBe(false);
+  });
+
+  it("keeps the previous filter a valid one, so a follow that still carries it keeps working until repaired", () => {
+    expect(validateFilter(GENERATION_1)).toEqual({ ok: true });
   });
 });
 
