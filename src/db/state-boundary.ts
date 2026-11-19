@@ -81,7 +81,7 @@ function hasPm2Parent(): boolean {
   if (process.ppid <= 1) return false;
   const parent = spawnSync("/bin/ps", ["-ww", "-p", String(process.ppid), "-o", "args="], {
     encoding: "utf8",
-    timeout: 2000,
+    timeout: 5000,
     maxBuffer: 64 * 1024,
   });
   if (parent.error || parent.status !== 0) return false;
@@ -96,18 +96,55 @@ function hasPm2Parent(): boolean {
   }
 }
 
+/**
+ * Per-attempt limits for `pm2 jlist`. The command takes ~1 s on an idle 1-vCPU
+ * host and 2–4 s under load (a boot or an update), so a single 2 s limit
+ * refused the daemon and the channels runner as if PM2 had not registered
+ * them. A slow answer is retried once with a longer limit; the bound stays
+ * finite (20 s in total) and an answer that never arrives still refuses.
+ */
+export const PM2_JLIST_ATTEMPT_TIMEOUTS_MS = [5_000, 15_000] as const;
+
+export interface Pm2JlistResult {
+  stdout: string;
+  status: number | null;
+  error?: Error;
+}
+
+/** Runs `pm2 jlist` once with the given limit. Injectable for tests. */
+export type Pm2JlistRunner = (timeoutMs: number) => Pm2JlistResult;
+
+const runPm2Jlist: Pm2JlistRunner = (timeoutMs) =>
+  spawnSync("pm2", ["jlist"], { encoding: "utf8", timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 });
+
+/**
+ * PM2's process registry, or `[]` when PM2 does not answer in time. Callers
+ * treat `[]` as "not registered" and refuse access, so a failure here can only
+ * refuse, never grant.
+ */
+export function readPm2Registry(run: Pm2JlistRunner = runPm2Jlist): RegisteredRuntimeProcess[] {
+  for (const timeoutMs of PM2_JLIST_ATTEMPT_TIMEOUTS_MS) {
+    const result = run(timeoutMs);
+    if (result.error || result.status !== 0) {
+      // A missing pm2 binary will not appear on retry.
+      if ((result.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") return [];
+      continue;
+    }
+    try {
+      return parsePm2Jlist(result.stdout) as RegisteredRuntimeProcess[];
+    } catch {
+      // no-cause: Unavailable PM2 identity refuses access; do not expose secret-bearing registry data.
+      return [];
+    }
+  }
+  return [];
+}
+
 function readRegisteredProcesses(): RegisteredRuntimeProcess[] {
   if (!hasPm2Parent()) return [];
   // Query the process manager, not inherited pm_id/name environment variables.
   // Bounded and read-only; stdout contains env secrets, so it never gets logged.
-  const result = spawnSync("pm2", ["jlist"], { encoding: "utf8", timeout: 2000, maxBuffer: 8 * 1024 * 1024 });
-  if (result.error || result.status !== 0) return [];
-  try {
-    return parsePm2Jlist(result.stdout) as RegisteredRuntimeProcess[];
-  } catch {
-    // no-cause: Unavailable PM2 identity refuses access; do not expose secret-bearing registry data.
-    return [];
-  }
+  return readPm2Registry();
 }
 
 export interface DatabaseBoundaryOptions {

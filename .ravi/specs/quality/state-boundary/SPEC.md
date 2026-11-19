@@ -70,6 +70,11 @@ applies_to:
 - PM2 registry parsing MUST tolerate leading version/diagnostic banners while
   rejecting malformed, truncated or non-array JSON. A failed registry query
   MUST NOT authorize real state or expose the secret-bearing registry output.
+- The registry query MUST tolerate a slow PM2 (`pm2 jlist` takes 2–4 s on a
+  loaded 1-vCPU host) and MUST stay bounded: it allows 5 s, retries once with
+  15 s after a timeout or failure, and refuses when neither answers. A slow
+  answer MUST NOT read as "not registered" (the 2 s limit refused the
+  registered daemon and channels runner on boot and during `ravi update`).
 - Identity validation MUST match the canonical launcher for each role: daemon registers the bundle with `daemon run`; channels registers the running Bun executable with `<bundle> channels run`. The exact arguments, bundle and executable MUST be checked; launcher-generated channel registration MUST be covered by regression tests.
 - The identity check MUST use the code's location. A package containing `src` or `.git`, unknown code provenance, CLI, build, worktree or test execution MUST NOT gain real-state access by inheriting runtime environment or explicitly naming the real directory.
 - A source checkout, worktree, build or test MUST select isolated state explicitly, normally with `RAVI_STATE_DIR` on the command. Losing that variable MUST refuse real-state access instead of silently opening the default. Errors MUST show the variable, a command example and the installed daemon gateway alternative.
