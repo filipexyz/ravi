@@ -29886,14 +29886,16 @@ public struct SessionsThreadSendOptions: Codable, Sendable {
 
 public struct SessionsThreadSendReturn: Codable, Sendable {
   public var actionId: String
+  public var delivery: RaviJSON?
   public var messageId: String
   public var reopened: Bool
   public var requestId: String
   public var status: String
   public var thread: RaviJSON
 
-  public init(actionId: String, messageId: String, reopened: Bool, requestId: String, status: String, thread: RaviJSON) {
+  public init(actionId: String, delivery: RaviJSON? = nil, messageId: String, reopened: Bool, requestId: String, status: String, thread: RaviJSON) {
     self.actionId = actionId
+    self.delivery = delivery
     self.messageId = messageId
     self.reopened = reopened
     self.requestId = requestId
@@ -29903,6 +29905,7 @@ public struct SessionsThreadSendReturn: Codable, Sendable {
 
   enum CodingKeys: String, CodingKey {
     case actionId = "actionId"
+    case delivery = "delivery"
     case messageId = "messageId"
     case reopened = "reopened"
     case requestId = "requestId"

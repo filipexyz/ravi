@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "24b903bea261e179"
+    "version": "79c777b1ed89bfd8"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -125383,6 +125383,33 @@
                     "actionId": {
                       "const": "thread.send",
                       "type": "string"
+                    },
+                    "delivery": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "barrier": {
+                          "enum": [
+                            "immediate_interrupt",
+                            "after_tool",
+                            "after_response",
+                            "after_task"
+                          ],
+                          "type": "string"
+                        },
+                        "barrierSource": {
+                          "enum": [
+                            "explicit",
+                            "default",
+                            "inferred"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "barrier",
+                        "barrierSource"
+                      ],
+                      "type": "object"
                     },
                     "messageId": {
                       "type": "string"

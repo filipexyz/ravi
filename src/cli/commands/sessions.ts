@@ -41,6 +41,7 @@ import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "../.
 import { publishSessionPrompt } from "../../omni/session-stream.js";
 import {
   DEFAULT_DELIVERY_BARRIER,
+  DELIVERY_BARRIER_VALUES,
   normalizeDeliveryBarrier,
   type DeliveryBarrier,
   type DeliveryBarrierSource,
@@ -580,7 +581,7 @@ const sessionReportReturnSchema = z
     }),
   })
   .strict();
-const sessionThreadSendReturnSchema = z
+export const sessionThreadSendReturnSchema = z
   .object({
     status: z.literal("published"),
     actionId: z.literal("thread.send"),
@@ -588,6 +589,15 @@ const sessionThreadSendReturnSchema = z
     messageId: z.string(),
     reopened: z.boolean(),
     thread: slackThreadSummarySchema,
+    // Additive observation: a daemon that predates it does not send it, and the gateway publishes
+    // the instruction before it checks this shape, so an unknown key here would fail every send.
+    delivery: z
+      .object({
+        barrier: z.enum(DELIVERY_BARRIER_VALUES),
+        barrierSource: z.enum(["explicit", "default", "inferred"]),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 const threadRuntimeOverridesSchema = z

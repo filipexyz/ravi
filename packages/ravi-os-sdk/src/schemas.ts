@@ -109501,6 +109501,33 @@ export const SessionsThreadSendReturnSchema = {
       "const": "thread.send",
       "type": "string"
     },
+    "delivery": {
+      "additionalProperties": false,
+      "properties": {
+        "barrier": {
+          "enum": [
+            "immediate_interrupt",
+            "after_tool",
+            "after_response",
+            "after_task"
+          ],
+          "type": "string"
+        },
+        "barrierSource": {
+          "enum": [
+            "explicit",
+            "default",
+            "inferred"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "barrier",
+        "barrierSource"
+      ],
+      "type": "object"
+    },
     "messageId": {
       "type": "string"
     },

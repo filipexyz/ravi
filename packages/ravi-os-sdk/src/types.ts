@@ -21252,6 +21252,10 @@ export type SessionsThreadSendInput = {
 /** Return shape for `sessions.thread-send`. */
 export type SessionsThreadSendReturn = {
   actionId: "thread.send";
+  delivery?: {
+    barrier: "immediate_interrupt" | "after_tool" | "after_response" | "after_task";
+    barrierSource: "explicit" | "default" | "inferred";
+  };
   messageId: string;
   reopened: boolean;
   requestId: string;
