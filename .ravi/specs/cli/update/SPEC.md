@@ -80,6 +80,53 @@ normative: true
   recovered based only on PM2 online or a boot receipt. Recovery MUST preserve
   schema ownership and MUST NOT imply a database rollback.
 
+## Waypoint and stability (supervisor)
+
+These rules run in the supervisor, which is the target release's bundle, so
+the refusals also hold for an update started by an older CLI. The text of a
+refusal does not: an older CLI starts the supervisor with its output ignored
+and does not read `supervisor-refused.json`, so it prints its own generic
+failure; the refusal's text reaches the operator on the next run, through the
+CLI that run installed.
+
+- Before it stops anything, the supervisor MUST refuse with
+  `UPDATE_WAYPOINT_REQUIRED` a state written before the thread fence
+  (`adopt-on-start`) that a release older than 3.261113.2 last prepared, or
+  that has no readiness markers (`state_schema_versions`, `1:<release>`). The
+  refusal MUST name the exact commands: `ravi update --version 3.261113.2`,
+  `ravi daemon status`, then `ravi update --next`. A source checkout does not
+  accept `--version`, so there the refusal MUST give the checkout steps
+  instead, as commands that run as written: `git -C "<checkout>" fetch --tags`,
+  `git -C "<checkout>" switch --detach v3.261113.2`, build, then
+  `ravi daemon restart -m "waypoint"` and `ravi channels restart`. It MUST say that the installed package (or the checkout) is
+  already the target release, because a restart before the waypoint would
+  start it on that state.
+- After the runtime converges and PM2 is saved, the supervisor MUST watch the
+  converged processes for a stability window (30 s by default,
+  `RAVI_UPDATE_STABILITY_WINDOW_MS`, at most 300 s). A new PID or start time,
+  or a runtime that stops being converged, MUST fail the update instead of
+  reporting success. PM2 reads count inside the window: it MUST end by its
+  deadline even when each read is slow.
+- The window MUST end before the starting CLI stops waiting. The CLI declares
+  its wait in `RAVI_UPDATE_SUPERVISOR_BUDGET_MS`, and the supervisor keeps 10 s
+  of that budget for its exit and the CLI's verification. With no declaration
+  (a CLI that predates the window, which waits 30 s up to 3.261113.2 and 90 s
+  from 3.261113.3) the supervisor MUST NOT run a window: it answers right
+  after convergence, as before the window existed.
+- `ravi daemon restart` and `ravi daemon start` do not check the waypoint yet
+  (follow-up): after a waypoint refusal, the next step is the commands the
+  refusal names, not a restart.
+- A refusal before any stop MUST be left in
+  `<state>/updates/supervisor-refused.json`. The CLI MUST capture the
+  supervisor's output in `<state>/updates/supervisor.log`, read a refusal
+  recorded since the supervisor started, and fail with that code and message
+  instead of a generic convergence failure. Any other failure MUST name the
+  supervisor log.
+- Still open: the waypoint is checked after the package is installed, and a
+  process that was stopped stays stopped (the CLI that verifies the result
+  predates a change to that rule). Automatic waypoints and rollback replace
+  both later.
+
 ## Detached execution
 
 - `ravi update` started inside the daemon's process tree (an agent tool, a
