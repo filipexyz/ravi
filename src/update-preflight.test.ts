@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
+import { spawn } from "bun";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,6 +19,7 @@ import {
   SUPERVISOR_EXIT_MARGIN_MS,
   type SupervisorStabilityPlan,
   supervisorStabilityPlan,
+  UPDATE_IN_PROGRESS,
 } from "./managed-runtime-rebind.js";
 import type { Pm2Process } from "./pm2.js";
 import { observeRuntimeBoot, writeRuntimeBootReceipt } from "./runtime-process-identity.js";
@@ -281,6 +283,52 @@ describe("supervisor refusal reaches the CLI", () => {
     const expectedDeadline = spawnedAt + MANAGED_RUNTIME_REBIND_TIMEOUT_MS - SUPERVISOR_EXIT_MARGIN_MS;
     expect(plans[1]?.stabilityWindowMs).toBeUndefined();
     expect(Math.abs((plans[1]?.stabilityDeadlineMs ?? 0) - expectedDeadline)).toBeLessThan(1_000);
+  });
+
+  it("refuses a second supervisor while another one holds the update lock, before any stop", async () => {
+    const packageRoot = join(stateDir, "package");
+    mkdirSync(join(packageRoot, "dist", "bundle"), { recursive: true });
+    writeFileSync(join(packageRoot, "package.json"), JSON.stringify({ name: "ravi.bot", version: "3.261119.9" }));
+    writeFileSync(join(packageRoot, "dist", "bundle", "index.js"), "");
+    const invocation = buildManagedRuntimeRebindSupervisorInvocation(
+      {
+        bundlePath: realpathSync(join(packageRoot, "dist", "bundle", "index.js")),
+        cwd: realpathSync(packageRoot),
+        version: "3.261119.9",
+      },
+      [pm2("ravi", 10), pm2("ravi-channels", 11)],
+      { PATH: "/usr/bin", RAVI_STATE_DIR: stateDir },
+    );
+    let rebinds = 0;
+    const rebind = async () => {
+      rebinds += 1;
+      return true;
+    };
+    // Another supervisor, in another process, holds the lock for its whole life.
+    const holder = join(stateDir, "holder.ts");
+    writeFileSync(
+      holder,
+      `import { acquireSchemaFileLock } from ${JSON.stringify(join(process.cwd(), "src/db/schema-lock.ts"))};\n` +
+        `acquireSchemaFileLock(${JSON.stringify(join(stateDir, "updates", "update.lock"))}, 0);\n` +
+        'console.log("held");\nsetInterval(() => {}, 1_000);\n',
+    );
+    const other = spawn([process.execPath, holder], { stdout: "pipe", stderr: "inherit" });
+    try {
+      const { value } = await other.stdout.getReader().read();
+      expect(new TextDecoder().decode(value)).toContain("held");
+      const since = Date.now();
+      process.env[REBIND_ENV] = invocation.env[REBIND_ENV];
+      await expect(maybeRunManagedRuntimeRebindFromEnv(() => false, rebind)).rejects.toThrow(UPDATE_IN_PROGRESS);
+      expect(rebinds).toBe(0);
+      expect(readSupervisorRefusal(since, stateDir)?.code).toBe(UPDATE_IN_PROGRESS);
+    } finally {
+      other.kill();
+      await other.exited;
+    }
+    // The lock goes with its process: the next supervisor runs.
+    process.env[REBIND_ENV] = invocation.env[REBIND_ENV];
+    expect(await maybeRunManagedRuntimeRebindFromEnv(() => false, rebind)).toBe(true);
+    expect(rebinds).toBe(1);
   });
 
   it("reads back only a refusal recorded since the supervisor started", () => {

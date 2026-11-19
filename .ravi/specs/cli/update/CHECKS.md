@@ -108,3 +108,44 @@
     rebind;
   - a refusal read back only when recorded since the supervisor started, and
     its code kept only when it looks like one.
+- `bun test src/update-snapshot.test.ts` MUST prove:
+  - a plan that needs only the margin with clones, the full size without them,
+    and a refusal before any stop when that does not fit, counting earlier
+    snapshots as freed space only without clones (an earlier clone counts for
+    nothing), and the room a store on another disk needs for its restore;
+  - a snapshot that keeps committed WAL frames, a restore that brings the
+    previous rows back, moves the target's files and the stores it created to
+    `candidate/`, and refuses a second restore;
+  - nothing moved when a snapshot file is missing, only the latest snapshot
+    kept, and clones where the filesystem has them;
+  - store ownership refused while a process holds the daemon's schema lock and
+    granted once it is gone;
+  - a restore that stops: no store missing, `restore.json` with every move
+    and whether it was done, and commands that finish it when run as written;
+  - a store on another disk staged next to it first: a staging failure moves
+    nothing, and the restore then goes through with its files aside next to
+    the store.
+- `bun test src/update-rollback.test.ts` MUST prove:
+  - a plan only from a proven previous release in the same global install,
+    and none without a receipt, to the same release or from a checkout;
+  - the previous release's CLI environment without target routing or runtime
+    context;
+  - a rollback that stops the target, restores under the locks, reinstalls the
+    exact previous release and starts the daemon, then the runner, through its
+    CLI; the manual commands when the reinstall fails; nothing restored while
+    a stopped process is alive, with exact commands that move the live WAL and
+    shared memory aside before a snapshot file comes back;
+  - a release older than the schema phase records proven by its receipt and
+    the window;
+  - a restored daemon that never reaches `ready` (with its boot receipt) and a
+    process that restarts in the stability window failing the rollback; an
+    error inside a step ending as a failure of that step; the commands of a
+    restore that stopped handed over before the install and start;
+  - a supervisor with a rollback plan that stops both before starting the
+    target, snapshots, rolls back and records `rolled-back` when the target
+    never gets ready, records `converged` and keeps the snapshot otherwise,
+    records `rollback-failed` when the rollback itself throws, and refuses
+    `UPDATE_SNAPSHOT_SPACE` before any PM2 mutation.
+- `bun test src/update-preflight.test.ts` MUST also prove a second supervisor
+  refused with `UPDATE_IN_PROGRESS`, before its rebind, while another process
+  holds the update lock, and running once that process is gone.
