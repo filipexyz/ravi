@@ -20,6 +20,11 @@
       initial agent prompt and MUST NOT duplicate the thread-created event.
 - [ ] Programmatic thread-created events MUST carry the child `agentId`.
 - [ ] `--model` MUST be stored before first-prompt publication.
+- [ ] The `create-thread` result MUST parse through its declared return schema:
+      `origin` is `null` for a request from Slack or from a group and
+      `{ channel, canonicalChatId }` for one from a direct chat on another
+      channel. A field the handler returns and the schema omits MUST fail the
+      test, not the production call after the thread exists.
 - [ ] Creating from an existing thread MUST create a sibling channel-root
       thread, not a nested thread.
 - [ ] `thread.close` MUST be available only from a Slack thread child.
