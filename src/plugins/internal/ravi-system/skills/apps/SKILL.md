@@ -248,12 +248,14 @@ CLI publico, `ravi <provedor> <operacao>`, com a chave do proprio contexto-filho
 
 ```json
 { "id": "md-render",
-  "provides": { "md-render/html": { "version": "1.0.0", "operations": ["md-render.html"] } } }
+  "provides": { "md-render/html": { "version": "1.0.0", "operations": ["md-render.html"] } },
+  "context": { "allow": ["execute:group:pages"] } }
 ```
 
 ```json
 { "id": "blog",
-  "requires": { "md-render/html": "^1" } }
+  "requires": { "md-render/html": "^1" },
+  "context": { "allow": ["execute:group:pages"] } }
 ```
 
 - A chave do servico e `<app-id>/<servico>` e comeca pelo id de quem oferece.
@@ -264,11 +266,12 @@ CLI publico, `ravi <provedor> <operacao>`, com a chave do proprio contexto-filho
 - Quem requer declara, no proprio `context.allow`, tudo o que o provedor
   declara no dele (entradas explicitas, sem curinga). O contexto do provedor
   nasce do contexto do consumidor, entao a autoridade so estreita: provedor
-  dentro do consumidor, consumidor dentro de quem invocou. O consumidor recebe
-  `use app:<provedor>` e o acesso a `apps run` do invocador sem declarar, e
+  dentro do consumidor, consumidor dentro de quem invocou. O consumidor recebe,
+  sem declarar, `use app:<provedor>` e o acesso a `apps run` do invocador, e
   tambem `execute app:<provedor>` quando um servico requerido oferece uma
-  operacao mutante: o invocador precisa ter esse `execute` (e o `apps run`), ou
-  o consumidor nem sobe. Invocador que so tem o grupo legado
+  operacao mutante. O invocador precisa ter tudo isso (o `use app:<provedor>`
+  de cada provedor do fecho, o `execute` quando couber e o `apps run`), ou o
+  consumidor nem sobe. Invocador que so tem o grupo legado
   `execute:group:apps` nao leva consumidor composto.
 - Antes de subir qualquer processo, o router recusa o app cujo provedor nao
   serve: `APP_DEPENDENCY_UNAVAILABLE`, com o motivo `not_installed`, `invalid`,
@@ -284,14 +287,17 @@ CLI publico, `ravi <provedor> <operacao>`, com a chave do proprio contexto-filho
   `execute app:<id>` nas operacoes mutantes): `provides` e o que os apps podem
   chamar uns dos outros, nao uma segunda permissao para quem ja tem o app. App
   chamado que nao declara `provides` mantem a regra de antes: quem tem
-  `use app:<id>` (e `execute app:<id>` nas mutantes) o chama, com ou sem
-  `requires`.
+  `use app:<id>` (e `execute app:<id>` nas mutantes) o chama; nao ha servico
+  para citar em `requires`, nem checagem de linhagem.
 - Ciclo de `requires` e erro de validacao (`requires cycle: a -> b -> a.`).
   Provedor que nao esta instalado ainda nao invalida o consumidor: vira aviso,
   e quem barra e a execucao.
 - A credencial de um app que oferece ou precisa de servico e revogada, com as
-  descendentes, quando o processo termina. App que nao participa de composicao
-  mantem a credencial ate o TTL, como antes.
+  descendentes, quando o processo termina. Se a revogacao falhar, o resultado
+  da execucao nao muda, o `apps-router` registra o aviso "Could not revoke the
+  app child context at the end of its operation" e a credencial vive ate o TTL.
+  App que nao participa de composicao mantem a credencial ate o TTL, como
+  antes.
 - O audit ve a linhagem turno -> `app:<consumidor>` -> `app:<provedor>`, e o
   contexto do provedor registra o servico e o consumidor em
   `metadata.composition`.
@@ -315,7 +321,7 @@ e chamado por outros, avise-os antes: passam a ser recusados ate declarar
 - Nao raspe stdout quando houver JSON.
 - Nao execute health checks durante discovery.
 - Nao use manifesto como grant de permissao.
-- App que precisa de outro app declara `requires` e cobre, no proprio `context.allow`, o que o provedor declara no dele; sem `requires`, nao chame `ravi <outro-app>` de dentro de um app.
+- Para chamar de dentro de um app um app que oferece servicos (`provides`), declare `requires` e cubra, no proprio `context.allow`, o que o provedor declara no dele; sem isso o router recusa. Um app que nao declara `provides` segue a regra de antes (so a permissao, `use app:<id>` e `execute app:<id>` nas mutantes), e nao ha o que declarar em `requires`.
 - Mutacoes precisam de permissao declarada e autorizacao runtime real. Se uma
   app bloquear por permissão recorrente, prefira `ravi permissions resolve
   <denial-id>` ou `ravi permissions allow <profile> --to <subject> --agent
