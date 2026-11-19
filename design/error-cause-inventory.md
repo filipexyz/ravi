@@ -152,12 +152,12 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | apps | src/apps/router.ts | 1025 | fixed | binding retained / no recognized error surface | src/apps/router.ts:be7924cab2b6818b47481d9d |
 | apps | src/apps/router.ts | 1038 | triaged-follow-up | catch-without-binding | src/apps/router.ts:e39c75939f3bada55ce4bba9 |
 | apps | src/apps/scaffold.ts | 566 | triaged-follow-up | catch-without-binding | src/apps/scaffold.ts:7539c3f22a40bad7711dec0c |
-| apps | src/apps/service.ts | 262 | fixed | binding retained / no recognized error surface | src/apps/service.ts:9af1f6f974fdf5c79d441a2b |
-| apps | src/apps/service.ts | 269 | fixed | binding retained / no recognized error surface | src/apps/service.ts:f786c25699f0041e2406547f |
-| apps | src/apps/service.ts | 400 | fixed | binding retained / no recognized error surface | src/apps/service.ts:cd26a1a079ed75e5f28dea45 |
-| apps | src/apps/service.ts | 459 | fixed | binding retained / no recognized error surface | src/apps/service.ts:0a4b790f9399d3f813e5a417 |
-| apps | src/apps/service.ts | 1474 | triaged-follow-up | catch-without-binding | src/apps/service.ts:4f18315e398f50e563b2ed7e |
-| apps | src/apps/service.ts | 1491 | triaged-follow-up | catch-without-binding | src/apps/service.ts:12bc6af12da4a5e8317d9403 |
+| apps | src/apps/service.ts | 271 | fixed | binding retained / no recognized error surface | src/apps/service.ts:9af1f6f974fdf5c79d441a2b |
+| apps | src/apps/service.ts | 278 | fixed | binding retained / no recognized error surface | src/apps/service.ts:f786c25699f0041e2406547f |
+| apps | src/apps/service.ts | 409 | fixed | binding retained / no recognized error surface | src/apps/service.ts:cd26a1a079ed75e5f28dea45 |
+| apps | src/apps/service.ts | 468 | fixed | binding retained / no recognized error surface | src/apps/service.ts:0a4b790f9399d3f813e5a417 |
+| apps | src/apps/service.ts | 1483 | triaged-follow-up | catch-without-binding | src/apps/service.ts:4f18315e398f50e563b2ed7e |
+| apps | src/apps/service.ts | 1500 | triaged-follow-up | catch-without-binding | src/apps/service.ts:12bc6af12da4a5e8317d9403 |
 | apps | src/apps/youtube/client.ts | 672 | triaged-follow-up | catch-without-binding | src/apps/youtube/client.ts:701786c6a30de68a19642f53 |
 | apps | src/apps/youtube/client.ts | 709 | triaged-follow-up | catch-without-binding | src/apps/youtube/client.ts:b551da5714883e23a044993d |
 | apps | src/apps/youtube/client.ts | 722 | triaged-follow-up | catch-without-binding | src/apps/youtube/client.ts:0645ef7c59a301ec13cf6b9f |

@@ -196,6 +196,13 @@ ravi context lineage <context-id> --json
 
 The provider's context names the service and the consuming app under
 `metadata.composition`, and its `parentContextId` is the consumer's context. A
-composed app's child context is revoked when its process ends; a context that
-is still live after the run points to a process that did not end, or to an app
-that does not take part in composition.
+composed app's child context is revoked when its process ends. A context that
+is still live after the run has one of three causes:
+
+- the process did not end;
+- the app does not take part in composition (it neither offers nor needs a
+  service), so its credential lives until its TTL, as before composition;
+- the revocation itself failed. That does not change the run's result; the
+  `apps-router` logger writes the warning "Could not revoke the app child context
+  at the end of its operation" with the context id. Revoke it by hand with
+  `ravi context revoke <context-id>`; otherwise it lives until its TTL.
