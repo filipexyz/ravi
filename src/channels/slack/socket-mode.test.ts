@@ -2340,6 +2340,23 @@ describe("Slack Socket Mode routing", () => {
       expect(listSessionSubscriptions(MAIN_KEY)).toEqual([expect.objectContaining({ chatId: chat.id })]);
     });
 
+    it("keeps an automatic subscription when the route's forced session lives on another instance", async () => {
+      const { chat, mainSession } = setupResidualSubscription("system");
+      // attach refuses a session on another instance, so releasing the stale
+      // subscription first would leave the chat with no subscription at all.
+      const farSession = getOrCreateSession("agent:main-agent:far-room", "main-agent", "/tmp/main-agent", {
+        name: "far-room",
+        channel: "slack",
+        accountId: "other-workspace",
+      });
+      const published: Array<{ sessionName: string; payload: unknown }> = [];
+
+      await service(config("main-agent", "far-room"), published).handleEnvelope(envelope("env-a2d9-cross-instance"));
+
+      expect(listSessionSubscriptions(mainSession.sessionKey)).toEqual([expect.objectContaining({ chatId: chat.id })]);
+      expect(listSessionSubscriptions(farSession.sessionKey)).toEqual([]);
+    });
+
     it("settles the envelope instead of retrying when the route's session belongs to another agent", async () => {
       seedAgent("main-agent", "/tmp/main-agent");
       seedAgent("specialist-agent", "/tmp/specialist-agent");

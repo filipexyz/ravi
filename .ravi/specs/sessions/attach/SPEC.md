@@ -56,7 +56,10 @@ from `src/channels/subscription-precedence.ts`):
   terminal routing error: logged with the agent and session keys, settled,
   and not retried.
 - An automatic subscription (`attachedByType: system`) loses to a route that
-  forces a session. The chat is rebound to the route's session.
+  forces a session. The chat is rebound to the route's session. The release
+  happens only when the chat can be attached there: a forced session on
+  another instance than the chat's is refused by attach, and releasing first
+  would leave the chat with no subscription, so the subscription stays.
 - An explicit attach (`user` or `agent`) keeps the chat on the attached
   session and agent; the route's forced session is ignored for that chat.
   The match handed to the commit MUST NOT force a session other than the

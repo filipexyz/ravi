@@ -1651,9 +1651,20 @@ export class OmniConsumer {
     // See .ravi/specs/sessions/attach/SPEC.md
     try {
       // The route's forced session beat an automatic subscription: release it
-      // so the chat is rebound to the session the route landed in.
+      // so the chat is rebound to the session the route landed in. Only when
+      // the chat can live there: attachChatToSession refuses a session on
+      // another instance, and releasing first would leave the chat with no
+      // subscription and no default output.
       if (staleSubscription && staleSubscription.sessionKey !== resolved.sessionKey) {
-        detachChatFromSession(staleSubscription.sessionKey, canonicalChat.id);
+        if (isChatCompatibleWithSession(canonicalChat.id, resolved.sessionKey)) {
+          detachChatFromSession(staleSubscription.sessionKey, canonicalChat.id);
+        } else {
+          log.warn("Route session is on another instance than the chat; keeping its automatic subscription", {
+            chatId: canonicalChat.id,
+            subscriptionSessionKey: staleSubscription.sessionKey,
+            routeSessionKey: resolved.sessionKey,
+          });
+        }
       }
       const existingSubscriptions = listSessionSubscriptions(resolved.sessionKey);
       const existingSubscription = existingSubscriptions.find((s) => s.chatId === canonicalChat.id);

@@ -47,8 +47,10 @@
   route that forces another session, MUST be committed on the attached
   session with a match that no longer forces a session, and that session
   MUST keep its name. A chat with an automatic subscription MUST be committed
-  on the route's session, and the stale subscription MUST be released. Both
-  inbound paths MUST take this decision from
+  on the route's session, and the stale subscription MUST be released, unless
+  the route's session lives on another instance than the chat: then the
+  automatic subscription MUST stay, so the chat is never left unattached by a
+  refused rebind. Both inbound paths MUST take this decision from
   `src/channels/subscription-precedence.ts`.
 - A route whose forced session belongs to another agent MUST settle the
   Slack envelope without delivery instead of retrying it every reconcile.
