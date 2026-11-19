@@ -7,11 +7,14 @@ import {
   ensureRepoWatch,
   findExistingGhFollowTrigger,
   ghFollowFilter,
+  isSupersededGhFollowFilter,
   observeGhBashCommand,
   parseGhWatchIntent,
   resetGhWatchCaches,
+  supersededGhFollowFilters,
   tokenizeShellCommand,
 } from "./gh-watch.js";
+import { deriveLocalGitHubEvents, WORKFLOW_CONCLUSIONS_WITH_OUTCOME_EVENT } from "../watch/local-events.js";
 import { evaluateFilter, validateFilter } from "../triggers/filter.js";
 import { resolveDurableFollowOwner } from "../triggers/follow-owner.js";
 import type { Trigger, TriggerInput } from "../triggers/index.js";
@@ -585,6 +588,164 @@ describe("gh watch follow", () => {
   it("finds the existing trigger by name", () => {
     expect(findExistingGhFollowTrigger("o/r", 7, [trigger()])?.id).toBe("trig_1");
     expect(findExistingGhFollowTrigger("o/r", 8, [trigger()])).toBeUndefined();
+  });
+});
+
+describe("gh follow filter: which events wake the owner", () => {
+  const filter = ghFollowFilter("o/r", 7);
+  const hears = (event: unknown) => evaluateFilter(filter, event);
+
+  // The envelope the watch runner publishes: the event type sits beside the payload.
+  const event = (eventType: string, payload: Record<string, unknown> = {}) => ({
+    eventType,
+    payload: { repository: "o/r", number: 7, ...payload },
+  });
+  const run = (eventType: string, conclusion: string | null, name = "CI") =>
+    event(eventType, { runId: 1, name, status: "completed", conclusion, branch: "feat/x" });
+
+  const OUTCOMES: Array<[conclusion: string, outcomeEvent: string]> = [
+    ["success", "workflow_run.succeeded"],
+    ["failure", "workflow_run.failed"],
+    ["timed_out", "workflow_run.failed"],
+    ["startup_failure", "workflow_run.failed"],
+    ["cancelled", "workflow_run.cancelled"],
+  ];
+
+  it("hears each CI result once: the outcome event, not the completed event repeating it", () => {
+    for (const [conclusion, outcomeEvent] of OUTCOMES) {
+      expect(hears(run(outcomeEvent, conclusion))).toBe(true);
+      expect(hears(run("workflow_run.completed", conclusion))).toBe(false);
+    }
+  });
+
+  it("keeps workflow_run.completed when it is the only event the run produces", () => {
+    // action_required is a CI run waiting for approval: nothing else reports it.
+    for (const conclusion of ["action_required", "neutral", "skipped", "stale", null, "a_conclusion_added_later"]) {
+      expect(hears(run("workflow_run.completed", conclusion))).toBe(true);
+    }
+  });
+
+  it("drops the PR Description workflow, whatever its outcome", () => {
+    for (const [conclusion, outcomeEvent] of OUTCOMES) {
+      expect(hears(run(outcomeEvent, conclusion, "PR Description"))).toBe(false);
+      expect(hears(run("workflow_run.completed", conclusion, "PR Description"))).toBe(false);
+    }
+    expect(hears(run("workflow_run.completed", "action_required", "PR Description"))).toBe(false);
+    // Another workflow with a similar name is still CI.
+    expect(hears(run("workflow_run.failed", "failure", "PR Description Required Sections"))).toBe(true);
+  });
+
+  it("never drops a PR lifecycle or comment event, which carry no workflow name or conclusion", () => {
+    for (const eventType of [
+      "pull_request.opened",
+      "pull_request.synchronize",
+      "pull_request.ready_for_review",
+      "pull_request.converted_to_draft",
+      "pull_request.merged",
+      "pull_request.closed",
+      "pull_request_comment.created",
+    ]) {
+      expect(hears(event(eventType))).toBe(true);
+    }
+    // The Console delivers lifecycle with the number under pull_request and no event type at all.
+    expect(hears({ payload: { repository: "o/r", pull_request: { number: 7 } } })).toBe(true);
+  });
+
+  it("still listens only to that repository and PR", () => {
+    expect(hears(run("workflow_run.succeeded", "success"))).toBe(true);
+    expect(hears(event("workflow_run.succeeded", { number: 8, conclusion: "success", name: "CI" }))).toBe(false);
+    expect(hears(event("workflow_run.succeeded", { repository: "o/other", conclusion: "success", name: "CI" }))).toBe(
+      false,
+    );
+    expect(hears(event("pull_request_comment.created", { number: 8 }))).toBe(false);
+  });
+
+  it("negates an equality because a missing path makes every comparison false, `!=` included", () => {
+    // Why the exclusions read `!(x == y)`: `data.payload.name != "PR Description"` would be
+    // false for an event that has no payload.name and silently drop every lifecycle event.
+    const notEqual = `data.payload.name != "PR Description"`;
+    const negatedEqual = `!(data.payload.name == "PR Description")`;
+    const lifecycle = event("pull_request.synchronize");
+    expect(evaluateFilter(notEqual, lifecycle)).toBe(false);
+    expect(evaluateFilter(negatedEqual, lifecycle)).toBe(true);
+    expect(filter).not.toContain("!=");
+  });
+
+  describe("against what the watch derivation really emits", () => {
+    function derive(name: string, conclusion: string | null) {
+      const pullRequest = {
+        number: 7,
+        title: "t",
+        url: "https://github.com/o/r/pull/7",
+        draft: false,
+        headSha: "a",
+        headRefName: "feat/x",
+      };
+      const base = { version: 1 as const, pullRequests: { "7": pullRequest }, comments: {} };
+      const running = { id: 1, name, status: "in_progress", conclusion: null, branch: "feat/x" };
+      return deriveLocalGitHubEvents("o/r", {
+        previous: { ...base, workflowRuns: { "1": running } },
+        current: { ...base, workflowRuns: { "1": { ...running, status: "completed", conclusion } } },
+        departed: {},
+      }).events;
+    }
+
+    it("lets exactly one event of a finished run reach the follow, whatever its conclusion", () => {
+      const conclusions = [
+        "success",
+        "failure",
+        "timed_out",
+        "startup_failure",
+        "cancelled",
+        "action_required",
+        "neutral",
+        "skipped",
+        "stale",
+        null,
+      ];
+      for (const conclusion of conclusions) {
+        const events = derive("CI", conclusion);
+        // The derivation may emit the outcome event and `completed`, or `completed` alone.
+        expect(events.length).toBeGreaterThanOrEqual(1);
+        expect(events.filter((emitted) => hears(emitted))).toHaveLength(1);
+      }
+    });
+
+    it("lets nothing of a PR Description run reach the follow", () => {
+      for (const conclusion of ["success", "failure", "cancelled", "action_required", null]) {
+        expect(derive("PR Description", conclusion).filter((emitted) => hears(emitted))).toEqual([]);
+      }
+    });
+
+    it("drops the repeat for exactly the conclusions that have their own event", () => {
+      expect([...WORKFLOW_CONCLUSIONS_WITH_OUTCOME_EVENT].sort()).toEqual(
+        OUTCOMES.map(([conclusion]) => conclusion).sort(),
+      );
+    });
+  });
+});
+
+describe("gh follow filter generations", () => {
+  // The literal an earlier release wrote: it listened to the PR and nothing else.
+  const GENERATION_1 = `data.payload.repository == "o/r" && (data.payload.number == "7" || data.payload.pull_request.number == "7")`;
+
+  it("recognises the filter the previous release generated, and only that", () => {
+    expect(supersededGhFollowFilters("o/r", 7)).toEqual([GENERATION_1]);
+    expect(isSupersededGhFollowFilter(GENERATION_1, "o/r", 7)).toBe(true);
+    expect(isSupersededGhFollowFilter(`  ${GENERATION_1}\n`, "o/r", 7)).toBe(true);
+  });
+
+  it("does not take the current filter, a customised one, or another PR's for superseded", () => {
+    expect(isSupersededGhFollowFilter(ghFollowFilter("o/r", 7), "o/r", 7)).toBe(false);
+    expect(isSupersededGhFollowFilter(`data.payload.repository == "o/r"`, "o/r", 7)).toBe(false);
+    expect(isSupersededGhFollowFilter(GENERATION_1, "o/r", 8)).toBe(false);
+    expect(isSupersededGhFollowFilter(GENERATION_1, "o/other", 7)).toBe(false);
+    expect(isSupersededGhFollowFilter(undefined, "o/r", 7)).toBe(false);
+    expect(isSupersededGhFollowFilter("", "o/r", 7)).toBe(false);
+  });
+
+  it("keeps the previous filter a valid one, so a follow that still carries it keeps working until repaired", () => {
+    expect(validateFilter(GENERATION_1)).toEqual({ ok: true });
   });
 });
 

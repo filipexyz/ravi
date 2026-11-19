@@ -65,6 +65,7 @@ Trigger filters are the deterministic pre-agent predicate for event payloads. Th
 - A trigger whose `agentId` does not resolve to an agent row MUST report `unbound_agent`. The runner MUST NOT subscribe it and MUST NOT create a session under `/tmp/ravi-<agentId>`.
 - Fixing or clearing an invalid filter MUST activate the trigger on the next `ravi.triggers.refresh` without a daemon restart.
 - Code that generates trigger filters programmatically (for example `gh` PR follow, bug follow, page comment follow, watch triggers) MUST emit filters that pass `validateFilter`.
+- A comparison on a path the event does not carry MUST evaluate to false for every operator, `!=` included. A filter that excludes events MUST negate an equality (`!(path == value)`); `path != value` also excludes every event that lacks the path.
 
 ## Trigger Owner
 
@@ -122,6 +123,12 @@ A trigger is owned by the turn that created it. The owner decides who the trigge
 - Manual Git Data API publication MUST explicitly ensure/register its follow: raw API calls alone do not pass through the `gh pr create` observer. Completion MUST verify ready state, active follow and durable reply owner.
 - For `ravi pr publish`, completion verification and partial-result recovery are governed by [the canonical publication contract](../../cli/pr/SPEC.md#verified-pr-publication) and its [recovery runbook](../../cli/pr/RUNBOOK.md); the manual-publication follow-registration step above does not apply.
 - API publication MUST validate the publisher's durable thread lineage before any GitHub mutation. Missing/ambiguous lineage MUST NOT create or promote a PR, register a follow at the child, or manufacture a parent from source metadata. Registration MUST resolve the original publisher again after GitHub I/O so closure/pruning during publication still hands off to the saved parent. Publication tests MUST exercise real isolated lifecycle state and CI delivery after child closure/pruning.
+
+## PR follow event selection
+
+- A generated `gh-follow` MUST wake its owner once for each finished CI run: the outcome event (`workflow_run.succeeded`, `failed`, `cancelled`) is delivered and the `workflow_run.completed` the watch derivation emits beside it is not. A `workflow_run.completed` that is the only event of its run (`action_required`, `neutral`, `skipped`, `stale`, no conclusion) MUST still be delivered.
+- A generated `gh-follow` MUST NOT deliver any run of the `PR Description` workflow, and MUST deliver every PR lifecycle event and PR comment of its PR.
+- A change to the generated filter MUST reach follows that already exist. Maintenance MUST rewrite a follow's filter when it equals, exactly, one an earlier release generated for that PR, and MUST leave any other valid filter alone.
 
 ## Reply account and channel
 

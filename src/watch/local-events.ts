@@ -134,6 +134,20 @@ const WORKFLOW_OUTCOME_EVENTS: Record<string, string> = {
   stale: "workflow_run.completed",
 };
 
+/**
+ * Conclusions whose run already has its own outcome event (`succeeded`, `failed`,
+ * `cancelled`). For these the derivation emits `workflow_run.completed` as well, so
+ * a consumer that listens to both hears the same run twice. For every other
+ * conclusion (`action_required`, `neutral`, `skipped`, `stale`, none) `completed`
+ * is the only event the run produces.
+ *
+ * Read from the map above so a consumer that drops the repeat cannot drift from
+ * what the derivation emits.
+ */
+export const WORKFLOW_CONCLUSIONS_WITH_OUTCOME_EVENT: readonly string[] = Object.entries(WORKFLOW_OUTCOME_EVENTS)
+  .filter(([, eventType]) => eventType !== "workflow_run.completed")
+  .map(([conclusion]) => conclusion);
+
 function pullRequestPayload(repo: string, pr: LocalPullRequestState): Record<string, unknown> {
   return {
     repository: repo,
