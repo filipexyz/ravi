@@ -19,5 +19,7 @@
   contact. Tag the right contact and check the identity link.
 - Nothing is held and colleagues still reach the shared session: no contact is
   tagged `permission-owner`, so the guard is off (fail-open). Tag the owner.
+  `ravi doctor --domain permissions` reports it as `permissions.owner_contact`
+  and also warns when more than one contact carries the tag.
 - To trace a held omni DM: `ravi sessions trace` shows `route.rejected` with
   `dm_owner_session_non_owner`.
