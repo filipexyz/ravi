@@ -16,7 +16,11 @@ import {
   shouldQueuePromptOnLiveSession,
   stashPromptForStartingSession,
 } from "./session-dispatcher.js";
-import { createQueuedRuntimeUserMessage, createRuntimeMessageGenerator } from "./delivery-queue.js";
+import {
+  createQueuedRuntimeUserMessage,
+  createRuntimeMessageGenerator,
+  getDeliverableRuntimeMessages,
+} from "./delivery-queue.js";
 import { KNOWLEDGE_AUDIENCE_LINES } from "../knowledge/turn/preamble.js";
 import { RuntimeHostSubscriptions } from "./host-subscriptions.js";
 import { stashPendingRuntimeMessages, type RuntimeUserMessage } from "./host-session.js";
@@ -26,6 +30,7 @@ import type { PendingRuntimeSessionStart } from "./session-launcher.js";
 import {
   deleteSession,
   getOrCreateSession,
+  getSession,
   getSessionByName,
   setSessionEphemeral,
   updateSessionRuntimeProviderOverride,
@@ -34,6 +39,7 @@ import {
 } from "../router/sessions.js";
 import {
   dbCreateAgent,
+  dbUpsertChat,
   dbUpdateAgent,
   dbGetDaemonRestartPendingMessages,
   dbGetDaemonRestartResumeDelivery,
@@ -58,6 +64,8 @@ import {
 } from "../tasks/task-db.js";
 import { buildChannelTurnOrigin, buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import { finalizeSlackThreadCreation, sendSlackThreadMessage } from "../channels/slack/thread-lifecycle.js";
+import { createSlackThreadLifecycle, markSlackThreadRootDelivered } from "../channels/slack/thread-lifecycle-store.js";
 import {
   buildDaemonRestartNoticePrompt,
   buildDaemonRestartResumePrompt,
@@ -3589,6 +3597,109 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       expect(activeSession.queryHandle.provider).toBe("codex");
       expect(activeSession.currentTurnSuperseded).not.toBe(true);
       expect(activeSession.interrupted).not.toBe(true);
+      expect(interrupt).not.toHaveBeenCalled();
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("holds a parent's thread-send behind the thread's live turn and releases it only when the turn ends", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-thread-send-");
+    try {
+      // A real Slack thread owned by a channel-root session, as `ravi sessions thread-send` finds it.
+      const requestId = "slack-thread:req-1";
+      const threadTs = "1713000000.000100";
+      getOrCreateSession("ravi-parent", "main", stateDir, { name: "ravi-parent", chatType: "channel" });
+      const rootChat = dbUpsertChat({
+        channel: "slack",
+        instanceId: "slack-instance-1",
+        platformChatId: "C123",
+        chatType: "channel",
+        title: "C123",
+      });
+      createSlackThreadLifecycle({
+        requestId,
+        parentSessionKey: "ravi-parent",
+        parentSessionName: "ravi-parent",
+        initiatorSessionKey: "ravi-parent",
+        initiatorSessionName: "ravi-parent",
+        accountId: "ravi-slack",
+        instanceId: "slack-instance-1",
+        platformChatId: "C123",
+        rootCanonicalChatId: rootChat.id,
+        initialPrompt: "Investigate the branch",
+      });
+      markSlackThreadRootDelivered({ requestId, providerThreadId: threadTs, canonicalRootMessageId: "cm_root" });
+      const published: Array<{ sessionName: string; payload: RuntimeLaunchPrompt }> = [];
+      const dependencies = {
+        publishPrompt: async (sessionName: string, payload: Record<string, unknown>) => {
+          published.push({ sessionName, payload: payload as unknown as RuntimeLaunchPrompt });
+        },
+        publishEvent: async () => {},
+      };
+      await finalizeSlackThreadCreation(requestId, dependencies);
+      const parent = getSession("ravi-parent")!;
+      const child = getSession(`ravi-parent:thread:${threadTs}`)!;
+      const childName = child.name!;
+      published.length = 0;
+
+      await sendSlackThreadMessage(
+        { parentSession: parent, ref: childName, message: "Also check the release branch" },
+        dependencies,
+      );
+      await sendSlackThreadMessage(
+        { parentSession: parent, ref: childName, message: "Steer now", deliveryBarrier: "after_tool" },
+        dependencies,
+      );
+      await sendSlackThreadMessage(
+        { parentSession: parent, ref: childName, message: "Stop now", deliveryBarrier: "immediate_interrupt" },
+        dependencies,
+      );
+      const [queued, steered, interrupting] = published.map((entry) => ({
+        ...entry.payload,
+        _agentId: child.agentId,
+      }));
+      expect(published.every((entry) => entry.sessionName === childName)).toBe(true);
+
+      // The thread is mid-turn, generating its answer.
+      const interrupt = mock(async () => {});
+      const dispatcher = createDispatcher(2);
+      const working = createActiveSession({
+        agentId: child.agentId,
+        turnActive: true,
+        queryHandle: { provider: "claude", events: (async function* () {})(), interrupt },
+      });
+      dispatcher.streamingSessions.set(childName, working);
+
+      // Only the explicit choices take the turn away; the default queues behind it.
+      expect(shouldQueuePromptOnLiveSession(childName, working, queued!, child.agentId)).toBe(true);
+      expect(shouldQueuePromptOnLiveSession(childName, working, steered!, child.agentId)).toBe(false);
+      expect(shouldQueuePromptOnLiveSession(childName, working, interrupting!, child.agentId)).toBe(false);
+
+      await dispatcher.handlePromptImmediate(childName, queued!);
+
+      // The turn survives: nothing aborted, nothing superseded, the instruction is queued behind it.
+      expect(interrupt).not.toHaveBeenCalled();
+      expect(working.interrupted).not.toBe(true);
+      expect(working.currentTurnSuperseded).not.toBe(true);
+      expect(dispatcher.streamingSessions.get(childName)).toBe(working);
+      expect(working.pendingMessages).toHaveLength(1);
+      expect(working.pendingMessages[0]?.deliveryBarrier).toBe("after_response");
+
+      // It is not handed to the provider while the thread generates text or runs a tool, however long.
+      expect(getDeliverableRuntimeMessages(childName, working)).toEqual([]);
+      working.toolRunning = true;
+      working.currentToolName = "bash";
+      working.toolStartTime = Date.now() - 10 * 60_000;
+      expect(getDeliverableRuntimeMessages(childName, working)).toEqual([]);
+
+      // The turn ends: the very same instruction is delivered next, as the thread's own Execute prompt.
+      working.toolRunning = false;
+      working.currentToolName = undefined;
+      working.turnActive = false;
+      expect(getDeliverableRuntimeMessages(childName, working).map((message) => message.launchPrompt?.prompt)).toEqual([
+        "[System] Execute: [from: ravi-parent] Also check the release branch",
+      ]);
       expect(interrupt).not.toHaveBeenCalled();
     } finally {
       await cleanupIsolatedRaviState(stateDir);

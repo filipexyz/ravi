@@ -8112,7 +8112,10 @@ export class RaviClient {
     },
     /** Send new instructions to one of this session's Slack threads */
     threadSend: async (thread: string, message: string, options?: {
+      barrier?: string;
+      immediate?: boolean;
       session?: string;
+      steer?: boolean;
     }): Promise<SessionsThreadSendReturn> => {
       return this.transport.call({
         groupSegments: ["sessions"],

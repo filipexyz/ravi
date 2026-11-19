@@ -28,7 +28,9 @@ import {
   slackThreadTitle,
   summarizeSlackThreadRuntime,
   reconcileSlackThreadLifecycle,
+  THREAD_SEND_DEFAULT_DELIVERY_BARRIER,
 } from "./thread-lifecycle.js";
+import type { DeliveryBarrier, DeliveryBarrierSource } from "../../delivery-barriers.js";
 import {
   claimSlackThreadCreation,
   completeSlackThreadCreation,
@@ -957,7 +959,8 @@ describe("Slack thread orchestration", () => {
     expect(prompts[0]!.payload).toMatchObject({
       prompt: "[System] Execute: [from: ravi-parent] Also check the release branch",
       source: { chatId: "C123", threadId: fixture.threadTs, actorType: "agent", actorAgentId: "ravi" },
-      deliveryBarrier: "after_tool",
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
       _slackThreadLifecycle: { eventType: "thread.message", reopened: true },
       _turnOrigin: {
         producer: "session-relay",
@@ -978,6 +981,32 @@ describe("Slack thread orchestration", () => {
     await expect(
       sendSlackThreadMessage({ parentSession: parent, ref: "unknown-thread", message: "Hi" }, dependencies),
     ).rejects.toThrow("Slack thread not found for this session: unknown-thread");
+  });
+
+  it("queues a thread-send behind the thread's turn unless the parent asks to steer or interrupt it", async () => {
+    const fixture = seedPendingCreation();
+    const { prompts, dependencies } = capture();
+    await finalizeSlackThreadCreation(fixture.requestId, dependencies);
+    const parent = getSession("ravi-parent")!;
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+    prompts.length = 0;
+
+    const send = (
+      message: string,
+      choice: { deliveryBarrier?: DeliveryBarrier; deliveryBarrierSource?: DeliveryBarrierSource } = {},
+    ) => sendSlackThreadMessage({ parentSession: parent, ref: child.name!, message, ...choice }, dependencies);
+    await send("no choice");
+    await send("the CLI default", { deliveryBarrier: "after_response", deliveryBarrierSource: "default" });
+    await send("steer", { deliveryBarrier: "after_tool" });
+    await send("interrupt", { deliveryBarrier: "immediate_interrupt", deliveryBarrierSource: "explicit" });
+
+    expect(THREAD_SEND_DEFAULT_DELIVERY_BARRIER).toBe("after_response");
+    expect(prompts.map((prompt) => [prompt.payload.deliveryBarrier, prompt.payload.deliveryBarrierSource])).toEqual([
+      ["after_response", "default"],
+      ["after_response", "default"],
+      ["after_tool", "explicit"],
+      ["immediate_interrupt", "explicit"],
+    ]);
   });
 
   it("updates the thread's root card on report, close and reopen", async () => {

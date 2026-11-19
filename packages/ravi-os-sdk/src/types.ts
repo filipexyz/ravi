@@ -21241,8 +21241,11 @@ export type SessionsThreadConfigureReturn = {
 
 /** Input shape for `sessions.thread-send`. */
 export type SessionsThreadSendInput = {
+  barrier?: string;
+  immediate?: boolean;
   message: string;
   session?: string;
+  steer?: boolean;
   thread: string;
 };
 

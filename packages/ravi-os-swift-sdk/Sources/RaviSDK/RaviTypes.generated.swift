@@ -29849,19 +29849,37 @@ public struct SessionsThreadConfigureReturn: Codable, Sendable {
 }
 
 public struct SessionsThreadSendOptions: Codable, Sendable {
+  public var barrier: String?
+  public var immediate: Bool?
   public var session: String?
+  public var steer: Bool?
 
-  public init(session: String? = nil) {
+  public init(barrier: String? = nil, immediate: Bool? = nil, session: String? = nil, steer: Bool? = nil) {
+    self.barrier = barrier
+    self.immediate = immediate
     self.session = session
+    self.steer = steer
   }
 
   enum CodingKeys: String, CodingKey {
+    case barrier = "barrier"
+    case immediate = "immediate"
     case session = "session"
+    case steer = "steer"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.barrier {
+      body["barrier"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.immediate {
+      body["immediate"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.session {
       body["session"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.steer {
+      body["steer"] = try RaviJSON.fromEncodable(value)
     }
   }
 }

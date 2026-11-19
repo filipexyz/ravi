@@ -110756,6 +110756,14 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "barrier": {
+        "description": "Delivery barrier: followup|steer|p0|p1|p2|p3 (default followup: queued behind the thread's current turn)",
+        "type": "string"
+      },
+      "immediate": {
+        "description": "Interrupt the thread's active turn now instead of queueing behind it",
+        "type": "boolean"
+      },
       "message": {
         "description": "Instructions for the thread session",
         "type": "string"
@@ -110763,6 +110771,10 @@ public enum RaviSchemas {
       "session": {
         "description": "Explicit owning session (defaults to current session)",
         "type": "string"
+      },
+      "steer": {
+        "description": "Steer the thread's active turn after a safe tool barrier (a long turn may be aborted)",
+        "type": "boolean"
       },
       "thread": {
         "description": "Thread session name, request id or Slack thread ts (see ravi sessions threads)",

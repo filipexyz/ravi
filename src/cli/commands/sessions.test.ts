@@ -75,6 +75,8 @@ const sentSlackThreadMessages: Array<{
   ref: string;
   message: string;
   origin?: unknown;
+  deliveryBarrier?: string;
+  deliveryBarrierSource?: string;
 }> = [];
 const configuredSlackThreadCalls: Array<{
   parentSession: Record<string, unknown>;
@@ -301,6 +303,8 @@ mock.module("../../channels/slack/thread-lifecycle.js", () => ({
     ref: string;
     message: string;
     origin?: unknown;
+    deliveryBarrier?: string;
+    deliveryBarrierSource?: string;
   }) => {
     sentSlackThreadMessages.push(input);
     if (sendSlackThreadError !== null) throw sendSlackThreadError;
@@ -2700,6 +2704,7 @@ describe("SessionCommands attach hints", () => {
       messageId: "slack-thread-send:slack-thread:req-1:m1",
       reopened: true,
       thread: fakeSlackThreadSummary,
+      delivery: { barrier: "after_response", barrierSource: "default" },
     });
     expect(sentSlackThreadMessages).toEqual([
       {
@@ -2707,12 +2712,64 @@ describe("SessionCommands attach hints", () => {
         ref: "dev-slack-t-1713000000000100",
         message: "Also check the release branch",
         origin: toolContext,
+        deliveryBarrier: "after_response",
+        deliveryBarrierSource: "default",
       },
     ]);
 
     await expect(new SessionCommands().threadSend("missing", "Hi", undefined, true)).rejects.toThrow(
       "Slack thread not found for this session: missing",
     );
+  });
+
+  it("queues thread-send behind the thread's turn by default and steers or interrupts only on request", async () => {
+    const rootKey = "agent:dev:slack:ravi-slack:C123";
+    resolvedSession = { sessionKey: rootKey, name: "dev-slack", agentId: "dev", agentCwd: "/tmp/dev" };
+    toolContext = { sessionKey: rootKey, sessionName: "dev-slack" };
+    const threadRef = "dev-slack-t-1713000000000100";
+    const send = (...extra: [barrier?: string, steer?: boolean, immediate?: boolean]) =>
+      new SessionCommands().threadSend(threadRef, "next step", undefined, true, ...extra) as Promise<
+        Record<string, any>
+      >;
+
+    expect((await send()).delivery).toEqual({ barrier: "after_response", barrierSource: "default" });
+    expect((await send("steer")).delivery).toEqual({ barrier: "after_tool", barrierSource: "explicit" });
+    expect((await send(undefined, true)).delivery).toEqual({ barrier: "after_tool", barrierSource: "explicit" });
+    expect((await send(undefined, false, true)).delivery).toEqual({
+      barrier: "immediate_interrupt",
+      barrierSource: "explicit",
+    });
+    expect((await send("p3")).delivery).toEqual({ barrier: "after_task", barrierSource: "explicit" });
+
+    expect(sentSlackThreadMessages.map((sent) => [sent.deliveryBarrier, sent.deliveryBarrierSource])).toEqual([
+      ["after_response", "default"],
+      ["after_tool", "explicit"],
+      ["after_tool", "explicit"],
+      ["immediate_interrupt", "explicit"],
+      ["after_task", "explicit"],
+    ]);
+  });
+
+  it("rejects conflicting or unknown thread-send barriers as USAGE_ERROR before any lifecycle call", async () => {
+    const rootKey = "agent:dev:slack:ravi-slack:C123";
+    resolvedSession = { sessionKey: rootKey, name: "dev-slack", agentId: "dev", agentCwd: "/tmp/dev" };
+    toolContext = { sessionKey: rootKey, sessionName: "dev-slack" };
+    const threadRef = "dev-slack-t-1713000000000100";
+
+    await expect(
+      new SessionCommands().threadSend(threadRef, "next step", undefined, true, undefined, true, true),
+    ).rejects.toMatchObject({
+      name: "ContractError",
+      code: "USAGE_ERROR",
+      message: "--immediate cannot be combined with --steer.",
+    });
+    await expect(
+      new SessionCommands().threadSend(threadRef, "next step", undefined, true, "whenever"),
+    ).rejects.toMatchObject({
+      name: "ContractError",
+      code: "USAGE_ERROR",
+    });
+    expect(sentSlackThreadMessages).toEqual([]);
   });
 
   it("queues Slack edits and deletes durably without claiming provider success", async () => {
@@ -3152,7 +3209,14 @@ describe("SessionCommands Slack thread error contract", () => {
       sendSlackThreadError,
     );
     expect(sentSlackThreadMessages).toEqual([
-      { parentSession: parent, ref: childName, message: "\n", origin: toolContext },
+      {
+        parentSession: parent,
+        ref: childName,
+        message: "\n",
+        origin: toolContext,
+        deliveryBarrier: "after_response",
+        deliveryBarrierSource: "default",
+      },
     ]);
   });
 });

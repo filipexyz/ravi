@@ -25470,13 +25470,25 @@ class SessionsThreadConfigureReturn {
 SessionsThreadConfigureReturn sessionsThreadConfigureReturnFromJson(Object? json) => SessionsThreadConfigureReturn.fromJsonValue(json);
 
 class SessionsThreadSendOptions {
-  const SessionsThreadSendOptions({this.session});
+  const SessionsThreadSendOptions({this.barrier, this.immediate, this.session, this.steer});
 
+  final String? barrier;
+  final bool? immediate;
   final String? session;
+  final bool? steer;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (barrier != null) {
+      into["barrier"] = RaviJson.from(barrier);
+    }
+    if (immediate != null) {
+      into["immediate"] = RaviJson.from(immediate);
+    }
     if (session != null) {
       into["session"] = RaviJson.from(session);
+    }
+    if (steer != null) {
+      into["steer"] = RaviJson.from(steer);
     }
   }
 }
