@@ -265,21 +265,27 @@ CLI publico, `ravi <provedor> <operacao>`, com a chave do proprio contexto-filho
   declara no dele (entradas explicitas, sem curinga). O contexto do provedor
   nasce do contexto do consumidor, entao a autoridade so estreita: provedor
   dentro do consumidor, consumidor dentro de quem invocou. O consumidor recebe
-  `use app:<provedor>` e o acesso a `apps run` do invocador sem declarar.
-  Invocador que so tem o grupo legado `execute:group:apps` nao leva consumidor
-  composto.
+  `use app:<provedor>` e o acesso a `apps run` do invocador sem declarar, e
+  tambem `execute app:<provedor>` quando um servico requerido oferece uma
+  operacao mutante: o invocador precisa ter esse `execute` (e o `apps run`), ou
+  o consumidor nem sobe. Invocador que so tem o grupo legado
+  `execute:group:apps` nao leva consumidor composto.
 - Antes de subir qualquer processo, o router recusa o app cujo provedor nao
   serve: `APP_DEPENDENCY_UNAVAILABLE`, com o motivo `not_installed`, `invalid`,
   `not_provided`, `version_mismatch` ou `insufficient_authority` (o provedor
   pede mais do que o consumidor declara; a lista do que falta vem junto).
   Quando o provedor volta, o app roda de novo sem mudar. `ravi <app-id> check
   --json` mostra o mesmo motivo como aviso.
-- App que chama uma operacao fora de `provides`, ou de um servico que nao
-  declarou em `requires`, recebe `APP_OPERATION_NOT_PROVIDED`. Vale tambem para
-  credencial que o app derivou para si e para linhagem que nao se consegue
-  seguir ate a raiz. Quem chama direto (turno, agente, operador) continua
-  valendo por `use app:<id>`: `provides` e o que os apps podem chamar uns dos
-  outros, nao uma segunda permissao para quem ja tem o app.
+- Quando o app chamado oferece servicos, o app que chama uma operacao fora de
+  `provides`, ou de um servico que nao declarou em `requires`, recebe
+  `APP_OPERATION_NOT_PROVIDED`. Vale tambem para credencial que o app derivou
+  para si e para linhagem que nao se consegue seguir ate a raiz. Quem chama
+  direto (turno, agente, operador) continua valendo por `use app:<id>` (e
+  `execute app:<id>` nas operacoes mutantes): `provides` e o que os apps podem
+  chamar uns dos outros, nao uma segunda permissao para quem ja tem o app. App
+  chamado que nao declara `provides` mantem a regra de antes: quem tem
+  `use app:<id>` (e `execute app:<id>` nas mutantes) o chama, com ou sem
+  `requires`.
 - Ciclo de `requires` e erro de validacao (`requires cycle: a -> b -> a.`).
   Provedor que nao esta instalado ainda nao invalida o consumidor: vira aviso,
   e quem barra e a execucao.
