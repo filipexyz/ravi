@@ -117,7 +117,8 @@ export function discoverAppManifests(options: RaviAppListOptions = {}): RaviAppM
     .sort((left, right) => left.id.localeCompare(right.id) || left.path.localeCompare(right.path));
   const records = options.source ? everything.filter((record) => record.source === options.source) : everything;
 
-  markDuplicateIds(records);
+  // Over every source too: an id declared in another source is a conflict whichever source a listing shows.
+  markDuplicateIds(everything);
   // Composition is a property of the set, not of one file: a circle of `requires` and a missing provider only show
   // once every manifest is known. Cycles first, because they decide which providers are still valid.
   markCompositionCycles(everything);

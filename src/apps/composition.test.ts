@@ -5,8 +5,8 @@ import { join } from "node:path";
 import type { ContextRecord } from "../router/router-db.js";
 import {
   RaviAppCompositionError,
-  appCallerOf,
   assertOperationProvided,
+  callerOf,
   composedContextAllow,
   declaresProvides,
   declaresRequires,
@@ -378,6 +378,27 @@ describe("discovery filtered by source", () => {
   });
 });
 
+describe("duplicate ids across sources", () => {
+  it("are flagged the same way whichever source a listing shows", () => {
+    const root = makeRepo();
+    writeApp(root, appManifest("md-render", { provides: provides("md-render") }));
+    const stateDir = join(process.env.RAVI_STATE_DIR as string, "apps", "md-render");
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(join(stateDir, "ravi.app.json"), JSON.stringify(appManifest("md-render"), null, 2));
+
+    const everything = discoverAppManifests();
+    expect(everything.filter((record) => !record.valid)).toHaveLength(1);
+    const flagged = everything.find((record) => !record.valid);
+    expect(flagged?.errors.join("\n")).toContain('Duplicate app id "md-render"');
+    for (const source of ["repo", "state"] as const) {
+      const shown = discoverAppManifests({ source });
+      expect(shown).toHaveLength(1);
+      // The record is the same one, with the same verdict, as in the listing of every source.
+      expect(shown[0]?.valid).toBe(shown[0]?.path === flagged?.path ? false : true);
+    }
+  });
+});
+
 describe("what a composed app may ask for", () => {
   function setup(root: string): Map<string, RaviAppManifestRecord> {
     // Each app declares what the apps it requires declare, because it delegates that to them.
@@ -575,12 +596,15 @@ describe("calls from one app to another", () => {
   }
 
   it("names the app only for a context the app router issued for an app", () => {
-    expect(appCallerOf(context({}))).toBe("blog");
-    expect(appCallerOf(undefined)).toBeNull();
-    expect(appCallerOf(context({ kind: "turn-runtime" }))).toBeNull();
-    expect(appCallerOf(context({ metadata: { appId: "blog" } }))).toBeNull();
-    expect(appCallerOf(context({ metadata: { source: "app-router" } }))).toBeNull();
-    expect(appCallerOf(context({ metadata: { appId: 7, source: "app-router" } }))).toBeNull();
+    expect(callerOf(context({}))).toEqual({ kind: "app", appId: "blog" });
+    // No context at all is the operator's own terminal: nobody to mediate.
+    expect(callerOf(undefined)).toEqual({ kind: "direct" });
+    // A turn, or an agent: a root, with no app on the way.
+    expect(callerOf(context({ kind: "turn-runtime", metadata: {} }))).toEqual({ kind: "direct" });
+    // A context that claims to be an app's and does not name one is an app we cannot name, not a turn.
+    expect(callerOf(context({ metadata: { appId: "blog" } }))).toEqual({ kind: "unknown" });
+    expect(callerOf(context({ metadata: { source: "app-router" } }))).toEqual({ kind: "unknown" });
+    expect(callerOf(context({ metadata: { appId: 7, source: "app-router" } }))).toEqual({ kind: "unknown" });
   });
 
   it("follows the lineage: a credential an app derived for itself is still the app's", () => {
@@ -599,10 +623,10 @@ describe("calls from one app to another", () => {
     const known = new Map([app, derived, grandchild, turn].map((record) => [record.contextId, record]));
     const parentOf = (id: string) => known.get(id) ?? null;
 
-    expect(appCallerOf(derived, parentOf)).toBe("blog");
-    expect(appCallerOf(grandchild, parentOf)).toBe("blog");
-    // Without a way to read the lineage only the context itself is looked at.
-    expect(appCallerOf(derived)).toBeNull();
+    expect(callerOf(derived, parentOf)).toEqual({ kind: "app", appId: "blog" });
+    expect(callerOf(grandchild, parentOf)).toEqual({ kind: "app", appId: "blog" });
+    // Without a way to read the lineage, a context that has a parent cannot be placed.
+    expect(callerOf(derived)).toEqual({ kind: "unknown" });
     // The nearest app wins: a provider's derived credential is the provider's.
     const provider = context({
       contextId: "ctx_provider",
@@ -614,28 +638,54 @@ describe("calls from one app to another", () => {
       metadata: { parentContextId: "ctx_provider" },
     });
     known.set(provider.contextId, provider);
-    expect(appCallerOf(providerDerived, parentOf)).toBe("md-render");
+    expect(callerOf(providerDerived, parentOf)).toEqual({ kind: "app", appId: "md-render" });
     // A turn, and a credential derived from a turn, are not apps.
-    expect(appCallerOf(turn, parentOf)).toBeNull();
+    expect(callerOf(turn, parentOf)).toEqual({ kind: "direct" });
     const fromTurn = context({
       contextId: "ctx_from_turn",
       kind: "cli-runtime",
       metadata: { parentContextId: "ctx_turn" },
     });
-    expect(appCallerOf(fromTurn, parentOf)).toBeNull();
+    expect(callerOf(fromTurn, parentOf)).toEqual({ kind: "direct" });
   });
 
-  it("stops at a circle in the lineage and at a parent that is gone", () => {
+  it("has no depth at which a chain of derived credentials stops being the app's", () => {
+    const records = new Map<string, ContextRecord>();
+    records.set("ctx_0", context({ contextId: "ctx_0", metadata: { appId: "blog", source: "app-router" } }));
+    for (let depth = 1; depth <= 200; depth++) {
+      records.set(
+        `ctx_${depth}`,
+        context({
+          contextId: `ctx_${depth}`,
+          kind: "cli-runtime",
+          metadata: { parentContextId: `ctx_${depth - 1}`, issuedFor: "derived" },
+        }),
+      );
+    }
+    const parentOf = (id: string) => records.get(id) ?? null;
+    for (const depth of [1, 15, 16, 17, 64, 200]) {
+      expect(callerOf(records.get(`ctx_${depth}`), parentOf)).toEqual({ kind: "app", appId: "blog" });
+    }
+    // And the same chain on a turn is a turn at any depth.
+    records.set("ctx_0", context({ contextId: "ctx_0", kind: "agent-runtime", metadata: {} }));
+    expect(callerOf(records.get("ctx_200"), parentOf)).toEqual({ kind: "direct" });
+  });
+
+  it("is unknown, never direct, when the lineage cannot be followed to a root", () => {
     const loopA = context({ contextId: "ctx_a", kind: "cli-runtime", metadata: { parentContextId: "ctx_b" } });
     const loopB = context({ contextId: "ctx_b", kind: "cli-runtime", metadata: { parentContextId: "ctx_a" } });
     const known = new Map([loopA, loopB].map((record) => [record.contextId, record]));
-    expect(appCallerOf(loopA, (id) => known.get(id))).toBeNull();
+    expect(callerOf(loopA, (id) => known.get(id))).toEqual({ kind: "unknown" });
     const orphan = context({
       contextId: "ctx_orphan",
       kind: "cli-runtime",
       metadata: { parentContextId: "ctx_missing" },
     });
-    expect(appCallerOf(orphan, () => null)).toBeNull();
+    expect(callerOf(orphan, () => null)).toEqual({ kind: "unknown" });
+    expect(callerOf(orphan, () => undefined)).toEqual({ kind: "unknown" });
+    // A parent that is gone halfway up a chain that would have reached an app: still unknown.
+    const child = context({ contextId: "ctx_child", kind: "cli-runtime", metadata: { parentContextId: "ctx_orphan" } });
+    expect(callerOf(child, (id) => (id === "ctx_orphan" ? orphan : null))).toEqual({ kind: "unknown" });
   });
 
   function setup(root: string): RaviAppManifestRecord[] {

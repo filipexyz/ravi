@@ -40,7 +40,7 @@ import { enforceRaviAppRunResult } from "./error-contract.js";
 import { maskedSecretForms, projectAppCliFailure } from "./failure.js";
 import {
   RaviAppCompositionError,
-  appCallerOf,
+  callerOf,
   assertOperationProvided,
   composedContextAllow,
   declaresProvides,
@@ -463,8 +463,9 @@ function lazyManifests(options: { cwd?: string; env?: NodeJS.ProcessEnv }): () =
 
 /**
  * When the caller is a process another app's operation launched (or a credential that process derived), and this app
- * offers services, the call must go through one of them. An app that offers nothing keeps the earlier rule: whatever
- * the caller's `use:app:<id>` capability lets it do.
+ * offers services, the call must go through one of them. A caller whose lineage cannot be followed to its origin is
+ * refused too: it could be an app, and nothing says it is not. An app that offers nothing keeps the earlier rule:
+ * whatever the caller's `use:app:<id>` capability lets it do.
  */
 function assertCallerMayCall(
   app: RaviAppManifestRecord,
@@ -473,9 +474,17 @@ function assertCallerMayCall(
   records: () => RaviAppManifestRecord[],
 ): { service: string; callerAppId: string } | null {
   if (!declaresProvides(app.manifest)) return null;
-  const callerAppId = appCallerOf(callerContext, dbGetContext);
-  if (!callerAppId || callerAppId === (app.manifest?.id ?? app.id)) return null;
-  return { ...assertOperationProvided(app, operationId, callerAppId, records()), callerAppId };
+  const calleeId = app.manifest?.id ?? app.id;
+  const caller = callerOf(callerContext, dbGetContext);
+  if (caller.kind === "direct") return null;
+  if (caller.kind === "unknown") {
+    throw new RaviAppCompositionError(
+      "APP_OPERATION_NOT_PROVIDED",
+      `${operationId} on ${calleeId}, which offers services, was called by a context whose lineage cannot be followed to its origin.`,
+    );
+  }
+  if (caller.appId === calleeId) return null;
+  return { ...assertOperationProvided(app, operationId, caller.appId, records()), callerAppId: caller.appId };
 }
 
 /**
@@ -509,18 +518,13 @@ function planComposition(
 }
 
 /**
- * What `apps run` is asked for at the gateway (spec `cli/command-access`: the semantic capability, its wildcards, and
- * the legacy command-group forms). A composed app reaches its providers through the public CLI, which becomes
- * `apps run`, so its credential carries the form its invoker holds. An invoker that holds none gets the semantic one
- * named, and the child context is refused, because the invoker could not have run an app through the gateway either.
+ * What `apps run` is asked for at the gateway, in the forms that are about `run` and nothing else. A composed app
+ * reaches its providers through the public CLI, which becomes `apps run`, so its credential carries the form its
+ * invoker holds. The wider forms that also satisfy the gateway (`execute:group:apps`, `mutate:apps:*`) are never
+ * passed on: they open `apps delete`, `apps scaffold` and `apps import-cli` too. An invoker that holds none of these
+ * gets the semantic one named, and the child context is refused: it could not have run an app through the gateway.
  */
-const APPS_RUN_ACCESS_FORMS = [
-  "mutate:apps:run",
-  "mutate:apps:*",
-  "mutate:apps.run:*",
-  "execute:group:apps_run",
-  "execute:group:apps",
-] as const;
+const APPS_RUN_ACCESS_FORMS = ["mutate:apps:run", "mutate:apps.run:*", "execute:group:apps_run"] as const;
 
 function publicRoutingCapability(invoker: ContextRecord | undefined): string | undefined {
   if (!invoker) return undefined;

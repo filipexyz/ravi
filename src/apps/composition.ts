@@ -410,30 +410,48 @@ function offersMutatingOperation(provider: RaviAppManifestRecord, serviceKey: st
 // ----------------------------------------------------------------------------------------------------------------
 // Calls from one app to another
 
-const MAX_LINEAGE_DEPTH = 16;
+/** Who is calling, as far as the lineage of the context can tell. */
+export type RaviAppCaller =
+  /** The nearest ancestor (or the context itself) that the app router issued for an app. */
+  | { kind: "app"; appId: string }
+  /** The lineage reaches a root with no app on the way: a turn, an agent, an operator. */
+  | { kind: "direct" }
+  /** The lineage cannot be followed to a root: a parent is gone, it loops, or an app context names no app. */
+  | { kind: "unknown" };
+
+const DIRECT: RaviAppCaller = { kind: "direct" };
+const UNKNOWN: RaviAppCaller = { kind: "unknown" };
 
 /**
- * The app a context belongs to: the one the app router issued it for, or the nearest such ancestor. A credential an
- * app derives for itself (`ravi context issue` gives it no app identity of its own) stays the app's, because its
- * lineage is host-owned and a process cannot erase it. `parentOf` reads one step up; without it only the context
- * itself is looked at.
+ * The app a context belongs to. A credential an app derives for itself (`ravi context issue` gives it no app identity
+ * of its own) stays the app's, because its lineage is host-owned and a process cannot erase it, however many times it
+ * derives. The climb has to end at a root: a lineage that cannot be followed (a parent that is gone, a loop, an app
+ * context that names no app) is `unknown`, never `direct`, so a broken or over-long chain cannot be used to look like a
+ * turn. `parentOf` reads one step up; without it a context that has a parent is `unknown`.
  */
-export function appCallerOf(
+export function callerOf(
   context: ContextRecord | undefined,
   parentOf?: (contextId: string) => ContextRecord | null | undefined,
-): string | null {
+): RaviAppCaller {
+  if (!context) return DIRECT;
   const seen = new Set<string>();
-  let cursor = context;
-  while (cursor && seen.size < MAX_LINEAGE_DEPTH && !seen.has(cursor.contextId)) {
+  let cursor: ContextRecord | null | undefined = context;
+  while (cursor) {
+    if (seen.has(cursor.contextId)) return UNKNOWN;
     seen.add(cursor.contextId);
-    const metadata = cursor.metadata;
-    if (cursor.kind === "app-runtime" && metadata?.source === "app-router" && typeof metadata.appId === "string") {
-      return metadata.appId;
+    const metadata: Record<string, unknown> | undefined = cursor.metadata;
+    if (cursor.kind === "app-runtime") {
+      // The router issues these with the app named. One without it is an app we cannot name, not a turn.
+      if (metadata?.source === "app-router" && typeof metadata.appId === "string") {
+        return { kind: "app", appId: metadata.appId };
+      }
+      return UNKNOWN;
     }
-    const parentId = typeof metadata?.parentContextId === "string" ? metadata.parentContextId : null;
-    cursor = parentId && parentOf ? (parentOf(parentId) ?? undefined) : undefined;
+    const parentId: string | null = typeof metadata?.parentContextId === "string" ? metadata.parentContextId : null;
+    if (!parentId) return DIRECT;
+    cursor = parentOf?.(parentId);
   }
-  return null;
+  return UNKNOWN;
 }
 
 /**

@@ -2793,4 +2793,76 @@ describe("Ravi app composition", () => {
       composition: { service: "md-render/html", consumerAppId: "blog" },
     });
   }, 30_000);
+
+  it("holds a long chain of derived credentials to what the app declared, and refuses a lineage it cannot follow", async () => {
+    const root = makeRepo();
+    writeMdRender(root);
+    writeConsumer(root, "blog");
+    compositionTurn();
+    const processContext = createRuntimeContext({
+      kind: "app-runtime",
+      agentId: "main",
+      capabilities: [appCapability("use", "md-render"), GROUP_PAGES, APPS_RUN],
+      metadata: { appId: "blog", source: "app-router" },
+    });
+    // `ravi context issue --inherit`, twenty times over: sixteen is where the first version of the lookup gave up.
+    let derived = processContext;
+    for (let link = 0; link < 20; link++) {
+      derived = issueRuntimeContext({ parent: derived, cliName: "again", inheritCapabilities: true });
+    }
+    expect(derived.kind).toBe("cli-runtime");
+
+    const refused = await callAsContext(root, derived, "md-render", "admin", ["x"]);
+    expect(refused).toMatchObject({ ok: false, errorCode: "APP_OPERATION_NOT_PROVIDED" });
+    expect(existsSync(contextOf(root, "md-render").runFile("ran-admin"))).toBe(false);
+    expect(await callAsContext(root, derived, "md-render", "html", ["x"])).toMatchObject({
+      ok: true,
+      operationId: "md-render.html",
+    });
+
+    // A context whose parent is gone cannot be placed at all: it could be an app's, so an app that offers services
+    // answers it for no operation.
+    const orphan = createRuntimeContext({
+      kind: "cli-runtime",
+      agentId: "main",
+      capabilities: [appCapability("use", "md-render"), GROUP_PAGES, APPS_RUN],
+      metadata: { parentContextId: "ctx_that_is_gone" },
+    });
+    for (const operation of ["admin", "html"]) {
+      expect(await callAsContext(root, orphan, "md-render", operation, ["x"])).toMatchObject({
+        ok: false,
+        errorCode: "APP_OPERATION_NOT_PROVIDED",
+      });
+    }
+    expect(existsSync(contextOf(root, "md-render").runFile("ran-admin"))).toBe(false);
+  }, 30_000);
+
+  it("hands a composed app only the forms of apps run that are about run, never the whole apps group", async () => {
+    const root = makeRepo();
+    writeMdRender(root);
+    writeConsumer(root, "blog");
+    const started = join(root, "started");
+    const caps = [appCapability("use", "blog"), appCapability("use", "md-render"), GROUP_CONTEXT, GROUP_PAGES];
+
+    // The legacy group also opens apps delete, apps scaffold and apps import-cli, so nothing of it is passed on and the
+    // consumer is refused, with no process and no credential.
+    const legacy = compositionTurn([...caps, { permission: "execute", objectType: "group", objectId: "apps" }]);
+    expect(await callAsContext(root, legacy, "blog", "render", [consumerConfig(root)])).toMatchObject({
+      ok: false,
+      errorCode: "APP_OPERATION_FAILED",
+    });
+    expect(existsSync(started)).toBe(false);
+    expect(getContextLineage(legacy.contextId)?.descendants).toEqual([]);
+
+    // The same for a wildcard over the whole apps resource: the consumer gets the specific form, not the wildcard.
+    const wide = compositionTurn([...caps, { permission: "mutate", objectType: "apps", objectId: "*" }]);
+    const served = await callAsContext(root, wide, "blog", "render", [consumerConfig(root)]);
+    expect(served).toMatchObject({ ok: true });
+    const blogChild = getContextLineage(wide.contextId)?.descendants.find(
+      (context) => context.contextId === served.childContextId,
+    ) as ContextRecord;
+    expect(capabilityNames(blogChild)).toContain("mutate:apps:run");
+    expect(capabilityNames(blogChild)).not.toContain("mutate:apps:*");
+    expect(capabilityNames(blogChild)).not.toContain("execute:group:apps");
+  }, 30_000);
 });

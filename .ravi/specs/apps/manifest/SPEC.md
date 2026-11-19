@@ -408,7 +408,8 @@ the router, with its own child context (spec `apps/router`, "Composition").
   plugin, state), whatever source a listing is asked to show. A source filter
   decides what is returned, not what is satisfied: a state app requiring a plugin
   app is satisfied in the `--source state` view too, and a circle across sources
-  is found in both.
+  is found in both. A duplicate id is flagged over every source for the same
+  reason: it is a conflict whichever source a listing shows.
 - A manifest that does not parse is still the app its directory names. A
   requirement on it is reported as `invalid` (its manifest is invalid or
   ambiguous), not as `not_installed`, so the operator repairs it instead of

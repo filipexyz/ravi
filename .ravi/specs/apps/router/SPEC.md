@@ -364,10 +364,13 @@ provider can still be diagnosed:
   delegates), `use app:<provider>` for every provider in the closure (plus
   `execute app:<provider>` for a provider that offers a mutating operation), and
   the access the gateway asks for before `apps run`, because a call to a provider
-  through the public command is `apps run`. That last one MUST be the form the
-  invoker holds (`mutate:apps:run`, its wildcards, or the legacy
-  `execute:group:apps_run` / `execute:group:apps`), so an invoker that could not
-  have run an app through the gateway gets no composed child either. A
+  through the public command is `apps run`. That last one MUST be a form
+  about `run` and nothing wider that the invoker holds (`mutate:apps:run`,
+  `mutate:apps.run:*` or the legacy `execute:group:apps_run`; a wildcard the
+  invoker holds over `apps` is passed on as `mutate:apps:run`). The legacy
+  `execute:group:apps` and `mutate:apps:*` also satisfy the gateway, and they also
+  open `apps delete`, `apps scaffold` and `apps import-cli`, so they are never
+  passed on: an invoker that holds only those, or none, gets no composed child. A
   provider's own `context.allow` MUST NOT be added to it. The registry rule that
   a child holds no capability its parent does not hold applies unchanged, so an
   invoker that does not hold all of it gets no child context and no process
@@ -384,8 +387,8 @@ provider can still be diagnosed:
 When the caller is a process another app's operation started (a context of kind
 `app-runtime` issued by this router for an app, or a credential that process
 derived, for example with `ravi context issue`: the nearest `app-runtime`
-ancestor in the host-owned lineage is the caller) and the called app offers
-services:
+ancestor in the host-owned lineage is the caller, however many credentials were
+derived in between) and the called app offers services:
 
 - The called operation MUST be listed under one of the called app's `provides`
   services, and the caller MUST have declared that service in its own `requires`
@@ -415,6 +418,13 @@ When the app's process ends:
   TTL, exactly as before composition. Revoking every app's credential at process
   end is a separate decision, because an app may start detached work that
   outlives its launching process.
+
+The climb through the lineage MUST end at a root. A lineage that cannot be
+followed (a parent that is gone, a loop, an `app-runtime` context that names no
+app) is an unknown caller, not a direct one: a call from it to an app that offers
+services MUST be refused with `APP_OPERATION_NOT_PROVIDED`, for every operation,
+before any context is issued and before any process is spawned. There MUST be no
+depth at which a chain of derived credentials stops being the app's.
 
 The mediation applies to callers that are apps. A turn, an agent or an operator
 calling a provider directly is governed by `use app:<provider>` and
@@ -530,6 +540,13 @@ other, not a second permission system for whoever already holds the app.
 - Identifying the calling app only by the kind of the context in hand lets an
   app that may derive credentials call, with a derived one, what `provides` does
   not list. The identity follows the lineage, which a process cannot erase.
+- Capping how far up the lineage the caller is looked for, or answering "not an
+  app" when the cap or a missing parent ends the climb, lets an app derive
+  credentials until its identity is lost. A climb that does not reach a root is
+  an unknown caller and fails closed.
+- Passing on the legacy `execute:group:apps` or `mutate:apps:*` to a composed
+  consumer so that it can call its providers hands it `apps delete`, `apps
+  scaffold` and `apps import-cli` too. Only the forms about `run` are passed on.
 - Granting a composed consumer `use app:<provider>` and nothing that reaches the
   router leaves the requirement declared and unusable through the public command:
   the gateway refuses `apps run` before the router runs.

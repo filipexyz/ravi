@@ -127,7 +127,14 @@ offers it) and the real context registry.
   the same call fails at the gateway.
 - A credential an app derived for itself (`kind: cli-runtime`, no app identity,
   parent in the app's lineage) is refused an operation outside `provides` and passes
-  one inside it; the provider's context then records the app as the consumer.
+  one inside it; the provider's context then records the app as the consumer. This
+  holds after twenty derivations in a chain, with no depth at which it stops.
+- A context whose lineage cannot be followed to a root (the parent is gone) is
+  refused every operation of an app that offers services with
+  `APP_OPERATION_NOT_PROVIDED`, starts no process, and is not taken for a turn.
+- An invoker that holds only the legacy `execute:group:apps` gets no composed
+  consumer (no process, no credential), and an invoker that holds `mutate:apps:*`
+  gets a consumer with `mutate:apps:run`, never the wildcard or the group.
 - Without the provider installed, the consumer fails with
   `APP_DEPENDENCY_UNAVAILABLE`, `unavailableDependencies` names the requirement
   (reason `not_installed`), no process starts and no context is issued. It passes
