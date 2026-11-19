@@ -72,6 +72,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/thread-text.test.ts",
     // Native channel readiness: broker connection, backend prerequisites, queued-but-undeliverable warnings.
     "src/channels/native-readiness.test.ts",
+    // Subscription x route's forced session, decided once for the Slack service and the Omni consumer.
+    "src/channels/subscription-precedence.test.ts",
   ],
   "src/omni/": [
     "src/omni/consumer-context.test.ts",
