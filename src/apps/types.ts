@@ -52,6 +52,17 @@ export interface RaviAppContext {
   allow: string[];
 }
 
+/**
+ * A service an app offers to other apps. The manifest key is `<app-id>/<service>`; the operations are ids from the
+ * same manifest's `operations`, the only ones another app may call through this service (spec apps/manifest,
+ * "Composition").
+ */
+export interface RaviAppProvidedService {
+  /** Exact `major.minor.patch`. */
+  version: string;
+  operations: string[];
+}
+
 export interface RaviAppManifest {
   schema: string;
   id: string;
@@ -61,6 +72,10 @@ export interface RaviAppManifest {
   interfaces: Record<string, unknown>;
   context: RaviAppContext;
   operations?: unknown;
+  /** Services this app offers to other apps, keyed `<app-id>/<service>`. */
+  provides?: Record<string, RaviAppProvidedService>;
+  /** Services this app needs from other apps: `<app-id>/<service>` -> semver range. */
+  requires?: Record<string, string>;
   permissions: Partial<RaviAppPermissions>;
   storage?: unknown;
   artifacts?: unknown;
@@ -323,6 +338,23 @@ export interface RaviAppRunOptions extends RaviAppDiscoveryOptions {
   };
 }
 
+export type RaviAppDependencyUnavailableReason = "not_installed" | "invalid" | "not_provided" | "version_mismatch";
+
+/**
+ * A `requires` entry the router could not satisfy when it was about to run an app. Every field is a validated
+ * identifier, version or range from the manifests, never free text from an app.
+ */
+export interface RaviAppUnavailableDependency {
+  /** The `<app-id>/<service>` that is required. */
+  requires: string;
+  range: string;
+  /** The app whose manifest declares the requirement; not always the one that was run (a provider may need more). */
+  requiredBy: string;
+  reason: RaviAppDependencyUnavailableReason;
+  /** The version the provider offers, when it is installed and the range rejects it. */
+  installedVersion?: string;
+}
+
 /**
  * What the router keeps of a CLI operation that exited non-zero. Every string is
  * already redacted and bounded (`src/apps/failure.ts`): this is a projection of
@@ -359,6 +391,8 @@ export interface RaviAppRunResult {
   errorCode?: string;
   /** Set only when a CLI operation failed after it ran. */
   failure?: RaviAppCliFailure;
+  /** Set only for `APP_DEPENDENCY_UNAVAILABLE`: what was required and could not be satisfied. No process was started. */
+  unavailableDependencies?: RaviAppUnavailableDependency[];
   dryRun?: true;
   plan?: {
     appId: string;

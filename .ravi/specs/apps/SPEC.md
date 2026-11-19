@@ -15,6 +15,7 @@ capabilities:
   - packaging
   - agent-operation
   - permission-providers
+  - composition
 tags:
   - apps
   - ecosystem
@@ -115,6 +116,15 @@ This domain protects the distinction between:
   parent context, and no raw key in logs or audit payloads.
 - `context.allow` is a requested child-context ceiling, not a grant. Failure to
   issue the declared capability MUST fail before the app CLI starts.
+- A Ravi App MAY offer services to other apps (`provides`) and declare the
+  services it needs (`requires`). Composition is declared in the manifest,
+  mediated by the App Router and ended with the process; it adds no executor, no
+  transport and no second runtime (specs `apps/manifest` and `apps/router`,
+  "Composition").
+- A call from one app to another MUST be made with the calling app's own child
+  context, and the called app's child context MUST be issued from it, so the
+  authority only narrows down the chain and the lineage reads turn → consumer →
+  provider.
 - A Ravi App SHOULD have a skill when agents are expected to use it. The skill
   MUST teach when to use the app, which commands to call, what outputs mean,
   and what failures require user input.
@@ -151,6 +161,8 @@ Every `ravi.app.json` SHOULD document:
 - `permissions`: required Ravi capabilities/scopes;
 - `context.allow`: Ravi capabilities requested for the child CLI context;
 - `permission provider`: optional app-owned authorization decision hook;
+- `provides` / `requires`: services the app offers to other apps and services
+  it needs from them, each keyed `<app-id>/<service>`;
 - `storage`: tables/files owned by the app;
 - `artifacts`: durable outputs the app creates;
 - `events`: events the app emits or consumes;
@@ -224,5 +236,8 @@ the structured readiness checklist.
 - One generic database for unrelated apps creates unclear data ownership.
 - Plugins treated as permission grants cause unsafe capability assumptions.
 - Apps with no health/check surface fail silently inside automations.
+- Apps that call each other with no declared contract: a provider changes
+  under its consumers, a missing provider is found halfway through a run, and
+  nothing records who called whom.
 - Apps that depend on generated root CLI commands for discovery cannot behave
   like runtime-installed ecosystem apps.

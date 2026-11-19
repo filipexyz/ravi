@@ -11,6 +11,7 @@ import { cleanupIsolatedRaviState } from "../test/ravi-state.js";
 import { enforceRaviAppRunResult, raviAppErrorToContractError } from "./error-contract.js";
 import { maskedSecretForms, projectAppCliFailure } from "./failure.js";
 import { maybeRunAppAliasRoute, resolveAppAliasInvocation, runAppOperation } from "./router.js";
+import { discoverAppManifests } from "./service.js";
 import { RaviAppError, type RaviAppRunResult } from "./types.js";
 
 declare const Bun: {
@@ -2052,4 +2053,547 @@ describe("Ravi app CLI failure projection", () => {
       cause: "The app CLI was terminated by a signal.",
     });
   });
+});
+
+// ----------------------------------------------------------------------------------------------------------------
+// Composition (spec apps/router, "Composition"). Real processes and the real context registry: a `blog` app that
+// requires `md-render/html`, and an `md-render` app that offers it.
+
+const COMPOSITION_MODULES = {
+  router: resolve(originalCwd, "src", "apps", "router.ts"),
+  registry: resolve(originalCwd, "src", "runtime", "context-registry.ts"),
+  context: resolve(originalCwd, "src", "cli", "context.ts"),
+};
+
+/**
+ * The consumer's CLI. It stands in for the gateway: what a router-launched app asks of Ravi, it asks with the
+ * context key it was given, so the call reaches the router with the consumer's own context as the caller.
+ */
+const COMPOSITION_CONSUMER_SCRIPT = `
+import { writeFileSync } from "node:fs";
+const config = JSON.parse(process.argv[3] ?? "{}");
+writeFileSync(config.started, String(process.pid));
+if (config.crash) process.exit(3);
+process.env.RAVI_SUPPRESS_AUDIT_EVENTS = "1";
+process.env.RAVI_LOG_LEVEL = "error";
+const { runAppOperation } = await import(config.modules.router);
+const { getContextLineage, resolveRuntimeContext } = await import(config.modules.registry);
+const { runWithContext } = await import(config.modules.context);
+const own = resolveRuntimeContext(process.env.RAVI_CONTEXT_KEY, { readOnly: true });
+if (!own) {
+  console.error("The app was started without a live context.");
+  process.exit(4);
+}
+const outcome = await runWithContext({ agentId: own.agentId, context: own }, () =>
+  runAppOperation({
+    appId: config.callee,
+    operation: config.operation,
+    args: config.args ?? [],
+    json: true,
+    cwd: config.root,
+    env: process.env,
+  }),
+);
+console.log(JSON.stringify({
+  contextId: own.contextId,
+  aliveWhileRunning: !getContextLineage(own.contextId)?.context.revokedAt,
+  providerRevokedWhenItReturned: outcome.childContextId
+    ? Boolean(getContextLineage(outcome.childContextId)?.context.revokedAt)
+    : null,
+  outcome,
+}));
+`;
+
+/** The provider's CLI: it leaves a mark that it ran and says whether its own credential was live while it did. */
+const COMPOSITION_PROVIDER_SCRIPT = `
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+const [operation, text = "", registryModule] = process.argv.slice(2);
+writeFileSync(join(process.env.RAVI_APP_ROOT, "ran-" + operation), String(process.pid));
+let credentialLive = null;
+if (registryModule) {
+  process.env.RAVI_LOG_LEVEL = "error";
+  const { resolveRuntimeContext } = await import(registryModule);
+  credentialLive = Boolean(resolveRuntimeContext(process.env.RAVI_CONTEXT_KEY, { readOnly: true }));
+}
+console.log(JSON.stringify({
+  operation,
+  appId: process.env.RAVI_APP_ID,
+  operationId: process.env.RAVI_APP_OPERATION_ID,
+  credentialLive,
+  html: "<p>" + text + "</p>",
+}));
+`;
+
+interface ConsumerReport {
+  contextId: string;
+  aliveWhileRunning: boolean;
+  providerRevokedWhenItReturned: boolean | null;
+  outcome: RaviAppRunResult & { result?: Record<string, unknown> };
+}
+
+function compositionManifest(id: string, extra: Record<string, unknown>): Record<string, unknown> {
+  return {
+    schema: "ravi.app/v1",
+    id,
+    name: id,
+    version: "1.0.0",
+    description: `${id} composition fixture.`,
+    interfaces: { cli: { command: "bun cli.mjs", json: true } },
+    context: { allow: [] },
+    operations: {},
+    permissions: { required: [], optional: [], mutating: [] },
+    health: { checks: [{ type: "builtin", handler: "apps.manifest.check" }] },
+    ...extra,
+  };
+}
+
+/** `md-render`: offers `md-render/html` (operation `html`) and has an operation it does not offer (`admin`). */
+function writeMdRender(root: string, extra: Record<string, unknown> = {}): void {
+  writeManifest(
+    root,
+    "md-render",
+    compositionManifest("md-render", {
+      context: { allow: ["execute:group:pages"] },
+      operations: {
+        "md-render.html": { interface: "cli", command: "bun cli.mjs html {args}", json: true, mutating: false },
+        "md-render.admin": { interface: "cli", command: "bun cli.mjs admin {args}", json: true, mutating: false },
+      },
+      provides: { "md-render/html": { version: "1.0.0", operations: ["md-render.html"] } },
+      ...extra,
+    }),
+  );
+  writeFileSync(join(root, "src", "apps", "md-render", "cli.mjs"), COMPOSITION_PROVIDER_SCRIPT);
+}
+
+/** An app whose `render` operation calls another app from inside its process. Needs `md-render/html` unless told not to. */
+function writeConsumer(root: string, id: string, extra: Record<string, unknown> = {}): void {
+  writeManifest(
+    root,
+    id,
+    compositionManifest(id, {
+      context: { allow: ["execute:group:context"] },
+      operations: {
+        [`${id}.render`]: { interface: "cli", command: "bun cli.mjs render {args}", json: true, mutating: false },
+        [`${id}.check`]: { interface: "builtin", handler: "apps.manifest.check", mutating: false },
+      },
+      requires: { "md-render/html": "^1" },
+      ...extra,
+    }),
+  );
+  writeFileSync(join(root, "src", "apps", id, "cli.mjs"), COMPOSITION_CONSUMER_SCRIPT);
+}
+
+/** What the consumer's process is told to do: which app to call, which operation, and where to leave its mark. */
+function consumerConfig(root: string, overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    root,
+    started: join(root, "started"),
+    modules: COMPOSITION_MODULES,
+    callee: "md-render",
+    operation: "html",
+    args: ["# hello", COMPOSITION_MODULES.registry],
+    ...overrides,
+  });
+}
+
+function contextOf(root: string, appId: string): { runFile: (name: string) => string } {
+  return { runFile: (name) => join(root, "src", "apps", appId, name) };
+}
+
+function callAsContext(
+  root: string,
+  context: ContextRecord,
+  appId: string,
+  operation: string,
+  args: string[],
+): Promise<RaviAppRunResult> {
+  return runWithContext({ agentId: "main", context }, () =>
+    runAppOperation({
+      appId,
+      operation,
+      args,
+      json: true,
+      cwd: root,
+      env: {
+        ...process.env,
+        RAVI_CONTEXT_KEY: context.contextKey,
+        RAVI_SUPPRESS_AUDIT_EVENTS: "1",
+        RAVI_LOG_LEVEL: "error",
+      },
+    }),
+  );
+}
+
+function capabilityNames(context: ContextRecord): string[] {
+  return context.capabilities.map((cap) => `${cap.permission}:${cap.objectType}:${cap.objectId}`).sort();
+}
+
+const GROUP_CONTEXT: ContextCapability = { permission: "execute", objectType: "group", objectId: "context" };
+const GROUP_PAGES: ContextCapability = { permission: "execute", objectType: "group", objectId: "pages" };
+
+/** A turn that may use `blog` and, through it, everything the two apps are allowed to reach. */
+function compositionTurn(capabilities?: ContextCapability[]): ContextRecord {
+  process.env.RAVI_SUPPRESS_AUDIT_EVENTS = "1";
+  return createRuntimeContext({
+    kind: "agent-runtime",
+    agentId: "main",
+    capabilities: capabilities ?? [
+      appCapability("use", "blog"),
+      appCapability("use", "md-render"),
+      GROUP_CONTEXT,
+      GROUP_PAGES,
+    ],
+  });
+}
+
+describe("Ravi app composition", () => {
+  it("shows the lineage turn → app:blog → app:md-render, and the authority only narrows down it", async () => {
+    const root = makeRepo();
+    writeMdRender(root);
+    writeConsumer(root, "blog");
+    const turn = compositionTurn();
+
+    const result = await callAsContext(root, turn, "blog", "render", [consumerConfig(root)]);
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "completed",
+      operationId: "blog.render",
+      callerContextId: turn.contextId,
+    });
+    const report = result.result as ConsumerReport;
+    expect(report.outcome).toMatchObject({
+      ok: true,
+      appId: "md-render",
+      operationId: "md-render.html",
+      // The provider was called by the consumer's own context, not by the turn.
+      callerContextId: report.contextId,
+      result: { appId: "md-render", operationId: "md-render.html", html: "<p># hello</p>" },
+    });
+    const blogChildId = result.childContextId as string;
+    const mdRenderChildId = report.outcome.childContextId as string;
+    expect(report.contextId).toBe(blogChildId);
+    expect(mdRenderChildId).not.toBe(blogChildId);
+
+    const lineage = getContextLineage(turn.contextId);
+    const descendants = new Map((lineage?.descendants ?? []).map((context) => [context.contextId, context]));
+    expect([...descendants.keys()].sort()).toEqual([blogChildId, mdRenderChildId].sort());
+    const blogChild = descendants.get(blogChildId) as ContextRecord;
+    const mdRenderChild = descendants.get(mdRenderChildId) as ContextRecord;
+    expect(blogChild.metadata).toMatchObject({
+      appId: "blog",
+      source: "app-router",
+      parentContextId: turn.contextId,
+      issuedFor: "app:blog",
+    });
+    expect(blogChild.metadata).not.toHaveProperty("composition");
+    expect(mdRenderChild.metadata).toMatchObject({
+      appId: "md-render",
+      operationId: "md-render.html",
+      source: "app-router",
+      parentContextId: blogChildId,
+      issuedFor: "app:md-render",
+      composition: { service: "md-render/html", consumerAppId: "blog" },
+    });
+    // Read from the end, the chain goes up to the turn.
+    expect(getContextLineage(mdRenderChildId)?.ancestors.map((context) => context.contextId)).toEqual([
+      blogChildId,
+      turn.contextId,
+    ]);
+    // What the audit records for anything an app does is its own context id and its parent's, taken from this
+    // metadata (src/sdk/gateway/dispatcher.ts), so this is the chain an audit reader follows.
+    const audited = [mdRenderChild, blogChild, turn].map((context) => ({
+      contextId: context.contextId,
+      parentContextId: context.metadata?.parentContextId ?? null,
+    }));
+    expect(audited).toEqual([
+      { contextId: mdRenderChildId, parentContextId: blogChildId },
+      { contextId: blogChildId, parentContextId: turn.contextId },
+      { contextId: turn.contextId, parentContextId: null },
+    ]);
+
+    // Each step holds less than the one above it: the provider gets only what its own manifest allows, the consumer
+    // gets what the chain needs (its own, the provider's, and the right to call it), and the turn held all of it.
+    expect(capabilityNames(mdRenderChild)).toEqual(["execute:group:pages"]);
+    expect(capabilityNames(blogChild)).toEqual(["execute:group:context", "execute:group:pages", "use:app:md-render"]);
+    for (const name of capabilityNames(mdRenderChild)) expect(capabilityNames(blogChild)).toContain(name);
+    for (const name of capabilityNames(blogChild)) expect(capabilityNames(turn)).toContain(name);
+    expect(JSON.stringify(result)).not.toContain(turn.contextKey);
+    expect(JSON.stringify(result)).not.toContain(blogChild.contextKey);
+    expect(JSON.stringify(result)).not.toContain(mdRenderChild.contextKey);
+  }, 30_000);
+
+  it("fails closed, with nothing started, when the invoker does not hold what the chain of apps needs", async () => {
+    const root = makeRepo();
+    writeMdRender(root);
+    writeConsumer(root, "blog");
+    // May use the blog and has what the blog allows itself, but not the provider or what the provider allows.
+    const narrow = compositionTurn([appCapability("use", "blog"), GROUP_CONTEXT]);
+
+    const result = await callAsContext(root, narrow, "blog", "render", [consumerConfig(root)]);
+
+    expect(result).toMatchObject({ ok: false, status: "failed", errorCode: "APP_OPERATION_FAILED" });
+    expect(existsSync(join(root, "started"))).toBe(false);
+    expect(getContextLineage(narrow.contextId)?.descendants).toEqual([]);
+  }, 30_000);
+
+  it("refuses with APP_DEPENDENCY_UNAVAILABLE before it starts anything, and works again when the provider is back", async () => {
+    const root = makeRepo();
+    writeConsumer(root, "blog");
+    const turn = compositionTurn();
+    const blogFiles = () =>
+      ["ravi.app.json", "cli.mjs"].map((name) => readFileSync(contextOf(root, "blog").runFile(name), "utf8"));
+    const blogBefore = blogFiles();
+
+    const refused = await callAsContext(root, turn, "blog", "render", [consumerConfig(root)]);
+
+    expect(refused).toMatchObject({
+      ok: false,
+      status: "failed",
+      appId: "blog",
+      errorCode: "APP_DEPENDENCY_UNAVAILABLE",
+      error: "Ravi app dependency is unavailable.",
+      unavailableDependencies: [
+        { requires: "md-render/html", range: "^1", requiredBy: "blog", reason: "not_installed" },
+      ],
+    });
+    // No process: the consumer never left its mark, and no credential was issued for it.
+    expect(existsSync(join(root, "started"))).toBe(false);
+    expect(getContextLineage(turn.contextId)?.descendants).toEqual([]);
+    // The same refusal as the CLI shows it.
+    const contract = raiseContractFailure(refused, true);
+    expect(contract.error.code).toBe("APP_DEPENDENCY_UNAVAILABLE");
+    expect(contract.error.envelope().error).toMatchObject({
+      code: "APP_DEPENDENCY_UNAVAILABLE",
+      message: "Ravi app dependency is unavailable.",
+      suggestedAction: "Install or repair the required app, then retry",
+      cause: "blog requires md-render/html@^1: no app with that id is installed.",
+    });
+    // The operations that do not start the consumer's process keep answering, so the missing provider can be diagnosed.
+    expect(await callAsContext(root, turn, "blog", "check", [])).toMatchObject({ ok: true, interface: "builtin" });
+
+    // A provider that is there but outside the range, or that does not offer the service, is just as unavailable.
+    writeMdRender(root, { provides: { "md-render/html": { version: "2.0.0", operations: ["md-render.html"] } } });
+    expect(await callAsContext(root, turn, "blog", "render", [consumerConfig(root)])).toMatchObject({
+      errorCode: "APP_DEPENDENCY_UNAVAILABLE",
+      unavailableDependencies: [{ requires: "md-render/html", reason: "version_mismatch", installedVersion: "2.0.0" }],
+    });
+    writeMdRender(root, { provides: undefined });
+    expect(await callAsContext(root, turn, "blog", "render", [consumerConfig(root)])).toMatchObject({
+      errorCode: "APP_DEPENDENCY_UNAVAILABLE",
+      unavailableDependencies: [{ requires: "md-render/html", reason: "not_provided" }],
+    });
+    expect(existsSync(join(root, "started"))).toBe(false);
+
+    // The provider comes back as it was, and the consumer, untouched, runs.
+    writeMdRender(root);
+    const served = await callAsContext(root, turn, "blog", "render", [consumerConfig(root)]);
+    expect(served).toMatchObject({ ok: true, status: "completed" });
+    expect((served.result as ConsumerReport).outcome).toMatchObject({ ok: true, operationId: "md-render.html" });
+    expect(existsSync(join(root, "started"))).toBe(true);
+    expect(blogFiles()).toEqual(blogBefore);
+  }, 30_000);
+
+  it("answers a mutating operation with the dependency error while the provider is missing, and with its preview once it is there", async () => {
+    const root = makeRepo();
+    writeConsumer(root, "blog", {
+      operations: {
+        "blog.publish": {
+          interface: "cli",
+          command: "bun cli.mjs render {args}",
+          json: true,
+          mutating: true,
+          permission: "blog:write",
+        },
+      },
+      permissions: { required: [], optional: [], mutating: ["blog:write"] },
+    });
+    const turn = compositionTurn([
+      appCapability("use", "blog"),
+      appCapability("execute", "blog"),
+      appCapability("use", "md-render"),
+      GROUP_CONTEXT,
+      GROUP_PAGES,
+    ]);
+
+    // A preview would promise a run that cannot happen, so the brake comes after the requirements.
+    expect(await callAsContext(root, turn, "blog", "publish", [consumerConfig(root)])).toMatchObject({
+      ok: false,
+      status: "failed",
+      errorCode: "APP_DEPENDENCY_UNAVAILABLE",
+    });
+
+    writeMdRender(root);
+    expect(await callAsContext(root, turn, "blog", "publish", [consumerConfig(root)])).toMatchObject({
+      ok: false,
+      status: "blocked",
+      dryRun: true,
+      mutating: true,
+    });
+    expect(existsSync(join(root, "started"))).toBe(false);
+    expect(getContextLineage(turn.contextId)?.descendants).toEqual([]);
+  }, 30_000);
+
+  it("refuses an operation the provider has but does not offer, and starts nothing for it", async () => {
+    const root = makeRepo();
+    writeMdRender(root);
+    writeConsumer(root, "blog");
+    const turn = compositionTurn();
+
+    const result = await callAsContext(root, turn, "blog", "render", [
+      consumerConfig(root, { operation: "admin", args: ["x"] }),
+    ]);
+
+    // The consumer ran, asked for an operation outside `provides`, and was told no.
+    expect(result.ok).toBe(true);
+    const report = result.result as ConsumerReport;
+    expect(report.outcome).toMatchObject({
+      ok: false,
+      status: "failed",
+      appId: "md-render",
+      errorCode: "APP_OPERATION_NOT_PROVIDED",
+      error: "Ravi app operation is not offered to this caller.",
+    });
+    expect(report.outcome.childContextId).toBeUndefined();
+    expect(existsSync(contextOf(root, "md-render").runFile("ran-admin"))).toBe(false);
+    expect(getContextLineage(turn.contextId)?.descendants).toHaveLength(1);
+    const contract = raiseContractFailure(report.outcome, true);
+    expect(contract.error.code).toBe("APP_OPERATION_NOT_PROVIDED");
+    expect(contract.error.envelope().error.suggestedAction).toContain("provides");
+
+    // `provides` is what apps may call of each other. The turn's own authority over the app is the turn's, as before.
+    const direct = await callAsContext(root, turn, "md-render", "admin", ["x"]);
+    expect(direct).toMatchObject({ ok: true, operationId: "md-render.admin" });
+    expect(existsSync(contextOf(root, "md-render").runFile("ran-admin"))).toBe(true);
+  }, 30_000);
+
+  it("refuses an app that holds use on the provider but never declared the requirement", async () => {
+    const root = makeRepo();
+    writeMdRender(root);
+    writeConsumer(root, "blog");
+    // The contexts the router issues to two apps' processes. They hold the same capabilities, so the one thing that
+    // tells them apart is that `blog` declares `requires md-render/html` and `stranger` does not.
+    const processContext = (appId: string) =>
+      createRuntimeContext({
+        kind: "app-runtime",
+        agentId: "main",
+        capabilities: [appCapability("use", "md-render"), GROUP_PAGES],
+        metadata: { appId, source: "app-router" },
+      });
+    const stranger = processContext("stranger");
+    const declared = processContext("blog");
+
+    const refused = await callAsContext(root, stranger, "md-render", "html", ["x"]);
+    expect(refused).toMatchObject({ ok: false, errorCode: "APP_OPERATION_NOT_PROVIDED" });
+    expect(existsSync(contextOf(root, "md-render").runFile("ran-html"))).toBe(false);
+
+    // The one that declared it, on the same terms, is let in.
+    const allowed = await callAsContext(root, declared, "md-render", "html", ["x"]);
+    expect(allowed).toMatchObject({ ok: true, operationId: "md-render.html" });
+    expect(existsSync(contextOf(root, "md-render").runFile("ran-html"))).toBe(true);
+  }, 30_000);
+
+  it("revokes the child and the grandchild when their processes end", async () => {
+    const root = makeRepo();
+    writeMdRender(root);
+    writeConsumer(root, "blog");
+    const turn = compositionTurn();
+
+    const result = await callAsContext(root, turn, "blog", "render", [consumerConfig(root)]);
+
+    expect(result.ok).toBe(true);
+    const report = result.result as ConsumerReport;
+    // While each process ran, its own credential was live; the provider's was gone the moment its process ended,
+    // before the consumer's own did.
+    expect(report.aliveWhileRunning).toBe(true);
+    expect(report.outcome.result).toMatchObject({ credentialLive: true });
+    expect(report.providerRevokedWhenItReturned).toBe(true);
+
+    // And now that the consumer's process has ended too: both are revoked, and neither key resolves any more.
+    const descendants = getContextLineage(turn.contextId)?.descendants ?? [];
+    expect(descendants).toHaveLength(2);
+    for (const context of descendants) {
+      expect(context.revokedAt).toBeGreaterThan(0);
+      expect(resolveRuntimeContext(context.contextKey)).toBeNull();
+    }
+    // The turn that asked is not touched by any of it.
+    expect(getContextLineage(turn.contextId)?.context.revokedAt).toBeUndefined();
+    expect(resolveRuntimeContext(turn.contextKey)).not.toBeNull();
+
+    // An app that fails, or that is killed, loses its credential the same way.
+    const crashed = await callAsContext(root, turn, "blog", "render", [consumerConfig(root, { crash: true })]);
+    expect(crashed).toMatchObject({ ok: false, errorCode: "APP_OPERATION_FAILED" });
+    const crashedChild = getContextLineage(turn.contextId)?.descendants.find(
+      (context) => context.contextId === crashed.childContextId,
+    );
+    expect(crashedChild?.revokedAt).toBeGreaterThan(0);
+  }, 30_000);
+
+  it("leaves an app that neither offers nor needs a service exactly as it was", async () => {
+    const root = makeRepo();
+    writeManifest(
+      root,
+      "plain",
+      compositionManifest("plain", {
+        context: { allow: ["execute:group:context"] },
+        operations: {
+          "plain.run": { interface: "cli", command: "bun cli.mjs run {args}", json: true, mutating: false },
+        },
+      }),
+    );
+    writeFileSync(join(root, "src", "apps", "plain", "cli.mjs"), "console.log(JSON.stringify({ ok: true }));\n");
+    const turn = compositionTurn([appCapability("use", "plain"), GROUP_CONTEXT]);
+
+    const result = await callAsContext(root, turn, "plain", "run", []);
+
+    expect(result).toMatchObject({ ok: true, result: { ok: true } });
+    const child = getContextLineage(turn.contextId)?.descendants.find(
+      (context) => context.contextId === result.childContextId,
+    ) as ContextRecord;
+    expect(child.metadata).toMatchObject({ issuedFor: "app:plain" });
+    expect(child.metadata).not.toHaveProperty("composition");
+    // Its credential keeps living until its own expiry, as it did before composition existed.
+    expect(child.revokedAt).toBeUndefined();
+    expect(resolveRuntimeContext(child.contextKey)).not.toBeNull();
+  }, 30_000);
+
+  it("turns a cycle of requires into a validation error, and nothing in it runs", async () => {
+    const root = makeRepo();
+    for (const [id, other] of [
+      ["alpha", "beta"],
+      ["beta", "alpha"],
+    ] as const) {
+      writeManifest(
+        root,
+        id,
+        compositionManifest(id, {
+          operations: {
+            [`${id}.render`]: { interface: "cli", command: "bun cli.mjs render", json: true, mutating: false },
+          },
+          provides: { [`${id}/svc`]: { version: "1.0.0", operations: [`${id}.render`] } },
+          requires: { [`${other}/svc`]: "^1" },
+        }),
+      );
+      writeFileSync(
+        join(root, "src", "apps", id, "cli.mjs"),
+        'import { writeFileSync } from "node:fs";\nwriteFileSync(process.env.RAVI_APP_ROOT + "/started", "1");\nconsole.log("{}");\n',
+      );
+    }
+
+    const records = discoverAppManifests({ cwd: root });
+    const alpha = records.find((record) => record.manifest?.id === "alpha");
+    const beta = records.find((record) => record.manifest?.id === "beta");
+    expect(alpha).toMatchObject({ valid: false });
+    expect(beta).toMatchObject({ valid: false });
+    expect(alpha?.errors).toContain("requires cycle: alpha -> beta -> alpha.");
+    expect(beta?.errors).toContain("requires cycle: beta -> alpha -> beta.");
+
+    const turn = compositionTurn([appCapability("use", "alpha"), appCapability("use", "beta")]);
+    for (const id of ["alpha", "beta"]) {
+      expect(await callAsContext(root, turn, id, "render", [])).toMatchObject({ ok: false, status: "failed" });
+      expect(existsSync(join(root, "src", "apps", id, "started"))).toBe(false);
+    }
+    expect(getContextLineage(turn.contextId)?.descendants).toEqual([]);
+  }, 30_000);
 });

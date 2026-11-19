@@ -142,3 +142,56 @@ CLI print `{ "ok": false, "error": { "code", "message", "suggestedAction" } }`
 on stdout before it exits non-zero. A local run without `--json` is the one case with
 nothing to project: the CLI inherits the terminal, so its own output is already
 on screen. A run through the gateway (every agent turn) always captures it.
+
+## Diagnose APP_DEPENDENCY_UNAVAILABLE
+
+An app that declares `requires` refuses to run when a service it needs is not
+available. Nothing was started and no context was issued.
+
+```bash
+ravi apps check <app-id> --json     # warnings name each requirement and the reason
+ravi apps show <app-id> --json      # `requires` as declared
+ravi apps list --json               # is the provider installed, and valid?
+ravi apps show <provider-id> --json # `provides`: the service key and its version
+```
+
+The reasons and what each one asks for:
+
+- `not_installed`: no app with the provider's id. Install the provider.
+- `invalid`: the provider is there, but its manifest is invalid or its id is
+  duplicated. `ravi apps check <provider-id> --json` says which.
+- `not_provided`: the provider does not offer that service key. The provider is
+  an older or different version, or the consumer names the wrong key.
+- `version_mismatch`: the provider offers a version outside the consumer's
+  range. Update the provider, or the consumer's range when the new major is
+  compatible.
+
+Once the provider is back, run the same command again. The consumer needs no
+change.
+
+## Diagnose APP_OPERATION_NOT_PROVIDED
+
+An app called an operation of another app and the router refused it. Check, in
+this order:
+
+```bash
+ravi apps show <provider-id> --json   # is the operation under `provides.<service>.operations`?
+ravi apps show <consumer-id> --json   # does `requires` name that service, in a range the version satisfies?
+```
+
+An operation the provider has but does not list is not offered to other apps.
+Add it to `provides` only when other apps are meant to call it. A person or an
+agent calling the provider directly is not affected: `use app:<provider-id>`
+still decides.
+
+## Read the lineage of a composed run
+
+```bash
+ravi context lineage <context-id> --json
+```
+
+The provider's context names the service and the consuming app under
+`metadata.composition`, and its `parentContextId` is the consumer's context. A
+composed app's child context is revoked when its process ends; a context that
+is still live after the run points to a process that did not end, or to an app
+that does not take part in composition.

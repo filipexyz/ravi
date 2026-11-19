@@ -22,6 +22,7 @@ import { AppPermissionProviderDeniedError, evaluateAppPermissionProvider } from 
 import {
   getRuntimeContextFromEnv,
   issueRuntimeContext,
+  revokeRuntimeContext,
   type IssueRuntimeContextInput,
 } from "../runtime/context-registry.js";
 import type { ContextRecord } from "../router/router-db.js";
@@ -33,6 +34,18 @@ import {
 } from "./permissions.js";
 import { enforceRaviAppRunResult } from "./error-contract.js";
 import { maskedSecretForms, projectAppCliFailure } from "./failure.js";
+import {
+  RaviAppCompositionError,
+  appCallerOf,
+  assertOperationProvided,
+  composedContextAllow,
+  declaresProvides,
+  declaresRequires,
+  describeUnavailableDependency,
+  participatesInComposition,
+  resolveDependencyClosure,
+} from "./composition.js";
+import { logger } from "../utils/logger.js";
 
 interface ResolvedOperation {
   id: string;
@@ -45,6 +58,22 @@ interface ResolvedOperationInvocation {
 }
 
 const DEFAULT_STATIC_ROOT_COMMANDS = new Set(["apps"]);
+
+const log = logger.child("apps-router");
+
+/**
+ * What composition changes about one CLI run. An app that does not offer or need a service gets the default: its own
+ * `context.allow`, and a credential that lives until its TTL, exactly as before composition existed.
+ */
+interface CompositionPlan {
+  /** The capabilities for the child context, when they are more than the app's own `context.allow`. */
+  allow?: string[];
+  /** The service another app called this one through, and that app. Recorded on the child context. */
+  service?: string;
+  callerAppId?: string;
+  /** The child credential is revoked when the process ends. */
+  operationScoped: boolean;
+}
 
 export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviAppRunResult> {
   const startedAt = Date.now();
@@ -83,7 +112,11 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
           ? "Ravi app operation was denied."
           : errorCode === "APP_PERMISSION_PROVIDER_FAILED"
             ? "Ravi app permission provider failed."
-            : "Ravi app operation failed.";
+            : errorCode === "APP_DEPENDENCY_UNAVAILABLE"
+              ? "Ravi app dependency is unavailable."
+              : errorCode === "APP_OPERATION_NOT_PROVIDED"
+                ? "Ravi app operation is not offered to this caller."
+                : "Ravi app operation failed.";
     result = {
       ok: false,
       appId: options.appId,
@@ -97,6 +130,9 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
       errorCode,
       ...(callerContext ? { callerContextId: callerContext.contextId } : {}),
       ...(error instanceof AppPermissionProviderDeniedError ? { permissionProvider: error.audit } : {}),
+      ...(error instanceof RaviAppCompositionError && error.unavailable.length > 0
+        ? { unavailableDependencies: error.unavailable }
+        : {}),
     };
   }
 
@@ -105,6 +141,7 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
 
 function classifyAppRunError(error: unknown): string {
   if (error instanceof RaviAppError) return error.code;
+  if (error instanceof RaviAppCompositionError) return error.code;
   if (error instanceof RaviAppPermissionDeniedError) return "PERMISSION_DENIED";
   if (error instanceof AppPermissionProviderDeniedError) {
     return ["deny", "needs_grant", "not_applicable"].includes(error.audit.decision)
@@ -339,7 +376,13 @@ async function dispatchResolvedOperation(
   if (mutating && !hasDeclaredOperationPermission(operation)) {
     throw new Error(`Mutating operation ${resolved.id} must declare permission or permissions.`);
   }
+  // Composition (spec apps/router): another app may call an app that offers services only through them, and an app
+  // that needs services runs only when they are there. Both read the manifests and start nothing, so they sit before
+  // anything with a side effect. Apps that neither offer nor need a service do not discover anything here.
+  const records = lazyManifests(options);
+  const calledThrough = assertCallerMayCall(app, resolved.id, options.callerContext, records);
   assertCanRunAppOperation(appId, resolved.id, mutating);
+  const composition = planComposition(app, interfaceName, calledThrough, records);
   if (mutating && !options.execute) {
     return {
       ok: false,
@@ -397,10 +440,65 @@ async function dispatchResolvedOperation(
     if (isRecursiveCliCommand(appId, operation.command, options.staticRootCommands)) {
       throw new Error(`CLI operation ${resolved.id} recursively invokes ravi ${appId.split("/").join(" ")}.`);
     }
-    return withPermissionProvider(await runCliOperation(app, resolved, options), permissionProvider);
+    return withPermissionProvider(
+      await runCliOperation(app, resolved, { ...options, composition }),
+      permissionProvider,
+    );
   }
 
   throw new Error(`App operation interface is not supported by the router: ${interfaceName}`);
+}
+
+function lazyManifests(options: { cwd?: string; env?: NodeJS.ProcessEnv }): () => RaviAppManifestRecord[] {
+  let discovered: RaviAppManifestRecord[] | undefined;
+  return () => {
+    discovered ??= discoverAppManifests({ cwd: options.cwd, env: options.env });
+    return discovered;
+  };
+}
+
+/**
+ * When the caller is a process another app's operation launched, and this app offers services, the call must go
+ * through one of them. An app that offers nothing keeps the earlier rule: whatever the caller's context lets it use.
+ */
+function assertCallerMayCall(
+  app: RaviAppManifestRecord,
+  operationId: string,
+  callerContext: ContextRecord | undefined,
+  records: () => RaviAppManifestRecord[],
+): { service: string; callerAppId: string } | null {
+  const callerAppId = appCallerOf(callerContext);
+  if (!callerAppId || callerAppId === (app.manifest?.id ?? app.id) || !declaresProvides(app.manifest)) return null;
+  return { ...assertOperationProvided(app, operationId, callerAppId, records()), callerAppId };
+}
+
+/**
+ * Decide, before anything starts, how this run composes: refuse when a service the app needs is not there, and widen
+ * the child context to the composed ceiling (the app's own `context.allow`, its providers', and the right to call
+ * them) so each provider's context can be issued from it.
+ */
+function planComposition(
+  app: RaviAppManifestRecord,
+  interfaceName: string,
+  calledThrough: { service: string; callerAppId: string } | null,
+  records: () => RaviAppManifestRecord[],
+): CompositionPlan {
+  const plan: CompositionPlan = {
+    operationScoped: participatesInComposition(app.manifest),
+    ...(calledThrough ? { service: calledThrough.service, callerAppId: calledThrough.callerAppId } : {}),
+  };
+  // Only an operation that starts the app's own process needs what the app needs. `help`, `show` and `check` are how a
+  // missing provider gets diagnosed, so they keep answering.
+  if (interfaceName !== "cli" || !declaresRequires(app.manifest)) return plan;
+  const closure = resolveDependencyClosure(app, records());
+  if (closure.unavailable.length > 0) {
+    throw new RaviAppCompositionError(
+      "APP_DEPENDENCY_UNAVAILABLE",
+      closure.unavailable.map(describeUnavailableDependency).join(" "),
+      closure.unavailable,
+    );
+  }
+  return { ...plan, allow: composedContextAllow(app, closure) };
 }
 
 function withPermissionProvider(
@@ -422,22 +520,30 @@ async function runCliOperation(
     runtime?: RaviAppRunOptions["runtime"];
     callerContext?: ContextRecord;
     startedAt: number;
+    composition: CompositionPlan;
   },
 ): Promise<RaviAppRunResult> {
   const appId = app.manifest?.id ?? app.id;
   const invocation = resolveRaviAppCommand(resolved.operation.command ?? "", options.args, options.runtime);
   const appRoot = dirname(app.path);
-  const childContext = issueAppChildContext(app, resolved.id, options.callerContext);
-  const run = await spawnExecutable(invocation.executable, invocation.argv, {
-    cwd: appRoot,
-    env: buildRaviAppProcessEnv(options.env ?? process.env, {
-      appId,
-      operationId: resolved.id,
-      appRoot,
-      contextKey: childContext?.contextKey,
-    }),
-    capture: options.json,
-  });
+  const childContext = issueAppChildContext(app, resolved.id, options.callerContext, options.composition);
+  let run: Awaited<ReturnType<typeof spawnExecutable>>;
+  try {
+    run = await spawnExecutable(invocation.executable, invocation.argv, {
+      cwd: appRoot,
+      env: buildRaviAppProcessEnv(options.env ?? process.env, {
+        appId,
+        operationId: resolved.id,
+        appRoot,
+        contextKey: childContext?.contextKey,
+      }),
+      capture: options.json,
+    });
+  } finally {
+    // An app that offers or needs a service holds its credential for the operation, not for the TTL. Whatever the
+    // process handed to a provider ends with it too (the revocation cascades down the lineage).
+    if (childContext && options.composition.operationScoped) revokeAppChildContext(childContext);
+  }
   const parsed = options.json ? parseJsonOutput(run.stdout) : undefined;
 
   const base = {
@@ -854,10 +960,11 @@ function issueAppChildContext(
   app: RaviAppManifestRecord,
   operationId: string,
   parent: ContextRecord | undefined,
+  composition: CompositionPlan,
 ): ContextRecord | undefined {
   if (!parent) return undefined;
   const appId = app.manifest?.id ?? app.id;
-  const allow = app.manifest?.context?.allow ?? [];
+  const allow = composition.allow ?? app.manifest?.context?.allow ?? [];
   const capabilities = allow.map(parseRaviAppCapability);
   const input: IssueRuntimeContextInput = {
     parent,
@@ -869,9 +976,26 @@ function issueAppChildContext(
       appId,
       operationId,
       source: "app-router",
+      // Why this app runs for another one: the service it was called through, so the lineage explains itself.
+      ...(composition.service && composition.callerAppId
+        ? { composition: { service: composition.service, consumerAppId: composition.callerAppId } }
+        : {}),
     },
   };
   return issueRuntimeContext(input);
+}
+
+function revokeAppChildContext(context: ContextRecord): void {
+  try {
+    revokeRuntimeContext(context.contextId, { cascade: true, reason: "app_operation_finished" });
+  } catch (error) {
+    // The operation already ran and its result stands. The credential then lives until its TTL, which is the bounded
+    // behavior apps had before composition; say so rather than change what the caller is told.
+    log.warn("Could not revoke the app child context at the end of its operation", {
+      contextId: context.contextId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 function resolveCommandTokens(command: string): string[] {

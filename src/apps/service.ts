@@ -5,6 +5,7 @@ import { loadInternalPlugins } from "../plugins/internal-loader.js";
 import { discoverPlugins } from "../plugins/index.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { parseRaviAppCapability, parseRaviAppCommand, tokenizeRaviAppCommand } from "./command.js";
+import { markCompositionCycles, markUnavailableDependencies, validateComposition } from "./composition.js";
 import {
   RaviAppError,
   type RaviAppCheckResult,
@@ -114,6 +115,10 @@ export function discoverAppManifests(options: RaviAppListOptions = {}): RaviAppM
     .sort((left, right) => left.id.localeCompare(right.id) || left.path.localeCompare(right.path));
 
   markDuplicateIds(records);
+  // Composition is a property of the set, not of one file: a circle of `requires` and a missing provider only show
+  // once every manifest is known. Cycles first, because they decide which providers are still valid.
+  markCompositionCycles(records);
+  markUnavailableDependencies(records);
   return records;
 }
 
@@ -329,6 +334,7 @@ function validateManifest(
 
   validateContext(manifest.context, errors);
   validateOperations(manifest.operations, manifest.interfaces, manifest.id, errors, warnings);
+  validateComposition(manifest, operationIds, errors);
 
   if (!isObject(manifest.permissions)) {
     errors.push("permissions is required and must be an object.");

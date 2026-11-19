@@ -12,6 +12,7 @@ capabilities:
   - operations
   - routing
   - health
+  - composition
 tags:
   - apps
   - manifest
@@ -19,8 +20,11 @@ tags:
   - permissions
   - ui
   - ecosystem
+  - composition
 applies_to:
   - .ravi/specs/apps
+  - src/apps/composition.ts
+  - src/apps/service.ts
   - src/plugins
   - src/cli
   - src/sdk/gateway
@@ -346,6 +350,56 @@ merely because a manifest was generated.
   options MUST NOT be sent by default.
 - Discovery MUST validate operation metadata without executing operations.
 
+## Composition
+
+An app MAY offer services to other apps (`provides`) and MAY need services from
+other apps (`requires`). Both are declarative and read without running anything,
+and neither adds an executor or a transport: one app still calls another through
+the router, with its own child context (spec `apps/router`, "Composition").
+
+```json
+{ "id": "md-render",
+  "provides": { "md-render/html": { "version": "1.0.0", "operations": ["md-render.html"] } } }
+```
+
+```json
+{ "id": "blog",
+  "requires": { "md-render/html": "^1" } }
+```
+
+- A service key MUST be `<app-id>/<service>`: the id of the app that offers it,
+  a `/`, and a service name matching `^[a-z][a-z0-9-]*$`.
+- `provides` MUST be an object keyed by service keys, and every key MUST start
+  with the declaring app's own id. An app does not offer another app's service.
+- Each `provides` entry MUST have `version`, an exact `x.y.z` (digits only, no
+  leading zeros, no prerelease, no build metadata), and `operations`, a
+  non-empty list of operation ids declared in this manifest, without duplicates.
+  An operation that is not listed is not offered to other apps.
+- The permission provider operation (`permissions.provider.operation`) MUST NOT
+  be offered.
+- A change to what an offered operation accepts or returns that breaks an
+  existing caller MUST change the service's major version.
+- `requires` MUST be an object mapping a service key to a version range. A
+  range is one to three space-separated comparators, each one an optional `^`,
+  `~`, `>=`, `<=`, `>`, `<` or `=` followed by `x`, `x.y` or `x.y.z`. Anything
+  else (`latest`, `*`, `1.x`, a prerelease, an empty string) MUST be a validation
+  error, because the semver parser the runtime uses answers "satisfied" for
+  text it cannot read.
+- An app MUST NOT require one of its own services.
+- A cycle in `requires` MUST be a validation error on every app on the cycle,
+  and the error MUST name the path (`requires cycle: a -> b -> a.`). An app that
+  only leads into a cycle stays valid; it is told, as a warning, that what it
+  needs is invalid.
+- A requirement that nothing satisfies (no app with that id, an invalid or
+  duplicated one, one that does not offer the service, an offered version outside
+  the range) MUST NOT make the manifest invalid. It MUST be a discovery warning
+  that names the requirement and the reason, because an app is installed before
+  or after what it needs, and the run (not the install) is where it is held back.
+- Discovery MUST NOT install, start or query any app to resolve a requirement.
+  The answer comes from the manifests discovery already read.
+- An app that neither offers nor needs a service MUST behave exactly as it did
+  before these fields existed.
+
 ## Permission Rules
 
 - `permissions.required` are authorization requirements the caller must satisfy
@@ -461,6 +515,11 @@ merely because a manifest was generated.
   mutating/non-health operation.
 - Manifest validation MUST fail when builtin operations use handlers outside
   the router allowlist.
+- Manifest validation MUST fail when `provides` or `requires` is malformed, when
+  a service key does not start with the app's own id, when an offered version is
+  not an exact `x.y.z`, when an offered operation is undeclared, duplicated or
+  the permission provider operation, when a range cannot be read, when an app
+  requires its own service, and when `requires` forms a cycle.
 - Manifest validation SHOULD warn on missing health checks, missing skill for
   agent-operated apps, missing storage ownership for stateful apps, missing
   event declarations for eventful apps, and human-only CLI interfaces.
@@ -500,3 +559,12 @@ merely because a manifest was generated.
   check recursion.
 - Treating declarative CLI commands as shell programs and exposing app args to
   command injection.
+- Trusting the semver parser with a range it cannot read: `Bun.semver.satisfies`
+  answers "satisfied" for `latest`, `*` or any text, so a typo in `requires`
+  would silently accept every version.
+- Resolving `requires` at discovery by starting or querying the provider, which
+  turns listing apps into running them.
+- Finding a cycle only at run time, when both apps are already running and each
+  is waiting on the other.
+- Making a missing provider invalidate the consumer's manifest, which forces an
+  install order on the ecosystem instead of holding the run back.
