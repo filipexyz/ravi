@@ -358,7 +358,7 @@ const DEFAULT_DEPS: DoctorDeps = {
     }),
   inspectManagedRuntime: () =>
     isPm2Available()
-      ? buildManagedRuntimeIdentity(getPm2Processes(), process.env.RAVI_BUNDLE ?? process.argv[1])
+      ? buildManagedRuntimeIdentity(getPm2Processes({ strict: true }), process.env.RAVI_BUNDLE ?? process.argv[1])
       : null,
   probeChannelRunnerAdapters: probeRunnerAdapters,
 };
@@ -624,12 +624,17 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
     });
     addCheck(checks, () => buildInboundIdentityResolutionCheck(deps));
     addCheck(checks, () => buildNativeChannelRuntimeCheck(deps.inspectNativeChannelRuntime()));
-    addCheck(checks, () =>
-      buildChannelRunnerReleaseCheck({
-        runtime: options.managedRuntime !== undefined ? options.managedRuntime : deps.inspectManagedRuntime(),
-        adapters: options.runnerAdapters ?? null,
-      }),
-    );
+    addCheck(checks, () => {
+      try {
+        return buildChannelRunnerReleaseCheck({
+          runtime: options.managedRuntime !== undefined ? options.managedRuntime : deps.inspectManagedRuntime(),
+          adapters: options.runnerAdapters ?? null,
+        });
+      } catch (error) {
+        // addCheck's own fallback belongs to the runtime domain and `--domain channels` would filter it out.
+        return buildChannelRunnerReleaseReadFailureCheck(error);
+      }
+    });
     addCheck(checks, () => buildCostPricingCoverageCheck(deps));
     addCheck(checks, () => buildCostCompletenessCheck(deps));
   }
@@ -1600,6 +1605,19 @@ export function buildNativeChannelRuntimeCheck(snapshot: NativeChannelRuntimeSna
         ? "add or enable the broker connection with `ravi credentials add` (keychain needs macOS; elsewhere use vault with VAULT_ADDR and VAULT_TOKEN), then `ravi channels restart`"
         : "start the runner with `ravi channels start`",
     data,
+  };
+}
+
+/** A PM2 that cannot be read leaves the releases uncompared; say so in the channels domain, where it is looked for. */
+function buildChannelRunnerReleaseReadFailureCheck(error: unknown): LegacyDoctorCheck {
+  return {
+    id: "channels.runner_release",
+    title: "Channel runner release",
+    status: "skip",
+    severity: "warn",
+    summary: `PM2 could not be read, so the ${CHANNELS_PM2_PROCESS_NAME} and daemon releases could not be compared: ${error instanceof Error ? error.message : String(error)}`,
+    fixHint: "check PM2 with `pm2 jlist`, then compare the releases with `ravi channels status`",
+    data: { state: "unverified", why: "pm2_unreadable" },
   };
 }
 

@@ -137,7 +137,7 @@ runner's log:
   not. The snapshot MUST NOT gain a field for it.
 - `ravi doctor` MUST report `channels.runner_release`: `fail` when the releases
   differ, `warn` when only the runner reports a refused guard (evidence on its
-  own, whatever the releases are), `skip` otherwise when a release cannot be
+  own, unless verified different releases already make it a `fail`), `skip` otherwise when a release cannot be
   verified or a process is not online. The runner's own report
   comes from a bounded NATS probe; a runner that does not answer MUST NOT hold
   the doctor.

@@ -1410,14 +1410,14 @@ describe("channels.runner_release", () => {
     expect(probed).toEqual([200]);
   });
 
-  it("runDoctor lets inspectDoctor report a failed PM2 read as a failed check instead of crashing", async () => {
+  it("reports a PM2 read that throws as an unverified check in the channels domain instead of dropping it", async () => {
     const deps = makeHealthyDeps();
     const originalLog = console.log;
     console.log = () => {};
     try {
-      // No domain filter: the unexpected-failure check belongs to the runtime domain.
+      // `--domain channels` filters out addCheck's own fallback (runtime domain), so the check reports it itself.
       const report = await runDoctor(
-        { json: true },
+        { json: true, domain: "channels" },
         {
           ...deps,
           inspectManagedRuntime: () => {
@@ -1425,7 +1425,11 @@ describe("channels.runner_release", () => {
           },
         },
       );
-      expect(report.checks.find((entry) => entry.id === "doctor.check")?.status).toBe("fail");
+      const check = report.checks.find((entry) => entry.id === "channels.runner_release");
+      expect(check).toMatchObject({ domain: "channels", status: "skip", severity: "warn" });
+      const finding = report.findings.find((entry) => entry.id === "channels.runner_release");
+      expect(finding?.summary).toContain("PM2 could not be read");
+      expect(finding?.summary).toContain("pm2 jlist failed");
     } finally {
       console.log = originalLog;
     }
