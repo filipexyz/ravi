@@ -126,7 +126,8 @@ A trigger is owned by the turn that created it. The owner decides who the trigge
 
 ## PR follow event selection
 
-- A generated `gh-follow` MUST wake its owner once for each finished CI run: the outcome event (`workflow_run.succeeded`, `failed`, `cancelled`) is delivered and the `workflow_run.completed` the watch derivation emits beside it is not. A `workflow_run.completed` that is the only event of its run (`action_required`, `neutral`, `skipped`, `stale`, no conclusion) MUST still be delivered.
+- A generated `gh-follow` MUST NOT wake its owner twice for a run the local derivation reports: the outcome event (`workflow_run.succeeded`, `failed`, `cancelled`) is delivered and the `workflow_run.completed` the local derivation (`placement == "local"`) emits beside it is not. A `workflow_run.completed` that is the only event of its run (`action_required`, `neutral`, `skipped`, `stale`, no conclusion) MUST still be delivered.
+- A `workflow_run.completed` the Console delivers MUST be delivered whatever its conclusion. The Console sends no outcome event, so it is the only CI signal of a follow whose local poller produces nothing (the repo watch was deactivated by someone else, `gh` cannot read the repo, the watch could not be created). When the Console and the local poller both report a run, the owner hears it twice; that is the price of never going deaf.
 - A generated `gh-follow` MUST NOT deliver any run of the `PR Description` workflow, and MUST deliver every PR lifecycle event and PR comment of its PR.
 - A change to the generated filter MUST reach follows that already exist. Maintenance MUST rewrite a follow's filter when it equals, exactly, one an earlier release generated for that PR, and MUST leave any other valid filter alone.
 

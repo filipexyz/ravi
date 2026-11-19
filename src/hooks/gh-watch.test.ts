@@ -597,13 +597,17 @@ describe("gh follow filter: which events wake the owner", () => {
   const filter = ghFollowFilter("o/r", 7);
   const hears = (event: unknown) => evaluateFilter(filter, event);
 
-  // The envelope the watch runner publishes: the event type sits beside the payload.
-  const event = (eventType: string, payload: Record<string, unknown> = {}) => ({
+  // The envelope a watch publishes: the event type and the placement sit beside the payload.
+  // The local runner sets `placement: "local"` (its own test, "publishes the derived event with
+  // the watch contract on change", pins it); the Console sends the placement of the watch.
+  type Placement = "local" | "console";
+  const event = (eventType: string, payload: Record<string, unknown> = {}, placement: Placement = "local") => ({
     eventType,
+    placement,
     payload: { repository: "o/r", number: 7, ...payload },
   });
-  const run = (eventType: string, conclusion: string | null, name = "CI") =>
-    event(eventType, { runId: 1, name, status: "completed", conclusion, branch: "feat/x" });
+  const run = (eventType: string, conclusion: string | null, name = "CI", placement: Placement = "local") =>
+    event(eventType, { runId: 1, name, status: "completed", conclusion, branch: "feat/x" }, placement);
 
   const OUTCOMES: Array<[conclusion: string, outcomeEvent: string]> = [
     ["success", "workflow_run.succeeded"],
@@ -613,7 +617,7 @@ describe("gh follow filter: which events wake the owner", () => {
     ["cancelled", "workflow_run.cancelled"],
   ];
 
-  it("hears each CI result once: the outcome event, not the completed event repeating it", () => {
+  it("hears each CI result once from the local producer: the outcome event, not the completed event repeating it", () => {
     for (const [conclusion, outcomeEvent] of OUTCOMES) {
       expect(hears(run(outcomeEvent, conclusion))).toBe(true);
       expect(hears(run("workflow_run.completed", conclusion))).toBe(false);
@@ -627,12 +631,35 @@ describe("gh follow filter: which events wake the owner", () => {
     }
   });
 
-  it("drops the PR Description workflow, whatever its outcome", () => {
-    for (const [conclusion, outcomeEvent] of OUTCOMES) {
-      expect(hears(run(outcomeEvent, conclusion, "PR Description"))).toBe(false);
-      expect(hears(run("workflow_run.completed", conclusion, "PR Description"))).toBe(false);
+  it("keeps the Console's workflow_run.completed whatever its conclusion: it is the only CI event the Console sends", () => {
+    // The Console reports `completed` and no outcome event. Dropping it for `success` or `failure`
+    // would leave a follow whose local poller produces nothing deaf to every CI result.
+    for (const conclusion of [
+      ...OUTCOMES.map(([name]) => name),
+      "action_required",
+      "neutral",
+      "skipped",
+      "stale",
+      null,
+    ]) {
+      expect(hears(run("workflow_run.completed", conclusion, "CI", "console"))).toBe(true);
     }
-    expect(hears(run("workflow_run.completed", "action_required", "PR Description"))).toBe(false);
+  });
+
+  it("hears an event that does not say where it comes from", () => {
+    // A missing `placement` makes `placement == "local"` false, so the exclusion does not apply.
+    const unplaced = { eventType: "workflow_run.completed", payload: run("workflow_run.completed", "success").payload };
+    expect(hears(unplaced)).toBe(true);
+  });
+
+  it("drops the PR Description workflow, whatever its outcome and wherever it was reported", () => {
+    for (const placement of ["local", "console"] as const) {
+      for (const [conclusion, outcomeEvent] of OUTCOMES) {
+        expect(hears(run(outcomeEvent, conclusion, "PR Description", placement))).toBe(false);
+        expect(hears(run("workflow_run.completed", conclusion, "PR Description", placement))).toBe(false);
+      }
+      expect(hears(run("workflow_run.completed", "action_required", "PR Description", placement))).toBe(false);
+    }
     // Another workflow with a similar name is still CI.
     expect(hears(run("workflow_run.failed", "failure", "PR Description Required Sections"))).toBe(true);
   });
@@ -648,6 +675,7 @@ describe("gh follow filter: which events wake the owner", () => {
       "pull_request_comment.created",
     ]) {
       expect(hears(event(eventType))).toBe(true);
+      expect(hears(event(eventType, {}, "console"))).toBe(true);
     }
     // The Console delivers lifecycle with the number under pull_request and no event type at all.
     expect(hears({ payload: { repository: "o/r", pull_request: { number: 7 } } })).toBe(true);
@@ -685,11 +713,13 @@ describe("gh follow filter: which events wake the owner", () => {
       };
       const base = { version: 1 as const, pullRequests: { "7": pullRequest }, comments: {} };
       const running = { id: 1, name, status: "in_progress", conclusion: null, branch: "feat/x" };
-      return deriveLocalGitHubEvents("o/r", {
+      const derived = deriveLocalGitHubEvents("o/r", {
         previous: { ...base, workflowRuns: { "1": running } },
         current: { ...base, workflowRuns: { "1": { ...running, status: "completed", conclusion } } },
         departed: {},
       }).events;
+      // What the local runner publishes: the derived event inside its watch envelope.
+      return derived.map((emitted) => ({ ...emitted, placement: "local" as const }));
     }
 
     it("lets exactly one event of a finished run reach the follow, whatever its conclusion", () => {
@@ -719,9 +749,8 @@ describe("gh follow filter: which events wake the owner", () => {
       }
     });
 
-    // The Console reports `workflow_run.completed` and none of the outcome events. For a repo the
-    // outcome events come from the managed local watch every follow ensures, so a Console
-    // completion that repeats one is judged exactly like a local completion.
+    // The Console reports `workflow_run.completed` and none of the outcome events, so a Console
+    // completion is the only CI signal of its run whenever the local poller produces nothing.
     function consoleRun(conclusion: string | null, name = "CI") {
       const inbox: InboxNatsPayload = {
         version: 1,
@@ -761,16 +790,45 @@ describe("gh follow filter: which events wake the owner", () => {
       return watchEventFromInboxPayload(inbox);
     }
 
-    it("judges a Console completion like a local one: dropped when an outcome event exists, kept when it is the only one", () => {
-      expect(consoleRun("success")).toMatchObject({ placement: "console", eventType: "workflow_run.completed" });
-      for (const conclusion of ["success", "failure", "timed_out", "startup_failure", "cancelled"]) {
-        expect(hears(consoleRun(conclusion))).toBe(false);
+    const CONCLUSIONS = [
+      "success",
+      "failure",
+      "timed_out",
+      "startup_failure",
+      "cancelled",
+      "action_required",
+      "neutral",
+      "skipped",
+      "stale",
+      null,
+    ];
+
+    it("hears a repo that only the Console reports on exactly once per finished run, whatever the conclusion", () => {
+      // No local poller output: the Console's `completed` is all the follow can ever hear.
+      for (const conclusion of CONCLUSIONS) {
+        expect(consoleRun(conclusion)).toMatchObject({ placement: "console", eventType: "workflow_run.completed" });
+        expect([consoleRun(conclusion)].filter((emitted) => hears(emitted))).toHaveLength(1);
       }
-      for (const conclusion of ["action_required", "neutral", "skipped", "stale", null]) {
-        expect(hears(consoleRun(conclusion))).toBe(true);
+    });
+
+    it("drops the PR Description workflow from the Console as well", () => {
+      for (const conclusion of CONCLUSIONS) {
+        expect(hears(consoleRun(conclusion, "PR Description"))).toBe(false);
       }
-      expect(hears(consoleRun("success", "PR Description"))).toBe(false);
-      expect(hears(consoleRun("action_required", "PR Description"))).toBe(false);
+    });
+
+    it("hears a run twice when the Console and the local poller both report it: the cost of keeping the Console signal", () => {
+      // The local derivation emits the outcome event and `completed` (the follow drops the second);
+      // the Console adds its own `completed`. Two events, down from the three before the exclusion.
+      for (const [conclusion, outcomeEvent] of OUTCOMES) {
+        const reported = [...derive("CI", conclusion), consoleRun(conclusion)!];
+        const heard = reported.filter((emitted) => hears(emitted));
+        expect(reported).toHaveLength(3);
+        expect(heard.map((emitted) => [emitted.placement, emitted.eventType])).toEqual([
+          ["local", outcomeEvent],
+          ["console", "workflow_run.completed"],
+        ]);
+      }
     });
 
     it("drops the repeat for exactly the conclusions that have their own event", () => {

@@ -592,24 +592,34 @@ const GH_FOLLOW_PR_DESCRIPTION_WORKFLOW = "PR Description";
 /**
  * Events a PR follow does not wake its owner for.
  *
- * - A `workflow_run.completed` whose conclusion already has its own outcome event
- *   (`succeeded`, `failed`, `cancelled`): the derivation emits both for every such
- *   run, so the owner heard each CI result twice. `completed` stays for the
- *   conclusions that have no outcome event (`action_required`, `neutral`,
- *   `skipped`, `stale`), where it is the only signal.
+ * - A `workflow_run.completed` that the local derivation (`placement == "local"`)
+ *   emits beside the outcome event of the same run (`succeeded`, `failed`,
+ *   `cancelled`): the derivation emits both for every such run, so the owner heard
+ *   each CI result twice. `completed` stays for the conclusions that have no outcome
+ *   event (`action_required`, `neutral`, `skipped`, `stale`), where it is the only
+ *   signal.
  * - Every run of the PR Description workflow, whatever its outcome.
+ *
+ * The exclusion is scoped to the local producer because only it emits the pair. The
+ * Console reports `workflow_run.completed` and no outcome event, so a Console
+ * `completed` is the only CI signal when the local poller produces nothing (the repo
+ * watch was deactivated by someone else, `gh` cannot read the repo, the watch could
+ * not be created). Dropping it would leave the follow deaf to every CI result. The
+ * cost: with both sources active the owner can hear a run twice, the local outcome
+ * and the Console completion.
  *
  * Written as `!(path == value)`, never `path != value`: a path the event does not
  * carry makes every comparison false, `!=` included, so `data.payload.name != "x"`
  * would drop each PR lifecycle and comment event (they have no `payload.name`).
- * Negating the equality keeps every event that lacks the field.
+ * Negating the equality keeps every event that lacks the field, a missing
+ * `placement` included.
  */
 function ghFollowNoiseExclusion(): string {
   const repeated = WORKFLOW_CONCLUSIONS_WITH_OUTCOME_EVENT.map(
     (conclusion) => `data.payload.conclusion == ${JSON.stringify(conclusion)}`,
   ).join(" || ");
   return [
-    `!(data.eventType == "workflow_run.completed" && (${repeated}))`,
+    `!(data.placement == "local" && data.eventType == "workflow_run.completed" && (${repeated}))`,
     `!(data.payload.name == ${JSON.stringify(GH_FOLLOW_PR_DESCRIPTION_WORKFLOW)})`,
   ].join(" && ");
 }

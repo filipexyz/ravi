@@ -1187,18 +1187,18 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | hooks | src/hooks/gh-follow-sweep.ts | 357 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:b53ab0d130807a6b05e97125 |
 | hooks | src/hooks/gh-follow-sweep.ts | 421 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:8cb91fffe47bdc0cae186f89 |
 | hooks | src/hooks/gh-pr-publish.ts | 139 | fixed | binding retained / no recognized error surface | src/hooks/gh-pr-publish.ts:21b7ea1410bb22bbfc408308 |
-| hooks | src/hooks/gh-watch.ts | 757 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:8073d9576e24b20742de4a05 |
-| hooks | src/hooks/gh-watch.ts | 789 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:15462fd7c975cd3568f4bc2c |
-| hooks | src/hooks/gh-watch.ts | 818 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:15c7b4fe70049a4776673155 |
-| hooks | src/hooks/gh-watch.ts | 877 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:09ba37f04ad007cd21eee4b0 |
-| hooks | src/hooks/gh-watch.ts | 890 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:08ad2f925bb9e28a05118a0e |
-| hooks | src/hooks/gh-watch.ts | 924 | triaged-follow-up | catch-without-binding | src/hooks/gh-watch.ts:af8457fcadfb65da4dd90240 |
-| hooks | src/hooks/gh-watch.ts | 960 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:26f04b4cb70174099933b9d4 |
-| hooks | src/hooks/gh-watch.ts | 970 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:3c35affae2df1ffb3c3a9a22 |
-| hooks | src/hooks/gh-watch.ts | 983 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:3c35affae2df1ffb3c3a9a22 |
-| hooks | src/hooks/gh-watch.ts | 1015 | triaged-follow-up | catch-without-binding | src/hooks/gh-watch.ts:23d0acda26def2baf561fcf1 |
-| hooks | src/hooks/gh-watch.ts | 1031 | triaged-follow-up | catch-without-binding | src/hooks/gh-watch.ts:d400d88bf210764803f508f4 |
-| hooks | src/hooks/gh-watch.ts | 1158 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:108b86d5f9678900d5b1b3cb |
+| hooks | src/hooks/gh-watch.ts | 767 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:8073d9576e24b20742de4a05 |
+| hooks | src/hooks/gh-watch.ts | 799 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:15462fd7c975cd3568f4bc2c |
+| hooks | src/hooks/gh-watch.ts | 828 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:15c7b4fe70049a4776673155 |
+| hooks | src/hooks/gh-watch.ts | 887 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:09ba37f04ad007cd21eee4b0 |
+| hooks | src/hooks/gh-watch.ts | 900 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:08ad2f925bb9e28a05118a0e |
+| hooks | src/hooks/gh-watch.ts | 934 | triaged-follow-up | catch-without-binding | src/hooks/gh-watch.ts:af8457fcadfb65da4dd90240 |
+| hooks | src/hooks/gh-watch.ts | 970 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:26f04b4cb70174099933b9d4 |
+| hooks | src/hooks/gh-watch.ts | 980 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:3c35affae2df1ffb3c3a9a22 |
+| hooks | src/hooks/gh-watch.ts | 993 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:3c35affae2df1ffb3c3a9a22 |
+| hooks | src/hooks/gh-watch.ts | 1025 | triaged-follow-up | catch-without-binding | src/hooks/gh-watch.ts:23d0acda26def2baf561fcf1 |
+| hooks | src/hooks/gh-watch.ts | 1041 | triaged-follow-up | catch-without-binding | src/hooks/gh-watch.ts:d400d88bf210764803f508f4 |
+| hooks | src/hooks/gh-watch.ts | 1168 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:108b86d5f9678900d5b1b3cb |
 | hooks | src/hooks/jobs-promote.ts | 106 | fixed | binding retained / no recognized error surface | src/hooks/jobs-promote.ts:21c4820fb5c34b39bc576264 |
 | hooks | src/hooks/pre-compact.ts | 333 | fixed | binding retained / no recognized error surface | src/hooks/pre-compact.ts:8bd137fa7ea0b369d8761dd5 |
 | hooks | src/hooks/pre-compact.ts | 344 | triaged-follow-up | catch-without-binding | src/hooks/pre-compact.ts:b200a5a7c730aeae6a9170c4 |
