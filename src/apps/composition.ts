@@ -9,7 +9,7 @@
 import { semver } from "bun";
 import { canWithCapabilities } from "../permissions/capability-snapshot.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
-import { parseRaviAppCapability } from "./command.js";
+import { tryParseRaviAppCapability } from "./command.js";
 import type {
   RaviAppDependencyUnavailableReason,
   RaviAppManifest,
@@ -312,14 +312,12 @@ function uncoveredAllow(provider: RaviAppManifestRecord, holder: RaviAppManifest
   const held = declaredCapabilities(holder.manifest);
   const asked = provider.manifest?.context?.allow;
   return (Array.isArray(asked) ? asked : []).filter((entry) => {
-    if (typeof entry !== "string") return false;
-    try {
-      const capability = parseRaviAppCapability(entry);
-      return !canWithCapabilities(held, capability.permission, capability.objectType, capability.objectId);
-    } catch {
-      // A malformed entry is the provider's own validation error; it is not a gap in the holder's declaration.
-      return false;
-    }
+    // An entry that is not a capability is the provider's own validation error, not a gap in the holder's declaration.
+    const capability = typeof entry === "string" ? tryParseRaviAppCapability(entry) : null;
+    return (
+      capability !== null &&
+      !canWithCapabilities(held, capability.permission, capability.objectType, capability.objectId)
+    );
   });
 }
 
@@ -327,12 +325,8 @@ function declaredCapabilities(manifest: RaviAppManifest | null | undefined): Con
   const allow = manifest?.context?.allow;
   const out: ContextCapability[] = [];
   for (const entry of Array.isArray(allow) ? allow : []) {
-    if (typeof entry !== "string") continue;
-    try {
-      out.push(parseRaviAppCapability(entry));
-    } catch {
-      // Skipped: validation already reports it.
-    }
+    const capability = typeof entry === "string" ? tryParseRaviAppCapability(entry) : null;
+    if (capability) out.push(capability);
   }
   return out;
 }
