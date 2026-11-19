@@ -19,20 +19,20 @@ import {
   detachChatFromSession,
   findSessionByAttachedChat,
   getSession,
-  getSessionByName,
   listSessionSubscriptions,
   matchRoute,
   isChatCompatibleWithSession,
   RouteSessionAgentConflictError,
 } from "../../router/index.js";
 import { isExplicitSessionAttach } from "../../router/route-sticky-attach.js";
+import { resolveSubscriptionPrecedence } from "../subscription-precedence.js";
 import {
   dbUpsertChat,
   dbUpsertChatMessage,
   dbUpsertChatParticipant,
   type ChannelConfig,
 } from "../../router/router-db.js";
-import type { MatchedRoute, ResolvedRoute, RouterConfig } from "../../router/types.js";
+import type { ResolvedRoute, RouterConfig } from "../../router/types.js";
 import type { MessageActorMetadata, MessageContext, MessageTarget } from "../../runtime/message-types.js";
 import { transcribeAudio } from "../../transcribe/openai.js";
 import { logger } from "../../utils/logger.js";
@@ -1834,49 +1834,37 @@ export class SlackSocketModeService {
           routeSessionKey: matched?.sessionKey,
         });
       } else if (ownerSession && ownerAgent) {
-        const forcedSessionName = routeThreadId ? undefined : matched?.route?.session?.trim();
-        const forcedSession = forcedSessionName ? getSessionByName(forcedSessionName) : null;
-        const subscriptionIsForcedSession = forcedSession?.sessionKey === existingSubscription.sessionKey;
-        if (
-          forcedSessionName &&
-          !subscriptionIsForcedSession &&
-          !isExplicitSessionAttach(existingSubscription.attachedByType)
-        ) {
+        // The decision is shared with the Omni consumer (the route's forced
+        // session against an automatic or an explicit subscription).
+        const precedence = resolveSubscriptionPrecedence({
+          matched,
+          subscription: existingSubscription,
+          ownerAgentId: ownerSession.agentId,
+          ownerAgent,
+          threadId: routeThreadId,
+          defaultDmScope: routerConfig.defaultDmScope,
+        });
+        if (precedence.kind === "route-wins") {
           // An explicit route with a fixed session beats automatic inbound
           // bookkeeping: the chat is rebound to the route's session after commit.
           log.info("Slack route session replaces automatic chat subscription", {
             chatId: canonicalChat.id,
             subscriptionSessionKey: existingSubscription.sessionKey,
             subscriptionAgentId: ownerSession.agentId,
-            routeSession: forcedSessionName,
+            routeSession: precedence.routeSession,
             routeAgentId: matched?.agentId,
           });
           staleSubscription = existingSubscription;
         } else {
-          if (!matched || existingSubscription.sessionKey !== matched.sessionKey) {
+          if (precedence.rerouted) {
             log.info("Slack inbound rerouted by session subscription", {
               chatId: canonicalChat.id,
               fromSessionKey: matched?.sessionKey,
               toSessionKey: existingSubscription.sessionKey,
             });
-            // The subscription picks agent and session together; dropping the
-            // route's fixed session keeps commit from pairing this agent with
-            // another agent's session.
-            const route = matched?.route;
-            matched = {
-              agentId: ownerSession.agentId,
-              agent: ownerAgent,
-              sessionKey: existingSubscription.sessionKey,
-              dmScope: matched?.dmScope ?? ownerAgent.dmScope ?? routerConfig.defaultDmScope,
-              route: route?.session && !subscriptionIsForcedSession ? { ...route, session: undefined } : route,
-            } satisfies MatchedRoute;
           }
+          matched = precedence.matched;
           trustedSubscription = true;
-          // Even when the keys already agree, an attached chat must not be
-          // redirected to a different session the route forces.
-          if (matched?.route?.session && forcedSessionName && !subscriptionIsForcedSession) {
-            matched = { ...matched, route: { ...matched.route, session: undefined } };
-          }
         }
       } else {
         log.warn("Slack subscription points to a missing session or agent - falling back to route resolution", {

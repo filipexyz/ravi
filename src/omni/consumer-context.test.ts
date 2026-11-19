@@ -55,7 +55,7 @@ let configuredAgentMode: "active" | "sentinel" = "active";
 let configuredRoutes: RouteConfig[] = [];
 let useAccountAgentFallback = true;
 const commitMatchedRouteCalls: Array<{
-  matched: { agentId: string; route?: { pattern?: string } };
+  matched: { agentId: string; sessionKey: string; route?: { pattern?: string; session?: string } };
   params: { phone: string };
 }> = [];
 
@@ -115,7 +115,10 @@ mock.module("../slash/index.js", () => ({
 mock.module("../router/index.js", () => ({
   ...actualRouterIndexModule,
   expandHome: (cwd: string) => cwd,
-  commitMatchedRoute: (matched: { agentId: string; route?: { pattern?: string } }, params: { phone: string }) => {
+  commitMatchedRoute: (
+    matched: { agentId: string; sessionKey: string; route?: { pattern?: string; session?: string } },
+    params: { phone: string },
+  ) => {
     commitMatchedRouteCalls.push({ matched, params });
     return routeResult;
   },
@@ -2552,6 +2555,131 @@ describe("OmniConsumer channel context", () => {
     const [, prompt] = promptCalls[0];
     expect(prompt.prompt).toContain("[Replying to unknown mid:quoted-audio-2]");
     expect(prompt.prompt).toContain("[Audio]\nTranscript:\nhistórico recuperado pelo metadata db");
+  });
+
+  describe("chat subscription x route's forced session", () => {
+    // Spec sessions/attach: an automatic subscription loses to a route that
+    // forces a session; an explicit attach keeps the chat on its session and
+    // the route's forced session is dropped for that chat. Before the fix the
+    // consumer handed the commit a match that still forced the route's session,
+    // and the commit renamed the attached session to the route's name.
+    const PEER = "5511988887777";
+    const FORCED = "colleague-room";
+
+    function peerDm(id: string) {
+      return {
+        id,
+        type: "message.received",
+        payload: {
+          externalId: `msg-${id}`,
+          chatId: `${PEER}@s.whatsapp.net`,
+          from: `${PEER}@s.whatsapp.net`,
+          content: { type: "text", text: "oi" },
+          rawPayload: { pushName: "Peer", isGroup: false },
+        },
+        metadata: { instanceId: "instance-1", channelType: "whatsapp-baileys", ingestMode: "realtime" },
+        timestamp: Date.now(),
+      };
+    }
+
+    function consumer() {
+      const sender = { send: mock(async () => {}), sendTyping: mock(async () => {}), markRead: mock(async () => {}) };
+      return new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+        resolveGroupMetadata: async () => null,
+      });
+    }
+
+    // Routing's own first inbound attaches the peer's chat (automatically) to
+    // the session the commit returned; this finds that chat.
+    async function firstInboundChatId(omni: InstanceType<typeof OmniConsumer>): Promise<string> {
+      await omni["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", peerDm("evt-first") as never);
+      const key = String(routeResult?.sessionKey);
+      const subscription = actualRouterSessionsModule.listSessionSubscriptions(key)[0];
+      if (!subscription) throw new Error("the first inbound did not attach the chat");
+      return subscription.chatId;
+    }
+
+    function reattach(chatId: string, fromKey: string, toKey: string, attachedByType: "user" | "system") {
+      actualGetOrCreateSession(toKey, "main", agentCwd);
+      actualRouterSessionsModule.detachChatFromSession(fromKey, chatId);
+      actualRouterSessionsModule.attachChatToSession({
+        sessionKey: toKey,
+        chatId,
+        role: "primary",
+        attachedByType,
+        attachedReason: "test",
+        setOutputTarget: true,
+      });
+    }
+
+    function forceSession(session: string) {
+      configuredRoutes = [{ pattern: PEER, accountId: "main", agent: "main", session }];
+    }
+
+    it("keeps an explicit attach on its session and hands the commit a route that no longer forces another", async () => {
+      const omni = consumer();
+      const chatId = await firstInboundChatId(omni);
+      reattach(chatId, String(routeResult?.sessionKey), "agent:main:attached", "user");
+      forceSession(FORCED);
+
+      await omni["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", peerDm("evt-second") as never);
+
+      expect(commitMatchedRouteCalls).toHaveLength(2);
+      const matched = commitMatchedRouteCalls[1]!.matched;
+      expect(matched.sessionKey).toBe("agent:main:attached");
+      expect(matched.route?.pattern).toBe(PEER);
+      expect(matched.route?.session).toBeUndefined();
+    }, 20_000);
+
+    it("keeps an explicit attach that already is the session the route computes", async () => {
+      const omni = consumer();
+      const chatId = await firstInboundChatId(omni);
+      // The wildcard-free route for this peer computes agent:main:main (dmScope main).
+      reattach(chatId, String(routeResult?.sessionKey), "agent:main:main", "user");
+      forceSession(FORCED);
+
+      await omni["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", peerDm("evt-second") as never);
+
+      const matched = commitMatchedRouteCalls[1]!.matched;
+      expect(matched.sessionKey).toBe("agent:main:main");
+      expect(matched.route?.session).toBeUndefined();
+    }, 20_000);
+
+    it("lets the route's forced session beat an automatic subscription and rebinds the chat", async () => {
+      const omni = consumer();
+      const chatId = await firstInboundChatId(omni);
+      const staleKey = String(routeResult?.sessionKey);
+      forceSession(FORCED);
+      const forcedKey = "agent:main:colleague-room";
+      actualGetOrCreateSession(forcedKey, "main", agentCwd, { name: FORCED });
+      routeResult = { ...routeResult, sessionKey: forcedKey, sessionName: FORCED };
+
+      await omni["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", peerDm("evt-second") as never);
+
+      const matched = commitMatchedRouteCalls[1]!.matched;
+      // The route is committed as matched, not rerouted to the old session...
+      expect(matched.sessionKey).not.toBe(staleKey);
+      expect(matched.route?.session).toBe(FORCED);
+      // ...and the stale automatic subscription is released, the chat rebound.
+      expect(actualRouterSessionsModule.listSessionSubscriptions(staleKey)).toEqual([]);
+      expect(actualRouterSessionsModule.findSessionByAttachedChat(chatId)?.sessionKey).toBe(forcedKey);
+    }, 20_000);
+
+    it("keeps the route's forced session when the subscription already is that session", async () => {
+      const omni = consumer();
+      const chatId = await firstInboundChatId(omni);
+      const forcedKey = "agent:main:colleague-room";
+      actualGetOrCreateSession(forcedKey, "main", agentCwd, { name: FORCED });
+      reattach(chatId, String(routeResult?.sessionKey), forcedKey, "system");
+      forceSession(FORCED);
+
+      await omni["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", peerDm("evt-second") as never);
+
+      const matched = commitMatchedRouteCalls[1]!.matched;
+      expect(matched.sessionKey).toBe(forcedKey);
+      expect(matched.route?.session).toBe(FORCED);
+      expect(actualRouterSessionsModule.findSessionByAttachedChat(chatId)?.sessionKey).toBe(forcedKey);
+    }, 20_000);
   });
 });
 

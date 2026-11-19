@@ -42,6 +42,14 @@
   route to agent B and a fixed session of B, MUST deliver to B's session and
   move the subscription there. With an explicit attach it MUST stay on A's
   session. Neither case may hand channel ingress agent A with B's session.
+- The same precedence holds on the Omni consumer (WhatsApp and the other Omni
+  channels), not only on Slack: a chat with an explicit attach, routed by a
+  route that forces another session, MUST be committed on the attached
+  session with a match that no longer forces a session, and that session
+  MUST keep its name. A chat with an automatic subscription MUST be committed
+  on the route's session, and the stale subscription MUST be released. Both
+  inbound paths MUST take this decision from
+  `src/channels/subscription-precedence.ts`.
 - A route whose forced session belongs to another agent MUST settle the
   Slack envelope without delivery instead of retrying it every reconcile.
 - Channel ingress MUST reject a resolved session owned by another agent
@@ -56,5 +64,5 @@
   interrupt X at tool completion. X's answer MUST be emitted once to X and
   never to Y; queued work follows after the terminal event without replaying X.
 - `ravi sessions mute`, `unmute`, `focus`, and related state MUST NOT exist.
-- `bun test src/router/session-attach.test.ts src/runtime/session-output-target.test.ts src/cli/commands/sessions.test.ts src/omni/consumer-context.test.ts src/runtime/session-surface-hint.test.ts src/runtime/session-trace.test.ts src/cli/session-cli-surface.test.ts src/channels/slack/socket-mode.test.ts src/router/route-sticky-attach.test.ts src/channels/backend.test.ts`
+- `bun test src/router/session-attach.test.ts src/runtime/session-output-target.test.ts src/cli/commands/sessions.test.ts src/omni/consumer-context.test.ts src/runtime/session-surface-hint.test.ts src/runtime/session-trace.test.ts src/cli/session-cli-surface.test.ts src/channels/slack/socket-mode.test.ts src/channels/subscription-precedence.test.ts src/router/route-sticky-attach.test.ts src/channels/backend.test.ts`
   SHOULD pass after changing attach behavior.
