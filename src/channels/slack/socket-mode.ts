@@ -1903,6 +1903,7 @@ export class SlackSocketModeService {
           subscription: existingSubscription,
           ownerAgentId: ownerSession.agentId,
           ownerAgent,
+          chatId: canonicalChat.id,
           threadId: routeThreadId,
           defaultDmScope: routerConfig.defaultDmScope,
         });
@@ -2066,18 +2067,10 @@ export class SlackSocketModeService {
     const sessionName = resolved.sessionName ?? resolved.sessionKey;
 
     if (staleSubscription && staleSubscription.sessionKey !== resolved.sessionKey) {
-      // Release only when the chat can live in the route's session: attach
-      // refuses a session on another instance, and releasing first would leave
-      // the chat with no subscription and no default output.
-      if (isChatCompatibleWithSession(canonicalChat.id, resolved.sessionKey)) {
-        detachChatFromSession(staleSubscription.sessionKey, canonicalChat.id);
-      } else {
-        log.warn("Route session is on another instance than the chat; keeping its automatic subscription", {
-          chatId: canonicalChat.id,
-          subscriptionSessionKey: staleSubscription.sessionKey,
-          routeSessionKey: resolved.sessionKey,
-        });
-      }
+      // The decision only lets the route win when the chat can be attached to
+      // its session (instance isolation), so the rebind below is not refused
+      // after this release.
+      detachChatFromSession(staleSubscription.sessionKey, canonicalChat.id);
     }
     syncSlackSessionSubscription(resolved.sessionKey, canonicalChat.id);
     let createdEventOwnedByProgrammaticLifecycle = false;

@@ -2353,6 +2353,10 @@ describe("Slack Socket Mode routing", () => {
 
       await service(config("main-agent", "far-room"), published).handleEnvelope(envelope("env-a2d9-cross-instance"));
 
+      // The route cannot take the chat, so the subscription keeps it and the
+      // inbound lands in the subscribed session, not in the foreign one.
+      expect(published).toHaveLength(1);
+      expect(published[0]?.sessionName).toBe("main-agent-c777");
       expect(listSessionSubscriptions(mainSession.sessionKey)).toEqual([expect.objectContaining({ chatId: chat.id })]);
       expect(listSessionSubscriptions(farSession.sessionKey)).toEqual([]);
     });

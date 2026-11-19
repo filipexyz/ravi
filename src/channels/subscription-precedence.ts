@@ -10,20 +10,26 @@
  * ("Routes and attachments solve different problems").
  *
  * - An automatic subscription (`attachedByType: system`) loses to a route that
- *   forces another session. The caller commits the route, then releases the
- *   subscription and the chat is rebound to the session the route landed in.
+ *   forces another session, provided the chat can be attached to that session.
+ *   The caller commits the route, then releases the subscription and the chat
+ *   is rebound to the session the route landed in. A forced session on another
+ *   instance than the chat's would refuse that attach (instance isolation), and
+ *   releasing first would leave the chat with no subscription: there the
+ *   subscription keeps the chat and the forced session is dropped.
  * - An explicit attach (`user` or `agent`) keeps the chat on the attached
  *   session and agent. The route's forced session is dropped for that chat so
  *   the commit neither redirects to it nor renames the attached session to it.
- * - A subscription to the forced session itself agrees with the route.
+ * - A subscription to the forced session itself agrees with the route, in a
+ *   thread too: the thread keeps the forced name and the commit forks it there.
  * - A thread has no forced session of its own (the commit forks it under the
  *   route's session), so a thread never takes the "route wins" branch and
- *   always loses the route's forced session.
+ *   always loses the route's forced session, unless the subscription already
+ *   is the session the route names.
  */
 
 import { isExplicitSessionAttach } from "../router/route-sticky-attach.js";
 import type { AttachedByType } from "../router/router-db.js";
-import { getSessionByName } from "../router/sessions.js";
+import { getSessionByName, isChatCompatibleWithSession } from "../router/sessions.js";
 import type { AgentConfig, DmScope, MatchedRoute } from "../router/types.js";
 
 export type SubscriptionPrecedence =
@@ -48,6 +54,8 @@ export interface SubscriptionPrecedenceInput {
   /** The agent that owns the subscription's session. */
   ownerAgentId: string;
   ownerAgent: AgentConfig;
+  /** The canonical chat of the inbound: the route's session must be one it can be attached to. */
+  chatId: string;
   /** The thread the inbound belongs to, when it is a thread reply. */
   threadId?: string;
   /** Fallback `dmScope` when neither the match nor the owner agent set one. */
@@ -57,11 +65,23 @@ export interface SubscriptionPrecedenceInput {
 export function resolveSubscriptionPrecedence(input: SubscriptionPrecedenceInput): SubscriptionPrecedence {
   const { matched, subscription, ownerAgentId, ownerAgent } = input;
   const threadId = input.threadId?.trim();
-  const forcedSessionName = threadId ? undefined : matched?.route?.session?.trim() || undefined;
-  const forcedSession = forcedSessionName ? getSessionByName(forcedSessionName) : null;
-  const subscriptionIsForcedSession = forcedSession?.sessionKey === subscription.sessionKey;
+  const routeSessionName = matched?.route?.session?.trim() || undefined;
+  const routeSession = routeSessionName ? getSessionByName(routeSessionName) : null;
+  // Whether the subscription is the session the route names, thread or not: a
+  // thread under that session must keep the forced name so the commit forks it there.
+  const subscriptionIsForcedSession = routeSession?.sessionKey === subscription.sessionKey;
+  // A thread has no forced session of its own: the commit forks it under the route's session.
+  const forcedSessionName = threadId ? undefined : routeSessionName;
+  // The route's session takes the chat only where attach allows it. A session on
+  // another instance is refused after the release, which would strand the chat.
+  const chatFitsRouteSession = !routeSession || isChatCompatibleWithSession(input.chatId, routeSession.sessionKey);
 
-  if (forcedSessionName && !subscriptionIsForcedSession && !isExplicitSessionAttach(subscription.attachedByType)) {
+  if (
+    forcedSessionName &&
+    !subscriptionIsForcedSession &&
+    !isExplicitSessionAttach(subscription.attachedByType) &&
+    chatFitsRouteSession
+  ) {
     return { kind: "route-wins", routeSession: forcedSessionName };
   }
 
@@ -82,8 +102,8 @@ export function resolveSubscriptionPrecedence(input: SubscriptionPrecedenceInput
     rerouted = true;
   }
   // Even when the keys already agree, an attached chat must not be redirected
-  // to a different session the route forces.
-  if (next.route?.session && forcedSessionName && !subscriptionIsForcedSession) {
+  // to a different session the route forces (a thread included).
+  if (next.route?.session && !subscriptionIsForcedSession) {
     next = { ...next, route: { ...next.route, session: undefined } };
   }
   return { kind: "subscription-wins", matched: next, rerouted };

@@ -397,15 +397,15 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels-slack | src/channels/slack/socket-mode.ts | 1634 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:75b1ddfaffa11c9a57945410 |
 | channels-slack | src/channels/slack/socket-mode.ts | 1690 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:cc425e50d06483314ccdd599 |
 | channels-slack | src/channels/slack/socket-mode.ts | 1793 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:373789c88c85a58979474725 |
-| channels-slack | src/channels/slack/socket-mode.ts | 2053 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:860e2b2e0726e3796bd40958 |
-| channels-slack | src/channels/slack/socket-mode.ts | 2099 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:e7cc946eb68d118ae004c1c7 |
-| channels-slack | src/channels/slack/socket-mode.ts | 2188 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:9ad24298b226ed9d4f0aa0ca |
-| channels-slack | src/channels/slack/socket-mode.ts | 2206 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:e02fe64267df2775c851ecc0 |
-| channels-slack | src/channels/slack/socket-mode.ts | 2482 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:023e0658ddc9f4d90e557bca |
-| channels-slack | src/channels/slack/socket-mode.ts | 2495 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:eee9b1dca53f26e40d046797 |
-| channels-slack | src/channels/slack/socket-mode.ts | 2539 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:c52256502098f1fcdf6ed28d |
-| channels-slack | src/channels/slack/socket-mode.ts | 2928 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:ece0f2429234cdb1c2567c17 |
-| channels-slack | src/channels/slack/socket-mode.ts | 3059 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:bca6f7f65214760682070030 |
+| channels-slack | src/channels/slack/socket-mode.ts | 2054 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:860e2b2e0726e3796bd40958 |
+| channels-slack | src/channels/slack/socket-mode.ts | 2092 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:e7cc946eb68d118ae004c1c7 |
+| channels-slack | src/channels/slack/socket-mode.ts | 2181 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:9ad24298b226ed9d4f0aa0ca |
+| channels-slack | src/channels/slack/socket-mode.ts | 2199 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:e02fe64267df2775c851ecc0 |
+| channels-slack | src/channels/slack/socket-mode.ts | 2475 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:023e0658ddc9f4d90e557bca |
+| channels-slack | src/channels/slack/socket-mode.ts | 2488 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:eee9b1dca53f26e40d046797 |
+| channels-slack | src/channels/slack/socket-mode.ts | 2532 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:c52256502098f1fcdf6ed28d |
+| channels-slack | src/channels/slack/socket-mode.ts | 2921 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:ece0f2429234cdb1c2567c17 |
+| channels-slack | src/channels/slack/socket-mode.ts | 3052 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:bca6f7f65214760682070030 |
 | channels-slack | src/channels/slack/text-send.ts | 178 | fixed | binding retained / no recognized error surface | src/channels/slack/text-send.ts:9283ed2c203036ae2c862e2d |
 | channels-slack | src/channels/slack/text-send.ts | 188 | fixed | binding retained / no recognized error surface | src/channels/slack/text-send.ts:02b5ab725ad58b0388b1c65e |
 | channels-slack | src/channels/slack/thread-attention-admission.ts | 158 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-attention-admission.ts:87ca3b3b96aa8165f25da5a3 |
@@ -1544,27 +1544,27 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | omni | src/omni/consumer.ts | 829 | triaged-follow-up | rejection-without-binding | src/omni/consumer.ts:5c4f266950372136184e2b9e |
 | omni | src/omni/consumer.ts | 988 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:2ae2b126528c37323598b70f |
 | omni | src/omni/consumer.ts | 1116 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:4ccd00c120398c504a5b2b21 |
-| omni | src/omni/consumer.ts | 1380 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:1e9c6609438d61f230e46581 |
-| omni | src/omni/consumer.ts | 1689 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:49e91e6f1cdc3130f7cfcf56 |
-| omni | src/omni/consumer.ts | 1790 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:5c569f33a9138aa7ed0a7607 |
-| omni | src/omni/consumer.ts | 1883 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:4701237152190cb180be5d34 |
-| omni | src/omni/consumer.ts | 1992 | triaged-follow-up | rejection-without-binding | src/omni/consumer.ts:5c4f266950372136184e2b9e |
-| omni | src/omni/consumer.ts | 2003 | triaged-follow-up | rejection-without-binding | src/omni/consumer.ts:5c4f266950372136184e2b9e |
-| omni | src/omni/consumer.ts | 2016 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:09a5502e2d7cefaaf28fc9fb |
-| omni | src/omni/consumer.ts | 2068 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:2c7a38898d35ac2f82be039e |
-| omni | src/omni/consumer.ts | 2115 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:8a96f98723cc903850e123d2 |
-| omni | src/omni/consumer.ts | 2131 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:2c3c74ee97a4d37f366eadf7 |
-| omni | src/omni/consumer.ts | 2233 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:b3197967f9e8f45e56d272e2 |
-| omni | src/omni/consumer.ts | 2274 | triaged-follow-up | catch-without-binding | src/omni/consumer.ts:0a59ad0dd07833b1a237797d |
-| omni | src/omni/consumer.ts | 2308 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:2aab179a6523d6433bac6256 |
-| omni | src/omni/consumer.ts | 2422 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:c2e57ee5654372dc1e6d509d |
-| omni | src/omni/consumer.ts | 2563 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:7135d57fb9c8f5b05d615131 |
-| omni | src/omni/consumer.ts | 2612 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:fec17a2873bb338967069009 |
-| omni | src/omni/consumer.ts | 2626 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:4c91dca1c688cad11dfafc1e |
-| omni | src/omni/consumer.ts | 2779 | triaged-follow-up | catch-without-binding | src/omni/consumer.ts:a06d73f089a30555b058cc70 |
-| omni | src/omni/consumer.ts | 2815 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:c0475d70e61d996659033243 |
-| omni | src/omni/consumer.ts | 2822 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:8f7cb0917f1d0e447cf0b803 |
-| omni | src/omni/consumer.ts | 2832 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:a30283e7bef2640baab2a151 |
+| omni | src/omni/consumer.ts | 1381 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:1e9c6609438d61f230e46581 |
+| omni | src/omni/consumer.ts | 1681 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:49e91e6f1cdc3130f7cfcf56 |
+| omni | src/omni/consumer.ts | 1782 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:5c569f33a9138aa7ed0a7607 |
+| omni | src/omni/consumer.ts | 1875 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:4701237152190cb180be5d34 |
+| omni | src/omni/consumer.ts | 1984 | triaged-follow-up | rejection-without-binding | src/omni/consumer.ts:5c4f266950372136184e2b9e |
+| omni | src/omni/consumer.ts | 1995 | triaged-follow-up | rejection-without-binding | src/omni/consumer.ts:5c4f266950372136184e2b9e |
+| omni | src/omni/consumer.ts | 2008 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:09a5502e2d7cefaaf28fc9fb |
+| omni | src/omni/consumer.ts | 2060 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:2c7a38898d35ac2f82be039e |
+| omni | src/omni/consumer.ts | 2107 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:8a96f98723cc903850e123d2 |
+| omni | src/omni/consumer.ts | 2123 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:2c3c74ee97a4d37f366eadf7 |
+| omni | src/omni/consumer.ts | 2225 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:b3197967f9e8f45e56d272e2 |
+| omni | src/omni/consumer.ts | 2266 | triaged-follow-up | catch-without-binding | src/omni/consumer.ts:0a59ad0dd07833b1a237797d |
+| omni | src/omni/consumer.ts | 2300 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:2aab179a6523d6433bac6256 |
+| omni | src/omni/consumer.ts | 2414 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:c2e57ee5654372dc1e6d509d |
+| omni | src/omni/consumer.ts | 2555 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:7135d57fb9c8f5b05d615131 |
+| omni | src/omni/consumer.ts | 2604 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:fec17a2873bb338967069009 |
+| omni | src/omni/consumer.ts | 2618 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:4c91dca1c688cad11dfafc1e |
+| omni | src/omni/consumer.ts | 2771 | triaged-follow-up | catch-without-binding | src/omni/consumer.ts:a06d73f089a30555b058cc70 |
+| omni | src/omni/consumer.ts | 2807 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:c0475d70e61d996659033243 |
+| omni | src/omni/consumer.ts | 2814 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:8f7cb0917f1d0e447cf0b803 |
+| omni | src/omni/consumer.ts | 2824 | fixed | binding retained / no recognized error surface | src/omni/consumer.ts:a30283e7bef2640baab2a151 |
 | omni | src/omni/group-metadata-cache.ts | 134 | triaged-follow-up | catch-without-binding | src/omni/group-metadata-cache.ts:b4ff5747b9e1ff636daa7f34 |
 | omni | src/omni/group-metadata-cache.ts | 147 | triaged-follow-up | catch-without-binding | src/omni/group-metadata-cache.ts:d82c951b91df0e9959ffbb38 |
 | omni | src/omni/group-metadata-cache.ts | 422 | triaged-follow-up | rejection-without-binding | src/omni/group-metadata-cache.ts:745e69a422622e7d582d3d32 |

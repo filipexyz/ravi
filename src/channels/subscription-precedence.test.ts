@@ -96,6 +96,7 @@ function inbound(
       subscription,
       ownerAgentId: owner.agentId,
       ownerAgent: config.agents[owner.agentId]!,
+      chatId: seedChat(),
       threadId,
       defaultDmScope: config.defaultDmScope,
     });
@@ -268,6 +269,97 @@ describe("subscription x route precedence", () => {
     expect(getSession(threadKey)?.name).toBe("main-thread");
   });
 
+  // A DM carries no thread in its session key, so a thread reply can compute the
+  // very key the chat is attached to (dmScope main). The route's forced session
+  // must still not pull the reply away from the attach, and a subscription that
+  // IS the forced session must still fork the thread under it.
+  for (const by of ["user", "system"] as const) {
+    it(`keeps a thread reply on the ${by} attach when the key agrees and the route forces another session`, () => {
+      const chatId = seedChat();
+      attach(chatId, MAIN_KEY, by);
+      getOrCreateSession("agent:main:shared", "main", "/tmp/main", { name: "shared" });
+      const config = configWith(routeFor({ session: "shared", dmScope: "main" }));
+      expect(match(config, THREAD).sessionKey).toBe(MAIN_KEY);
+
+      const { precedence, resolved } = inbound(config, { sessionKey: MAIN_KEY, attachedByType: by }, THREAD);
+
+      expect(precedence?.kind).toBe("subscription-wins");
+      if (precedence?.kind !== "subscription-wins") return;
+      expect(precedence.matched.route?.session).toBeUndefined();
+      expect(resolved.sessionKey).toBe(MAIN_KEY);
+      expect(getSessionByName("shared")?.sessionKey).toBe("agent:main:shared");
+    });
+  }
+
+  it("forks a thread reply under the forced session when the subscription is that session and the keys differ", () => {
+    const chatId = seedChat();
+    getOrCreateSession("agent:main:shared", "main", "/tmp/main", { name: "shared" });
+    attach(chatId, "agent:main:shared", "system");
+    const config = configWith(routeFor({ session: "shared" }));
+    expect(match(config, THREAD).sessionKey).not.toBe("agent:main:shared");
+
+    const { precedence, resolved } = inbound(
+      config,
+      { sessionKey: "agent:main:shared", attachedByType: "system" },
+      THREAD,
+    );
+
+    expect(precedence?.kind).toBe("subscription-wins");
+    if (precedence?.kind !== "subscription-wins") return;
+    expect(precedence.matched.route?.session).toBe("shared");
+    expect(resolved.sessionKey).toBe(`agent:main:shared:thread:${THREAD}`);
+  });
+
+  it("forks a thread reply under the forced session when the subscription is that session and the keys agree", () => {
+    const chatId = seedChat();
+    attach(chatId, MAIN_KEY, "system");
+    const config = configWith(routeFor({ session: "main", dmScope: "main" }));
+    expect(match(config, THREAD).sessionKey).toBe(MAIN_KEY);
+
+    const { resolved } = inbound(config, { sessionKey: MAIN_KEY, attachedByType: "system" }, THREAD);
+
+    expect(resolved.sessionKey).toBe(`${MAIN_KEY}:thread:${THREAD}`);
+  });
+
+  // attachChatToSession refuses a session on another instance (instance
+  // isolation), and commitMatchedRoute only checks the agent. A route that wins
+  // there would release the subscription and then fail to rebind the chat.
+  it("keeps an automatic subscription when the route's forced session lives on another instance", () => {
+    const chatId = seedChat();
+    attach(chatId, MAIN_KEY, "system");
+    getOrCreateSession("agent:main:far-room", "main", "/tmp/main", {
+      name: "far-room",
+      channel: "whatsapp",
+      accountId: "other-account",
+    });
+    const config = configWith(routeFor({ session: "far-room" }));
+
+    const { precedence, resolved } = inbound(config, { sessionKey: MAIN_KEY, attachedByType: "system" });
+
+    expect(precedence).toMatchObject({ kind: "subscription-wins", rerouted: true });
+    if (precedence?.kind !== "subscription-wins") return;
+    expect(precedence.matched.route?.session).toBeUndefined();
+    // The commit lands in the subscription's session, not in the foreign one.
+    expect(resolved.sessionKey).toBe(MAIN_KEY);
+    expect(getSession("agent:main:far-room")?.name).toBe("far-room");
+  });
+
+  it("still lets a route's forced session on the chat's own instance beat an automatic subscription", () => {
+    const chatId = seedChat();
+    attach(chatId, MAIN_KEY, "system");
+    getOrCreateSession("agent:main:near-room", "main", "/tmp/main", {
+      name: "near-room",
+      channel: "whatsapp",
+      accountId: "acc",
+    });
+    const config = configWith(routeFor({ session: "near-room" }));
+
+    const { precedence, resolved } = inbound(config, { sessionKey: MAIN_KEY, attachedByType: "system" });
+
+    expect(precedence).toEqual({ kind: "route-wins", routeSession: "near-room" });
+    expect(resolved.sessionKey).toBe("agent:main:near-room");
+  });
+
   it("builds the match from the owner agent when no route matched the inbound", () => {
     const owner = config().agents.specialist!;
     getOrCreateSession("agent:specialist:main", "specialist", "/tmp/specialist", { name: "specialist" });
@@ -277,6 +369,7 @@ describe("subscription x route precedence", () => {
       subscription: { sessionKey: "agent:specialist:main", attachedByType: "user" },
       ownerAgentId: "specialist",
       ownerAgent: owner,
+      chatId: seedChat(),
       defaultDmScope: "main",
     });
 
@@ -302,6 +395,7 @@ describe("subscription x route precedence", () => {
       subscription: { sessionKey: matched.sessionKey, attachedByType: "system" },
       ownerAgentId: "main",
       ownerAgent: cfg.agents.main!,
+      chatId,
       defaultDmScope: "per-peer",
     });
     expect(same).toEqual({ kind: "subscription-wins", matched, rerouted: false });
@@ -311,6 +405,7 @@ describe("subscription x route precedence", () => {
       subscription: { sessionKey: MAIN_KEY, attachedByType: "user" },
       ownerAgentId: "main",
       ownerAgent: cfg.agents.main!,
+      chatId,
       defaultDmScope: "per-peer",
     });
     expect(moved).toMatchObject({ kind: "subscription-wins", rerouted: true });

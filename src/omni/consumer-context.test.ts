@@ -2794,18 +2794,23 @@ describe("OmniConsumer channel context", () => {
       const chatId = await firstInboundChatId(omni);
       const staleKey = String(routeResult?.sessionKey);
       forceSession(FORCED);
-      // attachChatToSession refuses a session on another instance, so releasing
-      // the subscription first would leave the chat with no subscription at all.
+      // attachChatToSession refuses a session on another instance and the commit
+      // only checks the agent, so a route that won here would release the
+      // subscription and then fail to rebind the chat.
       const forcedKey = "agent:main:colleague-room";
       actualGetOrCreateSession(forcedKey, "main", agentCwd, {
         name: FORCED,
         channel: "whatsapp",
         accountId: "other-account",
       });
-      routeResult = { ...routeResult, sessionKey: forcedKey, sessionName: FORCED };
 
       await omni["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", peerDm("evt-second") as never);
 
+      // The subscription keeps the chat: the commit is handed its session, with
+      // no forced session left on the route, and nothing is released.
+      const matched = commitMatchedRouteCalls[1]!.matched;
+      expect(matched.sessionKey).toBe(staleKey);
+      expect(matched.route?.session).toBeUndefined();
       expect(actualRouterSessionsModule.findSessionByAttachedChat(chatId)?.sessionKey).toBe(staleKey);
       expect(actualRouterSessionsModule.listSessionSubscriptions(forcedKey)).toEqual([]);
     }, 20_000);

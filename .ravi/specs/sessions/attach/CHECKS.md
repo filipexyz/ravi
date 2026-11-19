@@ -48,10 +48,16 @@
   session with a match that no longer forces a session, and that session
   MUST keep its name. A chat with an automatic subscription MUST be committed
   on the route's session, and the stale subscription MUST be released, unless
-  the route's session lives on another instance than the chat: then the
-  automatic subscription MUST stay, so the chat is never left unattached by a
-  refused rebind. Both inbound paths MUST take this decision from
-  `src/channels/subscription-precedence.ts`.
+  the route's session lives on another instance than the chat: then the route
+  MUST NOT win, the chat MUST be committed on the subscription's session with
+  no forced session, and the subscription MUST stay, so the chat is never
+  left unattached by a refused rebind. Both inbound paths MUST take this
+  decision from `src/channels/subscription-precedence.ts`.
+- A thread reply MUST NOT be pulled to the route's forced session away from
+  the subscription, including a DM whose session key does not carry the
+  thread and agrees with the attach. When the subscription is the forced
+  session itself, the thread MUST fork under it, whether or not the keys
+  agree.
 - A route whose forced session belongs to another agent MUST settle the
   Slack envelope without delivery instead of retrying it every reconcile.
 - Channel ingress MUST reject a resolved session owned by another agent
@@ -66,5 +72,9 @@
   interrupt X at tool completion. X's answer MUST be emitted once to X and
   never to Y; queued work follows after the terminal event without replaying X.
 - `ravi sessions mute`, `unmute`, `focus`, and related state MUST NOT exist.
-- `bun test src/router/session-attach.test.ts src/runtime/session-output-target.test.ts src/cli/commands/sessions.test.ts src/omni/consumer-context.test.ts src/runtime/session-surface-hint.test.ts src/runtime/session-trace.test.ts src/cli/session-cli-surface.test.ts src/channels/slack/socket-mode.test.ts src/channels/subscription-precedence.test.ts src/router/route-sticky-attach.test.ts src/channels/backend.test.ts`
+- `bun test src/router/session-attach.test.ts src/runtime/session-output-target.test.ts src/cli/commands/sessions.test.ts src/omni/consumer-context.test.ts src/runtime/session-surface-hint.test.ts src/runtime/session-trace.test.ts src/cli/session-cli-surface.test.ts src/channels/slack/socket-mode.test.ts src/router/route-sticky-attach.test.ts src/channels/backend.test.ts`
   SHOULD pass after changing attach behavior.
+- `bun test src/channels/subscription-precedence.test.ts`
+  SHOULD pass after changing the precedence rule. Run it in its own command:
+  `src/omni/consumer-context.test.ts` mocks `commitMatchedRoute` and bun
+  leaks that mock into every file of the same process, which breaks this one.
