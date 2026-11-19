@@ -95,6 +95,24 @@ describe("RunnerReleaseGuard", () => {
     expect(guard.recordFailure(refusal())).not.toBeNull();
   });
 
+  it("ends a streak of refusals at a failure for another reason, so three refusals need not be consecutive to count", () => {
+    const guard = new RunnerReleaseGuard({
+      runningVersion: "3.261119.6",
+      readInstalledVersion: () => "3.261119.9",
+    });
+
+    expect(guard.recordFailure(refusal())).toBeNull();
+    expect(guard.recordFailure(new Error("SQLITE_BUSY"))).toBeNull();
+    // Two more are two in a row, not the fourth refusal in the run: still not enough.
+    expect(guard.recordFailure(refusal())).toBeNull();
+    expect(guard.recordFailure(refusal())).toBeNull();
+    expect(guard.recordFailure(refusal())).toEqual({
+      runningVersion: "3.261119.6",
+      installedVersion: "3.261119.9",
+      refusals: RUNNER_RELEASE_REFUSAL_THRESHOLD,
+    });
+  });
+
   it("recognizes a refusal that arrives wrapped in another error", () => {
     const guard = new RunnerReleaseGuard({
       runningVersion: "3.261119.6",

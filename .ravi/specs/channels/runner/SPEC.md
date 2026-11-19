@@ -100,8 +100,9 @@ re-checks it (`STATE_SCHEMA_NOT_READY`) while its sockets stay connected and PM2
 still reports it online. The runner MUST NOT stay in that state:
 
 - A runner MUST count consecutive `STATE_SCHEMA_NOT_READY` refusals of its
-  outbound publish reconcile loop, and a pass that clears the guard MUST reset
-  the count.
+  outbound publish reconcile loop. A pass that clears the guard, and a failure
+  for another reason (it proves nothing about the guard), MUST reset the count;
+  only the pass also clears the refusal the runner reports in its health.
 - After 3 consecutive refusals, and only when the installed bundle (read from
   disk at decision time) is a different release from the one the process is
   running, the runner MUST drain, exit with status 75 and let its supervisor

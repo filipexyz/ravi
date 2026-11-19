@@ -45,7 +45,7 @@ export function readInstalledRunnerVersion(bundlePath: string | undefined = proc
  * only way out, and it is safe only when the installed bundle really is a
  * different release: then the relaunched process matches the prepared state.
  *
- * The guard therefore relaunches on one condition: repeated state refusals
+ * The guard therefore relaunches on one condition: consecutive state refusals
  * while the installed release differs from the running one. Staleness alone
  * never restarts a runner (restart stays an operator decision), and a refusal
  * with matching releases (daemon not prepared yet) is reported, not acted on,
@@ -53,7 +53,10 @@ export function readInstalledRunnerVersion(bundlePath: string | undefined = proc
  * it cannot loop.
  */
 export class RunnerReleaseGuard {
+  /** Consecutive state refusals: what a relaunch is decided on. */
   private refusals = 0;
+  /** The guard's last verdict was a refusal; only an accepted pass clears it. */
+  private refused = false;
   private relaunched = false;
 
   constructor(private readonly options: RunnerReleaseGuardOptions = {}) {}
@@ -61,20 +64,31 @@ export class RunnerReleaseGuard {
   /** A reconciliation passed the state guard: whatever refused it is over. */
   recordSuccess(): void {
     this.refusals = 0;
+    this.refused = false;
   }
 
   /**
    * The state guard is refusing this runner now: a refused reconciliation has not
    * been followed by an accepted one. Health reports it so the condition is visible
    * from `ravi channels status` and `ravi doctor` without reading the runner's log.
+   * A pass that failed for another reason says nothing about the guard, so it does
+   * not clear this.
    */
   isRefused(): boolean {
-    return this.refusals > 0;
+    return this.refused;
   }
 
-  /** A reconciliation failed. Only a state refusal counts toward a relaunch. */
+  /**
+   * A reconciliation failed. Only a run of consecutive state refusals counts toward a
+   * relaunch: a failure for another reason ends the run (it proves nothing about the
+   * guard) but leaves `isRefused()` as it was.
+   */
   recordFailure(error: unknown): RunnerReleaseRelaunch | null {
-    if (!isStateNotReadyError(error)) return null;
+    if (!isStateNotReadyError(error)) {
+      this.refusals = 0;
+      return null;
+    }
+    this.refused = true;
     this.refusals += 1;
     if (this.relaunched || this.refusals < (this.options.threshold ?? RUNNER_RELEASE_REFUSAL_THRESHOLD)) return null;
 

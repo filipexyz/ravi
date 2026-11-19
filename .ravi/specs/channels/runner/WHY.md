@@ -60,6 +60,13 @@ Nothing durable is at risk: accepted inbound envelopes are persisted before the
 Slack ack, and unpublished outbound jobs stay pending until the new process
 publishes them.
 
+The tail of `stop()` (health responder, config refresh, database handles, NATS
+drain) does not run when the proof rejects, so the process exit closes those
+instead. Every component has already stopped by then, so nothing is mid-delivery;
+committed SQLite transactions survive the exit, and the outbound consumer is a
+durable one (`ravi-channel-outbound`, explicit ack) that stays in place for the
+new process.
+
 ## Health says so too
 
 A runner the relaunch cannot reach still has to be visible. The relaunch only
