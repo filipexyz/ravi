@@ -174,8 +174,9 @@ function assertShellTriggerChange(
 /**
  * The env file of a shell trigger must be a regular file outside the Ravi
  * state dir, with a single hard link and at most 1 MiB, owned by the user Ravi
- * runs as and not writable by its group or others (see `shell-env-file.ts`).
- * The location part is a path check, not an access boundary.
+ * runs as and not writable by its group or others, and one the check can
+ * verify (see `shell-env-file.ts`). The location part is a path check, not an
+ * access boundary.
  */
 function assertShellEnvFileAllowed(op: string, envFile: string | null | undefined, asJson?: boolean): void {
   if (!envFile) return;
@@ -183,6 +184,15 @@ function assertShellEnvFileAllowed(op: string, envFile: string | null | undefine
   if (!refusal) return;
   const suggestedAction =
     "put only the variables the command needs in a regular file of its own outside the Ravi state dir, given by a path without .., owned by the user Ravi runs as and writable only by it (chmod 600)";
+  if (refusal === "unverifiable") {
+    failShellTrigger(
+      op,
+      "TRIGGER_SHELL_ENV_FILE_UNVERIFIABLE",
+      `The env file ${envFile} could not be checked: a symlink loop, or a path Ravi may not search or read. Next: ${suggestedAction}.`,
+      { envFile, suggestedAction },
+      asJson,
+    );
+  }
   if (refusal === "not_owned") {
     failShellTrigger(
       op,

@@ -20,7 +20,7 @@
  * known tricks: `..`, symlinks and hard links.
  */
 
-import { realpathSync, type Stats, statSync } from "node:fs";
+import { accessSync, constants as fsConstants, realpathSync, type Stats, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { type EnvFileTrustRefusal, envFileTrustRefusal, MAX_ENV_FILE_BYTES } from "../cron/shell-executor.js";
@@ -142,7 +142,26 @@ function shellEnvFileUntrusted(envFile: string): EnvFileTrustRefusal | null {
   return stats?.isFile() ? envFileTrustRefusal(stats) : null;
 }
 
-export type ShellEnvFileRefusal = "in_state_dir" | "not_regular_file" | "hard_link" | "too_large" | EnvFileTrustRefusal;
+/**
+ * Errors that say the check cannot see what the loader would open, and will
+ * not on retry: a symlink loop (`ELOOP`), a directory Ravi may not search or a
+ * file it may not read (`EACCES`, `EPERM`), a path too long (`ENAMETOOLONG`).
+ * Anything else (a transient `EMFILE`, for example) is thrown.
+ */
+const UNVERIFIABLE_ERROR_CODES = new Set(["ELOOP", "EACCES", "EPERM", "ENAMETOOLONG"]);
+
+function isUnverifiableError(error: unknown): boolean {
+  const { code, syscall } = (error ?? {}) as NodeJS.ErrnoException;
+  return error instanceof Error && typeof syscall === "string" && UNVERIFIABLE_ERROR_CODES.has(code ?? "");
+}
+
+export type ShellEnvFileRefusal =
+  | "in_state_dir"
+  | "not_regular_file"
+  | "hard_link"
+  | "too_large"
+  | EnvFileTrustRefusal
+  | "unverifiable";
 
 /**
  * Why a shell trigger may not use this env file, or null when it may. The
@@ -150,7 +169,9 @@ export type ShellEnvFileRefusal = "in_state_dir" | "not_regular_file" | "hard_li
  * refused before any `realpath`: `in_state_dir` (inside, or a `..` that may
  * lead there), `not_regular_file`, `hard_link`, `too_large` (more than the
  * loader reads), `not_owned` or `writable_by_others` (the loader would not
- * trust it).
+ * trust it), or `unverifiable` (the file system refused the check: a symlink
+ * loop, a path Ravi may not search or a file it may not read), never a raw
+ * error.
  */
 export function shellEnvFileRefusal(envFile: string, stateDir: string = getRaviStateDir()): ShellEnvFileRefusal | null {
   if (
@@ -159,9 +180,21 @@ export function shellEnvFileRefusal(envFile: string, stateDir: string = getRaviS
       .includes("..")
   )
     return "in_state_dir";
-  if (shellEnvFileNotRegular(envFile)) return "not_regular_file";
-  if (shellEnvFileInsideStateDir(envFile, stateDir)) return "in_state_dir";
-  if (shellEnvFileHasHardLinks(envFile)) return "hard_link";
-  if (shellEnvFileTooLarge(envFile)) return "too_large";
-  return shellEnvFileUntrusted(envFile);
+  try {
+    if (shellEnvFileNotRegular(envFile)) return "not_regular_file";
+    if (shellEnvFileInsideStateDir(envFile, stateDir)) return "in_state_dir";
+    if (shellEnvFileHasHardLinks(envFile)) return "hard_link";
+    if (shellEnvFileTooLarge(envFile)) return "too_large";
+    const untrusted = shellEnvFileUntrusted(envFile);
+    if (untrusted) return untrusted;
+    // `access` does not open the file. A file Ravi may not read would otherwise
+    // pass here on Linux and fail in the loader on every event (on macOS,
+    // `realpath` above already opens it and fails).
+    const raw = absoluteRaw(envFile);
+    if (statWithoutOpening(raw)?.isFile()) accessSync(raw, fsConstants.R_OK);
+    return null;
+  } catch (error) {
+    if (isUnverifiableError(error)) return "unverifiable";
+    throw error;
+  }
 }
