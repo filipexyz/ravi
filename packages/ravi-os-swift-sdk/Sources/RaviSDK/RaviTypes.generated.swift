@@ -29852,33 +29852,53 @@ public struct SessionsThreadConfigureReturn: Codable, Sendable {
 }
 
 public struct SessionsThreadSendOptions: Codable, Sendable {
+  public var barrier: String?
+  public var immediate: Bool?
   public var session: String?
+  public var steer: Bool?
 
-  public init(session: String? = nil) {
+  public init(barrier: String? = nil, immediate: Bool? = nil, session: String? = nil, steer: Bool? = nil) {
+    self.barrier = barrier
+    self.immediate = immediate
     self.session = session
+    self.steer = steer
   }
 
   enum CodingKeys: String, CodingKey {
+    case barrier = "barrier"
+    case immediate = "immediate"
     case session = "session"
+    case steer = "steer"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.barrier {
+      body["barrier"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.immediate {
+      body["immediate"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.session {
       body["session"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.steer {
+      body["steer"] = try RaviJSON.fromEncodable(value)
     }
   }
 }
 
 public struct SessionsThreadSendReturn: Codable, Sendable {
   public var actionId: String
+  public var delivery: RaviJSON?
   public var messageId: String
   public var reopened: Bool
   public var requestId: String
   public var status: String
   public var thread: RaviJSON
 
-  public init(actionId: String, messageId: String, reopened: Bool, requestId: String, status: String, thread: RaviJSON) {
+  public init(actionId: String, delivery: RaviJSON? = nil, messageId: String, reopened: Bool, requestId: String, status: String, thread: RaviJSON) {
     self.actionId = actionId
+    self.delivery = delivery
     self.messageId = messageId
     self.reopened = reopened
     self.requestId = requestId
@@ -29888,6 +29908,7 @@ public struct SessionsThreadSendReturn: Codable, Sendable {
 
   enum CodingKeys: String, CodingKey {
     case actionId = "actionId"
+    case delivery = "delivery"
     case messageId = "messageId"
     case reopened = "reopened"
     case requestId = "requestId"

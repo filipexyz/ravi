@@ -312,7 +312,7 @@ ravi sessions create-thread "<mensagem inicial>" [--model <model>]
 
 # Na sessão do canal: listar as threads (abertas; --all inclui fechadas) e mandar instruções para uma
 ravi sessions threads [--all] --json
-ravi sessions thread-send <sessão-da-thread|request-id|thread-ts> "instruções"
+ravi sessions thread-send <sessão-da-thread|request-id|thread-ts> "instruções" [--steer | --immediate]
 
 # No pai: configurar o próximo turno de uma filha pelo vínculo da thread
 ravi sessions thread-configure <sessão-da-thread|request-id|thread-ts> --effort ultra --json
@@ -336,7 +336,7 @@ Bases, Pages e apps dentro da thread agem por quem fez o pedido que abriu a thre
 
 A raiz da thread aparece no canal como um card: a primeira linha da mensagem inicial é o título (escreva um título curto nela), o resto vira um resumo, e a mensagem inteira abre a thread quando não cabe no card. O card mostra quem pediu (quem escreveu o turno; nos turnos do operador, o contato dono) e o status, e muda sozinho com `report`, `close-thread` e quando `thread-send` reabre a thread.
 
-Progresso e resultado chegam na sessão do canal como `[System] Inform: Slack thread "<título>" (<sessão-da-thread>) ...`. `thread-send` reabre uma thread fechada; a filha responde dentro da thread.
+Progresso e resultado chegam na sessão do canal como `[System] Inform: Slack thread "<título>" (<sessão-da-thread>) ...`. `thread-send` reabre uma thread fechada; a filha responde dentro da thread. A instrução entra na fila atrás do turno atual da thread (follow-up, `after_response`): uma thread que está trabalhando não perde o turno, e a mensagem chega quando ele termina; thread parada recebe na hora. `--steer` entrega depois da próxima tool e pode abortar um turno que esteja gerando texto ou numa tool longa; `--immediate` interrompe agora. Use as duas só quando a instrução não pode esperar o turno acabar. A instrução na fila não pode ser retirada: uma correção com `--immediate` roda antes dela, então cite o que está pendente ("quando chegar X, ignore"). Se a thread se fechou sozinha no turno em que a instrução esperava, a entrega reabre a thread e o próximo `close-thread --return` chega ao pai. Um crash do daemon perde a fila em memória; reinício gracioso, não.
 
 Uma mensagem no canal que continua o assunto de uma thread já aberta vai para essa thread com `thread-send`, sem abrir outra. Threads não falam entre si: quando uma precisa de algo de outra, ela pede com `report` e a sessão do canal repassa com `thread-send`.
 

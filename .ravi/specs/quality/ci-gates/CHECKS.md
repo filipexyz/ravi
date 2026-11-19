@@ -21,6 +21,15 @@ status: active
 - The same test fails when the job named `Quality Gate` loses `if: always()`, drops a `needs` entry, is renamed, or stops requiring `success` from every dependency (failed, cancelled and skipped all fail it).
 - A new CI job that is neither gated nor listed as deliberately not gated fails the same test until someone decides.
 
+## macOS Job Placement Checks
+
+- `actionlint .github/workflows/ci.yml` passes with the dynamic `matrix.os` of `managed-runtime-launcher`.
+- `retained-preload` carries `if: github.event_name != 'push'`, and the `os` matrix of `managed-runtime-launcher` is `ubuntu-latest` alone when the event is `push` and `ubuntu-latest` plus `macos-latest` otherwise. A push run of `dev` or `main` therefore contains no macOS job.
+- A pull request run still shows `Managed runtime launcher / macos-latest` and `Retained preload guard contracts`; neither is in the `needs` of `Quality Gate` (`bun test src/ci/quality-gate-shards.test.ts` lists them as deliberately not gated).
+- Evidence for the cause, from the jobs API and the check-run, never from timing alone: in a cancelled run `gh api repos/<repo>/actions/runs/<id>/jobs` lists the macOS job with an empty `runner_name`, zero `steps` and a `completed_at` 15 minutes after `created_at` (`started_at` is filled in green and cancelled jobs alike, so it proves nothing), and `gh api repos/<repo>/check-runs/<job_id>/annotations` carries GitHub's own statement, "The job was not acquired by Runner of type hosted even after multiple attempts", with the notice "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times". In a green run the same jobs have eight steps and finish in 14-40 s.
+- **The `@next` release no longer waits for macOS.** `SPEC.md` and the pull request body state that `version.yml` publishes `@next` from a push run of `CI` that ends `success`, that no macOS job is in that run any more, and that the macOS coverage before a release is the run of the pull request. Any change that moves a macOS job back to the push, or that gates the release on one, MUST update that statement.
+- **Merge rule.** A pull request that touches the managed runtime launcher or the retained preload guards (the paths listed in `SPEC.md`) MUST NOT be merged until `Managed runtime launcher / macos-latest` and `Retained preload guard contracts` are `success` in the run of that pull request: `cancelled` with no steps is a missing runner and the job is re-run; `failure` with steps blocks the merge even with `Quality Gate` green. Check it with `gh api repos/<repo>/commits/<head_sha>/check-runs --jq '.check_runs[] | select(.name | test("macos|Retained")) | [.name, .status, .conclusion] | @tsv'`.
+
 ## Test Discovery Checks
 
 - `bun test src/ci/test-discovery.test.ts` fails when a test file is selected by no CI command and is not in `src/ci/test-discovery-exclusions.ts`, naming the file and where to add it.
