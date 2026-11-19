@@ -145,14 +145,44 @@ describe("automation notice", () => {
     expect(some.calls.fallbacks).toBe(0);
   });
 
-  it("still falls back when resolving a recipient throws", async () => {
+  it("resolves each recipient on its own: one that throws loses only itself", async () => {
+    const unreadable = () => {
+      throw new Error("contacts unreadable");
+    };
+
+    // The owner cannot be resolved: the operator is still told, and nothing falls back.
+    const ownerDown = recorder();
+    const ownerCase = build();
+    expect(
+      await notifyAutomationOff(ownerCase.current, {
+        owner: unreadable,
+        operator: () => OPERATOR,
+        deliver: ownerDown.deliver,
+      }),
+    ).toEqual({ delivered: 1, fellBack: false });
+    expect(ownerDown.sent.map((entry) => entry.target.contactId)).toEqual(["c_operator"]);
+    expect(ownerCase.calls.fallbacks).toBe(0);
+
+    // The operator cannot be resolved: the owner that did resolve keeps its message.
+    const operatorDown = recorder();
+    const operatorCase = build();
+    expect(
+      await notifyAutomationOff(operatorCase.current, {
+        owner: () => ANA,
+        operator: unreadable,
+        deliver: operatorDown.deliver,
+      }),
+    ).toEqual({ delivered: 1, fellBack: false });
+    expect(operatorDown.sent.map((entry) => entry.target.contactId)).toEqual(["c_ana"]);
+    expect(operatorCase.calls.fallbacks).toBe(0);
+  });
+
+  it("falls back when no recipient can be resolved at all", async () => {
+    const unreadable = () => {
+      throw new Error("contacts unreadable");
+    };
     const { current, calls } = build();
-    const result = await notifyAutomationOff(current, {
-      owner: () => {
-        throw new Error("contacts unreadable");
-      },
-      operator: () => OPERATOR,
-    });
+    const result = await notifyAutomationOff(current, { owner: unreadable, operator: unreadable });
     expect(result).toEqual({ delivered: 0, fellBack: true });
     expect(calls.fallbacks).toBe(1);
   });

@@ -511,6 +511,9 @@ export class CronRunner {
       log.error("Shell cron disabled: owner is not the operator", { jobId: job.id, code });
       // Told to its owner and to the operator by direct message, no model in
       // the path; the main session's prompt is the fallback when none is sent.
+      // The authority is read now, at the transition: the fallback runs after
+      // awaited deliveries, and the owner's operator link can change meanwhile.
+      const authority = captureRunAuthority(job);
       void notifyAutomationOff({
         kind: "cron",
         id: job.id,
@@ -530,7 +533,7 @@ export class CronRunner {
             deliveryBarrierSource: "default",
             _cron: true,
             _jobId: job.id,
-            _cronAuthority: captureRunAuthority(job),
+            _cronAuthority: authority,
             _cronOnError: true,
           });
         },

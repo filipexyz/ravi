@@ -84,9 +84,36 @@ function defaultOwnerTarget(ownerPrincipal: string | null | undefined): OwnerDir
   return owner ? resolveCronFailureOwner({ ownerPrincipal: owner }) : null;
 }
 
+/**
+ * One recipient, resolved on its own: a resolver that throws (an unreadable
+ * contact store, say) loses that recipient and no other, so a reachable one
+ * still gets its direct message before anything falls back to the main session.
+ */
+function resolveRecipient(
+  notice: AutomationNotice,
+  who: "owner" | "operator",
+  resolve: () => OwnerDirectTarget | null,
+): OwnerDirectTarget | null {
+  try {
+    return resolve();
+  } catch (error) {
+    log.warn("Automation notice recipient unresolved", {
+      kind: notice.kind,
+      id: notice.id,
+      code: notice.code,
+      who,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
 function recipients(notice: AutomationNotice, deps: AutomationNoticeDeps): OwnerDirectTarget[] {
-  const owner = (deps.owner ?? defaultOwnerTarget)(notice.ownerPrincipal);
-  const operator = notice.operatorToo || !owner ? (deps.operator ?? resolveOwnerDirectTarget)() : null;
+  const owner = resolveRecipient(notice, "owner", () => (deps.owner ?? defaultOwnerTarget)(notice.ownerPrincipal));
+  const operator =
+    notice.operatorToo || !owner
+      ? resolveRecipient(notice, "operator", () => (deps.operator ?? resolveOwnerDirectTarget)())
+      : null;
   const seen = new Set<string>();
   const out: OwnerDirectTarget[] = [];
   for (const target of [owner, operator]) {
