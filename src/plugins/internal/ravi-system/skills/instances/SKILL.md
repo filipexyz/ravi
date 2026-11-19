@@ -174,9 +174,28 @@ Quando `dmPolicy=pairing` ou `groupPolicy=allowlist`, contatos/grupos desconheci
 
 ```bash
 ravi instances pending list <name>
-ravi instances pending approve <name> <id>    # aprova + cria rota
+ravi instances pending approve <name> <chat> [--agent <agent>]   # chat/grupo (group:...): aprova e cria a rota para o agent
+ravi instances pending approve <name> <identidade>               # contato em DM: só o marca `allowed`, NÃO cria rota
 ravi instances pending reject <name> <id> --execute   # rejeita (sem --execute é dry-run, exit 3)
 ```
+
+Aprovar o contato libera a DM dele no WhatsApp sob `pairing`. No Slack não: lá o `pairing` exige rota explícita mesmo para contato `allowed`.
+
+### DM de colega retida (guard do dono)
+
+Com algum contato marcado `permission-owner` (ver `ravi-system:contacts`), a DM de quem não é o dono nunca cai na sessão compartilhada de um agent (`agent:<id>:main`, `dmScope: main`) sem uma rota literal. A DM fica retida como pendente em qualquer `dmPolicy`, inclusive `open`, e `ravi sessions trace` mostra `route.rejected` com `dm_owner_session_non_owner`.
+
+```bash
+ravi instances pending list <name>
+ravi instances routes add <name> <id-do-colega-na-plataforma> <agent-de-teto-baixo> --session <nome>
+```
+
+- A rota tem que nomear a pessoa: padrão literal (`U0123ABCD`, `5511999999999`). Padrão com `*` (`5511*`, `*`) não conta, porque casa gente que o operador nunca nomeou.
+- `pending approve` do contato não cria rota: a DM segue retida até existir a rota.
+- Mande o colega para um agent próprio de teto baixo, não para o agent do dono.
+- Rota existe e a DM segue retida: o chat do colega já está atachado à sessão compartilhada por uma DM anterior (`ravi sessions subscriptions <sessão>`) e esse attach vence a rota. No Slack, rota com `--session` substitui o attach do próprio roteamento; nos outros casos, `ravi sessions detach <sessão> --chat <id>`. `sessions attach` de novo não ajuda.
+- A DM do próprio dono retida: há outro contato com a tag e o do dono não tem, ou a identidade do remetente está ligada a outro contato. Marque o contato certo e confira o `contacts link`.
+- Nenhum contato com a tag: o guard está desligado e a DM de qualquer um cai na sessão compartilhada. `ravi doctor --domain permissions` acusa (`permissions.owner_contact`).
 
 ## Exemplos de Setup
 

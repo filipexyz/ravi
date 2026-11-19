@@ -247,6 +247,7 @@ function makeHealthyDeps() {
       chatId: "5511999999999@s.whatsapp.net",
       contactId: "c_owner",
     }),
+    listOwnerContactIds: () => ["c_owner"],
     agentHasNoExec: () => true,
     codexKnowledgeParityHolds: () => true,
     listInboxSubscriptions: () => [{ id: "sub_1" }],
@@ -1110,6 +1111,90 @@ describe("runDoctor", () => {
       expect(text).toContain("codex parity fixture fails for codex-dev");
       expect(text).toContain("inbox subscription");
     });
+  });
+});
+
+// Spec channels/owner-dm-guard: with no contact tagged `permission-owner` the guard
+// admits every sender (fail-open) and, before this check, nothing said so.
+describe("permissions.owner_contact", () => {
+  function ownerCheck(report: ReturnType<typeof inspectDoctor>) {
+    return report.checks.find((check) => check.id === "permissions.owner_contact");
+  }
+
+  it("passes when a contact carries the owner tag, and says the guard is on", () => {
+    const report = inspectDoctor(makeHealthyDeps());
+    expect(ownerCheck(report)).toMatchObject({ domain: "permissions", status: "pass", severity: "info" });
+    const finding = report.findings.find((item) => item.id === "permissions.owner_contact");
+    expect(finding?.summary).toContain("one contact is tagged permission-owner");
+    expect(finding?.summary).toContain("guard is on");
+    expect(report.summary.warnings).toBe(0);
+  });
+
+  it("warns when two contacts carry the tag: the guard stays on, the DM notices and Knowledge find no one chat", () => {
+    const report = inspectDoctor({ ...makeHealthyDeps(), listOwnerContactIds: () => ["c_owner", "c_duplicate"] });
+
+    expect(ownerCheck(report)).toMatchObject({ domain: "permissions", status: "fail", severity: "warn" });
+    const finding = report.findings.find((item) => item.id === "permissions.owner_contact");
+    expect(finding?.summary).toContain("2 contacts are tagged permission-owner");
+    expect(finding?.summary).toContain("guard is on");
+    expect(finding?.summary).toContain("exactly one");
+    expect(finding?.fixHint).toContain("ravi contacts untag <contact-id> permission-owner");
+    expect(finding?.data).toMatchObject({ ownerCount: 2 });
+    expect(report.ok).toBe(true);
+  });
+
+  it("warns, with the command and the guide, when no contact carries the owner tag", () => {
+    const report = inspectDoctor({ ...makeHealthyDeps(), listOwnerContactIds: () => [] });
+
+    expect(ownerCheck(report)).toMatchObject({ domain: "permissions", status: "fail", severity: "warn" });
+    const finding = report.findings.find((item) => item.id === "permissions.owner_contact");
+    expect(finding?.summary).toBe("no contact is tagged permission-owner");
+    expect(finding?.fixHint).toContain("ravi contacts tag <contact-id> permission-owner");
+    expect(finding?.fixHint).toContain("https://docs.ravi.bot/start/owner");
+    expect(JSON.stringify(finding)).toContain("owner DM guard is off");
+    expect(finding?.data).toMatchObject({ ownerCount: 0 });
+  });
+
+  it("is a warning only: the report stays ok, so the exit code is unchanged unless --strict", () => {
+    const report = inspectDoctor({ ...makeHealthyDeps(), listOwnerContactIds: () => [] });
+
+    // doctorExitCode: errors → 1, warnings → 3 only under --strict, else 0.
+    expect(report.summary.errors).toBe(0);
+    expect(report.summary.warnings).toBe(1);
+    expect(report.ok).toBe(true);
+  });
+
+  it("counts distinct, non-empty ids, so a blank or repeated id is not a second owner", () => {
+    const report = inspectDoctor({ ...makeHealthyDeps(), listOwnerContactIds: () => ["c_owner", "c_owner", "  ", ""] });
+
+    expect(ownerCheck(report)?.status).toBe("pass");
+    const finding = report.findings.find((item) => item.id === "permissions.owner_contact");
+    expect(finding?.data).toMatchObject({ ownerCount: 1 });
+  });
+
+  it("counts a blank id as no owner", () => {
+    const report = inspectDoctor({ ...makeHealthyDeps(), listOwnerContactIds: () => ["  "] });
+    expect(ownerCheck(report)).toMatchObject({ status: "fail", severity: "warn" });
+  });
+
+  it("skips, without failing, when the contacts cannot be read", () => {
+    const report = inspectDoctor({
+      ...makeHealthyDeps(),
+      listOwnerContactIds: () => {
+        throw new Error("contacts database is locked");
+      },
+    });
+
+    expect(ownerCheck(report)).toMatchObject({ status: "skip", severity: "info" });
+    expect(report.ok).toBe(true);
+    expect(report.summary.warnings).toBe(0);
+  });
+
+  it("belongs to the permissions domain and is left out of other domains", () => {
+    const overrides = { ...makeHealthyDeps(), listOwnerContactIds: () => [] as string[] };
+
+    expect(ownerCheck(inspectDoctor(overrides, { domain: "permissions" }))).toBeDefined();
+    expect(ownerCheck(inspectDoctor(overrides, { domain: "knowledge" }))).toBeUndefined();
   });
 });
 

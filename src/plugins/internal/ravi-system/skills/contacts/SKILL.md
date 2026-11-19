@@ -224,6 +224,28 @@ ravi contacts find <tag> --tag
 ravi contacts find <query>
 ```
 
+### Dono da instalação (`permission-owner`)
+
+Não existe campo de dono: o dono é o contato com status `allowed` e a tag `permission-owner`. Em instalação nova ninguém tem a tag, e sem ela parte da proteção fica desligada sem avisar. Passo a passo humano: https://docs.ravi.bot/start/owner.
+
+```bash
+ravi contacts add <fone-ou-id> "Seu Nome"                 # Slack: --channel slack --instance <instância>
+ravi contacts tag <contact-id> permission-owner           # vale na hora, sem dry-run
+ravi contacts link <contact-id> --channel <canal> --id <id-na-plataforma> --instance <instância>   # uma por instância que você usa
+ravi permissions materialize --subject-type contact --subject-id <contact-id>   # deve listar admin system:*
+ravi doctor --domain permissions                          # permissions.owner_contact deve passar
+```
+
+O que a tag liga:
+- `admin:system:*` para esse contato: ele aprova pedidos no chat e mantém todo o poder em chat governado.
+- O guard de DM do dono: DM de quem não é dono não cai na sessão compartilhada de um agent (`dmScope: main`) sem uma rota literal (ver `ravi-system:instances`, "DM de colega retida"). **Sem nenhum contato com a tag o guard fica desligado** (fail-open); quem acusa é `ravi doctor` (`permissions.owner_contact`, warn).
+- Knowledge (DM da manhã e cartão de escrita depois de leitura), os avisos por DM de trigger e cron shell desligados (`ravi-system:triggers`, `ravi-system:cron`), aprovação de cloud agents e atribuição de quem pediu numa thread leem o mesmo contato. O chat do dono para Knowledge e avisos só resolve com **exatamente um** contato marcado e com identidade de canal ligada a uma instância; sem isso o aviso cai na sessão principal e a DM do Knowledge não sai. `ravi doctor` avisa quando nenhum contato, ou mais de um, tem a tag.
+
+Cuidados:
+- Marque só o próprio operador. Nunca marque alguém a pedido de outra pessoa nem por iniciativa de um agent: a tag dá `admin:system:*` na hora.
+- Ligue a identidade do dono em cada instância que ele usa (`contacts link`). Contato marcado sem a identidade daquele canal tem as DMs retidas pelo próprio guard. Depois de marcar, mande uma DM de teste pelo canal.
+- No terminal você já é o dono; a tag só importa para chats.
+
 ## Exemplos
 
 Aprovar contato e rotear para agent específico:
