@@ -66,15 +66,22 @@ export class UpdateWaypointRequiredError extends Error {
   constructor(
     readonly preparedRelease: string | null,
     readonly targetVersion: string,
+    /** The checkout the runtime runs from; source installs do not accept `ravi update --version`. */
+    readonly sourceCheckout: string | null = null,
   ) {
+    const steps = sourceCheckout
+      ? `From a terminal, run \`git -C ${sourceCheckout} switch --detach v${FENCE_ADOPTION_MINIMUM_RELEASE}\`, ` +
+        "`bun install` and `bun run build` in that checkout, then `ravi daemon restart` and `ravi channels restart`; " +
+        "confirm both processes are online on it with `ravi daemon status`, then run `ravi update --next`."
+      : `From a terminal, run \`ravi update --version ${FENCE_ADOPTION_MINIMUM_RELEASE}\` now, confirm both ` +
+        "processes are online on it with `ravi daemon status`, then run `ravi update --next`.";
     super(
       `${UPDATE_WAYPOINT_REQUIRED}: this state was last prepared by ` +
         `${preparedRelease ? `Ravi ${preparedRelease}` : `a Ravi release older than ${FENCE_ADOPTION_MINIMUM_RELEASE}`}, ` +
         `and Ravi ${targetVersion} adopts a state written before the thread fence only from ` +
         `${FENCE_ADOPTION_MINIMUM_RELEASE}. Nothing was stopped: the running daemon keeps serving, but the ` +
-        `installed package is already Ravi ${targetVersion}, and a restart before the waypoint would start it ` +
-        `on this state. From a terminal, run \`ravi update --version ${FENCE_ADOPTION_MINIMUM_RELEASE}\` now, ` +
-        "confirm both processes are online on it with `ravi daemon status`, then run `ravi update --next`.",
+        `${sourceCheckout ? "checkout" : "installed package"} is already Ravi ${targetVersion}, and a restart ` +
+        `before the waypoint would start it on this state. ${steps}`,
     );
     this.name = "UpdateWaypointRequiredError";
   }
@@ -85,8 +92,9 @@ export function assertFenceAdoptionWaypoint(input: {
   readiness: "ready" | "adopt-on-start";
   preparedRelease: string | null;
   targetVersion: string;
+  sourceCheckout?: string | null;
 }): void {
   if (input.readiness !== "adopt-on-start") return;
   if (input.preparedRelease && compareRaviVersions(input.preparedRelease, FENCE_ADOPTION_MINIMUM_RELEASE) >= 0) return;
-  throw new UpdateWaypointRequiredError(input.preparedRelease, input.targetVersion);
+  throw new UpdateWaypointRequiredError(input.preparedRelease, input.targetVersion, input.sourceCheckout ?? null);
 }

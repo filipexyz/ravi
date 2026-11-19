@@ -106,6 +106,27 @@ describe("fence adoption waypoint", () => {
   });
 });
 
+describe("waypoint for a source checkout", () => {
+  it("gives checkout steps, since a source install does not accept --version", () => {
+    let refusal: unknown;
+    try {
+      assertFenceAdoptionWaypoint({
+        readiness: "adopt-on-start",
+        preparedRelease: null,
+        targetVersion: "3.261119.9",
+        sourceCheckout: "/src/ravi",
+      });
+    } catch (error) {
+      refusal = error;
+    }
+    const message = (refusal as Error).message;
+    expect(message).toContain(`git -C /src/ravi switch --detach v${FENCE_ADOPTION_MINIMUM_RELEASE}`);
+    expect(message).toContain("ravi channels restart");
+    expect(message).toContain("checkout is already Ravi 3.261119.9");
+    expect(message).not.toContain("ravi update --version");
+  });
+});
+
 describe("stability window", () => {
   const converged = () => true;
 
@@ -160,6 +181,24 @@ describe("stability window", () => {
       ...time,
     });
     expect(stable).toBe(false);
+  });
+
+  it("counts slow PM2 reads inside the window, so it ends by its deadline", async () => {
+    const time = clock();
+    const processes = [pm2("ravi", 10), pm2("ravi-channels", 11)];
+    const stable = await observeStableManagedRuntime({
+      // Every read takes 4 s: without accounting for it, the window overran by two reads.
+      getProcesses: () => {
+        void time.wait(4_000);
+        return processes;
+      },
+      isConverged: converged,
+      windowMs: 10_000,
+      pollMs: 1_000,
+      ...time,
+    });
+    expect(stable).toBe(true);
+    expect(time.now()).toBeLessThanOrEqual(10_000);
   });
 
   it("ends by the deadline of the CLI that waits for the supervisor", () => {

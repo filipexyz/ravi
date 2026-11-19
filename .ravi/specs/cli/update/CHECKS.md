@@ -76,11 +76,13 @@
     and null without a database or markers;
   - the waypoint refusal for a pre-fence state from a release older than
     3.261113.2 or without markers, with the exact commands, and no refusal for
-    a fenced state or one prepared by the waypoint or later;
+    a fenced state or one prepared by the waypoint or later, and checkout steps
+    instead of `--version` for a source checkout;
   - a supervisor that refuses such a state before any stop, records the
     refusal, and consumes its request and budget variables;
   - the stability window: success when the same processes stay online,
-    failure on a new PID or start time or a runtime that stops converging, a
+    failure on a new PID or start time or a runtime that stops converging, slow
+    PM2 reads counted inside the window, a
     window bounded by the CLI's deadline, and a 90 s budget when the CLI
     declares none;
   - a refusal read back only when recorded since the supervisor started, and

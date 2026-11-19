@@ -141,14 +141,20 @@ export async function observeStableManagedRuntime(input: {
   wait: (ms: number) => Promise<void>;
   pollMs?: number;
 }): Promise<boolean> {
+  // The window, PM2 reads included, ends by its deadline: the CLI's wait is bounded.
+  const started = input.now();
+  const deadline = started + input.windowMs;
   const initial = onlineRuntimeIdentity(input.getProcesses());
-  const deadline = input.now() + input.windowMs;
+  let readMs = input.now() - started;
   for (;;) {
-    const remaining = deadline - input.now();
+    // Room for the read that ends the next wait; no time left means the window is over.
+    const remaining = deadline - input.now() - readMs;
     if (remaining <= 0) return true;
     const before = input.now();
     await input.wait(Math.min(input.pollMs ?? STABILITY_POLL_MS, remaining));
+    const readStarted = input.now();
     const current = input.getProcesses();
+    readMs = Math.max(readMs, input.now() - readStarted);
     if (onlineRuntimeIdentity(current) !== initial || !input.isConverged(current)) return false;
     // A clock that does not advance cannot measure a window; stop after this check.
     if (input.now() <= before) return true;
@@ -327,6 +333,7 @@ export async function rebindManagedRuntimeProcesses(
         ? (dependencies.preparedStateRelease ?? (() => readPreparedStateRelease(stateDir)))()
         : null,
     targetVersion: target.version,
+    sourceCheckout: existsSync(join(target.cwd, ".git")) ? target.cwd : null,
   });
   const run = dependencies.run ?? runCommand;
   const getProcesses = dependencies.getProcesses ?? (() => getPm2Processes({ strict: true }));

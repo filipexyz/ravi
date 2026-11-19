@@ -90,14 +90,18 @@ they also hold for an update started by an older CLI.
   (`adopt-on-start`) that a release older than 3.261113.2 last prepared, or
   that has no readiness markers (`state_schema_versions`, `1:<release>`). The
   refusal MUST name the exact commands: `ravi update --version 3.261113.2`,
-  `ravi daemon status`, then `ravi update --next`. It MUST say that the
-  installed package is already the target release, because a restart before
-  the waypoint would start it on that state.
+  `ravi daemon status`, then `ravi update --next`. A source checkout does not
+  accept `--version`, so there the refusal MUST give the checkout steps
+  instead (`git switch --detach v3.261113.2`, build, restart both
+  processes). It MUST say that the installed package (or the checkout) is
+  already the target release, because a restart before the waypoint would
+  start it on that state.
 - After the runtime converges and PM2 is saved, the supervisor MUST watch the
   converged processes for a stability window (30 s by default,
   `RAVI_UPDATE_STABILITY_WINDOW_MS`, at most 300 s). A new PID or start time,
   or a runtime that stops being converged, MUST fail the update instead of
-  reporting success.
+  reporting success. PM2 reads count inside the window: it MUST end by its
+  deadline even when each read is slow.
 - The window MUST end before the starting CLI stops waiting. The CLI declares
   its wait in `RAVI_UPDATE_SUPERVISOR_BUDGET_MS`; with no declaration (a CLI
   that predates the window) the supervisor MUST assume 90 s. It keeps 10 s of
