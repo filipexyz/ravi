@@ -199,6 +199,21 @@ describe("agent runtime env policy", () => {
     expect(resolveCodexTransportKind(runtimeEnv)).toBe("stdio");
   });
 
+  it("carries the operator's IS_SANDBOX to Claude without a passthrough, so a root host can run turns", () => {
+    // Siqueira runs Ravi as root: Claude Code refuses --dangerously-skip-permissions
+    // as root unless IS_SANDBOX is set, and every turn failed while the filter dropped it.
+    const daemonEnv = { PATH: "/usr/bin", HOME: "/root", USER: "root", IS_SANDBOX: "1" };
+    expect(AGENT_ENV_PASSTHROUGH_VAR in daemonEnv).toBe(false);
+    for (const provider of ["claude", "codex", "pi", "grok"]) {
+      const runtimeEnv = buildRuntimeEnv(daemonEnv, { RAVI_CONTEXT_KEY: "rctx_turn" }, undefined, capabilities, false, {
+        runtimeProviderId: provider,
+      });
+      expect(runtimeEnv.IS_SANDBOX).toBe("1");
+    }
+    // Only what the operator set reaches the agent: nothing is invented.
+    expect(filterAgentRuntimeBaseEnv({ PATH: "/usr/bin" }, { runtimeProviderId: "claude" }).IS_SANDBOX).toBeUndefined();
+  });
+
   it("drops personal access tokens and token-shaped values under allowed names", () => {
     expect(isAgentRuntimeEnvNameAllowed("GITHUB_PAT")).toBe(false);
     expect(isAgentRuntimeEnvNameAllowed("GH_PAT")).toBe(false);

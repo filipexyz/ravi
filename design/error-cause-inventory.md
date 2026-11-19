@@ -1119,11 +1119,11 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | db | src/db/state-boundary.ts | 33 | fixed | binding retained / no recognized error surface | src/db/state-boundary.ts:3f55d5938d663afc49d5f324 |
 | db | src/db/state-boundary.ts | 76 | fixed | binding retained / no recognized error surface | src/db/state-boundary.ts:b344cf6a7f6079bdc6a174c6 |
 | db | src/db/state-boundary.ts | 93 | no-cause | An unverifiable manager home cannot establish runtime identity. | src/db/state-boundary.ts:f86e9e9c5d2f3ef3132e283e |
-| db | src/db/state-boundary.ts | 107 | no-cause | Unavailable PM2 identity refuses access; do not expose secret-bearing registry data. | src/db/state-boundary.ts:49923661d70f785abb4c92fd |
-| db | src/db/state-boundary.ts | 193 | no-cause | an entry that cannot be resolved is not the installed CLI. | src/db/state-boundary.ts:d3f6156311caa279ba4d656e |
-| db | src/db/state-boundary.ts | 257 | no-cause | a location that cannot be resolved is treated as real state, which this CLI never prepares. | src/db/state-boundary.ts:02dabed46ad79226f17cae32 |
-| db | src/db/state-boundary.ts | 310 | fixed | binding retained / no recognized error surface | src/db/state-boundary.ts:eb783381e6bae91bc3e4dfe7 |
-| db | src/db/state-boundary.ts | 353 | fixed | binding retained / no recognized error surface | src/db/state-boundary.ts:2aaf2abe81355a00c9d64fd7 |
+| db | src/db/state-boundary.ts | 135 | no-cause | Unavailable PM2 identity refuses access; do not expose secret-bearing registry data. | src/db/state-boundary.ts:6e024bf28f32961f8881dbd9 |
+| db | src/db/state-boundary.ts | 230 | no-cause | an entry that cannot be resolved is not the installed CLI. | src/db/state-boundary.ts:d3f6156311caa279ba4d656e |
+| db | src/db/state-boundary.ts | 294 | no-cause | a location that cannot be resolved is treated as real state, which this CLI never prepares. | src/db/state-boundary.ts:02dabed46ad79226f17cae32 |
+| db | src/db/state-boundary.ts | 347 | fixed | binding retained / no recognized error surface | src/db/state-boundary.ts:eb783381e6bae91bc3e4dfe7 |
+| db | src/db/state-boundary.ts | 390 | fixed | binding retained / no recognized error surface | src/db/state-boundary.ts:2aaf2abe81355a00c9d64fd7 |
 | db | src/db/write-retry.ts | 85 | fixed | binding retained / no recognized error surface | src/db/write-retry.ts:f2bf3437be2dbb366d884d3e |
 | db | src/db/write-retry.ts | 192 | fixed | binding retained / no recognized error surface | src/db/write-retry.ts:84f503ea348ad1ef99f7285a |
 | db | src/db/write-retry.ts | 195 | triaged-follow-up | catch-without-binding | src/db/write-retry.ts:2678de187797463c8ed583e4 |
