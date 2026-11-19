@@ -66,6 +66,9 @@ export interface RegisteredRuntimeProcess {
   pm2_env?: { pm_exec_path?: string; args?: string[] };
 }
 
+/** The `ps` read that names the parent's PM2 home, used only when PM2 has no `pm2.pid` at its default path. */
+export const PM2_PARENT_CHECK_TIMEOUT_MS = 5_000;
+
 function hasPm2Parent(): boolean {
   const pm2Home = process.env.PM2_HOME || join(homedir(), ".pm2");
   // The CLI can auto-start PM2. Check the actual parent before invoking it,
@@ -81,7 +84,7 @@ function hasPm2Parent(): boolean {
   if (process.ppid <= 1) return false;
   const parent = spawnSync("/bin/ps", ["-ww", "-p", String(process.ppid), "-o", "args="], {
     encoding: "utf8",
-    timeout: 5000,
+    timeout: PM2_PARENT_CHECK_TIMEOUT_MS,
     maxBuffer: 64 * 1024,
   });
   if (parent.error || parent.status !== 0) return false;
@@ -107,13 +110,19 @@ function hasPm2Parent(): boolean {
  */
 export const PM2_JLIST_ATTEMPT_TIMEOUTS_MS = [15_000, 5_000] as const;
 
-/** The longest the guard can wait on PM2 before it refuses. */
+/**
+ * The longest the `pm2 jlist` attempts can take. The guard checks the parent
+ * before each attempt, and without a `pm2.pid` at the default path that check
+ * is a `ps` read of up to `PM2_PARENT_CHECK_TIMEOUT_MS`: the guard's worst case
+ * is this plus one such read per attempt (30 s), not this alone. The ready
+ * window below still covers it with at least 15 s left for the bundle's boot.
+ */
 export const PM2_REGISTRY_QUERY_BOUND_MS = PM2_JLIST_ATTEMPT_TIMEOUTS_MS.reduce((total, ms) => total + ms, 0);
 
 /**
  * How long a supervisor (restart, `ravi update`) waits for a new daemon or
- * channels runner to report in. It must cover the guard's PM2 bound plus the
- * bundle's own boot, or a successor still waiting on a slow `pm2 jlist` is
+ * channels runner to report in. It must cover the guard's worst case (the PM2
+ * bound plus a parent check per attempt) plus the bundle's own boot, or a successor still waiting on a slow `pm2 jlist` is
  * deleted as failed before the guard answers.
  */
 export const MANAGED_RUNTIME_READY_TIMEOUT_MS = PM2_REGISTRY_QUERY_BOUND_MS + 25_000;
@@ -156,7 +165,10 @@ export function readPm2RegistryOutcome(
   let attempts = 0;
   let reason: Pm2RegistryOutage["reason"] = "failed";
   for (const timeoutMs of PM2_JLIST_ATTEMPT_TIMEOUTS_MS) {
-    if (!beforeAttempt()) return { processes: [], outage: null };
+    // The manager left between attempts: what the attempts already made saw is still a PM2 that did not answer.
+    if (!beforeAttempt()) {
+      return { processes: [], outage: attempts > 0 ? { attempts, limitsMs: limits(attempts), reason } : null };
+    }
     attempts++;
     const result = run(timeoutMs);
     if (result.error || result.status !== 0) {

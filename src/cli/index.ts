@@ -405,6 +405,12 @@ program
 installRootUsageContract(program);
 
 void bootstrapCli().catch(async (error: unknown) => {
+  // A refusal before the runner's own entry (resolving the default credential opens the database) is paused for
+  // here too; one the runner already paused for is not repeated.
+  if (process.argv[2] === "channels" && process.argv[3] === "run") {
+    const { pauseAfterRunnerStateRefusal } = await import("../channels/runner.js");
+    await pauseAfterRunnerStateRefusal(error);
+  }
   if (error instanceof ContractError) {
     // Contract helpers render once and throw. Audit the semantic outcome before
     // preserving the process taxonomy (1 failure · 2 usage · 3 blocked).

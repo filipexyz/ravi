@@ -1,6 +1,6 @@
 import { assertRuntimeMaintenanceInactive } from "../runtime-maintenance.js";
 import { TrackedWorkDrain, type WorkDrainProof, type WorkDrainStatus } from "../runtime/work-drain.js";
-import { recordManagedRuntimeBoot } from "../runtime-process-identity.js";
+import { recordManagedRuntimeBoot, retireManagedRuntimeBoot } from "../runtime-process-identity.js";
 import { closeAllRaviDbs } from "../db/close-all.js";
 import { canonicalStatePath, runAsSchemaConsumer } from "../db/state-boundary.js";
 import { getCredentialsDbPath } from "../credentials/store.js";
@@ -535,26 +535,38 @@ export function resolveChannelRunnerLogLevel(env: NodeJS.ProcessEnv = process.en
 /** Same pause as the daemon's refused entry (`src/cli/env.ts`), so PM2 does not spin a refused runner. */
 export const RUNNER_STATE_REFUSAL_PAUSE_MS = 30_000;
 
-function isRealStateRefusal(error: unknown): boolean {
+/** Refusals already paused for, so the pause at the CLI's top level does not repeat one taken in the runner. */
+const pausedRefusals = new WeakSet<object>();
+
+/** The refusal in the chain, or null when the error is not one. */
+function findRealStateRefusal(error: unknown): object | null {
   for (let current = error, depth = 0; current && depth < 8; depth++) {
-    if ((current as { code?: unknown }).code === "REAL_STATE_ACCESS_REFUSED") return true;
+    if ((current as { code?: unknown }).code === "REAL_STATE_ACCESS_REFUSED") return current as object;
     current = (current as { cause?: unknown }).cause;
   }
-  return false;
+  return null;
 }
 
 /**
  * A runner the state guard refused exits; PM2 restarts it at once, and every
  * start runs `pm2 jlist` again. On a 1-vCPU host that loop is load that slows
  * the very query the guard waits on. Under PM2, pause before exiting.
+ *
+ * It also takes back the boot receipt this process wrote before the guard ran:
+ * during the pause PM2 lists the runner as online with the same PID, and with
+ * its receipt in place `ravi update` would count it as converged.
  */
 export async function pauseAfterRunnerStateRefusal(
   error: unknown,
   env: NodeJS.ProcessEnv = process.env,
   wait: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 ): Promise<boolean> {
-  if (!isRealStateRefusal(error) || env.pm_id === undefined) return false;
+  const refusal = findRealStateRefusal(error);
+  if (!refusal || env.pm_id === undefined || pausedRefusals.has(refusal)) return false;
+  pausedRefusals.add(refusal);
+  retireManagedRuntimeBoot("ravi-channels");
   log.error("Channel runner refused by the state guard; pausing before exit so PM2 does not restart it in a loop", {
+    error,
     pauseMs: RUNNER_STATE_REFUSAL_PAUSE_MS,
   });
   await wait(RUNNER_STATE_REFUSAL_PAUSE_MS);

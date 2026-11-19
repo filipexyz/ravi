@@ -67,21 +67,23 @@ export const MANAGED_RUNTIME_SUPERVISOR_BUDGET_ENV = "RAVI_UPDATE_SUPERVISOR_BUD
 export const SUPERVISOR_EXIT_MARGIN_MS = 10_000;
 /** How long the replaced runtime must stay unchanged before the update claims success. */
 export const MANAGED_RUNTIME_STABILITY_WINDOW_ENV = "RAVI_UPDATE_STABILITY_WINDOW_MS";
-const DEFAULT_STABILITY_WINDOW_MS = 30_000;
-/** One rebind attempt: the daemon and then the channels runner, each up to the ready window (which itself covers the state guard's PM2 bound), then the stability window, with a margin. 180 s with the defaults. */
-const REBIND_ATTEMPT_MS = 2 * MANAGED_RUNTIME_READY_TIMEOUT_MS + DEFAULT_STABILITY_WINDOW_MS + 60_000;
-/** What the automatic rollback may spend reinstalling the previous release (network and package manager, not bounded by the ready window). */
-const ROLLBACK_REINSTALL_ALLOWANCE_MS = 540_000;
+export const DEFAULT_STABILITY_WINDOW_MS = 30_000;
 /**
  * How long the CLI waits for the supervisor: the rebind, the stability window
  * and, when the target does not converge, the automatic rollback (which
- * reinstalls a release and converges the restored one the same way). Derived
- * from the ready window so a longer state-guard bound lengthens it; 900 s with
- * the defaults. CLIs before the window declare no wait and give up after 30 s
- * (up to 3.261113.2) or 90 s (3.261113.3 on); they get no window, and the
- * supervisor records its result for them.
+ * reinstalls a release). CLIs before the window declare no wait and give up
+ * after 30 s (up to 3.261113.2) or 90 s (3.261113.3 on); they get no window,
+ * and the supervisor records its result for them.
+ *
+ * A fixed 15 minutes, as the update spec says, not a sum: the reinstall has no
+ * timeout of its own, so any share left for it would be calibrated, not
+ * measured. What it must always cover is asserted from the phases that do have
+ * limits (`state-boundary.test.ts`), so a longer state-guard bound fails there
+ * instead of eating the reinstall's share.
  */
-export const MANAGED_RUNTIME_REBIND_TIMEOUT_MS = 2 * REBIND_ATTEMPT_MS + ROLLBACK_REINSTALL_ALLOWANCE_MS;
+export const MANAGED_RUNTIME_REBIND_TIMEOUT_MS = 900_000;
+/** How long the rebind waits for the channels runner after the daemon: the ready window, as every supervisor. */
+export const MANAGED_RUNTIME_CHANNELS_WAIT_MS = MANAGED_RUNTIME_READY_TIMEOUT_MS;
 const MAX_STABILITY_WINDOW_MS = 300_000;
 
 type RunResult = {
@@ -336,7 +338,7 @@ async function waitForChannelsAfterUpgrade(
 ): Promise<boolean> {
   const now = dependencies.now ?? Date.now;
   const wait = dependencies.wait ?? ((ms: number) => delay(ms));
-  const deadline = now() + (dependencies.readyTimeoutMs ?? MANAGED_RUNTIME_READY_TIMEOUT_MS);
+  const deadline = now() + (dependencies.readyTimeoutMs ?? MANAGED_RUNTIME_CHANNELS_WAIT_MS);
   for (;;) {
     const online = getProcesses().some(
       (process) => process.name === CHANNELS_PM2_PROCESS_NAME && process.status === "online",

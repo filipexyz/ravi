@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from "bun:test";
-import { which } from "bun";
+import { spawn, which } from "bun";
 import { Database } from "bun:sqlite";
 import { spawnSync } from "node:child_process";
 import {
@@ -25,6 +25,7 @@ import {
   openStateDatabase,
   MANAGED_RUNTIME_READY_TIMEOUT_MS,
   PM2_JLIST_ATTEMPT_TIMEOUTS_MS,
+  PM2_PARENT_CHECK_TIMEOUT_MS,
   PM2_REGISTRY_QUERY_BOUND_MS,
   readPm2Registry,
   readPm2RegistryOutcome,
@@ -35,7 +36,13 @@ import {
 import { buildChannelsPm2Env, buildDaemonPm2StartArgs } from "../daemon-stdin.js";
 import { DEFAULT_READY_TIMEOUT_MS } from "../cli/daemon-restart-supervision.js";
 import { CHANNELS_WAIT_MS } from "../cli/daemon-upgrade-restart.js";
-import { buildManagedRuntimeRebindPlan, MANAGED_RUNTIME_REBIND_TIMEOUT_MS } from "../managed-runtime-rebind.js";
+import {
+  buildManagedRuntimeRebindPlan,
+  DEFAULT_STABILITY_WINDOW_MS,
+  MANAGED_RUNTIME_CHANNELS_WAIT_MS,
+  MANAGED_RUNTIME_REBIND_TIMEOUT_MS,
+  SUPERVISOR_EXIT_MARGIN_MS,
+} from "../managed-runtime-rebind.js";
 import { OUTDATED_PM2_BANNER } from "../test/pm2-jlist.js";
 
 const dirs: string[] = [];
@@ -372,8 +379,45 @@ it("supervisors wait at least the guard's PM2 bound before calling a successor f
   expect(MANAGED_RUNTIME_READY_TIMEOUT_MS).toBeGreaterThanOrEqual(PM2_REGISTRY_QUERY_BOUND_MS + 15_000);
   expect(DEFAULT_READY_TIMEOUT_MS).toBe(MANAGED_RUNTIME_READY_TIMEOUT_MS);
   expect(CHANNELS_WAIT_MS).toBe(MANAGED_RUNTIME_READY_TIMEOUT_MS);
-  // `ravi update` runs the daemon restart and then waits for the runner, each up to the window.
-  expect(MANAGED_RUNTIME_REBIND_TIMEOUT_MS).toBeGreaterThan(2 * MANAGED_RUNTIME_READY_TIMEOUT_MS);
+  expect(MANAGED_RUNTIME_CHANNELS_WAIT_MS).toBe(MANAGED_RUNTIME_READY_TIMEOUT_MS);
+});
+
+it("the guard's worst case, with a parent check before each attempt, fits the ready window with room to boot", () => {
+  // Without a `pm2.pid` at the default path the parent check is a `ps` read, before every attempt.
+  const guardWorstCase =
+    PM2_REGISTRY_QUERY_BOUND_MS + PM2_JLIST_ATTEMPT_TIMEOUTS_MS.length * PM2_PARENT_CHECK_TIMEOUT_MS;
+  expect(guardWorstCase).toBe(30_000);
+  expect(MANAGED_RUNTIME_READY_TIMEOUT_MS - guardWorstCase).toBeGreaterThanOrEqual(15_000);
+});
+
+it("keeps the outage of the attempts already made when the PM2 manager leaves before the retry", () => {
+  const timedOut = (): Pm2JlistResult => ({
+    stdout: "",
+    status: null,
+    error: Object.assign(new Error("spawnSync pm2 ETIMEDOUT"), { code: "ETIMEDOUT" }),
+  });
+  let checks = 0;
+  const outcome = readPm2RegistryOutcome(timedOut, () => checks++ === 0);
+  expect(outcome.processes).toEqual([]);
+  expect(outcome.outage).toEqual({ attempts: 1, limitsMs: [PM2_JLIST_ATTEMPT_TIMEOUTS_MS[0]], reason: "timeout" });
+  // A manager that was never this process's parent made no attempt: nothing to name.
+  expect(readPm2RegistryOutcome(timedOut, () => false).outage).toBeNull();
+});
+
+it("the update supervisor's budget covers every bounded phase and leaves the reinstall a real share", () => {
+  // The first attempt uses the ready window three times: the daemon's boot receipt and its `ready`
+  // (`daemon-restart-supervision.ts`), then the runner (`managed-runtime-rebind.ts`), plus the 10 s wait for
+  // the target, the stability window and the margin the supervisor keeps before the CLI stops waiting.
+  const firstAttempt = 3 * MANAGED_RUNTIME_READY_TIMEOUT_MS + 10_000 + DEFAULT_STABILITY_WINDOW_MS;
+  // The rollback's own fixed waits (`update-rollback.ts`): 30 s exit, 30 s lock, 60 s daemon, 60 s runner, 30 s window.
+  const rollbackWaits = 30_000 + 30_000 + 60_000 + 60_000 + 30_000;
+  // What the reinstall (no timeout of its own) and the PM2/snapshot commands are guaranteed at least.
+  const reinstallShare = 300_000;
+  expect(MANAGED_RUNTIME_REBIND_TIMEOUT_MS).toBeGreaterThanOrEqual(
+    firstAttempt + rollbackWaits + SUPERVISOR_EXIT_MARGIN_MS + reinstallShare,
+  );
+  // The spec promises the CLI waits up to 15 minutes.
+  expect(MANAGED_RUNTIME_REBIND_TIMEOUT_MS).toBe(900_000);
 });
 
 it("a daemon refused because `pm2 jlist` failed says PM2 did not answer, not that it is unregistered", () => {
@@ -769,3 +813,84 @@ it("bridge and publication stores cannot reopen real state after source fixture 
   expect(result.status, result.stderr).toBe(0);
   expect(existsSync(join(options.homeDir, ".ravi"))).toBe(false);
 });
+
+/**
+ * Runs `channels run` from the source entry under PM2 (`pm_id` set) against an unregistered real state, and answers
+ * with what it printed until it pauses (or `limitMs`). The pause is 30 s, so the process is killed once it shows.
+ */
+async function launchRefusedChannelsRun(options: {
+  withDefaultCredential: boolean;
+}): Promise<{ paused: boolean; output: string; exited: boolean }> {
+  const homeDir = mkdtempSync(join(tmpdir(), "ravi-runner-refused-"));
+  dirs.push(homeDir);
+  const bin = join(homeDir, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "pm2"), "#!/usr/bin/env bun\nconsole.log('[]');\n");
+  chmodSync(join(bin, "pm2"), 0o755);
+  const stateDir = join(homeDir, ".ravi");
+  mkdirSync(stateDir, { mode: 0o700 });
+  if (options.withDefaultCredential) {
+    // A default credential makes the CLI resolve its context, which opens the database, before the runner starts.
+    writeFileSync(
+      join(stateDir, "credentials.json"),
+      JSON.stringify({
+        version: 1,
+        default: "rctx_refusedrunner",
+        contexts: {
+          rctx_refusedrunner: {
+            context_id: "ctx_refusedrunner",
+            agent_id: "main",
+            label: "test",
+            kind: "cli-runtime",
+            issued_at: 1,
+            expires_at: null,
+          },
+        },
+      }),
+      { mode: 0o600 },
+    );
+  }
+  const child = spawn([process.execPath, resolve(import.meta.dir, "../cli/index.ts"), "channels", "run"], {
+    env: {
+      PATH: `${bin}:${resolve(process.execPath, "..")}:/usr/bin:/bin`,
+      HOME: homeDir,
+      PM2_HOME: join(homeDir, "pm2"),
+      pm_id: "3",
+    },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  let output = "";
+  let exited = false;
+  void child.exited.then(() => {
+    exited = true;
+  });
+  const decoder = new TextDecoder();
+  const read = async (stream: ReadableStream<Uint8Array>) => {
+    for await (const chunk of stream) output += decoder.decode(chunk);
+  };
+  void read(child.stdout);
+  void read(child.stderr);
+  const deadline = Date.now() + 25_000;
+  while (Date.now() < deadline && !exited && !output.includes("pausing before exit"))
+    await new Promise((done) => setTimeout(done, 100));
+  const paused = output.includes("pausing before exit");
+  const stillRunning = !exited;
+  child.kill();
+  await child.exited;
+  return { paused, output, exited: !stillRunning };
+}
+
+it("a channels runner refused by the state guard pauses under PM2 before it exits, with or without a default credential", async () => {
+  const plain = await launchRefusedChannelsRun({ withDefaultCredential: false });
+  expect(plain.output).toContain("REAL_STATE_ACCESS_REFUSED");
+  expect(plain.paused).toBe(true);
+  expect(plain.exited).toBe(false);
+  // The refusal now happens while the CLI resolves the default credential, before the runner's own entry.
+  const credentialed = await launchRefusedChannelsRun({ withDefaultCredential: true });
+  expect(credentialed.output).toContain("REAL_STATE_ACCESS_REFUSED");
+  expect(credentialed.paused).toBe(true);
+  expect(credentialed.exited).toBe(false);
+  // The log line carries the refusal, not an empty error.
+  expect(plain.output).not.toContain("Error object has no message or cause");
+}, 70_000);
