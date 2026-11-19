@@ -42,3 +42,32 @@ condition. The supervisor's own refusal covers a CLI installed before this
 change: that CLI starts the supervisor wherever it runs. Refusing leaves the
 previous runtime running, and the next run uses the CLI that was just
 installed.
+
+## Snapshot and rollback (19/11/2026)
+
+The VPS report ended with both processes in a restart loop and the question
+"is there a command that goes back to the previous version?". The rule until
+then forbade any automatic database or package downgrade, for a good reason:
+an older release must never run on a state a newer one migrated, and a
+database restore without its package changes nothing. Restoring both together,
+from a snapshot taken while no daemon owned the stores, is the safe form of
+that downgrade: the previous release runs on exactly the state it last wrote.
+The locks prove that no daemon writes during the copy; a CLI writing from a
+terminal at that moment is not excluded.
+
+The snapshot needs a moment with no owner, after the predecessor's last write
+and before the target's first. Coordinated replacement has no such moment,
+because the successor takes ownership the instant the predecessor exits. So an
+update that can roll back stops both processes first. The cost is the target's
+boot time added to the downtime, plus the copy itself on a filesystem without
+clones (seconds per gigabyte), with the channel runner stopped too. A target that cannot boot at
+all now goes through a rollback, with a reinstall, instead of leaving the
+predecessor running. `ravi daemon restart` keeps the coordinated cutover.
+
+The previous release starts through its own CLI because only that release
+knows its launcher and registration. What the target wrote during the attempt
+leaves the live state, Thread records included: its files are kept in
+`candidate/`, not deleted, and the result names the window. Copy-on-write
+clones make the snapshot nearly free on APFS, btrfs and XFS. On ext4 it is a
+full copy, so the space check refuses before anything stops instead of finding
+a full disk afterwards.
