@@ -147,17 +147,17 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | apps | src/apps/import-cli.ts | 230 | fixed | binding retained / no recognized error surface | src/apps/import-cli.ts:48915e7519f4de5520ada591 |
 | apps | src/apps/import-cli.ts | 480 | triaged-follow-up | catch-without-binding | src/apps/import-cli.ts:e9873d35b097f2130bab5398 |
 | apps | src/apps/import-cli.ts | 494 | triaged-follow-up | catch-without-binding | src/apps/import-cli.ts:a6b7f0a99cae3270e4ae02a8 |
-| apps | src/apps/router.ts | 106 | fixed | binding retained / no recognized error surface | src/apps/router.ts:1d246da10a087fed552dfb99 |
-| apps | src/apps/router.ts | 930 | triaged-follow-up | catch-without-binding | src/apps/router.ts:ccbdb880a3313f6d6887530a |
-| apps | src/apps/router.ts | 991 | fixed | binding retained / no recognized error surface | src/apps/router.ts:be7924cab2b6818b47481d9d |
-| apps | src/apps/router.ts | 1004 | triaged-follow-up | catch-without-binding | src/apps/router.ts:e39c75939f3bada55ce4bba9 |
+| apps | src/apps/router.ts | 110 | fixed | binding retained / no recognized error surface | src/apps/router.ts:1d246da10a087fed552dfb99 |
+| apps | src/apps/router.ts | 960 | triaged-follow-up | catch-without-binding | src/apps/router.ts:ccbdb880a3313f6d6887530a |
+| apps | src/apps/router.ts | 1021 | fixed | binding retained / no recognized error surface | src/apps/router.ts:be7924cab2b6818b47481d9d |
+| apps | src/apps/router.ts | 1034 | triaged-follow-up | catch-without-binding | src/apps/router.ts:e39c75939f3bada55ce4bba9 |
 | apps | src/apps/scaffold.ts | 566 | triaged-follow-up | catch-without-binding | src/apps/scaffold.ts:7539c3f22a40bad7711dec0c |
-| apps | src/apps/service.ts | 258 | fixed | binding retained / no recognized error surface | src/apps/service.ts:9af1f6f974fdf5c79d441a2b |
-| apps | src/apps/service.ts | 265 | fixed | binding retained / no recognized error surface | src/apps/service.ts:f786c25699f0041e2406547f |
-| apps | src/apps/service.ts | 396 | fixed | binding retained / no recognized error surface | src/apps/service.ts:cd26a1a079ed75e5f28dea45 |
-| apps | src/apps/service.ts | 455 | fixed | binding retained / no recognized error surface | src/apps/service.ts:0a4b790f9399d3f813e5a417 |
-| apps | src/apps/service.ts | 1470 | triaged-follow-up | catch-without-binding | src/apps/service.ts:4f18315e398f50e563b2ed7e |
-| apps | src/apps/service.ts | 1487 | triaged-follow-up | catch-without-binding | src/apps/service.ts:12bc6af12da4a5e8317d9403 |
+| apps | src/apps/service.ts | 261 | fixed | binding retained / no recognized error surface | src/apps/service.ts:9af1f6f974fdf5c79d441a2b |
+| apps | src/apps/service.ts | 268 | fixed | binding retained / no recognized error surface | src/apps/service.ts:f786c25699f0041e2406547f |
+| apps | src/apps/service.ts | 399 | fixed | binding retained / no recognized error surface | src/apps/service.ts:cd26a1a079ed75e5f28dea45 |
+| apps | src/apps/service.ts | 458 | fixed | binding retained / no recognized error surface | src/apps/service.ts:0a4b790f9399d3f813e5a417 |
+| apps | src/apps/service.ts | 1473 | triaged-follow-up | catch-without-binding | src/apps/service.ts:4f18315e398f50e563b2ed7e |
+| apps | src/apps/service.ts | 1490 | triaged-follow-up | catch-without-binding | src/apps/service.ts:12bc6af12da4a5e8317d9403 |
 | apps | src/apps/youtube/client.ts | 672 | triaged-follow-up | catch-without-binding | src/apps/youtube/client.ts:701786c6a30de68a19642f53 |
 | apps | src/apps/youtube/client.ts | 709 | triaged-follow-up | catch-without-binding | src/apps/youtube/client.ts:b551da5714883e23a044993d |
 | apps | src/apps/youtube/client.ts | 722 | triaged-follow-up | catch-without-binding | src/apps/youtube/client.ts:0645ef7c59a301ec13cf6b9f |
