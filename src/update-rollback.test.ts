@@ -28,6 +28,7 @@ import {
 import {
   planUpdateSnapshot,
   UPDATE_SNAPSHOT_SPACE,
+  UpdateSnapshotRestoreError,
   updateSnapshotsDir,
   type UpdateSnapshotManifest,
 } from "./update-snapshot.js";
@@ -150,7 +151,15 @@ describe("update rollback plan", () => {
   });
 });
 
-function rollbackFixture(input: { failInstall?: boolean; stuckPid?: boolean } = {}) {
+function rollbackFixture(
+  input: {
+    failInstall?: boolean;
+    stuckPid?: boolean;
+    phase?: "waiting" | "owned" | "ready" | null;
+    restartAfterSave?: boolean;
+    throwAfterRestore?: boolean;
+  } = {},
+) {
   const stateDir = tempDir("ravi-rollback-state-");
   const install = globalInstall("3.2.0");
   const bundle = install.target.bundlePath;
@@ -181,9 +190,13 @@ function rollbackFixture(input: { failInstall?: boolean; stuckPid?: boolean } = 
   const manifest = {
     id: "20261119T200000Z-abcdef",
     stores: [join(stateDir, "ravi.db")],
+    files: [{ source: join(stateDir, "ravi.db"), name: "0-ravi.db", bytes: 8192 }],
     createdAt: "2026-11-19T20:00:00.000Z",
     targetRelease: "3.2.0",
   } as UpdateSnapshotManifest;
+  let saved = false;
+  let readsAfterSave = 0;
+  let restoredState = false;
   const deps: UpdateRollbackDependencies = {
     stateDir,
     plan,
@@ -194,8 +207,21 @@ function rollbackFixture(input: { failInstall?: boolean; stuckPid?: boolean } = 
     ],
     bunPath: "/usr/local/bin/bun",
     env: { PATH: "/bin", RAVI_BUNDLE: bundle, RAVI_CONTEXT_KEY: "" },
-    getProcesses: () => processes,
+    getProcesses: () => {
+      if (input.throwAfterRestore && restoredState) throw new Error("Unable to read the managed PM2 processes");
+      // A restored daemon that restarts once the window began (the save check and the window's first read pass):
+      // a new PID and start time.
+      if (saved) readsAfterSave += 1;
+      if (input.restartAfterSave && readsAfterSave > 2)
+        return processes.map((process) =>
+          process.name === "ravi" ? { ...process, pid: 999, startedAt: (process.startedAt ?? 0) + 5_000 } : process,
+        );
+      return processes;
+    },
     pidAlive: (pid) => input.stuckPid === true && pid === 300,
+    schemaPhase: () => (input.phase === undefined ? "ready" : input.phase),
+    stabilityWindowMs: 1_000,
+    startTimeoutMs: 2_000,
     now: (() => {
       let time = 0;
       return () => (time += 100);
@@ -207,6 +233,7 @@ function rollbackFixture(input: { failInstall?: boolean; stuckPid?: boolean } = 
     },
     restore: () => {
       order.push("restore");
+      restoredState = true;
       return { candidateDir: join(stateDir, "candidate"), restoredAt: "2026-11-19T20:01:00.000Z" };
     },
     settleLeftovers: () => "none",
@@ -220,6 +247,7 @@ function rollbackFixture(input: { failInstall?: boolean; stuckPid?: boolean } = 
         install.setVersion("3.1.0");
       } else if (args[1] === "daemon" && args[2] === "start") start("ravi");
       else if (args[1] === "channels" && args[2] === "start") start("ravi-channels");
+      else if (command === "pm2" && args[0] === "save") saved = true;
       return { success: true, output: "" };
     },
   };
@@ -260,12 +288,83 @@ describe("update rollback", () => {
     expect(calls.some((call) => call.args.includes("start"))).toBe(false);
   });
 
-  it("restores nothing while a stopped process is still alive", async () => {
+  it("restores nothing while a stopped process is still alive, and gives the exact restore by hand", async () => {
     const { deps, order } = rollbackFixture({ stuckPid: true });
     const outcome = await rollBackUpdate(deps);
 
     expect(outcome).toMatchObject({ ok: false, step: "stop", restoredAt: null });
     expect(order).toEqual([]);
+    if (outcome.ok) throw new Error("unreachable");
+    const live = join(deps.stateDir, "ravi.db");
+    const snapshotDir = join(updateSnapshotsDir(deps.stateDir), deps.manifest.id);
+    // The target's WAL and shared memory go aside with the database, before the snapshot file comes back.
+    const aside = outcome.commands.findIndex((command) => command.includes(`'${live}-wal'`));
+    const back = outcome.commands.indexOf(`mv -n '${join(snapshotDir, "files", "0-ravi.db")}' '${live}'`);
+    expect(outcome.commands.slice(0, 2)).toEqual(["pm2 delete ravi-channels", "pm2 delete ravi"]);
+    expect(outcome.commands[aside]).toBe(
+      `if [ -e '${live}-wal' ]; then mkdir -p '${join(snapshotDir, "candidate")}' && mv -n '${live}-wal' '${join(snapshotDir, "candidate", "0-ravi.db-wal")}'; fi`,
+    );
+    expect(outcome.commands.some((command) => command.includes(`'${live}-shm'`))).toBe(true);
+    expect(back).toBeGreaterThan(aside);
+    expect(outcome.commands.slice(-4)).toEqual([
+      "bun install -g ravi.bot@3.1.0",
+      "ravi daemon start",
+      "ravi channels start",
+      "ravi daemon status",
+    ]);
+  });
+
+  it("does not count a restored daemon that never reaches ready, even with its boot receipt", async () => {
+    const { deps, calls } = rollbackFixture({ phase: "waiting" });
+    const outcome = await rollBackUpdate(deps);
+
+    expect(outcome).toMatchObject({ ok: false, step: "start", restoredAt: "2026-11-19T20:01:00.000Z" });
+    expect(calls.some((call) => call.args.includes("channels"))).toBe(false);
+    expect(calls.some((call) => call.args[0] === "save")).toBe(false);
+  });
+
+  it("fails the rollback when the restored daemon restarts inside the stability window", async () => {
+    const { deps } = rollbackFixture({ restartAfterSave: true });
+    const outcome = await rollBackUpdate(deps);
+
+    expect(outcome).toMatchObject({ ok: false, step: "verify", restoredAt: "2026-11-19T20:01:00.000Z" });
+    if (outcome.ok) throw new Error("unreachable");
+    expect(outcome.message).toContain("did not stay up for the stability window");
+  });
+
+  it("turns an error thrown inside a step into a failure of that step, with its commands", async () => {
+    const { deps } = rollbackFixture({ throwAfterRestore: true });
+    const outcome = await rollBackUpdate(deps);
+
+    expect(outcome).toMatchObject({ ok: false, step: "start", restoredAt: "2026-11-19T20:01:00.000Z" });
+    if (outcome.ok) throw new Error("unreachable");
+    expect(outcome.message).toContain("Unable to read the managed PM2 processes");
+    expect(outcome.message).toContain("The state is restored");
+    expect(outcome.commands).toEqual(["ravi daemon start", "ravi channels start", "ravi daemon status"]);
+  });
+
+  it("hands over the commands that finish a restore that stopped, then the previous release", async () => {
+    const { deps } = rollbackFixture();
+    const pending = { from: "/state/human-bridge/bridge.db", to: "/snap/candidate/6-bridge.db", done: false };
+    const outcome = await rollBackUpdate({
+      ...deps,
+      restore: () => {
+        throw new UpdateSnapshotRestoreError("rename failed", [
+          { from: "/state/ravi.db", to: "/snap/candidate/0-ravi.db", done: true },
+          pending,
+        ]);
+      },
+    });
+
+    expect(outcome).toMatchObject({ ok: false, step: "restore", restoredAt: null });
+    if (outcome.ok) throw new Error("unreachable");
+    expect(outcome.commands).toEqual([
+      `mkdir -p '/snap/candidate' && mv -n '${pending.from}' '${pending.to}'`,
+      "bun install -g ravi.bot@3.1.0",
+      "ravi daemon start",
+      "ravi channels start",
+      "ravi daemon status",
+    ]);
   });
 });
 
@@ -374,6 +473,23 @@ describe("update supervisor with a rollback plan", () => {
       candidateDir: join(fixture.stateDir, "candidate"),
     });
     expect(result?.message).toContain("Ravi 3.1.0 runs again on its state as of");
+  });
+
+  it("records a rollback that throws as rollback-failed, with where to look", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: true });
+    const since = Date.now() - 1_000;
+
+    expect(
+      await fixture.rebind({
+        rollBack: async () => {
+          throw new Error("boom");
+        },
+      }),
+    ).toBe(false);
+    const result = readUpdateSupervisorResult(since, fixture.stateDir);
+    expect(result).toMatchObject({ outcome: "rollback-failed", previousRelease: "3.1.0" });
+    expect(result?.message).toContain("the rollback threw (boom)");
+    expect(result?.commands.at(-1)).toContain("restore.json");
   });
 
   it("records a converged update and keeps its snapshot", async () => {

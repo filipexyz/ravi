@@ -27,6 +27,8 @@ import {
 } from "./managed-runtime.js";
 import { buildChannelsPm2Env, buildChannelsPm2StartArgs, buildDaemonPm2StartArgs } from "./daemon-stdin.js";
 import { readDaemonSchemaPhase } from "./db/daemon-schema-owner.js";
+import { acquireSchemaFileLock } from "./db/schema-lock.js";
+import { observeStableManagedRuntime } from "./runtime-stability.js";
 import { performSupervisedDaemonRestart, type ManagedDaemonProcess } from "./cli/daemon-restart-supervision.js";
 import { buildPm2Env, CHANNELS_PM2_PROCESS_NAME, getPm2Processes, PM2_PROCESS_NAME, type Pm2Process } from "./pm2.js";
 import {
@@ -50,6 +52,8 @@ import {
   type UpdateSupervisorResult,
 } from "./update-rollback.js";
 
+export { observeStableManagedRuntime } from "./runtime-stability.js";
+
 const MANAGED_RUNTIME_REBIND_ENV = "RAVI_INTERNAL_UPDATE_RUNTIME_REBIND";
 /**
  * How long the CLI waits for the supervisor: the rebind, the stability window
@@ -72,7 +76,6 @@ export const SUPERVISOR_EXIT_MARGIN_MS = 10_000;
 export const MANAGED_RUNTIME_STABILITY_WINDOW_ENV = "RAVI_UPDATE_STABILITY_WINDOW_MS";
 const DEFAULT_STABILITY_WINDOW_MS = 30_000;
 const MAX_STABILITY_WINDOW_MS = 300_000;
-const STABILITY_POLL_MS = 1_000;
 
 type RunResult = {
   success: boolean;
@@ -136,6 +139,12 @@ type ManagedRuntimeRebindDependencies = {
   rollBack?: (dependencies: UpdateRollbackDependencies) => Promise<UpdateRollbackOutcome>;
   /** Overrides the rollback's own dependencies (tests). */
   rollbackOverrides?: Partial<UpdateRollbackDependencies>;
+  /**
+   * The window the restored release must hold before a rollback counts. Defaults to the configured window
+   * (`RAVI_UPDATE_STABILITY_WINDOW_MS`, 30 s), also when the CLI declared no budget: that CLI reports the failure
+   * anyway, and the rollback is only proven by the window.
+   */
+  rollbackStabilityWindowMs?: number;
   storePaths?: (stateDir: string) => string[];
 };
 
@@ -177,51 +186,6 @@ export function supervisorStabilityPlan(
   if (!value || !/^\d+$/.test(value)) return { stabilityWindowMs: 0 };
   const budgetMs = Math.min(Number(value), MANAGED_RUNTIME_REBIND_TIMEOUT_MS * 5);
   return { stabilityDeadlineMs: startedAt + budgetMs - SUPERVISOR_EXIT_MARGIN_MS };
-}
-
-function onlineRuntimeIdentity(processes: Pm2Process[]): string {
-  return processes
-    .filter(
-      (process) =>
-        (process.name === PM2_PROCESS_NAME || process.name === CHANNELS_PM2_PROCESS_NAME) &&
-        process.status === "online",
-    )
-    .map((process) => `${process.name}:${process.pm_id}:${process.pid}:${process.startedAt ?? ""}`)
-    .sort()
-    .join("|");
-}
-
-/**
- * A runtime that converged can still crash right after: a restart loop shows up
- * as a new PID or start time. Watch the converged processes for the window and
- * fail the update on any change, instead of reporting success.
- */
-export async function observeStableManagedRuntime(input: {
-  getProcesses: () => Pm2Process[];
-  isConverged: (processes: Pm2Process[]) => boolean;
-  windowMs: number;
-  now: () => number;
-  wait: (ms: number) => Promise<void>;
-  pollMs?: number;
-}): Promise<boolean> {
-  // The window, PM2 reads included, ends by its deadline: the CLI's wait is bounded.
-  const started = input.now();
-  const deadline = started + input.windowMs;
-  const initial = onlineRuntimeIdentity(input.getProcesses());
-  let readMs = input.now() - started;
-  for (;;) {
-    // Room for the read that ends the next wait; no time left means the window is over.
-    const remaining = deadline - input.now() - readMs;
-    if (remaining <= 0) return true;
-    const before = input.now();
-    await input.wait(Math.min(input.pollMs ?? STABILITY_POLL_MS, remaining));
-    const readStarted = input.now();
-    const current = input.getProcesses();
-    readMs = Math.max(readMs, input.now() - readStarted);
-    if (onlineRuntimeIdentity(current) !== initial || !input.isConverged(current)) return false;
-    // A clock that does not advance cannot measure a window; stop after this check.
-    if (input.now() <= before) return true;
-  }
 }
 
 function runCommand(command: string, args: string[], options: RunOptions = {}): Promise<RunResult> {
@@ -616,19 +580,37 @@ export async function rebindManagedRuntimeProcesses(
     }
   };
   const rollBack = async (reason: string, manifest: UpdateSnapshotManifest): Promise<void> => {
-    const outcome = await (dependencies.rollBack ?? rollBackUpdate)({
-      stateDir,
-      plan: rollbackPlan,
-      manifest,
-      previousProcesses,
-      bunPath,
-      run,
-      getProcesses,
-      pidAlive: (pid) => !gone(pid),
-      now: dependencies.now,
-      wait: dependencies.wait,
-      ...dependencies.rollbackOverrides,
-    });
+    let outcome: UpdateRollbackOutcome;
+    try {
+      outcome = await (dependencies.rollBack ?? rollBackUpdate)({
+        stateDir,
+        plan: rollbackPlan,
+        manifest,
+        previousProcesses,
+        bunPath,
+        run,
+        getProcesses,
+        pidAlive: (pid) => !gone(pid),
+        now: dependencies.now,
+        wait: dependencies.wait,
+        schemaPhase: phase,
+        stabilityWindowMs: dependencies.rollbackStabilityWindowMs ?? resolveStabilityWindowMs({}),
+        ...dependencies.rollbackOverrides,
+      });
+    } catch (cause) {
+      // Never an unrecorded end: the result names where to look for what the rollback did.
+      const snapshotDir = join(updateSnapshotsDir(stateDir), manifest.id);
+      outcome = {
+        ok: false,
+        step: "unknown",
+        message:
+          `the rollback threw (${(cause as Error).message}). Whether the state was restored is in ` +
+          `${join(snapshotDir, "restore.json")}; the snapshot is in ${snapshotDir}.`,
+        commands: ["ravi daemon status", "pm2 jlist", `cat ${join(snapshotDir, "restore.json")}`],
+        restoredAt: null,
+        candidateDir: null,
+      };
+    }
     if (outcome.ok) {
       record(
         "rolled-back",
@@ -852,22 +834,48 @@ export async function maybeRunManagedRuntimeRebindFromEnv(
   const declaredBudget = process.env[MANAGED_RUNTIME_SUPERVISOR_BUDGET_ENV];
   delete process.env[MANAGED_RUNTIME_SUPERVISOR_BUDGET_ENV];
   refuseRebindInsideDaemonTree(insideDaemonTree);
-  const request = decodeManagedRuntimeRebindRequest(encoded);
-  // The CLI started waiting when it spawned this process.
-  const plan = supervisorStabilityPlan(declaredBudget, Date.now() - process.uptime() * 1000);
-  let converged: boolean;
+  const lock = acquireUpdateSupervisorLock();
   try {
-    converged = await rebind(request.previousProcesses, request.target, plan);
-  } catch (error) {
-    // Refusals before any stop: the running release keeps serving, and the reason reaches the CLI.
-    const code = (error as { code?: unknown } | null)?.code;
-    if (code === UPDATE_WAYPOINT_REQUIRED || code === UPDATE_SNAPSHOT_SPACE) {
-      throw recordSupervisorRefusal(code, (error as Error).message);
+    const request = decodeManagedRuntimeRebindRequest(encoded);
+    // The CLI started waiting when it spawned this process.
+    const plan = supervisorStabilityPlan(declaredBudget, Date.now() - process.uptime() * 1000);
+    let converged: boolean;
+    try {
+      converged = await rebind(request.previousProcesses, request.target, plan);
+    } catch (error) {
+      // Refusals before any stop: the running release keeps serving, and the reason reaches the CLI.
+      const code = (error as { code?: unknown } | null)?.code;
+      if (code === UPDATE_WAYPOINT_REQUIRED || code === UPDATE_SNAPSHOT_SPACE) {
+        throw recordSupervisorRefusal(code, (error as Error).message);
+      }
+      throw error;
     }
-    throw error;
+    if (!converged) throw new Error("Managed Ravi runtime did not converge on the updated bundle");
+    return true;
+  } finally {
+    lock.release();
   }
-  if (!converged) throw new Error("Managed Ravi runtime did not converge on the updated bundle");
-  return true;
+}
+
+export const UPDATE_IN_PROGRESS = "UPDATE_IN_PROGRESS";
+
+/**
+ * One update supervisor per state directory, for its whole life: a second one would prune the first one's
+ * snapshot and stop processes under it. The lock goes with the process, so a crash leaves nothing behind.
+ */
+export function acquireUpdateSupervisorLock(stateDir: string = getRaviStateDir()): { release(): void } {
+  try {
+    return acquireSchemaFileLock(join(stateDir, "updates", "update.lock"), 0);
+  } catch (cause) {
+    throw recordSupervisorRefusal(
+      UPDATE_IN_PROGRESS,
+      `${UPDATE_IN_PROGRESS}: another update supervisor holds ${join(stateDir, "updates", "update.lock")} ` +
+        `(${(cause as Error).message}). Nothing was stopped. Wait for it to finish (its outcome goes to ` +
+        `${join(stateDir, "updates", "supervisor-result.json")}), then run ravi update again if it is still needed.`,
+      stateDir,
+      cause,
+    );
+  }
 }
 
 const SUPERVISOR_LOG_FILE = "supervisor.log";

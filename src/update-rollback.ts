@@ -19,6 +19,8 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import type { ManagedDaemonProcess } from "./cli/daemon-restart-supervision.js";
+import { readDaemonSchemaPhase } from "./db/daemon-schema-owner.js";
 import {
   buildManagedRuntimeIdentity,
   findRaviPackageRoot,
@@ -29,10 +31,13 @@ import {
   type ManagedRuntimeTarget,
 } from "./managed-runtime.js";
 import { CHANNELS_PM2_PROCESS_NAME, clearedPm2ContextEnv, PM2_PROCESS_NAME, type Pm2Process } from "./pm2.js";
+import { observeStableManagedRuntime } from "./runtime-stability.js";
 import { settleThreadFenceLeftovers } from "./threads/fence-adoption.js";
 import {
   acquireStateStoreOwnership,
   restoreUpdateSnapshot,
+  UpdateSnapshotRestoreError,
+  updateSnapshotManualRestoreCommands,
   updateSnapshotsDir,
   type UpdateSnapshotManifest,
 } from "./update-snapshot.js";
@@ -176,7 +181,8 @@ export function previousReleaseCliEnv(env: NodeJS.ProcessEnv): Record<string, st
 type RunResult = { success: boolean; output: string };
 type RunOptions = { cwd?: string; env?: NodeJS.ProcessEnv; stream?: boolean };
 
-export type UpdateRollbackStep = "stop" | "restore" | "reinstall" | "start" | "verify";
+/** `unknown`: the rollback itself threw, outside any step it tracks. */
+export type UpdateRollbackStep = "stop" | "restore" | "reinstall" | "start" | "verify" | "unknown";
 
 export type UpdateRollbackOutcome =
   | { ok: true; target: ManagedRuntimeTarget; restoredAt: string; candidateDir: string }
@@ -214,7 +220,13 @@ export type UpdateRollbackDependencies = {
   lockTimeoutMs?: number;
   startTimeoutMs?: number;
   channelStartAttempts?: number;
+  /** Schema phase of a daemon (`readDaemonSchemaPhase`): only a daemon that reached `ready` counts as up. */
+  schemaPhase?: (process: ManagedDaemonProcess) => "waiting" | "owned" | "ready" | null;
+  /** How long the restored release must stay up before the rollback counts, as the update's window (30 s). */
+  stabilityWindowMs?: number;
 };
+
+const DEFAULT_ROLLBACK_STABILITY_WINDOW_MS = 30_000;
 
 function describe(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
@@ -232,6 +244,7 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
   const wait = deps.wait ?? ((ms: number) => delay(ms));
   const log = deps.log ?? ((line: string) => console.error(`ravi update rollback: ${line}`));
   const env = previousReleaseCliEnv(deps.env ?? process.env);
+  const phase = deps.schemaPhase ?? ((process: ManagedDaemonProcess) => readDaemonSchemaPhase(process, stateDir));
   const snapshotDir = join(updateSnapshotsDir(stateDir), manifest.id);
   const install =
     plan.method === "bun"
@@ -242,12 +255,21 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
     ...(plan.channelsOnline ? ["ravi channels start"] : []),
     "ravi daemon status",
   ];
+  // Every live file of each store goes aside (WAL and shared memory included) before a snapshot file comes back.
+  const manualRestore = () => [
+    "pm2 delete ravi-channels",
+    "pm2 delete ravi",
+    ...updateSnapshotManualRestoreCommands(stateDir, manifest),
+    install,
+    ...startCommands,
+  ];
   let restored: { candidateDir: string; restoredAt: string } | null = null;
-  const failed = (step: UpdateRollbackStep, message: string, commands: string[]): UpdateRollbackOutcome => {
-    log(`failed at ${step}: ${message}`);
+  let step: UpdateRollbackStep = "stop";
+  const failed = (failedStep: UpdateRollbackStep, message: string, commands: string[]): UpdateRollbackOutcome => {
+    log(`failed at ${failedStep}: ${message}`);
     return {
       ok: false,
-      step,
+      step: failedStep,
       message,
       commands,
       restoredAt: restored?.restoredAt ?? null,
@@ -266,161 +288,243 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
   };
   const unrestored = (reason: string) =>
     `${reason} Nothing was restored: the state is still what Ravi ${manifest.targetRelease} wrote. ` +
-    `The snapshot of Ravi ${plan.previousRelease}'s state is intact in ${snapshotDir} (manifest.json lists where ` +
-    `each file goes back). Stop both processes, put those files back, then install Ravi ${plan.previousRelease} ` +
-    "and start it. Do not start Ravi " +
-    `${plan.previousRelease} on the current state.`;
+    `The snapshot of Ravi ${plan.previousRelease}'s state is intact in ${snapshotDir}. The commands stop both ` +
+    "processes, move every live file of each store aside (its WAL and shared memory too, so none is left next " +
+    `to a restored database), put the snapshot files back, then install and start Ravi ${plan.previousRelease}. ` +
+    `Do not start Ravi ${plan.previousRelease} on the current state.`;
 
-  // 1. Stop the target. Only a process that is gone cannot write after the restore.
-  log(`stopping Ravi ${manifest.targetRelease} to restore the state Ravi ${plan.previousRelease} wrote`);
-  const pids = new Set<number>();
-  for (const name of [CHANNELS_PM2_PROCESS_NAME, PM2_PROCESS_NAME]) {
-    for (const entry of deps.getProcesses().filter((process) => process.name === name)) {
-      if (entry.pid > 0) pids.add(entry.pid);
-      const result = await deps.run("pm2", ["delete", String(entry.pm_id)], { env, stream: false });
-      if (!result.success) {
-        return failed(
-          "stop",
-          unrestored(`PM2 could not remove ${name} (pm_id ${entry.pm_id}): ${result.output.trim()}.`),
-          ["pm2 delete ravi-channels", "pm2 delete ravi"],
-        );
+  try {
+    return await rollBackSteps();
+  } catch (cause) {
+    // Whatever escapes a step still ends as a recorded failure that names the step and the commands.
+    let commands: string[];
+    try {
+      commands =
+        step === "stop"
+          ? manualRestore()
+          : step === "restore"
+            ? cause instanceof UpdateSnapshotRestoreError
+              ? [...cause.commands, install, ...startCommands]
+              : []
+            : step === "reinstall"
+              ? [install, ...startCommands]
+              : step === "start"
+                ? startCommands
+                : ["ravi daemon status", "ravi channels status", "pm2 save --force"];
+    } catch {
+      // no-cause: The failure below already carries the cause; these commands only need to be safe to print.
+      commands = ["ravi daemon status", "pm2 jlist"];
+    }
+    return failed(
+      step,
+      `The rollback stopped at ${step} on an unexpected error (${describe(cause)}). ` +
+        (restored
+          ? `The state is restored to the snapshot of ${manifest.createdAt}.`
+          : `The state may still be what Ravi ${manifest.targetRelease} wrote; the snapshot is in ${snapshotDir}.`),
+      commands,
+    );
+  }
+
+  async function rollBackSteps(): Promise<UpdateRollbackOutcome> {
+    // 1. Stop the target. Only a process that is gone cannot write after the restore.
+    log(`stopping Ravi ${manifest.targetRelease} to restore the state Ravi ${plan.previousRelease} wrote`);
+    const pids = new Set<number>();
+    for (const name of [CHANNELS_PM2_PROCESS_NAME, PM2_PROCESS_NAME]) {
+      for (const entry of deps.getProcesses().filter((process) => process.name === name)) {
+        if (entry.pid > 0) pids.add(entry.pid);
+        const result = await deps.run("pm2", ["delete", String(entry.pm_id)], { env, stream: false });
+        if (!result.success) {
+          return failed(
+            "stop",
+            unrestored(`PM2 could not remove ${name} (pm_id ${entry.pm_id}): ${result.output.trim()}.`),
+            manualRestore(),
+          );
+        }
       }
     }
-  }
-  if (!(await waitFor(() => [...pids].every((pid) => !deps.pidAlive(pid)), deps.exitTimeoutMs ?? 30_000))) {
-    return failed("stop", unrestored("A removed process did not exit."), [
-      "pm2 delete ravi-channels",
-      "pm2 delete ravi",
-    ]);
-  }
+    if (!(await waitFor(() => [...pids].every((pid) => !deps.pidAlive(pid)), deps.exitTimeoutMs ?? 30_000))) {
+      return failed("stop", unrestored("A removed process did not exit."), manualRestore());
+    }
 
-  // 2. Restore under the store locks, then settle what an adoption the target started left behind.
-  let ownership: { release(): void };
-  try {
-    ownership = (deps.acquireOwnership ?? acquireStateStoreOwnership)(
-      stateDir,
-      manifest.stores,
-      deps.lockTimeoutMs ?? 30_000,
-    );
-  } catch (cause) {
-    return failed("stop", unrestored(`A process still owns the state stores (${describe(cause)}).`), ["pm2 jlist"]);
-  }
-  try {
-    restored = (deps.restore ?? restoreUpdateSnapshot)({ stateDir, manifest });
-  } catch (cause) {
-    return failed(
-      "restore",
-      `The snapshot could not be put back (${describe(cause)}). Do not start any release: ${snapshotDir}/restore.json ` +
-        "and manifest.json say which files moved. The files the target wrote are under " +
-        `${snapshotDir}/candidate.`,
-      [],
-    );
-  } finally {
-    ownership.release();
-  }
-  log(`state restored to the snapshot of ${manifest.createdAt}; the target's files are in ${restored.candidateDir}`);
-  try {
-    if ((deps.settleLeftovers ?? settleThreadFenceLeftovers)(stateDir) === "running") {
+    // 2. Restore under the store locks, then settle what an adoption the target started left behind.
+    let ownership: { release(): void };
+    try {
+      ownership = (deps.acquireOwnership ?? acquireStateStoreOwnership)(
+        stateDir,
+        manifest.stores,
+        deps.lockTimeoutMs ?? 30_000,
+      );
+    } catch (cause) {
+      return failed("stop", unrestored(`A process still owns the state stores (${describe(cause)}).`), manualRestore());
+    }
+    step = "restore";
+    try {
+      restored = (deps.restore ?? restoreUpdateSnapshot)({ stateDir, manifest });
+    } catch (cause) {
+      // A restore that stopped knows what it moved: its commands finish it, then the previous release comes back.
       return failed(
         "restore",
-        "The state is restored, but a thread fence adoption still holds its lease, so nothing was started.",
+        `The snapshot could not be put back (${describe(cause)}). Do not start any release before the restore is ` +
+          `finished: ${snapshotDir}/restore.json lists every move and whether it was done, and the commands finish ` +
+          `it, then install and start Ravi ${plan.previousRelease}.`,
+        cause instanceof UpdateSnapshotRestoreError ? [...cause.commands, install, ...startCommands] : [],
+      );
+    } finally {
+      ownership.release();
+    }
+    log(`state restored to the snapshot of ${manifest.createdAt}; the target's files are in ${restored.candidateDir}`);
+    try {
+      if ((deps.settleLeftovers ?? settleThreadFenceLeftovers)(stateDir) === "running") {
+        return failed(
+          "restore",
+          "The state is restored, but a thread fence adoption still holds its lease, so nothing was started.",
+          [install, ...startCommands],
+        );
+      }
+    } catch (cause) {
+      return failed(
+        "restore",
+        `The state is restored, but the leftovers of the target's thread fence adoption could not be settled (${describe(cause)}).`,
         [install, ...startCommands],
       );
     }
-  } catch (cause) {
-    return failed(
-      "restore",
-      `The state is restored, but the leftovers of the target's thread fence adoption could not be settled (${describe(cause)}).`,
-      [install, ...startCommands],
-    );
-  }
 
-  // 3. The release that wrote the restored state, in the same install.
-  if (plan.method === "bun") {
-    try {
-      unlinkSync(join(dirname(dirname(plan.packageRoot)), "bun.lock"));
-    } catch {
-      // no-cause: The global lockfile may not exist; the update removes it the same way before installing.
+    // 3. The release that wrote the restored state, in the same install.
+    step = "reinstall";
+    if (plan.method === "bun") {
+      try {
+        unlinkSync(join(dirname(dirname(plan.packageRoot)), "bun.lock"));
+      } catch {
+        // no-cause: The global lockfile may not exist; the update removes it the same way before installing.
+      }
     }
-  }
-  log(`installing Ravi ${plan.previousRelease} with ${plan.method}`);
-  const reinstall = await deps.run(
-    plan.method,
-    plan.method === "bun"
-      ? ["install", "-g", "--force", `ravi.bot@${plan.previousRelease}`]
-      : ["install", "-g", `ravi.bot@${plan.previousRelease}`],
-    { env, stream: false },
-  );
-  const target = (deps.resolveTarget ?? resolveManagedRuntimeTargetFromPackageRoot)(plan.packageRoot);
-  if (!reinstall.success || !target || target.version !== plan.previousRelease) {
-    return failed(
-      "reinstall",
-      `The state is restored, but Ravi ${plan.previousRelease} could not be installed ` +
-        `(${reinstall.success ? `the install resolved to ${target?.version ?? "no runnable bundle"}` : reinstall.output.trim().split("\n").slice(-3).join(" ")}). ` +
-        "Nothing is running.",
-      [install, ...startCommands],
+    log(`installing Ravi ${plan.previousRelease} with ${plan.method}`);
+    const reinstall = await deps.run(
+      plan.method,
+      plan.method === "bun"
+        ? ["install", "-g", "--force", `ravi.bot@${plan.previousRelease}`]
+        : ["install", "-g", `ravi.bot@${plan.previousRelease}`],
+      { env, stream: false },
     );
-  }
-
-  // 4. Started by that release's own CLI, with its own launcher and registration.
-  const member = (name: typeof PM2_PROCESS_NAME | typeof CHANNELS_PM2_PROCESS_NAME) => {
-    const identity = buildManagedRuntimeIdentity(deps.getProcesses(), target.bundlePath, -1, { stateDir });
-    const current = name === PM2_PROCESS_NAME ? identity.daemon : identity.channels;
-    return (
-      current.online && current.identityVerified && !current.stale && current.runningVersion === plan.previousRelease
-    );
-  };
-  const startTimeoutMs = deps.startTimeoutMs ?? 60_000;
-  log(`starting the daemon with Ravi ${plan.previousRelease}`);
-  const daemonStart = await deps.run(deps.bunPath, [target.bundlePath, "daemon", "start"], {
-    cwd: target.cwd,
-    env,
-    stream: false,
-  });
-  log(daemonStart.output.trim());
-  if (!daemonStart.success || !(await waitFor(() => member(PM2_PROCESS_NAME), startTimeoutMs))) {
-    return failed(
-      "start",
-      `Ravi ${plan.previousRelease} is installed and the state is restored, but its daemon did not come up running it.`,
-      startCommands,
-    );
-  }
-  if (plan.channelsOnline) {
-    let started = false;
-    const attempts = deps.channelStartAttempts ?? 3;
-    for (let attempt = 1; attempt <= attempts && !started; attempt += 1) {
-      log(`starting the channel runner with Ravi ${plan.previousRelease} (attempt ${attempt})`);
-      const channelsStart = await deps.run(deps.bunPath, [target.bundlePath, "channels", "start"], {
-        cwd: target.cwd,
-        env,
-        stream: false,
-      });
-      log(channelsStart.output.trim());
-      started =
-        channelsStart.success && (await waitFor(() => member(CHANNELS_PM2_PROCESS_NAME), startTimeoutMs / attempts));
-      if (!started && attempt < attempts) await wait(5_000);
-    }
-    if (!started) {
+    const target = (deps.resolveTarget ?? resolveManagedRuntimeTargetFromPackageRoot)(plan.packageRoot);
+    if (!reinstall.success || !target || target.version !== plan.previousRelease) {
       return failed(
-        "start",
-        `The daemon runs Ravi ${plan.previousRelease} on the restored state, but the channel runner did not come up.`,
-        ["ravi channels start", "ravi channels status"],
+        "reinstall",
+        `The state is restored, but Ravi ${plan.previousRelease} could not be installed ` +
+          `(${reinstall.success ? `the install resolved to ${target?.version ?? "no runnable bundle"}` : reinstall.output.trim().split("\n").slice(-3).join(" ")}). ` +
+          "Nothing is running.",
+        [install, ...startCommands],
       );
     }
-  }
 
-  // 5. Saved and checked like an update.
-  const save = await deps.run("pm2", ["save", "--force"], { env, stream: false });
-  if (
-    !save.success ||
-    !managedRuntimeMatchesTarget(deps.previousProcesses, deps.getProcesses(), target, { stateDir })
-  ) {
-    return failed(
-      "verify",
-      `Ravi ${plan.previousRelease} was started on the restored state, but ${save.success ? "its processes do not match it" : "PM2 could not save its process list"}.`,
-      ["ravi daemon status", "ravi channels status", "pm2 save --force"],
-    );
+    // 4. Started by that release's own CLI, with its own launcher and registration.
+    step = "start";
+    const member = (name: typeof PM2_PROCESS_NAME | typeof CHANNELS_PM2_PROCESS_NAME) => {
+      const identity = buildManagedRuntimeIdentity(deps.getProcesses(), target.bundlePath, -1, { stateDir });
+      const current = name === PM2_PROCESS_NAME ? identity.daemon : identity.channels;
+      return (
+        current.online && current.identityVerified && !current.stale && current.runningVersion === plan.previousRelease
+      );
+    };
+    // Like the update: the daemon counts once it reached `ready` (its boot receipt is written before that), and the
+    // same process must stay ready for the window.
+    let readyDaemon: ManagedDaemonProcess | null = null;
+    const asManaged = (process: Pm2Process): ManagedDaemonProcess => ({
+      name: process.name,
+      pmId: process.pm_id,
+      pid: process.pid,
+      status: process.status,
+      startedAt: process.startedAt ?? undefined,
+    });
+    const daemonReady = (processes: Pm2Process[]): boolean => {
+      const current = processes.find((process) => process.name === PM2_PROCESS_NAME && process.status === "online");
+      if (!current) return false;
+      const managed = asManaged(current);
+      if (
+        readyDaemon &&
+        (managed.pmId !== readyDaemon.pmId ||
+          managed.pid !== readyDaemon.pid ||
+          managed.startedAt !== readyDaemon.startedAt)
+      )
+        return false;
+      return phase(managed) === "ready";
+    };
+    const startTimeoutMs = deps.startTimeoutMs ?? 60_000;
+    log(`starting the daemon with Ravi ${plan.previousRelease}`);
+    const daemonStart = await deps.run(deps.bunPath, [target.bundlePath, "daemon", "start"], {
+      cwd: target.cwd,
+      env,
+      stream: false,
+    });
+    log(daemonStart.output.trim());
+    if (
+      !daemonStart.success ||
+      !(await waitFor(() => member(PM2_PROCESS_NAME) && daemonReady(deps.getProcesses()), startTimeoutMs))
+    ) {
+      return failed(
+        "start",
+        `Ravi ${plan.previousRelease} is installed and the state is restored, but its daemon did not come up ` +
+          "running it and ready on that state.",
+        [...startCommands, "pm2 logs ravi --lines 200 --nostream"],
+      );
+    }
+    const daemonNow = deps.getProcesses().find((process) => process.name === PM2_PROCESS_NAME);
+    readyDaemon = daemonNow ? asManaged(daemonNow) : null;
+    if (plan.channelsOnline) {
+      let started = false;
+      const attempts = deps.channelStartAttempts ?? 3;
+      for (let attempt = 1; attempt <= attempts && !started; attempt += 1) {
+        log(`starting the channel runner with Ravi ${plan.previousRelease} (attempt ${attempt})`);
+        const channelsStart = await deps.run(deps.bunPath, [target.bundlePath, "channels", "start"], {
+          cwd: target.cwd,
+          env,
+          stream: false,
+        });
+        log(channelsStart.output.trim());
+        started =
+          channelsStart.success && (await waitFor(() => member(CHANNELS_PM2_PROCESS_NAME), startTimeoutMs / attempts));
+        if (!started && attempt < attempts) await wait(5_000);
+      }
+      if (!started) {
+        return failed(
+          "start",
+          `The daemon runs Ravi ${plan.previousRelease} on the restored state, but the channel runner did not come up.`,
+          ["ravi channels start", "ravi channels status"],
+        );
+      }
+    }
+
+    // 5. Saved and checked like an update, then held for the stability window.
+    step = "verify";
+    const save = await deps.run("pm2", ["save", "--force"], { env, stream: false });
+    if (
+      !save.success ||
+      !managedRuntimeMatchesTarget(deps.previousProcesses, deps.getProcesses(), target, { stateDir })
+    ) {
+      return failed(
+        "verify",
+        `Ravi ${plan.previousRelease} was started on the restored state, but ${save.success ? "its processes do not match it" : "PM2 could not save its process list"}.`,
+        ["ravi daemon status", "ravi channels status", "pm2 save --force"],
+      );
+    }
+    const converged = (processes: Pm2Process[]) =>
+      daemonReady(processes) && managedRuntimeMatchesTarget(deps.previousProcesses, processes, target, { stateDir });
+    const stable = await observeStableManagedRuntime({
+      getProcesses: deps.getProcesses,
+      isConverged: converged,
+      windowMs: deps.stabilityWindowMs ?? DEFAULT_ROLLBACK_STABILITY_WINDOW_MS,
+      now,
+      wait,
+    });
+    if (!stable) {
+      return failed(
+        "verify",
+        `Ravi ${plan.previousRelease} came up on the restored state, but did not stay up for the stability window ` +
+          "(a process restarted, or the daemon left ready).",
+        ["ravi daemon status", "ravi channels status", "pm2 logs ravi --lines 200 --nostream"],
+      );
+    }
+    log(`rolled back to Ravi ${plan.previousRelease}`);
+    return { ok: true, target, restoredAt: restored.restoredAt, candidateDir: restored.candidateDir };
   }
-  log(`rolled back to Ravi ${plan.previousRelease}`);
-  return { ok: true, target, restoredAt: restored.restoredAt, candidateDir: restored.candidateDir };
 }

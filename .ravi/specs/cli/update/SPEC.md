@@ -135,13 +135,20 @@ CLI that run installed.
   from that same install, and that release is not the target. Any other update
   MUST run as before: no snapshot, no rollback, coordinated replacement where
   it applied. Source checkouts keep that behaviour.
+- One update supervisor MUST run per state directory: it holds
+  `<state>/updates/update.lock` for its whole life, and a second one MUST
+  refuse with `UPDATE_IN_PROGRESS` before any stop (recorded and read back like
+  the waypoint's refusal). The lock is released with its process.
 - Before any stop, an update that can roll back MUST plan its snapshot. The
   stores are `runtimeStateDatabasePaths` with each database's `-wal` and
   `-journal`. It MUST refuse with `UPDATE_SNAPSHOT_SPACE` before any stop when
-  free space plus earlier snapshots is below what the copy needs: on a
-  filesystem without copy-on-write clones, the stores' size plus the larger of
-  10% and 256 MiB; with clones, 256 MiB. The refusal is recorded and read back
-  like the waypoint's.
+  the state disk cannot hold the copy: on a filesystem without copy-on-write
+  clones, the stores' size plus the larger of 10% and 256 MiB, against free
+  space plus earlier snapshots; with clones, 256 MiB plus any store on another
+  disk, against free space only (an earlier clone shares its blocks with the
+  live stores, so deleting it frees almost nothing). A store on another disk
+  MUST also have its size plus that margin free on its own disk, for the
+  restore. The refusal is recorded and read back like the waypoint's.
 - Such an update MUST stop both processes before it starts the target, with no
   coordinated overlap. After the stop it MUST confirm the stopped PIDs exited,
   and it MUST hold every lock a daemon takes before opening a store
@@ -154,22 +161,38 @@ CLI that run installed.
   window, or the rebind fails after the snapshot, the supervisor MUST roll
   back:
   - remove both processes from PM2 and confirm they exited;
-  - under the store locks, move the live store files (including `-shm` and any
-    store the target created) to `<snapshot>/candidate/`, and rename the
-    snapshot files into place;
+  - under the store locks, put the snapshot back with renames on each disk:
+    the snapshot copy of a store on another disk is first copied next to it
+    (a failure there moves nothing); then, store by store, the live files
+    (including `-wal`, `-shm` and any store the target created) move aside on
+    their own disk (`<snapshot>/candidate/`, or `.ravi-update-candidate-<id>/`
+    next to a store on another disk), and the snapshot files move into place.
+    `restore.json` MUST list every move and whether it was done, updated after
+    each one; a restore that stops MUST end the rollback with commands (`mv -n`)
+    that finish it, followed by the install and start of the previous release;
   - settle thread fence leftovers;
   - reinstall the previous exact release with the same installer;
   - start the daemon, then the channel runner if it was online, through that
     release's own CLI (`daemon start`, `channels start`), without target
     routing or runtime context;
-  - save PM2 and verify both identities against that release.
+  - count the daemon only once it reached the schema phase `ready` (its boot
+    receipt is written before that), then save PM2, verify both identities
+    against that release, and hold them for the stability window
+    (`RAVI_UPDATE_STABILITY_WINDOW_MS`, 30 s by default, also when the CLI
+    declared no budget). A daemon that never gets ready, or a process that
+    restarts in the window, MUST end as `rollback-failed`, not `rolled-back`.
 - A rollback MUST NOT delete what the target wrote: its files stay in
   `candidate/` until the next update. One snapshot MUST NOT be restored twice
   (`restore.json`).
 - The supervisor MUST record `<state>/updates/supervisor-result.json`
   (`converged`, `rolled-back`, `rollback-failed` or `failed`) with the snapshot
   time, the restore time and where the target's files are. A failed rollback
-  also records its step and the manual commands for the state it left. The CLI
+  also records its step and the manual commands for the state it left; an
+  error thrown inside a step MUST end as a failure of that step, and one
+  thrown by the rollback itself as `rollback-failed` at step `unknown`, with
+  where to read what it did. The commands for a rollback that stopped before
+  any restore MUST move every live file of each store aside (WAL and shared
+  memory included) before a snapshot file comes back. The CLI
   waits up to 15 min and fails with `UPDATE_ROLLED_BACK` or
   `UPDATE_ROLLBACK_FAILED` from that record. A CLI that stops waiting earlier
   reports a generic failure, and the record still holds the outcome.

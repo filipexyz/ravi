@@ -62,21 +62,36 @@ authorizes no database or package downgrade by hand: the update's own rollback
 ## Rollback
 
 - `UPDATE_ROLLED_BACK`: the target did not converge, and the previous release
-  runs again on its state as of the snapshot. `~/.ravi/updates/supervisor-result.json`
+  runs again on its state as of the snapshot: its daemon reached `ready` and
+  both processes held for the stability window. `<state>/updates/supervisor-result.json`
   names the window that left the live state and where the target's files are
-  (`candidateDir`). Report the failure with `~/.ravi/updates/supervisor.log`
-  before trying that target again.
+  (`candidateDir`; a store on another disk keeps them next to it, in
+  `.ravi-update-candidate-<id>/`). Effects outside the state that the target
+  had in that window (a message sent, a cron run) are not undone and may
+  happen again under the previous release. Report the failure with
+  `<state>/updates/supervisor.log` before trying that target again.
 - `UPDATE_ROLLBACK_FAILED`: run the commands in the message, in order. The step
   says what the rollback left:
-  - `stop`: nothing was restored. Do not start the previous release on this
-    state.
-  - `restore`: do not start any release; `restore.json` and `manifest.json` in
-    the snapshot directory say which files moved.
+  - `stop`: nothing was restored. The commands stop both processes, move every
+    live file of each store aside (WAL and shared memory too), put the
+    snapshot files back, then install and start the previous release. Do not
+    start the previous release on the current state.
+  - `restore`: do not start any release before the restore is finished.
+    `restore.json` in the snapshot directory lists every move and whether it
+    was done; the commands (`mv -n`, which never replaces a file) finish it,
+    then install and start the previous release. When the message says
+    nothing was moved, the state is still the target's.
   - `reinstall`, `start`, `verify`: the state is restored. Install and start
-    the previous release.
+    the previous release; `start` and `verify` also name its log.
+  - `unknown`: the rollback itself failed. `restore.json` says whether the
+    state was restored; read it before running anything.
 - A CLI older than this change may report "did not converge" while the
   supervisor is still rolling back. Wait for `supervisor-result.json` before
   acting.
 - `UPDATE_SNAPSHOT_SPACE`: nothing was stopped. Free the space the message
-  names and run the update again. Do not delete `~/.ravi/updates/snapshots/`
-  while an update runs.
+  names (the state disk, or the disk of a store that lives elsewhere) and run
+  the update again. Do not delete `<state>/updates/snapshots/` while an update
+  runs.
+- `UPDATE_IN_PROGRESS`: another update supervisor runs on this state; nothing
+  was stopped. Wait for its outcome in `supervisor-result.json`, then run the
+  update again if it is still needed.

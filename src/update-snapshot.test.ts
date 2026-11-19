@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 import { spawn } from "bun";
+import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -9,10 +11,11 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  truncateSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   acquireStateStoreOwnership,
   planUpdateSnapshot,
@@ -20,6 +23,7 @@ import {
   restoreUpdateSnapshot,
   takeUpdateSnapshot,
   UPDATE_SNAPSHOT_SPACE,
+  UpdateSnapshotRestoreError,
   updateSnapshotsDir,
   updateStorePaths,
 } from "./update-snapshot.js";
@@ -232,5 +236,123 @@ await Bun.sleep(30_000);`,
     }
     const lease = acquireStateStoreOwnership(stateDir, stores, 5_000);
     lease.release();
+  });
+});
+
+/** ravi.db and the human bridge store, each with a row before the snapshot and one the target wrote after it. */
+function twoStores() {
+  const stateDir = makeStateDir();
+  const stores = updateStorePaths(stateDir, {});
+  const ravi = stores[0]!;
+  const bridge = stores.find((store) => store.includes("human-bridge"))!;
+  mkdirSync(dirname(bridge), { recursive: true });
+  writeRows(ravi, ["before"]);
+  writeRows(bridge, ["bridge before"]);
+  const manifest = takeUpdateSnapshot({
+    stateDir,
+    stores,
+    method: "copy",
+    previousRelease: "3.1.0",
+    targetRelease: "3.2.0",
+  });
+  writeRows(ravi, ["target"]);
+  writeRows(bridge, ["bridge target"]);
+  return { stateDir, stores, ravi, bridge, manifest, index: stores.indexOf(bridge) };
+}
+
+/** Runs `run` with `directory` read-only (a cut that stands for EIO or EACCES), and returns what it threw. */
+function failureWithReadOnly(directory: string, run: () => void): unknown {
+  chmodSync(directory, 0o555);
+  try {
+    run();
+    return null;
+  } catch (error) {
+    return error;
+  } finally {
+    chmodSync(directory, 0o755);
+  }
+}
+
+describe("update snapshot restore that stops", () => {
+  it("leaves no store missing, records every move, and gives commands that finish it", () => {
+    const { stateDir, ravi, bridge, manifest } = twoStores();
+    const failure = failureWithReadOnly(dirname(bridge), () => restoreUpdateSnapshot({ stateDir, manifest }));
+
+    expect(failure).toBeInstanceOf(UpdateSnapshotRestoreError);
+    // The store before the stop is restored, and the one it stopped at is still the target's: none is missing.
+    expect(readRows(ravi)).toEqual(["before"]);
+    expect(readRows(bridge)).toEqual(["bridge before", "bridge target"]);
+    const journal = JSON.parse(readFileSync(join(updateSnapshotsDir(stateDir), manifest.id, "restore.json"), "utf8"));
+    expect(journal.phase).toBe("cut-short");
+    const moves = journal.moves as Array<{ from: string; to: string; done: boolean }>;
+    expect(moves.find((move) => move.to === ravi)?.done).toBe(true);
+    expect(moves.find((move) => move.from === bridge)?.done).toBe(false);
+    // The commands finish the restore as written.
+    const commands = (failure as UpdateSnapshotRestoreError).commands;
+    expect(commands.length).toBeGreaterThan(0);
+    const finish = spawnSync("sh", ["-c", commands.join(" && ")], { encoding: "utf8" });
+    expect(finish.status).toBe(0);
+    expect(readRows(bridge)).toEqual(["bridge before"]);
+    expect(readRows(ravi)).toEqual(["before"]);
+  });
+
+  it("stages a store on another disk next to it first: a staging failure moves nothing", () => {
+    const { stateDir, ravi, bridge, manifest, index } = twoStores();
+    // The human bridge directory stands for a store on another disk.
+    const device = (path: string) => (path.includes("human-bridge") ? 2 : 1);
+    const failure = failureWithReadOnly(dirname(bridge), () => restoreUpdateSnapshot({ stateDir, manifest, device }));
+
+    expect(failure).toBeInstanceOf(UpdateSnapshotRestoreError);
+    expect((failure as Error).message).toContain("Nothing was moved");
+    expect(readRows(ravi)).toEqual(["before", "target"]);
+    expect(existsSync(join(updateSnapshotsDir(stateDir), manifest.id, "restore.json"))).toBe(false);
+
+    // With room next to it, the same restore goes through, by renames on each disk.
+    restoreUpdateSnapshot({ stateDir, manifest, device });
+    expect(readRows(ravi)).toEqual(["before"]);
+    expect(readRows(bridge)).toEqual(["bridge before"]);
+    const aside = join(dirname(bridge), `.ravi-update-candidate-${manifest.id}`);
+    expect(readdirSync(aside)).toContain(`${index}-bridge.db`);
+    expect(readdirSync(dirname(bridge)).filter((entry) => entry.startsWith(".ravi-update-restore-"))).toEqual([]);
+  });
+});
+
+describe("update snapshot plan across disks and clones", () => {
+  it("refuses before any stop when a store on another disk has no room for its restore", () => {
+    const stateDir = makeStateDir();
+    const stores = updateStorePaths(stateDir, {});
+    const bridge = stores.find((store) => store.includes("human-bridge"))!;
+    mkdirSync(dirname(bridge), { recursive: true });
+    writeRows(bridge, ["x"]);
+    const device = (path: string) => (path.includes("human-bridge") ? 2 : 1);
+
+    const plan = planUpdateSnapshot({ stateDir, stores, reflink: () => false, free: () => 10 * 1024 * MiB, device });
+    expect(plan.restoreSpace).toHaveLength(1);
+    expect(plan.restoreSpace[0]).toMatchObject({ directory: dirname(bridge), freeBytes: 10 * 1024 * MiB });
+    expect(() =>
+      planUpdateSnapshot({
+        stateDir,
+        stores,
+        reflink: () => false,
+        free: (directory) => (directory.includes("human-bridge") ? MiB : 10 * 1024 * MiB),
+        device,
+      }),
+    ).toThrow(`free in ${dirname(bridge)}`);
+  });
+
+  it("does not count an earlier clone as free space", () => {
+    const stateDir = makeStateDir();
+    const stores = updateStorePaths(stateDir, {});
+    writeRows(stores[0]!, ["x"]);
+    // An earlier snapshot of 300 MiB (a sparse file here): a clone shares its blocks with the live stores.
+    const earlier = join(updateSnapshotsDir(stateDir), "20261118T000000Z-aaaaaa", "files");
+    mkdirSync(earlier, { recursive: true });
+    writeFileSync(join(earlier, "0-ravi.db"), "");
+    truncateSync(join(earlier, "0-ravi.db"), 300 * MiB);
+    const plan = (reflink: boolean) =>
+      planUpdateSnapshot({ stateDir, stores, reflink: () => reflink, free: () => 100 * MiB });
+
+    expect(() => plan(true)).toThrow(UPDATE_SNAPSHOT_SPACE);
+    expect(plan(false).availableBytes).toBe(400 * MiB);
   });
 });

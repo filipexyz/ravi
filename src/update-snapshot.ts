@@ -1,6 +1,6 @@
 /**
  * Snapshot of the runtime state stores, taken by the update supervisor while
- * no process owns them, and its restore.
+ * no daemon owns them, and its restore.
  *
  * A snapshot is only restored together with the exact release that wrote it
  * (`update-rollback.ts`): an older release never runs on a state a newer one
@@ -41,6 +41,9 @@ const SNAPSHOT_SUFFIXES = ["", "-wal", "-journal"] as const;
 const LIVE_SUFFIXES = ["", "-wal", "-shm", "-journal"] as const;
 const MIN_FREE_MARGIN_BYTES = 256 * 1024 * 1024;
 const SNAPSHOT_ID_PATTERN = /^\d{8}T\d{6}Z-[0-9a-f]{6}$/;
+/** Next to a store on another disk: what the restore moves aside, and the snapshot copy it stages there. */
+const CANDIDATE_PREFIX = ".ravi-update-candidate-";
+const STAGED_PREFIX = ".ravi-update-restore-";
 
 export type UpdateSnapshotMethod = "reflink" | "copy";
 
@@ -73,21 +76,40 @@ export type UpdateSnapshotPlan = {
   freeBytes: number;
   /** Bytes held by earlier snapshots, deleted before this one is taken. */
   reclaimableBytes: number;
+  /**
+   * What the snapshot can count on: free space, plus the earlier snapshot in copy mode only. A clone shares its
+   * blocks with the live stores, so deleting an earlier clone frees almost nothing.
+   */
+  availableBytes: number;
   requiredBytes: number;
+  /**
+   * Stores on another disk than the state directory: the restore copies their snapshot next to them before it
+   * moves anything, so that disk needs the room too.
+   */
+  restoreSpace: Array<{ directory: string; requiredBytes: number; freeBytes: number }>;
 };
 
 export class UpdateSnapshotSpaceError extends Error {
   readonly code = UPDATE_SNAPSHOT_SPACE;
   constructor(readonly plan: UpdateSnapshotPlan) {
+    const short = plan.restoreSpace.find((space) => space.freeBytes < space.requiredBytes);
+    const need =
+      plan.availableBytes < plan.requiredBytes
+        ? `${formatBytes(plan.requiredBytes)} free on the state disk; ${formatBytes(plan.availableBytes)} is available ` +
+          `(${plan.method === "copy" ? "this filesystem has no copy-on-write clones, so the copy is full" : "copy-on-write clones"})`
+        : `${formatBytes(short?.requiredBytes ?? 0)} free in ${short?.directory}, a store on another disk, to restore ` +
+          `it; ${formatBytes(short?.freeBytes ?? 0)} is available`;
     super(
       `${UPDATE_SNAPSHOT_SPACE}: the update keeps a snapshot of the state stores so it can roll back, and it needs ` +
-        `${formatBytes(plan.requiredBytes)} free on the state disk; ${formatBytes(plan.freeBytes + plan.reclaimableBytes)} ` +
-        `is available (${plan.method === "copy" ? "this filesystem has no copy-on-write clones, so the copy is full" : "copy-on-write clones"}). ` +
-        "Nothing was stopped: the running daemon keeps serving, but the installed package is already the target " +
-        "release, and a restart would start it on this state. Free disk space, then run `ravi update` again.",
+        `${need}. Nothing was stopped: the running daemon keeps serving, but the installed package is already the ` +
+        "target release, and a restart would start it on this state. Free disk space, then run `ravi update` again.",
     );
     this.name = "UpdateSnapshotSpaceError";
   }
+}
+
+function spaceWithMargin(bytes: number): number {
+  return bytes + Math.max(Math.ceil(bytes / 10), MIN_FREE_MARGIN_BYTES);
 }
 
 function formatBytes(bytes: number): string {
@@ -183,25 +205,49 @@ export function planUpdateSnapshot(input: {
   stores: string[];
   reflink?: (directory: string) => boolean;
   free?: (directory: string) => number;
+  /** Device of an existing path (test seam); the default is `stat().dev`. */
+  device?: (path: string) => number;
 }): UpdateSnapshotPlan {
   const directory = updateSnapshotsDir(input.stateDir);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const method: UpdateSnapshotMethod = (input.reflink ?? probeReflink)(directory) ? "reflink" : "copy";
-  const stateDevice = statSync(directory).dev;
-  const files = listStoreFiles(input.stores);
+  const free = input.free ?? freeBytes;
+  const stateDevice = input.device ? input.device(directory) : statSync(directory).dev;
+  const files = listStoreFiles(input.stores).map((file) => ({
+    ...file,
+    device: input.device ? input.device(file.source) : file.device,
+  }));
   const bytes = files.reduce((sum, file) => sum + file.bytes, 0);
   const copyBytes = files
     .filter((file) => method === "copy" || file.device !== stateDevice)
     .reduce((sum, file) => sum + file.bytes, 0);
+  const elsewhere = new Map<number, { directory: string; bytes: number }>();
+  for (const file of files.filter((candidate) => candidate.device !== stateDevice)) {
+    const entry = elsewhere.get(file.device) ?? { directory: dirname(file.source), bytes: 0 };
+    entry.bytes += file.bytes;
+    elsewhere.set(file.device, entry);
+  }
+  const freeOnState = free(directory);
+  const reclaimableBytes = directoryBytes(directory);
   const plan: UpdateSnapshotPlan = {
     method,
     bytes,
     copyBytes,
-    freeBytes: (input.free ?? freeBytes)(directory),
-    reclaimableBytes: directoryBytes(directory),
-    requiredBytes: copyBytes + Math.max(Math.ceil(copyBytes / 10), MIN_FREE_MARGIN_BYTES),
+    freeBytes: freeOnState,
+    reclaimableBytes,
+    availableBytes: method === "copy" ? freeOnState + reclaimableBytes : freeOnState,
+    requiredBytes: spaceWithMargin(copyBytes),
+    restoreSpace: [...elsewhere.values()].map((entry) => ({
+      directory: entry.directory,
+      requiredBytes: spaceWithMargin(entry.bytes),
+      freeBytes: free(entry.directory),
+    })),
   };
-  if (plan.freeBytes + plan.reclaimableBytes < plan.requiredBytes) throw new UpdateSnapshotSpaceError(plan);
+  if (
+    plan.availableBytes < plan.requiredBytes ||
+    plan.restoreSpace.some((space) => space.freeBytes < space.requiredBytes)
+  )
+    throw new UpdateSnapshotSpaceError(plan);
   return plan;
 }
 
@@ -275,6 +321,23 @@ function writeJsonAtomic(path: string, value: unknown): void {
   fsyncPath(dirname(path));
 }
 
+/** What an earlier restore left next to stores on another disk (a candidate directory, a staged copy). */
+function pruneStoreSiblings(stores: string[]): void {
+  for (const parent of new Set(stores.map((store) => dirname(store)))) {
+    let entries: string[];
+    try {
+      entries = readdirSync(parent);
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw cause;
+    }
+    for (const entry of entries) {
+      if (entry.startsWith(CANDIDATE_PREFIX) || entry.startsWith(STAGED_PREFIX))
+        rmSync(join(parent, entry), { recursive: true, force: true });
+    }
+  }
+}
+
 /** Earlier snapshots go first: only the last update's snapshot is kept. */
 function pruneUpdateSnapshots(directory: string, keep: string | null = null): void {
   let entries: string[];
@@ -306,6 +369,7 @@ export function takeUpdateSnapshot(input: {
   const root = updateSnapshotsDir(input.stateDir);
   mkdirSync(root, { recursive: true, mode: 0o700 });
   pruneUpdateSnapshots(root);
+  pruneStoreSiblings(input.stores);
   const id = createUpdateSnapshotId(input.now?.() ?? new Date());
   const directory = join(root, id);
   const filesDirectory = join(directory, "files");
@@ -367,17 +431,69 @@ function moveFile(source: string, destination: string): void {
   }
 }
 
+export type UpdateSnapshotMove = { from: string; to: string; done: boolean };
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+/** Exact commands for the moves not done yet, in order. `mv -n` never replaces a file. */
+export function updateSnapshotMoveCommands(moves: UpdateSnapshotMove[]): string[] {
+  return moves
+    .filter((move) => !move.done)
+    .map((move) => `mkdir -p ${shellQuote(dirname(move.to))} && mv -n ${shellQuote(move.from)} ${shellQuote(move.to)}`);
+}
+
+/** A restore that stopped: `moves` says what was done, and `commands` finish it from there. */
+export class UpdateSnapshotRestoreError extends Error {
+  readonly commands: string[];
+  constructor(
+    message: string,
+    readonly moves: UpdateSnapshotMove[],
+    options: { cause?: unknown } = {},
+  ) {
+    super(message, options);
+    this.name = "UpdateSnapshotRestoreError";
+    this.commands = updateSnapshotMoveCommands(moves);
+  }
+}
+
 /**
- * Puts the snapshot back. The live files (what the candidate wrote, plus any
- * store it created) are moved to `<snapshot>/candidate/`, never deleted; the
- * snapshot files are renamed into place, so the restore needs no free space.
- * Call only while both managed processes are stopped and the store locks are
- * held. `restore.json` records the phase for an operator if this is cut short.
+ * Commands that put a snapshot back by hand, for an operator whose processes are stopped: every live file of a
+ * store (database, WAL, shared memory, journal) goes aside first, so no WAL of the target is left next to a
+ * restored database, then each snapshot file goes to its place.
+ */
+export function updateSnapshotManualRestoreCommands(stateDir: string, manifest: UpdateSnapshotManifest): string[] {
+  const directory = join(updateSnapshotsDir(stateDir), manifest.id);
+  const aside = join(directory, "candidate");
+  const commands: string[] = [];
+  manifest.stores.forEach((store, index) => {
+    for (const suffix of LIVE_SUFFIXES) {
+      const live = shellQuote(`${store}${suffix}`);
+      const to = shellQuote(join(aside, `${index}-${basename(store)}${suffix}`));
+      commands.push(`if [ -e ${live} ]; then mkdir -p ${shellQuote(aside)} && mv -n ${live} ${to}; fi`);
+    }
+  });
+  for (const file of manifest.files) {
+    commands.push(`mv -n ${shellQuote(join(directory, "files", file.name))} ${shellQuote(file.source)}`);
+  }
+  return commands;
+}
+
+/**
+ * Puts the snapshot back with renames only. The live files (what the candidate wrote, plus any store it created)
+ * go aside on their own disk, never deleted: under `<snapshot>/candidate/`, or next to a store that lives on
+ * another disk (`.ravi-update-candidate-<id>/`). A store on another disk first gets its snapshot copy staged next
+ * to it, before anything moves: a staging failure leaves the state untouched. `restore.json` lists every move and
+ * whether it was done; a restore that stops raises `UpdateSnapshotRestoreError` with the commands that finish it.
+ * Call only while both managed processes are stopped and the store locks are held.
  */
 export function restoreUpdateSnapshot(input: {
   stateDir: string;
   manifest: UpdateSnapshotManifest;
   now?: () => Date;
+  /** Device of an existing path (test seam); the default is `stat().dev`. */
+  device?: (path: string) => number;
 }): { candidateDir: string; restoredAt: string } {
   const { manifest } = input;
   const directory = join(updateSnapshotsDir(input.stateDir), manifest.id);
@@ -392,27 +508,87 @@ export function restoreUpdateSnapshot(input: {
     if (!entryExists(join(filesDirectory, file.name)))
       throw new Error(`Update snapshot ${manifest.id} is missing ${file.name}; nothing was restored`);
   }
+  const deviceOf = input.device ?? ((path: string) => statSync(path).dev);
+  const snapshotDevice = deviceOf(directory);
   const candidateDir = join(directory, "candidate");
-  mkdirSync(candidateDir, { recursive: true, mode: 0o700 });
-  const startedAt = (input.now?.() ?? new Date()).toISOString();
-  writeJsonAtomic(journal, { phase: "restoring", startedAt, candidateDir });
-  const parents = new Set<string>();
+  const moves: UpdateSnapshotMove[] = [];
+  const staged: UpdateSnapshotMove[] = [];
   manifest.stores.forEach((store, index) => {
+    const parent = dirname(store);
+    mkdirSync(parent, { recursive: true, mode: 0o700 });
+    const local = deviceOf(parent) === snapshotDevice;
+    const aside = local ? candidateDir : join(parent, `${CANDIDATE_PREFIX}${manifest.id}`);
     for (const suffix of LIVE_SUFFIXES) {
       const live = `${store}${suffix}`;
-      if (!entryExists(live)) continue;
-      moveFile(live, join(candidateDir, `${index}-${basename(store)}${suffix}`));
-      parents.add(dirname(live));
+      if (entryExists(live))
+        moves.push({ from: live, to: join(aside, `${index}-${basename(store)}${suffix}`), done: false });
+    }
+    for (const file of manifest.files.filter((entry) =>
+      SNAPSHOT_SUFFIXES.some((suffix) => entry.source === `${store}${suffix}`),
+    )) {
+      const copy = join(filesDirectory, file.name);
+      if (local) {
+        moves.push({ from: copy, to: file.source, done: false });
+        continue;
+      }
+      const stagedPath = join(parent, `${STAGED_PREFIX}${manifest.id}-${file.name}`);
+      staged.push({ from: copy, to: stagedPath, done: false });
+      moves.push({ from: stagedPath, to: file.source, done: false });
     }
   });
-  for (const file of manifest.files) {
-    mkdirSync(dirname(file.source), { recursive: true, mode: 0o700 });
-    moveFile(join(filesDirectory, file.name), file.source);
-    parents.add(dirname(file.source));
+  const startedAt = (input.now?.() ?? new Date()).toISOString();
+  const writeJournal = (phase: string, extra: Record<string, unknown> = {}) =>
+    writeJsonAtomic(journal, { phase, startedAt, candidateDir, moves, ...extra });
+
+  // 1. Stage the snapshot copies of stores on another disk next to them. Nothing live has moved yet.
+  writeJournal("staging");
+  try {
+    for (const stage of staged) {
+      copyFileSync(stage.from, stage.to, constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE);
+      fsyncPath(stage.to);
+    }
+  } catch (cause) {
+    for (const stage of staged) rmSync(stage.to, { force: true });
+    rmSync(journal, { force: true });
+    const unstaged = moves.map((move) => ({
+      ...move,
+      from: staged.find((stage) => stage.to === move.from)?.from ?? move.from,
+    }));
+    throw new UpdateSnapshotRestoreError(
+      `The snapshot of a store on another disk could not be copied next to it (${describeCause(cause)}). ` +
+        "Nothing was moved: the state is still the target's.",
+      unstaged,
+      { cause },
+    );
   }
-  for (const parent of parents) fsyncPath(parent);
-  fsyncPath(candidateDir);
+
+  // 2. Swap, one rename at a time, each recorded before the next.
+  for (const move of moves) {
+    try {
+      mkdirSync(dirname(move.to), { recursive: true, mode: 0o700 });
+      moveFile(move.from, move.to);
+      move.done = true;
+      writeJournal("restoring");
+    } catch (cause) {
+      try {
+        writeJournal("cut-short", { stoppedAt: move.from });
+      } catch {
+        // no-cause: The journal write failed too; the error below still carries every move and the commands.
+      }
+      throw new UpdateSnapshotRestoreError(
+        `The restore stopped moving ${move.from} to ${move.to} (${describeCause(cause)}). ${journal} lists every ` +
+          "move and whether it was done; the commands finish the restore.",
+        moves,
+        { cause },
+      );
+    }
+  }
+  for (const parent of new Set(moves.flatMap((move) => [dirname(move.from), dirname(move.to)]))) fsyncPath(parent);
   const restoredAt = (input.now?.() ?? new Date()).toISOString();
-  writeJsonAtomic(journal, { phase: "restored", startedAt, restoredAt, candidateDir });
+  writeJournal("restored", { restoredAt });
   return { candidateDir, restoredAt };
+}
+
+function describeCause(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
