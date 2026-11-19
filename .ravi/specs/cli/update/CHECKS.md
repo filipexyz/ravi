@@ -135,6 +135,8 @@
     CLI; the manual commands when the reinstall fails; nothing restored while
     a stopped process is alive, with exact commands that move the live WAL and
     shared memory aside before a snapshot file comes back;
+  - a release older than the schema phase records proven by its receipt and
+    the window;
   - a restored daemon that never reaches `ready` (with its boot receipt) and a
     process that restarts in the stability window failing the rollback; an
     error inside a step ending as a failure of that step; the commands of a

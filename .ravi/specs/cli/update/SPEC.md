@@ -176,7 +176,9 @@ CLI that run installed.
     release's own CLI (`daemon start`, `channels start`), without target
     routing or runtime context;
   - count the daemon only once it reached the schema phase `ready` (its boot
-    receipt is written before that), then save PM2, verify both identities
+    receipt is written before that); a release older than 3.261109.1 records
+    no schema phase, so there its boot receipt and the window decide. Then
+    save PM2, verify both identities
     against that release, and hold them for the stability window
     (`RAVI_UPDATE_STABILITY_WINDOW_MS`, 30 s by default, also when the CLI
     declared no budget). A daemon that never gets ready, or a process that

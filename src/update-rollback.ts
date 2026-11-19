@@ -32,6 +32,7 @@ import {
 } from "./managed-runtime.js";
 import { CHANNELS_PM2_PROCESS_NAME, clearedPm2ContextEnv, PM2_PROCESS_NAME, type Pm2Process } from "./pm2.js";
 import { observeStableManagedRuntime } from "./runtime-stability.js";
+import { compareRaviVersions } from "./update-preflight.js";
 import { settleThreadFenceLeftovers } from "./threads/fence-adoption.js";
 import {
   acquireStateStoreOwnership,
@@ -227,6 +228,11 @@ export type UpdateRollbackDependencies = {
 };
 
 const DEFAULT_ROLLBACK_STABILITY_WINDOW_MS = 30_000;
+/**
+ * The first release whose daemon records its schema phase (`runtime-processes/schema-owner-<pid>.json`, #817).
+ * An older release writes no phase: its boot receipt and the stability window are the proof it is up.
+ */
+export const SCHEMA_PHASE_RECEIPTS_RELEASE = "3.261109.1";
 
 function describe(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
@@ -427,7 +433,9 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
       );
     };
     // Like the update: the daemon counts once it reached `ready` (its boot receipt is written before that), and the
-    // same process must stay ready for the window.
+    // same process must stay ready for the window. A release older than the schema phase records has no `ready` to
+    // read; there the receipt and the window decide.
+    const phaseRecorded = compareRaviVersions(plan.previousRelease, SCHEMA_PHASE_RECEIPTS_RELEASE) >= 0;
     let readyDaemon: ManagedDaemonProcess | null = null;
     const asManaged = (process: Pm2Process): ManagedDaemonProcess => ({
       name: process.name,
@@ -447,7 +455,7 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
           managed.startedAt !== readyDaemon.startedAt)
       )
         return false;
-      return phase(managed) === "ready";
+      return !phaseRecorded || phase(managed) === "ready";
     };
     const startTimeoutMs = deps.startTimeoutMs ?? 60_000;
     log(`starting the daemon with Ravi ${plan.previousRelease}`);

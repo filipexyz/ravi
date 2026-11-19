@@ -158,8 +158,11 @@ function rollbackFixture(
     phase?: "waiting" | "owned" | "ready" | null;
     restartAfterSave?: boolean;
     throwAfterRestore?: boolean;
+    /** The release rolled back to; 3.1.0 predates the schema phase records. */
+    previousRelease?: string;
   } = {},
 ) {
+  const previousRelease = input.previousRelease ?? "3.1.0";
   const stateDir = tempDir("ravi-rollback-state-");
   const install = globalInstall("3.2.0");
   const bundle = install.target.bundlePath;
@@ -179,10 +182,10 @@ function rollbackFixture(
     });
     nextPid += 1;
     processes.push(process);
-    boot(stateDir, process, bundle, "3.1.0");
+    boot(stateDir, process, bundle, previousRelease);
   };
   const plan: UpdateRollbackPlan = {
-    previousRelease: "3.1.0",
+    previousRelease,
     method: "bun",
     packageRoot: install.root,
     channelsOnline: true,
@@ -244,7 +247,7 @@ function rollbackFixture(
         processes = processes.filter((process) => String(process.pm_id) !== args[1]);
       } else if (command === "bun" && args[0] === "install") {
         if (input.failInstall) return { success: false, output: "registry unreachable" };
-        install.setVersion("3.1.0");
+        install.setVersion(previousRelease);
       } else if (args[1] === "daemon" && args[2] === "start") start("ravi");
       else if (args[1] === "channels" && args[2] === "start") start("ravi-channels");
       else if (command === "pm2" && args[0] === "save") saved = true;
@@ -315,12 +318,20 @@ describe("update rollback", () => {
   });
 
   it("does not count a restored daemon that never reaches ready, even with its boot receipt", async () => {
-    const { deps, calls } = rollbackFixture({ phase: "waiting" });
+    const { deps, calls } = rollbackFixture({ phase: "waiting", previousRelease: "3.261115.1" });
     const outcome = await rollBackUpdate(deps);
 
     expect(outcome).toMatchObject({ ok: false, step: "start", restoredAt: "2026-11-19T20:01:00.000Z" });
     expect(calls.some((call) => call.args.includes("channels"))).toBe(false);
     expect(calls.some((call) => call.args[0] === "save")).toBe(false);
+  });
+
+  it("proves a release older than the schema phase records by its receipt and the window", async () => {
+    // 3.1.0 writes no schema phase: an absent phase does not hold the rollback, a restart in the window still would.
+    const { deps } = rollbackFixture({ phase: null });
+    const outcome = await rollBackUpdate(deps);
+
+    expect(outcome).toMatchObject({ ok: true, restoredAt: "2026-11-19T20:01:00.000Z" });
   });
 
   it("fails the rollback when the restored daemon restarts inside the stability window", async () => {
