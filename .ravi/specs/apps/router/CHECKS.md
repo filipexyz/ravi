@@ -114,6 +114,14 @@ offers it) and the real context registry.
   (its own, the provider's, and `use app:<provider>`), and the turn held all of it.
 - An invoker that does not hold what the chain needs fails with
   `APP_OPERATION_FAILED`, starts no process and issues no context.
+- A consumer reaches its provider through the public command and the real gateway
+  (`ravi md-render html`, which the CLI sends as `apps run` with the consumer's own
+  key): the gateway command gate passes because the consumer's context carries the
+  access its invoker held, and the router mediates the call. Without that access
+  the same call fails at the gateway.
+- A credential an app derived for itself (`kind: cli-runtime`, no app identity,
+  parent in the app's lineage) is refused an operation outside `provides` and passes
+  one inside it; the provider's context then records the app as the consumer.
 - Without the provider installed, the consumer fails with
   `APP_DEPENDENCY_UNAVAILABLE`, `unavailableDependencies` names the requirement
   (reason `not_installed`), no process starts and no context is issued. It passes

@@ -18,14 +18,18 @@ import type {
 import { RaviAppError } from "./types.js";
 import { runWithCliAudit } from "../cli/audit.js";
 import { getContext } from "../cli/context.js";
-import { AppPermissionProviderDeniedError, evaluateAppPermissionProvider } from "../permissions/provider-runtime.js";
+import {
+  AppPermissionProviderDeniedError,
+  canWithCapabilityContext,
+  evaluateAppPermissionProvider,
+} from "../permissions/provider-runtime.js";
 import {
   getRuntimeContextFromEnv,
   issueRuntimeContext,
   revokeRuntimeContext,
   type IssueRuntimeContextInput,
 } from "../runtime/context-registry.js";
-import type { ContextRecord } from "../router/router-db.js";
+import { dbGetContext, type ContextRecord } from "../router/router-db.js";
 import {
   assertCanRunAppOperation,
   assertCanUseApp,
@@ -382,7 +386,7 @@ async function dispatchResolvedOperation(
   const records = lazyManifests(options);
   const calledThrough = assertCallerMayCall(app, resolved.id, options.callerContext, records);
   assertCanRunAppOperation(appId, resolved.id, mutating);
-  const composition = planComposition(app, interfaceName, calledThrough, records);
+  const composition = planComposition(app, interfaceName, calledThrough, records, options.callerContext);
   if (mutating && !options.execute) {
     return {
       ok: false,
@@ -458,8 +462,9 @@ function lazyManifests(options: { cwd?: string; env?: NodeJS.ProcessEnv }): () =
 }
 
 /**
- * When the caller is a process another app's operation launched, and this app offers services, the call must go
- * through one of them. An app that offers nothing keeps the earlier rule: whatever the caller's context lets it use.
+ * When the caller is a process another app's operation launched (or a credential that process derived), and this app
+ * offers services, the call must go through one of them. An app that offers nothing keeps the earlier rule: whatever
+ * the caller's `use:app:<id>` capability lets it do.
  */
 function assertCallerMayCall(
   app: RaviAppManifestRecord,
@@ -467,8 +472,9 @@ function assertCallerMayCall(
   callerContext: ContextRecord | undefined,
   records: () => RaviAppManifestRecord[],
 ): { service: string; callerAppId: string } | null {
-  const callerAppId = appCallerOf(callerContext);
-  if (!callerAppId || callerAppId === (app.manifest?.id ?? app.id) || !declaresProvides(app.manifest)) return null;
+  if (!declaresProvides(app.manifest)) return null;
+  const callerAppId = appCallerOf(callerContext, dbGetContext);
+  if (!callerAppId || callerAppId === (app.manifest?.id ?? app.id)) return null;
   return { ...assertOperationProvided(app, operationId, callerAppId, records()), callerAppId };
 }
 
@@ -482,6 +488,7 @@ function planComposition(
   interfaceName: string,
   calledThrough: { service: string; callerAppId: string } | null,
   records: () => RaviAppManifestRecord[],
+  invoker: ContextRecord | undefined,
 ): CompositionPlan {
   const plan: CompositionPlan = {
     operationScoped: participatesInComposition(app.manifest),
@@ -498,7 +505,30 @@ function planComposition(
       closure.unavailable,
     );
   }
-  return { ...plan, allow: composedContextAllow(app, closure) };
+  return { ...plan, allow: composedContextAllow(app, closure, publicRoutingCapability(invoker)) };
+}
+
+/**
+ * What `apps run` is asked for at the gateway (spec `cli/command-access`: the semantic capability, its wildcards, and
+ * the legacy command-group forms). A composed app reaches its providers through the public CLI, which becomes
+ * `apps run`, so its credential carries the form its invoker holds. An invoker that holds none gets the semantic one
+ * named, and the child context is refused, because the invoker could not have run an app through the gateway either.
+ */
+const APPS_RUN_ACCESS_FORMS = [
+  "mutate:apps:run",
+  "mutate:apps:*",
+  "mutate:apps.run:*",
+  "execute:group:apps_run",
+  "execute:group:apps",
+] as const;
+
+function publicRoutingCapability(invoker: ContextRecord | undefined): string | undefined {
+  if (!invoker) return undefined;
+  const held = APPS_RUN_ACCESS_FORMS.find((form) => {
+    const [permission, objectType, objectId] = form.split(":") as [string, string, string];
+    return canWithCapabilityContext(invoker, permission, objectType, objectId);
+  });
+  return held ?? APPS_RUN_ACCESS_FORMS[0];
 }
 
 function withPermissionProvider(

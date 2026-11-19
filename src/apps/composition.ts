@@ -281,7 +281,9 @@ function resolveRequirement(
   records: RaviAppManifestRecord[],
 ): { provider?: RaviAppManifestRecord; unavailable?: RaviAppUnavailableDependency } {
   const base = { requires: requirement.key.key, range: requirement.range, requiredBy };
-  const matches = records.filter((record) => record.manifest?.id === requirement.key.appId);
+  // A manifest that did not parse has no id of its own: it is known by the directory it sits in, and it is still the
+  // app the requirement names, only a broken one. Saying "not installed" would send the operator to install it again.
+  const matches = records.filter((record) => (record.manifest?.id ?? record.id) === requirement.key.appId);
   if (matches.length === 0) return { unavailable: { ...base, reason: "not_installed" } };
   const provider = matches[0]!;
   if (matches.length > 1 || !provider.valid) return { unavailable: { ...base, reason: "invalid" } };
@@ -336,12 +338,20 @@ export function resolveDependencyClosure(
 
 /**
  * The capabilities the composed app may ask for: its own `context.allow`, plus what each provider it needs (and
- * theirs) declares, plus the right to call each provider. A provider's context is issued from its consumer's, and the
+ * theirs) declares, plus the right to call each provider (`use:app:<id>`, and the public `apps run` access that
+ * `routing` names). A provider's context is issued from its consumer's, and the
  * registry refuses any capability the issuing context does not hold, so this union is the ceiling that lets the
  * chain exist. It never exceeds the invoker: the consumer's own context is issued from the invoker's.
  */
-export function composedContextAllow(root: RaviAppManifestRecord, closure: RaviAppDependencyClosure): string[] {
+export function composedContextAllow(
+  root: RaviAppManifestRecord,
+  closure: RaviAppDependencyClosure,
+  routing?: string,
+): string[] {
   const allow = new Set<string>(root.manifest?.context?.allow ?? []);
+  // A call to a provider through the public CLI is `apps run`, and the gateway asks for access to that command
+  // before the router sees the call. Without it the requirement could be declared and never used.
+  if (routing && closure.edges.length > 0) allow.add(routing);
   for (const provider of closure.providers) {
     for (const entry of provider.manifest?.context?.allow ?? []) allow.add(entry);
   }
@@ -366,12 +376,30 @@ function offersMutatingOperation(provider: RaviAppManifestRecord, serviceKey: st
 // ----------------------------------------------------------------------------------------------------------------
 // Calls from one app to another
 
-/** The app a context was issued for, when the context belongs to a process the app router launched. */
-export function appCallerOf(context: ContextRecord | undefined): string | null {
-  if (!context || context.kind !== "app-runtime") return null;
-  const metadata = context.metadata;
-  if (metadata?.source !== "app-router" || typeof metadata.appId !== "string") return null;
-  return metadata.appId;
+const MAX_LINEAGE_DEPTH = 16;
+
+/**
+ * The app a context belongs to: the one the app router issued it for, or the nearest such ancestor. A credential an
+ * app derives for itself (`ravi context issue` gives it no app identity of its own) stays the app's, because its
+ * lineage is host-owned and a process cannot erase it. `parentOf` reads one step up; without it only the context
+ * itself is looked at.
+ */
+export function appCallerOf(
+  context: ContextRecord | undefined,
+  parentOf?: (contextId: string) => ContextRecord | null | undefined,
+): string | null {
+  const seen = new Set<string>();
+  let cursor = context;
+  while (cursor && seen.size < MAX_LINEAGE_DEPTH && !seen.has(cursor.contextId)) {
+    seen.add(cursor.contextId);
+    const metadata = cursor.metadata;
+    if (cursor.kind === "app-runtime" && metadata?.source === "app-router" && typeof metadata.appId === "string") {
+      return metadata.appId;
+    }
+    const parentId = typeof metadata?.parentContextId === "string" ? metadata.parentContextId : null;
+    cursor = parentId && parentOf ? (parentOf(parentId) ?? undefined) : undefined;
+  }
+  return null;
 }
 
 /**

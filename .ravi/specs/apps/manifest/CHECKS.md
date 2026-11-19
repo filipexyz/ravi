@@ -121,5 +121,10 @@
     clears when the provider appears.
   - Confirm discovery resolves requirements from the manifests it already read,
     without starting, installing or querying any app.
+  - Confirm a source filter does not change what is satisfied: a state app that
+    requires a repo or plugin app has no warning in the `--source state` view, and a
+    cycle across two sources is an error in every view.
+  - Warn `the provider's manifest is invalid or ambiguous` (not `no app with that id
+    is installed`) when the required app's manifest does not parse.
   - Confirm an app with neither field is validated and reported exactly as
     before.

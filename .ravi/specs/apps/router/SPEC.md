@@ -358,16 +358,22 @@ provider can still be diagnosed:
   edited to make it run again. The check reads the manifests on every run and
   keeps no state.
 - The child context of an app that has `requires` MUST be issued with the app's
-  own `context.allow`, the `context.allow` of every provider in the closure, and
+  own `context.allow`, the `context.allow` of every provider in the closure,
   `use app:<provider>` (plus `execute app:<provider>` for a provider that offers
-  a mutating operation). That union is the most the chain below the app can ever
-  hold. The registry rule that a child holds no capability its parent does not
+  a mutating operation), and the access the gateway asks for before `apps run`,
+  because a call to a provider through the public command is `apps run`. That
+  last one MUST be the form the invoker holds (`mutate:apps:run`, its wildcards,
+  or the legacy `execute:group:apps_run` / `execute:group:apps`), so an invoker
+  that could not have run an app through the gateway gets no composed child
+  either. That union is the most the chain below the app can ever hold. The registry rule that a child holds no capability its parent does not
   hold applies unchanged, so an invoker that does not hold all of it gets no
   child context and no process (`child-context issuance failure spawns no
   process`).
 
 When the caller is a process another app's operation started (a context of kind
-`app-runtime` issued by this router for an app) and the called app offers
+`app-runtime` issued by this router for an app, or a credential that process
+derived, for example with `ravi context issue`: the nearest `app-runtime`
+ancestor in the host-owned lineage is the caller) and the called app offers
 services:
 
 - The called operation MUST be listed under one of the called app's `provides`
@@ -506,6 +512,12 @@ other, not a second permission system for whoever already holds the app.
   half-run with side effects. Check the requirements before the process starts.
 - Leaving the credential of a composed app alive until its TTL leaves a key
   that a finished process handed to a provider usable by anyone who kept it.
+- Identifying the calling app only by the kind of the context in hand lets an
+  app that may derive credentials call, with a derived one, what `provides` does
+  not list. The identity follows the lineage, which a process cannot erase.
+- Granting a composed consumer `use app:<provider>` and nothing that reaches the
+  router leaves the requirement declared and unusable through the public command:
+  the gateway refuses `apps run` before the router runs.
 - Reading `provides` as a permission system for people who already hold
   `use app:<provider>`: it is the surface apps may call of each other, nothing
   more. A holder calling directly is not mediated.

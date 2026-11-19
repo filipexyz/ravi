@@ -397,6 +397,15 @@ the router, with its own child context (spec `apps/router`, "Composition").
   or after what it needs, and the run (not the install) is where it is held back.
 - Discovery MUST NOT install, start or query any app to resolve a requirement.
   The answer comes from the manifests discovery already read.
+- Requirements and cycles MUST be resolved over every installed source (repo,
+  plugin, state), whatever source a listing is asked to show. A source filter
+  decides what is returned, not what is satisfied: a state app requiring a plugin
+  app is satisfied in the `--source state` view too, and a circle across sources
+  is found in both.
+- A manifest that does not parse is still the app its directory names. A
+  requirement on it is reported as `invalid` (its manifest is invalid or
+  ambiguous), not as `not_installed`, so the operator repairs it instead of
+  installing it again.
 - An app that neither offers nor needs a service MUST behave exactly as it did
   before these fields existed.
 

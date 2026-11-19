@@ -305,6 +305,25 @@ describe("a provider that is not there", () => {
     );
   });
 
+  it("says the provider is broken, not missing, when its manifest does not parse", () => {
+    const root = makeRepo();
+    writeApp(root, appManifest("blog", { requires: { "md-render/html": "^1" } }));
+    mkdirSync(join(root, "src", "apps", "md-render"), { recursive: true });
+    writeFileSync(join(root, "src", "apps", "md-render", "ravi.app.json"), '{ "schema": "ravi.app/v1", "id": "md-r');
+
+    const found = records();
+    expect(discoverAppManifests().find((record) => record.id === "md-render")?.valid).toBe(false);
+    const blog = found.get("blog");
+    expect(blog?.warnings).toContain(
+      "blog requires md-render/html@^1: the provider's manifest is invalid or ambiguous.",
+    );
+    expect(blog?.warnings.join("\n")).not.toContain("no app with that id is installed");
+    const closure = resolveDependencyClosure(blog as RaviAppManifestRecord, discoverAppManifests());
+    expect(closure.unavailable).toEqual([
+      { requires: "md-render/html", range: "^1", requiredBy: "blog", reason: "invalid" },
+    ]);
+  });
+
   it("is told in the structured form the router returns", () => {
     expect(
       describeUnavailableDependency({
@@ -315,6 +334,47 @@ describe("a provider that is not there", () => {
         installedVersion: "2.0.0",
       }),
     ).toBe("blog requires md-render/html@^1: the provider offers 2.0.0.");
+  });
+});
+
+describe("discovery filtered by source", () => {
+  /** A repo app and a state app: the two sources every test machine has. */
+  function writeStateApp(body: Record<string, unknown>): void {
+    const id = String(body.id);
+    const dir = join(process.env.RAVI_STATE_DIR as string, "apps", ...id.split("/"));
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "ravi.app.json"), JSON.stringify(body, null, 2));
+  }
+
+  it("satisfies a requirement with a provider from another source", () => {
+    const root = makeRepo();
+    writeApp(root, appManifest("md-render", { provides: provides("md-render") }));
+    writeStateApp(appManifest("blog", { requires: { "md-render/html": "^1" } }));
+
+    for (const source of [undefined, "state", "repo"] as const) {
+      const blog = discoverAppManifests({ source }).find((record) => record.manifest?.id === "blog");
+      if (source === "repo") {
+        expect(blog).toBeUndefined();
+        continue;
+      }
+      expect(blog?.source).toBe("state");
+      expect(blog?.warnings.some((warning) => warning.includes("requires"))).toBe(false);
+    }
+  });
+
+  it("finds a circle that runs through two sources, in either view", () => {
+    const root = makeRepo();
+    writeApp(root, appManifest("alpha", { provides: provides("alpha"), requires: { "beta/html": "^1" } }));
+    writeStateApp(appManifest("beta", { provides: provides("beta"), requires: { "alpha/html": "^1" } }));
+
+    for (const source of [undefined, "repo", "state"] as const) {
+      const found = discoverAppManifests({ source });
+      expect(found.length).toBe(source ? 1 : 2);
+      for (const record of found) {
+        expect(record.valid).toBe(false);
+        expect(record.errors.some((error) => error.startsWith("requires cycle:"))).toBe(true);
+      }
+    }
   });
 });
 
@@ -378,6 +438,19 @@ describe("what a composed app may ask for", () => {
     expect(allow).not.toContain("execute:app:mid");
   });
 
+  it("adds the public routing access to a consumer that has providers, and to nobody else", () => {
+    const found = setup(makeRepo());
+    const top = found.get("top")!;
+    const closure = resolveDependencyClosure(top, [...found.values()]);
+    expect(composedContextAllow(top, closure, "mutate:apps:run")).toContain("mutate:apps:run");
+    expect(composedContextAllow(top, closure)).not.toContain("mutate:apps:run");
+    // `base` has no providers of its own: nothing to route to, so nothing added.
+    const base = found.get("base")!;
+    expect(
+      composedContextAllow(base, resolveDependencyClosure(base, [...found.values()]), "mutate:apps:run"),
+    ).not.toContain("mutate:apps:run");
+  });
+
   it("reports every missing provider in the chain with who required it", () => {
     const root = makeRepo();
     writeApp(root, appManifest("top", { requires: { "mid/html": "^1" } }));
@@ -420,6 +493,61 @@ describe("calls from one app to another", () => {
     expect(appCallerOf(context({ metadata: { appId: "blog" } }))).toBeNull();
     expect(appCallerOf(context({ metadata: { source: "app-router" } }))).toBeNull();
     expect(appCallerOf(context({ metadata: { appId: 7, source: "app-router" } }))).toBeNull();
+  });
+
+  it("follows the lineage: a credential an app derived for itself is still the app's", () => {
+    const app = context({ contextId: "ctx_app", metadata: { appId: "blog", source: "app-router" } });
+    const derived = context({
+      contextId: "ctx_derived",
+      kind: "cli-runtime",
+      metadata: { parentContextId: "ctx_app", issuedFor: "some-cli" },
+    });
+    const grandchild = context({
+      contextId: "ctx_grand",
+      kind: "cli-runtime",
+      metadata: { parentContextId: "ctx_derived", issuedFor: "another-cli" },
+    });
+    const turn = context({ contextId: "ctx_turn", kind: "agent-runtime", metadata: {} });
+    const known = new Map([app, derived, grandchild, turn].map((record) => [record.contextId, record]));
+    const parentOf = (id: string) => known.get(id) ?? null;
+
+    expect(appCallerOf(derived, parentOf)).toBe("blog");
+    expect(appCallerOf(grandchild, parentOf)).toBe("blog");
+    // Without a way to read the lineage only the context itself is looked at.
+    expect(appCallerOf(derived)).toBeNull();
+    // The nearest app wins: a provider's derived credential is the provider's.
+    const provider = context({
+      contextId: "ctx_provider",
+      metadata: { appId: "md-render", source: "app-router", parentContextId: "ctx_app" },
+    });
+    const providerDerived = context({
+      contextId: "ctx_provider_derived",
+      kind: "cli-runtime",
+      metadata: { parentContextId: "ctx_provider" },
+    });
+    known.set(provider.contextId, provider);
+    expect(appCallerOf(providerDerived, parentOf)).toBe("md-render");
+    // A turn, and a credential derived from a turn, are not apps.
+    expect(appCallerOf(turn, parentOf)).toBeNull();
+    const fromTurn = context({
+      contextId: "ctx_from_turn",
+      kind: "cli-runtime",
+      metadata: { parentContextId: "ctx_turn" },
+    });
+    expect(appCallerOf(fromTurn, parentOf)).toBeNull();
+  });
+
+  it("stops at a circle in the lineage and at a parent that is gone", () => {
+    const loopA = context({ contextId: "ctx_a", kind: "cli-runtime", metadata: { parentContextId: "ctx_b" } });
+    const loopB = context({ contextId: "ctx_b", kind: "cli-runtime", metadata: { parentContextId: "ctx_a" } });
+    const known = new Map([loopA, loopB].map((record) => [record.contextId, record]));
+    expect(appCallerOf(loopA, (id) => known.get(id))).toBeNull();
+    const orphan = context({
+      contextId: "ctx_orphan",
+      kind: "cli-runtime",
+      metadata: { parentContextId: "ctx_missing" },
+    });
+    expect(appCallerOf(orphan, () => null)).toBeNull();
   });
 
   function setup(root: string): RaviAppManifestRecord[] {

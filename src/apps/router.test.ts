@@ -6,7 +6,12 @@ import { join, resolve } from "node:path";
 import { CONTRACT_EXIT_ERROR, ContractError } from "../cli/agent-contract.js";
 import { runWithContext } from "../cli/context.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
-import { createRuntimeContext, getContextLineage, resolveRuntimeContext } from "../runtime/context-registry.js";
+import {
+  createRuntimeContext,
+  getContextLineage,
+  issueRuntimeContext,
+  resolveRuntimeContext,
+} from "../runtime/context-registry.js";
 import { cleanupIsolatedRaviState } from "../test/ravi-state.js";
 import { enforceRaviAppRunResult, raviAppErrorToContractError } from "./error-contract.js";
 import { maskedSecretForms, projectAppCliFailure } from "./failure.js";
@@ -2125,6 +2130,29 @@ console.log(JSON.stringify({
 }));
 `;
 
+/**
+ * The consumer's CLI when it calls its provider the way an app does in production: the public command, which the real
+ * CLI sends to the gateway with the context key the app was given.
+ */
+const COMPOSITION_PUBLIC_CLI_CONSUMER_SCRIPT = `
+import { writeFileSync } from "node:fs";
+const config = JSON.parse(process.argv[3] ?? "{}");
+writeFileSync(config.started, String(process.pid));
+const call = Bun.spawnSync({
+  cmd: [process.execPath, config.cliEntry, ...config.command],
+  // The repository's tsconfig turns on the decorator metadata the CLI needs; Bun finds it from here.
+  cwd: config.repoRoot,
+  env: { ...process.env, RAVI_LOG_LEVEL: "error", RAVI_CLI_LOG_LEVEL: "error" },
+  stdout: "pipe",
+  stderr: "pipe",
+});
+console.log(JSON.stringify({
+  exitCode: call.exitCode,
+  stdout: new TextDecoder().decode(call.stdout).trim(),
+  stderr: new TextDecoder().decode(call.stderr).trim(),
+}));
+`;
+
 interface ConsumerReport {
   contextId: string;
   aliveWhileRunning: boolean;
@@ -2148,9 +2176,29 @@ function compositionManifest(id: string, extra: Record<string, unknown>): Record
   };
 }
 
+interface FixturePlace {
+  /** Where the app directory goes. Default: the temporary repository's `src/apps`. */
+  appsDir?: string;
+  /** The app's CLI. Default: the fixture for its role. */
+  script?: string;
+}
+
+function placeFixtureApp(
+  root: string,
+  id: string,
+  body: Record<string, unknown>,
+  script: string,
+  place: FixturePlace,
+): void {
+  const dir = join(place.appsDir ?? join(root, "src", "apps"), ...id.split("/"));
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "ravi.app.json"), JSON.stringify(body, null, 2));
+  writeFileSync(join(dir, "cli.mjs"), place.script ?? script);
+}
+
 /** `md-render`: offers `md-render/html` (operation `html`) and has an operation it does not offer (`admin`). */
-function writeMdRender(root: string, extra: Record<string, unknown> = {}): void {
-  writeManifest(
+function writeMdRender(root: string, extra: Record<string, unknown> = {}, place: FixturePlace = {}): void {
+  placeFixtureApp(
     root,
     "md-render",
     compositionManifest("md-render", {
@@ -2162,13 +2210,14 @@ function writeMdRender(root: string, extra: Record<string, unknown> = {}): void 
       provides: { "md-render/html": { version: "1.0.0", operations: ["md-render.html"] } },
       ...extra,
     }),
+    COMPOSITION_PROVIDER_SCRIPT,
+    place,
   );
-  writeFileSync(join(root, "src", "apps", "md-render", "cli.mjs"), COMPOSITION_PROVIDER_SCRIPT);
 }
 
 /** An app whose `render` operation calls another app from inside its process. Needs `md-render/html` unless told not to. */
-function writeConsumer(root: string, id: string, extra: Record<string, unknown> = {}): void {
-  writeManifest(
+function writeConsumer(root: string, id: string, extra: Record<string, unknown> = {}, place: FixturePlace = {}): void {
+  placeFixtureApp(
     root,
     id,
     compositionManifest(id, {
@@ -2180,8 +2229,9 @@ function writeConsumer(root: string, id: string, extra: Record<string, unknown> 
       requires: { "md-render/html": "^1" },
       ...extra,
     }),
+    COMPOSITION_CONSUMER_SCRIPT,
+    place,
   );
-  writeFileSync(join(root, "src", "apps", id, "cli.mjs"), COMPOSITION_CONSUMER_SCRIPT);
 }
 
 /** What the consumer's process is told to do: which app to call, which operation, and where to leave its mark. */
@@ -2231,6 +2281,8 @@ function capabilityNames(context: ContextRecord): string[] {
 
 const GROUP_CONTEXT: ContextCapability = { permission: "execute", objectType: "group", objectId: "context" };
 const GROUP_PAGES: ContextCapability = { permission: "execute", objectType: "group", objectId: "pages" };
+/** What the gateway asks for before `apps run`, which is what a call to another app through the public CLI becomes. */
+const APPS_RUN: ContextCapability = { permission: "mutate", objectType: "apps", objectId: "run" };
 
 /** A turn that may use `blog` and, through it, everything the two apps are allowed to reach. */
 function compositionTurn(capabilities?: ContextCapability[]): ContextRecord {
@@ -2241,6 +2293,7 @@ function compositionTurn(capabilities?: ContextCapability[]): ContextRecord {
     capabilities: capabilities ?? [
       appCapability("use", "blog"),
       appCapability("use", "md-render"),
+      APPS_RUN,
       GROUP_CONTEXT,
       GROUP_PAGES,
     ],
@@ -2316,7 +2369,12 @@ describe("Ravi app composition", () => {
     // Each step holds less than the one above it: the provider gets only what its own manifest allows, the consumer
     // gets what the chain needs (its own, the provider's, and the right to call it), and the turn held all of it.
     expect(capabilityNames(mdRenderChild)).toEqual(["execute:group:pages"]);
-    expect(capabilityNames(blogChild)).toEqual(["execute:group:context", "execute:group:pages", "use:app:md-render"]);
+    expect(capabilityNames(blogChild)).toEqual([
+      "execute:group:context",
+      "execute:group:pages",
+      "mutate:apps:run",
+      "use:app:md-render",
+    ]);
     for (const name of capabilityNames(mdRenderChild)) expect(capabilityNames(blogChild)).toContain(name);
     for (const name of capabilityNames(blogChild)) expect(capabilityNames(turn)).toContain(name);
     expect(JSON.stringify(result)).not.toContain(turn.contextKey);
@@ -2595,5 +2653,80 @@ describe("Ravi app composition", () => {
       expect(existsSync(join(root, "src", "apps", id, "started"))).toBe(false);
     }
     expect(getContextLineage(turn.contextId)?.descendants).toEqual([]);
+  }, 30_000);
+
+  it("reaches the provider through the public command and the gateway, the way an app does in production", async () => {
+    const root = makeRepo();
+    // The gateway process finds apps by the state directory, not by this temporary repository.
+    const place: FixturePlace = { appsDir: join(process.env.RAVI_STATE_DIR as string, "apps") };
+    writeMdRender(root, {}, place);
+    writeConsumer(root, "blog", {}, { ...place, script: COMPOSITION_PUBLIC_CLI_CONSUMER_SCRIPT });
+    const turn = compositionTurn();
+    await startHostCliGatewayProcess();
+
+    const config = JSON.stringify({
+      started: join(root, "started"),
+      cliEntry: resolve(originalCwd, "src", "cli", "index.ts"),
+      repoRoot: originalCwd,
+      command: ["md-render", "html", "# hello", "--json"],
+    });
+    const result = await callAsContext(root, turn, "blog", "render", [config]);
+
+    expect(result).toMatchObject({ ok: true, status: "completed" });
+    const call = result.result as { exitCode: number; stdout: string; stderr: string };
+    expect(call.stderr).toBe("");
+    expect(call.exitCode).toBe(0);
+    const provider = JSON.parse(call.stdout) as RaviAppRunResult & { result?: Record<string, unknown> };
+    // The call went through the gateway's command gate (`apps run`) and the router's composition rules.
+    expect(provider).toMatchObject({
+      ok: true,
+      appId: "md-render",
+      operationId: "md-render.html",
+      callerContextId: result.childContextId,
+      result: { appId: "md-render", operationId: "md-render.html", html: "<p># hello</p>" },
+    });
+    const lineage = getContextLineage(turn.contextId);
+    expect(lineage?.descendants.map((context) => context.contextId).sort()).toEqual(
+      [result.childContextId as string, provider.childContextId as string].sort(),
+    );
+    expect(getContextLineage(provider.childContextId as string)?.context.metadata).toMatchObject({
+      issuedFor: "app:md-render",
+      parentContextId: result.childContextId,
+      composition: { service: "md-render/html", consumerAppId: "blog" },
+    });
+    for (const context of lineage?.descendants ?? []) expect(context.revokedAt).toBeGreaterThan(0);
+  }, 30_000);
+
+  it("keeps a credential an app derived for itself under the same rules", async () => {
+    const root = makeRepo();
+    writeMdRender(root);
+    writeConsumer(root, "blog");
+    compositionTurn();
+    const processContext = createRuntimeContext({
+      kind: "app-runtime",
+      agentId: "main",
+      capabilities: [appCapability("use", "md-render"), GROUP_PAGES, APPS_RUN],
+      metadata: { appId: "blog", source: "app-router" },
+    });
+    // What `ravi context issue` gives an app that holds it: a credential with no app identity of its own, whose
+    // lineage the host writes and the process cannot erase.
+    const derived = issueRuntimeContext({
+      parent: processContext,
+      cliName: "some-helper",
+      capabilities: [appCapability("use", "md-render"), GROUP_PAGES],
+    });
+    expect(derived.kind).toBe("cli-runtime");
+    expect(derived.metadata).not.toHaveProperty("appId");
+
+    const refused = await callAsContext(root, derived, "md-render", "admin", ["x"]);
+    expect(refused).toMatchObject({ ok: false, errorCode: "APP_OPERATION_NOT_PROVIDED" });
+    expect(existsSync(contextOf(root, "md-render").runFile("ran-admin"))).toBe(false);
+
+    const allowed = await callAsContext(root, derived, "md-render", "html", ["x"]);
+    expect(allowed).toMatchObject({ ok: true, operationId: "md-render.html" });
+    expect(getContextLineage(allowed.childContextId as string)?.context.metadata).toMatchObject({
+      parentContextId: derived.contextId,
+      composition: { service: "md-render/html", consumerAppId: "blog" },
+    });
   }, 30_000);
 });

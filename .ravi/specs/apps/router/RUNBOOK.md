@@ -158,8 +158,8 @@ ravi apps show <provider-id> --json # `provides`: the service key and its versio
 The reasons and what each one asks for:
 
 - `not_installed`: no app with the provider's id. Install the provider.
-- `invalid`: the provider is there, but its manifest is invalid or its id is
-  duplicated. `ravi apps check <provider-id> --json` says which.
+- `invalid`: the provider is there, but its manifest is invalid (including JSON that
+  does not parse) or its id is duplicated. `ravi apps check <provider-id> --json` says which.
 - `not_provided`: the provider does not offer that service key. The provider is
   an older or different version, or the consumer names the wrong key.
 - `version_mismatch`: the provider offers a version outside the consumer's

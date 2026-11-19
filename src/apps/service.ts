@@ -101,7 +101,9 @@ export function normalizeAppSource(value?: string): RaviAppManifestSource | unde
 }
 
 export function discoverAppManifests(options: RaviAppListOptions = {}): RaviAppManifestRecord[] {
-  const roots = discoverAppRoots(options).filter((root) => !options.source || root.source === options.source);
+  // Every source is read, whatever `options.source` asks to see: a requirement is satisfied by an app from any
+  // installed source, and a circle of `requires` can pass through all of them. The filter only decides what is returned.
+  const roots = discoverAppRoots(options);
   const files = new Map<string, RaviAppDiscoveryRoot>();
 
   for (const root of roots) {
@@ -110,15 +112,16 @@ export function discoverAppManifests(options: RaviAppListOptions = {}): RaviAppM
     }
   }
 
-  const records = Array.from(files.entries())
+  const everything = Array.from(files.entries())
     .map(([filePath, root]) => readManifestRecord(filePath, root))
     .sort((left, right) => left.id.localeCompare(right.id) || left.path.localeCompare(right.path));
+  const records = options.source ? everything.filter((record) => record.source === options.source) : everything;
 
   markDuplicateIds(records);
   // Composition is a property of the set, not of one file: a circle of `requires` and a missing provider only show
   // once every manifest is known. Cycles first, because they decide which providers are still valid.
-  markCompositionCycles(records);
-  markUnavailableDependencies(records);
+  markCompositionCycles(everything);
+  markUnavailableDependencies(everything);
   return records;
 }
 
