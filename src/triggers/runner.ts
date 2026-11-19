@@ -55,6 +55,7 @@ import { resolveTriggerActivation } from "./activation.js";
 import { isInternalEventTopic } from "./topic-policy.js";
 import { buildTriggerPrompt } from "./prompt.js";
 import { TriggerDebouncer, type TriggerBatch } from "./debounce.js";
+import { notifyAutomationOff, type AutomationNoticeAudience } from "../cron/automation-notice.js";
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS, runShellCronCommand, type ShellCronRunResult } from "../cron/shell-executor.js";
 import { filterAgentRuntimeBaseEnv } from "../runtime/agent-env-policy.js";
 import { type ShellEnvFileRefusal, shellEnvFileRefusal } from "./shell-env-file.js";
@@ -63,6 +64,58 @@ const log = logger.child("triggers:runner");
 const EVENT_DEDUPE_TTL_MS = 60_000;
 const EVENT_DEDUPE_MAX = 2_000;
 const SESSION_NAME_MAX = 64;
+
+/**
+ * What a refused env file means: the stable code, the sentence the main
+ * session's prompt uses (en, the fallback) and the one a person reads in the
+ * direct message (pt). Neither carries the file's content or its command.
+ */
+const ENV_FILE_REFUSALS: Record<ShellEnvFileRefusal, { code: string; en: string; pt: string }> = {
+  in_state_dir: {
+    code: "TRIGGER_SHELL_ENV_FILE_IN_STATE_DIR",
+    en: "Its env file is inside the Ravi state dir, which holds the daemon's own secrets, or its path has a .. segment.",
+    pt: "O arquivo de env dele está dentro do diretório de estado do Ravi, onde ficam os segredos do daemon, ou o caminho tem um segmento “..”.",
+  },
+  not_regular_file: {
+    code: "TRIGGER_SHELL_ENV_FILE_NOT_REGULAR",
+    en: "Its env file is not a regular file (a FIFO, a device or a directory).",
+    pt: "O arquivo de env dele não é um arquivo comum (é um FIFO, um dispositivo ou um diretório).",
+  },
+  hard_link: {
+    code: "TRIGGER_SHELL_ENV_FILE_HARD_LINK",
+    en: "Its env file has more than one hard link, so its content may be a file inside the Ravi state dir.",
+    pt: "O arquivo de env dele tem mais de um hard link, então o conteúdo pode ser um arquivo dentro do diretório de estado do Ravi.",
+  },
+  too_large: {
+    code: "TRIGGER_SHELL_ENV_FILE_TOO_LARGE",
+    en: "Its env file is larger than 1 MiB, the most the env-file loader reads.",
+    pt: "O arquivo de env dele passa de 1 MiB, o máximo que o carregador lê.",
+  },
+  not_owned: {
+    code: "TRIGGER_SHELL_ENV_FILE_NOT_OWNED",
+    en: "Its env file belongs to another OS user, who could decide what the command runs.",
+    pt: "O arquivo de env dele pertence a outro usuário do sistema, que poderia decidir o que o comando executa.",
+  },
+  writable_by_others: {
+    code: "TRIGGER_SHELL_ENV_FILE_WRITABLE_BY_OTHERS",
+    en: "Its env file is writable by its group or by others, who could decide what the command runs.",
+    pt: "O arquivo de env dele aceita escrita do grupo ou de outros, que poderiam decidir o que o comando executa.",
+  },
+  unverifiable: {
+    code: "TRIGGER_SHELL_ENV_FILE_UNVERIFIABLE",
+    en: "Its env file could not be checked: a symlink loop, or a path Ravi may not search or read, so it may not be what it looks like.",
+    pt: "Não foi possível verificar o arquivo de env dele: um loop de symlinks, ou um caminho que o Ravi não pode percorrer nem ler, então ele pode não ser o que parece.",
+  },
+};
+
+/** One refused shell trigger, as the direct message (pt) and the main session's prompt (en) tell it. */
+interface ShellTriggerRefusalNotice {
+  code: string;
+  en: { why: string; next: string };
+  pt: { reason: string; next: string };
+  /** Who is told: the owner, who acts as the operator, or the operator alone, because the owner cannot act on it. */
+  audience: AutomationNoticeAudience;
+}
 
 /** Tracks a topic subscription stream for teardown */
 type TopicSub = ReturnType<typeof nats.subscribe>;
@@ -1052,53 +1105,60 @@ export class TriggerRunner {
 
   /**
    * A shell trigger whose owner does not act as the operator never runs. It is
-   * turned off once, with one notice to the main session; later events find it
-   * off. The notice never carries the command, its env or any event data.
+   * turned off once, with one notice to the operator alone: only the operator
+   * can recreate it, and its owner (who can be a contact) cannot act on it, so
+   * is told nothing. Later events find it off. The notice never carries the
+   * command, its env, any event data or who owns it.
    */
   private refuseShellTriggerOwner(trigger: Trigger): void {
-    this.turnOffRefusedShellTrigger(
-      trigger,
-      "TRIGGER_SHELL_NOT_OPERATOR",
-      `It runs as ${triggerRunsAs(trigger)}, not the operator, and a shell command runs with this machine's access.`,
-      "The operator can recreate it from their own chat with Ravi and remove this one.",
-    );
+    const runsAs = triggerRunsAs(trigger);
+    this.turnOffRefusedShellTrigger(trigger, {
+      code: "TRIGGER_SHELL_NOT_OPERATOR",
+      en: {
+        why: `It runs as ${runsAs}, not the operator, and a shell command runs with this machine's access.`,
+        next: "The operator can recreate it from their own chat with Ravi and remove this one.",
+      },
+      pt: {
+        reason:
+          "O dono dele não age como o operador, e um comando de shell roda com o acesso desta máquina. Nenhum comando foi executado.",
+        next: `Veja com ravi triggers show ${trigger.id}. O operador pode recriá-lo a partir do próprio chat com o Ravi e remover este.`,
+      },
+      // Its owner is not the operator, so only the operator can act on it.
+      audience: "operator",
+    });
   }
 
   /**
    * A shell trigger whose env file is refused never runs either: turned off
-   * once, one notice to the main session (its owner is the operator). The
-   * notice names the reason, never the file's content or the command.
+   * once, one notice to its owner, who acts as the operator. The notice names
+   * the reason, never the file's content or the command.
    */
   private refuseShellTriggerEnvFile(trigger: Trigger, reason: ShellEnvFileRefusal): void {
-    const codes: Record<ShellEnvFileRefusal, string> = {
-      in_state_dir: "TRIGGER_SHELL_ENV_FILE_IN_STATE_DIR",
-      not_regular_file: "TRIGGER_SHELL_ENV_FILE_NOT_REGULAR",
-      hard_link: "TRIGGER_SHELL_ENV_FILE_HARD_LINK",
-      too_large: "TRIGGER_SHELL_ENV_FILE_TOO_LARGE",
-      not_owned: "TRIGGER_SHELL_ENV_FILE_NOT_OWNED",
-      writable_by_others: "TRIGGER_SHELL_ENV_FILE_WRITABLE_BY_OTHERS",
-      unverifiable: "TRIGGER_SHELL_ENV_FILE_UNVERIFIABLE",
-    };
-    const why: Record<ShellEnvFileRefusal, string> = {
-      in_state_dir:
-        "Its env file is inside the Ravi state dir, which holds the daemon's own secrets, or its path has a .. segment.",
-      not_regular_file: "Its env file is not a regular file (a FIFO, a device or a directory).",
-      hard_link: "Its env file has more than one hard link, so its content may be a file inside the Ravi state dir.",
-      too_large: "Its env file is larger than 1 MiB, the most the env-file loader reads.",
-      not_owned: "Its env file belongs to another OS user, who could decide what the command runs.",
-      writable_by_others: "Its env file is writable by its group or by others, who could decide what the command runs.",
-      unverifiable:
-        "Its env file could not be checked: a symlink loop, or a path Ravi may not search or read, so it may not be what it looks like.",
-    };
-    this.turnOffRefusedShellTrigger(
-      trigger,
-      codes[reason],
-      why[reason],
-      `Give it a regular file of its own outside the Ravi state dir, owned by the user Ravi runs as and writable only by it (chmod 600), with ravi triggers set ${trigger.id} env-file <path>, and turn it back on (ravi triggers enable ${trigger.id}), from the owner's chat with Ravi.`,
-    );
+    const refusal = ENV_FILE_REFUSALS[reason];
+    this.turnOffRefusedShellTrigger(trigger, {
+      code: refusal.code,
+      en: {
+        why: refusal.en,
+        next: `Give it a regular file of its own outside the Ravi state dir, owned by the user Ravi runs as and writable only by it (chmod 600), with ravi triggers set ${trigger.id} env-file <path>, and turn it back on (ravi triggers enable ${trigger.id}), from the owner's chat with Ravi.`,
+      },
+      pt: {
+        reason: `${refusal.pt} Nenhum comando foi executado.`,
+        next: `Veja com ravi triggers show ${trigger.id}. Dê a ele um arquivo comum, só dele, fora do diretório de estado do Ravi, do usuário com que o Ravi roda e gravável só por ele (chmod 600), com ravi triggers set ${trigger.id} env-file CAMINHO_DO_ARQUIVO, e ligue de novo com ravi triggers enable ${trigger.id}, a partir do chat do dono com o Ravi.`,
+      },
+      // The owner acts as the operator, so the owner is who can fix it.
+      audience: "owner",
+    });
   }
 
-  private turnOffRefusedShellTrigger(trigger: Trigger, code: string, why: string, next: string): void {
+  /**
+   * Turns the trigger off (the winning call is the one that sends the notice,
+   * also across reloads and competing daemons) and tells the person who can act
+   * on it by direct message. When that message does not reach them, the notice
+   * falls back to the main session's prompt, which is the operator's, so whoever
+   * can act is never left without it.
+   */
+  private turnOffRefusedShellTrigger(trigger: Trigger, refusal: ShellTriggerRefusalNotice): void {
+    const { code } = refusal;
     log.error("Shell trigger not run: refused", { triggerId: trigger.id, triggerName: trigger.name, code });
     if (!dbDisableShellTriggerForOwner(trigger)) return;
     trigger.enabled = false;
@@ -1109,14 +1169,26 @@ export class TriggerRunner {
         error: error instanceof Error ? error.message : String(error),
       });
     });
-    const agentId = getDefaultAgentId();
-    const sessionName = getMainSession(agentId)?.name ?? agentId;
-    void publishSessionPrompt(sessionName, {
-      prompt: `[System] Inform: [from: trigger:${trigger.id}] Shell trigger disabled (${code}). ${why} No command was executed. Inspect with ravi triggers show ${trigger.id}. ${next}`,
-      deliveryBarrier: "after_response",
-      deliveryBarrierSource: "default",
+    void notifyAutomationOff({
+      kind: "trigger",
+      id: trigger.id,
+      name: trigger.name,
+      ownerPrincipal: trigger.ownerPrincipal,
+      code,
+      reason: refusal.pt.reason,
+      next: refusal.pt.next,
+      audience: refusal.audience,
+      fallback: () => {
+        const agentId = getDefaultAgentId();
+        const sessionName = getMainSession(agentId)?.name ?? agentId;
+        return publishSessionPrompt(sessionName, {
+          prompt: `[System] Inform: [from: trigger:${trigger.id}] Shell trigger disabled (${code}). ${refusal.en.why} No command was executed. Inspect with ravi triggers show ${trigger.id}. ${refusal.en.next}`,
+          deliveryBarrier: "after_response",
+          deliveryBarrierSource: "default",
+        });
+      },
     }).catch((error) => {
-      log.error("Failed to publish shell trigger refusal notice; trigger remains disabled", {
+      log.error("Failed to send shell trigger refusal notice; trigger remains disabled", {
         triggerId: trigger.id,
         code,
         error: error instanceof Error ? error.message : String(error),
