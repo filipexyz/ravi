@@ -92,12 +92,24 @@ normative: true
   counts as started only after the process reports `spawn`; a launch failure
   reported as an `error` event MUST take the same refusal path and MUST NOT
   escape as an unhandled event.
+- Whether the caller is inside the daemon's process tree MUST come from a
+  strict PM2 read. A PM2 that cannot be read is an unknown position and MUST
+  NOT be taken for "outside": the CLI MUST refuse with `UPDATE_FAILED` before it
+  detaches, installs or stops anything, and the supervisor MUST refuse as below.
+  Usage errors are reported before the read. The detached child and the worker
+  decide by their run markers and MUST NOT read PM2 for that decision.
 - The worker MUST confirm it is outside the daemon's process tree before it
-  installs anything. If it is still inside after the wait, it MUST refuse with
+  installs anything; a PM2 read that fails during that wait counts as still
+  inside. If it is still inside after the wait, it MUST refuse with
   `UPDATE_DETACH_FAILED` and record that result.
 - The detached run MUST NOT carry runtime context. Every `RAVI_*` key except
   `RAVI_HOME`, `RAVI_REPO` and `RAVI_SUPPRESS_AUDIT_EVENTS` MUST be removed;
-  `RAVI_STATE_DIR` MUST be passed as an absolute path.
+  `RAVI_STATE_DIR` MUST be passed as an absolute path. A relative value was
+  handed down by a daemon that predates the boot anchor and MUST be resolved
+  against that daemon's cwd (from the same PM2 read), never the caller's, as in
+  `ravi daemon restart` (#857). The run directory MUST use the same resolved
+  path. A relative value with no readable daemon cwd MUST be refused with
+  `UPDATE_DETACH_FAILED`.
 - Each detached run MUST keep `request.json`, `log` and `result.json` under
   `<state>/updates/<runId>/`. The run id MUST match
   `^\d{8}T\d{6}Z-[0-9a-f]{6}$` before it is used as a path. Results MUST be
@@ -105,13 +117,15 @@ normative: true
 - The run markers (`RAVI_UPDATE_HANDOFF`, `RAVI_UPDATE_HANDOFF_WORKER`,
   `RAVI_UPDATE_RUN_ID`) MUST NOT reach anything the worker starts: the worker
   MUST remove them from its environment before it installs anything, and PM2
-  registrations MUST clear them like runtime context. Only the worker writes a
-  run's `result.json`; an inline update that inherited a run id MUST NOT write
-  to that run.
+  registrations MUST clear them like runtime context. Only the run's own
+  processes write its `result.json` (the worker, or the detached child when it
+  cannot start the worker); an inline update that inherited a run id MUST NOT
+  write to that run.
 - The update supervisor (`RAVI_INTERNAL_UPDATE_RUNTIME_REBIND`) MUST refuse
   with `UPDATE_REFUSED_IN_DAEMON_TREE` when it runs inside the daemon's process
-  tree. The refusal MUST happen before it reads its request or touches PM2, and
-  it MUST leave `<state>/updates/supervisor-refused.json`. Only a CLI that
+  tree or cannot read PM2 to tell. The refusal MUST happen before it reads its
+  request or stops anything in PM2, and it MUST leave
+  `<state>/updates/supervisor-refused.json` with the reason. Only a CLI that
   predates detached execution starts a supervisor there.
 - The refusal of the root command in a runtime context (`CLI_ONLY`) is
   unchanged by detached execution.

@@ -18,7 +18,8 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { closeSync, mkdirSync, openSync, renameSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
+import { resolveHandoffStateDir } from "../runtime/restart-reason.js";
 import { getRaviStateDir } from "../utils/paths.js";
 
 /** Set on the detached child; it only reparents the worker. */
@@ -79,18 +80,42 @@ export function updateRunPaths(runId: string, stateDir: string = getRaviStateDir
 const DETACHED_UPDATE_KEPT_RAVI_KEYS = new Set(["RAVI_HOME", "RAVI_REPO", "RAVI_SUPPRESS_AUDIT_EVENTS"]);
 
 /**
+ * The state directory of a handed-off update, as an absolute path. A caller in the daemon tree inherited
+ * `RAVI_STATE_DIR` from the daemon; a relative value comes from a daemon that predates the boot anchor and
+ * resolves it against its own cwd (#857), so it is anchored there, never at the caller's cwd, or the run and the
+ * successor would use a different, empty directory. Unset stays unset (default `~/.ravi`). A relative value with
+ * no known daemon cwd throws: there is no directory that is certainly the daemon's.
+ */
+export function resolveDetachedUpdateStateDir(env: NodeJS.ProcessEnv, daemonCwd: string | null): string | undefined {
+  const value = env.RAVI_STATE_DIR;
+  if (!value || isAbsolute(value)) return value || undefined;
+  if (!daemonCwd) {
+    throw new Error(
+      `RAVI_STATE_DIR is relative (${value}) and the daemon's working directory is unknown, so the state ` +
+        "directory the daemon uses cannot be resolved",
+    );
+  }
+  return resolveHandoffStateDir(env, daemonCwd);
+}
+
+/**
  * Environment of the detached update: no runtime context, session or gateway
  * routing (the worker is an operator process, like the restart worker), the
- * same state directory as an absolute path, and the run markers.
+ * daemon's state directory as an absolute path (`resolveDetachedUpdateStateDir`),
+ * and the run markers.
  */
-export function buildDetachedUpdateEnv(env: NodeJS.ProcessEnv, runId: string): Record<string, string> {
+export function buildDetachedUpdateEnv(
+  env: NodeJS.ProcessEnv,
+  runId: string,
+  stateDir: string | undefined,
+): Record<string, string> {
   const clean: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
     if (value === undefined) continue;
     if (key.startsWith("RAVI_") && !DETACHED_UPDATE_KEPT_RAVI_KEYS.has(key)) continue;
     clean[key] = value;
   }
-  if (env.RAVI_STATE_DIR) clean.RAVI_STATE_DIR = resolve(env.RAVI_STATE_DIR);
+  if (stateDir) clean.RAVI_STATE_DIR = stateDir;
   clean[UPDATE_HANDOFF_ENV] = "1";
   clean[UPDATE_RUN_ID_ENV] = runId;
   return clean;

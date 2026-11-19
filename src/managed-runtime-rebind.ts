@@ -416,9 +416,21 @@ export function refuseRebindInsideDaemonTree(
   insideDaemonTree: () => boolean,
   stateDir: string = getRaviStateDir(),
 ): void {
-  if (!insideDaemonTree()) return;
+  // An unreadable PM2 is an unknown position: refused like "inside", never taken for "outside".
+  let readFailure: unknown;
+  try {
+    if (!insideDaemonTree()) return;
+  } catch (cause) {
+    readFailure = cause;
+  }
+  const where =
+    readFailure === undefined
+      ? "was started inside the daemon's process tree"
+      : `could not read PM2 to tell whether it runs inside the daemon's process tree (${
+          readFailure instanceof Error ? readFailure.message : String(readFailure)
+        })`;
   const message =
-    `${UPDATE_SUPERVISOR_IN_DAEMON_TREE}: the update supervisor was started inside the daemon's process tree, ` +
+    `${UPDATE_SUPERVISOR_IN_DAEMON_TREE}: the update supervisor ${where}, ` +
     "where stopping the daemon would kill it before the new runtime starts. Nothing was stopped. " +
     "Run ravi update again: the CLI it installed detaches first.";
   try {
@@ -432,11 +444,11 @@ export function refuseRebindInsideDaemonTree(
   } catch (cause) {
     throw new Error(message, { cause });
   }
-  throw new Error(message);
+  throw new Error(message, readFailure === undefined ? undefined : { cause: readFailure });
 }
 
 export async function maybeRunManagedRuntimeRebindFromEnv(
-  insideDaemonTree: () => boolean = () => isInsideDaemonProcessTree(),
+  insideDaemonTree: () => boolean = () => isInsideDaemonProcessTree({ strict: true }),
 ): Promise<boolean> {
   const encoded = process.env[MANAGED_RUNTIME_REBIND_ENV];
   if (!encoded) return false;
