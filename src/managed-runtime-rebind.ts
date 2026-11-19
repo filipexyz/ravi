@@ -8,7 +8,14 @@ import { which } from "bun";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isInsideDaemonProcessTree } from "./cli/daemon-process-tree.js";
-import { assertFenceAdoptionWaypoint, readPreparedStateRelease, UPDATE_WAYPOINT_REQUIRED } from "./update-preflight.js";
+import {
+  compareRaviVersions,
+  readPreparedStateRelease,
+  requiredFenceAdoptionWaypoint,
+  UPDATE_WAYPOINT_REQUIRED,
+  UpdateWaypointRequiredError,
+} from "./update-preflight.js";
+import { hopThroughWaypoint, type WaypointHopDependencies, type WaypointHopOutcome } from "./update-waypoint.js";
 import { setTimeout as delay } from "node:timers/promises";
 import { buildRunnerPm2Env } from "./channels/pm2-env.js";
 import {
@@ -44,6 +51,7 @@ import {
 import {
   readUpdateSupervisorResult,
   recordUpdateSupervisorResult,
+  globalInstallMethodOf,
   resolveUpdateRollbackPlan,
   rollBackUpdate,
   type UpdateRollbackDependencies,
@@ -145,6 +153,10 @@ type ManagedRuntimeRebindDependencies = {
    * anyway, and the rollback is only proven by the window.
    */
   rollbackStabilityWindowMs?: number;
+  /** The waypoint hop (`update-waypoint.ts`; tests). */
+  hopThroughWaypoint?: (dependencies: WaypointHopDependencies) => Promise<WaypointHopOutcome>;
+  /** Set on the update that follows a waypoint: a second waypoint means the first did not prepare the state. */
+  afterWaypoint?: boolean;
   storePaths?: (stateDir: string) => string[];
 };
 
@@ -351,17 +363,22 @@ export async function rebindManagedRuntimeProcesses(
   assertRuntimeMaintenanceInactive(stateDir);
   if (previousProcesses.length === 0) return true;
   const readiness = await (dependencies.assertPrepared ?? runtimeReplacementReadiness)();
-  // Before any stop: a pre-fence state the adoption cannot read refuses here,
-  // with the running release still serving.
-  assertFenceAdoptionWaypoint({
-    readiness,
-    preparedRelease:
-      readiness === "adopt-on-start"
-        ? (dependencies.preparedStateRelease ?? (() => readPreparedStateRelease(stateDir)))()
-        : null,
-    targetVersion: target.version,
-    sourceCheckout: existsSync(join(target.cwd, ".git")) ? target.cwd : null,
-  });
+  // Before any stop: a pre-fence state the adoption cannot read needs a waypoint. The update takes it by itself
+  // when it can roll back to the release that wrote the state (below); otherwise it refuses here, with the
+  // running release still serving.
+  const preparedRelease =
+    readiness === "adopt-on-start"
+      ? (dependencies.preparedStateRelease ?? (() => readPreparedStateRelease(stateDir)))()
+      : null;
+  const waypoint = requiredFenceAdoptionWaypoint({ readiness, preparedRelease });
+  const sourceCheckout = existsSync(join(target.cwd, ".git")) ? target.cwd : null;
+  const refuseWaypoint = (): never => {
+    throw new UpdateWaypointRequiredError(preparedRelease, target.version, sourceCheckout);
+  };
+  // Refused at once, before PM2 is read: a checkout is switched by its operator, only a global install can be rolled
+  // back, and a second waypoint means the first did not prepare the state.
+  if (waypoint && (sourceCheckout || dependencies.afterWaypoint || !globalInstallMethodOf(target.cwd)))
+    refuseWaypoint();
   const run = dependencies.run ?? runCommand;
   const getProcesses = dependencies.getProcesses ?? (() => getPm2Processes({ strict: true }));
   const bunPath = dependencies.bunPath ?? process.execPath;
@@ -387,6 +404,11 @@ export async function rebindManagedRuntimeProcesses(
     processes: initial,
     stateDir,
   });
+  // The waypoint is taken by the update only with a rollback to the release that wrote this state, and never as a
+  // downgrade of that release.
+  const hop =
+    waypoint && rollbackPlan && compareRaviVersions(rollbackPlan.previousRelease, waypoint) < 0 ? waypoint : null;
+  if (waypoint && !hop) refuseWaypoint();
   const stores = rollbackPlan ? (dependencies.storePaths ?? updateStorePaths)(stateDir) : [];
   const snapshotPlan = rollbackPlan ? (dependencies.planSnapshot ?? planUpdateSnapshot)({ stateDir, stores }) : null;
   const gone = (pid: number): boolean =>
@@ -635,6 +657,44 @@ export async function rebindManagedRuntimeProcesses(
   const unprotected = (reason: string) =>
     `Ravi ${target.version} did not converge (${reason}). No snapshot was taken (${warnings.join("; ") || "unknown reason"}), ` +
     "so nothing was rolled back.";
+
+  if (hop) {
+    // Both processes of the release that wrote the state are stopped and the state is in the snapshot.
+    const outcome = await (dependencies.hopThroughWaypoint ?? hopThroughWaypoint)({
+      stateDir,
+      waypoint: hop,
+      target,
+      method: rollbackPlan.method,
+      packageRoot: rollbackPlan.packageRoot,
+      bunPath,
+      run,
+      getProcesses,
+      now: dependencies.now,
+      wait: dependencies.wait,
+      stabilityWindowMs: dependencies.rollbackStabilityWindowMs ?? resolveStabilityWindowMs({}),
+    });
+    if (!outcome.ok) {
+      if (outcome.step === "reinstall-target") {
+        // The waypoint runs on the state it prepared: a release of its own, on its own state.
+        record(
+          "failed",
+          `Ravi ${hop} prepared the state and runs on it, but Ravi ${target.version} could not be installed ` +
+            `again (${outcome.message}). Nothing else changed; run the update again.`,
+          { commands: ["ravi daemon status", `ravi update --version ${target.version}`] },
+        );
+        return false;
+      }
+      const reason = `the waypoint Ravi ${hop} failed at ${outcome.step}: ${outcome.message}`;
+      if (snapshot) await rollBack(reason, snapshot);
+      else record("failed", unprotected(reason));
+      return false;
+    }
+    console.error(`ravi update: Ravi ${hop} prepared the state; updating it to Ravi ${target.version}`);
+    return rebindManagedRuntimeProcesses(managedRuntimeSnapshot(getProcesses()), target, {
+      ...dependencies,
+      afterWaypoint: true,
+    });
+  }
 
   let converged: boolean;
   try {

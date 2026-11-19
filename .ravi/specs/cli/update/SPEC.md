@@ -91,11 +91,33 @@ and does not read `supervisor-refused.json`, so it prints its own generic
 failure; the refusal's text reaches the operator on the next run, through the
 CLI that run installed.
 
-- Before it stops anything, the supervisor MUST refuse with
-  `UPDATE_WAYPOINT_REQUIRED` a state written before the thread fence
-  (`adopt-on-start`) that a release older than 3.261113.2 last prepared, or
-  that has no readiness markers (`state_schema_versions`, `1:<release>`). The
-  refusal MUST name the exact commands: `ravi update --version 3.261113.2`,
+- A state written before the thread fence (`adopt-on-start`) that a release
+  older than 3.261113.2 last prepared, or that has no readiness markers
+  (`state_schema_versions`, `1:<release>`), needs the waypoint 3.261113.2.
+  When the update can roll back (a global install whose running release
+  proved itself with a boot receipt) and that release is older than the
+  waypoint, the supervisor MUST take the waypoint by itself:
+  - stop both processes and snapshot the state, as an update that can roll
+    back does;
+  - install 3.261113.2 in the same global install and start the daemon, then
+    the channel runner, through its own CLI (`daemon start`, `channels
+    start`), without target routing or runtime context; both, because the
+    target's adoption needs a boot record of each;
+  - count the waypoint once the state shows its readiness markers (3.261113.2
+    or later) and the last boot record of `ravi` and `ravi-channels` was
+    written by 3.261113.2 with its bundle, and both held for the stability
+    window;
+  - install the target again and update from the waypoint to the target, as
+    any update (its own snapshot, and a rollback to the waypoint). A second
+    waypoint on that update MUST be refused, not taken.
+  A waypoint that fails to install, start, prepare the state or hold MUST roll
+  back to the release that wrote the state (its snapshot and its exact
+  release), and the result says the waypoint failed. A target that cannot be
+  installed again leaves the waypoint running on the state it prepared, and the
+  result names the command to retry.
+- Otherwise (a source checkout, no rollback, or a running release not older
+  than the waypoint), before it stops anything, the supervisor MUST refuse with
+  `UPDATE_WAYPOINT_REQUIRED`. The refusal MUST name the exact commands: `ravi update --version 3.261113.2`,
   `ravi daemon status`, then `ravi update --next`. A source checkout does not
   accept `--version`, so there the refusal MUST give the checkout steps
   instead, as commands that run as written: `git -C "<checkout>" fetch --tags`,
@@ -124,9 +146,9 @@ CLI that run installed.
   recorded since the supervisor started, and fail with that code and message
   instead of a generic convergence failure. Any other failure MUST name the
   supervisor log.
-- Still open: the waypoint is checked after the package is installed, and a
-  process that was stopped stays stopped (the CLI that verifies the result
-  predates a change to that rule). Automatic waypoints replace the first later.
+- Still open: the refusal comes after the package is installed, and a process
+  that was stopped stays stopped (the CLI that verifies the result predates a
+  change to that rule).
 
 ## Snapshot and rollback (supervisor)
 

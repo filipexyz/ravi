@@ -90,6 +90,21 @@ export class UpdateWaypointRequiredError extends Error {
   }
 }
 
+/**
+ * The release a pre-fence state must go through before the target can adopt it, or null: a state written before
+ * the thread fence (`adopt-on-start`) that a release older than 3.261113.2 last prepared, or that has no readiness
+ * markers, needs 3.261113.2 first.
+ */
+export function requiredFenceAdoptionWaypoint(input: {
+  readiness: "ready" | "adopt-on-start";
+  preparedRelease: string | null;
+}): string | null {
+  if (input.readiness !== "adopt-on-start") return null;
+  if (input.preparedRelease && compareRaviVersions(input.preparedRelease, FENCE_ADOPTION_MINIMUM_RELEASE) >= 0)
+    return null;
+  return FENCE_ADOPTION_MINIMUM_RELEASE;
+}
+
 /** Throws before any stop when a pre-fence state needs the 3.261113.2 waypoint first. */
 export function assertFenceAdoptionWaypoint(input: {
   readiness: "ready" | "adopt-on-start";
@@ -97,7 +112,6 @@ export function assertFenceAdoptionWaypoint(input: {
   targetVersion: string;
   sourceCheckout?: string | null;
 }): void {
-  if (input.readiness !== "adopt-on-start") return;
-  if (input.preparedRelease && compareRaviVersions(input.preparedRelease, FENCE_ADOPTION_MINIMUM_RELEASE) >= 0) return;
+  if (!requiredFenceAdoptionWaypoint(input)) return;
   throw new UpdateWaypointRequiredError(input.preparedRelease, input.targetVersion, input.sourceCheckout ?? null);
 }

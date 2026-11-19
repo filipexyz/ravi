@@ -16,6 +16,8 @@ import { rebindManagedRuntimeProcesses } from "./managed-runtime-rebind.js";
 import { resolveManagedRuntimeTargetFromPackageRoot } from "./managed-runtime.js";
 import type { Pm2Process } from "./pm2.js";
 import { observeRuntimeBoot, writeRuntimeBootReceipt } from "./runtime-process-identity.js";
+import { requiredFenceAdoptionWaypoint, UPDATE_WAYPOINT_REQUIRED } from "./update-preflight.js";
+import { hopThroughWaypoint, type WaypointHopDependencies, waypointPreparedState } from "./update-waypoint.js";
 import {
   globalInstallMethodOf,
   previousReleaseCliEnv,
@@ -462,7 +464,21 @@ describe("update supervisor with a rollback plan", () => {
           ...overrides,
         },
       );
-    return { stateDir, events, rolledBack, rebind, run };
+    /** Both processes running `version`, as the waypoint's own CLI leaves them. */
+    const bringUp = (version: string) => {
+      for (const name of ["ravi", "ravi-channels"] as const) {
+        const pmId = nextPmId++;
+        const process = pm2Process(name, bundle, install.root, {
+          pm_id: pmId,
+          pid: 100 + pmId,
+          startedAt: epoch + 10 + time,
+          createdAt: epoch + 10 + time,
+        });
+        processes.push(process);
+        boot(stateDir, process, bundle, version);
+      }
+    };
+    return { stateDir, events, rolledBack, rebind, run, bringUp };
   }
 
   it("stops both before the target starts, snapshots, and rolls back when the target never gets ready", async () => {
@@ -516,6 +532,120 @@ describe("update supervisor with a rollback plan", () => {
     );
   });
 
+  it("takes the waypoint by itself, then updates from it to the target", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false });
+    const since = Date.now() - 1_000;
+    let prepared: string | null = null;
+    let readiness: "ready" | "adopt-on-start" = "adopt-on-start";
+    const hops: string[] = [];
+
+    expect(
+      await fixture.rebind({
+        assertPrepared: () => readiness,
+        preparedStateRelease: () => prepared,
+        hopThroughWaypoint: async (dependencies) => {
+          hops.push(dependencies.waypoint);
+          prepared = dependencies.waypoint;
+          fixture.bringUp(dependencies.waypoint);
+          // The fence adoption belongs to the target's daemon; the update's own flow is what this test follows.
+          readiness = "ready";
+          return { ok: true };
+        },
+      }),
+    ).toBe(true);
+    expect(hops).toEqual(["3.261113.2"]);
+    // The release that wrote the state stops first; then the waypoint's processes, before the target starts.
+    expect(fixture.events.slice(0, 4)).toEqual([
+      "delete:ravi-channels",
+      "delete:ravi",
+      "delete:ravi-channels",
+      "delete:ravi",
+    ]);
+    expect(fixture.events).toContain("start:ravi");
+    expect(readUpdateSupervisorResult(since, fixture.stateDir)).toMatchObject({ outcome: "converged" });
+  });
+
+  it("does not take a second waypoint when the first left the state unprepared", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false });
+    const hops: string[] = [];
+
+    await expect(
+      fixture.rebind({
+        assertPrepared: () => "adopt-on-start",
+        preparedStateRelease: () => null,
+        hopThroughWaypoint: async (dependencies) => {
+          hops.push(dependencies.waypoint);
+          fixture.bringUp(dependencies.waypoint);
+          return { ok: true };
+        },
+      }),
+    ).rejects.toThrow(UPDATE_WAYPOINT_REQUIRED);
+    expect(hops).toHaveLength(1);
+  });
+
+  it("rolls back to the release that wrote the state when the waypoint fails", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false });
+    const since = Date.now() - 1_000;
+
+    expect(
+      await fixture.rebind({
+        assertPrepared: () => "adopt-on-start",
+        preparedStateRelease: () => null,
+        hopThroughWaypoint: async () => ({ ok: false, step: "start", message: "ravi did not come up" }),
+      }),
+    ).toBe(false);
+    expect(fixture.rolledBack).toHaveLength(1);
+    expect(fixture.events).not.toContain("start:ravi");
+    const result = readUpdateSupervisorResult(since, fixture.stateDir);
+    expect(result).toMatchObject({ outcome: "rolled-back", previousRelease: "3.1.0" });
+    expect(result?.message).toContain("the waypoint Ravi 3.261113.2 failed at start: ravi did not come up");
+  });
+
+  it("leaves the waypoint running and says so when the target cannot be installed again", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false });
+    const since = Date.now() - 1_000;
+
+    expect(
+      await fixture.rebind({
+        assertPrepared: () => "adopt-on-start",
+        preparedStateRelease: () => null,
+        hopThroughWaypoint: async () => ({ ok: false, step: "reinstall-target", message: "registry unreachable" }),
+      }),
+    ).toBe(false);
+    expect(fixture.rolledBack).toHaveLength(0);
+    const result = readUpdateSupervisorResult(since, fixture.stateDir);
+    expect(result).toMatchObject({ outcome: "failed" });
+    expect(result?.commands).toEqual(["ravi daemon status", "ravi update --version 3.2.0"]);
+  });
+
+  it("refuses the waypoint before any stop without a rollback, or as a downgrade", async () => {
+    for (const plan of [null, { previousRelease: "3.261115.1" }]) {
+      const fixture = supervisorFixture({ targetNeverReady: false });
+      const mutations: string[][] = [];
+      await expect(
+        fixture.rebind({
+          assertPrepared: () => "adopt-on-start",
+          preparedStateRelease: () => null,
+          rollbackPlan: () =>
+            plan && {
+              previousRelease: plan.previousRelease,
+              method: "bun" as const,
+              packageRoot: "/unused",
+              channelsOnline: true,
+            },
+          hopThroughWaypoint: async () => {
+            throw new Error("the waypoint must not run");
+          },
+          run: async (command, args) => {
+            mutations.push(args);
+            return fixture.run(command, args);
+          },
+        }),
+      ).rejects.toThrow(UPDATE_WAYPOINT_REQUIRED);
+      expect(mutations).toEqual([]);
+    }
+  });
+
   it("refuses before any stop when the snapshot does not fit", async () => {
     const fixture = supervisorFixture({ targetNeverReady: false });
     const mutations: string[][] = [];
@@ -531,5 +661,128 @@ describe("update supervisor with a rollback plan", () => {
     ).rejects.toThrow(UPDATE_SNAPSHOT_SPACE);
     expect(mutations).toEqual([]);
     expect(readFileSync(join(fixture.stateDir, "ravi.db")).length).toBeGreaterThan(0);
+  });
+});
+
+describe("the waypoint rule", () => {
+  it("asks for 3.261113.2 only for a pre-fence state prepared by an older release or none", () => {
+    expect(requiredFenceAdoptionWaypoint({ readiness: "ready", preparedRelease: null })).toBeNull();
+    expect(requiredFenceAdoptionWaypoint({ readiness: "adopt-on-start", preparedRelease: null })).toBe("3.261113.2");
+    expect(requiredFenceAdoptionWaypoint({ readiness: "adopt-on-start", preparedRelease: "3.261104.2" })).toBe(
+      "3.261113.2",
+    );
+    expect(requiredFenceAdoptionWaypoint({ readiness: "adopt-on-start", preparedRelease: "3.261113.2" })).toBeNull();
+  });
+});
+
+function waypointFixture(
+  input: { failInstall?: "waypoint" | "target"; neverUp?: boolean; neverPrepared?: boolean } = {},
+) {
+  const stateDir = tempDir("ravi-waypoint-state-");
+  // The CLI installed the target; both processes of the release that wrote the state are stopped.
+  const install = globalInstall("3.2.0");
+  const bundle = install.target.bundlePath;
+  const epoch = Math.ceil(statSync(bundle).mtimeMs) + 1;
+  const processes: Pm2Process[] = [];
+  let installed = "3.2.0";
+  let prepared: string | null = null;
+  let nextPid = 500;
+  const calls: string[] = [];
+  const deps: WaypointHopDependencies = {
+    stateDir,
+    waypoint: "3.261113.2",
+    target: install.target,
+    method: "bun",
+    packageRoot: install.root,
+    bunPath: "/usr/local/bin/bun",
+    env: { PATH: "/bin", RAVI_CONTEXT_KEY: "ctx" },
+    getProcesses: () => processes,
+    now: (() => {
+      let time = 0;
+      return () => (time += 100);
+    })(),
+    wait: async () => {},
+    log: () => {},
+    preparedRelease: () => prepared,
+    startTimeoutMs: 2_000,
+    prepareTimeoutMs: 2_000,
+    stabilityWindowMs: 1_000,
+    run: async (command, args, options) => {
+      calls.push([command, ...args].join(" "));
+      if (options?.env?.RAVI_CONTEXT_KEY) throw new Error("a runtime context reached the waypoint's CLI");
+      if (command === "bun" && args[0] === "install") {
+        const release = args.at(-1)!.split("@")[1]!;
+        if (input.failInstall === "waypoint" && release === "3.261113.2")
+          return { success: false, output: "registry unreachable" };
+        if (input.failInstall === "target" && release === "3.2.0")
+          return { success: false, output: "registry unreachable" };
+        install.setVersion(release);
+        installed = release;
+      } else if (args[2] === "start" && !input.neverUp) {
+        const name = args[1] === "daemon" ? "ravi" : "ravi-channels";
+        const process = pm2Process(name, bundle, install.root, {
+          pm_id: nextPid,
+          pid: nextPid,
+          startedAt: epoch + nextPid,
+        });
+        nextPid += 1;
+        processes.push(process);
+        boot(stateDir, process, bundle, installed);
+        // The waypoint's daemon writes its readiness markers when it prepares the state.
+        if (name === "ravi" && !input.neverPrepared) prepared = "3.261113.2";
+      }
+      return { success: true, output: "" };
+    },
+  };
+  return { deps, calls, install, bundle };
+}
+
+describe("update waypoint", () => {
+  it("installs the waypoint, starts both processes through its CLI, waits for the prepared state, reinstalls the target", async () => {
+    const { deps, calls, install, bundle } = waypointFixture();
+    const outcome = await hopThroughWaypoint(deps);
+
+    expect(outcome).toEqual({ ok: true });
+    expect(calls).toEqual([
+      "bun install -g --force ravi.bot@3.261113.2",
+      `/usr/local/bin/bun ${bundle} daemon start`,
+      `/usr/local/bin/bun ${bundle} channels start`,
+      "bun install -g --force ravi.bot@3.2.0",
+    ]);
+    expect(resolveManagedRuntimeTargetFromPackageRoot(install.root)?.version).toBe("3.2.0");
+  });
+
+  it("stops at the step that failed", async () => {
+    expect(await hopThroughWaypoint(waypointFixture({ failInstall: "waypoint" }).deps)).toMatchObject({
+      ok: false,
+      step: "install",
+    });
+    expect(await hopThroughWaypoint(waypointFixture({ neverUp: true }).deps)).toMatchObject({
+      ok: false,
+      step: "start",
+    });
+    const unprepared = await hopThroughWaypoint(waypointFixture({ neverPrepared: true }).deps);
+    expect(unprepared).toMatchObject({ ok: false, step: "prepare" });
+    expect(unprepared.ok ? "" : unprepared.message).toContain("readiness markers of Ravi 3.261113.2");
+    expect(await hopThroughWaypoint(waypointFixture({ failInstall: "target" }).deps)).toMatchObject({
+      ok: false,
+      step: "reinstall-target",
+    });
+  });
+
+  it("counts the state prepared only with the markers and a boot record of both processes from the waypoint", () => {
+    const stateDir = tempDir("ravi-waypoint-prepared-");
+    expect(waypointPreparedState(stateDir, "3.261113.2", "3.261113.2")).toMatchObject({ prepared: false });
+    const install = globalInstall("3.261113.2");
+    const epoch = Math.ceil(statSync(install.target.bundlePath).mtimeMs) + 1;
+    for (const name of ["ravi", "ravi-channels"] as const)
+      boot(
+        stateDir,
+        pm2Process(name, install.target.bundlePath, install.root, { startedAt: epoch }),
+        install.target.bundlePath,
+        "3.261113.2",
+      );
+    expect(waypointPreparedState(stateDir, "3.261113.2", "3.261113.2")).toEqual({ prepared: true, missing: [] });
+    expect(waypointPreparedState(stateDir, "3.261113.2", "3.261104.2").prepared).toBe(false);
   });
 });
