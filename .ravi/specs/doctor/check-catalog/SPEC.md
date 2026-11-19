@@ -120,6 +120,7 @@ Initial checks:
 - `permissions.provider_runtime_boundaries`
 - `permissions.local_operator_explicit`
 - `permissions.runtime_bootstrap_scope`
+- `permissions.owner_contact`
 
 The command registry SHOULD expose explicit metadata for:
 
@@ -137,6 +138,29 @@ Retired permission storage drift belongs to migration tooling, not the default
 doctor permissions domain. The default doctor MUST validate the active
 Permission Provider Runtime chain, boundary invariants, explicit
 operator-control semantics, and runtime bootstrap scope.
+
+### Owner contact (`permissions.owner_contact`)
+
+The owner DM guard (`channels/owner-dm-guard`) is off, and the owner's direct
+chat that Knowledge and the shell trigger and cron notices write to does not
+resolve, until exactly one contact is tagged `permission-owner`. A fresh
+installation starts without the tag and nothing else says so, so doctor does.
+
+- `id`: `permissions.owner_contact` (domain `permissions`).
+- `defaultSeverity`: `warn` when no contact carries the tag, and when more than
+  one does (the guard reads the set and stays on, but the owner's chat resolves
+  from exactly one contact, so with several the notice falls back to the main
+  session and the Knowledge DM is not sent); `pass` with exactly one; `skip`
+  (`info`) when the contacts cannot be read. It MUST NOT be `error`: a missing
+  protection is not a broken runtime, and the exit code changes only under
+  `--strict`.
+- `mode`: `local`. The check MUST remain read-only: it MUST NOT tag, untag or
+  create a contact.
+- The set it counts MUST be the one the guard reads (distinct, non-empty
+  contact ids found by the tag), so the check and the guard agree.
+- The fix hint MUST name the command (`ravi contacts tag <contact-id>
+  permission-owner`, or `ravi contacts untag` on the extra contacts) and the
+  owner guide, and MUST NOT carry a contact's name, phone or any platform id.
 
 ## Costs
 

@@ -26,6 +26,7 @@ permissions.provider_runtime_default_chain
 permissions.provider_runtime_boundaries
 permissions.local_operator_explicit
 permissions.runtime_bootstrap_scope
+permissions.owner_contact
 costs.pricing_unpriced_usage
 costs.pricing_catalog_stale
 costs.event_incomplete_usage
@@ -75,6 +76,11 @@ channels.inbound_contact_unresolved
   `permissions.local_operator_explicit`.
 - Runtime bootstrap actor/surface/admin drift emits
   `permissions.runtime_bootstrap_scope`.
+- No contact tagged `permission-owner`, or more than one, emits
+  `permissions.owner_contact` at `warn`; exactly one emits it at `pass`; a
+  contact store that cannot be read emits it as `skip`. Blank or repeated ids
+  are not a second owner. `bun test src/cli/commands/doctor.test.ts -t
+  permissions.owner_contact` covers these cases.
 - A target (cwd/temp/state) whose free space is below the critical threshold,
   or that fails the temp write/remove smoke test, emits `runtime.disk_space_low`
   at `error`.

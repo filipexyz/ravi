@@ -74,8 +74,9 @@ agent's whole ceiling (`permissions/agent-identity`).
   ungoverned chat, its ceiling; holding keeps a stranger out of both.
 - No owner tagged: the guard does not block (a fresh installation has nobody
   to protect the session for and nobody to review a held message). This is
-  fail-open and nothing reports it yet: an installation is protected only once
-  its owner contact is tagged.
+  fail-open, and an installation is protected only once its owner contact is
+  tagged, so `ravi doctor` reports it (`permissions.owner_contact`, `warn`; see
+  `doctor/check-catalog`).
 - Owner set unreadable: fail closed, the DM is held.
 - The omni path records the rejection as `route.rejected` with reason
   `dm_owner_session_non_owner`.

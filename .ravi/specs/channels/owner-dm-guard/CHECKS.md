@@ -18,6 +18,9 @@
 - A cloud approval reply from a held colleague MUST reach the run.
 - With no owner tagged the shared session MUST keep its legacy behaviour.
 - An unreadable owner set MUST hold the DM.
+- With no owner tagged, `ravi doctor` MUST warn (`permissions.owner_contact`,
+  `bun test src/cli/commands/doctor.test.ts -t permissions.owner_contact`), so
+  the fail-open state does not go unreported.
 - `bun test src/channels/owner-dm-guard.test.ts src/channels/owner-dm-guard.routing.test.ts`,
   `bun test src/channels/slack/socket-mode.test.ts -t "Slack owner DM guard"` and
   `bun test src/omni/consumer-context.test.ts -t "owner DM guard"` SHOULD pass

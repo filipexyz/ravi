@@ -434,6 +434,10 @@ export async function runSetup(): Promise<void> {
   console.log(`    ${bullet} ${c.white}ravi daemon logs -f${c.reset}       ${c.gray}Ver logs do daemon${c.reset}`);
   console.log(`    ${bullet} ${c.white}ravi instances connect <name>${c.reset}  ${c.gray}Conectar WhatsApp${c.reset}`);
   console.log(`    ${bullet} ${c.white}ravi agents chat main${c.reset}     ${c.gray}Testar o agente${c.reset}`);
+  console.log(`    ${bullet} ${c.white}ravi doctor${c.reset}              ${c.gray}Verificar a instalação${c.reset}`);
+  console.log(
+    `    ${bullet} ${c.white}docs.ravi.bot/start/owner${c.reset}  ${c.gray}Tornar-se dono (tag permission-owner); sem ela o guard de DM fica desligado${c.reset}`,
+  );
   console.log(`    ${bullet} ${c.white}pm2 startup${c.reset}              ${c.gray}Iniciar no boot${c.reset}`);
   console.log();
 }

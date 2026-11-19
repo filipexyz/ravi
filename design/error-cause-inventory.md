@@ -595,23 +595,23 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/db.ts | 97 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/db.ts:0fa4c8eccad90392c776790f |
 | cli | src/cli/commands/decisions.ts | 85 | fixed | binding retained / no recognized error surface | src/cli/commands/decisions.ts:fb10d65f4b6cd0f39872adfa |
 | cli | src/cli/commands/devin.ts | 76 | triaged-follow-up | cause-not-forwarded-at-surface | src/cli/commands/devin.ts:089371c20205645d5a23704b |
-| cli | src/cli/commands/doctor.ts | 361 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:c31755850b556ad462559083 |
-| cli | src/cli/commands/doctor.ts | 365 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:dc59537e08e6eba4ce2691ff |
-| cli | src/cli/commands/doctor.ts | 382 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/doctor.ts:683fc493ab98758db2104158 |
-| cli | src/cli/commands/doctor.ts | 386 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:6c2810d1127b29fe9a0103a4 |
-| cli | src/cli/commands/doctor.ts | 663 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:dc1237cf36aa98495b704fa2 |
-| cli | src/cli/commands/doctor.ts | 673 | fixed | binding retained / no recognized error surface | src/cli/commands/doctor.ts:7a0db2b9a1b3d822b9bbd2a9 |
-| cli | src/cli/commands/doctor.ts | 2714 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:9370a7cdff0e267d37a29f35 |
-| cli | src/cli/commands/doctor.ts | 2863 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:e33b695f27e20beff1210970 |
-| cli | src/cli/commands/doctor.ts | 2940 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:e2e87f42fd873bdae1fa27f1 |
-| cli | src/cli/commands/doctor.ts | 3065 | fixed | binding retained / no recognized error surface | src/cli/commands/doctor.ts:38845c7de8d8195c95019c7f |
-| cli | src/cli/commands/doctor.ts | 3159 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:ffba326ce58b4d3a2ae29430 |
-| cli | src/cli/commands/doctor.ts | 3264 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:9709dbae3e04f17081273f3b |
-| cli | src/cli/commands/doctor.ts | 3307 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:caf2848d8a3d8ba8afc6b9fa |
-| cli | src/cli/commands/doctor.ts | 3316 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:3ff0d45cb8a488b9efe0b603 |
-| cli | src/cli/commands/doctor.ts | 3336 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:3d1065e06934075b7f60368c |
-| cli | src/cli/commands/doctor.ts | 3383 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:2a9506587eaecbb8cc7296da |
-| cli | src/cli/commands/doctor.ts | 3440 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:b5cbdac32ef88a997d6037b1 |
+| cli | src/cli/commands/doctor.ts | 365 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:c31755850b556ad462559083 |
+| cli | src/cli/commands/doctor.ts | 369 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:dc59537e08e6eba4ce2691ff |
+| cli | src/cli/commands/doctor.ts | 386 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/doctor.ts:683fc493ab98758db2104158 |
+| cli | src/cli/commands/doctor.ts | 390 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:6c2810d1127b29fe9a0103a4 |
+| cli | src/cli/commands/doctor.ts | 668 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:dc1237cf36aa98495b704fa2 |
+| cli | src/cli/commands/doctor.ts | 678 | fixed | binding retained / no recognized error surface | src/cli/commands/doctor.ts:7a0db2b9a1b3d822b9bbd2a9 |
+| cli | src/cli/commands/doctor.ts | 2719 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:9370a7cdff0e267d37a29f35 |
+| cli | src/cli/commands/doctor.ts | 2868 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:e33b695f27e20beff1210970 |
+| cli | src/cli/commands/doctor.ts | 2945 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:e2e87f42fd873bdae1fa27f1 |
+| cli | src/cli/commands/doctor.ts | 3070 | fixed | binding retained / no recognized error surface | src/cli/commands/doctor.ts:38845c7de8d8195c95019c7f |
+| cli | src/cli/commands/doctor.ts | 3164 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:ffba326ce58b4d3a2ae29430 |
+| cli | src/cli/commands/doctor.ts | 3269 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:9709dbae3e04f17081273f3b |
+| cli | src/cli/commands/doctor.ts | 3312 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:caf2848d8a3d8ba8afc6b9fa |
+| cli | src/cli/commands/doctor.ts | 3321 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:3ff0d45cb8a488b9efe0b603 |
+| cli | src/cli/commands/doctor.ts | 3407 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:3d1065e06934075b7f60368c |
+| cli | src/cli/commands/doctor.ts | 3454 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:2a9506587eaecbb8cc7296da |
+| cli | src/cli/commands/doctor.ts | 3511 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:b5cbdac32ef88a997d6037b1 |
 | cli | src/cli/commands/eval.ts | 84 | fixed | binding retained / no recognized error surface | src/cli/commands/eval.ts:4df946004a725fad5770818f |
 | cli | src/cli/commands/events.ts | 543 | triaged-follow-up | catch-without-binding | src/cli/commands/events.ts:324b1a95da3c0855f66288a0 |
 | cli | src/cli/commands/events.ts | 551 | triaged-follow-up | catch-without-binding | src/cli/commands/events.ts:3afbd2d0d99757397ed9cc6c |

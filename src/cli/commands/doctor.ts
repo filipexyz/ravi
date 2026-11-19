@@ -75,7 +75,8 @@ import { resolveCronTarget, type CronTargetState } from "../../cron/target-resol
 import { resolveSession } from "../../router/sessions.js";
 import { inspectKnowledgeExposure, agentHasNoExec } from "../../knowledge/safety/exposure.js";
 import { knowledgeSettings } from "../../knowledge/settings.js";
-import { resolveOwnerDirectTarget } from "../../knowledge/owner.js";
+import { findContactsByTag } from "../../contacts.js";
+import { OWNER_CONTACT_TAG, resolveOwnerDirectTarget } from "../../knowledge/owner.js";
 import { codexKnowledgeParityHolds } from "../../permissions/codex-knowledge-parity.js";
 import { listSubscriptions } from "../../inbox/inbox-db.js";
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
@@ -267,6 +268,8 @@ type DoctorDeps = {
   inspectKnowledgeExposure: typeof inspectKnowledgeExposure;
   knowledgeSettings: typeof knowledgeSettings;
   resolveOwnerDirectTarget: () => ReturnType<typeof resolveOwnerDirectTarget>;
+  /** Contacts tagged `permission-owner`: the set the owner DM guard reads. */
+  listOwnerContactIds: () => string[];
   agentHasNoExec: (agentId: string) => boolean;
   codexKnowledgeParityHolds: typeof codexKnowledgeParityHolds;
   listInboxSubscriptions: (opts?: { enabledOnly?: boolean }) => unknown[];
@@ -337,6 +340,7 @@ const DEFAULT_DEPS: DoctorDeps = {
   inspectKnowledgeExposure,
   knowledgeSettings,
   resolveOwnerDirectTarget: () => resolveOwnerDirectTarget(),
+  listOwnerContactIds: () => findContactsByTag(OWNER_CONTACT_TAG).map((contact) => contact.id),
   agentHasNoExec: (agentId: string) => agentHasNoExec(agentId),
   codexKnowledgeParityHolds,
   listInboxSubscriptions: listSubscriptions,
@@ -621,6 +625,7 @@ export function inspectDoctor(overrides: Partial<DoctorDeps> = {}, options: Insp
   addCheck(checks, () => buildPermissionBootstrapScopeCheck(deps));
   addCheck(checks, () => buildPermissionChatOnlyCeilingCheck(deps));
   addCheck(checks, () => buildPermissionAgentIdentityReadinessCheck(deps));
+  addCheck(checks, () => buildOwnerContactCheck(deps));
   addCheck(checks, () => buildKnowledgeExposureCheck(deps));
   addCheck(checks, () => buildKnowledgeF2SetupCheck(deps));
   const filtered = filterChecksByDomain(checks, options.domain);
@@ -3316,6 +3321,72 @@ function readPackageVersion(): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+const OWNER_CONTACT_FIX_HINT =
+  "Tag your own contact: `ravi contacts tag <contact-id> permission-owner` (create it first with `ravi contacts add`; guide: https://docs.ravi.bot/start/owner). Then DM the agent once to confirm your own message still goes through.";
+
+const OWNER_CONTACT_MANY_FIX_HINT =
+  "Keep the tag on your own contact only: `ravi contacts untag <contact-id> permission-owner` on the others (a duplicate contact of the same person is the usual cause; `ravi contacts find <name>` lists them).";
+
+/**
+ * Owner contact (spec channels/owner-dm-guard): with no contact tagged
+ * `permission-owner` the owner DM guard admits every sender, so a DM from anyone
+ * can land in an agent's shared session. A fresh installation starts in that
+ * state and nothing else says so. Warn only: nothing is broken, a protection is
+ * off. The set read here is the one the guard reads, so the two agree.
+ *
+ * Several tagged contacts leave the guard on, but the owner's chat that the
+ * shell trigger and cron notices and Knowledge write to resolves only from
+ * exactly one (`resolveOwnerDirectTarget`): with several the notice falls back
+ * to the main session and the Knowledge DM is not sent. That is a warning too.
+ */
+function buildOwnerContactCheck(deps: DoctorDeps): LegacyDoctorCheck {
+  const base = { id: "permissions.owner_contact", domain: "permissions", title: "Owner contact" };
+  const ownerIds = safely<string[] | null>(() => deps.listOwnerContactIds(), null);
+  if (ownerIds === null) {
+    return {
+      ...base,
+      status: "skip",
+      severity: "info",
+      summary: "cannot read the contacts tagged permission-owner",
+      data: { skipped: true, reason: "contacts_unavailable" },
+    };
+  }
+  const owners = new Set(ownerIds.map((id) => id.trim()).filter(Boolean));
+  if (owners.size === 0) {
+    return {
+      ...base,
+      status: "warn",
+      severity: "warn",
+      summary: "no contact is tagged permission-owner",
+      details: [
+        "the owner DM guard is off: a DM from anyone can land in an agent's shared session (dmScope main)",
+        "Knowledge, cloud-agent approvals and thread requester attribution have no owner to read",
+      ],
+      fixHint: OWNER_CONTACT_FIX_HINT,
+      data: { ownerCount: 0 },
+    };
+  }
+  if (owners.size > 1) {
+    return {
+      ...base,
+      status: "warn",
+      severity: "warn",
+      summary: `${owners.size} contacts are tagged permission-owner: the owner DM guard is on, but the DM notices and Knowledge need exactly one`,
+      details: [
+        "a shell trigger or cron turned off, the Knowledge morning DM and its write card find the owner's chat only when one contact is tagged; with several the notice goes to the main session and the Knowledge DM is not sent",
+      ],
+      fixHint: OWNER_CONTACT_MANY_FIX_HINT,
+      data: { ownerCount: owners.size },
+    };
+  }
+  return {
+    ...base,
+    status: "ok",
+    summary: "one contact is tagged permission-owner: the owner DM guard is on",
+    data: { ownerCount: 1 },
+  };
 }
 
 const KNOWLEDGE_EXPOSURE_FIX_HINT =
