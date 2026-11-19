@@ -544,6 +544,11 @@ describe("TriggersCommands topic guidance", () => {
       await expect(commands.set("trg_1", "env-file", outside, true)).rejects.toMatchObject({
         code: "TRIGGER_SHELL_ENV_FILE_NOT_REGULAR",
       });
+      // A regular file over the loader's limit is refused when saved, not left to fail on every event.
+      writeFileSync(join(outside, "big.env"), `A=${"x".repeat(1024 * 1024)}\n`);
+      await expect(commands.set("trg_1", "env-file", join(outside, "big.env"), true)).rejects.toMatchObject({
+        code: "TRIGGER_SHELL_ENV_FILE_TOO_LARGE",
+      });
     } finally {
       rmSync(outside, { recursive: true, force: true });
     }

@@ -17,6 +17,7 @@
 import { existsSync, realpathSync, type Stats, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { MAX_ENV_FILE_BYTES } from "../cron/shell-executor.js";
 import { getRaviStateDir } from "../utils/paths.js";
 
 function expandHome(path: string): string {
@@ -106,13 +107,24 @@ export function shellEnvFileHasHardLinks(envFile: string): boolean {
   return stats !== null && stats.isFile() && stats.nlink > 1;
 }
 
-export type ShellEnvFileRefusal = "in_state_dir" | "not_regular_file" | "hard_link";
+/**
+ * True when the env file is a regular file larger than the most the loader
+ * reads (`MAX_ENV_FILE_BYTES`). Refused here so the fire takes the
+ * turn-off-and-notify path instead of failing in the loader on every event.
+ */
+export function shellEnvFileTooLarge(envFile: string): boolean {
+  const stats = statWithoutOpening(absoluteRaw(envFile));
+  return stats !== null && stats.isFile() && stats.size > MAX_ENV_FILE_BYTES;
+}
+
+export type ShellEnvFileRefusal = "in_state_dir" | "not_regular_file" | "hard_link" | "too_large";
 
 /**
  * Why a shell trigger may not use this env file, or null when it may. The
  * type is checked first, without opening anything, so a FIFO or a device is
  * refused before any `realpath`: `in_state_dir` (inside, or a `..` that may
- * lead there), `not_regular_file`, or `hard_link`.
+ * lead there), `not_regular_file`, `hard_link`, or `too_large` (more than the
+ * loader reads).
  */
 export function shellEnvFileRefusal(envFile: string, stateDir: string = getRaviStateDir()): ShellEnvFileRefusal | null {
   if (
@@ -124,5 +136,6 @@ export function shellEnvFileRefusal(envFile: string, stateDir: string = getRaviS
   if (shellEnvFileNotRegular(envFile)) return "not_regular_file";
   if (shellEnvFileInsideStateDir(envFile, stateDir)) return "in_state_dir";
   if (shellEnvFileHasHardLinks(envFile)) return "hard_link";
+  if (shellEnvFileTooLarge(envFile)) return "too_large";
   return null;
 }

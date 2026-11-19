@@ -1074,12 +1074,14 @@ export class TriggerRunner {
       in_state_dir: "TRIGGER_SHELL_ENV_FILE_IN_STATE_DIR",
       not_regular_file: "TRIGGER_SHELL_ENV_FILE_NOT_REGULAR",
       hard_link: "TRIGGER_SHELL_ENV_FILE_HARD_LINK",
+      too_large: "TRIGGER_SHELL_ENV_FILE_TOO_LARGE",
     };
     const why: Record<ShellEnvFileRefusal, string> = {
       in_state_dir:
         "Its env file is inside the Ravi state dir, which holds the daemon's own secrets, or its path has a .. segment.",
       not_regular_file: "Its env file is not a regular file (a FIFO, a device or a directory).",
       hard_link: "Its env file has more than one hard link, so its content may be a file inside the Ravi state dir.",
+      too_large: "Its env file is larger than 1 MiB, the most the env-file loader reads.",
     };
     this.turnOffRefusedShellTrigger(
       trigger,

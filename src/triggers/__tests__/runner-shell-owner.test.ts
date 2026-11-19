@@ -260,4 +260,25 @@ describe("shell trigger owner and env", () => {
     expect(notices).toHaveLength(1);
     expect(String(notices[0]!.payload.prompt)).not.toContain("canary-hard-link");
   });
+
+  it("turns off a shell trigger whose env file grew over the loader's limit, with one notice", async () => {
+    const topic = "ravi.test.shell-too-large";
+    const envFile = join(markerDir!, "grown.env");
+    writeFileSync(envFile, "TICKET_QUEUE=ops\n");
+    const trigger = createShellTrigger({ name: "grown-env", topic, ownerPrincipal: "operator", envFile });
+    await startRunner();
+
+    // Saved within the limit, then grown past it.
+    writeFileSync(envFile, `A=${"x".repeat(1024 * 1024)}\n`);
+    emit(topic, { eventId: "evt-too-large" });
+    await waitFor(() => !dbGetTrigger(trigger.id)?.enabled);
+    emit(topic, { eventId: "evt-too-large-2" });
+    await sleep(300);
+
+    expect(existsSync(markerPath())).toBe(false);
+    const notices = publishCalls.filter(({ payload }) =>
+      String(payload.prompt).includes("TRIGGER_SHELL_ENV_FILE_TOO_LARGE"),
+    );
+    expect(notices).toHaveLength(1);
+  });
 });

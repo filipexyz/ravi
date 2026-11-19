@@ -173,7 +173,7 @@ function assertShellTriggerChange(
 
 /**
  * The env file of a shell trigger must be a regular file outside the Ravi
- * state dir with a single hard link (see `shell-env-file.ts`). A path check,
+ * state dir, with a single hard link and at most 1 MiB (see `shell-env-file.ts`). A path check,
  * not an access boundary.
  */
 function assertShellEnvFileAllowed(op: string, envFile: string | null | undefined, asJson?: boolean): void {
@@ -187,6 +187,15 @@ function assertShellEnvFileAllowed(op: string, envFile: string | null | undefine
       op,
       "TRIGGER_SHELL_ENV_FILE_NOT_REGULAR",
       `The env file ${envFile} is not a regular file (a FIFO, a device or a directory). Next: ${suggestedAction}.`,
+      { envFile, suggestedAction },
+      asJson,
+    );
+  }
+  if (refusal === "too_large") {
+    failShellTrigger(
+      op,
+      "TRIGGER_SHELL_ENV_FILE_TOO_LARGE",
+      `The env file ${envFile} is larger than 1 MiB, the most the env-file loader reads. Next: ${suggestedAction}.`,
       { envFile, suggestedAction },
       asJson,
     );

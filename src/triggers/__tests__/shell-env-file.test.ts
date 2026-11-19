@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { MAX_ENV_FILE_BYTES } from "../../cron/shell-executor.js";
 import { shellEnvFileInsideStateDir, shellEnvFileRefusal } from "../shell-env-file.js";
 
 let root: string | null = null;
@@ -111,5 +112,16 @@ describe("shell trigger env file location", () => {
 
     expect(shellEnvFileRefusal("/dev/zero", stateDir)).toBe("not_regular_file");
     expect(shellEnvFileRefusal(join(base, "a-directory"), stateDir)).toBe("not_regular_file");
+  });
+
+  it("refuses a regular file over the loader's limit and accepts one at the limit (CodeRabbit, PR #884)", () => {
+    const base = makeRoot();
+    const stateDir = join(base, ".ravi");
+    mkdirSync(stateDir);
+    writeFileSync(join(base, "at-limit.env"), "x".repeat(MAX_ENV_FILE_BYTES));
+    writeFileSync(join(base, "over-limit.env"), "x".repeat(MAX_ENV_FILE_BYTES + 1));
+
+    expect(shellEnvFileRefusal(join(base, "at-limit.env"), stateDir)).toBeNull();
+    expect(shellEnvFileRefusal(join(base, "over-limit.env"), stateDir)).toBe("too_large");
   });
 });
