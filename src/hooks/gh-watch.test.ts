@@ -995,7 +995,7 @@ describe("durable PR follow owner", () => {
 
     expect(
       handOffClosingThreadFollows({ childSessionKey: record.childSessionKey!, childSessionName: "child" }),
-    ).toEqual([result.triggerId]);
+    ).toEqual([result.triggerId!]);
     expect(dbGetTrigger(result.triggerId!)!).toMatchObject({
       replySession: "parent",
       replySource: { channel: "slack", accountId: "slack-account", chatId: "C123" },

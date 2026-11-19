@@ -179,11 +179,12 @@ export function handOffClosingThreadFollows(
   for (const trigger of dbListTriggers()) {
     if (!trigger.name.startsWith(GH_FOLLOW_TRIGGER_PREFIX) || !trigger.replySession) continue;
     if (trigger.replySession !== child.childSessionKey && trigger.replySession !== child.childSessionName) continue;
-    const owner = resolveDurableFollowOwner(
-      { sessionKey: child.childSessionKey, sessionName: child.childSessionName, source: trigger.replySource },
-      "PR follow",
-      database,
-    );
+    const closing: FollowOwnerContext = {
+      sessionKey: child.childSessionKey,
+      sessionName: child.childSessionName,
+      source: trigger.replySource,
+    };
+    const owner = resolveDurableFollowOwner(closing, "PR follow", database);
     const target = owner.sessionName ?? owner.sessionKey;
     if (!target || target === trigger.replySession) continue;
     dbUpdateTrigger(trigger.id, {
