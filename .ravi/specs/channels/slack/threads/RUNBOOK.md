@@ -47,6 +47,14 @@ sqlite3 ~/.ravi/ravi.db "SELECT request_id, status, parent_session_key, child_se
 
 If close reports `THREAD_DECISIONS_PENDING`, run `ravi decisions list --thread <child-session> --json`, then `ravi decisions show <decision-id> --json`. Answer from the authorized parent/operator. A recorded answer with failed delivery uses `ravi decisions retry <decision-id> --execute`; uncertainty requires operator trace inspection and `decisions resolve-delivery`.
 
+## A thread-send waits, and cannot be taken back
+
+`thread-send` queues behind the thread's running turn, so it can wait for minutes behind a long tool.
+
+- **The result of a thread that closed itself is not lost.** If the thread closes in the turn the instruction waited behind, delivering the instruction reopens it, and the next close reaches the parent with its own `--return`. A card that says "closed" while the thread works means that reopen did not run: `ravi sessions trace <thread>` shows the turn, and closing again after it delivers the result.
+- **A queued instruction cannot be retracted.** A correction sent with `--immediate` runs first and the earlier instruction still runs after it. Name the pending one in the correction ("when X arrives, ignore it"), or wait for the turn to end.
+- **A hard crash of the daemon loses queued instructions.** They are in memory until delivered; a graceful restart snapshots them and a crash does not. After an unexpected restart, ask the thread for its state with `ravi sessions threads --json` and resend what it has not acknowledged.
+
 ## Close refused by active triggers
 
 For `THREAD_TRIGGERS_PENDING`, inspect every id in `triggerIds` with `ravi triggers show <id> --json`. Repoint each to its durable owner using `ravi triggers set <id> replySession <parent-session>`, inspect the saved target and activation verdict, then retry `ravi sessions close-thread`. Do not disable a live CI follow merely to close its thread. Generated `gh-follow` subscriptions use the parent automatically; maintenance repairs old thread targets, including closed/pruned children.

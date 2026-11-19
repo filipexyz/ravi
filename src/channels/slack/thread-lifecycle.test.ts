@@ -29,7 +29,9 @@ import {
   summarizeSlackThreadRuntime,
   reconcileSlackThreadLifecycle,
   THREAD_SEND_DEFAULT_DELIVERY_BARRIER,
+  updateReopenedSlackThreadCard,
 } from "./thread-lifecycle.js";
+import { reopenThreadsForDeliveredInstructions } from "./thread-instruction-delivery.js";
 import type { DeliveryBarrier, DeliveryBarrierSource } from "../../delivery-barriers.js";
 import {
   claimSlackThreadCreation,
@@ -1007,6 +1009,74 @@ describe("Slack thread orchestration", () => {
       ["after_tool", "explicit"],
       ["immediate_interrupt", "explicit"],
     ]);
+  });
+
+  it("marks the root card reopened when the delivery of a queued instruction reopens the thread", async () => {
+    const fixture = seedPendingCreation({ requestedBy: "Ana Souza" });
+    const { dependencies } = capture();
+    const jobs: ChannelOutboundJob[] = [];
+    const withCards = {
+      ...dependencies,
+      publishOutbound: mock(async (job: ChannelOutboundJob) => {
+        jobs.push(job);
+      }),
+    };
+    await finalizeSlackThreadCreation(fixture.requestId, withCards);
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+    const instruction = (eventType: string, childSessionKey = child.sessionKey) => ({
+      _slackThreadLifecycle: {
+        eventType,
+        requestId: fixture.requestId,
+        parentSessionKey: "ravi-parent",
+        childSessionKey,
+      },
+    });
+    const refreshCard = (record: Parameters<typeof updateReopenedSlackThreadCard>[0]) =>
+      updateReopenedSlackThreadCard(record, withCards);
+
+    // An open thread has nothing to reopen.
+    expect(reopenThreadsForDeliveredInstructions([instruction("thread.message")], { refreshCard })).toEqual([]);
+    await closeSlackThread(child, "R1", withCards);
+    jobs.length = 0;
+
+    // Only a parent's instruction for this child reopens it; a report, another child and an unknown thread do not.
+    expect(
+      reopenThreadsForDeliveredInstructions(
+        [
+          instruction("thread.report"),
+          instruction("thread.message", "ravi-parent:thread:9.9"),
+          { _slackThreadLifecycle: { ...instruction("thread.message")._slackThreadLifecycle, requestId: "missing" } },
+          undefined,
+          null,
+        ],
+        { refreshCard },
+      ),
+    ).toEqual([]);
+    expect(getSlackThreadLifecycle(fixture.requestId)?.status).toBe("closed");
+    expect(jobs).toHaveLength(0);
+
+    // Two instructions delivered in one turn reopen the thread once.
+    expect(
+      reopenThreadsForDeliveredInstructions([instruction("thread.message"), instruction("thread.message")], {
+        refreshCard,
+      }),
+    ).toEqual([fixture.requestId]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(getSlackThreadLifecycle(fixture.requestId)?.status).toBe("open");
+    expect(jobs.map((job) => (job.request.content as { threadCard?: { status?: string } }).threadCard?.status)).toEqual(
+      ["reopened"],
+    );
+
+    // A failing card update never stops the delivery that reopened the thread.
+    await closeSlackThread(child, "R2", withCards);
+    expect(
+      reopenThreadsForDeliveredInstructions([instruction("thread.message")], {
+        refreshCard: async () => {
+          throw new Error("outbound is down");
+        },
+      }),
+    ).toEqual([fixture.requestId]);
+    expect(getSlackThreadLifecycle(fixture.requestId)?.status).toBe("open");
   });
 
   it("updates the thread's root card on report, close and reopen", async () => {

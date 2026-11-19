@@ -1092,6 +1092,14 @@ export async function sendSlackThreadMessage(
   return { record, reopened, messageId };
 }
 
+/** The root card of a thread reopened by the delivery of a parent's queued instruction. Best effort. */
+export async function updateReopenedSlackThreadCard(
+  record: SlackThreadLifecycleRecord,
+  dependencies: SlackThreadLifecycleDependencies = DEFAULT_DEPENDENCIES,
+): Promise<void> {
+  await updateSlackThreadCard(record, { status: "reopened" }, dependencies);
+}
+
 /**
  * Re-render the root card of a thread Ravi opened (see thread-card.ts). A
  * thread a person started has their own message as root, which Ravi cannot

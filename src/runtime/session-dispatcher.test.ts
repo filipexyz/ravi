@@ -64,8 +64,17 @@ import {
 } from "../tasks/task-db.js";
 import { buildChannelTurnOrigin, buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
-import { finalizeSlackThreadCreation, sendSlackThreadMessage } from "../channels/slack/thread-lifecycle.js";
-import { createSlackThreadLifecycle, markSlackThreadRootDelivered } from "../channels/slack/thread-lifecycle-store.js";
+import {
+  closeSlackThread,
+  finalizeSlackThreadCreation,
+  sendSlackThreadMessage,
+} from "../channels/slack/thread-lifecycle.js";
+import { reopenThreadsForDeliveredInstructions } from "../channels/slack/thread-instruction-delivery.js";
+import {
+  createSlackThreadLifecycle,
+  getSlackThreadLifecycle,
+  markSlackThreadRootDelivered,
+} from "../channels/slack/thread-lifecycle-store.js";
 import {
   buildDaemonRestartNoticePrompt,
   buildDaemonRestartResumePrompt,
@@ -3701,6 +3710,115 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
         "[System] Execute: [from: ravi-parent] Also check the release branch",
       ]);
       expect(interrupt).not.toHaveBeenCalled();
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("reopens a thread that closed itself behind a queued instruction, so the next close reaches the parent", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-thread-send-close-");
+    try {
+      // A real Slack thread owned by a channel-root session, with the thread mid-turn.
+      const requestId = "slack-thread:req-1";
+      const threadTs = "1713000000.000100";
+      getOrCreateSession("ravi-parent", "main", stateDir, { name: "ravi-parent", chatType: "channel" });
+      const rootChat = dbUpsertChat({
+        channel: "slack",
+        instanceId: "slack-instance-1",
+        platformChatId: "C123",
+        chatType: "channel",
+        title: "C123",
+      });
+      createSlackThreadLifecycle({
+        requestId,
+        parentSessionKey: "ravi-parent",
+        parentSessionName: "ravi-parent",
+        initiatorSessionKey: "ravi-parent",
+        initiatorSessionName: "ravi-parent",
+        accountId: "ravi-slack",
+        instanceId: "slack-instance-1",
+        platformChatId: "C123",
+        rootCanonicalChatId: rootChat.id,
+        initialPrompt: "Investigate the branch",
+      });
+      markSlackThreadRootDelivered({ requestId, providerThreadId: threadTs, canonicalRootMessageId: "cm_root" });
+      const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+      const dependencies = {
+        publishPrompt: async (sessionName: string, payload: Record<string, unknown>) => {
+          published.push({ sessionName, payload });
+        },
+        publishEvent: async () => {},
+      };
+      await finalizeSlackThreadCreation(requestId, dependencies);
+      const parent = getSession("ravi-parent")!;
+      const child = getSession(`ravi-parent:thread:${threadTs}`)!;
+      const childName = child.name!;
+      const returnsToParent = () =>
+        published
+          .filter((entry) => entry.sessionName === "ravi-parent")
+          .map((entry) => String(entry.payload.prompt).split("\n").at(-1));
+      published.length = 0;
+
+      // The main session sends the next request while the thread is still finishing its turn.
+      await sendSlackThreadMessage(
+        { parentSession: parent, ref: childName, message: "Now check the release" },
+        dependencies,
+      );
+      const dispatcher = createDispatcher(2);
+      const working = createActiveSession({
+        agentId: child.agentId,
+        turnActive: true,
+        queryHandle: { provider: "claude", events: (async function* () {})(), interrupt: mock(async () => {}) },
+      });
+      dispatcher.streamingSessions.set(childName, working);
+      const queued = {
+        ...published.find((entry) => entry.sessionName === childName)!.payload,
+        _agentId: child.agentId,
+      };
+      await dispatcher.handlePromptImmediate(childName, queued as unknown as RuntimeLaunchPrompt);
+      expect(working.pendingMessages).toHaveLength(1);
+      expect(getSlackThreadLifecycle(requestId)?.status).toBe("open");
+
+      // That turn has not seen the instruction yet and closes the thread with its own result.
+      const first = await closeSlackThread(child, "R1", dependencies);
+      expect(first.changed).toBe(true);
+      expect(getSlackThreadLifecycle(requestId)?.status).toBe("closed");
+      expect(returnsToParent()).toHaveLength(1);
+      expect(returnsToParent()[0]).toContain("R1");
+
+      // Left closed, a second close is the no-op that drops the result: nothing reaches the parent.
+      const dropped = await closeSlackThread(child, "R-dropped", dependencies);
+      expect(dropped.changed).toBe(false);
+      expect(returnsToParent()).toHaveLength(1);
+
+      // The turn ends and the instruction is delivered. Delivery is when the thread works on it again.
+      working.turnActive = false;
+      const delivered = getDeliverableRuntimeMessages(childName, working);
+      expect(delivered.map((message) => message.launchPrompt?.prompt)).toEqual([
+        "[System] Execute: [from: ravi-parent] Now check the release",
+      ]);
+      const cards: string[] = [];
+      const refreshCard = async (record: { requestId: string; status: string }) => {
+        cards.push(`${record.requestId}:${record.status}`);
+      };
+      expect(
+        reopenThreadsForDeliveredInstructions(
+          delivered.map((message) => message.launchPrompt),
+          { refreshCard },
+        ),
+      ).toEqual([requestId]);
+      expect(getSlackThreadLifecycle(requestId)?.status).toBe("open");
+      // The root card is told the thread works again, as when `thread-send` reopens at publish.
+      await Promise.resolve();
+      expect(cards).toEqual([`${requestId}:open`]);
+
+      // The thread finishes that work and closes with the second result: it is not dropped.
+      const second = await closeSlackThread(child, "R2", dependencies);
+      expect(second.changed).toBe(true);
+      expect(second.parentReturnDelivered).toBe(true);
+      expect(getSlackThreadLifecycle(requestId)).toMatchObject({ status: "closed", closeResult: "R2" });
+      expect(returnsToParent()).toHaveLength(2);
+      expect(returnsToParent()[1]).toContain("R2");
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }

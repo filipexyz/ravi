@@ -52,6 +52,15 @@
       yield `USAGE_ERROR` without publishing
       (`src/channels/slack/thread-lifecycle.test.ts`, `src/cli/commands/sessions.test.ts`,
       `src/runtime/session-dispatcher.test.ts`).
+- [ ] A `thread-send` instruction queued behind a thread's turn MUST reopen the
+      thread when it is delivered after the thread closed itself in that turn: the
+      next close MUST be `changed: true`, deliver its `--return` to the parent and
+      mark the card reopened; a report, another child's instruction and an open
+      record MUST NOT change the lifecycle; a failing card update MUST NOT stop
+      the delivery. The real turn start MUST make the call
+      (`src/runtime/session-dispatcher.test.ts` with the real thread record and
+      `closeSlackThread`, `src/channels/slack/thread-lifecycle.test.ts`,
+      `src/runtime/runtime-request-builder.trigger-owner.test.ts`).
 - [ ] The channel-root variant MUST route follow-ups on an existing thread's
       subject to that thread and relay between threads; the thread variant MUST
       ask for relays through `thread.report`.
