@@ -71,6 +71,11 @@ export type EnvFileTrustRefusal = "not_owned" | "writable_by_others";
  * user, and its group and other users must not be able to write it, the rule
  * ssh applies to its own files. Returns why not, or null when it may be used.
  * Without a uid (Windows) the check does not apply.
+ *
+ * Known limit: on macOS an ACL entry (`chmod +a "user:<name> allow write"`)
+ * grants write without touching the mode bits, so this check does not see it
+ * (`ls -le` shows ACLs, `chmod -N` removes them). On Linux a POSIX ACL that
+ * grants write shows in the group bits (the ACL mask) and is refused.
  */
 export function envFileTrustRefusal(
   stats: Pick<Stats, "uid" | "mode">,

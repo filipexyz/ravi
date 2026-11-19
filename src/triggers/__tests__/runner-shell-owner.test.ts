@@ -1,5 +1,14 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { chmodSync, existsSync, linkSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  linkSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dbCreateAgent, getDb } from "../../router/router-db.js";
@@ -300,6 +309,29 @@ describe("shell trigger owner and env", () => {
     expect(existsSync(markerPath())).toBe(false);
     const notices = publishCalls.filter(({ payload }) =>
       String(payload.prompt).includes("TRIGGER_SHELL_ENV_FILE_WRITABLE_BY_OTHERS"),
+    );
+    expect(notices).toHaveLength(1);
+  });
+
+  it("turns off a shell trigger whose env file became a symlink loop, with one notice", async () => {
+    const topic = "ravi.test.shell-unverifiable";
+    const envFile = join(markerDir!, "looped.env");
+    writeFileSync(envFile, "TICKET_QUEUE=ops\n", { mode: 0o600 });
+    const trigger = createShellTrigger({ name: "looped-env", topic, ownerPrincipal: "operator", envFile });
+    await startRunner();
+
+    // Saved as a regular file, then replaced by a loop the check cannot follow (ELOOP).
+    rmSync(envFile);
+    symlinkSync(`${envFile}.other`, envFile);
+    symlinkSync(envFile, `${envFile}.other`);
+    emit(topic, { eventId: "evt-unverifiable" });
+    await waitFor(() => !dbGetTrigger(trigger.id)?.enabled);
+    emit(topic, { eventId: "evt-unverifiable-2" });
+    await sleep(300);
+
+    expect(existsSync(markerPath())).toBe(false);
+    const notices = publishCalls.filter(({ payload }) =>
+      String(payload.prompt).includes("TRIGGER_SHELL_ENV_FILE_UNVERIFIABLE"),
     );
     expect(notices).toHaveLength(1);
   });

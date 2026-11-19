@@ -1077,6 +1077,7 @@ export class TriggerRunner {
       too_large: "TRIGGER_SHELL_ENV_FILE_TOO_LARGE",
       not_owned: "TRIGGER_SHELL_ENV_FILE_NOT_OWNED",
       writable_by_others: "TRIGGER_SHELL_ENV_FILE_WRITABLE_BY_OTHERS",
+      unverifiable: "TRIGGER_SHELL_ENV_FILE_UNVERIFIABLE",
     };
     const why: Record<ShellEnvFileRefusal, string> = {
       in_state_dir:
@@ -1086,6 +1087,8 @@ export class TriggerRunner {
       too_large: "Its env file is larger than 1 MiB, the most the env-file loader reads.",
       not_owned: "Its env file belongs to another OS user, who could decide what the command runs.",
       writable_by_others: "Its env file is writable by its group or by others, who could decide what the command runs.",
+      unverifiable:
+        "Its env file could not be checked: a symlink loop, or a path Ravi may not search or read, so it may not be what it looks like.",
     };
     this.turnOffRefusedShellTrigger(
       trigger,

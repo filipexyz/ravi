@@ -176,4 +176,39 @@ describe("shell trigger env file location", () => {
 
     expect(shellEnvFileRefusal(foreignFile!, stateDir)).toBe("not_owned");
   });
+
+  it("refuses a symlink loop as unverifiable instead of throwing ELOOP (review of #888)", () => {
+    const base = makeRoot();
+    const stateDir = join(base, ".ravi");
+    mkdirSync(stateDir);
+    symlinkSync(join(base, "loop-b.env"), join(base, "loop-a.env"));
+    symlinkSync(join(base, "loop-a.env"), join(base, "loop-b.env"));
+
+    expect(shellEnvFileRefusal(join(base, "loop-a.env"), stateDir)).toBe("unverifiable");
+    // Also a path that would sit below the loop.
+    expect(shellEnvFileRefusal(join(base, "loop-a.env", "child.env"), stateDir)).toBe("unverifiable");
+  });
+
+  // Root reads and searches anything, so there is no EACCES to see.
+  it.skipIf(process.getuid?.() === 0)(
+    "refuses a file in a directory Ravi may not search, or one it may not read, as unverifiable instead of throwing EACCES",
+    () => {
+      const base = makeRoot();
+      const stateDir = join(base, ".ravi");
+      mkdirSync(stateDir);
+      const locked = join(base, "locked");
+      mkdirSync(locked);
+      writeFileSync(join(locked, "ticket.env"), "TICKET_QUEUE=ops\n", { mode: 0o600 });
+      writeFileSync(join(base, "write-only.env"), "TICKET_QUEUE=ops\n", { mode: 0o600 });
+      chmodSync(join(base, "write-only.env"), 0o200);
+      chmodSync(locked, 0o000);
+      try {
+        expect(shellEnvFileRefusal(join(locked, "ticket.env"), stateDir)).toBe("unverifiable");
+        // Readable by nobody: realpath fails on macOS, access(R_OK) on Linux.
+        expect(shellEnvFileRefusal(join(base, "write-only.env"), stateDir)).toBe("unverifiable");
+      } finally {
+        chmodSync(locked, 0o700);
+      }
+    },
+  );
 });

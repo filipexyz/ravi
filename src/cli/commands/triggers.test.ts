@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
-import { chmodSync, linkSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, linkSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getRaviStateDir } from "../../utils/paths.js";
@@ -583,6 +583,28 @@ describe("TriggersCommands topic guidance", () => {
           code: "TRIGGER_SHELL_ENV_FILE_NOT_OWNED",
         });
       }
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+    expect(updatedTriggers).toEqual([]);
+  });
+
+  it("refuses an env file it cannot check with a code, not a raw ELOOP", async () => {
+    const commands = new TriggersCommands();
+    mockToolContext = { transport: "gateway" };
+    triggerRecord = {
+      ...buildTriggerRecord(),
+      ownerPrincipal: "operator",
+      executionType: "shell",
+      shellCommand: "true",
+    };
+    const outside = mkdtempSync(join(tmpdir(), "ravi-trigger-env-loop-"));
+    try {
+      symlinkSync(join(outside, "b.env"), join(outside, "a.env"));
+      symlinkSync(join(outside, "a.env"), join(outside, "b.env"));
+      await expect(commands.set("trg_1", "env-file", join(outside, "a.env"), true)).rejects.toMatchObject({
+        code: "TRIGGER_SHELL_ENV_FILE_UNVERIFIABLE",
+      });
     } finally {
       rmSync(outside, { recursive: true, force: true });
     }
