@@ -245,8 +245,8 @@ The command gets these environment variables:
 | `RAVI_TRIGGER_PROVIDER`, `RAVI_TRIGGER_INTERACTION_TYPE`, `RAVI_TRIGGER_ACTION_ID`, `RAVI_TRIGGER_BLOCK_ID`, `RAVI_TRIGGER_VALUE`, `RAVI_TRIGGER_USER_ID`, `RAVI_TRIGGER_CHANNEL_ID`, `RAVI_TRIGGER_MESSAGE_TS`, `RAVI_TRIGGER_THREAD_TS`, `RAVI_TRIGGER_RESPONSE_URL_ID` | Copied from the matching top-level event fields (`provider`, `interactionType`, `actionId`, ...), empty when absent |
 
 - Read the event from `$RAVI_TRIGGER_DATA_FILE`. Do not paste event text into the command.
-- The command runs in the daemon's working directory and environment. Use absolute paths everywhere, including inside the script.
-- `--timeout` defaults to 10 minutes. `--env-file` adds `KEY=value` lines to the environment.
+- The command runs in the daemon's working directory. Its environment starts from the allowlisted agent environment, not the daemon's secrets, plus its `--env-file`. Use absolute paths everywhere, including inside the script.
+- `--timeout` defaults to 10 minutes. `--env-file` adds `KEY=value` lines to the environment. It must be a regular file outside the Ravi state dir (`~/.ravi` by default), owned by the OS user Ravi runs as and not writable by its group or by others (`chmod 600`).
 - Output goes to the daemon log. On a non-zero exit or a timeout, `--on-error notify-session:<session>` sends that session a `[System] Inform:` message with the command, exit code, stderr and stdout.
 - A script has no chat of its own. Commands in it that send messages need an explicit account and destination.
 

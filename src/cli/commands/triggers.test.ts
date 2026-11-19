@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
-import { linkSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, linkSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getRaviStateDir } from "../../utils/paths.js";
@@ -553,6 +553,39 @@ describe("TriggersCommands topic guidance", () => {
       rmSync(outside, { recursive: true, force: true });
     }
     expect(createdTriggers).toEqual([]);
+    expect(updatedTriggers).toEqual([]);
+  });
+
+  it("refuses an env file its group or others can write, or that another user owns", async () => {
+    const commands = new TriggersCommands();
+    mockToolContext = { transport: "gateway" };
+    triggerRecord = {
+      ...buildTriggerRecord(),
+      ownerPrincipal: "operator",
+      executionType: "shell",
+      shellCommand: "true",
+    };
+    const outside = mkdtempSync(join(tmpdir(), "ravi-trigger-env-mode-"));
+    try {
+      const envFile = join(outside, "ticket.env");
+      writeFileSync(envFile, "TICKET_QUEUE=ops\n", { mode: 0o600 });
+      chmodSync(envFile, 0o666);
+      await expect(commands.set("trg_1", "env-file", envFile, true)).rejects.toMatchObject({
+        code: "TRIGGER_SHELL_ENV_FILE_WRITABLE_BY_OTHERS",
+      });
+      // A file another user owns, when this machine has one (not when the tests run as root).
+      const foreign = ["/etc/hosts", "/etc/passwd"].find((path) => {
+        const stats = statSync(path, { throwIfNoEntry: false });
+        return stats?.isFile() && stats.nlink === 1 && stats.uid !== process.getuid?.() && (stats.mode & 0o022) === 0;
+      });
+      if (foreign) {
+        await expect(commands.set("trg_1", "env-file", foreign, true)).rejects.toMatchObject({
+          code: "TRIGGER_SHELL_ENV_FILE_NOT_OWNED",
+        });
+      }
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
     expect(updatedTriggers).toEqual([]);
   });
 

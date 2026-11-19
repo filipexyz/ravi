@@ -173,15 +173,34 @@ function assertShellTriggerChange(
 
 /**
  * The env file of a shell trigger must be a regular file outside the Ravi
- * state dir, with a single hard link and at most 1 MiB (see `shell-env-file.ts`). A path check,
- * not an access boundary.
+ * state dir, with a single hard link and at most 1 MiB, owned by the user Ravi
+ * runs as and not writable by its group or others (see `shell-env-file.ts`).
+ * The location part is a path check, not an access boundary.
  */
 function assertShellEnvFileAllowed(op: string, envFile: string | null | undefined, asJson?: boolean): void {
   if (!envFile) return;
   const refusal = shellEnvFileRefusal(envFile);
   if (!refusal) return;
   const suggestedAction =
-    "put only the variables the command needs in a regular file of its own outside the Ravi state dir, given by a path without ..";
+    "put only the variables the command needs in a regular file of its own outside the Ravi state dir, given by a path without .., owned by the user Ravi runs as and writable only by it (chmod 600)";
+  if (refusal === "not_owned") {
+    failShellTrigger(
+      op,
+      "TRIGGER_SHELL_ENV_FILE_NOT_OWNED",
+      `The env file ${envFile} belongs to another OS user, who could decide what the command runs. Next: ${suggestedAction}.`,
+      { envFile, suggestedAction },
+      asJson,
+    );
+  }
+  if (refusal === "writable_by_others") {
+    failShellTrigger(
+      op,
+      "TRIGGER_SHELL_ENV_FILE_WRITABLE_BY_OTHERS",
+      `The env file ${envFile} is writable by its group or by others, who could decide what the command runs. Next: ${suggestedAction}.`,
+      { envFile, suggestedAction },
+      asJson,
+    );
+  }
   if (refusal === "not_regular_file") {
     failShellTrigger(
       op,

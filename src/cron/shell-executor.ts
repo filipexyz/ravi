@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { closeSync, existsSync, constants as fsConstants, fstatSync, openSync, readSync } from "node:fs";
+import { closeSync, existsSync, constants as fsConstants, fstatSync, openSync, readSync, type Stats } from "node:fs";
 import { homedir } from "node:os";
 
 export const DEFAULT_CRON_SHELL_TIMEOUT_MS = 10 * 60 * 1000;
@@ -62,12 +62,35 @@ export function parseEnvFile(content: string): Record<string, string> {
 /** An env file holds a few variables; anything bigger is a mistake or a trick. */
 export const MAX_ENV_FILE_BYTES = 1024 * 1024;
 
+/** Why an env file cannot be trusted with a command's environment. */
+export type EnvFileTrustRefusal = "not_owned" | "writable_by_others";
+
+/**
+ * An env file is code: `BASH_ENV`, `PATH` or `NODE_OPTIONS` in it decide what
+ * the command runs, as the user Ravi runs as. So the file must belong to that
+ * user, and its group and other users must not be able to write it, the rule
+ * ssh applies to its own files. Returns why not, or null when it may be used.
+ * Without a uid (Windows) the check does not apply.
+ */
+export function envFileTrustRefusal(
+  stats: Pick<Stats, "uid" | "mode">,
+  uid: number | undefined = process.getuid?.(),
+): EnvFileTrustRefusal | null {
+  if (uid === undefined) return null;
+  if (stats.uid !== uid) return "not_owned";
+  if ((stats.mode & 0o022) !== 0) return "writable_by_others";
+  return null;
+}
+
 /**
  * Reads an env file for a shell cron job or a shell trigger. The file is opened
  * once without blocking (a FIFO would otherwise hang the daemon's thread until
- * someone writes to it), checked on that same descriptor to be a regular file,
- * and read from it up to `MAX_ENV_FILE_BYTES`, so a device such as `/dev/zero`
- * or a swapped-in file cannot make the daemon read without end.
+ * someone writes to it), checked on that same descriptor to be a regular file
+ * that belongs to the user Ravi runs as and that group and others cannot write
+ * (`envFileTrustRefusal`), and read from it up to `MAX_ENV_FILE_BYTES`, so a
+ * device such as `/dev/zero` or a swapped-in file cannot make the daemon read
+ * without end. The checks hold for the content read, since they look at the
+ * same descriptor.
  */
 function loadEnvFile(path: string | undefined): Record<string, string> {
   if (!path) return {};
@@ -77,8 +100,16 @@ function loadEnvFile(path: string | undefined): Record<string, string> {
   }
   const fd = openSync(resolvedPath, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK);
   try {
-    if (!fstatSync(fd).isFile()) {
+    const stats = fstatSync(fd);
+    if (!stats.isFile()) {
       throw new Error(`Env file is not a regular file: ${path}`);
+    }
+    const untrusted = envFileTrustRefusal(stats);
+    if (untrusted === "not_owned") {
+      throw new Error(`Env file belongs to another user, not the one Ravi runs as: ${path}`);
+    }
+    if (untrusted === "writable_by_others") {
+      throw new Error(`Env file is writable by its group or by others (fix: chmod go-w): ${path}`);
     }
     const buffer = Buffer.alloc(MAX_ENV_FILE_BYTES + 1);
     let length = 0;
