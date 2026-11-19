@@ -161,6 +161,10 @@ CLI that run installed.
   `ravi daemon restart` (#857). The run directory MUST use the same resolved
   path. A relative value with no readable daemon cwd MUST be refused with
   `UPDATE_DETACH_FAILED`.
+- Without a selector, the handoff MUST resolve the channel from the saved
+  channel in that same resolved state directory (never one relative to the
+  caller's cwd) and pass it to the worker as `--next` or `--stable`, so the
+  worker installs what the caller was told.
 - Each detached run MUST keep `request.json`, `log` and `result.json` under
   `<state>/updates/<runId>/`. The run id MUST match
   `^\d{8}T\d{6}Z-[0-9a-f]{6}$` before it is used as a path. Results MUST be

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -147,6 +147,30 @@ describe("ravi update inside the daemon process tree", () => {
       "--next",
       "--json",
     ]);
+  });
+
+  it("reads the saved channel from the daemon's state directory when RAVI_STATE_DIR is relative", async () => {
+    // The saved channel lives where the daemon's cwd puts the relative directory, not where the caller's cwd does.
+    const daemonCwd = mkdtempSync(join(tmpdir(), "ravi-update-daemon-cwd-"));
+    try {
+      mkdirSync(join(daemonCwd, "relative-state"), { recursive: true });
+      writeFileSync(join(daemonCwd, "relative-state", "update.json"), JSON.stringify({ updateChannel: "next" }));
+      const calls: SpawnCall[] = [];
+      const result = (await runUpdate(
+        { json: true },
+        {
+          env: { ...baseEnv(), RAVI_STATE_DIR: "relative-state" },
+          argv: ["/usr/bin/bun", SCRIPT, "update", "--json"],
+          insideDaemonTree: () => true,
+          daemonCwd,
+          spawnDetached: recordingSpawn(calls),
+        },
+      )) as RaviUpdateHandoff;
+      expect(result.requested).toBe("next");
+      expect(calls[0]!.args).toEqual([SCRIPT, "update", "--next", "--json"]);
+    } finally {
+      rmSync(daemonCwd, { recursive: true, force: true });
+    }
   });
 
   it("refuses when PM2 cannot be read, before detaching, installing or stopping anything", async () => {
@@ -330,6 +354,53 @@ describe("ravi update inside the daemon process tree", () => {
       runId: RUN_ID,
       status: "failed",
     });
+  });
+
+  it("redacts a worker failure before it records it in result.json", async () => {
+    await expect(
+      runUpdate(
+        { next: true, json: true },
+        {
+          env: {
+            PATH: "/usr/bin",
+            RAVI_STATE_DIR: stateDir,
+            [UPDATE_HANDOFF_ENV]: "1",
+            [UPDATE_HANDOFF_WORKER_ENV]: "1",
+            [UPDATE_RUN_ID_ENV]: RUN_ID,
+          },
+          insideDaemonTree: () => true,
+          waitUntilDetached: async () => {
+            throw new Error("could not read /srv/secrets/ravi-prod/state");
+          },
+        },
+      ),
+    ).rejects.toThrow();
+    const result = JSON.parse(readFileSync(updateRunPaths(RUN_ID, stateDir).result, "utf8"));
+    expect(result).toMatchObject({ runId: RUN_ID, status: "failed" });
+    expect(result.message).toContain("could not read /srv/secrets/");
+    expect(result.message).not.toContain("ravi-prod");
+  });
+
+  it("redacts a failed worker launch before it records it in result.json", async () => {
+    const calls: SpawnCall[] = [];
+    await expect(
+      runUpdate(
+        { next: true, json: true },
+        {
+          env: { PATH: "/usr/bin", RAVI_STATE_DIR: stateDir, [UPDATE_HANDOFF_ENV]: "1", [UPDATE_RUN_ID_ENV]: RUN_ID },
+          argv: ["/usr/bin/bun", SCRIPT, "update", "--next", "--json"],
+          execPath: "/srv/secrets/ravi-prod/bun",
+          spawnDetached: recordingSpawn(calls, null),
+          exit: (code) => {
+            throw new ExitSignal(code);
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ code: 1 });
+    const result = JSON.parse(readFileSync(updateRunPaths(RUN_ID, stateDir).result, "utf8"));
+    expect(result).toMatchObject({ runId: RUN_ID, status: "failed", code: "UPDATE_DETACH_FAILED" });
+    expect(result.message).toContain("The update worker could not be started");
+    expect(result.message).not.toContain("ravi-prod");
   });
 
   it("an inline update that inherited only a run id leaves that run's result alone", async () => {
