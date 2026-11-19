@@ -30,7 +30,18 @@ not remove the preload or point the test at production to make it pass.
 
 ## When A macOS Job Is Cancelled After 15 Minutes
 
-A job `cancelled` at almost exactly 15 minutes with no steps is not a hung test: the hosted macOS runner was never assigned. Confirm with `gh api repos/<repo>/actions/runs/<run_id>/jobs --jq '.jobs[] | [.name, .created_at, .started_at, .completed_at, (.runner_name // "none"), (.steps | length)] | @tsv'`: `runner_name` is empty and `steps` is 0. Re-running the job usually works. Pushes to `dev` and `main` do not run the macOS jobs for this reason; to run them on `dev`, use `workflow_dispatch` on the CI workflow. If a macOS job fails with steps present, that is a real failure: read its log.
+A job `cancelled` at almost exactly 15 minutes with no steps is not a hung test: the hosted macOS runner was never assigned. Confirm it:
+
+```bash
+gh api repos/<repo>/actions/runs/<run_id>/jobs --jq '.jobs[] | [.name, .created_at, .completed_at, (.runner_name // "none"), (.steps | length)] | @tsv'
+gh api repos/<repo>/check-runs/<job_id>/annotations --jq '.[] | .message'
+```
+
+`runner_name` is empty, `steps` is 0, and the annotation says "The job was not acquired by Runner of type hosted even after multiple attempts". Re-run the job; a rerun usually gets a runner. Pushes to `dev` and `main` do not run the macOS jobs for this reason; to run them on `dev`, use `workflow_dispatch` on the CI workflow. If a macOS job fails with steps present, that is a real failure: read its log.
+
+## Before merging a pull request that touches the launcher or the preload guards
+
+The push run no longer has a macOS job, so the `@next` release waits for none. For a pull request that touches the paths listed in `SPEC.md` (managed runtime launcher, PM2, retained preload guards, `ci.yml`), read the two macOS jobs on its head before merging. `success` goes on. `cancelled` with no steps is a missing runner: re-run it and wait. `failure` with steps blocks the merge, even when `Quality Gate` is green. Other pull requests need no macOS job to be green.
 
 ## When The Gate Says A Test File Runs In No CI Job
 
