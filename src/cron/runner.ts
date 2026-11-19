@@ -48,6 +48,7 @@ import {
   type CronTurnOutcome,
 } from "./turn-outcome.js";
 import type { CronJob } from "./types.js";
+import { notifyAutomationOff } from "./automation-notice.js";
 import { notifyCronFailure } from "./failure-notification.js";
 import {
   admitCronRun,
@@ -508,18 +509,38 @@ export class CronRunner {
       // The persisted transition is the notice claim, including across reloads
       // and competing runners. Never include the command, env or output here.
       log.error("Shell cron disabled: owner is not the operator", { jobId: job.id, code });
-      const agentId = getDefaultAgentId();
-      const sessionName = getMainSession(agentId)?.name ?? agentId;
-      void publishSessionPrompt(sessionName, {
-        prompt: `[System] Inform: [from: cron:${job.id}] Shell cron disabled (${code}). Its owner does not act as the operator. No command was executed and no retry is scheduled. Inspect with ravi cron show ${job.id}. The operator can recreate it or convert it to an agent job.`,
-        deliveryBarrier: "after_response",
-        deliveryBarrierSource: "default",
-        _cron: true,
-        _jobId: job.id,
-        _cronAuthority: captureRunAuthority(job),
-        _cronOnError: true,
+      // Told to the operator alone by direct message, no model in the path: the
+      // owner does not act as the operator (it can be a contact) and cannot act
+      // on it. The main session's prompt, which is the operator's, is the
+      // fallback when that message does not reach them. The authority is read
+      // now, at the transition: the fallback runs after the awaited delivery,
+      // and the owner's operator link can change meanwhile.
+      const authority = captureRunAuthority(job);
+      void notifyAutomationOff({
+        kind: "cron",
+        id: job.id,
+        name: job.name,
+        ownerPrincipal: job.ownerPrincipal,
+        code,
+        reason:
+          "O dono dele não age como o operador, e um comando de shell roda com o acesso desta máquina. Nenhum comando foi executado e nenhuma nova execução está agendada.",
+        next: `Veja com ravi cron show ${job.id}. O operador pode recriá-lo a partir do próprio chat com o Ravi ou convertê-lo em um job de agente.`,
+        audience: "operator",
+        fallback: () => {
+          const agentId = getDefaultAgentId();
+          const sessionName = getMainSession(agentId)?.name ?? agentId;
+          return publishSessionPrompt(sessionName, {
+            prompt: `[System] Inform: [from: cron:${job.id}] Shell cron disabled (${code}). Its owner does not act as the operator. No command was executed and no retry is scheduled. Inspect with ravi cron show ${job.id}. The operator can recreate it or convert it to an agent job.`,
+            deliveryBarrier: "after_response",
+            deliveryBarrierSource: "default",
+            _cron: true,
+            _jobId: job.id,
+            _cronAuthority: authority,
+            _cronOnError: true,
+          });
+        },
       }).catch((error) => {
-        log.error("Failed to publish cron ownership notice; job remains disabled", {
+        log.error("Failed to send cron ownership notice; job remains disabled", {
           jobId: job.id,
           code,
           error: error instanceof Error ? error.message : String(error),

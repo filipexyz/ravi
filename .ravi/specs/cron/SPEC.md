@@ -84,8 +84,16 @@ target resolution, and operational inspection.
   atomically and have its next run cleared. It MUST NOT execute, count as a run,
   overwrite past outcomes, be deleted, or automatically regain enabled state.
 - The winning enabled-to-disabled transition MUST emit one high-severity log and
-  attempt one diagnostic prompt to the default agent's main session, even without
-  `onError`. It MUST omit command text, env, output and other secret-bearing data.
+  send one notice, even without `onError`, by direct message with no model in the
+  path (`src/cron/automation-notice.ts`, the delivery cron failures use). It goes
+  to the operator alone: the owner does not act as the operator, so only the operator
+  can recreate the job, and the owner (it can be a contact) is not messaged, because
+  the message would reach a third party over the instance where Ravi last saw them,
+  about something they cannot act on. When that message does not reach the operator
+  (no contact, or more than one, is tagged as the operator, or the delivery fails)
+  the notice MUST fall back to one diagnostic prompt to the default agent's main
+  session, which is the operator's, so the operator is never left without it. It MUST
+  omit command text, env, output, the owner's id and other secret-bearing data.
 - Repeated cycles, competing runners and reloads MUST NOT repeat the notice. An
   explicit re-enable starts a new transition if ownership is still invalid.
   Notice delivery is best effort: failure is logged and MUST NOT re-enable or retry
