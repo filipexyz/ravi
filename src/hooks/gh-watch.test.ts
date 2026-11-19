@@ -14,6 +14,8 @@ import {
   supersededGhFollowFilters,
   tokenizeShellCommand,
 } from "./gh-watch.js";
+import type { InboxNatsPayload } from "../inbox/types.js";
+import { watchEventFromInboxPayload } from "../watch/events.js";
 import { deriveLocalGitHubEvents, WORKFLOW_CONCLUSIONS_WITH_OUTCOME_EVENT } from "../watch/local-events.js";
 import { evaluateFilter, validateFilter } from "../triggers/filter.js";
 import { resolveDurableFollowOwner } from "../triggers/follow-owner.js";
@@ -715,6 +717,60 @@ describe("gh follow filter: which events wake the owner", () => {
       for (const conclusion of ["success", "failure", "cancelled", "action_required", null]) {
         expect(derive("PR Description", conclusion).filter((emitted) => hears(emitted))).toEqual([]);
       }
+    });
+
+    // The Console reports `workflow_run.completed` and none of the outcome events. For a repo the
+    // outcome events come from the managed local watch every follow ensures, so a Console
+    // completion that repeats one is judged exactly like a local completion.
+    function consoleRun(conclusion: string | null, name = "CI") {
+      const inbox: InboxNatsPayload = {
+        version: 1,
+        eventId: "item_1",
+        sequence: 1,
+        dedupeKey: "watch:watch_c:github:delivery_1",
+        eventType: "watch.github.workflow_run.completed",
+        category: "source_control",
+        severity: "info",
+        sensitivity: "private",
+        title: null,
+        summary: null,
+        organization: { id: "org_1" },
+        project: null,
+        source: { type: "github_webhook", provider: "github", providerEventType: "workflow_run" },
+        actor: { type: "github_user", id: "octocat", login: "octocat" },
+        target: { type: "github_repository", id: "repo_1", ref: "o/r" },
+        payload: {
+          watch: { id: "watch_c", provider: "github", placement: "console", resourceRef: "o/r" },
+          repository: "o/r",
+          number: 7,
+          name,
+          status: "completed",
+          conclusion,
+        },
+        links: null,
+        delivery: {
+          subscriptionId: "sub_1",
+          installationId: "cli_1",
+          pollId: "poll_1",
+          leaseId: null,
+          localDeliveredAt: "2026-11-19T17:00:00.000Z",
+        },
+        occurredAt: "2026-11-19T17:00:00.000Z",
+        createdAt: "2026-11-19T17:00:00.000Z",
+      };
+      return watchEventFromInboxPayload(inbox);
+    }
+
+    it("judges a Console completion like a local one: dropped when an outcome event exists, kept when it is the only one", () => {
+      expect(consoleRun("success")).toMatchObject({ placement: "console", eventType: "workflow_run.completed" });
+      for (const conclusion of ["success", "failure", "timed_out", "startup_failure", "cancelled"]) {
+        expect(hears(consoleRun(conclusion))).toBe(false);
+      }
+      for (const conclusion of ["action_required", "neutral", "skipped", "stale", null]) {
+        expect(hears(consoleRun(conclusion))).toBe(true);
+      }
+      expect(hears(consoleRun("success", "PR Description"))).toBe(false);
+      expect(hears(consoleRun("action_required", "PR Description"))).toBe(false);
     });
 
     it("drops the repeat for exactly the conclusions that have their own event", () => {
