@@ -41,6 +41,7 @@ import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "../.
 import { publishSessionPrompt } from "../../omni/session-stream.js";
 import {
   DEFAULT_DELIVERY_BARRIER,
+  DELIVERY_BARRIER_VALUES,
   normalizeDeliveryBarrier,
   type DeliveryBarrier,
   type DeliveryBarrierSource,
@@ -588,7 +589,7 @@ const sessionReportReturnSchema = z
     }),
   })
   .strict();
-const sessionThreadSendReturnSchema = z
+export const sessionThreadSendReturnSchema = z
   .object({
     status: z.literal("published"),
     actionId: z.literal("thread.send"),
@@ -596,6 +597,15 @@ const sessionThreadSendReturnSchema = z
     messageId: z.string(),
     reopened: z.boolean(),
     thread: slackThreadSummarySchema,
+    // Additive observation: a daemon that predates it does not send it, and the gateway publishes
+    // the instruction before it checks this shape, so an unknown key here would fail every send.
+    delivery: z
+      .object({
+        barrier: z.enum(DELIVERY_BARRIER_VALUES),
+        barrierSource: z.enum(["explicit", "default", "inferred"]),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 const threadRuntimeOverridesSchema = z
@@ -7492,10 +7502,33 @@ export class SessionCommands {
     sessionOverride?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--barrier <barrier>",
+      description:
+        "Delivery barrier: followup|steer|p0|p1|p2|p3 (default followup: queued behind the thread's current turn)",
+    })
+    barrier?: string,
+    @Option({
+      flags: "--steer",
+      description: "Steer the thread's active turn after a safe tool barrier (a long turn may be aborted)",
+    })
+    steer?: boolean,
+    @Option({
+      flags: "--immediate",
+      description: "Interrupt the thread's active turn now instead of queueing behind it",
+    })
+    immediate?: boolean,
   ) {
     if (!message.trim()) {
       throw new CliExpectedError("Thread message is required", "USAGE_ERROR", 2);
     }
+    // Queue behind the thread's turn unless the caller explicitly steers or interrupts it.
+    const delivery = resolveDeliveryBarrierOptionWithDefault(barrier, "after_response", {
+      steer: Boolean(steer),
+      immediate: Boolean(immediate),
+      op: "sessions thread-send",
+      asJson,
+    });
     const target = sessionOverride?.trim() || resolveCurrentSessionRef();
     if (!target) {
       fail(
@@ -7517,6 +7550,8 @@ export class SessionCommands {
         ref: thread,
         message: decodeLiteralLineBreaks(message),
         origin: getContext() ?? {},
+        deliveryBarrier: delivery.barrier,
+        deliveryBarrierSource: delivery.source,
       });
     } catch (error) {
       rethrowSlackThreadError(error);
@@ -7528,11 +7563,13 @@ export class SessionCommands {
       messageId: result.messageId,
       reopened: result.reopened,
       thread: summarizeSlackThread(result.record),
+      delivery: { barrier: delivery.barrier, barrierSource: delivery.source },
     };
     if (asJson) printJson(payload);
     else {
       const name = result.record.childSessionName ?? result.record.requestId;
-      console.log(`Sent to ${name}${result.reopened ? " (reopened)" : ""}`);
+      const explicitBarrier = delivery.source === "explicit" ? ` (${delivery.barrier})` : "";
+      console.log(`Sent to ${name}${result.reopened ? " (reopened)" : ""}${explicitBarrier}`);
     }
     return payload;
   }

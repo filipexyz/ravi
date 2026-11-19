@@ -145,7 +145,7 @@ ravi sessions create-thread "<initial message>" [--provider <provider>] [--model
 ravi sessions close-thread [--return "<result>"]
 ravi sessions report "<progress>"
 ravi sessions threads [--all] [--json]
-ravi sessions thread-send <thread> "<instructions>"
+ravi sessions thread-send <thread> "<instructions>" [--steer | --immediate | --barrier <followup|steer|p0|p1|p2|p3>]
 ravi sessions thread-configure <thread> [--provider <provider|clear>] [--model <model|clear>] [--effort <level|clear>] [--thinking <level|clear>] [--json]
 ```
 
@@ -159,6 +159,28 @@ ravi sessions thread-configure <thread> [--provider <provider|clear>] [--model <
 - `threads` lists the channel-root session's threads, from the root or any of
   its children. `thread-send` names a thread by child session name or key,
   request id or Slack `thread_ts`, and works only from the channel-root session.
+- `thread-send` MUST queue the instruction behind the thread's current turn
+  (delivery barrier `after_response`, source `default`): a thread that is
+  generating text or running a tool keeps its turn, however long, and the
+  instruction reaches it when the turn ends. An idle thread gets it at once.
+  Taking the turn away is the caller's explicit choice: `--steer` (`after_tool`)
+  lets the runtime abort a turn that is generating or whose tool has run for
+  15 s, `--immediate` interrupts now, and `--barrier` names any barrier. `--steer`
+  with `--immediate`, or an unknown barrier, MUST refuse with `USAGE_ERROR`
+  before publishing. The result carries `delivery: { barrier, barrierSource }`.
+  A thread can close itself, with its own `--return`, in the turn the instruction
+  waited behind. Delivery is when the thread starts working on the instruction, so
+  delivering a `thread.message` MUST reopen a thread whose record is `closed` (card
+  `reopened`), at the start of the turn that receives it (`beforeTurnStart`), as
+  `thread-send` already does at publish when the thread is closed. Only a parent's
+  `thread.message` for that child reopens: a report, an attention notice, an
+  instruction for another child and an open record leave the lifecycle alone. A
+  failure to reopen or to update the card MUST NOT stop the turn. Without the
+  reopen, the close that ends the work is a no-op (`changed: false`) and its
+  result never reaches the parent. An instruction queued behind a turn cannot be
+  retracted, and a later `--immediate` runs before it: a correction names what it
+  corrects. Queued instructions live in memory until delivered; a graceful daemon
+  restart snapshots them and a hard crash loses them.
 - `report`, `close-thread` and `thread-send` refuse with typed codes, never a
   bare command failure: `THREAD_NOT_THREAD_CHILD`, `THREAD_IDENTITY_MISMATCH`
   (the session has an open thread's name under another key), and for
