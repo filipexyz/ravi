@@ -4,7 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { NatsExposureReport } from "../../security/nats-exposure.js";
 import type { StateDirPermissionsInspection } from "../../security/state-dir-permissions.js";
-import { buildNativeChannelRuntimeCheck, inspectDoctor, runDoctor } from "./doctor.js";
+import { PREPARE_STATE_COMMAND } from "../../db/state-readiness.js";
+import type { ManagedRuntimeMemberIdentity } from "../../managed-runtime.js";
+import { runnerReleaseGuardAdapter } from "../../channels/runner-release-status.js";
+import {
+  buildChannelRunnerReleaseCheck,
+  buildNativeChannelRuntimeCheck,
+  inspectDoctor,
+  probeDoctorRunnerAdapters,
+  runDoctor,
+} from "./doctor.js";
 
 const tempDirs: string[] = [];
 
@@ -251,6 +260,8 @@ function makeHealthyDeps() {
     codexKnowledgeParityHolds: () => true,
     listInboxSubscriptions: () => [{ id: "sub_1" }],
     inspectNativeChannelRuntime: () => ({ channels: [], runnerStatus: null }),
+    inspectManagedRuntime: () => null,
+    probeChannelRunnerAdapters: async () => null,
   };
 }
 
@@ -1188,5 +1199,279 @@ describe("channels.native_runtime", () => {
     );
     const check = report.checks.find((entry) => entry.id === "channels.native_runtime");
     expect(check).toMatchObject({ domain: "channels", status: "fail", severity: "warn" });
+  });
+});
+
+describe("channels.runner_release", () => {
+  function member(overrides: Partial<ManagedRuntimeMemberIdentity> = {}): ManagedRuntimeMemberIdentity {
+    return {
+      name: "ravi",
+      managed: true,
+      online: true,
+      status: "online",
+      pid: 100,
+      bundlePath: "/pkg/dist/bundle/index.js",
+      cwd: "/pkg",
+      runningVersion: "3.261119.9",
+      diskVersion: "3.261119.9",
+      startedAt: 1_000,
+      stale: false,
+      codeStale: false,
+      envStale: false,
+      identityVerified: true,
+      warnings: [],
+      matchesCli: true,
+      ...overrides,
+    };
+  }
+  const runtime = (
+    daemon: Partial<ManagedRuntimeMemberIdentity> = {},
+    channels: Partial<ManagedRuntimeMemberIdentity> = {},
+  ) => ({ daemon: member(daemon), channels: member({ name: "ravi-channels", pid: 200, ...channels }) });
+
+  it("passes when the runner and the daemon run the same release", () => {
+    const check = buildChannelRunnerReleaseCheck({ runtime: runtime(), adapters: [] });
+    expect(check).toMatchObject({
+      id: "channels.runner_release",
+      status: "ok",
+      summary: "ravi-channels and the daemon run 3.261119.9",
+      data: { state: "aligned", runnerVersion: "3.261119.9", daemonVersion: "3.261119.9" },
+    });
+  });
+
+  it("fails on a runner left on the previous release, naming both releases and the restart", () => {
+    // 2026-11-19: PM2 online, Slack socket connected, replies queued behind the state guard for ~51 minutes.
+    const check = buildChannelRunnerReleaseCheck({
+      runtime: runtime({}, { runningVersion: "3.261119.6", diskVersion: "3.261119.9" }),
+      adapters: [],
+    });
+    expect(check).toMatchObject({
+      status: "fail",
+      summary:
+        "ravi-channels runs 3.261119.6 but the daemon runs 3.261119.9: the state guard refuses a runner on another release, so replies stay queued while PM2 still reports it online",
+      fixHint: "ravi channels restart",
+      details: ["ravi-channels: 3.261119.6", "daemon: 3.261119.9"],
+      data: { state: "drift", runnerVersion: "3.261119.6", daemonVersion: "3.261119.9" },
+    });
+    expect(check.severity).toBeUndefined();
+  });
+
+  it("warns, not fails, when only the runner says its guard refuses it on matching releases", () => {
+    const check = buildChannelRunnerReleaseCheck({ runtime: runtime(), adapters: [runnerReleaseGuardAdapter()] });
+    expect(check).toMatchObject({
+      status: "warn",
+      fixHint: PREPARE_STATE_COMMAND,
+      data: { state: "refused" },
+    });
+    expect(check.summary).toContain(
+      "ravi-channels is refused by its state guard (runner 3.261119.9, daemon 3.261119.9)",
+    );
+  });
+
+  it("treats the runner's own report of a refused guard as evidence on its own, whatever the releases are", () => {
+    // Unknown runner release, and a daemon that is down: still a warning, never a skip.
+    const unknownRelease = buildChannelRunnerReleaseCheck({
+      runtime: runtime({}, { runningVersion: null }),
+      adapters: [runnerReleaseGuardAdapter()],
+    });
+    expect(unknownRelease).toMatchObject({
+      status: "warn",
+      data: { state: "refused" },
+      fixHint: PREPARE_STATE_COMMAND,
+    });
+
+    const daemonDown = buildChannelRunnerReleaseCheck({
+      runtime: runtime({ online: false, status: "stopped", runningVersion: null }),
+      adapters: [runnerReleaseGuardAdapter()],
+    });
+    expect(daemonDown).toMatchObject({ status: "warn", data: { state: "refused" }, fixHint: "ravi daemon start" });
+  });
+
+  it("skips what it cannot verify instead of calling it drift", () => {
+    expect(buildChannelRunnerReleaseCheck({ runtime: null, adapters: null })).toMatchObject({
+      status: "skip",
+      data: { state: "unverified", why: "pm2_unavailable" },
+    });
+    expect(
+      buildChannelRunnerReleaseCheck({
+        runtime: runtime({}, { online: false, status: "stopped", runningVersion: null }),
+        adapters: null,
+      }),
+    ).toMatchObject({ status: "skip", data: { why: "runner_not_online" } });
+    expect(
+      buildChannelRunnerReleaseCheck({ runtime: runtime({ online: false, status: "stopped" }), adapters: null }),
+    ).toMatchObject({ status: "skip", data: { why: "daemon_not_online" } });
+
+    const unverified = buildChannelRunnerReleaseCheck({
+      runtime: runtime({}, { runningVersion: null }),
+      adapters: null,
+    });
+    expect(unverified).toMatchObject({ status: "skip", severity: "warn", data: { why: "version_unknown" } });
+    expect(unverified.fixHint).toContain("records its release");
+  });
+
+  it("is reported in the channels domain of the doctor report, as an error when the releases differ", () => {
+    const report = inspectDoctor(
+      {
+        ...makeHealthyDeps(),
+        inspectManagedRuntime: () => runtime({}, { runningVersion: "3.261119.6" }),
+      },
+      { domain: "channels" },
+    );
+    expect(report.checks.find((entry) => entry.id === "channels.runner_release")).toMatchObject({
+      domain: "channels",
+      status: "fail",
+      severity: "error",
+    });
+  });
+
+  it("uses what the runner reported over NATS, handed over by runDoctor", () => {
+    const report = inspectDoctor(
+      { ...makeHealthyDeps(), inspectManagedRuntime: () => runtime() },
+      { domain: "channels", runnerAdapters: [runnerReleaseGuardAdapter()] },
+    );
+    expect(report.checks.find((entry) => entry.id === "channels.runner_release")).toMatchObject({
+      status: "fail",
+      severity: "warn",
+    });
+  });
+
+  it("uses the PM2 read runDoctor already made instead of reading it again", () => {
+    const report = inspectDoctor(
+      {
+        ...makeHealthyDeps(),
+        inspectManagedRuntime: () => {
+          throw new Error("PM2 must not be read a second time");
+        },
+      },
+      { domain: "channels", managedRuntime: runtime({}, { runningVersion: "3.261119.6" }) },
+    );
+    expect(report.checks.find((entry) => entry.id === "channels.runner_release")).toMatchObject({
+      status: "fail",
+      severity: "error",
+    });
+  });
+
+  it("runDoctor probes the runner by its PM2 PID for the channels domain only, and survives a probe that fails", async () => {
+    const deps = makeHealthyDeps();
+    const probed: number[] = [];
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      const report = await runDoctor(
+        { json: true, domain: "channels" },
+        {
+          ...deps,
+          inspectManagedRuntime: () => runtime(),
+          probeChannelRunnerAdapters: async (pid) => {
+            probed.push(pid);
+            return [runnerReleaseGuardAdapter()];
+          },
+        },
+      );
+      expect(report.checks.find((entry) => entry.id === "channels.runner_release")?.status).toBe("fail");
+
+      await runDoctor(
+        { json: true, domain: "apps" },
+        {
+          ...deps,
+          probeChannelRunnerAdapters: async (pid) => {
+            probed.push(pid);
+            return [];
+          },
+        },
+      );
+      // A runner that is not online has nothing to ask.
+      await runDoctor(
+        { json: true, domain: "channels" },
+        {
+          ...deps,
+          inspectManagedRuntime: () => runtime({}, { online: false, status: "stopped", pid: null }),
+          probeChannelRunnerAdapters: async (pid) => {
+            probed.push(pid);
+            return [];
+          },
+        },
+      );
+      const failed = await runDoctor(
+        { json: true, domain: "channels" },
+        {
+          ...deps,
+          inspectManagedRuntime: () => runtime(),
+          probeChannelRunnerAdapters: async () => {
+            throw new Error("probe exploded");
+          },
+        },
+      );
+      expect(failed.checks.find((entry) => entry.id === "channels.runner_release")?.status).toBe("pass");
+    } finally {
+      console.log = originalLog;
+    }
+    expect(probed).toEqual([200]);
+  });
+
+  it("reports a PM2 read that throws as an unverified check in the channels domain instead of dropping it", async () => {
+    const deps = makeHealthyDeps();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      // `--domain channels` filters out addCheck's own fallback (runtime domain), so the check reports it itself.
+      const report = await runDoctor(
+        { json: true, domain: "channels" },
+        {
+          ...deps,
+          inspectManagedRuntime: () => {
+            throw new Error("pm2 jlist failed");
+          },
+        },
+      );
+      const check = report.checks.find((entry) => entry.id === "channels.runner_release");
+      expect(check).toMatchObject({ domain: "channels", status: "skip", severity: "warn" });
+      const finding = report.findings.find((entry) => entry.id === "channels.runner_release");
+      expect(finding?.summary).toContain("PM2 could not be read");
+      expect(finding?.summary).toContain("pm2 jlist failed");
+    } finally {
+      console.log = originalLog;
+    }
+  });
+});
+
+describe("probeDoctorRunnerAdapters", () => {
+  const onlineRunner = { online: true, pid: 200 };
+
+  it("does not let a runner or NATS that never answers hold the doctor", async () => {
+    const started = Date.now();
+    const adapters = await probeDoctorRunnerAdapters(() => new Promise(() => {}), onlineRunner, undefined, 20);
+    expect(adapters).toBeNull();
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it("asks the runner by PID and returns what it reported when it answers in time", async () => {
+    const reported = [runnerReleaseGuardAdapter()];
+    const pids: number[] = [];
+    const adapters = await probeDoctorRunnerAdapters(
+      async (pid) => {
+        pids.push(pid);
+        return reported;
+      },
+      onlineRunner,
+      null,
+    );
+    expect(adapters).toEqual(reported);
+    expect(pids).toEqual([200]);
+  });
+
+  it("has nothing to ask a runner that is not online or has no PID, or outside the channels domain", async () => {
+    let probes = 0;
+    const probe = async () => {
+      probes++;
+      return [];
+    };
+    expect(await probeDoctorRunnerAdapters(probe, null, undefined)).toBeNull();
+    expect(await probeDoctorRunnerAdapters(probe, { online: false, pid: 200 }, undefined)).toBeNull();
+    expect(await probeDoctorRunnerAdapters(probe, { online: true, pid: null }, undefined)).toBeNull();
+    expect(await probeDoctorRunnerAdapters(probe, { online: true, pid: 0 }, undefined)).toBeNull();
+    expect(await probeDoctorRunnerAdapters(probe, onlineRunner, "runtime")).toBeNull();
+    expect(probes).toBe(0);
   });
 });

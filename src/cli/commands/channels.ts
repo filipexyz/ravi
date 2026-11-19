@@ -18,6 +18,11 @@ import {
 } from "../../channels/health.js";
 import { ChannelRunner, runChannelRunnerFromEnv } from "../../channels/runner.js";
 import { inspectManagedChannelRunner } from "../../channels/runner-liveness.js";
+import {
+  inspectRunnerRelease,
+  runnerReleaseHealthReason,
+  runnerReleaseWarning,
+} from "../../channels/runner-release-status.js";
 import { buildRunnerPm2Env } from "../../channels/pm2-env.js";
 import { buildChannelsPm2Env, buildChannelsPm2StartArgs } from "../../daemon-stdin.js";
 import { buildManagedRuntimeIdentity, managedRuntimeWarnings } from "../../managed-runtime.js";
@@ -369,6 +374,9 @@ function buildChannelsStatusJson(
   const channels = processes.find((process) => process.name === CHANNELS_PM2_PROCESS_NAME);
   const runtime = buildManagedRuntimeIdentity(processes, process.env.RAVI_BUNDLE ?? process.argv[1]);
   const warnings = managedRuntimeWarnings(runtime);
+  // A runner on another release than its daemon is invisible to PM2 and to a healthy socket; the boot receipts show it.
+  const drift = runnerReleaseWarning(inspectRunnerRelease(runtime));
+  if (drift) warnings.push(drift);
   if (options.warn) for (const warning of warnings) console.warn(warning);
 
   return {
@@ -455,12 +463,19 @@ export async function buildChannelsLiveStatusJson(
     };
   }
 
+  // A release problem makes the runner unhealthy whatever its sockets say. Drift is already in the
+  // warnings (receipts alone show it); a refusal the runner reports about itself is added here.
+  const release = inspectRunnerRelease(payload.runtime, result.snapshot.adapters);
+  const releaseReason = runnerReleaseHealthReason(release);
+  const refusal = release.state === "refused" ? runnerReleaseWarning(release) : null;
   return {
     ...payload,
+    ...(refusal ? { warnings: [...payload.warnings, refusal] } : {}),
     health: {
-      status: classifyChannelRunnerHealth(result.snapshot),
+      status: releaseReason ? "degraded" : classifyChannelRunnerHealth(result.snapshot),
       reachable: true,
       checkedAt,
+      ...(releaseReason ? { reason: releaseReason } : {}),
     },
     runner: result.snapshot,
   };
