@@ -352,6 +352,34 @@ function cleanThreadId(threadId: string | undefined): string | undefined {
   return cleaned ? cleaned : undefined;
 }
 
+/**
+ * The session key `commitMatchedRoute` will land this message in, computed
+ * without writing anything. It follows the commit's decision tree: a route
+ * that forces an existing session redirects there when there is no thread,
+ * and a thread under a forced session forks from it. A check that has to run
+ * before the commit (the owner DM guard) must look at this key, not at
+ * `matched.sessionKey`, or a forced session walks around it.
+ *
+ * When the forced session belongs to another agent the commit throws
+ * `RouteSessionAgentConflictError`; the preview still returns that session's
+ * key, so a guard reading it can only hold more, never admit more.
+ */
+export function previewCommittedSessionKey(matched: MatchedRoute, params: { threadId?: string }): string {
+  const threadId = cleanThreadId(params.threadId);
+  const forcedRouteSessionName = matched.route?.session?.trim();
+  if (!forcedRouteSessionName) return matched.sessionKey;
+  const forcedRouteSession = getSessionByName(forcedRouteSessionName);
+  if (!threadId && forcedRouteSession && forcedRouteSession.sessionKey !== matched.sessionKey) {
+    return forcedRouteSession.sessionKey;
+  }
+  return resolveCommittedSessionKey({
+    matchedSessionKey: matched.sessionKey,
+    threadId,
+    forcedRouteSessionName,
+    forcedRouteParentSessionKey: forcedRouteSession?.sessionKey ?? null,
+  });
+}
+
 export function resolveCommittedSessionKey(params: {
   matchedSessionKey: string;
   threadId?: string;

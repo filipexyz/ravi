@@ -12,8 +12,10 @@ tags:
   - sessions
 applies_to:
   - src/channels/owner-dm-guard.ts
+  - src/channels/pending-review-event.ts
   - src/channels/slack/socket-mode.ts
   - src/omni/consumer.ts
+  - src/router/resolver.ts
 owners:
   - dev
 status: active
@@ -34,27 +36,46 @@ agent's whole ceiling (`permissions/agent-identity`).
 
 - The owner is any contact tagged `permission-owner` (the same tag Knowledge
   uses for the operator).
-- An inbound DM is guarded when, after route matching and any subscription
-  reroute, it would land in a session whose key parses as `dmScope: "main"`.
+- An inbound DM is guarded when it would land in a session whose key parses as
+  `dmScope: "main"`, including a thread forked from it. The key is the one the
+  commit will produce (`previewCommittedSessionKey`), after route matching and
+  any subscription reroute: a route that forces an existing session redirects
+  there, and a thread under a forced session forks from it, so
+  `matched.sessionKey` alone is not where the message lands.
 - A guarded DM is admitted only when the sender's resolved contact is an owner.
   An unresolved sender is never the owner.
-- The guard yields to a destination the operator chose for that conversation:
-  a route whose pattern names the peer (not `*`), or a chat attached to the
-  session by a person or an agent. Routing's own bookkeeping attach
-  (`attachedByType: system`) is not a choice and does not exempt the DM.
+- The guard yields to a destination the operator chose for that conversation,
+  and each choice vouches only for the destination it names:
+  - a route whose pattern is a literal id (no `*`), when the message lands where
+    that route sends it. A glob (`*`, `U0*`, `5511*`) is a wildcard: it matches
+    people the operator never named. A chat subscription that reroutes the DM
+    elsewhere (for example routing's earlier attach of the chat to the shared
+    session) takes the DM away from the route, and the route no longer vouches
+    for it;
+  - a chat attached by a person or an agent, when the message lands in the
+    attached session. Routing's own bookkeeping attach (`attachedByType:
+    system`) is not a choice and does not exempt the DM.
+- Admission is a route. `ravi sessions attach` on a chat that routing already
+  attached keeps that attach and its `system` provenance (the attach is
+  idempotent), so it does not admit the person; only a subscription a person or
+  an agent created counts as an explicit attach. Approving the held contact
+  (`ravi instances pending approve`) allows the contact but creates no route,
+  so the DM stays held until a route names the person.
 - A blocked DM is held for owner review, the same path a `pairing` DM takes: no
   session row is committed, no runtime turn runs, the sender is recorded as an
-  account-pending contact and the owner review event fires once. The owner
-  admits the person by adding an explicit route for them (for example a bridge
-  agent) or by attaching the chat explicitly. It holds whatever the instance
-  `dmPolicy` is, `open` included.
+  account-pending contact and, the first time, `ravi.contacts.pending` fires on
+  both paths (omni and Slack). It holds whatever the instance `dmPolicy` is,
+  `open` included.
+- A reply a cloud run is waiting for (`aprovar <código>`, a message in a thread
+  bound to the run) reaches the run before routing, policy and this guard, on
+  both paths. A held sender can still answer the run that asked them.
 - Decision (19/11/2026): hold for review, not a per-contact session. A session
   of the same agent would still run with that agent's instructions and, in an
   ungoverned chat, its ceiling; holding keeps a stranger out of both.
 - No owner tagged: the guard does not block (a fresh installation has nobody
-  to protect the session for and nobody to review a held message). Doctor
-  SHOULD report an installation whose shared session is reachable by DM with no
-  owner tagged.
+  to protect the session for and nobody to review a held message). This is
+  fail-open and nothing reports it yet: an installation is protected only once
+  its owner contact is tagged.
 - Owner set unreadable: fail closed, the DM is held.
 - The omni path records the rejection as `route.rejected` with reason
   `dm_owner_session_non_owner`.
