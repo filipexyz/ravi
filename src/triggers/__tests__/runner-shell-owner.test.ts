@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { OwnerDirectTarget } from "../../knowledge/owner.js";
 import { dbCreateAgent, getDb } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 
@@ -68,8 +69,56 @@ function createTopicStream(topic: string): AsyncIterableIterator<BusEvent> {
   return stream;
 }
 
+// Who a direct message can reach, and what was sent: the notice goes out by direct message, with no model in the path.
+const OPERATOR_CHAT: OwnerDirectTarget = {
+  channel: "slack",
+  accountId: "ops",
+  to: "U_OPERATOR",
+  chatId: "U_OPERATOR",
+  contactId: "c_operator",
+};
+const ANA_CHAT: OwnerDirectTarget = {
+  channel: "whatsapp",
+  accountId: "main",
+  to: "ana",
+  chatId: "ana",
+  contactId: "c_ana",
+};
+let operatorChat: OwnerDirectTarget | null = null;
+const contactChats = new Map<string, OwnerDirectTarget>();
+let directDeliveryFails = false;
+const directMessages: Array<{ target: OwnerDirectTarget; text: string }> = [];
+
 const actualNatsModule = await import("../../nats.js");
 const actualSessionStreamModule = await import("../../omni/session-stream.js");
+const actualOwnerModule = await import("../../knowledge/owner.js");
+const actualChatTargetModule = await import("../../cloud-agents/chat-target.js");
+
+// Only what a test armed is faked: with nothing armed these call through to the real ones, so the mocks
+// are harmless to other files that share this process.
+const actualResolveOwnerDirectTarget = actualOwnerModule.resolveOwnerDirectTarget;
+const actualDeliverToChat = actualChatTargetModule.deliverToChat;
+const directChatsArmed = () => operatorChat !== null || contactChats.size > 0;
+
+mock.module("../../knowledge/owner.js", () => ({
+  ...actualOwnerModule,
+  // With a contact list: that contact's own chat. Without: the operator's.
+  resolveOwnerDirectTarget: (deps?: Parameters<typeof actualResolveOwnerDirectTarget>[0]) => {
+    if (!directChatsArmed()) return actualResolveOwnerDirectTarget(deps);
+    const ids = deps?.listOwnerContactIds?.();
+    return ids ? (contactChats.get(ids[0] ?? "") ?? null) : operatorChat;
+  },
+}));
+
+mock.module("../../cloud-agents/chat-target.js", () => ({
+  ...actualChatTargetModule,
+  deliverToChat: mock(async (target: OwnerDirectTarget, message: { text: string }, timeoutMs?: number) => {
+    if (!directChatsArmed()) return actualDeliverToChat(target, message, timeoutMs);
+    if (directDeliveryFails) throw new Error("gateway offline");
+    directMessages.push({ target, text: message.text });
+    return { messageId: "m1", deliveries: [] };
+  }),
+}));
 
 mock.module("../../nats.js", () => ({
   ...actualNatsModule,
@@ -146,10 +195,17 @@ beforeEach(async () => {
   channels.clear();
   subscribedTopics.length = 0;
   publishCalls.length = 0;
+  operatorChat = null;
+  contactChats.clear();
+  directDeliveryFails = false;
+  directMessages.length = 0;
 });
 
 afterEach(async () => {
   await runner?.stop();
+  operatorChat = null;
+  contactChats.clear();
+  directDeliveryFails = false;
   runner = null;
   for (const channel of channels.values()) channel.close();
   channels.clear();
@@ -334,5 +390,98 @@ describe("shell trigger owner and env", () => {
       String(payload.prompt).includes("TRIGGER_SHELL_ENV_FILE_UNVERIFIABLE"),
     );
     expect(notices).toHaveLength(1);
+  });
+});
+
+describe("shell trigger refusal notice", () => {
+  const promptsAbout = (code: string) => publishCalls.filter(({ payload }) => String(payload.prompt).includes(code));
+
+  it("tells the operator by direct message, not in the main session, when a trigger nobody owns is turned off", async () => {
+    operatorChat = OPERATOR_CHAT;
+    const topic = "ravi.test.notice-unowned";
+    const trigger = createShellTrigger({ name: "Cards de aprovação", topic });
+    await startRunner();
+
+    emit(topic, { eventId: "evt-1" });
+    await waitFor(() => directMessages.length === 1);
+    emit(topic, { eventId: "evt-2" });
+    await sleep(300);
+
+    expect(dbGetTrigger(trigger.id)?.enabled).toBe(false);
+    expect(existsSync(markerPath())).toBe(false);
+    // One message, to the one person who can act: nobody owns the trigger.
+    expect(directMessages).toHaveLength(1);
+    expect(directMessages[0]!.target.contactId).toBe("c_operator");
+    const { text } = directMessages[0]!;
+    expect(text).toContain(
+      `O gatilho de shell “Cards de aprovação” (${trigger.id}) foi desligado: TRIGGER_SHELL_NOT_OPERATOR.`,
+    );
+    expect(text).toContain("Nenhum comando foi executado.");
+    expect(text).toContain(`ravi triggers show ${trigger.id}`);
+    expect(text).not.toContain("env >");
+    // The direct message was enough: nothing went to the main session's prompt.
+    expect(promptsAbout("TRIGGER_SHELL_NOT_OPERATOR")).toHaveLength(0);
+  });
+
+  it("tells a contact who owns it, and the operator, once each", async () => {
+    operatorChat = OPERATOR_CHAT;
+    contactChats.set("c_ana", ANA_CHAT);
+    const topic = "ravi.test.notice-contact";
+    createShellTrigger({ name: "contact-owner", topic, ownerPrincipal: "contact:c_ana" });
+    await startRunner();
+
+    emit(topic, { eventId: "evt-1" });
+    await waitFor(() => directMessages.length === 2);
+    emit(topic, { eventId: "evt-2" });
+    await sleep(300);
+
+    expect(directMessages.map(({ target }) => target.contactId)).toEqual(["c_ana", "c_operator"]);
+    expect(promptsAbout("TRIGGER_SHELL_NOT_OPERATOR")).toHaveLength(0);
+  });
+
+  it("tells the owner who acts as the operator about a refused env file, without the file's content", async () => {
+    operatorChat = OPERATOR_CHAT;
+    const topic = "ravi.test.notice-env-file";
+    const stateEnvFile = join(stateDir!, ".env");
+    writeFileSync(stateEnvFile, "RAVI_ADMIN_TOKEN=canary-notice-content\n");
+    const linked = join(markerDir!, "innocent.env");
+    linkSync(stateEnvFile, linked);
+    const trigger = createShellTrigger({ name: "hard-link-env", topic, ownerPrincipal: "operator", envFile: linked });
+    await startRunner();
+
+    emit(topic, { eventId: "evt-1" });
+    await waitFor(() => directMessages.length === 1);
+    emit(topic, { eventId: "evt-2" });
+    await sleep(300);
+
+    expect(dbGetTrigger(trigger.id)?.enabled).toBe(false);
+    expect(directMessages).toHaveLength(1);
+    const { text } = directMessages[0]!;
+    expect(text).toContain("TRIGGER_SHELL_ENV_FILE_HARD_LINK");
+    expect(text).toContain(`ravi triggers set ${trigger.id} env-file CAMINHO_DO_ARQUIVO`);
+    expect(text).not.toContain("canary-notice-content");
+    expect(text).not.toContain(linked);
+    expect(promptsAbout("TRIGGER_SHELL_ENV_FILE_HARD_LINK")).toHaveLength(0);
+  });
+
+  it("falls back to the main session's prompt when the direct message cannot be sent", async () => {
+    operatorChat = OPERATOR_CHAT;
+    directDeliveryFails = true;
+    const topic = "ravi.test.notice-fallback";
+    const trigger = createShellTrigger({ name: "no-owner", topic });
+    await startRunner();
+
+    emit(topic, { eventId: "evt-1" });
+    await waitFor(() => promptsAbout("TRIGGER_SHELL_NOT_OPERATOR").length === 1);
+    emit(topic, { eventId: "evt-2" });
+    await sleep(300);
+
+    // Never silent: the prompt the runner always sent still goes out, once.
+    expect(directMessages).toHaveLength(0);
+    expect(dbGetTrigger(trigger.id)?.enabled).toBe(false);
+    const notices = promptsAbout("TRIGGER_SHELL_NOT_OPERATOR");
+    expect(notices).toHaveLength(1);
+    expect(String(notices[0]!.payload.prompt)).toContain("Shell trigger disabled (TRIGGER_SHELL_NOT_OPERATOR)");
+    expect(String(notices[0]!.payload.prompt)).not.toContain("env >");
   });
 });

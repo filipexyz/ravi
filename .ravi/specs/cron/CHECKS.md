@@ -18,6 +18,11 @@
   never re-enables the job. Operator shell and agent-owned agent jobs still run.
 - `bun test src/cli/commands/cron-commands.test.ts` MUST distinguish invalid shell,
   operator shell and agent-owned agent jobs in JSON and text without mutating rows.
+- `bun test src/cron/runner.test.ts src/cron/automation-notice.test.ts` MUST prove the
+  notice goes by direct message to the owner and the operator (to the operator alone
+  when nobody owns the job), never carries the command, and falls back to the main
+  session's prompt, with the cron authority it carried, when no direct message goes
+  out. Run the files separately if module mocks are shared.
 
 ## Distant Jobs MUST NOT Overflow The Timer
 

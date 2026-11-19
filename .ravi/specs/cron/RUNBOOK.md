@@ -7,8 +7,10 @@
 enabled invalid row, text list shows `invalid-owner`. Inspection does not write.
 
 The scheduler keeps the row and previous execution history, clears its next run
-and sends one notice to the default agent's main session. Check daemon logs if
-the notice was not delivered. There are no repeated run failures for this state.
+and sends one notice by direct message to its owner and to the operator (to the
+operator alone when nobody owns it); only when no direct message goes out does it
+reach the default agent's main session. Check daemon logs (`cron:automation-notice`)
+if no notice arrived. There are no repeated run failures for this state.
 
 The operator can recreate the command from their own authenticated turn or
 convert the job to an agent prompt. Do not blindly enable the same invalid job
