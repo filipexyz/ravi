@@ -12,7 +12,7 @@ export function parseProcStatParentPid(stat: string): number | null {
 }
 
 /** Linux: `/proc/<pid>/stat` works where `ps -p` does not (BusyBox). */
-function procParentPid(pid: number): number | null {
+export function procParentPid(pid: number): number | null {
   try {
     return parseProcStatParentPid(readFileSync(`/proc/${pid}/stat`, "utf8"));
   } catch {
@@ -21,7 +21,8 @@ function procParentPid(pid: number): number | null {
   }
 }
 
-function nativeParentPid(pid: number): number | null {
+/** The parent of `pid`: `/proc` first, `ps` where there is no `/proc` (macOS). */
+export function nativeParentPid(pid: number): number | null {
   return procParentPid(pid) ?? psParentPid(pid);
 }
 

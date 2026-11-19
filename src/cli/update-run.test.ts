@@ -7,7 +7,9 @@ import { buildPm2Env, clearedPm2ContextEnv } from "../pm2.js";
 import {
   isInsideDaemonProcessTree,
   locateInDaemonProcessTree,
+  nativeParentPid,
   parseProcStatParentPid,
+  procParentPid,
   waitUntilOutsideDaemonProcessTree,
 } from "./daemon-process-tree.js";
 import {
@@ -299,6 +301,19 @@ describe("position in the daemon tree", () => {
     // `ravi daemon restart` keeps its non-strict answer.
     expect(isInsideDaemonProcessTree({ daemonPid: 10, startPid: 30, readParentPid: () => null })).toBe(false);
     expect(isInsideDaemonProcessTree({ daemonPid: 10, startPid: 100, readParentPid: (pid) => pid + 1 })).toBe(false);
+  });
+
+  // Linux only (the CI's ubuntu jobs): /proc answers without `ps`, as on a BusyBox host whose `ps` has no `-p`.
+  it.skipIf(process.platform !== "linux")("reads the parent from /proc without ps on Linux", () => {
+    expect(procParentPid(process.pid)).toBe(process.ppid);
+    const inheritedPath = process.env.PATH;
+    process.env.PATH = mkdtempSync(join(tmpdir(), "ravi-no-ps-"));
+    try {
+      expect(nativeParentPid(process.pid)).toBe(process.ppid);
+    } finally {
+      rmSync(process.env.PATH, { recursive: true, force: true });
+      process.env.PATH = inheritedPath;
+    }
   });
 
   it("reads the parent pid from /proc/<pid>/stat whatever the command name holds", () => {

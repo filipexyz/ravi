@@ -67,6 +67,13 @@
   - an unreadable PM2 that refuses with `UPDATE_FAILED` before anything is
     detached, installed or stopped, a usage error that still comes first, and
     a worker that counts a failed read during its wait as still inside;
+  - every `ravi` registration tested for ancestry; an unreadable, looping or
+    too deep ancestry refused in strict mode; the `/proc/<pid>/stat` parser,
+    and on Linux the parent read from `/proc` with no `ps` in `PATH`;
+  - the saved channel read from the run's resolved state directory (relative
+    `RAVI_STATE_DIR` included) and passed to the worker;
+  - messages written to `result.json` (worker failure, failed worker launch)
+    redacted like the CLI's output;
   - a caller inside the tree that installs nothing and returns the run;
   - refusal when the child cannot start, including a launch failure reported
     as an `error` event by the real spawn (missing executable or working
