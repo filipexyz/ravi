@@ -209,17 +209,24 @@ export function buildRaviAppProcessEnv(
   return env;
 }
 
-export function parseRaviAppCapability(value: string): ContextCapability {
+/** The capability a `context.allow` entry names, or null when the entry is not `permission:objectType:objectId`. */
+export function tryParseRaviAppCapability(value: string): ContextCapability | null {
   const match = /^([^:\s]+):([^:\s]+):(.+)$/.exec(value.trim());
-  if (!match || !match[3]?.trim()) {
-    throw new Error(`Invalid context capability "${value}"; expected permission:objectType:objectId.`);
-  }
+  if (!match || !match[3]?.trim()) return null;
   return {
     permission: match[1]!,
     objectType: match[2]!,
     objectId: match[3]!.trim(),
     source: "app-manifest",
   };
+}
+
+export function parseRaviAppCapability(value: string): ContextCapability {
+  const capability = tryParseRaviAppCapability(value);
+  if (!capability) {
+    throw new Error(`Invalid context capability "${value}"; expected permission:objectType:objectId.`);
+  }
+  return capability;
 }
 
 function renderTemplateArgs(parsed: RaviAppCommandTemplate, args: string[]): string[] {

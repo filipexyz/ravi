@@ -61,3 +61,29 @@ The app manifest gives Ravi a stable indexable contract:
   rejected because non-health app operations can recursively call the same
   router. Router `check` validates health metadata without executing it;
   executable health belongs under the real implementation CLI.
+
+## Composition
+
+Apps that need each other had no way to say so. A blog that needs a Markdown
+renderer either carried a copy of the renderer or called an app and hoped it was
+installed. Declaring the need in the manifest makes it checkable before anything
+runs: the router can name what is missing, and the audit can name why one app
+called another.
+
+- The declaration is two small fields, not a second manifest: `provides` (what
+  I offer, at which version, through which operations) and `requires` (which
+  service I need, in which range). The key is `<app-id>/<service>` so a
+  service always has one owner.
+- The offered version is exact and the required range is strict. A manifest
+  that says `latest` or `1.x` must fail validation, because the parser that
+  decides satisfaction would otherwise call every version a match.
+- A missing provider is a warning on the consumer, not an invalid manifest:
+  apps are installed in any order, and the run is where the need becomes
+  binding. A cycle is the opposite case, a fact about the manifests alone, so
+  it is a validation error found once and on every app on it.
+- Nothing is resolved by running anything. The answer comes from manifests
+  discovery already read.
+
+Rejected: letting an app name a provider by a path or a command (it would
+bypass the router and the context lineage), and an install-time dependency
+resolver (installation is not where authority is decided).

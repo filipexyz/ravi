@@ -6,6 +6,7 @@ import {
   contractFail,
   renderContractError,
 } from "../cli/agent-contract.js";
+import { describeUnavailableDependency } from "./composition.js";
 import { RaviAppError, type RaviAppRunResult } from "./types.js";
 
 const APP_OPERATION_FAILED_MESSAGE = "Ravi app operation failed.";
@@ -56,6 +57,38 @@ export function enforceRaviAppRunResult(result: RaviAppRunResult, asJson: boolea
         details: { suggestedAction: "Request the required app permission and retry" },
       },
       diagnostic: errorDiagnostic("Ravi app operation was denied.", { operation: "apps run" }),
+    });
+  }
+
+  // Composition (spec apps/router): both refusals happen before any process starts. What they name is validated
+  // identifiers and versions from manifests, never an app's own text. The public envelope carries the cause and the
+  // next step; the structured list of what is missing stays on the run result (`unavailableDependencies`).
+  if (result.errorCode === "APP_DEPENDENCY_UNAVAILABLE") {
+    const unavailable = result.unavailableDependencies ?? [];
+    contractFail("apps run", "APP_DEPENDENCY_UNAVAILABLE", "Ravi app dependency is unavailable.", {
+      ...{
+        asJson,
+        details: { suggestedAction: "Install or repair the required app, then retry" },
+      },
+      diagnostic: errorDiagnostic(
+        unavailable.length > 0
+          ? unavailable.map(describeUnavailableDependency).join(" ")
+          : "A service this app requires is unavailable.",
+        { operation: "apps run" },
+      ),
+    });
+  }
+
+  if (result.errorCode === "APP_OPERATION_NOT_PROVIDED") {
+    contractFail("apps run", "APP_OPERATION_NOT_PROVIDED", "Ravi app operation is not offered to this caller.", {
+      ...{
+        asJson,
+        details: {
+          suggestedAction:
+            "Call only operations the provider lists under provides, and declare requires for its service",
+        },
+      },
+      diagnostic: errorDiagnostic("Ravi app operation is not offered to this caller.", { operation: "apps run" }),
     });
   }
 

@@ -100,3 +100,34 @@
     operation.
   - Running with and without `--json` should use the same authorization and
     child-context path.
+
+- Composition check (`provides`, `requires`)
+  - Fail if `provides` is not an object, or a key is not `<app-id>/<service>`
+    starting with the app's own id.
+  - Fail if an offered `version` is not an exact `x.y.z` (a range, a
+    prerelease, a leading zero, or `latest` all fail).
+  - Fail if `operations` is empty, repeats an operation, names an operation the
+    manifest does not declare, or names the permission provider operation.
+  - Fail if `requires` is not an object, a key is not `<app-id>/<service>`, a
+    range cannot be read (`latest`, `*`, `1.x`, a prerelease, empty, a fourth
+    comparator), or the app requires its own service.
+  - Pass ranges such as `^1`, `~1.2`, `1.4.0`, `>=1.2.0 <2`.
+  - Fail every app on a cycle of `requires` with `requires cycle: a -> b -> a.`;
+    an app that only leads into the cycle passes, with a warning.
+  - Pass, with a warning that names the requirement and the reason
+    (`no app with that id is installed`, `the provider's manifest is invalid or
+    ambiguous`, `the provider does not offer that service`, `the provider
+    offers <version>`), an app whose requirement nothing satisfies; the warning
+    clears when the provider appears.
+  - Confirm discovery resolves requirements from the manifests it already read,
+    without starting, installing or querying any app.
+  - Confirm a source filter does not change what is satisfied: a state app that
+    requires a repo or plugin app has no warning in the `--source state` view, and a
+    cycle across two sources is an error in every view.
+  - Warn, naming the missing entries, when a required provider's `context.allow`
+    asks for something the requiring app's own `context.allow` does not cover
+    (wildcards cover); no warning once it does.
+  - Warn `the provider's manifest is invalid or ambiguous` (not `no app with that id
+    is installed`) when the required app's manifest does not parse.
+  - Confirm an app with neither field is validated and reported exactly as
+    before.

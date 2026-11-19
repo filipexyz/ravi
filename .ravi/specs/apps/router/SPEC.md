@@ -10,14 +10,17 @@ capabilities:
   - operation-dispatch
   - permissions
   - audit
+  - composition
 tags:
   - apps
   - router
   - cli
   - runtime
   - operations
+  - composition
 applies_to:
   - src/apps/router.ts
+  - src/apps/composition.ts
   - src/apps/failure.ts
   - src/apps/error-contract.ts
   - src/apps/service.ts
@@ -324,6 +327,110 @@ The router does not host an App RPC protocol.
 An app MAY use `--json` on a Ravi command when it needs structured output. That
 is ordinary CLI composition, not a distinct App protocol.
 
+## Composition
+
+An app's process calls another app the way anything in Ravi calls an app: with
+its own `RAVI_CONTEXT_KEY`, through the router. There is no second path and no
+App-to-App protocol. Composition adds rules about what such a call may be and
+what it leaves behind. The manifest side (`provides`, `requires`) is in
+`apps/manifest`, "Composition".
+
+Before the app's process starts. An operation that starts no process of the
+app's own (`help`, `show`, `check`, any `builtin`) is not held back, so a missing
+provider can still be diagnosed:
+
+- When the app declares `requires`, the router MUST resolve every requirement,
+  transitively through each provider's own `requires`, against the installed and
+  valid manifests. A requirement that cannot be satisfied MUST fail the run with
+  `APP_DEPENDENCY_UNAVAILABLE` before the permission provider is consulted,
+  before any context is issued, and before any process is spawned. It also comes
+  before the mutation brake, so a preview never promises a run that cannot
+  happen (the brake keeps its place for every app whose requirements hold). The reasons
+  are `not_installed`, `invalid` (an invalid or duplicated manifest),
+  `not_provided` (the app is there and does not offer the service),
+  `version_mismatch` (the offered version is outside the range) and
+  `insufficient_authority` (the provider asks for more than the requiring app
+  declares, below).
+- The run result of that failure MUST carry `unavailableDependencies`: the
+  requirement, its range, the app that requires it, the reason and, when there
+  is one, the installed version. The public contract error carries the cause
+  (one sentence per requirement) and the next step `Install or repair the
+  required app, then retry`. It is `retryable: false`.
+- Putting the app back MUST be enough: the consumer's manifest and files are not
+  edited to make it run again. The check reads the manifests on every run and
+  keeps no state.
+- The child context of an app that has `requires` MUST be issued with the app's
+  own `context.allow` (what its manifest says it holds, and so what it
+  delegates), `use app:<provider>` for every provider in the closure (plus
+  `execute app:<provider>` for a provider that offers a mutating operation), and
+  the access the gateway asks for before `apps run`, because a call to a provider
+  through the public command is `apps run`. That last one MUST be a form
+  about `run` and nothing wider that the invoker holds (`mutate:apps:run`,
+  `mutate:apps.run:*` or the legacy `execute:group:apps_run`; a wildcard the
+  invoker holds over `apps` is passed on as `mutate:apps:run`). The legacy
+  `execute:group:apps` and `mutate:apps:*` also satisfy the gateway, and they also
+  open `apps delete`, `apps scaffold` and `apps import-cli`, so they are never
+  passed on: an invoker that holds only those, or none, gets no composed child. A
+  provider's own `context.allow` MUST NOT be added to it. The registry rule that
+  a child holds no capability its parent does not hold applies unchanged, so an
+  invoker that does not hold all of it gets no child context and no process
+  (`child-context issuance failure spawns no process`).
+- Every edge of the closure MUST satisfy the delegation rule before anything
+  starts: what the provider's `context.allow` declares is covered, entry by
+  entry (wildcards count), by the `context.allow` of the app that requires it.
+  An edge that does not fails the run with `APP_DEPENDENCY_UNAVAILABLE`, reason
+  `insufficient_authority`, and `missing` lists the entries. So the authority a
+  consumer delegates is written in its own manifest, a provider that starts
+  asking for more fails closed instead of widening its consumers, and
+  provider ⊆ consumer ⊆ invoker holds along the whole chain.
+
+When the caller is a process another app's operation started (a context of kind
+`app-runtime` issued by this router for an app, or a credential that process
+derived, for example with `ravi context issue`: the nearest `app-runtime`
+ancestor in the host-owned lineage is the caller, however many credentials were
+derived in between) and the called app offers services:
+
+- The called operation MUST be listed under one of the called app's `provides`
+  services, and the caller MUST have declared that service in its own `requires`
+  with a range the offered version satisfies. Otherwise the run MUST fail with
+  `APP_OPERATION_NOT_PROVIDED` before any context is issued and before any
+  process is spawned. An operation the provider has but does not list, a caller
+  that never declared the requirement (even when it holds `use app:<provider>`),
+  and a caller whose range no longer matches are all this one refusal.
+- The provider's child context MUST be issued from the caller's context, so the
+  lineage reads turn → `app:<consumer>` → `app:<provider>` and the registry
+  rejects any capability the consumer does not hold. Its capabilities are the
+  provider's own `context.allow` (plus its own providers', if it has `requires`),
+  never the consumer's. Authority only narrows down the chain.
+- The service and the consuming app MUST be recorded on the provider's child
+  context metadata (`composition: { service, consumerAppId }`), so an audit reader
+  following `contextId` and `parentContextId` can name what each link was for.
+
+When the app's process ends:
+
+- An app that offers or needs a service MUST have its child context revoked
+  when its process ends, however it ends (clean exit, non-zero exit, a signal,
+  or an error raised while spawning), with the revocation cascading down the
+  lineage so whatever the process handed to a provider ends with it. A revoked
+  key MUST NOT resolve any more. A failure to revoke MUST be logged and MUST NOT
+  change the run's result.
+- An app that neither offers nor needs a service keeps the credential until its
+  TTL, exactly as before composition. Revoking every app's credential at process
+  end is a separate decision, because an app may start detached work that
+  outlives its launching process.
+
+The climb through the lineage MUST end at a root. A lineage that cannot be
+followed (a parent that is gone, a loop, an `app-runtime` context that names no
+app) is an unknown caller, not a direct one: a call from it to an app that offers
+services MUST be refused with `APP_OPERATION_NOT_PROVIDED`, for every operation,
+before any context is issued and before any process is spawned. There MUST be no
+depth at which a chain of derived credentials stops being the app's.
+
+The mediation applies to callers that are apps. A turn, an agent or an operator
+calling a provider directly is governed by `use app:<provider>` and
+`execute app:<provider>`, as before: `provides` is what apps may call of each
+other, not a second permission system for whoever already holds the app.
+
 ## Boundaries
 
 - The app router is not an app discovery index by itself. It consumes the app
@@ -340,6 +447,12 @@ is ordinary CLI composition, not a distinct App protocol.
   Those surfaces call the router.
 - The root-level alias is the user and agent-facing launcher. `ravi apps run`
   is the lower-level router entrypoint for diagnostics and collision fallback.
+- Composition mediates Ravi authority: what a context may ask of Ravi, who
+  issued it, and when it ends. It is not OS-level isolation. A consumer's process
+  and its provider's process run as the same OS user, and the consumer's context
+  holds what its own manifest declares, which is what it delegated to its
+  providers, so a consumer that is compromised can use that. Declare no more in
+  a consumer, and ask no more in a provider, than the offered operations need.
 
 ## Validation
 
@@ -365,6 +478,21 @@ is ordinary CLI composition, not a distinct App protocol.
 - In agent/runtime context, a valid operation MUST launch with a new child
   context no broader than manifest `context.allow`.
 - A child-context issuance failure MUST produce no app process.
+- An app with `requires` whose provider is not installed MUST fail with
+  `APP_DEPENDENCY_UNAVAILABLE`, start no process and issue no context, and MUST
+  run again once the provider is installed, without any change to the app.
+- A provider installed outside the required range, or that does not offer the
+  service, MUST fail the same way, with reason `version_mismatch` or
+  `not_provided`.
+- An operation that is not listed under `provides` MUST be refused with
+  `APP_OPERATION_NOT_PROVIDED` when an app calls it, and MUST start no process.
+- A call from one app to another MUST produce the lineage turn → consumer →
+  provider on the contexts, each one holding no more than the one above it.
+- An app that offers or needs a service MUST have its child context and its
+  providers' child contexts revoked when the process ends; a key revoked that way
+  MUST NOT resolve.
+- An app that neither offers nor needs a service MUST keep the child context it
+  had before composition existed.
 
 ## Known Failure Modes
 
@@ -395,3 +523,36 @@ is ordinary CLI composition, not a distinct App protocol.
 - Running health checks during discovery creates side effects and slow startup.
 - Hiding app route failures behind generic Commander help makes agents unable
   to diagnose missing manifests or invalid operations.
+- Letting a provider's context be born from the invoker instead of from the
+  consumer's context loses the lineage the audit reads, and lets the provider
+  hold authority the consumer never had to hold.
+- Letting a provider's context inherit the consumer's capabilities makes
+  authority grow along the chain. It must only narrow: the provider holds its
+  own `context.allow`, and the registry refuses what the consumer lacks.
+- Starting the consumer first and finding the provider missing later leaves a
+  half-run with side effects. Check the requirements before the process starts.
+- Leaving the credential of a composed app alive until its TTL leaves a key
+  that a finished process handed to a provider usable by anyone who kept it.
+- Adding the providers' `context.allow` to the consumer's ceiling makes a
+  consumer grow with every provider upgrade without its manifest showing it, and
+  needs no compromise to be abused: declaring `requires` is enough. The consumer
+  declares what it delegates, and a provider that asks for more is refused.
+- Identifying the calling app only by the kind of the context in hand lets an
+  app that may derive credentials call, with a derived one, what `provides` does
+  not list. The identity follows the lineage, which a process cannot erase.
+- Capping how far up the lineage the caller is looked for, or answering "not an
+  app" when the cap or a missing parent ends the climb, lets an app derive
+  credentials until its identity is lost. A climb that does not reach a root is
+  an unknown caller and fails closed.
+- Passing on the legacy `execute:group:apps` or `mutate:apps:*` to a composed
+  consumer so that it can call its providers hands it `apps delete`, `apps
+  scaffold` and `apps import-cli` too. Only the forms about `run` are passed on.
+- Granting a composed consumer `use app:<provider>` and nothing that reaches the
+  router leaves the requirement declared and unusable through the public command:
+  the gateway refuses `apps run` before the router runs.
+- Reading `provides` as a permission system for people who already hold
+  `use app:<provider>`: it is the surface apps may call of each other, nothing
+  more. A holder calling directly is not mediated.
+- Trusting a semver parser with a range it cannot read: `Bun.semver.satisfies`
+  answers "satisfied" for `latest`, `*`, or any text. The router accepts only
+  ranges the manifest validation accepted.
