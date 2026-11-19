@@ -53,6 +53,7 @@ export type RouteRejectionReason =
   | "group_allowlist_pending"
   | "dm_closed"
   | "dm_pairing_pending"
+  | "dm_owner_session_non_owner"
   | "agent_contact_scope_denied"
   | "agent_actor_observed";
 

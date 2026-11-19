@@ -13,6 +13,8 @@ import { getNats, publish, nats } from "../nats.js";
 import { publishSessionPrompt } from "./session-stream.js";
 import { expandRaviCommandPrompt, RaviCommandError } from "../commands/index.js";
 import { channelMessagePrefixDelivery, parseChannelMessagePrefix } from "../channels/message-prefix.js";
+import { evaluateOwnerDmGuard } from "../channels/owner-dm-guard.js";
+import { isExplicitSessionAttach } from "../router/route-sticky-attach.js";
 import { handleSlashCommand } from "../slash/index.js";
 import {
   handleLinkingDirectMessage,
@@ -1272,6 +1274,13 @@ export class OmniConsumer {
     // overrides the default route resolution.
     // See .ravi/specs/sessions/attach/SPEC.md (Instance Isolation)
     const existingSubscription = findSessionByAttachedChat(canonicalChat.id);
+    // Whether a person or an agent chose the session this inbound lands in by
+    // attaching the chat; routing's own bookkeeping attach does not count.
+    let subscriptionAttachIsExplicit = Boolean(
+      existingSubscription &&
+        existingSubscription.sessionKey === matched.sessionKey &&
+        isExplicitSessionAttach(existingSubscription.attachedByType),
+    );
     if (existingSubscription && existingSubscription.sessionKey !== matched.sessionKey) {
       const ownerSession = getSession(existingSubscription.sessionKey);
       const ownerAgent = ownerSession ? routerConfig.agents[ownerSession.agentId] : undefined;
@@ -1305,6 +1314,7 @@ export class OmniConsumer {
           // route — instance-level policy is the next fallback.
           route: matched.route,
         };
+        subscriptionAttachIsExplicit = isExplicitSessionAttach(existingSubscription.attachedByType);
       } else {
         log.warn("Subscription points to a missing session or agent — falling back to route resolution", {
           chatId: canonicalChat.id,
@@ -1547,6 +1557,49 @@ export class OmniConsumer {
         }
       }
       // "open" → falls through normally
+    }
+
+    // -- Owner session guard --
+    // A DM from anyone but the owner never lands in the owner's shared
+    // session, whatever the instance policy (spec channels/owner-dm-guard).
+    if (!isGroup) {
+      const ownerGuard = evaluateOwnerDmGuard({
+        peerKind: peerKind ?? "dm",
+        sessionKey: matched.sessionKey,
+        senderContactId: effectiveActorType === "contact" ? effectiveContactId : null,
+        explicit: Boolean(hasExplicitRoute) || subscriptionAttachIsExplicit,
+      });
+      if (ownerGuard.blocked) {
+        const isNew = saveAccountPending(effectiveAccountId, senderPhone, {
+          chatId: chatJid,
+          isGroup: false,
+        });
+        log.warn("DM from a non-owner held: it would land in the owner's shared session", {
+          senderPhone,
+          accountId: effectiveAccountId,
+          canonicalChatId: canonicalChat.id,
+          sessionKey: matched.sessionKey,
+          reviewKind: "contact",
+          isNew,
+        });
+        if (isNew) {
+          emitPendingReviewEvent({
+            channel: channelType,
+            accountId: effectiveAccountId,
+            senderId: senderPhone,
+            chatId: chatJid,
+            isGroup: false,
+          });
+        }
+        rejectRoute("dm_owner_session_non_owner", {
+          senderPhone,
+          accountId: effectiveAccountId,
+          sessionKey: matched.sessionKey,
+          contactId: effectiveActorType === "contact" ? (effectiveContactId ?? null) : null,
+        });
+        this.completeInboundMessage(dedupKey);
+        return;
+      }
     }
 
     // -- Per-agent contact scoping --

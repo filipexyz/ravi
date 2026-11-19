@@ -5,6 +5,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { configStore } from "../../config-store.js";
 import {
+  addContactTag,
   createContact,
   ensureContactFromInbound,
   getContact,
@@ -6084,5 +6085,138 @@ describe("Slack Socket Mode drain", () => {
       .catch(() => {});
     expect(service.drainStatus().pending).toBe(0);
     await expect(service.requestDrain()).rejects.toThrow("WORK_DRAIN_UNPROVEN");
+  });
+});
+
+describe("Slack owner DM guard", () => {
+  const accountId = "slack-main";
+  const ownerUser = "U0OWNER01";
+  const peerUser = "U0PEER001";
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-slack-owner-dm-");
+    seedAgent("main", "/tmp/main");
+    seedAgent("ponte", "/tmp/ponte");
+    configStore.refresh();
+    dbUpsertInstance({ name: accountId, instanceId: accountId, channel: "slack", dmPolicy: "open" });
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  function seedContacts(options: { tagOwner: boolean }): void {
+    const owner = createContact({ phone: "5511900000001", name: "Owner", status: "allowed" });
+    if (options.tagOwner) addContactTag(owner.phone, "permission-owner");
+    linkContactIdentity(owner.id, { channel: "slack", platformUserId: ownerUser, instanceId: accountId });
+    const peer = createContact({ phone: "5511900000002", name: "Colleague", status: "allowed" });
+    linkContactIdentity(peer.id, { channel: "slack", platformUserId: peerUser, instanceId: accountId });
+  }
+
+  function routerConfig(routes: RouterConfig["routes"] = []): RouterConfig {
+    return {
+      agents: {
+        main: { id: "main", cwd: "/tmp/main", dmScope: "main" },
+        ponte: { id: "ponte", cwd: "/tmp/ponte", dmScope: "per-peer" },
+      },
+      routes,
+      defaultAgent: "main",
+      defaultDmScope: "main",
+      accountAgents: { [accountId]: "main" },
+      instanceToAccount: { [accountId]: accountId },
+      instances: {
+        [accountId]: {
+          name: accountId,
+          instanceId: accountId,
+          channel: "slack",
+          dmPolicy: "open",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+    };
+  }
+
+  function service(config: RouterConfig, published: Array<{ sessionName: string }>): SlackSocketModeService {
+    return new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId,
+      instanceId: accountId,
+      getRouterConfig: () => config,
+      publishPrompt: async (sessionName) => {
+        published.push({ sessionName });
+      },
+      webClient: { usersInfo: mock(async () => ({ ok: true, user: { id: peerUser } })) } as never,
+    });
+  }
+
+  function dm(eventId: string, channel: string, user: string, ts: string): SlackSocketEnvelope {
+    return {
+      envelope_id: eventId,
+      type: "events_api",
+      payload: {
+        type: "event_callback",
+        team_id: "T123",
+        event_id: eventId,
+        event_time: 1_713_000_000,
+        event: { type: "message", channel, channel_type: "im", user, text: "oi", ts },
+      },
+    };
+  }
+
+  it("delivers the owner's DM to the shared main session", async () => {
+    seedContacts({ tagOwner: true });
+    const published: Array<{ sessionName: string }> = [];
+    await service(routerConfig(), published).handleEnvelope(dm("Ev-owner", "D0OWNER", ownerUser, "1713000000.000100"));
+
+    expect(published).toHaveLength(1);
+    expect(getSessionByName(published[0]!.sessionName)?.sessionKey).toBe("agent:main:main");
+  });
+
+  it("holds a colleague's DM for owner review instead of the owner's session", async () => {
+    seedContacts({ tagOwner: true });
+    const published: Array<{ sessionName: string }> = [];
+    await service(routerConfig(), published).handleEnvelope(dm("Ev-peer", "D0PEER", peerUser, "1713000000.000200"));
+
+    expect(published).toHaveLength(0);
+    expect(listAccountPendingContacts(accountId)).toMatchObject([{ accountId, phone: peerUser, chatId: "D0PEER" }]);
+  });
+
+  it("keeps holding a colleague whose DM chat routing attached to the owner's session", async () => {
+    seedContacts({ tagOwner: true });
+    const chat = dbUpsertChat({ channel: "slack", instanceId: accountId, platformChatId: "D0PEER", chatType: "dm" });
+    getOrCreateSession("agent:main:main", "main", "/tmp/main");
+    attachChatToSession({
+      sessionKey: "agent:main:main",
+      chatId: chat.id,
+      role: "primary",
+      attachedByType: "system",
+      attachedReason: "inbound-route",
+    });
+    const published: Array<{ sessionName: string }> = [];
+    await service(routerConfig(), published).handleEnvelope(dm("Ev-peer-sub", "D0PEER", peerUser, "1713000000.000250"));
+
+    expect(published).toHaveLength(0);
+  });
+
+  it("routes a colleague with an explicit route to that route's agent", async () => {
+    seedContacts({ tagOwner: true });
+    const published: Array<{ sessionName: string }> = [];
+    const config = routerConfig([{ pattern: peerUser, accountId, agent: "ponte", channel: "slack" }]);
+    await service(config, published).handleEnvelope(dm("Ev-peer-route", "D0PEER", peerUser, "1713000000.000300"));
+
+    expect(published).toHaveLength(1);
+    expect(getSessionByName(published[0]!.sessionName)?.sessionKey).toStartWith("agent:ponte:");
+  });
+
+  it("keeps the legacy shared session while no owner is tagged", async () => {
+    seedContacts({ tagOwner: false });
+    const published: Array<{ sessionName: string }> = [];
+    await service(routerConfig(), published).handleEnvelope(dm("Ev-no-owner", "D0PEER", peerUser, "1713000000.000400"));
+
+    expect(published).toHaveLength(1);
+    expect(getSessionByName(published[0]!.sessionName)?.sessionKey).toBe("agent:main:main");
   });
 });

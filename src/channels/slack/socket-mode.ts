@@ -26,6 +26,7 @@ import {
   RouteSessionAgentConflictError,
 } from "../../router/index.js";
 import { isExplicitSessionAttach } from "../../router/route-sticky-attach.js";
+import { evaluateOwnerDmGuard } from "../owner-dm-guard.js";
 import {
   dbUpsertChat,
   dbUpsertChatMessage,
@@ -1914,8 +1915,35 @@ export class SlackSocketModeService {
           (!contact.allowedAgents?.length || contact.allowedAgents.includes(matched.agentId)),
       );
     }
+    // A DM from anyone but the owner never lands in the owner's shared
+    // session, whatever the instance policy (spec channels/owner-dm-guard).
+    let ownerSessionBlocked = false;
+    if (!isGroup && matched && message.senderKind !== "bot") {
+      const ownerGuard = evaluateOwnerDmGuard({
+        peerKind,
+        sessionKey: matched.sessionKey,
+        senderContactId: resolveSlackActorIdentity({
+          chatId: canonicalChat.id,
+          instanceAliases,
+          platformUserId: message.slackUserId ?? message.userId,
+          senderKind: message.senderKind,
+        }).contactId,
+        explicit: explicitRoute,
+      });
+      if (ownerGuard.blocked) {
+        ownerSessionBlocked = true;
+        log.warn("Slack DM from a non-owner held: it would land in the owner's shared session", {
+          accountId: routeAccountId,
+          channelId: message.channelId,
+          userId: message.userId,
+          sessionKey: matched.sessionKey,
+          reason: ownerGuard.reason,
+        });
+      }
+    }
     const needsReview =
       !matched ||
+      ownerSessionBlocked ||
       (!explicitRoute &&
         ((isGroup && inboundPolicy === "allowlist") ||
           (!isGroup && inboundPolicy === "pairing" && !approvedDmContact)));
