@@ -890,8 +890,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/youtube.ts | 1391 | fixed | binding retained / no recognized error surface | src/cli/commands/youtube.ts:0b0b9c6c742bfed563ca0775 |
 | cli | src/cli/context.ts | 199 | triaged-follow-up | catch-without-binding | src/cli/context.ts:9e7eca8e26d51a8350e4f5f9 |
 | cli | src/cli/daemon-process-tree.ts | 18 | no-cause | No /proc entry (macOS, or the process exited): the caller falls back to ps. | src/cli/daemon-process-tree.ts:61057a3a7392186f0787c07e |
-| cli | src/cli/daemon-process-tree.ts | 37 | no-cause | An unreadable parent ends the walk; the caller treats the chain as outside the daemon. | src/cli/daemon-process-tree.ts:ff7a07a3b9a49493213628db |
-| cli | src/cli/daemon-process-tree.ts | 123 | no-cause | An unreadable PM2 is an unknown position, so it counts as inside and the worker keeps waiting. | src/cli/daemon-process-tree.ts:417f82de02c714008e49f383 |
+| cli | src/cli/daemon-process-tree.ts | 39 | no-cause | An unreadable parent ends the walk; the caller treats the chain as outside the daemon. | src/cli/daemon-process-tree.ts:ff7a07a3b9a49493213628db |
+| cli | src/cli/daemon-process-tree.ts | 125 | no-cause | An unreadable PM2 is an unknown position, so it counts as inside and the worker keeps waiting. | src/cli/daemon-process-tree.ts:417f82de02c714008e49f383 |
 | cli | src/cli/env.ts | 67 | fixed | binding retained / no recognized error surface | src/cli/env.ts:b76b7cc01882eb319d11a188 |
 | cli | src/cli/host-cli-gateway.ts | 62 | fixed | binding retained / no recognized error surface | src/cli/host-cli-gateway.ts:fbf979b7648feaf37ce0e087 |
 | cli | src/cli/host-cli-gateway.ts | 68 | fixed | binding retained / no recognized error surface | src/cli/host-cli-gateway.ts:f7e094da98fed906069260b2 |

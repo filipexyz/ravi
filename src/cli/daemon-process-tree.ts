@@ -31,6 +31,8 @@ function psParentPid(pid: number): number | null {
     const out = execSync(`ps -o ppid= -p ${pid}`, {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
+      // Explicit: Bun (up to 1.3.x) hands a child the environment from startup, not the live process.env.
+      env: process.env,
     }).trim();
     const parsed = Number.parseInt(out, 10);
     return Number.isFinite(parsed) ? parsed : null;
