@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCodexRuntimeProvider } from "./codex-provider.js";
 
+// Starts a fake Codex as a child process: 2.2 s to 3.9 s on a CI runner, against Bun's 5 s default timeout. The test
+// says how long it may take; the CI segment that runs the file keeps the default.
 it("stored-session control spawns Codex without the daemon's secrets", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-control-env-"));
   const command = join(cwd, "fake-codex.mjs");
@@ -47,4 +49,4 @@ createInterface({input:process.stdin}).on("line", line => {
     }
     rmSync(cwd, { recursive: true, force: true });
   }
-});
+}, 20_000);
