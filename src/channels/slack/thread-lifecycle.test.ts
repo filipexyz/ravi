@@ -13,6 +13,10 @@ import type { PublishSessionPromptOptions } from "../../omni/session-stream.js";
 import type { ChannelOutboundJob } from "../outbound-stream.js";
 import { deleteSession, getOrCreateSession, getSession, listSessionSubscriptions } from "../../router/index.js";
 import { dbCreateTrigger, dbGetTrigger, dbUpdateTrigger } from "../../triggers/triggers-db.js";
+import { dbDeleteTrigger } from "../../triggers/triggers-db.js";
+import { triggersRefreshPending } from "../../triggers/refresh-intent.js";
+import { runGhFollowMaintenance } from "../../hooks/gh-follow-sweep.js";
+import { askDecisionRecord } from "../../decisions/store.js";
 import { dbCreateAgent } from "../../router/router-db.js";
 import { dbUpsertChat } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -965,6 +969,122 @@ describe("Slack thread orchestration", () => {
     expect(dbGetTrigger(follow.id)!.replySource?.threadId).toBeUndefined();
     // The running trigger runner reloads its subscriptions, so the CI event reaches the parent.
     expect(dependencies.publishEvent).toHaveBeenCalledWith("ravi.triggers.refresh", {});
+  });
+
+  describe("PR follows a closing thread hands to its parent", () => {
+    async function threadWithFollow(publishEvent = mock(async (_topic: string, _data: unknown) => {})) {
+      const fixture = seedPendingCreation();
+      dbCreateAgent({ id: "ravi", cwd: "/tmp/ravi" });
+      const dependencies = { ...capture().dependencies, publishEvent };
+      await finalizeSlackThreadCreation(fixture.requestId, dependencies);
+      const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+      const addressedToChild = {
+        topic: "ravi.watch.github.>",
+        agentId: "ravi",
+        session: "main",
+        replySession: child.name!,
+        replySource: { channel: "slack", accountId: "ravi-slack", chatId: "C123", threadId: fixture.threadTs },
+      };
+      const follow = dbCreateTrigger({ ...addressedToChild, name: "gh-follow:o/r#7", message: "follow" });
+      return { fixture, child, dependencies, publishEvent, addressedToChild, follow };
+    }
+
+    it("leaves the follows with the thread while another active trigger refuses the close, and moves them when it goes through", async () => {
+      const { fixture, child, dependencies, publishEvent, addressedToChild, follow } = await threadWithFollow();
+      const other = dbCreateTrigger({ ...addressedToChild, name: "custom-review", message: "other" });
+      const refreshes = () => publishEvent.mock.calls.filter(([topic]) => topic === "ravi.triggers.refresh").length;
+
+      // Another active trigger refuses the close. Only that one is named: the PR follow would have moved.
+      await expect(closeSlackThread(child, "done", dependencies)).rejects.toMatchObject({
+        code: "THREAD_TRIGGERS_PENDING",
+        details: { triggerIds: [other.id] },
+      });
+      expect(dbGetTrigger(follow.id)!.replySession).toBe(child.name);
+      expect(dbGetTrigger(follow.id)!.replySource?.threadId).toBe(fixture.threadTs);
+      expect(refreshes()).toBe(0);
+      expect(triggersRefreshPending()).toBe(false);
+      expect(getSlackThreadLifecycle(fixture.requestId)?.status).toBe("open");
+
+      // Once nothing refuses, the close moves the follow in the same transaction and tells the runner.
+      dbDeleteTrigger(other.id);
+      const closed = await closeSlackThread(child, "done", dependencies);
+      expect(closed.changed).toBe(true);
+      expect(dbGetTrigger(follow.id)).toMatchObject({
+        replySession: "ravi-parent",
+        replySource: { channel: "slack", accountId: "ravi-slack", chatId: "C123" },
+      });
+      expect(dbGetTrigger(follow.id)!.replySource?.threadId).toBeUndefined();
+      expect(refreshes()).toBe(1);
+      expect(triggersRefreshPending()).toBe(false);
+    });
+
+    it("leaves the follows with the thread while a pending decision refuses the close", async () => {
+      const { fixture, child, dependencies, publishEvent, follow } = await threadWithFollow();
+      askDecisionRecord(
+        {
+          type: "thread",
+          id: fixture.requestId,
+          chatId: getSlackThreadLifecycle(fixture.requestId)!.threadCanonicalChatId!,
+          sessionKey: child.sessionKey,
+        },
+        { key: "which-branch", ask: "Which branch?" },
+      );
+
+      await expect(closeSlackThread(child, "done", dependencies)).rejects.toMatchObject({
+        code: "THREAD_DECISIONS_PENDING",
+      });
+
+      // The thread is still open and still the one that must react to its CI.
+      expect(dbGetTrigger(follow.id)!.replySession).toBe(child.name);
+      expect(dbGetTrigger(follow.id)!.replySource?.threadId).toBe(fixture.threadTs);
+      expect(publishEvent.mock.calls.filter(([topic]) => topic === "ravi.triggers.refresh")).toHaveLength(0);
+      expect(triggersRefreshPending()).toBe(false);
+      expect(getSlackThreadLifecycle(fixture.requestId)?.status).toBe("open");
+    });
+
+    it("publishes a lost refresh again from follow maintenance until the runner has been told", async () => {
+      let brokerUp = false;
+      const publishEvent = mock(async (topic: string) => {
+        if (topic === "ravi.triggers.refresh" && !brokerUp) throw new Error("broker disconnected");
+      });
+      const { child, dependencies, follow } = await threadWithFollow(publishEvent);
+
+      // The close completes, the follow is on the parent, and the refresh event is lost.
+      expect((await closeSlackThread(child, "done", dependencies)).changed).toBe(true);
+      expect(dbGetTrigger(follow.id)!.replySession).toBe("ravi-parent");
+      expect(triggersRefreshPending()).toBe(true);
+
+      let refreshes = 0;
+      const maintain = (emitTriggersRefresh: () => Promise<void>) =>
+        runGhFollowMaintenance({
+          readPending: () => [],
+          listPrStates: () => new Map([[7, "OPEN"]]),
+          listWatches: () => [],
+          ensureWatches: async () => {},
+          emitTriggersRefresh,
+        });
+
+      // The broker is still down: the intent stays, and the sweep reports the error without losing it.
+      const down = await maintain(async () => {
+        throw new Error("still down");
+      });
+      expect(down.errors).toBeGreaterThan(0);
+      expect(down.refreshRepublished).toBeUndefined();
+      expect(triggersRefreshPending()).toBe(true);
+
+      // Once it is back, the next sweep publishes it, clears the intent, and later sweeps stay quiet.
+      brokerUp = true;
+      const back = await maintain(async () => {
+        refreshes++;
+      });
+      expect(back.refreshRepublished).toBe(true);
+      expect(refreshes).toBe(1);
+      expect(triggersRefreshPending()).toBe(false);
+      await maintain(async () => {
+        refreshes++;
+      });
+      expect(refreshes).toBe(1);
+    });
   });
 
   it("sends parent instructions into the thread, reopening a closed one, and only from the parent", async () => {

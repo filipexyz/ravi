@@ -18,6 +18,7 @@
 import type { Database } from "bun:sqlite";
 import { findSlackThreadLifecycleByChildRef } from "../channels/slack/thread-lifecycle-store.js";
 import { getSession, resolveSession } from "../router/sessions.js";
+import { isGhFollowTriggerName } from "./follow-trigger-names.js";
 import { dbListTriggers, dbUpdateTrigger } from "./triggers-db.js";
 import type { TriggerReplySource } from "./types.js";
 
@@ -162,9 +163,6 @@ export function resolveDurableFollowOwner<T extends FollowOwnerContext>(
   };
 }
 
-/** The name `gh-watch` gives a PR follow trigger (`gh-follow:<repo>#<number>`). */
-const GH_FOLLOW_TRIGGER_PREFIX = "gh-follow:";
-
 /**
  * A thread that is closing hands the PR follows addressed to its child to its
  * durable parent first, so the close is not refused (`THREAD_TRIGGERS_PENDING`)
@@ -177,7 +175,7 @@ export function handOffClosingThreadFollows(
 ): string[] {
   const moved: string[] = [];
   for (const trigger of dbListTriggers()) {
-    if (!trigger.name.startsWith(GH_FOLLOW_TRIGGER_PREFIX) || !trigger.replySession) continue;
+    if (!isGhFollowTriggerName(trigger.name) || !trigger.replySession) continue;
     if (trigger.replySession !== child.childSessionKey && trigger.replySession !== child.childSessionName) continue;
     const closing: FollowOwnerContext = {
       sessionKey: child.childSessionKey,

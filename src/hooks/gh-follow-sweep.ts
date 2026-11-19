@@ -27,6 +27,7 @@ import { removeWatch as removeWatchOperation, listWatchRecords } from "../watch/
 import type { WatchRecord } from "../watch/types.js";
 import { nats } from "../nats.js";
 import { logger } from "../utils/logger.js";
+import { clearTriggersRefreshPending, triggersRefreshPending } from "../triggers/refresh-intent.js";
 import {
   ensureGhWatchFollow,
   ensureFollowWatchProducer,
@@ -58,6 +59,8 @@ export interface GhFollowMaintenanceResult {
   watchesRemoved: number;
   watchesEnsured: number;
   errors: number;
+  /** A refresh the runner had not been told about (a thread close handed it follows) was published again. */
+  refreshRepublished?: boolean;
 }
 
 export interface GhFollowMaintenanceDeps {
@@ -212,6 +215,19 @@ export async function runGhFollowMaintenance(deps: GhFollowMaintenanceDeps = {})
     watchesEnsured: 0,
     errors: 0,
   };
+
+  // 0. A thread close that handed its PR follows to the parent saved the intent to refresh the runner.
+  //    If publishing that event failed, the runner still delivers to the closed child: publish it again.
+  if (triggersRefreshPending()) {
+    try {
+      await emitRefresh();
+      clearTriggersRefreshPending();
+      result.refreshRepublished = true;
+    } catch (error) {
+      log.warn("Could not publish the pending triggers refresh; will retry on the next tick", { error });
+      result.errors += 1;
+    }
+  }
 
   // 1. Pendências: `gh pr create` sem número.
   const pending = readPending();

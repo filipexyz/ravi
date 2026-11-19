@@ -6,6 +6,7 @@ import { nats } from "../../nats.js";
 import { publishSessionPrompt, type PublishSessionPromptOptions } from "../../omni/session-stream.js";
 import { publishChannelSessionPrompt } from "../session-prompt.js";
 import { handOffClosingThreadFollows } from "../../triggers/follow-owner.js";
+import { clearTriggersRefreshPending, markTriggersRefreshPending } from "../../triggers/refresh-intent.js";
 import { prepareThreadAttentionNotice } from "./thread-attention-admission.js";
 import { publishChannelOutboundJobDurably } from "../outbound-publish-outbox.js";
 import { buildChannelChatActionJob, type ChannelOutboundJob } from "../outbound-stream.js";
@@ -650,27 +651,36 @@ export async function closeSlackThreadRecord(
       );
     }
   }
-  // The PR follows this thread armed address the thread while it is open. Hand them to the
-  // durable parent before the close checks for active triggers, so the close is not refused.
-  const handedOff = handOffClosingThreadFollows({
-    childSessionKey: existing.childSessionKey,
-    childSessionName: existing.childSessionName,
-  });
-  if (handedOff.length > 0) {
-    await dependencies.publishEvent("ravi.triggers.refresh", {}).catch((error) => {
-      log.warn("Failed to refresh triggers after handing a thread's PR follows to its parent", {
-        requestId: existing.requestId,
-        triggerIds: handedOff,
-        error: errorMessage(error),
-      });
-    });
-  }
   const closed = closeSlackThreadLifecycle({
     childSessionKey: existing.childSessionKey,
     requestId: existing.requestId,
     returnResult,
     closeContextId: getContext({ localOnly: true })?.contextId,
+    // The PR follows this thread armed address the thread while it is open. They move to the durable
+    // parent inside the close itself, so a close that is refused leaves them where they were.
+    handOffFollows: (database) => {
+      const moved = handOffClosingThreadFollows(
+        { childSessionKey: existing.childSessionKey!, childSessionName: existing.childSessionName },
+        database,
+      );
+      // The runner keeps delivering to the recipient it loaded until it is told to reload. The intent
+      // is saved with the handoff, so a lost refresh event is published again (follow maintenance).
+      if (moved.length) markTriggersRefreshPending();
+      return moved;
+    },
   });
+  if (closed.handedOffTriggerIds?.length) {
+    try {
+      await dependencies.publishEvent("ravi.triggers.refresh", {});
+      clearTriggersRefreshPending();
+    } catch (error) {
+      log.warn("Triggers refresh after a thread close was not published; follow maintenance will retry it", {
+        requestId: existing.requestId,
+        triggerIds: closed.handedOffTriggerIds,
+        error: errorMessage(error),
+      });
+    }
+  }
 
   if (closed.changed) {
     await dependencies
