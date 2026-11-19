@@ -2,7 +2,7 @@ import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { describe, expect, it } from "bun:test";
 import { Command } from "commander";
 import {
-  argsForRootUsageContract,
+  argsForUsageContract,
   ContractError,
   GENERIC_COMMAND_FAILED_MESSAGE,
   expectedErrorToContractError,
@@ -782,11 +782,28 @@ describe("diagnostic identifier egress", () => {
   });
 });
 
-describe("argsForRootUsageContract", () => {
+describe("argsForUsageContract", () => {
+  // ravi
+  //   tasks (alias t): list [--json], profiles: list, show <id>
+  //   crm: contact [id] [--json] (own argument and options): list
+  //   ops [--env <name>] (own option): run
+  //   secret (hidden)
   const program = new Command("ravi");
-  program.command("tasks").alias("t");
+  const tasks = program.command("tasks").alias("t");
+  tasks.command("list").option("--json");
+  const profiles = tasks.command("profiles");
+  profiles.command("list");
+  profiles.command("show").argument("<id>");
+  const crm = program.command("crm");
+  const contact = crm
+    .command("contact")
+    .argument("[id]")
+    .option("--json")
+    .action(() => {});
+  contact.command("list");
+  program.command("ops").option("--env <name>").command("run");
   program.command("secret", { hidden: true });
-  const argsFor = (...args: string[]) => argsForRootUsageContract(args, program);
+  const argsFor = (...args: string[]) => argsForUsageContract(args, program);
 
   it("drops the help flags after an unknown root command so the parser reaches its unknown-command error", () => {
     expect(argsFor("task", "--help")).toEqual(["task"]);
@@ -795,23 +812,74 @@ describe("argsForRootUsageContract", () => {
     expect(argsFor("task", "-h", "--help")).toEqual(["task"]);
   });
 
-  it("leaves every other invocation as it is", () => {
+  it("does the same for an unknown command under a group, at any depth, through an alias too", () => {
+    expect(argsFor("tasks", "lsit", "--help")).toEqual(["tasks", "lsit"]);
+    expect(argsFor("t", "lsit", "-h")).toEqual(["t", "lsit"]);
+    expect(argsFor("tasks", "lsit", "--help", "--json")).toEqual(["tasks", "lsit", "--json"]);
+    expect(argsFor("tasks", "profiles", "lsit", "--help")).toEqual(["tasks", "profiles", "lsit"]);
+    expect(argsFor("crm", "contcat", "--help")).toEqual(["crm", "contcat"]);
+  });
+
+  it("drops the help flag whatever sits between the unknown command and it", () => {
+    // An unknown option makes Commander set the rest aside, `--` included, and it still finds the help flag there.
+    expect(argsFor("task", "--foo", "--", "--help")).toEqual(["task", "--foo", "--"]);
+    expect(argsFor("task", "--", "--help")).toEqual(["task", "--"]);
+    expect(argsFor("task", "--help", "--", "-h")).toEqual(["task", "--"]);
+    // Options in front of the unknown command are unknown to a node that declares none: they do not move the operand.
+    expect(argsFor("--json", "task", "--help")).toEqual(["--json", "task"]);
+    expect(argsFor("tasks", "--json", "lsit", "--help")).toEqual(["tasks", "--json", "lsit"]);
+  });
+
+  it("leaves a known command and its help alone", () => {
     expect(argsFor("task")).toEqual(["task"]);
     expect(argsFor("tasks", "--help")).toEqual(["tasks", "--help"]);
     expect(argsFor("t", "-h")).toEqual(["t", "-h"]);
+    expect(argsFor("tasks", "list", "--help")).toEqual(["tasks", "list", "--help"]);
+    expect(argsFor("tasks", "profiles", "--help")).toEqual(["tasks", "profiles", "--help"]);
+    expect(argsFor("tasks", "profiles", "show", "abc", "--help")).toEqual([
+      "tasks",
+      "profiles",
+      "show",
+      "abc",
+      "--help",
+    ]);
     expect(argsFor("secret", "--help")).toEqual(["secret", "--help"]);
     expect(argsFor("help", "tasks")).toEqual(["help", "tasks"]);
     expect(argsFor("help", "--help")).toEqual(["help", "--help"]);
-    expect(argsFor("--help")).toEqual(["--help"]);
-    expect(argsFor("-h")).toEqual(["-h"]);
-    expect(argsFor()).toEqual([]);
+    expect(argsFor("tasks", "help", "lsit")).toEqual(["tasks", "help", "lsit"]);
   });
 
-  it("keeps a help flag that follows the end-of-options marker, and does not touch its input", () => {
-    expect(argsFor("task", "--", "--help")).toEqual(["task", "--", "--help"]);
-    expect(argsFor("task", "--help", "--", "-h")).toEqual(["task", "--", "-h"]);
+  it("leaves a help flag in front of the operand: it asks for the help of the node it follows", () => {
+    expect(argsFor("--help")).toEqual(["--help"]);
+    expect(argsFor("-h")).toEqual(["-h"]);
+    expect(argsFor("--help", "task")).toEqual(["--help", "task"]);
+    expect(argsFor("--json", "-h", "task")).toEqual(["--json", "-h", "task"]);
+    expect(argsFor("tasks", "-h", "lsit")).toEqual(["tasks", "-h", "lsit"]);
+    expect(argsFor("tasks", "--json", "--help", "lsit")).toEqual(["tasks", "--json", "--help", "lsit"]);
+  });
+
+  it("leaves a node that takes an argument or an option of its own: the next operand may be that argument", () => {
+    // `crm contact` has `[id]` and `--json`; `ops` has `--env <name>` and no argument, so `prod` below is a value.
+    expect(argsFor("crm", "contact", "abc", "--help")).toEqual(["crm", "contact", "abc", "--help"]);
+    expect(argsFor("crm", "contact", "list", "--help")).toEqual(["crm", "contact", "list", "--help"]);
+    expect(argsFor("ops", "--env", "prod", "lsit", "--help")).toEqual(["ops", "--env", "prod", "lsit", "--help"]);
+    expect(argsFor("ops", "ruN", "--help")).toEqual(["ops", "ruN", "--help"]);
+  });
+
+  it("leaves the end-of-options marker and a missing operand alone", () => {
+    expect(argsFor()).toEqual([]);
+    expect(argsFor("--")).toEqual(["--"]);
+    expect(argsFor("--", "task", "--help")).toEqual(["--", "task", "--help"]);
+    expect(argsFor("tasks")).toEqual(["tasks"]);
+    expect(argsFor("tasks", "--json")).toEqual(["tasks", "--json"]);
+    expect(argsFor("tasks", "--", "lsit", "--help")).toEqual(["tasks", "--", "lsit", "--help"]);
+  });
+
+  it("returns a new array and does not touch its input", () => {
     const input = ["task", "--help"];
-    argsForRootUsageContract(input, program);
+    expect(argsForUsageContract(input, program)).not.toBe(input);
     expect(input).toEqual(["task", "--help"]);
+    const untouched = ["tasks", "list", "--help"];
+    expect(argsForUsageContract(untouched, program)).not.toBe(untouched);
   });
 });
