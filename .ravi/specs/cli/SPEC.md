@@ -94,12 +94,19 @@ The canonical failure value is a `ContractError` and its envelope:
   invalid usage; `3` blocked by confirmation policy. Exit `3` is a safe block,
   not an execution failure.
 - Root parser, domain parser, handler and bootstrap paths MUST preserve this
-  taxonomy. Unknown root commands are usage errors (`USAGE_ERROR`, exit `2`),
-  including when Commander can suggest a valid command and when a help flag
-  follows the unknown command: Commander looks for help before it looks for an
-  unknown command, so the root hands the parser the arguments without the help
-  flags (`argsForRootUsageContract`) and `ravi task --help` fails like
-  `ravi task` instead of printing the root help with exit `0`.
+  taxonomy. Unknown commands are usage errors (`USAGE_ERROR`, exit `2`) at the
+  root and under every migrated domain group, including when Commander can
+  suggest a valid command and when a help flag follows the unknown command:
+  Commander looks for help before it looks for an unknown command, so the root
+  hands the parser the arguments without the help flags
+  (`argsForUsageContract`, which follows the operands down the command tree)
+  and `ravi task --help` and `ravi tasks lsit --help` fail like `ravi task` and
+  `ravi tasks lsit` instead of printing help with exit `0`. A group that has
+  not migrated reports the unknown command the way Commander does by default,
+  and the help flag no longer hides it there either. A help flag in front of
+  the unknown command, a known command, and a node that takes an argument or an
+  option of its own (`ravi crm contact <id> --help`, where the next operand may
+  be that argument) keep Commander's help.
 - Expected handler failures that still use the compatibility `fail()` helper
   are normalized at the shared transport boundary as `COMMAND_FAILED`, exit
   `1`. JSON CLI, tools and gateway MUST receive one canonical envelope whose
