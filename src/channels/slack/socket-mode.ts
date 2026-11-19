@@ -22,9 +22,12 @@ import {
   listSessionSubscriptions,
   matchRoute,
   isChatCompatibleWithSession,
+  previewCommittedSessionKey,
   RouteSessionAgentConflictError,
 } from "../../router/index.js";
 import { isExplicitSessionAttach } from "../../router/route-sticky-attach.js";
+import { evaluateOwnerDmGuard, isOperatorChosenDestination } from "../owner-dm-guard.js";
+import { pendingReviewEvents } from "../pending-review-event.js";
 import { resolveSubscriptionPrecedence } from "../subscription-precedence.js";
 import {
   dbUpsertChat,
@@ -1771,11 +1774,29 @@ export class SlackSocketModeService {
     });
     const profileUserId = input.message.slackUserId ?? input.message.userId;
     const profile = input.isGroup ? null : await this.slackUserProfile(profileUserId);
-    saveAccountPending(input.accountId, input.isGroup ? input.message.channelId : input.message.userId, {
+    const isNew = saveAccountPending(input.accountId, input.isGroup ? input.message.channelId : input.message.userId, {
       name: profile?.displayName ?? null,
       chatId: input.message.channelId,
       isGroup: input.isGroup,
     });
+    if (!isNew) return;
+    // Same events the omni path emits for a new pending sender or chat.
+    for (const event of pendingReviewEvents({
+      channel: "slack",
+      accountId: input.accountId,
+      senderId: input.message.userId,
+      chatId: input.message.channelId,
+      isGroup: input.isGroup,
+    })) {
+      try {
+        await this.publishInteraction(event.topic, event.payload);
+      } catch (error) {
+        log.warn("Failed to emit Slack pending review event", {
+          topic: event.topic,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
 
   private async routeMessage(message: SlackNormalizedMessage): Promise<void> {
@@ -1810,6 +1831,45 @@ export class SlackSocketModeService {
       },
       seenAt: message.eventTimeMs,
     });
+    // A cloud run's person in a thread bound to the run, or answering an
+    // approval (`aprovar <código>`): the run gets it, not the agent, before any
+    // route, policy or owner guard, as on the omni path
+    // (src/cloud-agents/chat-routing.ts). A held sender's reply must still
+    // reach the run that asked.
+    const leadingPrefix = parseSlackMessagePrefix(message.text);
+    const promptText = await this.resolveSlackUserMentions(leadingPrefix ? leadingPrefix.body : message.text);
+    const cloudChatActor = resolveSlackActorIdentity({
+      chatId: canonicalChat.id,
+      instanceAliases,
+      platformUserId: message.slackUserId ?? message.userId,
+      alternatePlatformUserIds: message.botId ? [message.botId] : [],
+      senderKind: message.senderKind,
+    });
+    if (
+      cloudChatActor.actorType === "contact" &&
+      cloudChatActor.contactId &&
+      (await interceptCloudChatMessage(
+        {
+          channel: "slack",
+          accountId: this.options.accountId,
+          instanceId,
+          chatId: message.channelId,
+          threadTs: message.thread.inboundThreadTs ?? null,
+          isGroup,
+          contactId: cloudChatActor.contactId,
+          text: promptText,
+        },
+        (text) =>
+          this.webClient.postMessage({
+            channel: message.channelId,
+            ...(message.thread.outboundThreadTs ? { threadTs: message.thread.outboundThreadTs } : {}),
+            text,
+          }),
+      ))
+    ) {
+      return;
+    }
+
     let matched = matchRoute(routerConfig, {
       phone: routePeerId,
       channel: "slack",
@@ -1819,6 +1879,8 @@ export class SlackSocketModeService {
       peerKind,
       threadId: routeThreadId,
     });
+    // Where the route alone sends the message, before a subscription reroutes it.
+    const routeMatched = matched;
 
     const existingSubscription = findSessionByAttachedChat(canonicalChat.id);
     let trustedSubscription = false;
@@ -1902,8 +1964,44 @@ export class SlackSocketModeService {
           (!contact.allowedAgents?.length || contact.allowedAgents.includes(matched.agentId)),
       );
     }
+    // A DM from anyone but the owner never lands in the owner's shared
+    // session, whatever the instance policy (spec channels/owner-dm-guard).
+    // It reads the session the commit will land in: a route that forces a
+    // session redirects there, away from `matched.sessionKey`.
+    let ownerSessionBlocked = false;
+    if (!isGroup && matched && message.senderKind !== "bot") {
+      const landingSessionKey = previewCommittedSessionKey(matched, { threadId: routeThreadId });
+      const ownerGuard = evaluateOwnerDmGuard({
+        peerKind,
+        sessionKey: landingSessionKey,
+        senderContactId: resolveSlackActorIdentity({
+          chatId: canonicalChat.id,
+          instanceAliases,
+          platformUserId: message.slackUserId ?? message.userId,
+          senderKind: message.senderKind,
+        }).contactId,
+        explicit: isOperatorChosenDestination({
+          routePattern: routeMatched?.route?.pattern,
+          routeSessionKey: routeMatched ? previewCommittedSessionKey(routeMatched, { threadId: routeThreadId }) : null,
+          attachExplicit: explicitAttach,
+          attachSessionKey: existingSubscription?.sessionKey,
+          landingSessionKey,
+        }),
+      });
+      if (ownerGuard.blocked) {
+        ownerSessionBlocked = true;
+        log.warn("Slack DM from a non-owner held: it would land in the owner's shared session", {
+          accountId: routeAccountId,
+          channelId: message.channelId,
+          userId: message.userId,
+          sessionKey: landingSessionKey,
+          reason: ownerGuard.reason,
+        });
+      }
+    }
     const needsReview =
       !matched ||
+      ownerSessionBlocked ||
       (!explicitRoute &&
         ((isGroup && inboundPolicy === "allowlist") ||
           (!isGroup && inboundPolicy === "pairing" && !approvedDmContact)));
@@ -2165,35 +2263,6 @@ export class SlackSocketModeService {
       message,
       actorIdentity,
     });
-    const leadingPrefix = parseSlackMessagePrefix(message.text);
-    const promptText = await this.resolveSlackUserMentions(leadingPrefix ? leadingPrefix.body : message.text);
-    // A cloud run's person in a thread bound to the run, or answering an
-    // approval (`aprovar <código>`): the run gets it, not the agent
-    // (src/cloud-agents/chat-routing.ts).
-    if (
-      actorIdentity.actorType === "contact" &&
-      actorIdentity.contactId &&
-      (await interceptCloudChatMessage(
-        {
-          channel: "slack",
-          accountId: this.options.accountId,
-          instanceId,
-          chatId: message.channelId,
-          threadTs: message.thread.inboundThreadTs ?? null,
-          isGroup,
-          contactId: actorIdentity.contactId,
-          text: promptText,
-        },
-        (text) =>
-          this.webClient.postMessage({
-            channel: message.channelId,
-            ...(message.thread.outboundThreadTs ? { threadTs: message.thread.outboundThreadTs } : {}),
-            text,
-          }),
-      ))
-    ) {
-      return;
-    }
     const ingress = await acceptResolvedChannelIngress(
       {
         request: {

@@ -2865,4 +2865,26 @@ describe("Ravi app composition", () => {
     expect(capabilityNames(blogChild)).not.toContain("mutate:apps:*");
     expect(capabilityNames(blogChild)).not.toContain("execute:group:apps");
   }, 30_000);
+
+  it("routes an app that sits under both the repo root and the state root", async () => {
+    const root = makeRepo();
+    // A state directory inside the repository makes `<repo>/src/apps` the repo root and the state root at once. The app
+    // is found once, not twice, and runs.
+    const real = realpathSync(root);
+    process.env.RAVI_STATE_DIR = join(real, "src");
+    writeManifest(
+      root,
+      "plain",
+      compositionManifest("plain", {
+        operations: {
+          "plain.run": { interface: "cli", command: "bun cli.mjs run {args}", json: true, mutating: false },
+        },
+      }),
+    );
+    writeFileSync(join(root, "src", "apps", "plain", "cli.mjs"), "console.log(JSON.stringify({ ok: true }));\n");
+    const turn = compositionTurn([appCapability("use", "plain")]);
+
+    expect(discoverAppManifests({ cwd: real }).filter((record) => record.id === "plain")).toHaveLength(1);
+    expect(await callAsContext(real, turn, "plain", "run", [])).toMatchObject({ ok: true, result: { ok: true } });
+  }, 30_000);
 });

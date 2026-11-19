@@ -13,7 +13,10 @@ import { getNats, publish, nats } from "../nats.js";
 import { publishSessionPrompt } from "./session-stream.js";
 import { expandRaviCommandPrompt, RaviCommandError } from "../commands/index.js";
 import { channelMessagePrefixDelivery, parseChannelMessagePrefix } from "../channels/message-prefix.js";
+import { evaluateOwnerDmGuard, isOperatorChosenDestination } from "../channels/owner-dm-guard.js";
+import { type PendingReviewInput, pendingReviewEvents } from "../channels/pending-review-event.js";
 import { resolveSubscriptionPrecedence } from "../channels/subscription-precedence.js";
+import { isExplicitSessionAttach } from "../router/route-sticky-attach.js";
 import { handleSlashCommand } from "../slash/index.js";
 import {
   handleLinkingDirectMessage,
@@ -39,6 +42,7 @@ import {
   listSessionSubscriptions,
   matchRoute,
   isChatCompatibleWithSession,
+  previewCommittedSessionKey,
 } from "../router/index.js";
 import { configStore } from "../config-store.js";
 import {
@@ -118,30 +122,11 @@ export function supportsOmniReadReceipts(channelType: string): boolean {
   }
 }
 
-function emitPendingReviewEvent(input: {
-  channel: string;
-  accountId: string;
-  senderId: string;
-  chatId: string;
-  isGroup: boolean;
-}): void {
-  const reviewKind = input.isGroup ? "chat" : "contact";
-  const payload = {
-    type: "account",
-    reviewKind,
-    channel: input.channel,
-    accountId: input.accountId,
-    senderId: input.senderId,
-    chatId: input.chatId,
-    isGroup: input.isGroup,
-  };
-  const topic = input.isGroup ? "ravi.chats.pending" : "ravi.contacts.pending";
-  nats.emit(topic, payload).catch((err) => log.warn("Failed to emit pending notification", { topic, error: err }));
-
-  if (input.isGroup) {
+function emitPendingReviewEvent(input: PendingReviewInput): void {
+  for (const event of pendingReviewEvents(input)) {
     nats
-      .emit("ravi.contacts.pending", { ...payload, deprecated: true, replacementTopic: "ravi.chats.pending" })
-      .catch((err) => log.warn("Failed to emit legacy pending notification", { error: err }));
+      .emit(event.topic, event.payload)
+      .catch((err) => log.warn("Failed to emit pending notification", { topic: event.topic, error: err }));
   }
 }
 
@@ -1280,6 +1265,15 @@ export class OmniConsumer {
     // src/channels/subscription-precedence.ts
     const existingSubscription = findSessionByAttachedChat(canonicalChat.id);
     let staleSubscription: typeof existingSubscription = null;
+    // Where the route alone sends the message, before a subscription reroutes it.
+    const routeMatched = matched;
+    // Whether the chat's subscription was honored and was made by a person or
+    // an agent; routing's own bookkeeping attach does not count.
+    let subscriptionAttachIsExplicit = Boolean(
+      existingSubscription &&
+        existingSubscription.sessionKey === matched.sessionKey &&
+        isExplicitSessionAttach(existingSubscription.attachedByType),
+    );
     if (
       existingSubscription &&
       (existingSubscription.sessionKey !== matched.sessionKey || Boolean(matched.route?.session?.trim()))
@@ -1331,6 +1325,7 @@ export class OmniConsumer {
           // override. The subscription doesn't expose a route — instance-level
           // policy is the next fallback.
           matched = precedence.matched;
+          subscriptionAttachIsExplicit = isExplicitSessionAttach(existingSubscription.attachedByType);
         }
       } else {
         log.warn("Subscription points to a missing session or agent — falling back to route resolution", {
@@ -1574,6 +1569,58 @@ export class OmniConsumer {
         }
       }
       // "open" → falls through normally
+    }
+
+    // -- Owner session guard --
+    // A DM from anyone but the owner never lands in the owner's shared
+    // session, whatever the instance policy (spec channels/owner-dm-guard).
+    // It reads the session the commit will land in: a route that forces a
+    // session redirects there, away from `matched.sessionKey`.
+    if (!isGroup) {
+      const landingSessionKey = previewCommittedSessionKey(matched, { threadId });
+      const ownerGuard = evaluateOwnerDmGuard({
+        peerKind: peerKind ?? "dm",
+        sessionKey: landingSessionKey,
+        senderContactId: effectiveActorType === "contact" ? effectiveContactId : null,
+        explicit: isOperatorChosenDestination({
+          routePattern: routeMatched.route?.pattern,
+          routeSessionKey: previewCommittedSessionKey(routeMatched, { threadId }),
+          attachExplicit: subscriptionAttachIsExplicit,
+          attachSessionKey: existingSubscription?.sessionKey,
+          landingSessionKey,
+        }),
+      });
+      if (ownerGuard.blocked) {
+        const isNew = saveAccountPending(effectiveAccountId, senderPhone, {
+          chatId: chatJid,
+          isGroup: false,
+        });
+        log.warn("DM from a non-owner held: it would land in the owner's shared session", {
+          senderPhone,
+          accountId: effectiveAccountId,
+          canonicalChatId: canonicalChat.id,
+          sessionKey: landingSessionKey,
+          reviewKind: "contact",
+          isNew,
+        });
+        if (isNew) {
+          emitPendingReviewEvent({
+            channel: channelType,
+            accountId: effectiveAccountId,
+            senderId: senderPhone,
+            chatId: chatJid,
+            isGroup: false,
+          });
+        }
+        rejectRoute("dm_owner_session_non_owner", {
+          senderPhone,
+          accountId: effectiveAccountId,
+          sessionKey: landingSessionKey,
+          contactId: effectiveActorType === "contact" ? (effectiveContactId ?? null) : null,
+        });
+        this.completeInboundMessage(dedupKey);
+        return;
+      }
     }
 
     // -- Per-agent contact scoping --

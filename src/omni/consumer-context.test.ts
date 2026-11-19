@@ -1207,6 +1207,130 @@ describe("OmniConsumer channel context", () => {
     expect(commitMatchedRouteCalls[0]?.matched.agentId).toBe("main");
   });
 
+  describe("owner DM guard", () => {
+    function seedOwner(): string {
+      const owner = actualContactsModule.createContact({ phone: "5511900000001", name: "Owner", status: "allowed" });
+      actualContactsModule.addContactTag(owner.phone, "permission-owner");
+      return owner.id;
+    }
+
+    function dmEvent(id: string, from: string) {
+      return {
+        id,
+        type: "message.received",
+        payload: {
+          externalId: `msg-${id}`,
+          chatId: `${from}@s.whatsapp.net`,
+          from: `${from}@s.whatsapp.net`,
+          content: { type: "text", text: "oi" },
+          rawPayload: { pushName: "Someone", isGroup: false },
+        },
+        metadata: { instanceId: "instance-1", channelType: "whatsapp-baileys", ingestMode: "realtime" },
+        timestamp: Date.now(),
+      };
+    }
+
+    function consumer() {
+      const sender = { send: mock(async () => {}), sendTyping: mock(async () => {}), markRead: mock(async () => {}) };
+      return new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+        resolveGroupMetadata: async () => null,
+      });
+    }
+
+    beforeEach(() => {
+      routeResult = {
+        sessionKey: "agent:main:main",
+        sessionName: "main",
+        dmScope: "main",
+        agent: { id: "main", cwd: agentCwd, mode: "active" },
+      };
+      actualGetOrCreateSession("agent:main:main", "main", agentCwd);
+    });
+
+    it("holds a non-owner DM that would land in the owner's shared session", async () => {
+      seedOwner();
+
+      await consumer()["handleMessageEvent"](
+        "message.received.whatsapp-baileys.instance-1",
+        dmEvent("evt-dm-colleague", "5511988887777") as never,
+      );
+
+      expect(promptCalls).toHaveLength(0);
+      expect(commitMatchedRouteCalls).toHaveLength(0);
+    }, 20_000);
+
+    it("delivers the owner's DM to the shared session", async () => {
+      const ownerId = seedOwner();
+      platformIdentityByUser.set("5511900000001", {
+        id: "pi_owner",
+        ownerType: "contact",
+        ownerId,
+        channel: "whatsapp",
+        instanceId: "instance-1",
+        platformUserId: "5511900000001@s.whatsapp.net",
+        normalizedPlatformUserId: "5511900000001",
+        confidence: 1,
+      });
+      contactByRef.set(ownerId, { id: ownerId, status: "allowed", name: "Owner" });
+
+      await consumer()["handleMessageEvent"](
+        "message.received.whatsapp-baileys.instance-1",
+        dmEvent("evt-dm-owner", "5511900000001") as never,
+      );
+
+      expect(promptCalls).toHaveLength(1);
+      expect(commitMatchedRouteCalls).toHaveLength(1);
+    }, 20_000);
+
+    it("holds a non-owner that a wildcard route forces into the owner's shared session", async () => {
+      seedOwner();
+      actualRouterSessionsModule.updateSessionName("agent:main:main", "main");
+      configuredRoutes = [{ pattern: "*", accountId: "main", agent: "main", dmScope: "per-peer", session: "main" }];
+
+      await consumer()["handleMessageEvent"](
+        "message.received.whatsapp-baileys.instance-1",
+        dmEvent("evt-dm-forced-session", "5511988887777") as never,
+      );
+
+      expect(promptCalls).toHaveLength(0);
+      expect(commitMatchedRouteCalls).toHaveLength(0);
+    }, 20_000);
+
+    it("admits a non-owner whose literal route forces a session on purpose", async () => {
+      seedOwner();
+      actualRouterSessionsModule.updateSessionName("agent:main:main", "main");
+      configuredRoutes = [{ pattern: "5511988887777", accountId: "main", agent: "main", session: "main" }];
+
+      await consumer()["handleMessageEvent"](
+        "message.received.whatsapp-baileys.instance-1",
+        dmEvent("evt-dm-literal-forced", "5511988887777") as never,
+      );
+
+      expect(commitMatchedRouteCalls).toHaveLength(1);
+      expect(commitMatchedRouteCalls[0]?.matched.route?.pattern).toBe("5511988887777");
+    }, 20_000);
+
+    it("does not let a literal route vouch for a DM that routing's earlier attach sends to the shared session", async () => {
+      const omni = consumer();
+      // Before the owner is tagged, routing attaches the colleague's chat to the shared session.
+      await omni["handleMessageEvent"](
+        "message.received.whatsapp-baileys.instance-1",
+        dmEvent("evt-dm-before-owner", "5511988887777") as never,
+      );
+      expect(commitMatchedRouteCalls).toHaveLength(1);
+
+      seedOwner();
+      configuredRoutes = [{ pattern: "5511988887777", accountId: "main", agent: "john" }];
+      await omni["handleMessageEvent"](
+        "message.received.whatsapp-baileys.instance-1",
+        dmEvent("evt-dm-after-owner", "5511988887777") as never,
+      );
+
+      expect(commitMatchedRouteCalls).toHaveLength(1);
+      expect(promptCalls).toHaveLength(1);
+    }, 20_000);
+  });
+
   it("lets the link flow answer a private message of a person who must link, before any route or agent turn", async () => {
     contactByRef.set("contact_luis", { id: "contact_luis", status: "allowed", name: "Luis" });
     platformIdentityByUser.set("5511947879044", {
