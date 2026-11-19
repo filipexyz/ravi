@@ -27,17 +27,17 @@ import { performSupervisedDaemonRestart, type ManagedDaemonProcess } from "./cli
 import { buildPm2Env, CHANNELS_PM2_PROCESS_NAME, getPm2Processes, PM2_PROCESS_NAME, type Pm2Process } from "./pm2.js";
 
 const MANAGED_RUNTIME_REBIND_ENV = "RAVI_INTERNAL_UPDATE_RUNTIME_REBIND";
-/** Covers the rebind plus the stability window. CLIs before this change wait 90 s. */
+/** Covers the rebind plus the stability window. */
 export const MANAGED_RUNTIME_REBIND_TIMEOUT_MS = 180_000;
 /**
- * How long the CLI that started the supervisor waits for it, in ms. A CLI
- * that predates the stability window sets nothing and gives up after 90 s:
- * a window past that would turn a converged update into a reported failure.
+ * How long the CLI that started the supervisor waits for it, in ms. A CLI that
+ * predates the stability window sets nothing, and its wait is short: 30 s up to
+ * 3.261113.2 (the waypoint release), 90 s from 3.261113.3. Such a CLI gets no
+ * window (`supervisorStabilityPlan`).
  */
 export const MANAGED_RUNTIME_SUPERVISOR_BUDGET_ENV = "RAVI_UPDATE_SUPERVISOR_BUDGET_MS";
-const LEGACY_SUPERVISOR_BUDGET_MS = 90_000;
 /** Kept after the window for the supervisor to exit and the CLI to verify. */
-const SUPERVISOR_EXIT_MARGIN_MS = 10_000;
+export const SUPERVISOR_EXIT_MARGIN_MS = 10_000;
 /** How long the replaced runtime must stay unchanged before the update claims success. */
 export const MANAGED_RUNTIME_STABILITY_WINDOW_ENV = "RAVI_UPDATE_STABILITY_WINDOW_MS";
 const DEFAULT_STABILITY_WINDOW_MS = 30_000;
@@ -109,11 +109,26 @@ export function boundedStabilityWindowMs(input: { windowMs: number; deadlineMs?:
   return Math.max(0, Math.min(input.windowMs, input.deadlineMs - input.now));
 }
 
-/** The wait the starting CLI declared; 90 s when it declared none (a CLI that predates the window). */
-export function supervisorBudgetMs(raw: string | undefined): number {
-  const value = raw?.trim();
-  if (value && /^\d+$/.test(value)) return Math.min(Number(value), MANAGED_RUNTIME_REBIND_TIMEOUT_MS * 5);
-  return LEGACY_SUPERVISOR_BUDGET_MS;
+export type SupervisorStabilityPlan = Pick<
+  ManagedRuntimeRebindDependencies,
+  "stabilityWindowMs" | "stabilityDeadlineMs"
+>;
+
+/**
+ * The stability window a supervisor may run, from the wait the CLI that started it declared
+ * (`RAVI_UPDATE_SUPERVISOR_BUDGET_MS`). A declared wait gets the window, ending `SUPERVISOR_EXIT_MARGIN_MS` before
+ * that wait runs out. No declaration means a CLI that predates the window, whose wait can be as short as 30 s
+ * (3.261113.2, the waypoint release): it gets no window, so the supervisor answers as before this change and a
+ * converged update is never reported as a failure.
+ */
+export function supervisorStabilityPlan(
+  declaredBudget: string | undefined,
+  startedAt: number,
+): SupervisorStabilityPlan {
+  const value = declaredBudget?.trim();
+  if (!value || !/^\d+$/.test(value)) return { stabilityWindowMs: 0 };
+  const budgetMs = Math.min(Number(value), MANAGED_RUNTIME_REBIND_TIMEOUT_MS * 5);
+  return { stabilityDeadlineMs: startedAt + budgetMs - SUPERVISOR_EXIT_MARGIN_MS };
 }
 
 function onlineRuntimeIdentity(processes: Pm2Process[]): string {
@@ -595,21 +610,20 @@ export function readSupervisorRefusal(sinceMs: number, stateDir: string = getRav
 
 export async function maybeRunManagedRuntimeRebindFromEnv(
   insideDaemonTree: () => boolean = () => isInsideDaemonProcessTree({ strict: true }),
+  rebind: typeof rebindManagedRuntimeProcesses = rebindManagedRuntimeProcesses,
 ): Promise<boolean> {
   const encoded = process.env[MANAGED_RUNTIME_REBIND_ENV];
   if (!encoded) return false;
   delete process.env[MANAGED_RUNTIME_REBIND_ENV];
-  const budgetMs = supervisorBudgetMs(process.env[MANAGED_RUNTIME_SUPERVISOR_BUDGET_ENV]);
+  const declaredBudget = process.env[MANAGED_RUNTIME_SUPERVISOR_BUDGET_ENV];
   delete process.env[MANAGED_RUNTIME_SUPERVISOR_BUDGET_ENV];
   refuseRebindInsideDaemonTree(insideDaemonTree);
   const request = decodeManagedRuntimeRebindRequest(encoded);
   // The CLI started waiting when it spawned this process.
-  const startedAt = Date.now() - process.uptime() * 1000;
+  const plan = supervisorStabilityPlan(declaredBudget, Date.now() - process.uptime() * 1000);
   let converged: boolean;
   try {
-    converged = await rebindManagedRuntimeProcesses(request.previousProcesses, request.target, {
-      stabilityDeadlineMs: startedAt + budgetMs - SUPERVISOR_EXIT_MARGIN_MS,
-    });
+    converged = await rebind(request.previousProcesses, request.target, plan);
   } catch (error) {
     if ((error as { code?: unknown } | null)?.code === UPDATE_WAYPOINT_REQUIRED) {
       throw recordSupervisorRefusal(UPDATE_WAYPOINT_REQUIRED, (error as Error).message);

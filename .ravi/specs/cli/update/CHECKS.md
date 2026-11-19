@@ -16,6 +16,9 @@
   already present and prove their contents and directory entries stay unchanged.
 - A supervisor exiting zero without replacing processes, a failed runner
   restart, and an unreadable PM2 snapshot MUST each fail the update.
+- A supervisor that records a refusal and exits MUST fail the update with the
+  refusal's code and message, with its output in
+  `<state>/updates/supervisor.log` and only PM2 reads.
 - The PM2 read failure MUST retain both the reconciliation error and the
   underlying command failure in the public diagnostic cause.
 - `bun test src/runtime-process-identity.test.ts` MUST verify that an actual
@@ -83,13 +86,18 @@
   - the waypoint refusal for a pre-fence state from a release older than
     3.261113.2 or without markers, with the exact commands, and no refusal for
     a fenced state or one prepared by the waypoint or later, and checkout steps
-    instead of `--version` for a source checkout;
+    instead of `--version` for a source checkout (quoted path, `fetch --tags`,
+    `daemon restart -m`);
   - a supervisor that refuses such a state before any stop, records the
     refusal, and consumes its request and budget variables;
   - the stability window: success when the same processes stay online,
     failure on a new PID or start time or a runtime that stops converging, slow
-    PM2 reads counted inside the window, a
-    window bounded by the CLI's deadline, and a 90 s budget when the CLI
-    declares none;
+    PM2 reads counted inside the window, a window bounded by the CLI's
+    deadline, and no window when the CLI declares no budget;
+  - the window wired into the real rebind (fake PM2 and clock): held for its
+    length, failed by a daemon or runner restart or a daemon leaving ready,
+    ended by the CLI's deadline, and skipped for a CLI that declares no budget
+    (3.261113.2 waits 30 s); the supervisor entry passing that plan to the
+    rebind;
   - a refusal read back only when recorded since the supervisor started, and
     its code kept only when it looks like one.

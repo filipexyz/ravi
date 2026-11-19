@@ -69,9 +69,12 @@ export class UpdateWaypointRequiredError extends Error {
     /** The checkout the runtime runs from; source installs do not accept `ravi update --version`. */
     readonly sourceCheckout: string | null = null,
   ) {
+    const checkout = JSON.stringify(sourceCheckout);
     const steps = sourceCheckout
-      ? `From a terminal, run \`git -C ${sourceCheckout} switch --detach v${FENCE_ADOPTION_MINIMUM_RELEASE}\`, ` +
-        "`bun install` and `bun run build` in that checkout, then `ravi daemon restart` and `ravi channels restart`; " +
+      ? `From a terminal, run \`git -C ${checkout} fetch --tags\` and ` +
+        `\`git -C ${checkout} switch --detach v${FENCE_ADOPTION_MINIMUM_RELEASE}\`, ` +
+        "`bun install` and `bun run build` in that checkout, then " +
+        '`ravi daemon restart -m "waypoint"` and `ravi channels restart`; ' +
         "confirm both processes are online on it with `ravi daemon status`, then run `ravi update --next`."
       : `From a terminal, run \`ravi update --version ${FENCE_ADOPTION_MINIMUM_RELEASE}\` now, confirm both ` +
         "processes are online on it with `ravi daemon status`, then run `ravi update --next`.";
