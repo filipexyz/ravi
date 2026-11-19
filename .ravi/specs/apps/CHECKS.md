@@ -73,3 +73,16 @@ bun test src/apps/service.test.ts src/apps/router.test.ts src/apps/permissions.t
 bun run typecheck
 bun run build
 ```
+
+## Composition
+
+- A call from one app to another fails when the callee offers services and the
+  called operation is not listed under `provides`, or when the caller did not
+  declare the service in `requires`.
+- A consumer whose provider is missing, outside its range or not offering the
+  service fails before any process starts, and runs again when the provider is
+  restored, with no change to the consumer.
+- The provider's child context is issued from the consumer's, and no context
+  holds more than the one above it.
+- A composed app's child context is revoked when its process ends.
+- A cycle of `requires` fails manifest validation.

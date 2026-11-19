@@ -98,3 +98,67 @@ ravi specs sync --json
 - Audit and process output contain no raw context key.
 - Running with and without `--json` uses the same routing, authorization, and
   child-context path.
+
+## Composition Checks
+
+Asserted in `src/apps/router.test.ts` ("Ravi app composition") with real
+processes (a `blog` app that requires `md-render/html`, an `md-render` app that
+offers it) and the real context registry.
+
+- A consumer that calls its provider produces the lineage turn → `app:blog` →
+  `app:md-render` on the contexts (`parentContextId` and `issuedFor` at each
+  step), and the provider's context carries `composition: { service,
+  consumerAppId }`. The audit follows the same `contextId` and `parentContextId`.
+- Each context holds no more than the one above it: the provider holds exactly
+  its own `context.allow`, the consumer holds its own `context.allow` plus
+  `use app:<provider>` and the `apps run` access (never the provider's allow), and
+  the turn held all of it.
+- A provider that asks for more than the consumer declares (including after an
+  upgrade inside the range) fails the consumer with `APP_DEPENDENCY_UNAVAILABLE`,
+  reason `insufficient_authority` and `missing` naming the entries, starts no
+  process and issues no context; once the consumer's own manifest declares them it
+  runs again with the provider untouched.
+- An invoker that does not hold what the chain needs fails with
+  `APP_OPERATION_FAILED`, starts no process and issues no context.
+- A consumer reaches its provider through the public command and the real gateway
+  (`ravi md-render html`, which the CLI sends as `apps run` with the consumer's own
+  key): the gateway command gate passes because the consumer's context carries the
+  access its invoker held, and the router mediates the call. Without that access
+  the same call fails at the gateway.
+- A credential an app derived for itself (`kind: cli-runtime`, no app identity,
+  parent in the app's lineage) is refused an operation outside `provides` and passes
+  one inside it; the provider's context then records the app as the consumer. This
+  holds after twenty derivations in a chain, with no depth at which it stops.
+- A context whose lineage cannot be followed to a root (the parent is gone) is
+  refused every operation of an app that offers services with
+  `APP_OPERATION_NOT_PROVIDED`, starts no process, and is not taken for a turn.
+- An invoker that holds only the legacy `execute:group:apps` gets no composed
+  consumer (no process, no credential), and an invoker that holds `mutate:apps:*`
+  gets a consumer with `mutate:apps:run`, never the wildcard or the group.
+- Without the provider installed, the consumer fails with
+  `APP_DEPENDENCY_UNAVAILABLE`, `unavailableDependencies` names the requirement
+  (reason `not_installed`), no process starts and no context is issued. It passes
+  again once the provider is installed, with the consumer's manifest and script
+  byte-identical.
+- A mutating operation of an app whose provider is missing fails with
+  `APP_DEPENDENCY_UNAVAILABLE`, not with the exit-3 preview; once the provider
+  is installed the same call returns the preview, and neither starts a process.
+- A provider outside the range fails with reason `version_mismatch` and the
+  installed version; one that does not offer the service, with `not_provided`.
+- `help`, `show` and `check` of the consumer keep passing while its provider is
+  missing.
+- The public contract error for `APP_DEPENDENCY_UNAVAILABLE` carries the cause
+  and the next step, is `retryable: false`, and contains no context key.
+- An operation the provider has but does not list under `provides` fails with
+  `APP_OPERATION_NOT_PROVIDED` when an app calls it, starts no process and issues
+  no context. The turn calling the same operation directly passes.
+- An app that holds `use app:<provider>` but never declared `requires` fails
+  with `APP_OPERATION_NOT_PROVIDED`; the one that declared it, holding the same
+  capabilities, passes.
+- Both contexts are revoked when their processes end: the provider's as soon as
+  its process returns, the consumer's when its own ends, including on a
+  non-zero exit. Neither key resolves afterwards and the turn is untouched.
+- An app that neither offers nor needs a service keeps a live child context with
+  no `composition` metadata.
+- A cycle of `requires` makes every app on it invalid (`requires cycle: a -> b ->
+  a.`), and no app on it starts.

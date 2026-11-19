@@ -5,6 +5,7 @@ import { loadInternalPlugins } from "../plugins/internal-loader.js";
 import { discoverPlugins } from "../plugins/index.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { parseRaviAppCapability, parseRaviAppCommand, tokenizeRaviAppCommand } from "./command.js";
+import { markCompositionCycles, markUnavailableDependencies, validateComposition } from "./composition.js";
 import {
   RaviAppError,
   type RaviAppCheckResult,
@@ -100,7 +101,9 @@ export function normalizeAppSource(value?: string): RaviAppManifestSource | unde
 }
 
 export function discoverAppManifests(options: RaviAppListOptions = {}): RaviAppManifestRecord[] {
-  const roots = discoverAppRoots(options).filter((root) => !options.source || root.source === options.source);
+  // Every source is read, whatever `options.source` asks to see: a requirement is satisfied by an app from any
+  // installed source, and a circle of `requires` can pass through all of them. The filter only decides what is returned.
+  const roots = discoverAppRoots(options);
   const files = new Map<string, RaviAppDiscoveryRoot>();
 
   for (const root of roots) {
@@ -109,11 +112,17 @@ export function discoverAppManifests(options: RaviAppListOptions = {}): RaviAppM
     }
   }
 
-  const records = Array.from(files.entries())
+  const everything = Array.from(files.entries())
     .map(([filePath, root]) => readManifestRecord(filePath, root))
     .sort((left, right) => left.id.localeCompare(right.id) || left.path.localeCompare(right.path));
+  const records = options.source ? everything.filter((record) => record.source === options.source) : everything;
 
-  markDuplicateIds(records);
+  // Over every source too: an id declared in another source is a conflict whichever source a listing shows.
+  markDuplicateIds(everything);
+  // Composition is a property of the set, not of one file: a circle of `requires` and a missing provider only show
+  // once every manifest is known. Cycles first, because they decide which providers are still valid.
+  markCompositionCycles(everything);
+  markUnavailableDependencies(everything);
   return records;
 }
 
@@ -329,6 +338,7 @@ function validateManifest(
 
   validateContext(manifest.context, errors);
   validateOperations(manifest.operations, manifest.interfaces, manifest.id, errors, warnings);
+  validateComposition(manifest, operationIds, errors);
 
   if (!isObject(manifest.permissions)) {
     errors.push("permissions is required and must be an object.");
