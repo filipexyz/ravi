@@ -85,7 +85,11 @@ normative: true
 ## Waypoint and stability (supervisor)
 
 These rules run in the supervisor, which is the target release's bundle, so
-they also hold for an update started by an older CLI.
+the refusals also hold for an update started by an older CLI. The text of a
+refusal does not: an older CLI starts the supervisor with its output ignored
+and does not read `supervisor-refused.json`, so it prints its own generic
+failure; the refusal's text reaches the operator on the next run, through the
+CLI that run installed.
 
 - Before it stops anything, the supervisor MUST refuse with
   `UPDATE_WAYPOINT_REQUIRED` a state written before the thread fence
@@ -94,8 +98,9 @@ they also hold for an update started by an older CLI.
   refusal MUST name the exact commands: `ravi update --version 3.261113.2`,
   `ravi daemon status`, then `ravi update --next`. A source checkout does not
   accept `--version`, so there the refusal MUST give the checkout steps
-  instead (`git switch --detach v3.261113.2`, build, restart both
-  processes). It MUST say that the installed package (or the checkout) is
+  instead, as commands that run as written: `git -C "<checkout>" fetch --tags`,
+  `git -C "<checkout>" switch --detach v3.261113.2`, build, then
+  `ravi daemon restart -m "waypoint"` and `ravi channels restart`. It MUST say that the installed package (or the checkout) is
   already the target release, because a restart before the waypoint would
   start it on that state.
 - After the runtime converges and PM2 is saved, the supervisor MUST watch the
@@ -105,9 +110,14 @@ they also hold for an update started by an older CLI.
   reporting success. PM2 reads count inside the window: it MUST end by its
   deadline even when each read is slow.
 - The window MUST end before the starting CLI stops waiting. The CLI declares
-  its wait in `RAVI_UPDATE_SUPERVISOR_BUDGET_MS`; with no declaration (a CLI
-  that predates the window) the supervisor MUST assume 90 s. It keeps 10 s of
-  that budget for its exit and the CLI's verification.
+  its wait in `RAVI_UPDATE_SUPERVISOR_BUDGET_MS`, and the supervisor keeps 10 s
+  of that budget for its exit and the CLI's verification. With no declaration
+  (a CLI that predates the window, which waits 30 s up to 3.261113.2 and 90 s
+  from 3.261113.3) the supervisor MUST NOT run a window: it answers right
+  after convergence, as before the window existed.
+- `ravi daemon restart` and `ravi daemon start` do not check the waypoint yet
+  (follow-up): after a waypoint refusal, the next step is the commands the
+  refusal names, not a restart.
 - A refusal before any stop MUST be left in
   `<state>/updates/supervisor-refused.json`. The CLI MUST capture the
   supervisor's output in `<state>/updates/supervisor.log`, read a refusal
@@ -176,12 +186,24 @@ they also hold for an update started by an older CLI.
   counts as started only after the process reports `spawn`; a launch failure
   reported as an `error` event MUST take the same refusal path and MUST NOT
   escape as an unhandled event.
+- Whether the caller is inside the daemon's process tree MUST come from a
+  strict PM2 read. A PM2 that cannot be read is an unknown position and MUST
+  NOT be taken for "outside": the CLI MUST refuse with `UPDATE_FAILED` before it
+  detaches, installs or stops anything, and the supervisor MUST refuse as below.
+  Usage errors are reported before the read. The detached child and the worker
+  decide by their run markers and MUST NOT read PM2 for that decision.
 - The worker MUST confirm it is outside the daemon's process tree before it
-  installs anything. If it is still inside after the wait, it MUST refuse with
+  installs anything; a PM2 read that fails during that wait counts as still
+  inside. If it is still inside after the wait, it MUST refuse with
   `UPDATE_DETACH_FAILED` and record that result.
 - The detached run MUST NOT carry runtime context. Every `RAVI_*` key except
   `RAVI_HOME`, `RAVI_REPO` and `RAVI_SUPPRESS_AUDIT_EVENTS` MUST be removed;
-  `RAVI_STATE_DIR` MUST be passed as an absolute path.
+  `RAVI_STATE_DIR` MUST be passed as an absolute path. A relative value was
+  handed down by a daemon that predates the boot anchor and MUST be resolved
+  against that daemon's cwd (from the same PM2 read), never the caller's, as in
+  `ravi daemon restart` (#857). The run directory MUST use the same resolved
+  path. A relative value with no readable daemon cwd MUST be refused with
+  `UPDATE_DETACH_FAILED`.
 - Each detached run MUST keep `request.json`, `log` and `result.json` under
   `<state>/updates/<runId>/`. The run id MUST match
   `^\d{8}T\d{6}Z-[0-9a-f]{6}$` before it is used as a path. Results MUST be
@@ -189,13 +211,15 @@ they also hold for an update started by an older CLI.
 - The run markers (`RAVI_UPDATE_HANDOFF`, `RAVI_UPDATE_HANDOFF_WORKER`,
   `RAVI_UPDATE_RUN_ID`) MUST NOT reach anything the worker starts: the worker
   MUST remove them from its environment before it installs anything, and PM2
-  registrations MUST clear them like runtime context. Only the worker writes a
-  run's `result.json`; an inline update that inherited a run id MUST NOT write
-  to that run.
+  registrations MUST clear them like runtime context. Only the run's own
+  processes write its `result.json` (the worker, or the detached child when it
+  cannot start the worker); an inline update that inherited a run id MUST NOT
+  write to that run.
 - The update supervisor (`RAVI_INTERNAL_UPDATE_RUNTIME_REBIND`) MUST refuse
   with `UPDATE_REFUSED_IN_DAEMON_TREE` when it runs inside the daemon's process
-  tree. The refusal MUST happen before it reads its request or touches PM2, and
-  it MUST leave `<state>/updates/supervisor-refused.json`. Only a CLI that
+  tree or cannot read PM2 to tell. The refusal MUST happen before it reads its
+  request or stops anything in PM2, and it MUST leave
+  `<state>/updates/supervisor-refused.json` with the reason. Only a CLI that
   predates detached execution starts a supervisor there.
 - The refusal of the root command in a runtime context (`CLI_ONLY`) is
   unchanged by detached execution.

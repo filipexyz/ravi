@@ -120,9 +120,91 @@ describe("ravi update inside the daemon process tree", () => {
           spawnDetached: recordingSpawn(calls, null),
         },
       ),
-    ).rejects.toMatchObject({ code: "UPDATE_DETACH_FAILED" });
+    ).rejects.toMatchObject({
+      code: "UPDATE_DETACH_FAILED",
+      details: { suggestedAction: "Run ravi update from a terminal." },
+    });
     expect(calls).toHaveLength(1);
     expect(existsSync(join(stateDir, "update.json"))).toBe(false);
+  });
+
+  it("refuses when PM2 cannot be read, before detaching, installing or stopping anything", async () => {
+    const calls: SpawnCall[] = [];
+    await expect(
+      runUpdate(
+        { next: true, json: true },
+        {
+          env: baseEnv(),
+          argv: ["/usr/bin/bun", SCRIPT, "update", "--next", "--json"],
+          insideDaemonTree: () => {
+            throw new Error("Empty PM2 snapshot");
+          },
+          spawnDetached: recordingSpawn(calls),
+        },
+      ),
+    ).rejects.toMatchObject({ code: "UPDATE_FAILED" });
+    // An unreadable PM2 is never taken for "outside": nothing ran inline and nothing was handed off.
+    expect(calls).toHaveLength(0);
+    expect(existsSync(join(stateDir, "update.json"))).toBe(false);
+    expect(existsSync(join(stateDir, "updates"))).toBe(false);
+  });
+
+  it("still reports a usage error first when PM2 cannot be read", async () => {
+    await expect(
+      runUpdate(
+        { next: true, stable: true, json: true },
+        {
+          env: baseEnv(),
+          insideDaemonTree: () => {
+            throw new Error("Empty PM2 snapshot");
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ code: "USAGE_ERROR" });
+  });
+
+  it("anchors a relative state directory at the daemon's cwd, never the caller's (#857)", async () => {
+    const daemonCwd = mkdtempSync(join(tmpdir(), "ravi-update-daemon-cwd-"));
+    try {
+      const calls: SpawnCall[] = [];
+      const result = (await runUpdate(
+        { next: true, json: true },
+        {
+          env: { ...baseEnv(), RAVI_STATE_DIR: "relative-state" },
+          argv: ["/usr/bin/bun", SCRIPT, "update", "--next", "--json"],
+          cwd: "/work",
+          insideDaemonTree: () => true,
+          daemonCwd,
+          spawnDetached: recordingSpawn(calls),
+        },
+      )) as RaviUpdateHandoff;
+      const daemonStateDir = join(daemonCwd, "relative-state");
+      const paths = updateRunPaths(result.runId, daemonStateDir);
+      expect(calls[0]!.env.RAVI_STATE_DIR).toBe(daemonStateDir);
+      expect(result.resultPath).toBe(paths.result);
+      expect(existsSync(paths.request)).toBe(true);
+      expect(existsSync(join(process.cwd(), "relative-state"))).toBe(false);
+    } finally {
+      rmSync(daemonCwd, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a relative state directory when the daemon's cwd is unknown", async () => {
+    const calls: SpawnCall[] = [];
+    await expect(
+      runUpdate(
+        { next: true, json: true },
+        {
+          env: { ...baseEnv(), RAVI_STATE_DIR: "relative-state" },
+          argv: ["/usr/bin/bun", SCRIPT, "update", "--next", "--json"],
+          insideDaemonTree: () => true,
+          daemonCwd: null,
+          spawnDetached: recordingSpawn(calls),
+        },
+      ),
+    ).rejects.toMatchObject({ code: "UPDATE_DETACH_FAILED" });
+    expect(calls).toHaveLength(0);
+    expect(existsSync(join(process.cwd(), "relative-state"))).toBe(false);
   });
 
   it("reports a usage error to the caller instead of detaching it", async () => {
@@ -268,6 +350,19 @@ describe("update supervisor inside the daemon process tree", () => {
     expect(process.env[REBIND_ENV]).toBeUndefined();
     const evidence = JSON.parse(readFileSync(join(stateDir, "updates", "supervisor-refused.json"), "utf8"));
     expect(evidence.code).toBe(UPDATE_SUPERVISOR_IN_DAEMON_TREE);
+  });
+
+  it("refuses like inside when PM2 cannot be read, and records why", async () => {
+    process.env[REBIND_ENV] = "not-a-request";
+    await expect(
+      maybeRunManagedRuntimeRebindFromEnv(() => {
+        throw new Error("Empty PM2 snapshot");
+      }),
+    ).rejects.toThrow(UPDATE_SUPERVISOR_IN_DAEMON_TREE);
+    const evidence = JSON.parse(readFileSync(join(stateDir, "updates", "supervisor-refused.json"), "utf8"));
+    expect(evidence.code).toBe(UPDATE_SUPERVISOR_IN_DAEMON_TREE);
+    expect(evidence.message).toContain("could not read PM2");
+    expect(evidence.message).toContain("Empty PM2 snapshot");
   });
 
   it("proceeds outside the tree", async () => {

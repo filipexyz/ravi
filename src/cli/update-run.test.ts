@@ -11,6 +11,7 @@ import {
   type DetachedChild,
   decideUpdateExecution,
   prepareUpdateRunDir,
+  resolveDetachedUpdateStateDir,
   spawnDetachedUpdateProcess,
   UPDATE_HANDOFF_ENV,
   UPDATE_HANDOFF_WORKER_ENV,
@@ -59,7 +60,7 @@ describe("update run identity", () => {
     }
   });
 
-  it("builds the detached environment without runtime context and with an absolute state directory", () => {
+  it("builds the detached environment without runtime context and with the resolved state directory", () => {
     const env = buildDetachedUpdateEnv(
       {
         PATH: "/usr/bin",
@@ -75,12 +76,13 @@ describe("update run identity", () => {
         RAVI_HOME: "/home/op/ravi",
       },
       "20261119T191542Z-a1b2c3",
+      "/srv/daemon/relative-state",
     );
     expect(env.PATH).toBe("/usr/bin");
     expect(env.PM2_HOME).toBe("/home/op/.pm2");
     expect(env.RAVI_REPO).toBe("/src/ravi");
     expect(env.RAVI_HOME).toBe("/home/op/ravi");
-    expect(env.RAVI_STATE_DIR).toBe(join(process.cwd(), "relative-state"));
+    expect(env.RAVI_STATE_DIR).toBe("/srv/daemon/relative-state");
     expect(env[UPDATE_HANDOFF_ENV]).toBe("1");
     expect(env[UPDATE_RUN_ID_ENV]).toBe("20261119T191542Z-a1b2c3");
     for (const key of [
@@ -92,6 +94,26 @@ describe("update run identity", () => {
     ]) {
       expect(env[key]).toBeUndefined();
     }
+    // Unset state directory: nothing is added, the worker uses the default ~/.ravi like the daemon.
+    expect(
+      buildDetachedUpdateEnv({ RAVI_STATE_DIR: "relative-state" }, "20261119T191542Z-a1b2c3", undefined),
+    ).not.toHaveProperty("RAVI_STATE_DIR");
+  });
+
+  it("anchors a relative state directory at the daemon's cwd, never the caller's (#857)", () => {
+    expect(resolveDetachedUpdateStateDir({ RAVI_STATE_DIR: "state" }, "/srv/daemon")).toBe("/srv/daemon/state");
+    expect(resolveDetachedUpdateStateDir({ RAVI_STATE_DIR: "../shared/state" }, "/srv/daemon")).toBe(
+      "/srv/shared/state",
+    );
+    expect(resolveDetachedUpdateStateDir({ RAVI_STATE_DIR: "state" }, "/srv/daemon")).not.toBe(
+      join(process.cwd(), "state"),
+    );
+    expect(resolveDetachedUpdateStateDir({ RAVI_STATE_DIR: "/abs/state" }, null)).toBe("/abs/state");
+    expect(resolveDetachedUpdateStateDir({}, null)).toBeUndefined();
+    expect(resolveDetachedUpdateStateDir({ RAVI_STATE_DIR: "" }, "/srv/daemon")).toBeUndefined();
+    expect(() => resolveDetachedUpdateStateDir({ RAVI_STATE_DIR: "state" }, null)).toThrow(
+      "the daemon's working directory is unknown",
+    );
   });
 });
 
@@ -209,5 +231,24 @@ describe("waiting to leave the daemon tree", () => {
     clock = 0;
     expect(await waitUntilOutsideDaemonProcessTree({ ...timing, isInside: () => true })).toBe(false);
     expect(clock).toBe(1_000);
+  });
+
+  it("counts an unreadable PM2 as still inside, so the worker never proceeds on a failed read", async () => {
+    let clock = 0;
+    const timing = { now: () => clock, wait: async (ms: number) => void (clock += ms), pollMs: 100, timeoutMs: 1_000 };
+    const unreadable = () => {
+      throw new Error("Empty PM2 snapshot");
+    };
+    expect(await waitUntilOutsideDaemonProcessTree({ ...timing, isInside: unreadable })).toBe(false);
+    expect(clock).toBe(1_000);
+    clock = 0;
+    let reads = 0;
+    const flaky = () => {
+      reads += 1;
+      if (reads === 1) throw new Error("Empty PM2 snapshot");
+      return false;
+    };
+    expect(await waitUntilOutsideDaemonProcessTree({ ...timing, isInside: flaky })).toBe(true);
+    expect(reads).toBe(2);
   });
 });

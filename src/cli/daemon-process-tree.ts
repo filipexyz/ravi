@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { getRaviPid } from "../pm2.js";
+import { getPm2Processes, getRaviPid, PM2_PROCESS_NAME } from "../pm2.js";
 
 function nativeParentPid(pid: number): number | null {
   try {
@@ -17,9 +17,47 @@ function nativeParentPid(pid: number): number | null {
 
 export type DaemonProcessTreeOptions = {
   daemonPid?: number | null;
+  /** Unreadable PM2 throws instead of answering "outside": callers that must never run inline in the tree. */
+  strict?: boolean;
   startPid?: number;
   readParentPid?: (pid: number) => number | null;
 };
+
+/** The `ravi` process from a strict PM2 read: throws when PM2 cannot be read, null when it is not registered. */
+function readManagedDaemonStrict(): { pid: number | null; cwd: string | null } | null {
+  const daemon = getPm2Processes({ strict: true }).find((process) => process.name === PM2_PROCESS_NAME);
+  return daemon ? { pid: daemon.pid, cwd: daemon.cwd ?? null } : null;
+}
+
+export type DaemonTreePosition = {
+  inside: boolean;
+  /** cwd of the running daemon: a relative `RAVI_STATE_DIR` it handed down resolves against it. */
+  daemonCwd: string | null;
+};
+
+/**
+ * Where this process sits relative to the daemon, from one strict PM2 read. Throws when PM2 cannot be read:
+ * an unknown position must never be taken for "outside".
+ */
+export function locateInDaemonProcessTree(
+  options: Omit<DaemonProcessTreeOptions, "daemonPid" | "strict"> = {},
+): DaemonTreePosition {
+  const daemon = readManagedDaemonStrict();
+  return {
+    inside: isInsideDaemonProcessTree({ ...options, daemonPid: daemon?.pid ?? null }),
+    daemonCwd: daemon?.cwd ?? null,
+  };
+}
+
+/** A PM2 read that fails counts as still inside: the worker keeps waiting and, at the deadline, stops nothing. */
+function insideOrUnreadable(isInside: () => boolean): boolean {
+  try {
+    return isInside();
+  } catch {
+    // no-cause: An unreadable PM2 is an unknown position, so it counts as inside and the worker keeps waiting.
+    return true;
+  }
+}
 
 /**
  * True when this process lives inside the daemon's own process tree -- cron
@@ -31,7 +69,12 @@ export type DaemonProcessTreeOptions = {
  * following `pm2 start` never runs and the daemon stays offline.
  */
 export function isInsideDaemonProcessTree(options: DaemonProcessTreeOptions = {}): boolean {
-  const daemonPid = options.daemonPid === undefined ? getRaviPid() : options.daemonPid;
+  const daemonPid =
+    options.daemonPid !== undefined
+      ? options.daemonPid
+      : options.strict
+        ? (readManagedDaemonStrict()?.pid ?? null)
+        : getRaviPid();
   if (!daemonPid) return false;
 
   const readParentPid = options.readParentPid ?? nativeParentPid;
@@ -63,12 +106,12 @@ export async function waitUntilOutsideDaemonProcessTree(
     wait?: (ms: number) => Promise<void>;
   } = {},
 ): Promise<boolean> {
-  const isInside = options.isInside ?? (() => isInsideDaemonProcessTree());
+  const isInside = options.isInside ?? (() => isInsideDaemonProcessTree({ strict: true }));
   const now = options.now ?? Date.now;
   const wait = options.wait ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const deadline = now() + (options.timeoutMs ?? 5_000);
   for (;;) {
-    if (!isInside()) return true;
+    if (!insideOrUnreadable(isInside)) return true;
     if (now() >= deadline) return false;
     await wait(options.pollMs ?? 100);
   }

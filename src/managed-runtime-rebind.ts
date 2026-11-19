@@ -54,19 +54,20 @@ const MANAGED_RUNTIME_REBIND_ENV = "RAVI_INTERNAL_UPDATE_RUNTIME_REBIND";
 /**
  * How long the CLI waits for the supervisor: the rebind, the stability window
  * and, when the target does not converge, the automatic rollback (which
- * reinstalls a release). CLIs before the window wait 90 s, before the
- * rollback 180 s; the supervisor records its result for them.
+ * reinstalls a release). CLIs before the window declare no wait and give up
+ * after 30 s (up to 3.261113.2) or 90 s (3.261113.3 on); they get no window,
+ * and the supervisor records its result for them.
  */
 export const MANAGED_RUNTIME_REBIND_TIMEOUT_MS = 900_000;
 /**
- * How long the CLI that started the supervisor waits for it, in ms. A CLI
- * that predates the stability window sets nothing and gives up after 90 s:
- * a window past that would turn a converged update into a reported failure.
+ * How long the CLI that started the supervisor waits for it, in ms. A CLI that
+ * predates the stability window sets nothing, and its wait is short: 30 s up to
+ * 3.261113.2 (the waypoint release), 90 s from 3.261113.3. Such a CLI gets no
+ * window (`supervisorStabilityPlan`).
  */
 export const MANAGED_RUNTIME_SUPERVISOR_BUDGET_ENV = "RAVI_UPDATE_SUPERVISOR_BUDGET_MS";
-const LEGACY_SUPERVISOR_BUDGET_MS = 90_000;
 /** Kept after the window for the supervisor to exit and the CLI to verify. */
-const SUPERVISOR_EXIT_MARGIN_MS = 10_000;
+export const SUPERVISOR_EXIT_MARGIN_MS = 10_000;
 /** How long the replaced runtime must stay unchanged before the update claims success. */
 export const MANAGED_RUNTIME_STABILITY_WINDOW_ENV = "RAVI_UPDATE_STABILITY_WINDOW_MS";
 const DEFAULT_STABILITY_WINDOW_MS = 30_000;
@@ -156,11 +157,26 @@ export function boundedStabilityWindowMs(input: { windowMs: number; deadlineMs?:
   return Math.max(0, Math.min(input.windowMs, input.deadlineMs - input.now));
 }
 
-/** The wait the starting CLI declared; 90 s when it declared none (a CLI that predates the window). */
-export function supervisorBudgetMs(raw: string | undefined): number {
-  const value = raw?.trim();
-  if (value && /^\d+$/.test(value)) return Math.min(Number(value), MANAGED_RUNTIME_REBIND_TIMEOUT_MS * 5);
-  return LEGACY_SUPERVISOR_BUDGET_MS;
+export type SupervisorStabilityPlan = Pick<
+  ManagedRuntimeRebindDependencies,
+  "stabilityWindowMs" | "stabilityDeadlineMs"
+>;
+
+/**
+ * The stability window a supervisor may run, from the wait the CLI that started it declared
+ * (`RAVI_UPDATE_SUPERVISOR_BUDGET_MS`). A declared wait gets the window, ending `SUPERVISOR_EXIT_MARGIN_MS` before
+ * that wait runs out. No declaration means a CLI that predates the window, whose wait can be as short as 30 s
+ * (3.261113.2, the waypoint release): it gets no window, so the supervisor answers as before this change and a
+ * converged update is never reported as a failure.
+ */
+export function supervisorStabilityPlan(
+  declaredBudget: string | undefined,
+  startedAt: number,
+): SupervisorStabilityPlan {
+  const value = declaredBudget?.trim();
+  if (!value || !/^\d+$/.test(value)) return { stabilityWindowMs: 0 };
+  const budgetMs = Math.min(Number(value), MANAGED_RUNTIME_REBIND_TIMEOUT_MS * 5);
+  return { stabilityDeadlineMs: startedAt + budgetMs - SUPERVISOR_EXIT_MARGIN_MS };
 }
 
 function onlineRuntimeIdentity(processes: Pm2Process[]): string {
@@ -761,12 +777,24 @@ export function refuseRebindInsideDaemonTree(
   insideDaemonTree: () => boolean,
   stateDir: string = getRaviStateDir(),
 ): void {
-  if (!insideDaemonTree()) return;
+  // An unreadable PM2 is an unknown position: refused like "inside", never taken for "outside".
+  let readFailure: unknown;
+  try {
+    if (!insideDaemonTree()) return;
+  } catch (cause) {
+    readFailure = cause;
+  }
+  const where =
+    readFailure === undefined
+      ? "was started inside the daemon's process tree"
+      : `could not read PM2 to tell whether it runs inside the daemon's process tree (${
+          readFailure instanceof Error ? readFailure.message : String(readFailure)
+        })`;
   const message =
-    `${UPDATE_SUPERVISOR_IN_DAEMON_TREE}: the update supervisor was started inside the daemon's process tree, ` +
+    `${UPDATE_SUPERVISOR_IN_DAEMON_TREE}: the update supervisor ${where}, ` +
     "where stopping the daemon would kill it before the new runtime starts. Nothing was stopped. " +
     "Run ravi update again: the CLI it installed detaches first.";
-  throw recordSupervisorRefusal(UPDATE_SUPERVISOR_IN_DAEMON_TREE, message, stateDir);
+  throw recordSupervisorRefusal(UPDATE_SUPERVISOR_IN_DAEMON_TREE, message, stateDir, readFailure);
 }
 
 const SUPERVISOR_REFUSAL_FILE = "supervisor-refused.json";
@@ -777,16 +805,21 @@ export type SupervisorRefusal = { code: string; pid: number; at: string; message
  * A supervisor's stdout/stderr may go nowhere (older CLIs ignore them), so a
  * refusal before any stop is also left on disk for whoever started it.
  */
-export function recordSupervisorRefusal(code: string, message: string, stateDir: string = getRaviStateDir()): Error {
+export function recordSupervisorRefusal(
+  code: string,
+  message: string,
+  stateDir: string = getRaviStateDir(),
+  cause?: unknown,
+): Error {
   try {
     const dir = join(stateDir, "updates");
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const refusal: SupervisorRefusal = { code, pid: process.pid, at: new Date().toISOString(), message };
     writeFileSync(join(dir, SUPERVISOR_REFUSAL_FILE), `${JSON.stringify(refusal, null, 2)}\n`, { mode: 0o600 });
-  } catch (cause) {
-    return new Error(message, { cause });
+  } catch (writeFailure) {
+    return new Error(message, { cause: writeFailure });
   }
-  return new Error(message);
+  return cause === undefined ? new Error(message) : new Error(message, { cause });
 }
 
 /** The refusal a supervisor recorded at or after `sinceMs`, if any. */
@@ -810,22 +843,21 @@ export function readSupervisorRefusal(sinceMs: number, stateDir: string = getRav
 }
 
 export async function maybeRunManagedRuntimeRebindFromEnv(
-  insideDaemonTree: () => boolean = () => isInsideDaemonProcessTree(),
+  insideDaemonTree: () => boolean = () => isInsideDaemonProcessTree({ strict: true }),
+  rebind: typeof rebindManagedRuntimeProcesses = rebindManagedRuntimeProcesses,
 ): Promise<boolean> {
   const encoded = process.env[MANAGED_RUNTIME_REBIND_ENV];
   if (!encoded) return false;
   delete process.env[MANAGED_RUNTIME_REBIND_ENV];
-  const budgetMs = supervisorBudgetMs(process.env[MANAGED_RUNTIME_SUPERVISOR_BUDGET_ENV]);
+  const declaredBudget = process.env[MANAGED_RUNTIME_SUPERVISOR_BUDGET_ENV];
   delete process.env[MANAGED_RUNTIME_SUPERVISOR_BUDGET_ENV];
   refuseRebindInsideDaemonTree(insideDaemonTree);
   const request = decodeManagedRuntimeRebindRequest(encoded);
   // The CLI started waiting when it spawned this process.
-  const startedAt = Date.now() - process.uptime() * 1000;
+  const plan = supervisorStabilityPlan(declaredBudget, Date.now() - process.uptime() * 1000);
   let converged: boolean;
   try {
-    converged = await rebindManagedRuntimeProcesses(request.previousProcesses, request.target, {
-      stabilityDeadlineMs: startedAt + budgetMs - SUPERVISOR_EXIT_MARGIN_MS,
-    });
+    converged = await rebind(request.previousProcesses, request.target, plan);
   } catch (error) {
     // Refusals before any stop: the running release keeps serving, and the reason reaches the CLI.
     const code = (error as { code?: unknown } | null)?.code;

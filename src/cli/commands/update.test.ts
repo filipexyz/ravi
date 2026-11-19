@@ -73,7 +73,7 @@ function createSourceUpdateScenario(
   options: {
     linkPathToCheckout?: boolean;
     managedProcesses?: boolean;
-    supervisor?: "rebind" | "noop";
+    supervisor?: "rebind" | "noop" | "refuse";
     failRunnerStart?: boolean;
     failPm2Status?: boolean;
     pm2Banner?: boolean;
@@ -109,7 +109,10 @@ function createSourceUpdateScenario(
     join(seed, "supervisor.js"),
     options.supervisor === "noop"
       ? "// Deliberately exits zero without implementing the rebind protocol.\n"
-      : `import { decodeManagedRuntimeRebindRequest, rebindManagedRuntimeProcesses } from ${JSON.stringify(join(process.cwd(), "src/managed-runtime-rebind.ts"))};\nconst request = decodeManagedRuntimeRebindRequest(process.env.RAVI_INTERNAL_UPDATE_RUNTIME_REBIND);\ndelete process.env.RAVI_INTERNAL_UPDATE_RUNTIME_REBIND;\nif (!(await rebindManagedRuntimeProcesses(request.previousProcesses, request.target, { pidAlive: () => true, assertPrepared: () => "ready", stabilityWindowMs: 0 }))) throw new Error("Fixture reconciliation failed");\n`,
+      : options.supervisor === "refuse"
+        ? // Refuses before any stop the way a real supervisor does: a recorded refusal, output, exit 1.
+          `import { mkdirSync, writeFileSync } from "node:fs";\nimport { join } from "node:path";\nconst dir = join(process.env.RAVI_STATE_DIR, "updates");\nmkdirSync(dir, { recursive: true });\nconsole.log("fixture supervisor: refusing before any stop");\nwriteFileSync(join(dir, "supervisor-refused.json"), JSON.stringify({ code: "UPDATE_WAYPOINT_REQUIRED", pid: process.pid, at: new Date().toISOString(), message: "UPDATE_WAYPOINT_REQUIRED: fixture refusal, run the waypoint first" }));\nprocess.exit(1);\n`
+        : `import { decodeManagedRuntimeRebindRequest, rebindManagedRuntimeProcesses } from ${JSON.stringify(join(process.cwd(), "src/managed-runtime-rebind.ts"))};\nconst request = decodeManagedRuntimeRebindRequest(process.env.RAVI_INTERNAL_UPDATE_RUNTIME_REBIND);\ndelete process.env.RAVI_INTERNAL_UPDATE_RUNTIME_REBIND;\nif (!(await rebindManagedRuntimeProcesses(request.previousProcesses, request.target, { pidAlive: () => true, assertPrepared: () => "ready", stabilityWindowMs: 0 }))) throw new Error("Fixture reconciliation failed");\n`,
   );
   writeFileSync(join(seed, ".gitignore"), "dist/\nnode_modules/\nbun.lock\n", "utf8");
   writeExecutable(join(seed, "bin", "ravi"), "#!/usr/bin/env bash\necho checkout\n");
@@ -218,6 +221,7 @@ writeFileSync(snapshotPath, JSON.stringify(entries));
     checkout,
     globalRoot,
     pathRavi: join(bin, "ravi"),
+    stateDir,
     pm2Calls,
     pm2Snapshot,
     run(...args: string[]) {
@@ -555,6 +559,32 @@ describe("update command helpers", () => {
       expect(payload.error.message).toContain("ravi daemon restart");
       expect(payload.error.message).toContain("ravi channels restart");
       expect(payload.error.message).toContain("ravi-channels is running stale code");
+      expect(
+        readFileSync(scenario.pm2Calls, "utf8")
+          .trim()
+          .split("\n")
+          .every((call) => call === "jlist"),
+      ).toBe(true);
+    } finally {
+      scenario.cleanup();
+    }
+  }, 60_000);
+
+  it("fails with the supervisor's recorded refusal and keeps its output in supervisor.log", () => {
+    const scenario = createSourceUpdateScenario({
+      linkPathToCheckout: true,
+      managedProcesses: true,
+      supervisor: "refuse",
+    });
+    try {
+      const result = scenario.run("--json");
+      expect(result.status).toBe(1);
+      const payload = JSON.parse(result.stdout);
+      expect(payload).toMatchObject({ success: false, error: { code: "UPDATE_WAYPOINT_REQUIRED" } });
+      expect(payload.error.message).toContain("fixture refusal, run the waypoint first");
+      expect(readFileSync(join(scenario.stateDir, "updates", "supervisor.log"), "utf8")).toContain(
+        "fixture supervisor: refusing before any stop",
+      );
       expect(
         readFileSync(scenario.pm2Calls, "utf8")
           .trim()

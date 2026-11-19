@@ -45,11 +45,17 @@ authorizes no database or package downgrade by hand: the update's own rollback
   session that asked may be interrupted when the daemon restarts. Read the
   outcome in `~/.ravi/updates/<runId>/result.json`, and the detail in `log`.
 - `UPDATE_DETACH_FAILED` means nothing was installed or stopped. Run
-  `ravi update` from a terminal.
+  `ravi update` from a terminal. With a relative `RAVI_STATE_DIR` the refusal
+  can also mean the daemon's cwd could not be read: set an absolute
+  `RAVI_STATE_DIR`.
+- `UPDATE_FAILED` with "Could not read PM2 runtime status" means Ravi could not
+  tell whether the caller runs inside the daemon's process tree, so nothing ran.
+  Check `pm2 jlist` and retry.
 - An older CLI that reports "PM2 did not converge" while both processes still
   run the previous release, with `~/.ravi/updates/supervisor-refused.json`
-  present, hit the supervisor's refusal inside the daemon tree. Nothing was
-  stopped. Run `ravi update` again: the CLI it installed detaches first.
+  present, hit the supervisor's refusal inside the daemon tree (or a PM2 it
+  could not read; the file says which). Nothing was stopped. Run `ravi update`
+  again: the CLI it installed detaches first.
 
 ## Rollback
 
