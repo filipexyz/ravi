@@ -410,19 +410,19 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels-slack | src/channels/slack/text-send.ts | 188 | fixed | binding retained / no recognized error surface | src/channels/slack/text-send.ts:02b5ab725ad58b0388b1c65e |
 | channels-slack | src/channels/slack/thread-attention-admission.ts | 158 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-attention-admission.ts:87ca3b3b96aa8165f25da5a3 |
 | channels-slack | src/channels/slack/thread-lifecycle-store.ts | 920 | no-cause | A malformed origin only loses the WhatsApp return; the completion then stays in Slack, as before origins existed. | src/channels/slack/thread-lifecycle-store.ts:4698d4a028fe7f5e71a7700a |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 204 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:b911f7b0646fdb37c1036be1 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 217 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3931e436098dcef7fb8f6040 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 238 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:0c07e521d00e171ade1709c5 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 251 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:b1f7078520b6527d71c97b7f |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 309 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:0badece10f83ff4d3d5ba9ac |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 366 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:7045053794e752ba9469e452 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 461 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:ff35a488b1d608b91dcc7f92 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 521 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:2c6a661603d61cec45ee5b83 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 636 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3480b77cb404aa4d76ef5053 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 662 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:79070e050ee994049ecf949b |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 676 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3830479576acbc9a4faf42e7 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 729 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3128594da318c7d29f0f5eb0 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 1124 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:168c889a92f9cf70994d3983 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 205 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:b911f7b0646fdb37c1036be1 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 218 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3931e436098dcef7fb8f6040 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 239 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:0c07e521d00e171ade1709c5 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 252 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:b1f7078520b6527d71c97b7f |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 310 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:0badece10f83ff4d3d5ba9ac |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 367 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:7045053794e752ba9469e452 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 462 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:ff35a488b1d608b91dcc7f92 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 522 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:2c6a661603d61cec45ee5b83 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 637 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3480b77cb404aa4d76ef5053 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 663 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:79070e050ee994049ecf949b |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 677 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3830479576acbc9a4faf42e7 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 730 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3128594da318c7d29f0f5eb0 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 1144 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:168c889a92f9cf70994d3983 |
 | channels-slack | src/channels/slack/thread-requester.ts | 34 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-requester.ts:906a166dfda93a7451e16429 |
 | channels-slack | src/channels/slack/thread-requester.ts | 64 | triaged-follow-up | catch-without-binding | src/channels/slack/thread-requester.ts:518fbe45995656bbf2c7b34e |
 | channels-slack | src/channels/slack/thread-requester.ts | 73 | triaged-follow-up | catch-without-binding | src/channels/slack/thread-requester.ts:4e96a74ec3eda3554d5b7d4b |
@@ -765,11 +765,11 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | sessions | src/cli/commands/sessions.ts | 6917 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d21b2d11d3d254c02b35c1c5 |
 | sessions | src/cli/commands/sessions.ts | 7295 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:fdf35d6359ee1a68febf9e0b |
 | sessions | src/cli/commands/sessions.ts | 7447 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:3ff0843b67b1cc10bb3733d5 |
-| sessions | src/cli/commands/sessions.ts | 7513 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:9abb1fd8ad15058eab3e60b1 |
-| sessions | src/cli/commands/sessions.ts | 7581 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:fd080b4571635a55133ac393 |
-| sessions | src/cli/commands/sessions.ts | 8060 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:e74ef6f25c50455ddaa2c778 |
-| sessions | src/cli/commands/sessions.ts | 8281 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:af6b2d0d05a12aa7fc99bc15 |
-| sessions | src/cli/commands/sessions.ts | 8326 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:a7884c195162ae8d081804b5 |
+| sessions | src/cli/commands/sessions.ts | 7538 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:9abb1fd8ad15058eab3e60b1 |
+| sessions | src/cli/commands/sessions.ts | 7608 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:fd080b4571635a55133ac393 |
+| sessions | src/cli/commands/sessions.ts | 8087 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:e74ef6f25c50455ddaa2c778 |
+| sessions | src/cli/commands/sessions.ts | 8308 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:af6b2d0d05a12aa7fc99bc15 |
+| sessions | src/cli/commands/sessions.ts | 8353 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:a7884c195162ae8d081804b5 |
 | cli | src/cli/commands/settings.ts | 87 | triaged-follow-up | rejection-without-binding | src/cli/commands/settings.ts:97fc7d03957d443943127257 |
 | cli | src/cli/commands/settings.ts | 144 | triaged-follow-up | catch-without-binding | src/cli/commands/settings.ts:40d8a2afa100fcde48567ace |
 | cli | src/cli/commands/settings.ts | 572 | fixed | binding retained / no recognized error surface | src/cli/commands/settings.ts:66966335acd020bf544ec079 |
