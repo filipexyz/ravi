@@ -34,6 +34,7 @@ import {
   ghFollowDeliveryPatch,
   ghFollowReplyTargetPatch,
   isGhFollowManagedWatch,
+  isSupersededGhFollowFilter,
 } from "./gh-watch.js";
 import {
   addPendingGhFollow,
@@ -126,16 +127,25 @@ export function selectStaleGhFollowTriggers(
 }
 
 /**
- * Follows cujo filtro não compila, com o filtro canônico derivado do nome.
+ * Follows whose filter must be rewritten to the canonical one derived from the name:
  *
- * O runner não ativa trigger com filtro inválido (fail-closed), então sem o
- * reparo o follow ficaria mudo até a PR fechar. Filtro válido não é tocado.
+ * - a filter that does not compile. The runner never activates it (fail-closed), so
+ *   without the repair the follow would stay mute until the PR closes;
+ * - a canonical filter an earlier release generated and this one has superseded.
+ *   It compiles and works, so nothing else would ever move it: a follow created
+ *   before a release that changed what a follow listens to would keep the old
+ *   behavior until someone touched its PR.
+ *
+ * Any other valid filter, current or customised, is not touched.
  */
 export function selectGhFollowFilterRepairs(triggers: Trigger[]): Array<{ trigger: Trigger; filter: string }> {
   const repairs: Array<{ trigger: Trigger; filter: string }> = [];
   for (const trigger of triggers) {
     const parsed = parseGhFollowTriggerName(trigger.name ?? "");
-    if (!parsed || validateFilter(trigger.filter).ok) continue;
+    if (!parsed) continue;
+    const stale =
+      !validateFilter(trigger.filter).ok || isSupersededGhFollowFilter(trigger.filter, parsed.repo, parsed.prNumber);
+    if (!stale) continue;
     repairs.push({ trigger, filter: ghFollowFilter(parsed.repo, parsed.prNumber) });
   }
   return repairs;

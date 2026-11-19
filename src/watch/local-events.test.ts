@@ -4,6 +4,7 @@ import {
   PULL_REQUEST_COMMENT_EVENT,
   type LocalCommentObservation,
   type LocalWatchSnapshot,
+  WORKFLOW_CONCLUSIONS_WITH_OUTCOME_EVENT,
 } from "./local-events.js";
 
 function comment(overrides: Partial<LocalCommentObservation> = {}): LocalCommentObservation {
@@ -191,6 +192,41 @@ describe("local github watch events", () => {
     // Já estava completed: não repete a cada tick.
     const second = deriveLocalGitHubEvents("o/r", { previous: current, current, departed: {} });
     expect(second.events).toEqual([]);
+  });
+
+  it("lists exactly the conclusions whose run emits an outcome event beside workflow_run.completed", () => {
+    // A consumer that listens to both event types hears these runs twice. It reads the
+    // list instead of copying it, so the two cannot drift apart.
+    const previous = snapshotWith({ workflowRuns: [{ id: 7, status: "in_progress", conclusion: null }] });
+    const conclusions = [
+      "success",
+      "failure",
+      "timed_out",
+      "startup_failure",
+      "cancelled",
+      "action_required",
+      "neutral",
+      "skipped",
+      "stale",
+    ];
+
+    for (const conclusion of conclusions) {
+      const current = snapshotWith({ workflowRuns: [{ id: 7, status: "completed", conclusion }] });
+      const types = deriveLocalGitHubEvents("o/r", { previous, current, departed: {} }).events.map(
+        (event) => event.eventType,
+      );
+      const hasOutcomeEvent = WORKFLOW_CONCLUSIONS_WITH_OUTCOME_EVENT.includes(conclusion);
+
+      expect(types).toContain("workflow_run.completed");
+      expect(types).toHaveLength(hasOutcomeEvent ? 2 : 1);
+    }
+    expect([...WORKFLOW_CONCLUSIONS_WITH_OUTCOME_EVENT].sort()).toEqual([
+      "cancelled",
+      "failure",
+      "startup_failure",
+      "success",
+      "timed_out",
+    ]);
   });
 
   it("ignores workflow runs that are still in flight", () => {

@@ -737,40 +737,40 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/self.ts | 591 | triaged-follow-up | catch-without-binding | src/cli/commands/self.ts:baedabaf40aa5665fd263637 |
 | sessions | src/cli/commands/session-conversations.ts | 60 | fixed | binding retained / no recognized error surface | src/cli/commands/session-conversations.ts:896fc8b69d9bbf921f401c35 |
 | sessions | src/cli/commands/sessions-runtime.ts | 179 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions-runtime.ts:4395a23d4078be55a557c2bf |
-| sessions | src/cli/commands/sessions.ts | 1763 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:944b8d05da2c45f2902502be |
-| sessions | src/cli/commands/sessions.ts | 1832 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:9dc7e9fc81738f9628adf86d |
-| sessions | src/cli/commands/sessions.ts | 2074 | triaged-follow-up | rejection-without-binding | src/cli/commands/sessions.ts:bb33fd9f96a52411ee3d735f |
-| sessions | src/cli/commands/sessions.ts | 2468 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:f343a742bb44614542f84ca1 |
-| sessions | src/cli/commands/sessions.ts | 2680 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:c7638ec53a5c9a8ad225e727 |
-| sessions | src/cli/commands/sessions.ts | 3868 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:3bfa3728d97be3491c0172b7 |
-| sessions | src/cli/commands/sessions.ts | 3938 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:95b05645e384bb96dc3bd4e2 |
-| sessions | src/cli/commands/sessions.ts | 4155 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d5a5efa4664214cbad54803c |
-| sessions | src/cli/commands/sessions.ts | 4398 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:c8b2e26f2fd6043b99b88199 |
-| sessions | src/cli/commands/sessions.ts | 4435 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:c8b2e26f2fd6043b99b88199 |
-| sessions | src/cli/commands/sessions.ts | 4522 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:7cbb8863ac4b02b21e00dc0b |
-| sessions | src/cli/commands/sessions.ts | 4630 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:d63c46469103c28624519dca |
-| sessions | src/cli/commands/sessions.ts | 4725 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:538560357ab207bdd65b1b5f |
-| sessions | src/cli/commands/sessions.ts | 4898 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:eeaab4efe83b93bf9e263261 |
-| sessions | src/cli/commands/sessions.ts | 5373 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d27d338c459f4e729b585416 |
-| sessions | src/cli/commands/sessions.ts | 5421 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d27d338c459f4e729b585416 |
-| sessions | src/cli/commands/sessions.ts | 5448 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d27d338c459f4e729b585416 |
-| sessions | src/cli/commands/sessions.ts | 6287 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:52a0c574f7b7344469c6a183 |
-| sessions | src/cli/commands/sessions.ts | 6468 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:d8e2f06f3f8858398d8ab837 |
-| sessions | src/cli/commands/sessions.ts | 6511 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:a51b74cdb16e7eb2a1e16296 |
-| sessions | src/cli/commands/sessions.ts | 6562 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:8a239e4836d6ce42cbc48d7b |
-| sessions | src/cli/commands/sessions.ts | 6649 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:4e8213d901784dd4628928f7 |
-| sessions | src/cli/commands/sessions.ts | 6662 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:4e8213d901784dd4628928f7 |
-| sessions | src/cli/commands/sessions.ts | 6687 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:4e8213d901784dd4628928f7 |
-| sessions | src/cli/commands/sessions.ts | 6706 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:e295b972934a27cbc6026898 |
-| sessions | src/cli/commands/sessions.ts | 6826 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:403eb918999b13c4d738cbad |
-| sessions | src/cli/commands/sessions.ts | 6917 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d21b2d11d3d254c02b35c1c5 |
-| sessions | src/cli/commands/sessions.ts | 7295 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:fdf35d6359ee1a68febf9e0b |
-| sessions | src/cli/commands/sessions.ts | 7447 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:3ff0843b67b1cc10bb3733d5 |
-| sessions | src/cli/commands/sessions.ts | 7513 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:9abb1fd8ad15058eab3e60b1 |
-| sessions | src/cli/commands/sessions.ts | 7581 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:fd080b4571635a55133ac393 |
-| sessions | src/cli/commands/sessions.ts | 8060 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:e74ef6f25c50455ddaa2c778 |
-| sessions | src/cli/commands/sessions.ts | 8281 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:af6b2d0d05a12aa7fc99bc15 |
-| sessions | src/cli/commands/sessions.ts | 8326 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:a7884c195162ae8d081804b5 |
+| sessions | src/cli/commands/sessions.ts | 1771 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:944b8d05da2c45f2902502be |
+| sessions | src/cli/commands/sessions.ts | 1840 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:9dc7e9fc81738f9628adf86d |
+| sessions | src/cli/commands/sessions.ts | 2082 | triaged-follow-up | rejection-without-binding | src/cli/commands/sessions.ts:bb33fd9f96a52411ee3d735f |
+| sessions | src/cli/commands/sessions.ts | 2476 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:f343a742bb44614542f84ca1 |
+| sessions | src/cli/commands/sessions.ts | 2688 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:c7638ec53a5c9a8ad225e727 |
+| sessions | src/cli/commands/sessions.ts | 3876 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:3bfa3728d97be3491c0172b7 |
+| sessions | src/cli/commands/sessions.ts | 3946 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:95b05645e384bb96dc3bd4e2 |
+| sessions | src/cli/commands/sessions.ts | 4163 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d5a5efa4664214cbad54803c |
+| sessions | src/cli/commands/sessions.ts | 4406 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:c8b2e26f2fd6043b99b88199 |
+| sessions | src/cli/commands/sessions.ts | 4443 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:c8b2e26f2fd6043b99b88199 |
+| sessions | src/cli/commands/sessions.ts | 4530 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:7cbb8863ac4b02b21e00dc0b |
+| sessions | src/cli/commands/sessions.ts | 4638 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:d63c46469103c28624519dca |
+| sessions | src/cli/commands/sessions.ts | 4733 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:538560357ab207bdd65b1b5f |
+| sessions | src/cli/commands/sessions.ts | 4906 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:eeaab4efe83b93bf9e263261 |
+| sessions | src/cli/commands/sessions.ts | 5381 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d27d338c459f4e729b585416 |
+| sessions | src/cli/commands/sessions.ts | 5429 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d27d338c459f4e729b585416 |
+| sessions | src/cli/commands/sessions.ts | 5456 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d27d338c459f4e729b585416 |
+| sessions | src/cli/commands/sessions.ts | 6295 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:52a0c574f7b7344469c6a183 |
+| sessions | src/cli/commands/sessions.ts | 6476 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:d8e2f06f3f8858398d8ab837 |
+| sessions | src/cli/commands/sessions.ts | 6519 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:a51b74cdb16e7eb2a1e16296 |
+| sessions | src/cli/commands/sessions.ts | 6570 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:8a239e4836d6ce42cbc48d7b |
+| sessions | src/cli/commands/sessions.ts | 6657 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:4e8213d901784dd4628928f7 |
+| sessions | src/cli/commands/sessions.ts | 6670 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:4e8213d901784dd4628928f7 |
+| sessions | src/cli/commands/sessions.ts | 6695 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:4e8213d901784dd4628928f7 |
+| sessions | src/cli/commands/sessions.ts | 6714 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:e295b972934a27cbc6026898 |
+| sessions | src/cli/commands/sessions.ts | 6834 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:403eb918999b13c4d738cbad |
+| sessions | src/cli/commands/sessions.ts | 6925 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d21b2d11d3d254c02b35c1c5 |
+| sessions | src/cli/commands/sessions.ts | 7303 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:fdf35d6359ee1a68febf9e0b |
+| sessions | src/cli/commands/sessions.ts | 7455 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:3ff0843b67b1cc10bb3733d5 |
+| sessions | src/cli/commands/sessions.ts | 7521 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:9abb1fd8ad15058eab3e60b1 |
+| sessions | src/cli/commands/sessions.ts | 7589 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:fd080b4571635a55133ac393 |
+| sessions | src/cli/commands/sessions.ts | 8068 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:e74ef6f25c50455ddaa2c778 |
+| sessions | src/cli/commands/sessions.ts | 8289 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:af6b2d0d05a12aa7fc99bc15 |
+| sessions | src/cli/commands/sessions.ts | 8334 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:a7884c195162ae8d081804b5 |
 | cli | src/cli/commands/settings.ts | 87 | triaged-follow-up | rejection-without-binding | src/cli/commands/settings.ts:97fc7d03957d443943127257 |
 | cli | src/cli/commands/settings.ts | 144 | triaged-follow-up | catch-without-binding | src/cli/commands/settings.ts:40d8a2afa100fcde48567ace |
 | cli | src/cli/commands/settings.ts | 572 | fixed | binding retained / no recognized error surface | src/cli/commands/settings.ts:66966335acd020bf544ec079 |
@@ -1176,30 +1176,30 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | hooks-runtime | src/hooks-runtime/runner.ts | 321 | fixed | binding retained / no recognized error surface | src/hooks-runtime/runner.ts:0e2962298a519845e9e5f341 |
 | hooks-runtime | src/hooks-runtime/runner.ts | 481 | fixed | binding retained / no recognized error surface | src/hooks-runtime/runner.ts:d8f5aa7c1209a1765b4cf2f4 |
 | hooks | src/hooks/gh-follow-pending.ts | 42 | triaged-follow-up | catch-without-binding | src/hooks/gh-follow-pending.ts:07c422a62374ce2f7d8b3b03 |
-| hooks | src/hooks/gh-follow-sweep.ts | 155 | triaged-follow-up | catch-without-binding | src/hooks/gh-follow-sweep.ts:8c3f1ef822281326b679b66b |
-| hooks | src/hooks/gh-follow-sweep.ts | 177 | triaged-follow-up | catch-without-binding | src/hooks/gh-follow-sweep.ts:f3bf41d6556d70accdf2d57c |
-| hooks | src/hooks/gh-follow-sweep.ts | 217 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:925559a6c81a9d4ea76b13cf |
-| hooks | src/hooks/gh-follow-sweep.ts | 238 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:8ab86bb8d0f0b0adae455dd3 |
-| hooks | src/hooks/gh-follow-sweep.ts | 257 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:cb13312de2b6e72394e0bbc3 |
-| hooks | src/hooks/gh-follow-sweep.ts | 271 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:9ffb9f94565cfd0d871c64f1 |
-| hooks | src/hooks/gh-follow-sweep.ts | 289 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:fc0dbf4a0e8435d77d3678d6 |
-| hooks | src/hooks/gh-follow-sweep.ts | 297 | triaged-follow-up | catch-without-binding | src/hooks/gh-follow-sweep.ts:6136337e8208a653f431fa70 |
-| hooks | src/hooks/gh-follow-sweep.ts | 333 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:68025f093570a3eea6f0e99f |
-| hooks | src/hooks/gh-follow-sweep.ts | 347 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:b53ab0d130807a6b05e97125 |
-| hooks | src/hooks/gh-follow-sweep.ts | 411 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:8cb91fffe47bdc0cae186f89 |
+| hooks | src/hooks/gh-follow-sweep.ts | 165 | triaged-follow-up | catch-without-binding | src/hooks/gh-follow-sweep.ts:8c3f1ef822281326b679b66b |
+| hooks | src/hooks/gh-follow-sweep.ts | 187 | triaged-follow-up | catch-without-binding | src/hooks/gh-follow-sweep.ts:f3bf41d6556d70accdf2d57c |
+| hooks | src/hooks/gh-follow-sweep.ts | 227 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:925559a6c81a9d4ea76b13cf |
+| hooks | src/hooks/gh-follow-sweep.ts | 248 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:8ab86bb8d0f0b0adae455dd3 |
+| hooks | src/hooks/gh-follow-sweep.ts | 267 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:cb13312de2b6e72394e0bbc3 |
+| hooks | src/hooks/gh-follow-sweep.ts | 281 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:9ffb9f94565cfd0d871c64f1 |
+| hooks | src/hooks/gh-follow-sweep.ts | 299 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:fc0dbf4a0e8435d77d3678d6 |
+| hooks | src/hooks/gh-follow-sweep.ts | 307 | triaged-follow-up | catch-without-binding | src/hooks/gh-follow-sweep.ts:6136337e8208a653f431fa70 |
+| hooks | src/hooks/gh-follow-sweep.ts | 343 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:68025f093570a3eea6f0e99f |
+| hooks | src/hooks/gh-follow-sweep.ts | 357 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:b53ab0d130807a6b05e97125 |
+| hooks | src/hooks/gh-follow-sweep.ts | 421 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:8cb91fffe47bdc0cae186f89 |
 | hooks | src/hooks/gh-pr-publish.ts | 139 | fixed | binding retained / no recognized error surface | src/hooks/gh-pr-publish.ts:21b7ea1410bb22bbfc408308 |
-| hooks | src/hooks/gh-watch.ts | 707 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:8073d9576e24b20742de4a05 |
-| hooks | src/hooks/gh-watch.ts | 739 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:15462fd7c975cd3568f4bc2c |
-| hooks | src/hooks/gh-watch.ts | 768 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:15c7b4fe70049a4776673155 |
-| hooks | src/hooks/gh-watch.ts | 827 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:09ba37f04ad007cd21eee4b0 |
-| hooks | src/hooks/gh-watch.ts | 840 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:08ad2f925bb9e28a05118a0e |
-| hooks | src/hooks/gh-watch.ts | 874 | triaged-follow-up | catch-without-binding | src/hooks/gh-watch.ts:af8457fcadfb65da4dd90240 |
-| hooks | src/hooks/gh-watch.ts | 910 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:26f04b4cb70174099933b9d4 |
-| hooks | src/hooks/gh-watch.ts | 920 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:3c35affae2df1ffb3c3a9a22 |
-| hooks | src/hooks/gh-watch.ts | 933 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:3c35affae2df1ffb3c3a9a22 |
-| hooks | src/hooks/gh-watch.ts | 965 | triaged-follow-up | catch-without-binding | src/hooks/gh-watch.ts:23d0acda26def2baf561fcf1 |
-| hooks | src/hooks/gh-watch.ts | 981 | triaged-follow-up | catch-without-binding | src/hooks/gh-watch.ts:d400d88bf210764803f508f4 |
-| hooks | src/hooks/gh-watch.ts | 1108 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:108b86d5f9678900d5b1b3cb |
+| hooks | src/hooks/gh-watch.ts | 768 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:8073d9576e24b20742de4a05 |
+| hooks | src/hooks/gh-watch.ts | 800 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:15462fd7c975cd3568f4bc2c |
+| hooks | src/hooks/gh-watch.ts | 829 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:15c7b4fe70049a4776673155 |
+| hooks | src/hooks/gh-watch.ts | 888 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:09ba37f04ad007cd21eee4b0 |
+| hooks | src/hooks/gh-watch.ts | 901 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:08ad2f925bb9e28a05118a0e |
+| hooks | src/hooks/gh-watch.ts | 935 | triaged-follow-up | catch-without-binding | src/hooks/gh-watch.ts:af8457fcadfb65da4dd90240 |
+| hooks | src/hooks/gh-watch.ts | 971 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:26f04b4cb70174099933b9d4 |
+| hooks | src/hooks/gh-watch.ts | 981 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:3c35affae2df1ffb3c3a9a22 |
+| hooks | src/hooks/gh-watch.ts | 994 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:3c35affae2df1ffb3c3a9a22 |
+| hooks | src/hooks/gh-watch.ts | 1026 | triaged-follow-up | catch-without-binding | src/hooks/gh-watch.ts:23d0acda26def2baf561fcf1 |
+| hooks | src/hooks/gh-watch.ts | 1042 | triaged-follow-up | catch-without-binding | src/hooks/gh-watch.ts:d400d88bf210764803f508f4 |
+| hooks | src/hooks/gh-watch.ts | 1169 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:108b86d5f9678900d5b1b3cb |
 | hooks | src/hooks/jobs-promote.ts | 106 | fixed | binding retained / no recognized error surface | src/hooks/jobs-promote.ts:21c4820fb5c34b39bc576264 |
 | hooks | src/hooks/pre-compact.ts | 333 | fixed | binding retained / no recognized error surface | src/hooks/pre-compact.ts:8bd137fa7ea0b369d8761dd5 |
 | hooks | src/hooks/pre-compact.ts | 344 | triaged-follow-up | catch-without-binding | src/hooks/pre-compact.ts:b200a5a7c730aeae6a9170c4 |
