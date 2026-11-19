@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -126,6 +126,27 @@ describe("ravi update inside the daemon process tree", () => {
     });
     expect(calls).toHaveLength(1);
     expect(existsSync(join(stateDir, "update.json"))).toBe(false);
+  });
+
+  it("passes the channel it resolved to the worker instead of resolving it again", async () => {
+    writeFileSync(join(stateDir, "update.json"), JSON.stringify({ updateChannel: "next" }));
+    const calls: SpawnCall[] = [];
+    const result = (await runUpdate(
+      { json: true },
+      {
+        env: baseEnv(),
+        argv: ["/usr/bin/bun", SCRIPT, "update", "--json"],
+        insideDaemonTree: () => true,
+        spawnDetached: recordingSpawn(calls),
+      },
+    )) as RaviUpdateHandoff;
+    expect(result.requested).toBe("next");
+    expect(calls[0]!.args).toEqual([SCRIPT, "update", "--next", "--json"]);
+    expect(JSON.parse(readFileSync(updateRunPaths(result.runId, stateDir).request, "utf8")).args).toEqual([
+      "update",
+      "--next",
+      "--json",
+    ]);
   });
 
   it("refuses when PM2 cannot be read, before detaching, installing or stopping anything", async () => {

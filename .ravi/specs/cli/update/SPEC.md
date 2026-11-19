@@ -187,8 +187,11 @@ CLI that run installed.
   reported as an `error` event MUST take the same refusal path and MUST NOT
   escape as an unhandled event.
 - Whether the caller is inside the daemon's process tree MUST come from a
-  strict PM2 read. A PM2 that cannot be read is an unknown position and MUST
-  NOT be taken for "outside": the CLI MUST refuse with `UPDATE_FAILED` before it
+  strict PM2 read, tested against every registration named `ravi` (a
+  supervised restart lists the successor and the predecessor at once). A PM2
+  that cannot be read, and an ancestry that cannot be read (`/proc` on Linux,
+  `ps` otherwise), loops or is deeper than the walk, is an unknown position
+  and MUST NOT be taken for "outside": the CLI MUST refuse with `UPDATE_FAILED` before it
   detaches, installs or stops anything, and the supervisor MUST refuse as below.
   Usage errors are reported before the read. The detached child and the worker
   decide by their run markers and MUST NOT read PM2 for that decision.
@@ -200,7 +203,8 @@ CLI that run installed.
   `RAVI_HOME`, `RAVI_REPO` and `RAVI_SUPPRESS_AUDIT_EVENTS` MUST be removed;
   `RAVI_STATE_DIR` MUST be passed as an absolute path. A relative value was
   handed down by a daemon that predates the boot anchor and MUST be resolved
-  against that daemon's cwd (from the same PM2 read), never the caller's, as in
+  against the cwd of the daemon whose tree holds the caller (from the same PM2
+  read), never the caller's, as in
   `ravi daemon restart` (#857). The run directory MUST use the same resolved
   path. A relative value with no readable daemon cwd MUST be refused with
   `UPDATE_DETACH_FAILED`.
