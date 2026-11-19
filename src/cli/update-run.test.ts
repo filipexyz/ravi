@@ -4,7 +4,12 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildPm2Env, clearedPm2ContextEnv } from "../pm2.js";
-import { waitUntilOutsideDaemonProcessTree } from "./daemon-process-tree.js";
+import {
+  isInsideDaemonProcessTree,
+  locateInDaemonProcessTree,
+  parseProcStatParentPid,
+  waitUntilOutsideDaemonProcessTree,
+} from "./daemon-process-tree.js";
 import {
   buildDetachedUpdateEnv,
   createUpdateRunId,
@@ -250,5 +255,55 @@ describe("waiting to leave the daemon tree", () => {
     };
     expect(await waitUntilOutsideDaemonProcessTree({ ...timing, isInside: flaky })).toBe(true);
     expect(reads).toBe(2);
+  });
+});
+
+describe("position in the daemon tree", () => {
+  const chain = (parents: Record<number, number>) => (pid: number) => parents[pid] ?? null;
+
+  it("tests every ravi registration and answers with the cwd of the one that holds the caller", () => {
+    // A supervised restart lists the predecessor (10) and the successor (20); the caller runs under the successor.
+    const readParentPid = chain({ 30: 20, 20: 1, 10: 1 });
+    const daemons = [
+      { pid: 10, cwd: "/old" },
+      { pid: 20, cwd: "/new" },
+    ];
+    expect(locateInDaemonProcessTree({ daemons, startPid: 30, readParentPid })).toEqual({
+      inside: true,
+      daemonCwd: "/new",
+    });
+    expect(locateInDaemonProcessTree({ daemons: [daemons[0]!], startPid: 30, readParentPid })).toEqual({
+      inside: false,
+      daemonCwd: null,
+    });
+    expect(locateInDaemonProcessTree({ daemons: [], startPid: 30, readParentPid })).toEqual({
+      inside: false,
+      daemonCwd: null,
+    });
+  });
+
+  it("never takes an ancestry it could not read for outside, while the legacy answer stays", () => {
+    const daemons = [{ pid: 10, cwd: "/srv" }];
+    expect(() => locateInDaemonProcessTree({ daemons, startPid: 30, readParentPid: () => null })).toThrow(
+      "the parent of pid 30 is unreadable",
+    );
+    expect(() =>
+      locateInDaemonProcessTree({ daemons, startPid: 30, readParentPid: chain({ 30: 31, 31: 30 }) }),
+    ).toThrow("it loops at pid 30");
+    expect(() => locateInDaemonProcessTree({ daemons, startPid: 100, readParentPid: (pid) => pid + 1 })).toThrow(
+      "deeper than 24 levels",
+    );
+    expect(() =>
+      isInsideDaemonProcessTree({ daemonPid: 10, strict: true, startPid: 30, readParentPid: () => null }),
+    ).toThrow("Could not read the process ancestry");
+    // `ravi daemon restart` keeps its non-strict answer.
+    expect(isInsideDaemonProcessTree({ daemonPid: 10, startPid: 30, readParentPid: () => null })).toBe(false);
+    expect(isInsideDaemonProcessTree({ daemonPid: 10, startPid: 100, readParentPid: (pid) => pid + 1 })).toBe(false);
+  });
+
+  it("reads the parent pid from /proc/<pid>/stat whatever the command name holds", () => {
+    expect(parseProcStatParentPid("4242 (bun) S 4100 4242 4242 0 -1")).toBe(4100);
+    expect(parseProcStatParentPid("4242 (my (odd) name) R 77 4242 4242 0 -1")).toBe(77);
+    expect(parseProcStatParentPid("garbage")).toBeNull();
   });
 });
