@@ -48,7 +48,7 @@ a success claim.
   - **A Ravi session**, through the gateway/agent (transport `gateway` or
     `tool`). It MUST carry a resolved authenticated runtime context bound to an
     agent and a session. Session/source identity MUST come from that record,
-    not ambient aliases. CI follows the publishing session's durable origin,
+    not ambient aliases. CI follows the publishing session (a Slack thread child while its thread is open, its durable parent once it closes),
     and `--reply-session`, when given, MUST be that session. A runtime context
     that belongs to no session MUST fail before body/worktree, GitHub, health
     or journal IO with `PERMISSION_DENIED` (exit 1) and `pr publish requires an
@@ -155,8 +155,15 @@ a success claim.
   Execute MUST revalidate the original publisher before object/ref/PR writes,
   before follow registration and before success. A thread closing or being
   pruned is safe while its saved lifecycle and durable parent remain; missing
-  or ambiguous lineage MUST fail closed. Verification and reported replySession
-  MUST refer to the resolved parent, never a frozen child destination.
+  or ambiguous lineage MUST fail closed. When the publisher is the child of an
+  open Slack thread the follow addresses that child and its thread (reply
+  session = the child, reply source with the thread id), because the thread that
+  published is the one that must react to the CI result. The follow is resolved
+  again before it is registered: a thread that closed or was pruned during the
+  upload resolves to its durable parent, never to a frozen child destination.
+  Closing the thread hands the follow to the parent (see
+  `channels/slack/threads`). Verification and reported replySession MUST refer
+  to the owner resolved at registration.
 - Follow verification MUST compare expected and persisted `replySource` through
   the same `serializeReplySource` projection used by trigger persistence:
   `channel`, `accountId`, `chatId`, and a nonempty optional `threadId`.

@@ -12,7 +12,7 @@ import type { RuntimeLaunchPrompt } from "../../runtime/message-types.js";
 import type { PublishSessionPromptOptions } from "../../omni/session-stream.js";
 import type { ChannelOutboundJob } from "../outbound-stream.js";
 import { deleteSession, getOrCreateSession, getSession, listSessionSubscriptions } from "../../router/index.js";
-import { dbCreateTrigger, dbUpdateTrigger } from "../../triggers/triggers-db.js";
+import { dbCreateTrigger, dbGetTrigger, dbUpdateTrigger } from "../../triggers/triggers-db.js";
 import { dbCreateAgent } from "../../router/router-db.js";
 import { dbUpsertChat } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -32,6 +32,7 @@ import {
 import {
   claimSlackThreadCreation,
   completeSlackThreadCreation,
+  closeSlackThreadLifecycle,
   createSlackThreadLifecycle,
   findSlackThreadLifecycleByChildSession,
   findSlackThreadLifecycleByChildRef,
@@ -934,6 +935,36 @@ describe("Slack thread orchestration", () => {
     await closeSlackThread(child, undefined, dependencies);
     expect(listSlackThreadsForSession(parent).threads).toEqual([]);
     expect(listSlackThreadsForSession(parent, { includeClosed: true }).threads[0]?.status).toBe("closed");
+  });
+
+  it("hands the PR follows that the thread armed to its parent when the thread closes", async () => {
+    const fixture = seedPendingCreation();
+    dbCreateAgent({ id: "ravi", cwd: "/tmp/ravi" });
+    const { dependencies } = capture();
+    await finalizeSlackThreadCreation(fixture.requestId, dependencies);
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+    const follow = dbCreateTrigger({
+      name: "gh-follow:o/r#7",
+      topic: "ravi.watch.github.>",
+      message: "follow",
+      agentId: "ravi",
+      session: "main",
+      replySession: child.name!,
+      replySource: { channel: "slack", accountId: "ravi-slack", chatId: "C123", threadId: fixture.threadTs },
+    });
+    // The follow addresses the open thread: the store alone refuses the close.
+    expect(() => closeSlackThreadLifecycle({ childSessionKey: child.sessionKey })).toThrow("active triggers");
+
+    const closed = await closeSlackThread(child, "done", dependencies);
+
+    expect(closed.changed).toBe(true);
+    expect(dbGetTrigger(follow.id)).toMatchObject({
+      replySession: "ravi-parent",
+      replySource: { channel: "slack", accountId: "ravi-slack", chatId: "C123" },
+    });
+    expect(dbGetTrigger(follow.id)!.replySource?.threadId).toBeUndefined();
+    // The running trigger runner reloads its subscriptions, so the CI event reaches the parent.
+    expect(dependencies.publishEvent).toHaveBeenCalledWith("ravi.triggers.refresh", {});
   });
 
   it("sends parent instructions into the thread, reopening a closed one, and only from the parent", async () => {
