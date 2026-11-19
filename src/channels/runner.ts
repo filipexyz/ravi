@@ -51,6 +51,12 @@ import {
 } from "./outbound-stream.js";
 import { ChannelPresenceConsumer } from "./presence-consumer.js";
 import {
+  RUNNER_RELEASE_DRIFT_EXIT_CODE,
+  RUNNER_RELEASE_DRIFT_FORCE_EXIT_MS,
+  RunnerReleaseGuard,
+  type RunnerReleaseRelaunch,
+} from "./runner-release-guard.js";
+import {
   startChannelBackendEgressResponder,
   type ChannelBackendEgressResponder,
   type ChannelBackendEgressResponderConnection,
@@ -113,6 +119,14 @@ export interface ChannelRunnerOptions {
   natsUrl?: string;
   consumeOutbound?: boolean;
   env?: NodeJS.ProcessEnv;
+  /** Replaces the guard that decides when a state-refused runner relaunches (tests). */
+  releaseGuard?: RunnerReleaseGuard;
+  /**
+   * The runner is on an older release than the state its daemon prepared, and the
+   * installed bundle is the newer one. The process owner drains and exits so the
+   * supervisor relaunches it. Without this callback the runner only logs.
+   */
+  onReleaseDrift?: (relaunch: RunnerReleaseRelaunch) => void;
 }
 
 export type ChannelRunnerStatus = ChannelRunnerRuntimeStatus;
@@ -205,8 +219,29 @@ export class ChannelRunner {
     });
 
     if (this.options.consumeOutbound !== false) {
+      // The reconciler re-checks the prepared-state marker on every pass, so it is
+      // where a runner left on an older release than its daemon first gets refused.
+      const releaseGuard =
+        this.options.releaseGuard ??
+        new RunnerReleaseGuard({
+          onRelaunch: (relaunch) => {
+            log.error(
+              "Channel runner is on an older release than the state its daemon prepared; relaunching onto the installed release",
+              {
+                runningVersion: relaunch.runningVersion,
+                installedVersion: relaunch.installedVersion,
+                refusals: relaunch.refusals,
+              },
+            );
+            this.options.onReleaseDrift?.(relaunch);
+          },
+        });
       this.outboundPublishReconciler = new ChannelOutboundPublishReconciler({
         isRunning: () => this.running,
+        onLoopSuccess: () => releaseGuard.recordSuccess(),
+        onLoopFailure: (error) => {
+          releaseGuard.recordFailure(error);
+        },
       });
       this.outboundPublishReconciler.start();
 
@@ -492,18 +527,35 @@ export async function runChannelRunnerFromEnv(): Promise<void> {
   logger.setLevel(resolveChannelRunnerLogLevel());
   if (!recordManagedRuntimeBoot("ravi-channels"))
     log.warn("Could not record process boot identity; runtime alignment will remain unverified");
+  // `stop` needs the runner and the runner's drift callback needs `stop`; the callback
+  // cannot fire before the first reconcile passes have been refused, long after both exist.
+  let stopRunner: ((signal: string, exitCode?: number) => Promise<void>) | null = null;
   const runner = await startChannelRunner({
     consumeOutbound: process.env.RAVI_CHANNELS_CONSUME_OUTBOUND !== "0",
+    // Not awaited: the reconcile loop that reported the drift has to be free to finish its drain.
+    onReleaseDrift: () => void stopRunner?.("release-drift", RUNNER_RELEASE_DRIFT_EXIT_CODE),
   });
 
   let stopping = false;
-  const stop = async (signal: string) => {
+  const stop = async (signal: string, exitCode = 0) => {
     if (stopping) return;
     stopping = true;
     log.info("Received channel runner shutdown signal", { signal });
+    if (exitCode !== 0) {
+      // A relaunch must not depend on a drain: the supervisor only restarts a process that
+      // exits, and the refusals that caused it make the drain proof fail by design.
+      setTimeout(() => process.exit(exitCode), RUNNER_RELEASE_DRIFT_FORCE_EXIT_MS).unref();
+      try {
+        await runner.stop();
+      } catch (error) {
+        log.warn("Channel runner drain was not proven before relaunching", { error });
+      }
+      process.exit(exitCode);
+    }
     await runner.stop();
     process.exit(0);
   };
+  stopRunner = stop;
 
   process.on("SIGINT", () => {
     void stop("SIGINT");

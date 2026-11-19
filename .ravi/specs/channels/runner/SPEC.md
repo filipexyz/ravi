@@ -87,5 +87,31 @@ Adapters SHOULD use process or credential-scoped locks before opening external s
   unknown. A daemon-only installation need not invent a missing runner.
 - Status and package/env mutations MUST name each stale process and its
   explicit restart command. Staleness detection MUST NOT restart any process.
+  The only restart a runner initiates is the refusal relaunch below.
 - Existing legacy state MUST be visible as unknown until an explicit restart
   writes a verifiable receipt; adding a guard for new starts alone is insufficient.
+
+## Release drift after a daemon restart
+
+State is prepared for one exact release (`state_schema_versions`), and a runner
+never migrates it. When the installed daemon moves to a newer release, a runner
+still executing the previous bundle is refused by that guard on every call that
+re-checks it (`STATE_SCHEMA_NOT_READY`) while its sockets stay connected and PM2
+still reports it online. The runner MUST NOT stay in that state:
+
+- A runner MUST count consecutive `STATE_SCHEMA_NOT_READY` refusals of its
+  outbound publish reconcile loop, and a pass that clears the guard MUST reset
+  the count.
+- After 3 consecutive refusals, and only when the installed bundle (read from
+  disk at decision time) is a different release from the one the process is
+  running, the runner MUST drain, exit with status 75 and let its supervisor
+  relaunch it onto the installed release. A failed or slow drain MUST NOT keep
+  a refused runner alive: exit is forced after a bounded wait.
+- A refusal while the installed release equals the running release (the daemon
+  has not prepared state yet) and an unreadable installed release MUST NOT
+  restart the runner: restarting could not help, and staleness alone never
+  restarts a runner.
+- The relaunch MUST happen at most once per process: after it the releases match,
+  so it cannot loop.
+- Only non-`STATE_SCHEMA_NOT_READY` failures and stale-but-accepted runners keep
+  the explicit-restart behaviour above.

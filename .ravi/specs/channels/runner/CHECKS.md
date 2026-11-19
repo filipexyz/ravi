@@ -17,5 +17,6 @@
 - [ ] `bun test src/managed-runtime.test.ts` verifies same-path replacement, boot-version preservation and unknown legacy identity with fixed times.
 - [ ] `bun test src/cli/commands/daemon-status.test.ts` verifies stale bundle/env projections and non-secret reconcile warnings for both processes.
 - [ ] `bun test src/cli/commands/channels.test.ts` verifies healthy transport does not conceal code or env staleness.
+- [ ] `bun test src/channels/runner-release-guard.test.ts` verifies a runner whose release differs from the state its daemon prepared is refused by the real state guard, relaunches once at 3 refusals only while the installed release differs, never relaunches on matching or unknown releases, and cannot be ended by a failing observer.
 
 - `bun test src/cli/env.test.ts` verifies runner restart adopts current env-file values while ordinary CLI calls preserve shell overrides.
