@@ -600,6 +600,11 @@ export async function readNativeChannelRunnerUpdateWarning(previousProcesses: Pm
   }
 }
 
+/** A recorded refusal keeps its code when it looks like one; anything else is a plain update failure. */
+export function supervisorRefusalCode(code: string): string {
+  return /^[A-Z][A-Z0-9_]{2,63}$/.test(code) ? code : "UPDATE_FAILED";
+}
+
 async function reconcileManagedRuntime(
   previousProcesses: Pm2Process[],
   target: ManagedRuntimeTarget,
@@ -614,12 +619,14 @@ async function reconcileManagedRuntime(
   }
 
   reporter.log(`Rebinding managed runtime to Ravi ${target.version} (${target.cwd})`);
-  const reconciled = await runManagedRuntimeRebindSupervisor(target, previousProcesses);
+  const supervisor = await runManagedRuntimeRebindSupervisor(target, previousProcesses);
+  // The supervisor refused before stopping anything: its reason is the result.
+  if (supervisor.refusal) fail(supervisor.refusal.message, supervisorRefusalCode(supervisor.refusal.code));
   // A successfully exited bundle may not implement this supervisor protocol.
   // Independently verify the live successors before claiming convergence.
   const currentProcesses = readManagedProcesses();
   if (
-    !reconciled ||
+    !supervisor.converged ||
     !managedRuntimeMatchesTarget(managedRuntimeSnapshot(previousProcesses), currentProcesses, target)
   ) {
     const warnings = managedRuntimeWarnings(buildManagedRuntimeIdentity(currentProcesses, target.bundlePath));
@@ -627,6 +634,7 @@ async function reconcileManagedRuntime(
       "Ravi updated, but PM2 did not converge on the updated runtime. " +
         "Deployment remains blocked. Inspect preparation/interlock evidence and both process identities; " +
         "do not bypass this result with independent daemon/channels restarts." +
+        (supervisor.logPath ? ` Supervisor log: ${supervisor.logPath}.` : "") +
         (warnings.length ? ` ${warnings.join(" ")}` : ""),
     );
   }

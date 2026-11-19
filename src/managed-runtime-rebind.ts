@@ -1,9 +1,10 @@
 import { assertRuntimeMaintenanceInactive, runtimeReplacementReadiness } from "./runtime-maintenance.js";
 import { spawn } from "node:child_process";
 import { which } from "bun";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isInsideDaemonProcessTree } from "./cli/daemon-process-tree.js";
+import { assertFenceAdoptionWaypoint, readPreparedStateRelease, UPDATE_WAYPOINT_REQUIRED } from "./update-preflight.js";
 import { setTimeout as delay } from "node:timers/promises";
 import { buildRunnerPm2Env } from "./channels/pm2-env.js";
 import {
@@ -26,7 +27,22 @@ import { performSupervisedDaemonRestart, type ManagedDaemonProcess } from "./cli
 import { buildPm2Env, CHANNELS_PM2_PROCESS_NAME, getPm2Processes, PM2_PROCESS_NAME, type Pm2Process } from "./pm2.js";
 
 const MANAGED_RUNTIME_REBIND_ENV = "RAVI_INTERNAL_UPDATE_RUNTIME_REBIND";
-const MANAGED_RUNTIME_REBIND_TIMEOUT_MS = 90_000;
+/** Covers the rebind plus the stability window. */
+export const MANAGED_RUNTIME_REBIND_TIMEOUT_MS = 180_000;
+/**
+ * How long the CLI that started the supervisor waits for it, in ms. A CLI that
+ * predates the stability window sets nothing, and its wait is short: 30 s up to
+ * 3.261113.2 (the waypoint release), 90 s from 3.261113.3. Such a CLI gets no
+ * window (`supervisorStabilityPlan`).
+ */
+export const MANAGED_RUNTIME_SUPERVISOR_BUDGET_ENV = "RAVI_UPDATE_SUPERVISOR_BUDGET_MS";
+/** Kept after the window for the supervisor to exit and the CLI to verify. */
+export const SUPERVISOR_EXIT_MARGIN_MS = 10_000;
+/** How long the replaced runtime must stay unchanged before the update claims success. */
+export const MANAGED_RUNTIME_STABILITY_WINDOW_ENV = "RAVI_UPDATE_STABILITY_WINDOW_MS";
+const DEFAULT_STABILITY_WINDOW_MS = 30_000;
+const MAX_STABILITY_WINDOW_MS = 300_000;
+const STABILITY_POLL_MS = 1_000;
 
 type RunResult = {
   success: boolean;
@@ -72,7 +88,93 @@ type ManagedRuntimeRebindDependencies = {
   readyTimeoutMs?: number;
   /** `adopt-on-start`: pre-fence database; every legacy writer stops before the daemon starts. */
   assertPrepared?: () => Promise<"ready" | "adopt-on-start"> | "ready" | "adopt-on-start";
+  /** Release that last prepared the state (its readiness markers); null when it predates them. */
+  preparedStateRelease?: () => string | null;
+  /** Overrides `RAVI_UPDATE_STABILITY_WINDOW_MS` (default 30 s). */
+  stabilityWindowMs?: number;
+  /** The window ends by this time (`now()` clock): the CLI waiting for the supervisor stops soon after. */
+  stabilityDeadlineMs?: number;
 };
+
+function resolveStabilityWindowMs(dependencies: ManagedRuntimeRebindDependencies): number {
+  if (dependencies.stabilityWindowMs !== undefined) return Math.max(0, dependencies.stabilityWindowMs);
+  const raw = process.env[MANAGED_RUNTIME_STABILITY_WINDOW_ENV]?.trim();
+  if (raw && /^\d+$/.test(raw)) return Math.min(Number(raw), MAX_STABILITY_WINDOW_MS);
+  return DEFAULT_STABILITY_WINDOW_MS;
+}
+
+/** The configured window, shortened to end by the deadline. */
+export function boundedStabilityWindowMs(input: { windowMs: number; deadlineMs?: number; now: number }): number {
+  if (input.deadlineMs === undefined) return input.windowMs;
+  return Math.max(0, Math.min(input.windowMs, input.deadlineMs - input.now));
+}
+
+export type SupervisorStabilityPlan = Pick<
+  ManagedRuntimeRebindDependencies,
+  "stabilityWindowMs" | "stabilityDeadlineMs"
+>;
+
+/**
+ * The stability window a supervisor may run, from the wait the CLI that started it declared
+ * (`RAVI_UPDATE_SUPERVISOR_BUDGET_MS`). A declared wait gets the window, ending `SUPERVISOR_EXIT_MARGIN_MS` before
+ * that wait runs out. No declaration means a CLI that predates the window, whose wait can be as short as 30 s
+ * (3.261113.2, the waypoint release): it gets no window, so the supervisor answers as before this change and a
+ * converged update is never reported as a failure.
+ */
+export function supervisorStabilityPlan(
+  declaredBudget: string | undefined,
+  startedAt: number,
+): SupervisorStabilityPlan {
+  const value = declaredBudget?.trim();
+  if (!value || !/^\d+$/.test(value)) return { stabilityWindowMs: 0 };
+  const budgetMs = Math.min(Number(value), MANAGED_RUNTIME_REBIND_TIMEOUT_MS * 5);
+  return { stabilityDeadlineMs: startedAt + budgetMs - SUPERVISOR_EXIT_MARGIN_MS };
+}
+
+function onlineRuntimeIdentity(processes: Pm2Process[]): string {
+  return processes
+    .filter(
+      (process) =>
+        (process.name === PM2_PROCESS_NAME || process.name === CHANNELS_PM2_PROCESS_NAME) &&
+        process.status === "online",
+    )
+    .map((process) => `${process.name}:${process.pm_id}:${process.pid}:${process.startedAt ?? ""}`)
+    .sort()
+    .join("|");
+}
+
+/**
+ * A runtime that converged can still crash right after: a restart loop shows up
+ * as a new PID or start time. Watch the converged processes for the window and
+ * fail the update on any change, instead of reporting success.
+ */
+export async function observeStableManagedRuntime(input: {
+  getProcesses: () => Pm2Process[];
+  isConverged: (processes: Pm2Process[]) => boolean;
+  windowMs: number;
+  now: () => number;
+  wait: (ms: number) => Promise<void>;
+  pollMs?: number;
+}): Promise<boolean> {
+  // The window, PM2 reads included, ends by its deadline: the CLI's wait is bounded.
+  const started = input.now();
+  const deadline = started + input.windowMs;
+  const initial = onlineRuntimeIdentity(input.getProcesses());
+  let readMs = input.now() - started;
+  for (;;) {
+    // Room for the read that ends the next wait; no time left means the window is over.
+    const remaining = deadline - input.now() - readMs;
+    if (remaining <= 0) return true;
+    const before = input.now();
+    await input.wait(Math.min(input.pollMs ?? STABILITY_POLL_MS, remaining));
+    const readStarted = input.now();
+    const current = input.getProcesses();
+    readMs = Math.max(readMs, input.now() - readStarted);
+    if (onlineRuntimeIdentity(current) !== initial || !input.isConverged(current)) return false;
+    // A clock that does not advance cannot measure a window; stop after this check.
+    if (input.now() <= before) return true;
+  }
+}
 
 function runCommand(command: string, args: string[], options: RunOptions = {}): Promise<RunResult> {
   return new Promise((resolve) => {
@@ -237,6 +339,17 @@ export async function rebindManagedRuntimeProcesses(
   assertRuntimeMaintenanceInactive(stateDir);
   if (previousProcesses.length === 0) return true;
   const readiness = await (dependencies.assertPrepared ?? runtimeReplacementReadiness)();
+  // Before any stop: a pre-fence state the adoption cannot read refuses here,
+  // with the running release still serving.
+  assertFenceAdoptionWaypoint({
+    readiness,
+    preparedRelease:
+      readiness === "adopt-on-start"
+        ? (dependencies.preparedStateRelease ?? (() => readPreparedStateRelease(stateDir)))()
+        : null,
+    targetVersion: target.version,
+    sourceCheckout: existsSync(join(target.cwd, ".git")) ? target.cwd : null,
+  });
   const run = dependencies.run ?? runCommand;
   const getProcesses = dependencies.getProcesses ?? (() => getPm2Processes({ strict: true }));
   const bunPath = dependencies.bunPath ?? process.execPath;
@@ -377,8 +490,21 @@ export async function rebindManagedRuntimeProcesses(
   if (!(await waitForManagedRuntimeTarget(previousProcesses, target, getProcesses))) return false;
   if (!daemonStillReady(getProcesses())) return false;
   if ((await save()) !== 0) return false;
-  const finalProcesses = getProcesses();
-  return daemonStillReady(finalProcesses) && managedRuntimeMatchesTarget(previousProcesses, finalProcesses, target);
+  const converged = (processes: Pm2Process[]) =>
+    daemonStillReady(processes) && managedRuntimeMatchesTarget(previousProcesses, processes, target);
+  if (!converged(getProcesses())) return false;
+  const clock = dependencies.now ?? Date.now;
+  return observeStableManagedRuntime({
+    getProcesses,
+    isConverged: converged,
+    windowMs: boundedStabilityWindowMs({
+      windowMs: resolveStabilityWindowMs(dependencies),
+      deadlineMs: dependencies.stabilityDeadlineMs,
+      now: clock(),
+    }),
+    now: clock,
+    wait: dependencies.wait ?? ((ms: number) => delay(ms)),
+  });
 }
 
 export function buildManagedRuntimeRebindSupervisorInvocation(
@@ -399,6 +525,7 @@ export function buildManagedRuntimeRebindSupervisorInvocation(
   if (existsSync(join(target.cwd, ".git"))) env.RAVI_REPO = target.cwd;
   else delete env.RAVI_REPO;
   env[MANAGED_RUNTIME_REBIND_ENV] = encodeManagedRuntimeRebindRequest(request);
+  env[MANAGED_RUNTIME_SUPERVISOR_BUDGET_ENV] = String(MANAGED_RUNTIME_REBIND_TIMEOUT_MS);
   return { command: process.execPath, args: [target.bundlePath], cwd: target.cwd, env };
 }
 
@@ -433,37 +560,122 @@ export function refuseRebindInsideDaemonTree(
     `${UPDATE_SUPERVISOR_IN_DAEMON_TREE}: the update supervisor ${where}, ` +
     "where stopping the daemon would kill it before the new runtime starts. Nothing was stopped. " +
     "Run ravi update again: the CLI it installed detaches first.";
+  throw recordSupervisorRefusal(UPDATE_SUPERVISOR_IN_DAEMON_TREE, message, stateDir, readFailure);
+}
+
+const SUPERVISOR_REFUSAL_FILE = "supervisor-refused.json";
+
+export type SupervisorRefusal = { code: string; pid: number; at: string; message: string };
+
+/**
+ * A supervisor's stdout/stderr may go nowhere (older CLIs ignore them), so a
+ * refusal before any stop is also left on disk for whoever started it.
+ */
+export function recordSupervisorRefusal(
+  code: string,
+  message: string,
+  stateDir: string = getRaviStateDir(),
+  cause?: unknown,
+): Error {
   try {
     const dir = join(stateDir, "updates");
     mkdirSync(dir, { recursive: true, mode: 0o700 });
-    writeFileSync(
-      join(dir, "supervisor-refused.json"),
-      `${JSON.stringify({ code: UPDATE_SUPERVISOR_IN_DAEMON_TREE, pid: process.pid, at: new Date().toISOString(), message }, null, 2)}\n`,
-      { mode: 0o600 },
-    );
-  } catch (cause) {
-    throw new Error(message, { cause });
+    const refusal: SupervisorRefusal = { code, pid: process.pid, at: new Date().toISOString(), message };
+    writeFileSync(join(dir, SUPERVISOR_REFUSAL_FILE), `${JSON.stringify(refusal, null, 2)}\n`, { mode: 0o600 });
+  } catch (writeFailure) {
+    return new Error(message, { cause: writeFailure });
   }
-  throw new Error(message, readFailure === undefined ? undefined : { cause: readFailure });
+  return cause === undefined ? new Error(message) : new Error(message, { cause });
+}
+
+/** The refusal a supervisor recorded at or after `sinceMs`, if any. */
+export function readSupervisorRefusal(sinceMs: number, stateDir: string = getRaviStateDir()): SupervisorRefusal | null {
+  try {
+    const refusal = JSON.parse(
+      readFileSync(join(stateDir, "updates", SUPERVISOR_REFUSAL_FILE), "utf8"),
+    ) as Partial<SupervisorRefusal>;
+    const at = typeof refusal.at === "string" ? Date.parse(refusal.at) : Number.NaN;
+    if (!Number.isFinite(at) || at < sinceMs || typeof refusal.message !== "string") return null;
+    return {
+      code: String(refusal.code),
+      pid: Number(refusal.pid),
+      at: refusal.at as string,
+      message: refusal.message,
+    };
+  } catch {
+    // no-cause: No refusal file (or an unreadable one) means the supervisor recorded no refusal.
+    return null;
+  }
 }
 
 export async function maybeRunManagedRuntimeRebindFromEnv(
   insideDaemonTree: () => boolean = () => isInsideDaemonProcessTree({ strict: true }),
+  rebind: typeof rebindManagedRuntimeProcesses = rebindManagedRuntimeProcesses,
 ): Promise<boolean> {
   const encoded = process.env[MANAGED_RUNTIME_REBIND_ENV];
   if (!encoded) return false;
   delete process.env[MANAGED_RUNTIME_REBIND_ENV];
+  const declaredBudget = process.env[MANAGED_RUNTIME_SUPERVISOR_BUDGET_ENV];
+  delete process.env[MANAGED_RUNTIME_SUPERVISOR_BUDGET_ENV];
   refuseRebindInsideDaemonTree(insideDaemonTree);
   const request = decodeManagedRuntimeRebindRequest(encoded);
-  if (!(await rebindManagedRuntimeProcesses(request.previousProcesses, request.target))) {
-    throw new Error("Managed Ravi runtime did not converge on the updated bundle");
+  // The CLI started waiting when it spawned this process.
+  const plan = supervisorStabilityPlan(declaredBudget, Date.now() - process.uptime() * 1000);
+  let converged: boolean;
+  try {
+    converged = await rebind(request.previousProcesses, request.target, plan);
+  } catch (error) {
+    if ((error as { code?: unknown } | null)?.code === UPDATE_WAYPOINT_REQUIRED) {
+      throw recordSupervisorRefusal(UPDATE_WAYPOINT_REQUIRED, (error as Error).message);
+    }
+    throw error;
   }
+  if (!converged) throw new Error("Managed Ravi runtime did not converge on the updated bundle");
   return true;
+}
+
+const SUPERVISOR_LOG_FILE = "supervisor.log";
+
+export type ManagedRuntimeSupervisorOutcome = {
+  converged: boolean;
+  /** What the supervisor recorded when it refused before stopping anything. */
+  refusal: SupervisorRefusal | null;
+  /** The supervisor's stdout and stderr (last run only); null when it could not be opened. */
+  logPath: string | null;
+};
+
+function openSupervisorLog(stateDir: string): { fd: number; path: string } | null {
+  const path = join(stateDir, "updates", SUPERVISOR_LOG_FILE);
+  try {
+    mkdirSync(join(stateDir, "updates"), { recursive: true, mode: 0o700 });
+    return { fd: openSync(path, "w", 0o600), path };
+  } catch (cause) {
+    // no-cause: Without a log file the supervisor runs as before, output ignored; a refusal still reaches the CLI through its file.
+    console.error(`ravi update: supervisor log unavailable at ${path}: ${(cause as Error).message}`);
+    return null;
+  }
 }
 
 export async function runManagedRuntimeRebindSupervisor(
   target: ManagedRuntimeTarget,
   processes: Pm2Process[],
+  stateDir: string = getRaviStateDir(),
+): Promise<ManagedRuntimeSupervisorOutcome> {
+  const startedAt = Date.now();
+  const log = openSupervisorLog(stateDir);
+  const converged = await superviseManagedRuntimeRebind(target, processes, log?.fd);
+  return {
+    converged,
+    // A refusal is recorded before any stop, so only an unconverged run can carry one.
+    refusal: converged ? null : readSupervisorRefusal(startedAt, stateDir),
+    logPath: log?.path ?? null,
+  };
+}
+
+function superviseManagedRuntimeRebind(
+  target: ManagedRuntimeTarget,
+  processes: Pm2Process[],
+  logFd: number | undefined,
 ): Promise<boolean> {
   const invocation = buildManagedRuntimeRebindSupervisorInvocation(target, processes);
   return new Promise((resolve) => {
@@ -473,11 +685,16 @@ export async function runManagedRuntimeRebindSupervisor(
         cwd: invocation.cwd,
         env: invocation.env,
         detached: true,
-        stdio: "ignore",
+        stdio: logFd === undefined ? "ignore" : ["ignore", logFd, logFd],
       });
-    } catch {
+    } catch (cause) {
+      // no-cause: A supervisor that cannot start reaches the CLI as a run that did not converge; the update fails on that result.
+      console.error(`ravi update: could not start the update supervisor: ${(cause as Error).message}`);
       resolve(false);
       return;
+    } finally {
+      // The child holds its own copy of the descriptor.
+      if (logFd !== undefined) closeSync(logFd);
     }
 
     let settled = false;
