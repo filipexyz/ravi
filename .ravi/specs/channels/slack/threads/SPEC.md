@@ -151,6 +151,7 @@ ravi sessions thread-configure <thread> [--provider <provider|clear>] [--model <
 
 - Both commands infer the current session and Slack surface from tool context.
 - `create-thread` is available only when an executable Slack surface exists.
+- The `create-thread` result MUST satisfy its declared return schema, which is strict. The gateway checks the result after the lifecycle and outbound records exist, so a field the handler returns and the schema leaves out turns a created thread into a 500. `origin` is `{ channel, canonicalChatId } | null`: the non-Slack direct chat that asked for the thread, where its completion returns, and `null` for a request from Slack or from a group.
 - `close-thread` is available inside an open Slack thread child session or through the authorized explicit orphan-close path below.
 - `--return` opts into the parent completion event; omission is intentionally
   silent.

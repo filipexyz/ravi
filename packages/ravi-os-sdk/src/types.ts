@@ -20140,6 +20140,10 @@ export type SessionsCreateThreadReturn = {
     sessionName: string | null;
   };
   nextAttemptAt?: number;
+  origin: ({
+    canonicalChatId: string | null;
+    channel: string;
+  }) | null;
   parentSession: {
     sessionKey: string;
     sessionName: string | null;

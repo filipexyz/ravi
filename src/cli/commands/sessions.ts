@@ -470,7 +470,7 @@ const sessionReadMessageReturnSchema = z
   })
   .passthrough();
 const sessionReadReturnSchema = z.union([sessionReadHistoryReturnSchema, sessionReadMessageReturnSchema]);
-const sessionCreateThreadReturnSchema = z
+export const sessionCreateThreadReturnSchema = z
   .object({
     status: z.literal("queued"),
     queued: z.literal(true),
@@ -496,6 +496,14 @@ const sessionCreateThreadReturnSchema = z
       channelId: z.string(),
       canonicalChatId: z.string(),
     }),
+    // The non-Slack direct chat that asked for the thread, where its completion returns.
+    // `null` when the request came from Slack itself or from a group.
+    origin: z
+      .object({
+        channel: z.string(),
+        canonicalChatId: z.string().nullable(),
+      })
+      .nullable(),
     child: z.object({
       status: z.literal("pending_root_delivery"),
       modelOverride: z.string().nullable(),

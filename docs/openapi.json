@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "c9b929f4f816f20c"
+    "version": "1723c9d11103dbf3"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -118716,6 +118716,36 @@
                     "nextAttemptAt": {
                       "type": "number"
                     },
+                    "origin": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "canonicalChatId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "channel": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "channel",
+                            "canonicalChatId"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "parentSession": {
                       "additionalProperties": false,
                       "properties": {
@@ -118804,6 +118834,7 @@
                     "parentSession",
                     "initiatorSession",
                     "slack",
+                    "origin",
                     "child"
                   ],
                   "type": "object"
