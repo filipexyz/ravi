@@ -609,7 +609,8 @@ export function buildGhFollowTriggerInput(
 
 /** The lifecycle survives pruning, including delayed `gh pr create` resolution. */
 export function resolveGhFollowContext(context: GhWatchFollowContext, database?: Database): GhWatchFollowContext {
-  return resolveDurableFollowOwner(context, "PR follow", database);
+  // An open thread's PR follow addresses the thread that published; closing the thread hands it to the parent.
+  return resolveDurableFollowOwner(context, "PR follow", database, { openThreadOwns: true });
 }
 
 /** Reconcile the saved owner's lifecycle; a new observer must not steal a follow. */

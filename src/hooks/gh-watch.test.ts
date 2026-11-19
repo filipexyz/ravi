@@ -13,7 +13,7 @@ import {
   tokenizeShellCommand,
 } from "./gh-watch.js";
 import { evaluateFilter, validateFilter } from "../triggers/filter.js";
-import { resolveDurableFollowOwner } from "../triggers/follow-owner.js";
+import { handOffClosingThreadFollows, resolveDurableFollowOwner } from "../triggers/follow-owner.js";
 import type { Trigger, TriggerInput } from "../triggers/index.js";
 import type { WatchRecord } from "../watch/types.js";
 
@@ -22,6 +22,7 @@ import { getOrCreateSession, deleteSession } from "../router/sessions.js";
 import { dbCreateTrigger, dbGetTrigger } from "../triggers/triggers-db.js";
 import { runGhFollowMaintenance } from "./gh-follow-sweep.js";
 import { createIsolatedRaviState, cleanupIsolatedRaviState } from "../test/ravi-state.js";
+import { dbCreateAgent } from "../router/router-db.js";
 
 let stateDir: string | null = null;
 beforeEach(async () => {
@@ -977,15 +978,79 @@ describe("durable PR follow owner", () => {
     source: { channel: "slack", accountId: "slack-account", chatId: "C123#1.2", threadId: "1.2" },
   };
 
-  it("creates a follow at the parent, with root fallback, and allows the child to close", async () => {
+  it("arms the follow for the open thread that published, and closing the thread hands it to the parent", async () => {
     const record = seed();
+    // An active trigger needs its bound agent; only then does the store refuse to close a thread it addresses.
+    dbCreateAgent({ id: "agent-test", cwd: "/tmp/follow-test" });
     const result = await ensureGhWatchFollow({ repo: "o/r", prNumber: 7, context: childContext }, deps);
+    expect(dbGetTrigger(result.triggerId!)!).toMatchObject({
+      agentId: "agent-test",
+      replySession: "child",
+      replySource: { channel: "slack", accountId: "slack-account", chatId: "C123", threadId: "1.2" },
+    });
+    // The open thread owns the follow, so the store alone still refuses to close it with the follow pending.
+    expect(() => closeSlackThreadLifecycle({ childSessionKey: record.childSessionKey! })).toThrow(
+      "still receives active triggers",
+    );
+
+    expect(
+      handOffClosingThreadFollows({ childSessionKey: record.childSessionKey!, childSessionName: "child" }),
+    ).toEqual([result.triggerId]);
     expect(dbGetTrigger(result.triggerId!)!).toMatchObject({
       replySession: "parent",
       replySource: { channel: "slack", accountId: "slack-account", chatId: "C123" },
     });
     expect(dbGetTrigger(result.triggerId!)!.replySource?.threadId).toBeUndefined();
     expect(closeSlackThreadLifecycle({ childSessionKey: record.childSessionKey! }).changed).toBe(true);
+  });
+
+  it("hands over only the PR follows addressed to the closing child", () => {
+    const record = seed();
+    dbCreateAgent({ id: "agent-test", cwd: "/tmp/follow-test" });
+    const own = dbCreateTrigger({
+      name: "gh-follow:o/r#7",
+      topic: "ravi.watch.github.>",
+      message: "own",
+      agentId: "agent-test",
+      session: "main",
+      replySession: "child",
+      replySource: childContext.source,
+    });
+    const custom = dbCreateTrigger({
+      name: "custom-review",
+      topic: "ravi.watch.github.>",
+      message: "custom",
+      agentId: "agent-test",
+      session: "main",
+      replySession: "child",
+      replySource: childContext.source,
+    });
+    const parentOwned = dbCreateTrigger({
+      name: "gh-follow:o/r#8",
+      topic: "ravi.watch.github.>",
+      message: "parent",
+      session: "main",
+      replySession: "parent",
+    });
+
+    const moved = handOffClosingThreadFollows({ childSessionKey: record.childSessionKey!, childSessionName: "child" });
+
+    expect(moved).toEqual([own.id]);
+    expect(dbGetTrigger(own.id)!.replySession).toBe("parent");
+    // Another kind of trigger is a decision of whoever created it: the close keeps refusing it.
+    expect(dbGetTrigger(custom.id)!.replySession).toBe("child");
+    expect(dbGetTrigger(parentOwned.id)!.replySession).toBe("parent");
+    expect(() => closeSlackThreadLifecycle({ childSessionKey: record.childSessionKey! })).toThrow(custom.id);
+  });
+
+  it("resolves a closed thread's follow to the parent, as the page comment follow always does", () => {
+    const record = seed();
+    expect(resolveGhFollowContext(childContext)).toMatchObject({ sessionName: "child" });
+    closeSlackThreadLifecycle({ childSessionKey: record.childSessionKey! });
+    expect(resolveGhFollowContext(childContext)).toMatchObject({
+      sessionName: "parent",
+      source: { channel: "slack", accountId: "slack-account", chatId: "C123" },
+    });
   });
 
   it("resolves a delayed creation after the child has closed and been pruned", async () => {
@@ -996,7 +1061,7 @@ describe("durable PR follow owner", () => {
     expect(dbGetTrigger(result.triggerId!)!.replySession).toBe("parent");
   });
 
-  it("reconciles an existing follow using its saved parent, not the new observer", async () => {
+  it("keeps an open thread's follow with the thread when another session observes the PR", async () => {
     seed();
     const old = dbCreateTrigger({
       name: "gh-follow:o/r#7",
@@ -1008,9 +1073,9 @@ describe("durable PR follow owner", () => {
     });
     const result = await ensureGhWatchFollow({ repo: "o/r", prNumber: 7, context: { sessionName: "unrelated" } }, deps);
     expect(result.triggerId).toBe(old.id);
-    expect(result.triggerRepaired).toBe(true);
-    expect(dbGetTrigger(old.id)!.replySession).toBe("parent");
-    expect(dbGetTrigger(old.id)!.replySource?.chatId).toBe("C123");
+    // The instruction text is refreshed; the recipient is not stolen by the observer.
+    expect(dbGetTrigger(old.id)!.replySession).toBe("child");
+    expect(dbGetTrigger(old.id)!.replySource).toEqual(childContext.source);
   });
 
   it("maintenance repairs a closed child's legacy follow and refreshes the runner", async () => {
@@ -1049,7 +1114,10 @@ describe("durable PR follow owner", () => {
 
   it("resolves the owner through the shared helper and keeps the PR follow wording of its refusals", () => {
     seed();
-    expect(resolveGhFollowContext(childContext)).toEqual(resolveDurableFollowOwner(childContext, "PR follow"));
+    expect(resolveGhFollowContext(childContext)).toEqual(
+      resolveDurableFollowOwner(childContext, "PR follow", undefined, { openThreadOwns: true }),
+    );
+    expect(resolveDurableFollowOwner(childContext, "PR follow")).toMatchObject({ sessionName: "parent" });
     expect(() => resolveGhFollowContext({ sessionKey: "missing:thread:1.2" })).toThrow(
       "Cannot register PR follow: thread lifecycle is missing or ambiguous.",
     );

@@ -5,6 +5,7 @@ import { CliExpectedError } from "../../cli/expected-error.js";
 import { nats } from "../../nats.js";
 import { publishSessionPrompt, type PublishSessionPromptOptions } from "../../omni/session-stream.js";
 import { publishChannelSessionPrompt } from "../session-prompt.js";
+import { handOffClosingThreadFollows } from "../../triggers/follow-owner.js";
 import { prepareThreadAttentionNotice } from "./thread-attention-admission.js";
 import { publishChannelOutboundJobDurably } from "../outbound-publish-outbox.js";
 import { buildChannelChatActionJob, type ChannelOutboundJob } from "../outbound-stream.js";
@@ -648,6 +649,21 @@ export async function closeSlackThreadRecord(
         "Retry after the parent session receives the pending return",
       );
     }
+  }
+  // The PR follows this thread armed address the thread while it is open. Hand them to the
+  // durable parent before the close checks for active triggers, so the close is not refused.
+  const handedOff = handOffClosingThreadFollows({
+    childSessionKey: existing.childSessionKey,
+    childSessionName: existing.childSessionName,
+  });
+  if (handedOff.length > 0) {
+    await dependencies.publishEvent("ravi.triggers.refresh", {}).catch((error) => {
+      log.warn("Failed to refresh triggers after handing a thread's PR follows to its parent", {
+        requestId: existing.requestId,
+        triggerIds: handedOff,
+        error: errorMessage(error),
+      });
+    });
   }
   const closed = closeSlackThreadLifecycle({
     childSessionKey: existing.childSessionKey,
