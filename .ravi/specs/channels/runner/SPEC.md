@@ -131,10 +131,13 @@ runner's log:
   as unknown, never as drift.
 - A runner whose state guard refuses its reconcile passes MUST report that in its
   health snapshot as a `degraded` entry of `adapters` with id
-  `runner:release-guard` and reason `state_refused`, from the first refused pass
-  until the first accepted one. `ravi channels status` MUST report health
-  `degraded` with reason `state_refused` for it, whether the releases match or
-  not. The snapshot MUST NOT gain a field for it.
+  `runner:release-guard` and reason `state_refused`, from the second refused pass
+  with no accepted pass between them until the first accepted one. A single
+  refused pass MUST NOT be reported: every daemon boot, on the same release too,
+  deletes the state marker while it prepares the stores, and one pass can fall in
+  that window. `ravi channels status` MUST report health `degraded` with reason
+  `state_refused` for it, whether the releases match or not. The snapshot MUST
+  NOT gain a field for it.
 - `ravi doctor` MUST report `channels.runner_release`: `fail` when the releases
   differ, `warn` when only the runner reports a refused guard (evidence on its
   own, unless verified different releases already make it a `fail`), `skip` otherwise when a release cannot be

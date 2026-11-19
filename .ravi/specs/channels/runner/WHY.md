@@ -87,6 +87,18 @@ documents, the Swift and Dart schemas, two TypeScript SDK files), and the health
 classification already treats a `degraded` entry as unhealthy and the status
 output already prints it.
 
+A refusal is reported from the second refused pass, not the first. Every daemon
+boot, on the same release too, runs `initializeStateSchema`, which deletes the
+component's marker, prepares the stores and writes the marker back. A runner pass
+that falls in that window is refused for the few seconds it takes, and reporting
+it would tell the operator who just restarted the daemon to restart it again,
+which reopens the window. Two refused passes are 30 s apart at the reconcile
+interval, so the state was still not prepared; that is worth saying. This costs
+the case that matters nothing: a runner on another release than its daemon is
+shown at once by the boot receipts, without waiting for refusals. The count is
+refusals since the last accepted pass, so a failure for another reason between
+two refusals does not hide them, while the relaunch still wants three in a row.
+
 A release that cannot be verified is never called drift: a status read right
 after a restart finds no receipt for the new process yet, and a healthy runner
 must not be called broken for that. Stale code alone stays a warning for the same

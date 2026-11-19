@@ -10,6 +10,17 @@ import { findRaviPackageRoot, readRaviVersion } from "../managed-runtime.js";
  */
 export const RUNNER_RELEASE_REFUSAL_THRESHOLD = 3;
 
+/**
+ * Refused passes, with no accepted pass between them, before a runner reports itself refused.
+ * Every daemon boot, on the same release too, deletes the state marker, prepares the stores and
+ * writes the marker back (`initializeStateSchema`), so one pass can be refused for the few seconds
+ * that takes. That is a daemon restart passing through, not a fault, and reporting it would send
+ * the operator to restart the daemon they just restarted. Two refused passes are 30 s apart at the
+ * reconcile interval: the state was still not prepared. A runner on another release than its
+ * daemon does not wait for this: the boot receipts show that at once.
+ */
+export const RUNNER_REFUSAL_REPORT_THRESHOLD = 2;
+
 /** Exit status of a runner that left because its release no longer matches the prepared state. */
 export const RUNNER_RELEASE_DRIFT_EXIT_CODE = 75;
 
@@ -55,8 +66,8 @@ export function readInstalledRunnerVersion(bundlePath: string | undefined = proc
 export class RunnerReleaseGuard {
   /** Consecutive state refusals: what a relaunch is decided on. */
   private refusals = 0;
-  /** The guard's last verdict was a refusal; only an accepted pass clears it. */
-  private refused = false;
+  /** State refusals since the last accepted pass, whatever failed in between: what health reports. */
+  private refusedPasses = 0;
   private relaunched = false;
 
   constructor(private readonly options: RunnerReleaseGuardOptions = {}) {}
@@ -64,18 +75,18 @@ export class RunnerReleaseGuard {
   /** A reconciliation passed the state guard: whatever refused it is over. */
   recordSuccess(): void {
     this.refusals = 0;
-    this.refused = false;
+    this.refusedPasses = 0;
   }
 
   /**
-   * The state guard is refusing this runner now: a refused reconciliation has not
-   * been followed by an accepted one. Health reports it so the condition is visible
-   * from `ravi channels status` and `ravi doctor` without reading the runner's log.
-   * A pass that failed for another reason says nothing about the guard, so it does
-   * not clear this.
+   * The state guard keeps refusing this runner: `RUNNER_REFUSAL_REPORT_THRESHOLD` refused
+   * reconciliations, none followed by an accepted one. Health reports it so the condition is
+   * visible from `ravi channels status` and `ravi doctor` without reading the runner's log.
+   * A pass that failed for another reason says nothing about the guard, so it neither clears
+   * this nor counts toward it; a single refused pass is not reported at all.
    */
   isRefused(): boolean {
-    return this.refused;
+    return this.refusedPasses >= RUNNER_REFUSAL_REPORT_THRESHOLD;
   }
 
   /**
@@ -88,7 +99,7 @@ export class RunnerReleaseGuard {
       this.refusals = 0;
       return null;
     }
-    this.refused = true;
+    this.refusedPasses += 1;
     this.refusals += 1;
     if (this.relaunched || this.refusals < (this.options.threshold ?? RUNNER_RELEASE_REFUSAL_THRESHOLD)) return null;
 

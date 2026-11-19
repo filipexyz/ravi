@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { StateSchemaNotReadyError } from "../db/schema-owner.js";
+import { STATE_SCHEMA_VERSION, StateSchemaNotReadyError } from "../db/schema-owner.js";
 import { getDb } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { runThreadMutation } from "../threads/schema-fence.js";
@@ -14,6 +14,7 @@ import {
   RUNNER_RELEASE_DRIFT_EXIT_CODE,
   RUNNER_RELEASE_DRIFT_FORCE_EXIT_MS,
   RUNNER_RELEASE_REFUSAL_THRESHOLD,
+  RUNNER_REFUSAL_REPORT_THRESHOLD,
   RunnerReleaseGuard,
   type RunnerReleaseRelaunch,
   drainAndExitForRelaunch,
@@ -122,25 +123,57 @@ describe("RunnerReleaseGuard", () => {
     expect(guard.recordFailure(new Error("reconcile failed", { cause: refusal() }))).not.toBeNull();
   });
 
-  it("says it is refused from the first refusal, whatever the releases are, until a pass is accepted", () => {
-    // Matching releases: it never relaunches, and it still must not look healthy.
+  it("does not report a single refused pass: a daemon restart on the same release passes through that window", () => {
+    // Matching releases: it never relaunches, and one refusal is not a fault either.
     const guard = new RunnerReleaseGuard({
       runningVersion: "3.261119.9",
       readInstalledVersion: () => "3.261119.9",
     });
     expect(guard.isRefused()).toBe(false);
 
-    guard.recordFailure(new Error("NATS_TIMEOUT"));
+    guard.recordFailure(refusal());
     expect(guard.isRefused()).toBe(false);
 
+    // The window closed: the next pass was accepted, and the count restarts from zero.
+    guard.recordSuccess();
+    guard.recordFailure(refusal());
+    expect(guard.isRefused()).toBe(false);
+    expect(RUNNER_REFUSAL_REPORT_THRESHOLD).toBe(2);
+  });
+
+  it("reports itself refused from the second refusal with no accepted pass between them, until one is accepted", () => {
+    const guard = new RunnerReleaseGuard({
+      runningVersion: "3.261119.9",
+      readInstalledVersion: () => "3.261119.9",
+    });
+
+    guard.recordFailure(new Error("NATS_TIMEOUT"));
+    expect(guard.isRefused()).toBe(false);
+    guard.recordFailure(refusal());
     guard.recordFailure(refusal());
     expect(guard.isRefused()).toBe(true);
-    // Not-state failures in between neither clear nor extend it.
+
+    // Failures for another reason in between neither clear it nor extend it.
     guard.recordFailure(new Error("NATS_TIMEOUT"));
     expect(guard.isRefused()).toBe(true);
 
     guard.recordSuccess();
     expect(guard.isRefused()).toBe(false);
+  });
+
+  it("counts refusals since the last accepted pass: a failure for another reason between two refusals is not an accepted pass", () => {
+    const guard = new RunnerReleaseGuard({
+      runningVersion: "3.261119.9",
+      readInstalledVersion: () => "3.261119.9",
+    });
+
+    guard.recordFailure(refusal());
+    guard.recordFailure(new Error("SQLITE_BUSY"));
+    expect(guard.isRefused()).toBe(false);
+    guard.recordFailure(refusal());
+    // Two refusals, the guard never accepted a pass in between: reported, although they were not consecutive
+    // for the relaunch decision (which a failure for another reason does reset).
+    expect(guard.isRefused()).toBe(true);
   });
 });
 
@@ -264,6 +297,56 @@ describe("a runner left on the previous release after the daemon prepared state 
       await reconciler.stop().catch(() => undefined);
     }
     expect(relaunches).toEqual([]);
+    // It does not restart, and it does say so: the state stayed unprepared for many passes in a row.
+    expect(guard.isRefused()).toBe(true);
+  });
+
+  it("is refused for one pass while the daemon prepares state on the same release, and never reports it", async () => {
+    const database = getDb();
+    ensureChannelOutboundPublishOutboxSchema(database);
+    // What every daemon boot does for a moment, on the same release too: the marker is deleted, the stores are
+    // prepared, the marker is written back (`initializeStateSchema`).
+    runThreadMutation(database, "DELETE FROM state_schema_versions WHERE component = ?", "channel-outbound-publish");
+    runAsChannelRunner();
+
+    const guard = new RunnerReleaseGuard({
+      runningVersion: "3.261119.9",
+      readInstalledVersion: () => "3.261119.9",
+    });
+    const refusals: unknown[] = [];
+    const reportedAfterRefusal: boolean[] = [];
+    let accepted = 0;
+    const reconciler = new ChannelOutboundPublishReconciler({
+      intervalMs: 1,
+      onLoopSuccess: () => {
+        accepted += 1;
+        guard.recordSuccess();
+      },
+      onLoopFailure: (error) => {
+        refusals.push(error);
+        guard.recordFailure(error);
+        reportedAfterRefusal.push(guard.isRefused());
+        // The daemon finished preparing: the marker is back before the runner's next pass.
+        runThreadMutation(
+          database,
+          `INSERT INTO state_schema_versions (component, version) VALUES (?, ?)
+           ON CONFLICT(component) DO UPDATE SET version = excluded.version`,
+          "channel-outbound-publish",
+          STATE_SCHEMA_VERSION,
+        );
+      },
+    });
+    try {
+      reconciler.start();
+      await waitFor(() => accepted >= 3);
+    } finally {
+      await reconciler.stop().catch(() => undefined);
+    }
+
+    expect(refusals).toHaveLength(1);
+    expect(String(refusals[0])).toContain("STATE_SCHEMA_NOT_READY: channel-outbound-publish is not initialized");
+    expect(reportedAfterRefusal).toEqual([false]);
+    expect(guard.isRefused()).toBe(false);
   });
 
   it("does not let a failing observer end the reconcile loop", async () => {

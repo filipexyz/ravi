@@ -319,7 +319,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels | src/channels/presence-consumer.ts | 182 | fixed | binding retained / no recognized error surface | src/channels/presence-consumer.ts:8b1ced9b3b5d40a13733b90e |
 | channels | src/channels/runner-liveness.ts | 86 | triaged-follow-up | catch-without-binding | src/channels/runner-liveness.ts:ca3df7cbd902e6aa4543a58e |
 | channels | src/channels/runner-liveness.ts | 118 | fixed | binding retained / no recognized error surface | src/channels/runner-liveness.ts:61963fd94cf3451299058c9c |
-| channels | src/channels/runner-release-guard.ts | 132 | fixed | binding retained / no recognized error surface | src/channels/runner-release-guard.ts:94f90985b005a8c0a2aaa7e4 |
+| channels | src/channels/runner-release-guard.ts | 143 | fixed | binding retained / no recognized error surface | src/channels/runner-release-guard.ts:94f90985b005a8c0a2aaa7e4 |
 | channels | src/channels/runner.ts | 279 | fixed | binding retained / no recognized error surface | src/channels/runner.ts:45f4d2331926639ea0c7f89c |
 | channels | src/channels/runner.ts | 317 | fixed | binding retained / no recognized error surface | src/channels/runner.ts:3c7e290e826e490b3cc0f746 |
 | channels | src/channels/runner.ts | 387 | fixed | binding retained / no recognized error surface | src/channels/runner.ts:a8803d0bf1faffcc734fc7f8 |

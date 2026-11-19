@@ -80,7 +80,10 @@ On shutdown the runner must:
    health `degraded (release_drift)` and the restart command in its warnings, and
    `ravi doctor --domain channels` fails `channels.runner_release`. A
    `degraded (state_refused)` health is the runner saying its guard refuses it
-   while the releases match: prepare state with the daemon
-   (`ravi daemon restart -m "prepare state"`), not by restarting the runner.
+   while the releases match, for two passes in a row (about a minute): prepare
+   state with the daemon (`ravi daemon restart -m "prepare state"`), not by
+   restarting the runner. One refused pass is not reported: it is a daemon
+   restart on the same release passing through its prepare window, and it clears
+   by itself on the next pass.
    `unverified` (doctor `skip`) means a process has no boot receipt yet, as in a
    status read right after a restart: read it again before acting.

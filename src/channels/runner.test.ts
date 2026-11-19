@@ -923,7 +923,7 @@ describe("channel runner release drift", () => {
     }
   });
 
-  it("reports a refused state guard as a degraded adapter until a pass is accepted", async () => {
+  it("reports a refused state guard as a degraded adapter from the second refusal until a pass is accepted", async () => {
     const { runner, reconciler, restore } = await startStubbedRunner({
       releaseGuard: { runningVersion: "3.261119.9", readInstalledVersion: () => "3.261119.9" },
     });
@@ -936,7 +936,11 @@ describe("channel runner release drift", () => {
       reconciler.onLoopFailure(new Error("NATS unavailable"));
       expect(guardEntries()).toEqual([]);
 
-      // One refusal is enough: a refused pass is a pass that did not reconcile, whatever the releases are.
+      // One refused pass is a daemon restart on the same release passing through its prepare window, not a fault.
+      reconciler.onLoopFailure(refusal());
+      expect(guardEntries()).toEqual([]);
+
+      // Still no accepted pass: the state was not prepared 30 s later either, whatever the releases are.
       reconciler.onLoopFailure(refusal());
       expect(guardEntries()).toEqual([
         {
