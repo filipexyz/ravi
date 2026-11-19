@@ -48,6 +48,7 @@ channels.instance_health_missing
 channels.provider_health_unavailable
 channels.inbound_actor_unresolved
 channels.inbound_contact_unresolved
+channels.runner_release
 ```
 
 ## Fixture Expectations
@@ -60,6 +61,8 @@ channels.inbound_contact_unresolved
   `channels.inbound_actor_unresolved`.
 - A recent inbound user message with no contact or agent metadata emits
   `channels.inbound_contact_unresolved`.
+- A channel runner whose boot receipt release differs from the daemon's emits
+  `channels.runner_release` as an error, naming both releases and the restart.
 - A provider/model cost row with token usage and no price emits
   `costs.pricing_unpriced_usage`.
 - A new public command without a strong return schema emits

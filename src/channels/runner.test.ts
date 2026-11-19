@@ -1,6 +1,7 @@
 import * as closeAllDbs from "../db/close-all.js";
 import * as natsConnection from "../nats.js";
 import { describe, expect, it, mock, spyOn } from "bun:test";
+import { StateSchemaNotReadyError } from "../db/schema-owner.js";
 import * as runtimeIdentity from "../runtime-process-identity.js";
 import * as runtimeState from "../db/runtime-state.js";
 import { configStore } from "../config-store.js";
@@ -45,6 +46,7 @@ import type { ChannelRuntimeEventSink } from "./runtime-events.js";
 import { createSlackNativeChannelDriver } from "./slack/driver.js";
 import type { ChannelOutboundJob } from "./outbound-stream.js";
 import { buildRunnerPm2Env } from "./pm2-env.js";
+import { RUNNER_RELEASE_GUARD_ADAPTER_ID } from "./runner-release-status.js";
 
 describe("channel runner PM2 environment", () => {
   it("does not use Slack connection env as runner configuration", () => {
@@ -852,6 +854,122 @@ describe("channel runner drain", () => {
     } finally {
       closeDbs.mockRestore();
       closeBroker.mockRestore();
+    }
+  });
+});
+
+describe("channel runner release drift", () => {
+  const refusal = () => new StateSchemaNotReadyError("channel-outbound-publish");
+
+  /** Starts a runner with every component stubbed, so only the wiring into the reconcile loop is exercised. */
+  async function startStubbedRunner(options: ConstructorParameters<typeof ChannelRunner>[0]) {
+    const spies = [
+      spyOn(ChannelOutboundConsumer.prototype, "start").mockImplementation(() => {}),
+      spyOn(ChannelOutboundPublishReconciler.prototype, "start").mockImplementation(() => {}),
+      spyOn(ChannelPresenceConsumer.prototype, "start").mockImplementation(() => {}),
+      spyOn(backend, "startChannelBackendPublicationReconciler").mockReturnValue((async () => ({})) as never),
+      spyOn(backendEgress, "startChannelBackendEgressResponder").mockReturnValue({ stop: async () => {} }),
+      spyOn(inboundActions, "startNativeInboundChannelActionResponder").mockReturnValue({ stop: async () => {} }),
+      spyOn(runtimeState, "assertRuntimeStateReady").mockImplementation(() => {}),
+      spyOn(natsConnection, "connectNats").mockResolvedValue({} as never),
+      spyOn(natsConnection, "getNats").mockReturnValue({} as never),
+      spyOn(configStore, "startRefresh").mockResolvedValue(undefined as never),
+      spyOn(configStore, "getConfig").mockReturnValue({ channels: {} } as ReturnType<typeof configStore.getConfig>),
+      spyOn(outboundStream, "ensureChannelOutboundInfrastructure").mockResolvedValue(undefined as never),
+      spyOn(sqliteChannelOutboundReceiptStore, "pruneExpired").mockReturnValue(0),
+      spyOn(sqliteChannelOutboundPublishOutboxStore, "prunePublished").mockReturnValue(0),
+      spyOn(runnerHealth, "startChannelRunnerHealthResponder").mockReturnValue({
+        subject: "test.health",
+        stop: async () => {},
+      }),
+      spyOn(nativeDrivers, "loadNativeChannelDriverModules").mockResolvedValue({ loadedProviders: [], failures: [] }),
+      spyOn(nativeDrivers.NativeChannelDriverManager.prototype, "start").mockResolvedValue(undefined as never),
+    ];
+    const runner = new ChannelRunner(options);
+    await runner.start();
+    const reconciler = (
+      runner as unknown as {
+        outboundPublishReconciler: { options: { onLoopFailure(error: unknown): void; onLoopSuccess(): void } };
+      }
+    ).outboundPublishReconciler;
+    return {
+      runner,
+      reconciler: reconciler.options,
+      restore: () => {
+        for (const spy of spies) spy.mockRestore();
+      },
+    };
+  }
+
+  it("feeds the outbound reconcile loop's refusals to the release guard and reports the drift once", async () => {
+    const drifts: unknown[] = [];
+    const { reconciler, restore } = await startStubbedRunner({
+      releaseGuard: { runningVersion: "3.261119.6", readInstalledVersion: () => "3.261119.9" },
+      onReleaseDrift: (relaunch) => drifts.push(relaunch),
+    });
+    try {
+      reconciler.onLoopFailure(refusal());
+      reconciler.onLoopFailure(refusal());
+      reconciler.onLoopSuccess(); // a pass that clears the guard restarts the count
+      reconciler.onLoopFailure(refusal());
+      reconciler.onLoopFailure(refusal());
+      expect(drifts).toEqual([]);
+
+      reconciler.onLoopFailure(refusal());
+      reconciler.onLoopFailure(refusal());
+      expect(drifts).toEqual([{ runningVersion: "3.261119.6", installedVersion: "3.261119.9", refusals: 3 }]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("reports a refused state guard as a degraded adapter from the second refusal until a pass is accepted", async () => {
+    const { runner, reconciler, restore } = await startStubbedRunner({
+      releaseGuard: { runningVersion: "3.261119.9", readInstalledVersion: () => "3.261119.9" },
+    });
+    const guardEntries = () =>
+      runner.status().adapters.filter((adapter) => adapter.id === RUNNER_RELEASE_GUARD_ADAPTER_ID);
+    try {
+      expect(guardEntries()).toEqual([]);
+
+      // A failure that is not a state refusal is the reconcile loop's own business, not the guard's.
+      reconciler.onLoopFailure(new Error("NATS unavailable"));
+      expect(guardEntries()).toEqual([]);
+
+      // One refused pass is a daemon restart on the same release passing through its prepare window, not a fault.
+      reconciler.onLoopFailure(refusal());
+      expect(guardEntries()).toEqual([]);
+
+      // Still no accepted pass: the state was not prepared 30 s later either, whatever the releases are.
+      reconciler.onLoopFailure(refusal());
+      expect(guardEntries()).toEqual([
+        {
+          id: RUNNER_RELEASE_GUARD_ADAPTER_ID,
+          channelId: "runner",
+          status: "degraded",
+          reason: "state_refused",
+          detail: "STATE_SCHEMA_NOT_READY",
+        },
+      ]);
+
+      reconciler.onLoopSuccess();
+      expect(guardEntries()).toEqual([]);
+    } finally {
+      restore();
+    }
+  });
+
+  it("does not report drift for a runner on the installed release", async () => {
+    const drifts: unknown[] = [];
+    const { reconciler, restore } = await startStubbedRunner({
+      releaseGuard: { runningVersion: "3.261119.9", readInstalledVersion: () => "3.261119.9" },
+      onReleaseDrift: (relaunch) => drifts.push(relaunch),
+    });
+    try {
+      for (let pass = 0; pass < 10; pass++) reconciler.onLoopFailure(refusal());
+      expect(drifts).toEqual([]);
+    } finally {
+      restore();
     }
   });
 });
