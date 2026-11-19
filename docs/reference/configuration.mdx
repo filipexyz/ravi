@@ -163,7 +163,7 @@ To give agents a variable on purpose, list it in `RAVI_AGENT_ENV_PASSTHROUGH` an
 RAVI_AGENT_ENV_PASSTHROUGH="MAX_THINKING_TOKENS,BASH_DEFAULT_TIMEOUT_MS"
 ```
 
-A provider's own config still reaches only that provider, even when listed. Naming `GIT_CONFIG_COUNT` passes the whole `GIT_CONFIG_*` set.
+A provider's own config still reaches only that provider, even when listed, and never a job or a shell trigger: names starting with `CLAUDE_`, `ANTHROPIC_`, `CODEX_`, `PI_` or `GROK_` belong to the agent runtime, so listing `CLAUDE_CODE_OAUTH_TOKEN` does not hand it to a job, while an unprefixed name such as `DEVIN_API_KEY` does reach it. Naming `GIT_CONFIG_COUNT` passes the whole `GIT_CONFIG_*` set.
 
 A shell trigger runs only when its owner is the operator, like a shell cron (`TRIGGER_SHELL_NOT_OPERATOR`). It is created and changed only from a request the daemon verifies: from your own chat with Ravi, not from a local `ravi` in the terminal. Only its owner changes it, turns it on or off. Its `--env-file` may not sit inside the Ravi state dir (`TRIGGER_SHELL_ENV_FILE_IN_STATE_DIR`), which holds the daemon's own secrets, and must be a regular file (`TRIGGER_SHELL_ENV_FILE_NOT_REGULAR`, no FIFO, device or directory) with a single hard link (`TRIGGER_SHELL_ENV_FILE_HARD_LINK`). An env file over 1 MiB is refused (`TRIGGER_SHELL_ENV_FILE_TOO_LARGE`). This is a path check when the trigger is saved and when it fires, not an access boundary: the file can change between the check and the read, and anything that runs as your OS user can still read the state dir.
 

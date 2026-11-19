@@ -1256,13 +1256,13 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | jobs | src/jobs/detach-script.ts | 88 | triaged-follow-up | catch-without-binding | src/jobs/detach-script.ts:55fc73ecc04df177cb3133ff |
 | jobs | src/jobs/detach-script.ts | 97 | triaged-follow-up | catch-without-binding | src/jobs/detach-script.ts:574c6e8d0596721b5c6ac6f9 |
 | jobs | src/jobs/detach.ts | 111 | triaged-follow-up | catch-without-binding | src/jobs/detach.ts:6964bd49b50ec68e6fd88f8b |
-| jobs | src/jobs/runner.ts | 169 | fixed | binding retained / no recognized error surface | src/jobs/runner.ts:60347111391e1ef9e90a7a9b |
-| jobs | src/jobs/runner.ts | 214 | fixed | binding retained / no recognized error surface | src/jobs/runner.ts:a05b8543d6abe2286621396c |
-| jobs | src/jobs/runner.ts | 389 | triaged-follow-up | catch-without-binding | src/jobs/runner.ts:fa392636c1cf04e02dc07bcb |
-| jobs | src/jobs/runner.ts | 434 | triaged-follow-up | catch-without-binding | src/jobs/runner.ts:cba5f0c5ec544b4c0307aca4 |
-| jobs | src/jobs/runner.ts | 445 | triaged-follow-up | catch-without-binding | src/jobs/runner.ts:f6697741e4a972122eaa1214 |
-| jobs | src/jobs/runner.ts | 451 | triaged-follow-up | catch-without-binding | src/jobs/runner.ts:fb2e66cc8566b8c3166bd36a |
-| jobs | src/jobs/runner.ts | 473 | fixed | binding retained / no recognized error surface | src/jobs/runner.ts:db5e1793ed8fe894a35b9e0e |
+| jobs | src/jobs/runner.ts | 171 | fixed | binding retained / no recognized error surface | src/jobs/runner.ts:60347111391e1ef9e90a7a9b |
+| jobs | src/jobs/runner.ts | 216 | fixed | binding retained / no recognized error surface | src/jobs/runner.ts:a05b8543d6abe2286621396c |
+| jobs | src/jobs/runner.ts | 391 | triaged-follow-up | catch-without-binding | src/jobs/runner.ts:fa392636c1cf04e02dc07bcb |
+| jobs | src/jobs/runner.ts | 436 | triaged-follow-up | catch-without-binding | src/jobs/runner.ts:cba5f0c5ec544b4c0307aca4 |
+| jobs | src/jobs/runner.ts | 447 | triaged-follow-up | catch-without-binding | src/jobs/runner.ts:f6697741e4a972122eaa1214 |
+| jobs | src/jobs/runner.ts | 453 | triaged-follow-up | catch-without-binding | src/jobs/runner.ts:fb2e66cc8566b8c3166bd36a |
+| jobs | src/jobs/runner.ts | 475 | fixed | binding retained / no recognized error surface | src/jobs/runner.ts:db5e1793ed8fe894a35b9e0e |
 | knowledge | src/knowledge/client.ts | 114 | triaged-follow-up | catch-without-binding | src/knowledge/client.ts:8ce657243d52e3d113abe333 |
 | knowledge | src/knowledge/client.ts | 234 | fixed | binding retained / no recognized error surface | src/knowledge/client.ts:973f89b13d0d7c68fe971cdc |
 | knowledge | src/knowledge/client.ts | 244 | fixed | binding retained / no recognized error surface | src/knowledge/client.ts:973f89b13d0d7c68fe971cdc |

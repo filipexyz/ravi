@@ -243,6 +243,21 @@ describe("job runner", () => {
     expect(env.RAVI_ADMIN_TOKEN).toBeUndefined();
   });
 
+  it("never gets a provider-prefixed name, even through the passthrough", () => {
+    // Provider config and logins belong to the agent runtime; the job filter runs with no provider.
+    const env = buildJobEnv(
+      { id: "job_prefixed" },
+      {
+        PATH: "/usr/bin:/bin",
+        CLAUDE_CODE_OAUTH_TOKEN: "canary-claude-login",
+        DEVIN_API_KEY: "canary-devin",
+        RAVI_AGENT_ENV_PASSTHROUGH: "CLAUDE_CODE_OAUTH_TOKEN,DEVIN_API_KEY",
+      },
+    );
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+    expect(env.DEVIN_API_KEY).toBe("canary-devin");
+  });
+
   it("spawns an agent-owned job without the daemon env underneath", async () => {
     const dir = mkdtempSync(join(tmpdir(), "ravi-job-env-"));
     const logPath = join(dir, "job.log");
