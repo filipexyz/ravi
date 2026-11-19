@@ -74,6 +74,11 @@ const ALLOWED_ENV_NAMES = new Set([
   "SSH_AUTH_SOCK",
   // Capability: the PM2 home lets the agent control PM2, including the daemon.
   "PM2_HOME",
+  // Capability, not a secret: the operator declares the host a sandbox. Claude
+  // Code refuses `--dangerously-skip-permissions` as root without it, so on a
+  // host that runs Ravi as root every turn failed. Only reaches the agent when
+  // the operator set it in the daemon env.
+  "IS_SANDBOX",
   "MANPATH",
   "INFOPATH",
   // Ravi names are listed one by one, never by prefix: a new RAVI_* secret must

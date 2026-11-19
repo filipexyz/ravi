@@ -154,7 +154,7 @@ Agent runtimes (Claude Code, Codex, Pi and Grok), every command an agent runs, t
 
 A job or a shell trigger that needs a secret gets it on purpose: by listing the variable in `RAVI_AGENT_ENV_PASSTHROUGH` (below) or, for a shell trigger, from its `--env-file`.
 
-- **Passed:** system and toolchain variables (`PATH`, `HOME`, `LANG`, proxies without credentials, `SSH_AUTH_SOCK`, `PM2_HOME`, `GIT_*`, `NODE_*` and similar), a fixed list of Ravi variables (state dir, gateway endpoint, logging, jobs, PM2), and each provider's own config and login: `CLAUDE_*`/`ANTHROPIC_*` to Claude, `CODEX_*` to Codex, `PI_*` to Pi, `GROK_*` to Grok.
+- **Passed:** system and toolchain variables (`PATH`, `HOME`, `LANG`, proxies without credentials, `SSH_AUTH_SOCK`, `PM2_HOME`, `IS_SANDBOX` (needed when Ravi runs as root), `GIT_*`, `NODE_*` and similar), a fixed list of Ravi variables (state dir, gateway endpoint, logging, jobs, PM2), and each provider's own config and login: `CLAUDE_*`/`ANTHROPIC_*` to Claude, `CODEX_*` to Codex, `PI_*` to Pi, `GROK_*` to Grok.
 - **Not passed:** other providers' keys, `RAVI_ADMIN_TOKEN`, webhook secrets, third-party API keys, database URLs, git config injected through `GIT_CONFIG_*`, any name that looks like a secret (`TOKEN`, `SECRET`, `PASSWORD`, `_KEY`, `_PAT`, `HEADERS`) and any value that looks like a token.
 
 To give agents a variable on purpose, list it in `RAVI_AGENT_ENV_PASSTHROUGH` and restart the daemon:
