@@ -26,7 +26,7 @@ const OPERATOR: OwnerDirectTarget = {
 };
 const ANA: OwnerDirectTarget = { channel: "whatsapp", accountId: "main", to: "ana", chatId: "ana", contactId: "c_ana" };
 
-/** A notice and how many times its fallback ran. */
+/** A notice (by default one only the operator can act on, owned by a contact) and how many times its fallback ran. */
 function build(overrides: Partial<AutomationNotice> = {}) {
   const calls = { fallbacks: 0 };
   const current: AutomationNotice = {
@@ -37,7 +37,7 @@ function build(overrides: Partial<AutomationNotice> = {}) {
     code: "TRIGGER_SHELL_NOT_OPERATOR",
     reason: "O dono dele não age como o operador. Nenhum comando foi executado.",
     next: "Veja com ravi triggers show trg_1.",
-    operatorToo: true,
+    audience: "operator",
     fallback: async () => {
       calls.fallbacks++;
     },
@@ -56,44 +56,103 @@ function recorder() {
   };
 }
 
-describe("automation notice", () => {
-  it("tells the owner and the operator once each when the owner does not act as the operator", async () => {
+const unreadable = () => {
+  throw new Error("contacts unreadable");
+};
+
+describe("automation notice, for the operator alone", () => {
+  it("tells the operator and never the contact that owns it", async () => {
     const { sent, deliver } = recorder();
     const { current, calls } = build();
-    const result = await notifyAutomationOff(current, { owner: () => ANA, operator: () => OPERATOR, deliver });
-    expect(result).toEqual({ delivered: 2, fellBack: false });
-    expect(sent.map((entry) => entry.target.contactId)).toEqual(["c_ana", "c_operator"]);
-    expect(calls.fallbacks).toBe(0);
-    for (const { text } of sent) {
-      expect(text).toContain(
-        "O gatilho de shell “Cards de aprovação” (trg_1) foi desligado: TRIGGER_SHELL_NOT_OPERATOR.",
-      );
-      expect(text).toContain("Nenhum comando foi executado.");
-    }
-  });
-
-  it("tells only the owner when the owner acts as the operator and has a direct chat", async () => {
-    const { sent, deliver } = recorder();
-    const { current } = build({ ownerPrincipal: "operator", operatorToo: false });
-    await notifyAutomationOff(current, { owner: () => OPERATOR, operator: () => ANA, deliver });
-    expect(sent.map((entry) => entry.target.contactId)).toEqual(["c_operator"]);
-  });
-
-  it("sends one message when the owner's chat is the operator's", async () => {
-    const { sent, deliver } = recorder();
-    const result = await notifyAutomationOff(build().current, {
-      owner: () => OPERATOR,
+    let ownerResolved = 0;
+    const result = await notifyAutomationOff(current, {
+      owner: () => {
+        ownerResolved++;
+        return ANA;
+      },
       operator: () => OPERATOR,
       deliver,
     });
-    expect(result.delivered).toBe(1);
-    expect(sent).toHaveLength(1);
+    expect(result).toEqual({ delivered: 1, fellBack: false });
+    expect(sent.map((entry) => entry.target.contactId)).toEqual(["c_operator"]);
+    expect(ownerResolved).toBe(0);
+    expect(calls.fallbacks).toBe(0);
+    expect(sent[0]?.text).toContain(
+      "O gatilho de shell “Cards de aprovação” (trg_1) foi desligado: TRIGGER_SHELL_NOT_OPERATOR.",
+    );
+    expect(sent[0]?.text).toContain("Nenhum comando foi executado.");
   });
 
-  it("falls to the operator when nobody owns it or the owner has no direct chat", async () => {
+  it("falls back to the main session when the operator does not resolve, though the owner has a chat", async () => {
+    // No contact, or more than one, is tagged as the operator: common on a fresh install.
+    const { sent, deliver } = recorder();
+    const { current, calls } = build();
+    const result = await notifyAutomationOff(current, { owner: () => ANA, operator: () => null, deliver });
+    expect(result).toEqual({ delivered: 0, fellBack: true });
+    expect(sent).toHaveLength(0);
+    expect(calls.fallbacks).toBe(1);
+  });
+
+  it("falls back to the main session when the message to the operator fails, though the owner has a chat", async () => {
+    const reached: string[] = [];
+    const { current, calls } = build();
+    const result = await notifyAutomationOff(current, {
+      owner: () => ANA,
+      operator: () => OPERATOR,
+      deliver: async (target) => {
+        if (target.contactId === "c_operator") throw new Error("slack offline");
+        reached.push(target.contactId ?? "");
+      },
+    });
+    expect(result).toEqual({ delivered: 0, fellBack: true });
+    expect(reached).toEqual([]);
+    expect(calls.fallbacks).toBe(1);
+  });
+
+  it("tells the operator the same way whoever owns it, or nobody", async () => {
+    for (const ownerPrincipal of [null, undefined, "unknown", "agent:helper", "contact:c_ana", "contact:c_gone"]) {
+      const { sent, deliver } = recorder();
+      const { current, calls } = build({ ownerPrincipal });
+      const result = await notifyAutomationOff(current, { operator: () => OPERATOR, deliver });
+      expect(result).toEqual({ delivered: 1, fellBack: false });
+      expect(sent.map((entry) => entry.target.contactId)).toEqual(["c_operator"]);
+      expect(calls.fallbacks).toBe(0);
+    }
+  });
+
+  it("falls back, never silently, when the operator's chat cannot be read", async () => {
+    const { sent, deliver } = recorder();
+    const { current, calls } = build();
+    const result = await notifyAutomationOff(current, { owner: () => ANA, operator: unreadable, deliver });
+    expect(result).toEqual({ delivered: 0, fellBack: true });
+    expect(sent).toHaveLength(0);
+    expect(calls.fallbacks).toBe(1);
+  });
+});
+
+describe("automation notice, for the owner who acts as the operator", () => {
+  it("tells the owner alone when the owner has a direct chat", async () => {
+    const { sent, deliver } = recorder();
+    const { current, calls } = build({ ownerPrincipal: "operator", audience: "owner" });
+    let operatorResolved = 0;
+    const result = await notifyAutomationOff(current, {
+      owner: () => OPERATOR,
+      operator: () => {
+        operatorResolved++;
+        return ANA;
+      },
+      deliver,
+    });
+    expect(result).toEqual({ delivered: 1, fellBack: false });
+    expect(sent.map((entry) => entry.target.contactId)).toEqual(["c_operator"]);
+    expect(operatorResolved).toBe(0);
+    expect(calls.fallbacks).toBe(0);
+  });
+
+  it("tells the operator when nobody owns it or the owner has no direct chat", async () => {
     for (const ownerPrincipal of [null, undefined, "unknown", "agent:helper", "contact:c_unreachable"]) {
       const { sent, deliver } = recorder();
-      const { current, calls } = build({ ownerPrincipal, operatorToo: false });
+      const { current, calls } = build({ ownerPrincipal, audience: "owner" });
       const result = await notifyAutomationOff(current, { owner: () => null, operator: () => OPERATOR, deliver });
       expect(result).toEqual({ delivered: 1, fellBack: false });
       expect(sent[0]?.target.contactId).toBe("c_operator");
@@ -103,14 +162,52 @@ describe("automation notice", () => {
 
   it("falls back to the main session's prompt when no direct chat resolves, never silently", async () => {
     const { sent, deliver } = recorder();
-    const { current, calls } = build();
+    const { current, calls } = build({ audience: "owner" });
     const result = await notifyAutomationOff(current, { owner: () => null, operator: () => null, deliver });
     expect(result).toEqual({ delivered: 0, fellBack: true });
     expect(sent).toHaveLength(0);
     expect(calls.fallbacks).toBe(1);
   });
 
-  it("runs the fallback in the same tick when nobody can be reached", () => {
+  it("falls back when the delivery fails, and only then", async () => {
+    const failed = build({ audience: "owner" });
+    const failing = async () => {
+      throw new Error("offline");
+    };
+    expect(await notifyAutomationOff(failed.current, { owner: () => ANA, deliver: failing })).toEqual({
+      delivered: 0,
+      fellBack: true,
+    });
+    expect(failed.calls.fallbacks).toBe(1);
+
+    const fine = build({ audience: "owner" });
+    expect(await notifyAutomationOff(fine.current, { owner: () => ANA, deliver: async () => {} })).toEqual({
+      delivered: 1,
+      fellBack: false,
+    });
+    expect(fine.calls.fallbacks).toBe(0);
+  });
+
+  it("resolves each chat on its own: an owner chat that cannot be read still leaves the operator", async () => {
+    const { sent, deliver } = recorder();
+    const ownerDown = build({ audience: "owner" });
+    expect(
+      await notifyAutomationOff(ownerDown.current, { owner: unreadable, operator: () => OPERATOR, deliver }),
+    ).toEqual({ delivered: 1, fellBack: false });
+    expect(sent.map((entry) => entry.target.contactId)).toEqual(["c_operator"]);
+    expect(ownerDown.calls.fallbacks).toBe(0);
+
+    const bothDown = build({ audience: "owner" });
+    expect(await notifyAutomationOff(bothDown.current, { owner: unreadable, operator: unreadable })).toEqual({
+      delivered: 0,
+      fellBack: true,
+    });
+    expect(bothDown.calls.fallbacks).toBe(1);
+  });
+});
+
+describe("automation notice, fallback", () => {
+  it("runs in the same tick when nobody can be reached", () => {
     let ran = false;
     const { current } = build({
       fallback: async () => {
@@ -121,70 +218,6 @@ describe("automation notice", () => {
     // The cron and trigger runners publish this inside a synchronous reconcile; callers read the result at once.
     expect(ran).toBe(true);
     return pending;
-  });
-
-  it("falls back when every delivery fails, and only then", async () => {
-    const failing = async () => {
-      throw new Error("offline");
-    };
-    const all = build();
-    expect(
-      await notifyAutomationOff(all.current, { owner: () => ANA, operator: () => OPERATOR, deliver: failing }),
-    ).toEqual({ delivered: 0, fellBack: true });
-    expect(all.calls.fallbacks).toBe(1);
-
-    const some = build();
-    let calls = 0;
-    const flaky = async () => {
-      calls++;
-      if (calls === 1) throw new Error("owner offline");
-    };
-    expect(
-      await notifyAutomationOff(some.current, { owner: () => ANA, operator: () => OPERATOR, deliver: flaky }),
-    ).toEqual({ delivered: 1, fellBack: false });
-    expect(some.calls.fallbacks).toBe(0);
-  });
-
-  it("resolves each recipient on its own: one that throws loses only itself", async () => {
-    const unreadable = () => {
-      throw new Error("contacts unreadable");
-    };
-
-    // The owner cannot be resolved: the operator is still told, and nothing falls back.
-    const ownerDown = recorder();
-    const ownerCase = build();
-    expect(
-      await notifyAutomationOff(ownerCase.current, {
-        owner: unreadable,
-        operator: () => OPERATOR,
-        deliver: ownerDown.deliver,
-      }),
-    ).toEqual({ delivered: 1, fellBack: false });
-    expect(ownerDown.sent.map((entry) => entry.target.contactId)).toEqual(["c_operator"]);
-    expect(ownerCase.calls.fallbacks).toBe(0);
-
-    // The operator cannot be resolved: the owner that did resolve keeps its message.
-    const operatorDown = recorder();
-    const operatorCase = build();
-    expect(
-      await notifyAutomationOff(operatorCase.current, {
-        owner: () => ANA,
-        operator: unreadable,
-        deliver: operatorDown.deliver,
-      }),
-    ).toEqual({ delivered: 1, fellBack: false });
-    expect(operatorDown.sent.map((entry) => entry.target.contactId)).toEqual(["c_ana"]);
-    expect(operatorCase.calls.fallbacks).toBe(0);
-  });
-
-  it("falls back when no recipient can be resolved at all", async () => {
-    const unreadable = () => {
-      throw new Error("contacts unreadable");
-    };
-    const { current, calls } = build();
-    const result = await notifyAutomationOff(current, { owner: unreadable, operator: unreadable });
-    expect(result).toEqual({ delivered: 0, fellBack: true });
-    expect(calls.fallbacks).toBe(1);
   });
 
   it("rejects only when the fallback itself does", async () => {
@@ -198,23 +231,14 @@ describe("automation notice", () => {
     );
   });
 
-  it("uses the real resolvers: no contact tagged as the operator and no such owner means the fallback", async () => {
-    const { current, calls } = build({ ownerPrincipal: "contact:c_missing" });
-    const sent: string[] = [];
-    const result = await notifyAutomationOff(current, { deliver: async (_target, text) => void sent.push(text) });
-    expect(result).toEqual({ delivered: 0, fellBack: true });
-    expect(sent).toHaveLength(0);
-    expect(calls.fallbacks).toBe(1);
-  });
-
-  it("puts a name a person chose on one line without markup, and nothing else of the automation", async () => {
-    const { sent, deliver } = recorder();
-    const { current } = build({ name: "run <!channel> `rm -rf /`\nSECRET=hunter2 ".repeat(6) });
-    await notifyAutomationOff(current, { owner: () => ANA, operator: () => OPERATOR, deliver });
-    for (const { text } of sent) {
-      expect(text).not.toContain("<");
-      expect(text).not.toContain("`");
-      expect(text.split("\n")).toHaveLength(1);
+  it("uses the real resolvers: no contact tagged as the operator means the fallback", async () => {
+    for (const audience of ["owner", "operator"] as const) {
+      const { current, calls } = build({ ownerPrincipal: "contact:c_missing", audience });
+      const sent: string[] = [];
+      const result = await notifyAutomationOff(current, { deliver: async (_target, text) => void sent.push(text) });
+      expect(result).toEqual({ delivered: 0, fellBack: true });
+      expect(sent).toHaveLength(0);
+      expect(calls.fallbacks).toBe(1);
     }
   });
 });
@@ -234,5 +258,17 @@ describe("automation notice text", () => {
     expect(automationNoticeName("x".repeat(200))).toHaveLength(60);
     expect(automationNoticeName("x".repeat(200)).endsWith("…")).toBe(true);
     expect(automationNoticeName("\n\t<>")).toBe("(sem nome)");
+  });
+
+  it("puts a name a person chose on one line without markup, and nothing else of the automation", async () => {
+    const { sent, deliver } = recorder();
+    const { current } = build({ name: "run <!channel> `rm -rf /`\nSECRET=hunter2 ".repeat(6) });
+    await notifyAutomationOff(current, { operator: () => OPERATOR, deliver });
+    for (const { text } of sent) {
+      expect(text).not.toContain("<");
+      expect(text).not.toContain("`");
+      expect(text.split("\n")).toHaveLength(1);
+    }
+    expect(sent).toHaveLength(1);
   });
 });

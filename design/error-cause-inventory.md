@@ -1054,9 +1054,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | credentials | src/credentials/remote/ssh.ts | 453 | no-cause | This request's SSH metadata cleanup cannot leak filesystem diagnostics. | src/credentials/remote/ssh.ts:c471be0e4c01fa8ea1cc459c |
 | crm | src/crm/pipeline-engines.ts | 91 | triaged-follow-up | catch-without-binding | src/crm/pipeline-engines.ts:8294632de396ae2e22ebf2dd |
 | cron | src/cron/authority.ts | 35 | triaged-follow-up | catch-without-binding | src/cron/authority.ts:e116ec0448fbb570f6475354 |
-| cron | src/cron/automation-notice.ts | 99 | fixed | binding retained / no recognized error surface | src/cron/automation-notice.ts:dfc42654eb690aca24f5cb38 |
-| cron | src/cron/automation-notice.ts | 145 | fixed | binding retained / no recognized error surface | src/cron/automation-notice.ts:202dbbd3da25be811e3b14b8 |
-| cron | src/cron/automation-notice.ts | 154 | fixed | binding retained / no recognized error surface | src/cron/automation-notice.ts:2c7f9bc70a925f1c22d48cd3 |
+| cron | src/cron/automation-notice.ts | 107 | fixed | binding retained / no recognized error surface | src/cron/automation-notice.ts:a67fcc103edf2acc58d9d4dd |
+| cron | src/cron/automation-notice.ts | 144 | fixed | binding retained / no recognized error surface | src/cron/automation-notice.ts:d154d5d261162fbd60b1fd73 |
+| cron | src/cron/automation-notice.ts | 154 | fixed | binding retained / no recognized error surface | src/cron/automation-notice.ts:a95b6dd11f31a709f9f4d9c0 |
 | cron | src/cron/failure-notification.ts | 92 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:872eccb90cc73e208afc46cb |
 | cron | src/cron/runner.ts | 132 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:fc2cdecb2aeccf630df7a4a8 |
 | cron | src/cron/runner.ts | 180 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:c797d567e8c78c6703f0019a |
@@ -1064,11 +1064,11 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cron | src/cron/runner.ts | 441 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:5330acdaef56e91c95ddf82c |
 | cron | src/cron/runner.ts | 462 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:c47c8a50008567bd304f8d72 |
 | cron | src/cron/runner.ts | 492 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:84c8fe96035d9d18e92887dc |
-| cron | src/cron/runner.ts | 540 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:14decf9d11378a3b03305156 |
-| cron | src/cron/runner.ts | 761 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:a2be358361197f4a1e5cef9a |
-| cron | src/cron/runner.ts | 786 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:744bbd117084af26649ef29c |
-| cron | src/cron/runner.ts | 810 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:5a991c30aac091d8da223934 |
-| cron | src/cron/runner.ts | 816 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:eaecf8e2bd7d2885c9130909 |
+| cron | src/cron/runner.ts | 542 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:14decf9d11378a3b03305156 |
+| cron | src/cron/runner.ts | 763 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:a2be358361197f4a1e5cef9a |
+| cron | src/cron/runner.ts | 788 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:744bbd117084af26649ef29c |
+| cron | src/cron/runner.ts | 812 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:5a991c30aac091d8da223934 |
+| cron | src/cron/runner.ts | 818 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:eaecf8e2bd7d2885c9130909 |
 | cron | src/cron/schedule.ts | 42 | triaged-follow-up | catch-without-binding | src/cron/schedule.ts:2b46c8ca013c56a26edd2e09 |
 | cron | src/cron/schedule.ts | 63 | triaged-follow-up | catch-without-binding | src/cron/schedule.ts:613ff03ae8445d303ad9e180 |
 | cron | src/cron/shell-context.ts | 98 | fixed | binding retained / no recognized error surface | src/cron/shell-context.ts:e7576672a6981834ff9e1aa0 |
@@ -2241,12 +2241,12 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | triggers | src/triggers/runner.ts | 580 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:b090483fd14e6839c04b29a3 |
 | triggers | src/triggers/runner.ts | 651 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:ebee8337f2dc263d32e180e8 |
 | triggers | src/triggers/runner.ts | 974 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:09388027ac2df7f2cec67567 |
-| triggers | src/triggers/runner.ts | 1162 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:d14c664694286369de3e6fbe |
-| triggers | src/triggers/runner.ts | 1186 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:aa360b558f3a8f49f5481484 |
-| triggers | src/triggers/runner.ts | 1300 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:f8c23e28c45f28fab923300a |
-| triggers | src/triggers/runner.ts | 1317 | triaged-follow-up | rejection-without-binding | src/triggers/runner.ts:2a64131ac5e4f6832e8265d6 |
-| triggers | src/triggers/runner.ts | 1353 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:50ee05b1b307f84258692b5e |
-| triggers | src/triggers/runner.ts | 1397 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:98d070593ad0a160c67acebc |
+| triggers | src/triggers/runner.ts | 1166 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:d14c664694286369de3e6fbe |
+| triggers | src/triggers/runner.ts | 1190 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:aa360b558f3a8f49f5481484 |
+| triggers | src/triggers/runner.ts | 1304 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:f8c23e28c45f28fab923300a |
+| triggers | src/triggers/runner.ts | 1321 | triaged-follow-up | rejection-without-binding | src/triggers/runner.ts:2a64131ac5e4f6832e8265d6 |
+| triggers | src/triggers/runner.ts | 1357 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:50ee05b1b307f84258692b5e |
+| triggers | src/triggers/runner.ts | 1401 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:98d070593ad0a160c67acebc |
 | triggers | src/triggers/shell-env-file.ts | 52 | fixed | binding retained / no recognized error surface | src/triggers/shell-env-file.ts:d1d19eafa3e41c1a6f2e98b1 |
 | triggers | src/triggers/shell-env-file.ts | 196 | fixed | binding retained / no recognized error surface | src/triggers/shell-env-file.ts:38a87581adb392a895da7126 |
 | triggers | src/triggers/triggers-db.ts | 67 | triaged-follow-up | catch-without-binding | src/triggers/triggers-db.ts:18050dd160921a6db0880e71 |

@@ -55,7 +55,7 @@ import { resolveTriggerActivation } from "./activation.js";
 import { isInternalEventTopic } from "./topic-policy.js";
 import { buildTriggerPrompt } from "./prompt.js";
 import { TriggerDebouncer, type TriggerBatch } from "./debounce.js";
-import { notifyAutomationOff } from "../cron/automation-notice.js";
+import { notifyAutomationOff, type AutomationNoticeAudience } from "../cron/automation-notice.js";
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS, runShellCronCommand, type ShellCronRunResult } from "../cron/shell-executor.js";
 import { filterAgentRuntimeBaseEnv } from "../runtime/agent-env-policy.js";
 import { type ShellEnvFileRefusal, shellEnvFileRefusal } from "./shell-env-file.js";
@@ -113,8 +113,8 @@ interface ShellTriggerRefusalNotice {
   code: string;
   en: { why: string; next: string };
   pt: { reason: string; next: string };
-  /** The operator is told as well as the owner: the owner does not act as the operator. */
-  operatorToo: boolean;
+  /** Who is told: the owner, who acts as the operator, or the operator alone, because the owner cannot act on it. */
+  audience: AutomationNoticeAudience;
 }
 
 /** Tracks a topic subscription stream for teardown */
@@ -1105,9 +1105,10 @@ export class TriggerRunner {
 
   /**
    * A shell trigger whose owner does not act as the operator never runs. It is
-   * turned off once, with one notice to its owner and to the operator (the
-   * only one who can recreate it); later events find it off. The notice never
-   * carries the command, its env or any event data.
+   * turned off once, with one notice to the operator alone: only the operator
+   * can recreate it, and its owner (who can be a contact) cannot act on it, so
+   * is told nothing. Later events find it off. The notice never carries the
+   * command, its env, any event data or who owns it.
    */
   private refuseShellTriggerOwner(trigger: Trigger): void {
     const runsAs = triggerRunsAs(trigger);
@@ -1118,11 +1119,12 @@ export class TriggerRunner {
         next: "The operator can recreate it from their own chat with Ravi and remove this one.",
       },
       pt: {
-        reason: `Ele roda como ${runsAs}, não como o operador, e um comando de shell roda com o acesso desta máquina. Nenhum comando foi executado.`,
+        reason:
+          "O dono dele não age como o operador, e um comando de shell roda com o acesso desta máquina. Nenhum comando foi executado.",
         next: `Veja com ravi triggers show ${trigger.id}. O operador pode recriá-lo a partir do próprio chat com o Ravi e remover este.`,
       },
       // Its owner is not the operator, so only the operator can act on it.
-      operatorToo: true,
+      audience: "operator",
     });
   }
 
@@ -1143,15 +1145,17 @@ export class TriggerRunner {
         reason: `${refusal.pt} Nenhum comando foi executado.`,
         next: `Veja com ravi triggers show ${trigger.id}. Dê a ele um arquivo comum, só dele, fora do diretório de estado do Ravi, do usuário com que o Ravi roda e gravável só por ele (chmod 600), com ravi triggers set ${trigger.id} env-file CAMINHO_DO_ARQUIVO, e ligue de novo com ravi triggers enable ${trigger.id}, a partir do chat do dono com o Ravi.`,
       },
-      operatorToo: false,
+      // The owner acts as the operator, so the owner is who can fix it.
+      audience: "owner",
     });
   }
 
   /**
    * Turns the trigger off (the winning call is the one that sends the notice,
-   * also across reloads and competing daemons) and tells the people who can act
-   * on it by direct message. When no direct message goes out, the notice falls
-   * back to the main session's prompt, so it is never silent.
+   * also across reloads and competing daemons) and tells the person who can act
+   * on it by direct message. When that message does not reach them, the notice
+   * falls back to the main session's prompt, which is the operator's, so whoever
+   * can act is never left without it.
    */
   private turnOffRefusedShellTrigger(trigger: Trigger, refusal: ShellTriggerRefusalNotice): void {
     const { code } = refusal;
@@ -1173,7 +1177,7 @@ export class TriggerRunner {
       code,
       reason: refusal.pt.reason,
       next: refusal.pt.next,
-      operatorToo: refusal.operatorToo,
+      audience: refusal.audience,
       fallback: () => {
         const agentId = getDefaultAgentId();
         const sessionName = getMainSession(agentId)?.name ?? agentId;

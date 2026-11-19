@@ -4,22 +4,28 @@
  *
  * It travels the way a cron failure does (`failure-notification.ts`): a direct
  * message through the gateway, with no model in the path, so the report of a
- * broken automation never needs the agent that may be what is broken. Who
- * receives it:
+ * broken automation never needs the agent that may be what is broken.
  *
- * - the owner, when a person owns the automation (the operator, or a contact)
- *   and has a direct chat;
- * - the operator as well when the owner does not act as the operator, because
- *   only the operator can recreate it, and instead of the owner when nobody
- *   owns it or the owner has no direct chat (a legacy row, one Ravi wrote, an
- *   agent).
+ * One person is told, chosen by the notice's `audience`:
  *
- * When no direct message went out (no recipient resolves, or every delivery
- * failed) the runner's own `fallback` runs: the prompt it always sent to the
- * default agent's main session. The notice is never silent.
+ * - `operator`: only the operator can act on it (the owner does not act as the
+ *   operator, so the owner cannot recreate a shell). The operator alone is told,
+ *   never the owner: a contact owner would be reached over the instance where
+ *   Ravi last saw them, which can be the operator's own line, about something
+ *   they cannot act on.
+ * - `owner`: the owner acts as the operator, so the owner is who can act. They
+ *   are told in their own direct chat, or the operator is when nobody owns it or
+ *   the owner has no direct chat (a legacy row, one Ravi wrote, an agent).
+ *
+ * When that person was not reached by direct message (the chat does not
+ * resolve, for example no contact or more than one is tagged as the operator, or
+ * the delivery failed) the runner's own `fallback` runs: the prompt it always
+ * sent to the default agent's main session, which is the operator's. Whoever can
+ * act on the notice is never left without it.
  *
  * The text names the code, the reason and what to do next. It never carries
- * the command, its environment, an event or the content of an env file.
+ * the command, its environment, an event or the content of an env file, and no
+ * internal id of who owns it.
  */
 
 import { deliverToChat } from "../cloud-agents/chat-target.js";
@@ -32,21 +38,23 @@ const log = logger.child("cron:automation-notice");
 const KIND_LABEL = { cron: "O agendamento de shell", trigger: "O gatilho de shell" } as const;
 const NAME_MAX = 60;
 
+/** Who is told: the owner (who acts as the operator) or the operator alone (the owner cannot act). */
+export type AutomationNoticeAudience = "owner" | "operator";
+
 export interface AutomationNotice {
   kind: keyof typeof KIND_LABEL;
   id: string;
   name: string;
-  /** Who owns it: `operator`, `contact:<id>`, anything else (or nothing) is nobody. */
+  /** Who owns it: `operator`, `contact:<id>`, anything else (or nothing) is nobody. Read only for the `owner` audience. */
   ownerPrincipal: string | null | undefined;
   /** The stable code, for example `TRIGGER_SHELL_NOT_OPERATOR`. */
   code: string;
-  /** Why it was turned off (pt-BR, one or two sentences, no command, env or file content). */
+  /** Why it was turned off (pt-BR, one or two sentences, no command, env, file content or owner id). */
   reason: string;
   /** What to do about it (pt-BR). */
   next: string;
-  /** The operator is told as well: the owner does not act as the operator. */
-  operatorToo: boolean;
-  /** Runs when no direct message went out. */
+  audience: AutomationNoticeAudience;
+  /** Runs when the person it is for was not reached by direct message. */
   fallback: () => Promise<unknown>;
 }
 
@@ -59,9 +67,9 @@ export interface AutomationNoticeDeps {
 }
 
 export interface AutomationNoticeResult {
-  /** Direct messages sent. */
+  /** Direct messages sent (0 or 1). */
   delivered: number;
-  /** The fallback ran because no direct message went out. */
+  /** The fallback ran because the direct message did not go out. */
   fellBack: boolean;
 }
 
@@ -85,11 +93,11 @@ function defaultOwnerTarget(ownerPrincipal: string | null | undefined): OwnerDir
 }
 
 /**
- * One recipient, resolved on its own: a resolver that throws (an unreadable
- * contact store, say) loses that recipient and no other, so a reachable one
- * still gets its direct message before anything falls back to the main session.
+ * One chat, resolved on its own: a resolver that throws (an unreadable contact
+ * store, say) loses that chat and nothing else, so the operator is still tried
+ * when the owner's chat cannot be read.
  */
-function resolveRecipient(
+function resolveChat(
   notice: AutomationNotice,
   who: "owner" | "operator",
   resolve: () => OwnerDirectTarget | null,
@@ -108,27 +116,18 @@ function resolveRecipient(
   }
 }
 
-function recipients(notice: AutomationNotice, deps: AutomationNoticeDeps): OwnerDirectTarget[] {
-  const owner = resolveRecipient(notice, "owner", () => (deps.owner ?? defaultOwnerTarget)(notice.ownerPrincipal));
-  const operator =
-    notice.operatorToo || !owner
-      ? resolveRecipient(notice, "operator", () => (deps.operator ?? resolveOwnerDirectTarget)())
+/** The one chat the notice goes to, or null when none resolves. */
+function recipient(notice: AutomationNotice, deps: AutomationNoticeDeps): OwnerDirectTarget | null {
+  const owner =
+    notice.audience === "owner"
+      ? resolveChat(notice, "owner", () => (deps.owner ?? defaultOwnerTarget)(notice.ownerPrincipal))
       : null;
-  const seen = new Set<string>();
-  const out: OwnerDirectTarget[] = [];
-  for (const target of [owner, operator]) {
-    if (!target) continue;
-    const key = `${target.channel}\u0000${target.accountId}\u0000${target.chatId}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(target);
-  }
-  return out;
+  return owner ?? resolveChat(notice, "operator", () => (deps.operator ?? resolveOwnerDirectTarget)());
 }
 
 /**
- * Sends the notice once to each recipient. Resolves after the fallback when no
- * direct message went out; rejects only when that fallback does.
+ * Sends the notice once. Resolves after the fallback when the direct message
+ * did not go out; rejects only when that fallback does.
  */
 export async function notifyAutomationOff(
   notice: AutomationNotice,
@@ -136,24 +135,25 @@ export async function notifyAutomationOff(
 ): Promise<AutomationNoticeResult> {
   let delivered = 0;
   try {
-    const text = automationNoticeText(notice);
-    const deliver = deps.deliver ?? ((target, message) => deliverToChat(target, { text: message }));
-    for (const target of recipients(notice, deps)) {
+    const target = recipient(notice, deps);
+    if (target) {
+      const deliver = deps.deliver ?? ((chat, message) => deliverToChat(chat, { text: message }));
       try {
-        await deliver(target, text);
-        delivered++;
+        await deliver(target, automationNoticeText(notice));
+        delivered = 1;
       } catch (error) {
-        log.warn("Automation notice not delivered to one recipient", {
+        log.warn("Automation notice not delivered", {
           kind: notice.kind,
           id: notice.id,
           code: notice.code,
+          audience: notice.audience,
           error: error instanceof Error ? error.message : String(error),
         });
       }
     }
   } catch (error) {
-    // Resolving a recipient must never swallow the notice: the fallback still runs.
-    log.warn("Automation notice recipients unresolved", {
+    // Building the text must never swallow the notice: the fallback still runs.
+    log.warn("Automation notice not built", {
       kind: notice.kind,
       id: notice.id,
       code: notice.code,
@@ -165,6 +165,7 @@ export async function notifyAutomationOff(
     kind: notice.kind,
     id: notice.id,
     code: notice.code,
+    audience: notice.audience,
   });
   await notice.fallback();
   return { delivered, fellBack: true };

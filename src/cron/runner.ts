@@ -509,10 +509,12 @@ export class CronRunner {
       // The persisted transition is the notice claim, including across reloads
       // and competing runners. Never include the command, env or output here.
       log.error("Shell cron disabled: owner is not the operator", { jobId: job.id, code });
-      // Told to its owner and to the operator by direct message, no model in
-      // the path; the main session's prompt is the fallback when none is sent.
-      // The authority is read now, at the transition: the fallback runs after
-      // awaited deliveries, and the owner's operator link can change meanwhile.
+      // Told to the operator alone by direct message, no model in the path: the
+      // owner does not act as the operator (it can be a contact) and cannot act
+      // on it. The main session's prompt, which is the operator's, is the
+      // fallback when that message does not reach them. The authority is read
+      // now, at the transition: the fallback runs after the awaited delivery,
+      // and the owner's operator link can change meanwhile.
       const authority = captureRunAuthority(job);
       void notifyAutomationOff({
         kind: "cron",
@@ -523,7 +525,7 @@ export class CronRunner {
         reason:
           "O dono dele não age como o operador, e um comando de shell roda com o acesso desta máquina. Nenhum comando foi executado e nenhuma nova execução está agendada.",
         next: `Veja com ravi cron show ${job.id}. O operador pode recriá-lo a partir do próprio chat com o Ravi ou convertê-lo em um job de agente.`,
-        operatorToo: true,
+        audience: "operator",
         fallback: () => {
           const agentId = getDefaultAgentId();
           const sessionName = getMainSession(agentId)?.name ?? agentId;

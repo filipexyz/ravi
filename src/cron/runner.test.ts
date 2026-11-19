@@ -70,6 +70,8 @@ let operatorChat: OwnerDirectTarget | null = null;
 const contactChats = new Map<string, OwnerDirectTarget>();
 let directDeliveryFails = false;
 const directMessages: Array<{ target: OwnerDirectTarget; text: string }> = [];
+// Every chat a direct message was tried on, including the ones that failed.
+const directAttempts: OwnerDirectTarget[] = [];
 
 const actualOwnerModule = await import("../knowledge/owner.js");
 const actualChatTargetModule = await import("../cloud-agents/chat-target.js");
@@ -94,6 +96,7 @@ mock.module("../cloud-agents/chat-target.js", () => ({
   ...actualChatTargetModule,
   deliverToChat: mock(async (target: OwnerDirectTarget, message: { text: string }, timeoutMs?: number) => {
     if (!directChatsArmed()) return actualDeliverToChat(target, message, timeoutMs);
+    directAttempts.push(target);
     if (directDeliveryFails) throw new Error("gateway offline");
     directMessages.push({ target, text: message.text });
     return { messageId: "m1", deliveries: [] };
@@ -127,6 +130,7 @@ beforeEach(async () => {
   contactChats.clear();
   directDeliveryFails = false;
   directMessages.length = 0;
+  directAttempts.length = 0;
 });
 
 afterEach(async () => {
@@ -964,7 +968,7 @@ describe("CronRunner shell jobs and personal connectors", () => {
     expect(publishCalls[0]!.payload.prompt).toContain("CRON_SHELL_NOT_OPERATOR");
   });
 
-  it("tells the owner and the operator by direct message, not in the main session, when it turns a shell job off", async () => {
+  it("tells the operator alone by direct message, not the contact that owns it nor the main session, when it turns a shell job off", async () => {
     operatorChat = OPERATOR_CHAT;
     contactChats.set("c_bob", BOB_CHAT);
     const out = join(stateDir!, "contact-shell-dm.txt");
@@ -979,22 +983,68 @@ describe("CronRunner shell jobs and personal connectors", () => {
     const runner = new CronRunner();
     await runner.triggerJob(job.id);
     await runner.triggerJob(job.id);
-    await waitUntil(() => directMessages.length >= 2);
+    await waitUntil(() => directMessages.length >= 1);
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     expect(existsSync(out)).toBe(false);
     expect(dbGetCronJob(job.id)?.enabled).toBe(false);
-    expect(directMessages.map(({ target }) => target.contactId)).toEqual(["c_bob", "c_operator"]);
-    for (const { text } of directMessages) {
-      expect(text).toContain(
-        `O agendamento de shell “Backup do Bob” (${job.id}) foi desligado: CRON_SHELL_NOT_OPERATOR.`,
-      );
-      expect(text).toContain("Nenhum comando foi executado");
-      expect(text).toContain(`ravi cron show ${job.id}`);
-      expect(text).not.toContain(out);
-    }
-    // The direct messages were enough, and a second run finds the job off: nothing more is sent.
+    // The contact cannot act on it (only the operator can recreate a shell), and a message to
+    // them would travel over whatever instance Ravi last saw them on: nothing is sent.
+    expect(directAttempts.map((target) => target.contactId)).toEqual(["c_operator"]);
+    expect(directMessages.map(({ target }) => target.contactId)).toEqual(["c_operator"]);
+    const { text } = directMessages[0]!;
+    expect(text).toContain(
+      `O agendamento de shell “Backup do Bob” (${job.id}) foi desligado: CRON_SHELL_NOT_OPERATOR.`,
+    );
+    expect(text).toContain("Nenhum comando foi executado");
+    expect(text).toContain(`ravi cron show ${job.id}`);
+    expect(text).not.toContain(out);
+    expect(text).not.toContain("contact:");
+    // The direct message was enough, and a second run finds the job off: nothing more is sent.
     expect(publishCalls).toHaveLength(0);
-    expect(directMessages).toHaveLength(2);
+    expect(directMessages).toHaveLength(1);
+  });
+
+  it("falls back to the main session when the operator's chat does not resolve, though the owner has one", async () => {
+    // No contact is tagged as the operator (or more than one is): the operator would hear nothing.
+    contactChats.set("c_bob", BOB_CHAT);
+    const job = dbCreateCronJob({
+      name: "Backup do Bob, sem chat do operador",
+      schedule: { type: "every", every: 60_000 },
+      message: "",
+      executionType: "shell",
+      shellCommand: "true",
+      ownerPrincipal: "contact:c_bob",
+    });
+    await new CronRunner().triggerJob(job.id);
+    await waitUntil(() => publishCalls.length === 1);
+
+    expect(dbGetCronJob(job.id)?.enabled).toBe(false);
+    expect(directAttempts).toHaveLength(0);
+    expect(publishCalls[0]!.payload.prompt).toContain("Shell cron disabled (CRON_SHELL_NOT_OPERATOR)");
+    expect(publishCalls[0]!.payload._jobId).toBe(job.id);
+  });
+
+  it("falls back to the main session when the message to the operator fails, though the owner has a chat", async () => {
+    operatorChat = OPERATOR_CHAT;
+    contactChats.set("c_bob", BOB_CHAT);
+    directDeliveryFails = true;
+    const job = dbCreateCronJob({
+      name: "Backup do Bob, entrega falha",
+      schedule: { type: "every", every: 60_000 },
+      message: "",
+      executionType: "shell",
+      shellCommand: "true",
+      ownerPrincipal: "contact:c_bob",
+    });
+    await new CronRunner().triggerJob(job.id);
+    await waitUntil(() => publishCalls.length === 1);
+
+    expect(dbGetCronJob(job.id)?.enabled).toBe(false);
+    expect(directMessages).toHaveLength(0);
+    // Only the operator was tried; the contact was never messaged.
+    expect(directAttempts.map((target) => target.contactId)).toEqual(["c_operator"]);
+    expect(publishCalls[0]!.payload.prompt).toContain("Shell cron disabled (CRON_SHELL_NOT_OPERATOR)");
   });
 
   it("tells the operator when nobody owns the shell job, and falls back to the main session if that fails", async () => {

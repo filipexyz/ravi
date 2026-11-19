@@ -88,6 +88,8 @@ let operatorChat: OwnerDirectTarget | null = null;
 const contactChats = new Map<string, OwnerDirectTarget>();
 let directDeliveryFails = false;
 const directMessages: Array<{ target: OwnerDirectTarget; text: string }> = [];
+// Every chat a direct message was tried on, including the ones that failed.
+const directAttempts: OwnerDirectTarget[] = [];
 
 const actualNatsModule = await import("../../nats.js");
 const actualSessionStreamModule = await import("../../omni/session-stream.js");
@@ -114,6 +116,7 @@ mock.module("../../cloud-agents/chat-target.js", () => ({
   ...actualChatTargetModule,
   deliverToChat: mock(async (target: OwnerDirectTarget, message: { text: string }, timeoutMs?: number) => {
     if (!directChatsArmed()) return actualDeliverToChat(target, message, timeoutMs);
+    directAttempts.push(target);
     if (directDeliveryFails) throw new Error("gateway offline");
     directMessages.push({ target, text: message.text });
     return { messageId: "m1", deliveries: [] };
@@ -199,6 +202,7 @@ beforeEach(async () => {
   contactChats.clear();
   directDeliveryFails = false;
   directMessages.length = 0;
+  directAttempts.length = 0;
 });
 
 afterEach(async () => {
@@ -423,7 +427,7 @@ describe("shell trigger refusal notice", () => {
     expect(promptsAbout("TRIGGER_SHELL_NOT_OPERATOR")).toHaveLength(0);
   });
 
-  it("tells a contact who owns it, and the operator, once each", async () => {
+  it("tells the operator alone, never the contact that owns it, and without the owner's id", async () => {
     operatorChat = OPERATOR_CHAT;
     contactChats.set("c_ana", ANA_CHAT);
     const topic = "ravi.test.notice-contact";
@@ -431,12 +435,58 @@ describe("shell trigger refusal notice", () => {
     await startRunner();
 
     emit(topic, { eventId: "evt-1" });
-    await waitFor(() => directMessages.length === 2);
+    await waitFor(() => directMessages.length === 1);
     emit(topic, { eventId: "evt-2" });
     await sleep(300);
 
-    expect(directMessages.map(({ target }) => target.contactId)).toEqual(["c_ana", "c_operator"]);
+    // The contact cannot act on it (only the operator can recreate a shell), and a message to
+    // them would travel over whatever instance Ravi last saw them on: nothing is sent.
+    expect(directAttempts.map((target) => target.contactId)).toEqual(["c_operator"]);
+    expect(directMessages.map(({ target }) => target.contactId)).toEqual(["c_operator"]);
+    const { text } = directMessages[0]!;
+    expect(text).toContain("TRIGGER_SHELL_NOT_OPERATOR");
+    expect(text).not.toContain("contact:");
+    expect(text).not.toContain("c_ana");
     expect(promptsAbout("TRIGGER_SHELL_NOT_OPERATOR")).toHaveLength(0);
+  });
+
+  it("falls back to the main session's prompt when the operator's chat does not resolve, though the owner has one", async () => {
+    // No contact is tagged as the operator (or more than one is): the operator would hear nothing.
+    contactChats.set("c_ana", ANA_CHAT);
+    const topic = "ravi.test.notice-no-operator-chat";
+    const trigger = createShellTrigger({ name: "no-operator-chat", topic, ownerPrincipal: "contact:c_ana" });
+    await startRunner();
+
+    emit(topic, { eventId: "evt-1" });
+    await waitFor(() => promptsAbout("TRIGGER_SHELL_NOT_OPERATOR").length === 1);
+    emit(topic, { eventId: "evt-2" });
+    await sleep(300);
+
+    expect(dbGetTrigger(trigger.id)?.enabled).toBe(false);
+    expect(directAttempts).toHaveLength(0);
+    const notices = promptsAbout("TRIGGER_SHELL_NOT_OPERATOR");
+    expect(notices).toHaveLength(1);
+    expect(String(notices[0]!.payload.prompt)).toContain("Shell trigger disabled (TRIGGER_SHELL_NOT_OPERATOR)");
+  });
+
+  it("falls back to the main session's prompt when the message to the operator fails, though the owner has a chat", async () => {
+    operatorChat = OPERATOR_CHAT;
+    contactChats.set("c_ana", ANA_CHAT);
+    directDeliveryFails = true;
+    const topic = "ravi.test.notice-operator-delivery-fails";
+    const trigger = createShellTrigger({ name: "operator-delivery-fails", topic, ownerPrincipal: "contact:c_ana" });
+    await startRunner();
+
+    emit(topic, { eventId: "evt-1" });
+    await waitFor(() => promptsAbout("TRIGGER_SHELL_NOT_OPERATOR").length === 1);
+    emit(topic, { eventId: "evt-2" });
+    await sleep(300);
+
+    expect(dbGetTrigger(trigger.id)?.enabled).toBe(false);
+    expect(directMessages).toHaveLength(0);
+    // Only the operator was tried; the contact was never messaged.
+    expect(directAttempts.map((target) => target.contactId)).toEqual(["c_operator"]);
+    expect(promptsAbout("TRIGGER_SHELL_NOT_OPERATOR")).toHaveLength(1);
   });
 
   it("tells the owner who acts as the operator about a refused env file, without the file's content", async () => {
