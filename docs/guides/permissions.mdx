@@ -111,6 +111,32 @@ The turn's authority depends on who sent the message:
 With a `full-access` agent, anyone who reaches it and resolves to a contact can drive it with admin rights, unless the chat is governed. Contact tags do not restrict anyone. Keep strangers out with entry policies (`pairing` DMs, `allowlist` groups, explicit routes; see [Instances and routing](/guides/routing)), and govern group chats that include other people.
 </Warning>
 
+## Apps that call apps
+
+A Ravi App runs with a child context that carries only what its manifest asks for in `context.allow` and its caller already holds. When an app needs another app, it says so in the manifest, and the authority only narrows down the chain: the provider holds no more than the app that called it, and that app holds no more than whoever invoked it.
+
+```json
+{ "id": "md-render",
+  "provides": { "md-render/html": { "version": "1.0.0", "operations": ["md-render.html"] } } }
+```
+
+```json
+{ "id": "blog",
+  "requires": { "md-render/html": "^1" },
+  "context": { "allow": ["execute:group:pages"] } }
+```
+
+- `provides` lists the operations other apps may call, under a key `<app-id>/<service>` and an exact version. `requires` names a service and a version range such as `^1`.
+- **The consumer declares what it delegates.** Its own `context.allow` has to cover every entry the provider declares in the provider's `context.allow` (explicit entries, no wildcards). Nothing is added for it: a provider that starts asking for more fails closed with `insufficient_authority`, with the entries missing, until the consumer's manifest declares them. `ravi <app-id> check --json` shows the same gap as a warning before anything runs.
+- The consumer also gets `use app:<provider>` and the `apps run` access its invoker holds, without declaring them. An invoker that holds only the legacy `execute:group:apps` group gets no composed consumer, because that group also opens `apps delete`, `apps scaffold` and `apps import-cli`.
+- If a provider is missing, outside the version range, or does not offer the service, the consumer is refused with `APP_DEPENDENCY_UNAVAILABLE` before any process starts. When the provider comes back, the consumer runs again with no change.
+- An app may call only the operations a service lists, and only for a service it declared in `requires`: anything else is `APP_OPERATION_NOT_PROVIDED`. That includes a credential the app derived for itself, and a caller whose lineage cannot be followed. A person or an agent calling the provider directly is still decided by `use app:<provider>` and `execute app:<provider>`: `provides` is what apps may call of each other, not a second permission for people who already hold the app.
+- The audit shows the chain turn, then `app:<consumer>`, then `app:<provider>`. A composed app's credential is revoked, with the credentials it handed down, when its process ends.
+
+<Note>
+App composition is not in `@latest` (3.260927.5). Composition mediates what a context may ask of Ravi; it is not OS-level isolation, because a consumer and its provider run as the same user.
+</Note>
+
 ## Admin tags on contacts
 
 Three contact tags grant `admin:system:*`: `permission-admin`, `permission-owner` and `permission-superadmin`. They count only while the contact's status is `allowed` and the contact has not opted out.

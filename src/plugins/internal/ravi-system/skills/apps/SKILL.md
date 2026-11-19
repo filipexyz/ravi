@@ -239,6 +239,63 @@ Ao importar um grupo `ravi <group>`, o importer pode inferir
 `execute:group:<group>`, mas essa lista continua sendo um teto solicitado e
 deve ser revisada.
 
+## Composicao De Apps
+
+Um app pode oferecer um servico a outros apps (`provides`) e declarar os
+servicos de que precisa (`requires`). E um contrato do manifesto, mediado pelo
+App Router. Nao existe protocolo entre apps: o consumidor chama o provedor pelo
+CLI publico, `ravi <provedor> <operacao>`, com a chave do proprio contexto-filho.
+
+```json
+{ "id": "md-render",
+  "provides": { "md-render/html": { "version": "1.0.0", "operations": ["md-render.html"] } } }
+```
+
+```json
+{ "id": "blog",
+  "requires": { "md-render/html": "^1" } }
+```
+
+- A chave do servico e `<app-id>/<servico>` e comeca pelo id de quem oferece.
+  `provides` guarda uma versao exata `x.y.z` e as operacoes oferecidas: so elas
+  podem ser chamadas por outros apps. `requires` guarda uma faixa simples
+  (`^1`, `~1.2`, `1.4.0`, `>=1.2.0 <2`); texto que nao e faixa e erro de
+  validacao.
+- Quem requer declara, no proprio `context.allow`, tudo o que o provedor
+  declara no dele (entradas explicitas, sem curinga). O contexto do provedor
+  nasce do contexto do consumidor, entao a autoridade so estreita: provedor
+  dentro do consumidor, consumidor dentro de quem invocou. O consumidor recebe
+  `use app:<provedor>` e o acesso a `apps run` do invocador sem declarar.
+  Invocador que so tem o grupo legado `execute:group:apps` nao leva consumidor
+  composto.
+- Antes de subir qualquer processo, o router recusa o app cujo provedor nao
+  serve: `APP_DEPENDENCY_UNAVAILABLE`, com o motivo `not_installed`, `invalid`,
+  `not_provided`, `version_mismatch` ou `insufficient_authority` (o provedor
+  pede mais do que o consumidor declara; a lista do que falta vem junto).
+  Quando o provedor volta, o app roda de novo sem mudar. `ravi <app-id> check
+  --json` mostra o mesmo motivo como aviso.
+- App que chama uma operacao fora de `provides`, ou de um servico que nao
+  declarou em `requires`, recebe `APP_OPERATION_NOT_PROVIDED`. Vale tambem para
+  credencial que o app derivou para si e para linhagem que nao se consegue
+  seguir ate a raiz. Quem chama direto (turno, agente, operador) continua
+  valendo por `use app:<id>`: `provides` e o que os apps podem chamar uns dos
+  outros, nao uma segunda permissao para quem ja tem o app.
+- Ciclo de `requires` e erro de validacao (`requires cycle: a -> b -> a.`).
+  Provedor que nao esta instalado ainda nao invalida o consumidor: vira aviso,
+  e quem barra e a execucao.
+- A credencial de um app que oferece ou precisa de servico e revogada, com as
+  descendentes, quando o processo termina. App que nao participa de composicao
+  mantem a credencial ate o TTL, como antes.
+- O audit ve a linhagem turno -> `app:<consumidor>` -> `app:<provedor>`, e o
+  contexto do provedor registra o servico e o consumidor em
+  `metadata.composition`.
+
+Ao mudar um provedor: suba a versao maior quando uma operacao oferecida muda de
+um jeito que um chamador perceberia, e saiba que pedir mais em `context.allow`
+quebra os consumidores ate eles declararem. Ao adotar `provides` num app que ja
+e chamado por outros, avise-os antes: passam a ser recusados ate declarar
+`requires`.
+
 ## Regras
 
 - Nao invente comandos. Use apenas operations declaradas.
@@ -252,6 +309,7 @@ deve ser revisada.
 - Nao raspe stdout quando houver JSON.
 - Nao execute health checks durante discovery.
 - Nao use manifesto como grant de permissao.
+- App que precisa de outro app declara `requires` e cobre, no proprio `context.allow`, o que o provedor declara no dele; sem `requires`, nao chame `ravi <outro-app>` de dentro de um app.
 - Mutacoes precisam de permissao declarada e autorizacao runtime real. Se uma
   app bloquear por permissão recorrente, prefira `ravi permissions resolve
   <denial-id>` ou `ravi permissions allow <profile> --to <subject> --agent
