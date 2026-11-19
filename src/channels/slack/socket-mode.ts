@@ -2068,8 +2068,9 @@ export class SlackSocketModeService {
 
     if (staleSubscription && staleSubscription.sessionKey !== resolved.sessionKey) {
       // The decision only lets the route win when the chat can be attached to
-      // its session (instance isolation), so the rebind below is not refused
-      // after this release.
+      // the session the commit lands in (the forced session, or the route's own
+      // key while the forced name does not exist yet), so the rebind below is
+      // not refused after this release.
       detachChatFromSession(staleSubscription.sessionKey, canonicalChat.id);
     }
     syncSlackSessionSubscription(resolved.sessionKey, canonicalChat.id);

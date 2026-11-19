@@ -1652,9 +1652,10 @@ export class OmniConsumer {
     // See .ravi/specs/sessions/attach/SPEC.md
     try {
       // The route's forced session beat an automatic subscription: release it
-      // so the chat is rebound to the session the route landed in. The decision
+      // so the chat is rebound to the session the commit landed in. The decision
       // only lets the route win when the chat can be attached to that session
-      // (instance isolation), so the attach below is not refused after this release.
+      // (the forced session, or the route's own key while the forced name does
+      // not exist yet), so the attach below is not refused after this release.
       if (staleSubscription && staleSubscription.sessionKey !== resolved.sessionKey) {
         detachChatFromSession(staleSubscription.sessionKey, canonicalChat.id);
       }

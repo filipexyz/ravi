@@ -57,10 +57,12 @@ from `src/channels/subscription-precedence.ts`):
   and not retried.
 - An automatic subscription (`attachedByType: system`) loses to a route that
   forces a session. The chat is rebound to the route's session. The route
-  wins only when the chat can be attached there: a forced session on another
-  instance than the chat's is refused by attach, and releasing first would
-  leave the chat with no subscription, so the subscription keeps the chat and
-  the route's forced session is dropped for it.
+  wins only when the chat can be attached to the session the commit lands in:
+  the forced session, or the route's own key while the forced name does not
+  exist yet (the commit then renames that session). A landing session on
+  another instance than the chat's is refused by attach, and releasing first
+  would leave the chat with no subscription, so the subscription keeps the
+  chat and the route's forced session is dropped for it.
 - An explicit attach (`user` or `agent`) keeps the chat on the attached
   session and agent; the route's forced session is ignored for that chat.
   The match handed to the commit MUST NOT force a session other than the

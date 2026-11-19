@@ -10,9 +10,11 @@
  * ("Routes and attachments solve different problems").
  *
  * - An automatic subscription (`attachedByType: system`) loses to a route that
- *   forces another session, provided the chat can be attached to that session.
- *   The caller commits the route, then releases the subscription and the chat
- *   is rebound to the session the route landed in. A forced session on another
+ *   forces another session, provided the chat can be attached to the session
+ *   the commit lands in: the forced session, or the route's own key while the
+ *   forced name does not exist yet (the commit then renames that session). The
+ *   caller commits the route, then releases the subscription and the chat is
+ *   rebound to the session the route landed in. A landing session on another
  *   instance than the chat's would refuse that attach (instance isolation), and
  *   releasing first would leave the chat with no subscription: there the
  *   subscription keeps the chat and the forced session is dropped.
@@ -27,6 +29,7 @@
  *   is the session the route names.
  */
 
+import { previewCommittedSessionKey } from "../router/resolver.js";
 import { isExplicitSessionAttach } from "../router/route-sticky-attach.js";
 import type { AttachedByType } from "../router/router-db.js";
 import { getSessionByName, isChatCompatibleWithSession } from "../router/sessions.js";
@@ -54,7 +57,7 @@ export interface SubscriptionPrecedenceInput {
   /** The agent that owns the subscription's session. */
   ownerAgentId: string;
   ownerAgent: AgentConfig;
-  /** The canonical chat of the inbound: the route's session must be one it can be attached to. */
+  /** The canonical chat of the inbound: the session the commit lands in must be one it can be attached to. */
   chatId: string;
   /** The thread the inbound belongs to, when it is a thread reply. */
   threadId?: string;
@@ -72,9 +75,16 @@ export function resolveSubscriptionPrecedence(input: SubscriptionPrecedenceInput
   const subscriptionIsForcedSession = routeSession?.sessionKey === subscription.sessionKey;
   // A thread has no forced session of its own: the commit forks it under the route's session.
   const forcedSessionName = threadId ? undefined : routeSessionName;
-  // The route's session takes the chat only where attach allows it. A session on
-  // another instance is refused after the release, which would strand the chat.
-  const chatFitsRouteSession = !routeSession || isChatCompatibleWithSession(input.chatId, routeSession.sessionKey);
+  // The route takes the chat only where attach allows it, and the commit does
+  // not always land in the forced session: while the forced name does not exist
+  // yet it renames the route's own key, which a DM's key (no account in it) can
+  // share with another instance. So check the session the commit will land in.
+  // A session on another instance is refused after the release, which would
+  // strand the chat.
+  const chatFitsRouteSession =
+    !forcedSessionName ||
+    !matched ||
+    isChatCompatibleWithSession(input.chatId, previewCommittedSessionKey(matched, { threadId }));
 
   if (
     forcedSessionName &&

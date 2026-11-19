@@ -16,7 +16,15 @@ import { resolveSubscriptionPrecedence, type SubscriptionPrecedence } from "./su
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { commitMatchedRoute, matchRoute, RouteSessionAgentConflictError } from "../router/resolver.js";
 import { dbUpsertChat, type AttachedByType } from "../router/router-db.js";
-import { attachChatToSession, getOrCreateSession, getSession, getSessionByName } from "../router/sessions.js";
+import {
+  attachChatToSession,
+  detachChatFromSession,
+  findSessionByAttachedChat,
+  getOrCreateSession,
+  getSession,
+  getSessionByName,
+  isChatCompatibleWithSession,
+} from "../router/sessions.js";
 import type { MatchedRoute, RouteConfig, RouterConfig } from "../router/types.js";
 
 let stateDir: string | null = null;
@@ -109,6 +117,33 @@ function inbound(
     ...(threadId ? { threadId } : {}),
   });
   return { precedence, resolved };
+}
+
+// What both inbound paths do after the commit: release the stale subscription
+// when the route won, then attach the chat to the session the commit landed in.
+// The attach is refused for a session on another instance and the inbound path
+// only logs that, so where the chat ends up attached is part of the decision.
+function rebind(
+  chatId: string,
+  precedence: SubscriptionPrecedence | null,
+  subscriptionKey: string,
+  landedKey: string,
+): void {
+  try {
+    if (precedence?.kind === "route-wins" && subscriptionKey !== landedKey) {
+      detachChatFromSession(subscriptionKey, chatId);
+    }
+    attachChatToSession({
+      sessionKey: landedKey,
+      chatId,
+      role: "primary",
+      attachedByType: "system",
+      attachedReason: "test",
+      setOutputTarget: true,
+    });
+  } catch {
+    // A refused attach is logged and the inbound carries on.
+  }
 }
 
 describe("subscription x route precedence", () => {
@@ -343,6 +378,42 @@ describe("subscription x route precedence", () => {
     expect(resolved.sessionKey).toBe(MAIN_KEY);
     expect(getSession("agent:main:far-room")?.name).toBe("far-room");
   });
+
+  // While the forced name does not exist yet, commitMatchedRoute does not create
+  // a session: it renames the route's own key. A DM's key carries no account
+  // (dmScope main and per-peer), so that key can be a session created for another
+  // instance of the chat's channel, and attach refuses it after the release.
+  for (const [dmScope, agentId] of [
+    ["main", "specialist"],
+    ["per-peer", "main"],
+  ] as const) {
+    it(`keeps an automatic subscription when the forced name is new and the route's own ${dmScope} key belongs to another instance`, () => {
+      const chatId = seedChat();
+      const subscriptionKey = `agent:${agentId}:legacy-room`;
+      getOrCreateSession(subscriptionKey, agentId, `/tmp/${agentId}`, {
+        name: "legacy-room",
+        channel: "whatsapp",
+        accountId: "acc",
+      });
+      attach(chatId, subscriptionKey, "system");
+      const config = configWith(routeFor({ agent: agentId, session: "fresh-room", dmScope }));
+      const routeKey = match(config).sessionKey;
+      getOrCreateSession(routeKey, agentId, `/tmp/${agentId}`, { channel: "whatsapp", accountId: "other-account" });
+      expect(routeKey).not.toBe(subscriptionKey);
+      expect(isChatCompatibleWithSession(chatId, routeKey)).toBe(false);
+      expect(getSessionByName("fresh-room")).toBeNull();
+
+      const { precedence, resolved } = inbound(config, { sessionKey: subscriptionKey, attachedByType: "system" });
+      rebind(chatId, precedence, subscriptionKey, resolved.sessionKey);
+
+      expect(precedence?.kind).toBe("subscription-wins");
+      // The commit lands in the subscription's session, so nothing is renamed...
+      expect(resolved.sessionKey).toBe(subscriptionKey);
+      expect(getSessionByName("fresh-room")).toBeNull();
+      // ...and the chat is still attached.
+      expect(findSessionByAttachedChat(chatId)?.sessionKey).toBe(subscriptionKey);
+    });
+  }
 
   it("still lets a route's forced session on the chat's own instance beat an automatic subscription", () => {
     const chatId = seedChat();

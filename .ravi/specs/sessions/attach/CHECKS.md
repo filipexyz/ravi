@@ -48,11 +48,13 @@
   session with a match that no longer forces a session, and that session
   MUST keep its name. A chat with an automatic subscription MUST be committed
   on the route's session, and the stale subscription MUST be released, unless
-  the route's session lives on another instance than the chat: then the route
-  MUST NOT win, the chat MUST be committed on the subscription's session with
-  no forced session, and the subscription MUST stay, so the chat is never
-  left unattached by a refused rebind. Both inbound paths MUST take this
-  decision from `src/channels/subscription-precedence.ts`.
+  the session the commit would land in (the forced session, or the route's own
+  key while the forced name does not exist yet) lives on another instance
+  than the chat: then the route MUST NOT win, the chat MUST be committed on
+  the subscription's session with no forced session, and the subscription
+  MUST stay, so the chat is never left unattached by a refused rebind. Both
+  inbound paths MUST take this decision from
+  `src/channels/subscription-precedence.ts`.
 - A thread reply MUST NOT be pulled to the route's forced session away from
   the subscription, including a DM whose session key does not carry the
   thread and agrees with the attach. When the subscription is the forced
