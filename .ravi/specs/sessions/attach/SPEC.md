@@ -47,17 +47,33 @@ Routes and attachments solve different problems:
 - a route selects the agent/session that receives inbound traffic;
 - an attachment records that the chat participates in that session.
 
-When an active subscription and the matched route disagree on a native
-channel inbound:
+When an active subscription and the matched route disagree on an inbound
+(the native Slack service and the Omni consumer alike; both take the decision
+from `src/channels/subscription-precedence.ts`):
 
 - Routing MUST NOT pair one agent with another agent's session. A route that
   forces a session owned by a different agent than the resolved agent is a
   terminal routing error: logged with the agent and session keys, settled,
   and not retried.
 - An automatic subscription (`attachedByType: system`) loses to a route that
-  forces a session. The chat is rebound to the route's session.
+  forces a session. The chat is rebound to the route's session. The route
+  wins only when the chat can be attached to the session the commit lands in:
+  the forced session, or the route's own key while the forced name does not
+  exist yet (the commit then renames that session). A landing session on
+  another instance than the chat's is refused by attach, and releasing first
+  would leave the chat with no subscription, so the subscription keeps the
+  chat and the route's forced session is dropped for it.
 - An explicit attach (`user` or `agent`) keeps the chat on the attached
   session and agent; the route's forced session is ignored for that chat.
+  The match handed to the commit MUST NOT force a session other than the
+  attached one: the commit renames the session it lands in to the route's
+  forced name, so a forced name left on a rerouted match renames the attached
+  session (and a forced session that already exists redirects the chat away
+  from it).
+- A thread reply follows the subscription too: the route's forced session
+  never pulls it away, even when a DM's session key does not carry the thread
+  and agrees with the attach. When the subscription is the forced session
+  itself, the thread is forked under it.
 - `instances routes add`, `routes set <pattern> agent|session` and
   `instances pending approve` MUST release automatic subscriptions of the
   chats the pattern matches, including Slack channels matched by
