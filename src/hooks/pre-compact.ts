@@ -11,6 +11,7 @@ import { existsSync, readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync
 import { join, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { filterAgentRuntimeBaseEnv } from "../runtime/agent-env-policy.js";
 import { logger } from "../utils/logger.js";
 import { parseTranscript, formatTranscript } from "./transcript-parser.js";
 
@@ -52,6 +53,8 @@ export interface PreCompactHookOptions {
   memoryModel?: string;
   /** Include tool calls in transcript (default: false) */
   includeTools?: boolean;
+  /** Claude Code executable to spawn (default: the SDK's own resolution). Tests point it at a fake. */
+  pathToClaudeCodeExecutable?: string;
 }
 
 /**
@@ -292,6 +295,12 @@ Preste atenção especial a:
           options: {
             model: modelToUse,
             cwd: agentCwd,
+            // Without `env` the SDK spawns Claude Code with the whole daemon env.
+            // Same boundary as a Claude turn (see runtime/agent-env-policy.ts).
+            env: filterAgentRuntimeBaseEnv(process.env, { runtimeProviderId: "claude" }),
+            ...(options.pathToClaudeCodeExecutable
+              ? { pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable }
+              : {}),
             permissionMode: "bypassPermissions",
             allowDangerouslySkipPermissions: true,
             allowedTools: ["Read", "Edit", "Write"],
