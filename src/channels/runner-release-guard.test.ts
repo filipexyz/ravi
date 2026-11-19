@@ -12,9 +12,11 @@ import {
 } from "./outbound-publish-outbox.js";
 import {
   RUNNER_RELEASE_DRIFT_EXIT_CODE,
+  RUNNER_RELEASE_DRIFT_FORCE_EXIT_MS,
   RUNNER_RELEASE_REFUSAL_THRESHOLD,
   RunnerReleaseGuard,
   type RunnerReleaseRelaunch,
+  drainAndExitForRelaunch,
   readInstalledRunnerVersion,
 } from "./runner-release-guard.js";
 
@@ -244,5 +246,57 @@ describe("a runner left on the previous release after the daemon prepared state 
       await reconciler.stop().catch(() => undefined);
     }
     expect(passes).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("drainAndExitForRelaunch", () => {
+  function harness(stop: () => Promise<void>) {
+    const exits: number[] = [];
+    const timers: Array<{ callback: () => void; ms: number; unref: boolean }> = [];
+    const failures: unknown[] = [];
+    const run = drainAndExitForRelaunch({
+      stop,
+      exit: (code) => exits.push(code),
+      onDrainFailure: (error) => failures.push(error),
+      setTimer: (callback, ms) => {
+        const timer = { callback, ms, unref: false };
+        timers.push(timer);
+        return {
+          unref() {
+            timer.unref = true;
+          },
+        };
+      },
+    });
+    return { exits, timers, failures, run };
+  }
+
+  it("exits with the drift status once the runner has stopped, and arms an unref'd forced exit first", async () => {
+    const { exits, timers, run } = harness(async () => {});
+    await run;
+    expect(exits).toEqual([RUNNER_RELEASE_DRIFT_EXIT_CODE]);
+    expect(timers).toHaveLength(1);
+    expect(timers[0]).toMatchObject({ ms: RUNNER_RELEASE_DRIFT_FORCE_EXIT_MS, unref: true });
+  });
+
+  it("still exits when the drain is not proven, which is what a refused runner always reports", async () => {
+    const refusalDrain = new Error(
+      "WORK_DRAIN_UNPROVEN: channels.outbound-publish: outbound-publication-reconciliation",
+    );
+    const { exits, failures, run } = harness(async () => {
+      throw refusalDrain;
+    });
+    await run;
+    expect(failures).toEqual([refusalDrain]);
+    expect(exits).toEqual([RUNNER_RELEASE_DRIFT_EXIT_CODE]);
+  });
+
+  it("exits through the forced timer when the drain never finishes", async () => {
+    const { exits, timers, run } = harness(() => new Promise<void>(() => {}));
+    void run;
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(exits).toEqual([]);
+    timers[0].callback();
+    expect(exits).toEqual([RUNNER_RELEASE_DRIFT_EXIT_CODE]);
   });
 });

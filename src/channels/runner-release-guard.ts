@@ -79,3 +79,35 @@ export class RunnerReleaseGuard {
     return relaunch;
   }
 }
+
+export interface RelaunchExitOptions {
+  /** Stops every component (the runner's `stop`). It rejects when the drain cannot be proven. */
+  stop: () => Promise<void>;
+  exit: (code: number) => void;
+  /** The drain failed or was not proven; the exit still happens. */
+  onDrainFailure?: (error: unknown) => void;
+  forceAfterMs?: number;
+  /** Replaced in tests; the real timer is unref'd so it never keeps a process alive by itself. */
+  setTimer?: (callback: () => void, ms: number) => { unref(): unknown };
+}
+
+/**
+ * Leaves the process so its supervisor starts the installed bundle. A relaunch must
+ * not depend on the drain: PM2 only restarts a process that exits, and the refusals
+ * that caused it make the drain proof reject by design (`WORK_DRAIN_UNPROVEN`), even
+ * though `stop` has already stopped every component by then. The exit is therefore
+ * unconditional, with a forced one after a bounded wait for a drain that never ends.
+ */
+export async function drainAndExitForRelaunch(options: RelaunchExitOptions): Promise<void> {
+  const setTimer = options.setTimer ?? ((callback, ms) => setTimeout(callback, ms));
+  setTimer(
+    () => options.exit(RUNNER_RELEASE_DRIFT_EXIT_CODE),
+    options.forceAfterMs ?? RUNNER_RELEASE_DRIFT_FORCE_EXIT_MS,
+  ).unref();
+  try {
+    await options.stop();
+  } catch (error) {
+    options.onDrainFailure?.(error);
+  }
+  options.exit(RUNNER_RELEASE_DRIFT_EXIT_CODE);
+}

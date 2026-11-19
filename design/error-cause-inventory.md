@@ -319,13 +319,13 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels | src/channels/presence-consumer.ts | 182 | fixed | binding retained / no recognized error surface | src/channels/presence-consumer.ts:8b1ced9b3b5d40a13733b90e |
 | channels | src/channels/runner-liveness.ts | 86 | triaged-follow-up | catch-without-binding | src/channels/runner-liveness.ts:ca3df7cbd902e6aa4543a58e |
 | channels | src/channels/runner-liveness.ts | 118 | fixed | binding retained / no recognized error surface | src/channels/runner-liveness.ts:61963fd94cf3451299058c9c |
-| channels | src/channels/runner.ts | 274 | fixed | binding retained / no recognized error surface | src/channels/runner.ts:45f4d2331926639ea0c7f89c |
-| channels | src/channels/runner.ts | 312 | fixed | binding retained / no recognized error surface | src/channels/runner.ts:3c7e290e826e490b3cc0f746 |
-| channels | src/channels/runner.ts | 382 | fixed | binding retained / no recognized error surface | src/channels/runner.ts:a8803d0bf1faffcc734fc7f8 |
-| channels | src/channels/runner.ts | 415 | fixed | binding retained / no recognized error surface | src/channels/runner.ts:789dd2c4d62c066065c40602 |
-| channels | src/channels/runner.ts | 471 | fixed | binding retained / no recognized error surface | src/channels/runner.ts:a8482ffb742c1b41fb48e053 |
-| channels | src/channels/runner.ts | 481 | fixed | binding retained / no recognized error surface | src/channels/runner.ts:94dfc571037e43fc4d8717d6 |
-| channels | src/channels/runner.ts | 550 | fixed | binding retained / no recognized error surface | src/channels/runner.ts:5289122226eeae92efc07a95 |
+| channels | src/channels/runner-release-guard.ts | 109 | fixed | binding retained / no recognized error surface | src/channels/runner-release-guard.ts:94f90985b005a8c0a2aaa7e4 |
+| channels | src/channels/runner.ts | 275 | fixed | binding retained / no recognized error surface | src/channels/runner.ts:45f4d2331926639ea0c7f89c |
+| channels | src/channels/runner.ts | 313 | fixed | binding retained / no recognized error surface | src/channels/runner.ts:3c7e290e826e490b3cc0f746 |
+| channels | src/channels/runner.ts | 383 | fixed | binding retained / no recognized error surface | src/channels/runner.ts:a8803d0bf1faffcc734fc7f8 |
+| channels | src/channels/runner.ts | 416 | fixed | binding retained / no recognized error surface | src/channels/runner.ts:789dd2c4d62c066065c40602 |
+| channels | src/channels/runner.ts | 472 | fixed | binding retained / no recognized error surface | src/channels/runner.ts:a8482ffb742c1b41fb48e053 |
+| channels | src/channels/runner.ts | 482 | fixed | binding retained / no recognized error surface | src/channels/runner.ts:94dfc571037e43fc4d8717d6 |
 | channels | src/channels/runtime-events.ts | 716 | triaged-follow-up | catch-without-binding | src/channels/runtime-events.ts:48b6dfd56bce2ededcdcc137 |
 | channels | src/channels/runtime-events.ts | 723 | triaged-follow-up | catch-without-binding | src/channels/runtime-events.ts:d9de24636574af91dd475ee6 |
 | channels | src/channels/runtime-events.ts | 825 | fixed | binding retained / no recognized error surface | src/channels/runtime-events.ts:b285a7fb8a71edd03221a505 |
@@ -440,10 +440,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels | src/channels/terminal-projection-recovery.ts | 169 | fixed | binding retained / no recognized error surface | src/channels/terminal-projection-recovery.ts:b16c531362ec7ba4323b45f4 |
 | channels | src/channels/terminal-projection-recovery.ts | 200 | fixed | binding retained / no recognized error surface | src/channels/terminal-projection-recovery.ts:545c0a622bfd6a2bb7c8fbcc |
 | channels | src/channels/terminal-projection-recovery.ts | 368 | fixed | binding retained / no recognized error surface | src/channels/terminal-projection-recovery.ts:cec37543b58b49807dd44f1f |
-| ci | src/ci/quality-gate.ts | 450 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:35e920db0e1dc5d202263c0b |
-| ci | src/ci/quality-gate.ts | 461 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:3ca26f959f0fbb07f2541ae7 |
-| ci | src/ci/quality-gate.ts | 471 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:51a5a6018c77cc4a8a8aac22 |
-| ci | src/ci/quality-gate.ts | 480 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:4ef5158409736ec9a3bee50a |
+| ci | src/ci/quality-gate.ts | 452 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:35e920db0e1dc5d202263c0b |
+| ci | src/ci/quality-gate.ts | 463 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:3ca26f959f0fbb07f2541ae7 |
+| ci | src/ci/quality-gate.ts | 473 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:51a5a6018c77cc4a8a8aac22 |
+| ci | src/ci/quality-gate.ts | 482 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:4ef5158409736ec9a3bee50a |
 | ci | src/ci/run-quality-gate.ts | 37 | triaged-follow-up | catch-without-binding | src/ci/run-quality-gate.ts:5271b06f964c5c57249517e5 |
 | cli | src/cli/audit.ts | 55 | triaged-follow-up | rejection-without-binding | src/cli/audit.ts:66ccfbc7e8e1dda3b8608604 |
 | cli | src/cli/audit.ts | 58 | triaged-follow-up | rejection-without-binding | src/cli/audit.ts:66ccfbc7e8e1dda3b8608604 |

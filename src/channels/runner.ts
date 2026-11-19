@@ -52,9 +52,10 @@ import {
 import { ChannelPresenceConsumer } from "./presence-consumer.js";
 import {
   RUNNER_RELEASE_DRIFT_EXIT_CODE,
-  RUNNER_RELEASE_DRIFT_FORCE_EXIT_MS,
   RunnerReleaseGuard,
+  type RunnerReleaseGuardOptions,
   type RunnerReleaseRelaunch,
+  drainAndExitForRelaunch,
 } from "./runner-release-guard.js";
 import {
   startChannelBackendEgressResponder,
@@ -119,8 +120,8 @@ export interface ChannelRunnerOptions {
   natsUrl?: string;
   consumeOutbound?: boolean;
   env?: NodeJS.ProcessEnv;
-  /** Replaces the guard that decides when a state-refused runner relaunches (tests). */
-  releaseGuard?: RunnerReleaseGuard;
+  /** Overrides what the guard that decides when a state-refused runner relaunches reads (tests). */
+  releaseGuard?: Omit<RunnerReleaseGuardOptions, "onRelaunch">;
   /**
    * The runner is on an older release than the state its daemon prepared, and the
    * installed bundle is the newer one. The process owner drains and exits so the
@@ -221,21 +222,21 @@ export class ChannelRunner {
     if (this.options.consumeOutbound !== false) {
       // The reconciler re-checks the prepared-state marker on every pass, so it is
       // where a runner left on an older release than its daemon first gets refused.
-      const releaseGuard =
-        this.options.releaseGuard ??
-        new RunnerReleaseGuard({
-          onRelaunch: (relaunch) => {
-            log.error(
-              "Channel runner is on an older release than the state its daemon prepared; relaunching onto the installed release",
-              {
-                runningVersion: relaunch.runningVersion,
-                installedVersion: relaunch.installedVersion,
-                refusals: relaunch.refusals,
-              },
-            );
-            this.options.onReleaseDrift?.(relaunch);
-          },
-        });
+      const releaseGuard = new RunnerReleaseGuard({
+        ...this.options.releaseGuard,
+        onRelaunch: (relaunch) => {
+          // `warn`, not `error`: the logger reads an `error` payload as a failure diagnostic and would drop these fields.
+          log.warn(
+            "Channel runner is on an older release than the state its daemon prepared; relaunching onto the installed release",
+            {
+              runningVersion: relaunch.runningVersion,
+              installedVersion: relaunch.installedVersion,
+              refusals: relaunch.refusals,
+            },
+          );
+          this.options.onReleaseDrift?.(relaunch);
+        },
+      });
       this.outboundPublishReconciler = new ChannelOutboundPublishReconciler({
         isRunning: () => this.running,
         onLoopSuccess: () => releaseGuard.recordSuccess(),
@@ -542,15 +543,12 @@ export async function runChannelRunnerFromEnv(): Promise<void> {
     stopping = true;
     log.info("Received channel runner shutdown signal", { signal });
     if (exitCode !== 0) {
-      // A relaunch must not depend on a drain: the supervisor only restarts a process that
-      // exits, and the refusals that caused it make the drain proof fail by design.
-      setTimeout(() => process.exit(exitCode), RUNNER_RELEASE_DRIFT_FORCE_EXIT_MS).unref();
-      try {
-        await runner.stop();
-      } catch (error) {
-        log.warn("Channel runner drain was not proven before relaunching", { error });
-      }
-      process.exit(exitCode);
+      await drainAndExitForRelaunch({
+        stop: () => runner.stop(),
+        exit: (code) => process.exit(code),
+        onDrainFailure: (error) => log.warn("Channel runner drain was not proven before relaunching", { error }),
+      });
+      return;
     }
     await runner.stop();
     process.exit(0);
