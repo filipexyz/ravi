@@ -266,13 +266,14 @@ CLI that run installed.
   planning, it MUST refuse with `UPDATE_IN_PROGRESS` while another process's
   supervisor holds the update lock (an update, or a rollback whose command was
   cut), pointing at `supervisor-result.json` and `supervisor.log`; that probe
-  records no refusal. Only then, when neither process runs under PM2 next to an
+  records no refusal and creates nothing where no update ever ran. Only then, when neither process runs under PM2 next to an
   unused snapshot (a rollback cut after its stop), the refusal MUST say so and
   give the commands that finish it by hand: the snapshot's restore and the
   previous release's install and start, or, once a restore ran, its
   `restore.json` and the install and start. Commands in a refusal or a failure
   MUST come one per line after where they are kept (`finish-by-hand.txt` next to
-  the snapshot, or `supervisor-result.json`): a message line past 2048
+  the snapshot, written by a run with `--execute` and never by the preview, or
+  `supervisor-result.json`): a message line past 2048
   characters reaches the operator as `[redacted:oversize]`. A result the
   supervisor cannot write MUST NOT turn a rollback that ran into a failure.
 - It takes no release selector, and `--execute` without `--rollback` is a

@@ -144,13 +144,17 @@ export type OperatorRollbackPlan = {
 /**
  * `ravi update --rollback`: back to the release before the last update, with its state as of that update's snapshot.
  * Only from the release that update installed (its target, proven by the daemon's boot receipt), from a global
- * install, with a snapshot that was not restored yet. Read only.
+ * install, with a snapshot that was not restored yet. It reads the state and PM2 and writes nothing, except that a
+ * run that executes (`keepCommands`) and finds a rollback cut short keeps the commands that finish it in
+ * `finish-by-hand.txt` next to the snapshot. The preview writes nothing.
  */
 export function planOperatorRollback(input: {
   stateDir: string;
   processes: Pm2Process[];
   /** How this Ravi was installed, for the commands when nothing runs (the daemon's install is unknown then). */
   installMethod?: GlobalInstallMethod | null;
+  /** Keep the commands of a rollback cut short in `finish-by-hand.txt` (an executing run; never the preview). */
+  keepCommands?: boolean;
 }): OperatorRollbackPlan {
   const manifest = latestUpdateSnapshot(input.stateDir);
   if (!manifest)
@@ -161,7 +165,9 @@ export function planOperatorRollback(input: {
   if (
     !input.processes.some((process) => process.name === PM2_PROCESS_NAME || process.name === CHANNELS_PM2_PROCESS_NAME)
   )
-    throw new UpdateRollbackUnavailableError(cutShort(input.stateDir, manifest, input.installMethod ?? null));
+    throw new UpdateRollbackUnavailableError(
+      cutShort(input.stateDir, manifest, input.installMethod ?? null, input.keepCommands === true),
+    );
   if (existsSync(join(updateSnapshotsDir(input.stateDir), manifest.id, "restore.json")))
     throw new UpdateRollbackUnavailableError(
       `the snapshot of ${manifest.createdAt} was already restored, or a restore of it was cut short (see its ` +
@@ -197,7 +203,12 @@ export function planOperatorRollback(input: {
 }
 
 /** What to tell when neither process runs: the state may be the target's, half restored, or restored. */
-function cutShort(stateDir: string, manifest: UpdateSnapshotManifest, method: GlobalInstallMethod | null): string {
+function cutShort(
+  stateDir: string,
+  manifest: UpdateSnapshotManifest,
+  method: GlobalInstallMethod | null,
+  keep: boolean,
+): string {
   const directory = join(updateSnapshotsDir(stateDir), manifest.id);
   const install = method
     ? `${method} install -g ravi.bot@${manifest.previousRelease}`
@@ -205,13 +216,17 @@ function cutShort(stateDir: string, manifest: UpdateSnapshotManifest, method: Gl
   const start = [install, "ravi daemon start", "ravi channels start", "ravi daemon status"];
   const restored = existsSync(join(directory, "restore.json"));
   const commands = restored ? start : [...updateSnapshotManualRestoreCommands(stateDir, manifest), ...start];
-  // One command per line, and kept next to the snapshot: a message line past 2048 characters reaches the operator
-  // as "[redacted:oversize]", and a long message is cut.
+  // One command per line, and, by a run that executes, kept next to the snapshot: a message line past 2048
+  // characters reaches the operator as "[redacted:oversize]", and a long message is cut.
   const file = join(directory, "finish-by-hand.txt");
-  try {
-    writeFileSync(file, `${commands.join("\n")}\n`, { mode: 0o600 });
-  } catch {
-    // no-cause: The same commands follow in the message; the file is only their durable copy.
+  let kept = false;
+  if (keep) {
+    try {
+      writeFileSync(file, `${commands.join("\n")}\n`, { mode: 0o600 });
+      kept = true;
+    } catch {
+      // no-cause: The same commands follow in the message; the file is only their durable copy.
+    }
   }
   const head = restored
     ? `Ravi is not running under PM2, and a restore of the snapshot of ${manifest.createdAt} ran: a rollback ` +
@@ -220,7 +235,7 @@ function cutShort(stateDir: string, manifest: UpdateSnapshotManifest, method: Gl
     : `Ravi is not running under PM2, and the snapshot of ${manifest.createdAt} (Ravi ${manifest.previousRelease}'s ` +
       `state, before the update to Ravi ${manifest.targetRelease}) was not restored: a rollback may have stopped ` +
       "both processes and been cut. To go back by hand, with nothing started meanwhile";
-  return `${head}, run in order (the commands are also in ${file}):\n${commands.join("\n")}\n`;
+  return `${head}, run in order${kept ? ` (the commands are also in ${file})` : ""}:\n${commands.join("\n")}\n`;
 }
 
 export type OperatorRollbackSupervisorDependencies = {
@@ -253,6 +268,7 @@ export async function superviseOperatorRollback(deps: OperatorRollbackSupervisor
   const { stateDir } = deps;
   const { manifest, plan, previousProcesses, runningRelease } = planOperatorRollback({
     stateDir,
+    keepCommands: true,
     processes: deps.getProcesses(),
     installMethod: deps.installMethod ?? null,
   });

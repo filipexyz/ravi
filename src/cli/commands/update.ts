@@ -1211,7 +1211,7 @@ async function runOperatorRollback(
   const processes = getProcesses();
   let rollback: OperatorRollbackPlan;
   try {
-    rollback = planOperatorRollback({ stateDir, processes, installMethod });
+    rollback = planOperatorRollback({ stateDir, processes, installMethod, keepCommands: options.execute === true });
   } catch (cause) {
     if (cause instanceof UpdateRollbackUnavailableError)
       throw new UpdateFailure(cause.message, UPDATE_ROLLBACK_UNAVAILABLE, 1, { cause });
