@@ -5,6 +5,14 @@
   external authority requiring approval. HTTP 403 / `PERMISSION_DENIED`,
   and both denial-guidance inputs MUST name the same way out. Persistence and
   emission retain their existing sanitization of those inputs.
+- `bun test src/pr/service.test.ts src/hooks/gh-watch.test.ts src/channels/slack/thread-lifecycle.test.ts`
+  proves the thread owner rule: a publisher that is the child of an open Slack
+  thread gets a follow addressed to that child with the thread id in its reply
+  source; a thread that closes or is pruned during the upload resolves to the
+  durable parent; closing the thread hands only its `gh-follow:*` triggers to the
+  parent and refreshes the trigger runner, and any other trigger still blocks the
+  close; a closed thread, a missing parent and a missing lifecycle never arm a
+  follow on a child.
 - `bun test src/cli/commands/pr.test.ts src/pr/context.test.ts src/cli/command-access.test.ts`
   proves both callers. A runtime context with no authenticated session
   (unauthenticated, ambient identity, sessionless) stops with
