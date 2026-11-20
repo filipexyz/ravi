@@ -47,8 +47,9 @@ import { projectPublicIssues, publicValidationFieldName } from "../../cli/redact
 import { enforceWriteAfterRead, writeAfterReadContractError } from "../../knowledge/safety/write-after-read.js";
 import { contractErrorResponse, json, returnShapeError, type JsonIssue } from "./errors.js";
 
-import { withGatewayRequest } from "./request-context.js";
+import { gatewayRequestContext, withGatewayRequest } from "./request-context.js";
 import { logGatewayFailure } from "./diagnostics.js";
+import { enforceReturnContract, reportReturnContractViolation } from "./return-contract.js";
 
 export interface DispatchOptions {
   /** Allow `superadmin`-scoped commands. Off by default. */
@@ -297,9 +298,21 @@ async function dispatchCommand(
     return { response: returnValue, audit: auditEmitted ? audit : null };
   }
 
-  const responseValue = returnValue ?? {};
+  let responseValue = returnValue ?? {};
 
-  if (cmd.returns) {
+  if (cmd.returns && cmd.access?.kind === "mutate") {
+    // The effect is already applied: a result that misses its declared shape is drift telemetry,
+    // never a failure the caller could retry into a second effect.
+    const enforced = enforceReturnContract(cmd.returns, responseValue);
+    if (enforced.violation) {
+      reportReturnContractViolation(
+        commandOperation(group, cmd.command),
+        gatewayRequestContext().requestId,
+        enforced.violation,
+      );
+      responseValue = enforced.value as typeof responseValue;
+    }
+  } else if (cmd.returns) {
     const returnIssues = checkReturnShape(cmd.returns, responseValue);
     if (returnIssues) {
       response = returnShapeError(commandOperation(group, cmd.command), returnIssues);
