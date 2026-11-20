@@ -363,9 +363,9 @@ const PUBLIC_REGISTRY = "https://registry.npmjs.org";
  * The registry the installer reads ravi.bot from, so the probe sees what the install sees (a mirror included): its
  * environment first (`BUN_CONFIG_REGISTRY` for bun, `npm_config_registry`), then `~/.npmrc` (both read it, and bun
  * prefers it to its own config; the last `registry=` line wins), then bun's `bunfig.toml` `[install] registry`, then
- * the public registry. With it, the credential the installer would send there, and to that host only: the token or
- * the user and password of bun's registry entry, a `user:password@` in the address (taken off the address), or what
- * `~/.npmrc` gives that host (`_authToken`, `_auth`, `username` and `_password`), `${VAR}` expanded from the
+ * the public registry. With it, the credential the installer would send there, and to that host only: what `~/.npmrc`
+ * gives that host (`_authToken`, `_auth`, `username` and `_password`), else the token or the user and password of
+ * bun's registry entry, else a `user:password@` in the address (taken off the address); `${VAR}` expanded from the
  * environment. Never printed, logged or recorded.
  */
 export function installerRegistry(
@@ -466,8 +466,26 @@ function readInstallerRegistry(method: GlobalInstallMethod, env: NodeJS.ProcessE
   };
   let authorization: string | null = null;
   let credential: string | null = null;
+  // ~/.npmrc's credential for that host comes first: bun applies it over its own registry entry, and it is what this
+  // check sent before it read the other forms.
+  const token = scoped("_authToken");
+  const auth = scoped("_auth");
+  const username = scoped("username");
+  const password = scoped("_password");
   const bunEntry = bun && configured?.trim() === bun.url ? bun : null;
-  if (bunEntry?.token) {
+  if (token) {
+    authorization = `Bearer ${token}`;
+    secrets.push(token);
+    credential = "_authToken of ~/.npmrc";
+  } else if (auth) {
+    authorization = `Basic ${auth}`;
+    secrets.push(auth, Buffer.from(auth, "base64").toString("utf8"));
+    credential = "_auth of ~/.npmrc";
+  } else if (username && password) {
+    secrets.push(password);
+    authorization = basic(username, Buffer.from(password, "base64").toString("utf8"));
+    credential = "username and _password of ~/.npmrc";
+  } else if (bunEntry?.token) {
     authorization = `Bearer ${bunEntry.token}`;
     secrets.push(bunEntry.token);
     credential = "token of bun's install registry";
@@ -477,24 +495,6 @@ function readInstallerRegistry(method: GlobalInstallMethod, env: NodeJS.ProcessE
   } else if (userinfo) {
     authorization = basic(userinfo.user, userinfo.password);
     credential = "user and password in the registry's address";
-  } else {
-    const token = scoped("_authToken");
-    const auth = scoped("_auth");
-    const username = scoped("username");
-    const password = scoped("_password");
-    if (token) {
-      authorization = `Bearer ${token}`;
-      secrets.push(token);
-      credential = "_authToken of ~/.npmrc";
-    } else if (auth) {
-      authorization = `Basic ${auth}`;
-      secrets.push(auth, Buffer.from(auth, "base64").toString("utf8"));
-      credential = "_auth of ~/.npmrc";
-    } else if (username && password) {
-      secrets.push(password);
-      authorization = basic(username, Buffer.from(password, "base64").toString("utf8"));
-      credential = "username and _password of ~/.npmrc";
-    }
   }
   return {
     url,

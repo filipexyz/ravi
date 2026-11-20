@@ -161,7 +161,14 @@
   decides alone and the flag is reported as not used), the rollback proving it
   by PM2's record (the daemon's version and PID, the runner's package), the
   release a rollback would install again probed in the registry before any
-  stop (update and `--rollback`), and the refusal
+  stop (update and `--rollback`) with the installer's credential for that host
+  only (`~/.npmrc`'s `_authToken`, `_auth`, `username` with `_password` first,
+  even over a bunfig token for the same registry, then bun's install registry
+  token or user and password, then `user:password@` taken off the address;
+  another host's credential never sent; a 401 or 403 naming the credential,
+  never its value), the processes checked again after the probe (a PM2
+  restart refused as `UPDATE_RUNTIME_CHANGED`, recorded through the
+  supervisor's entry; a failed read tried once more), and the refusal
   asking for `--running-release` only when that settles it; no
   waypoint without a snapshot (the release that wrote the state brought back on
   it, untouched; in the rollback, nothing restored and nothing started while a

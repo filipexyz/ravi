@@ -2742,6 +2742,26 @@ describe("the registry probe before any stop", () => {
       `registry=https://mirror.example/npm/\n//other.example/:_auth=${Buffer.from("eve:pw4").toString("base64")}\n`,
     );
     expect((await asked("npm", {})).authorization).toBeUndefined();
+    // The same registry in both files: ~/.npmrc's credential wins, as bun applies it (a stale bunfig token must not
+    // refuse an update the installer can run), with or without its own registry= line.
+    for (const npmrc of [
+      "registry=https://mirror.example/npm/\n//mirror.example/npm/:_authToken=GOOD\n",
+      "//mirror.example/npm/:_authToken=GOOD\n",
+    ]) {
+      writeFileSync(join(home, ".npmrc"), npmrc);
+      writeFileSync(
+        join(home, ".bunfig.toml"),
+        '[install]\nregistry = { url = "https://mirror.example/npm/", token = "OLD" }\n',
+      );
+      expect(await asked("bun", env)).toEqual({
+        url: "https://mirror.example/npm/ravi.bot/3.1.0",
+        authorization: "Bearer GOOD",
+      });
+    }
+    writeFileSync(
+      join(home, ".npmrc"),
+      `registry=https://mirror.example/npm/\n//other.example/:_auth=${Buffer.from("eve:pw4").toString("base64")}\n`,
+    );
     // bun's entry counts only when it is the registry used: here ~/.npmrc's registry wins, without that token.
     writeFileSync(
       join(home, ".bunfig.toml"),
