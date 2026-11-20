@@ -8,6 +8,7 @@ import {
   isSecretShapedEnvValue,
   resolveProviderLoginEnvKeys,
 } from "./agent-env-policy.js";
+import { buildJobEnv } from "../jobs/runner.js";
 import { resolveCodexTransportKind } from "./codex-transport.js";
 import { buildRuntimeEnv } from "./host-env.js";
 import { buildRuntimeRequestEnv } from "./runtime-request-context.js";
@@ -210,6 +211,8 @@ describe("agent runtime env policy", () => {
       });
       expect(runtimeEnv.IS_SANDBOX).toBe("1");
     }
+    // Shared on purpose: a job that starts `claude` as root needs it as well.
+    expect(buildJobEnv({ id: "job_root" }, daemonEnv).IS_SANDBOX).toBe("1");
     // Only what the operator set reaches the agent: nothing is invented.
     expect(filterAgentRuntimeBaseEnv({ PATH: "/usr/bin" }, { runtimeProviderId: "claude" }).IS_SANDBOX).toBeUndefined();
   });

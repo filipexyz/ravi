@@ -1,3 +1,4 @@
+import { MANAGED_RUNTIME_READY_TIMEOUT_MS } from "../db/state-boundary.js";
 import { join } from "node:path";
 import { readRuntimeMaintenance } from "../runtime-maintenance.js";
 import {
@@ -54,7 +55,8 @@ export type UpgradeRestartOutcome = {
 };
 
 const UPGRADE_WAIT_MS = 180_000;
-const CHANNELS_WAIT_MS = 30_000;
+/** The runner passes the same state guard as the daemon, so it gets the same ready window. */
+export const CHANNELS_WAIT_MS = MANAGED_RUNTIME_READY_TIMEOUT_MS;
 const SPAWN_GRACE_MS = 15_000;
 
 export async function performUpgradeRestart(host: UpgradeRestartHost): Promise<UpgradeRestartOutcome> {
