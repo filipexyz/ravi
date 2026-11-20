@@ -105304,6 +105304,10 @@ public enum RaviSchemas {
         "description": "Reasoning effort for the child session: none|minimal|low|medium|high|xhigh|max|ultra",
         "type": "string"
       },
+      "idempotencyKey": {
+        "description": "Stable key for this thread request: sending it again returns the request it created instead of creating another thread. Without it, the same message and options from the same session within 2 minutes count as a repeat",
+        "type": "string"
+      },
       "message": {
         "description": "Initial Slack message and first instruction for the child session",
         "type": "string"
@@ -105491,6 +105495,9 @@ public enum RaviSchemas {
       },
       "queued": {
         "const": true,
+        "type": "boolean"
+      },
+      "replayed": {
         "type": "boolean"
       },
       "requestId": {

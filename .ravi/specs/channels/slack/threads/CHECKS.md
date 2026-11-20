@@ -25,6 +25,34 @@
       `{ channel, canonicalChatId }` for one from a direct chat on another
       channel. A field the handler returns and the schema omits MUST fail the
       test, not the production call after the thread exists.
+- [ ] The results of `threads`, `thread-send`, `report`, `close-thread` and
+      `thread-configure` MUST parse through their strict return schemas in a test,
+      with the real function behind them where the command delegates (the real
+      `configureSlackThreadRuntime` result for `thread-configure`)
+      (`src/cli/commands/sessions.test.ts`,
+      `src/cli/commands/sessions-create-thread-gateway.test.ts`).
+- [ ] The real `create-thread` handler, dispatched through the gateway with the real
+      registry and state, MUST answer 200 with every field it returns and no
+      `return_contract_violation`; with the schema missing `origin`, or with the
+      gateway failing a `mutate` result again, it MUST fail, and a field added to the
+      handler and not declared MUST NOT turn a created thread into an error
+      (`src/cli/commands/sessions-create-thread-gateway.test.ts`). The test never
+      reaches a NATS server: it points `NATS_URL` at a closed port and replaces the
+      connection helper before any import.
+- [ ] A repeated `create-thread` MUST come back as the request already accepted:
+      the same `--idempotency-key`, or the same asker's identical message and
+      options for the same parent within two minutes while that request is
+      `queued`, `root_delivered`, `starting` or `open`. The repeat MUST answer
+      `replayed: true` with the stored `requestId`, origin and options, create no
+      lifecycle row and no second outbound job, and publish nothing once the
+      request is past `queued`; a `failed` or `closed` request MUST NOT be
+      repeated; the same key with another message or options MUST refuse with
+      `THREAD_IDEMPOTENCY_KEY_REUSED` and change nothing; a key over 200 characters
+      MUST yield `USAGE_ERROR`
+      (`src/channels/slack/thread-request-replay.test.ts`,
+      `src/cli/commands/sessions.test.ts`,
+      `src/cli/commands/sessions-create-thread-gateway.test.ts`,
+      `src/cli/remote-gateway.test.ts`).
 - [ ] Creating from an existing thread MUST create a sibling channel-root
       thread, not a nested thread.
 - [ ] `thread.close` MUST be available only from a Slack thread child.

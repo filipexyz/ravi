@@ -141,7 +141,7 @@ channel-root parent.
 ## Session Actions
 
 ```bash
-ravi sessions create-thread "<initial message>" [--provider <provider>] [--model <model>]
+ravi sessions create-thread "<initial message>" [--provider <provider>] [--model <model>] [--idempotency-key <key>]
 ravi sessions close-thread [--return "<result>"]
 ravi sessions report "<progress>"
 ravi sessions threads [--all] [--json]
@@ -152,6 +152,8 @@ ravi sessions thread-configure <thread> [--provider <provider|clear>] [--model <
 - Both commands infer the current session and Slack surface from tool context.
 - `create-thread` is available only when an executable Slack surface exists.
 - The `create-thread` result MUST satisfy its declared return schema, which is strict. The gateway checks the result after the lifecycle and outbound records exist, so a field the handler returns and the schema leaves out turns a created thread into a 500. `origin` is `{ channel, canonicalChatId } | null`: the non-Slack direct chat that asked for the thread, where its completion returns, and `null` for a request from Slack or from a group.
+- The `create-thread` handler MUST tie the payload it returns to that schema at compile time (`satisfies z.input<typeof sessionCreateThreadReturnSchema>`), so a key added to one side and not the other fails the build. The gateway removes an undeclared field from a `mutate` result instead of failing the call (`sdk/gateway/errors`); that keeps the caller from retrying, but it still drops the field, so the schema and the handler stay in step.
+- `create-thread` MUST answer a repeated request with the request it already accepted, never a second thread. The request is the same when the caller sends the same `--idempotency-key` (the key is scoped to the parent session, and its request id is derived from both), or, with no key, when the same asker repeats the same message and runtime options (model, provider, effort, thinking) for the same parent within two minutes and that request is still `queued`, `root_delivered`, `starting` or `open`. A request that `failed` or whose thread was `closed` is not repeated: the caller asked for a new one. A repeat answers from the stored request (`replayed: true`, same `requestId` and outbound `idempotencyKey`, origin and options as stored, not as the repeat carried them), changes no lifecycle row, and publishes the root job again only while the request is still `queued`, which the durable outbox answers without sending a second Slack post. The same key with a different message or runtime options MUST refuse with `THREAD_IDEMPOTENCY_KEY_REUSED` before any change. A key longer than 200 characters MUST refuse with `USAGE_ERROR`. The explicit key is the contract for a caller that must repeat across more than two minutes; the window only covers the call whose outcome the caller lost.
 - `close-thread` is available inside an open Slack thread child session or through the authorized explicit orphan-close path below.
 - `--return` opts into the parent completion event; omission is intentionally
   silent.
@@ -199,8 +201,9 @@ ravi sessions thread-configure <thread> [--provider <provider|clear>] [--model <
   (the session has an open thread's name under another key), and for
   `thread-send` `THREAD_NOT_CHANNEL_ROOT`, `THREAD_NOT_FOUND`,
   `THREAD_NOT_STARTED`, `THREAD_SESSION_MISSING`; also
-  `THREAD_PARENT_MISSING` and `THREAD_PARENT_RETURN_PENDING`. The remote relay
-  renders local copy for each code.
+  `THREAD_PARENT_MISSING` and `THREAD_PARENT_RETURN_PENDING`; `create-thread`
+  refuses with `THREAD_MODEL_INVALID` and `THREAD_IDEMPOTENCY_KEY_REUSED`. The
+  remote relay renders local copy for each code.
 - Empty `report` and `thread-send` messages, including messages empty after
   literal line-break decoding and trimming, MUST refuse with `USAGE_ERROR`,
   exit `2`, before publishing or changing lifecycle state.
