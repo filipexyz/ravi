@@ -102,11 +102,17 @@ authorizes no database or package downgrade by hand: the update's own rollback
 - With `--execute` the rollback runs in the update supervisor, which goes on
   if the terminal closes: then read `<state>/updates/supervisor-result.json`
   (and `<state>/updates/supervisor.log`) before acting.
+- `UPDATE_IN_PROGRESS` from `ravi update --rollback`: an update supervisor still
+  runs (an update, or a rollback whose command was cut). Do not run anything by
+  hand: wait for `<state>/updates/supervisor-result.json`, and follow
+  `<state>/updates/supervisor.log` meanwhile.
 - `UPDATE_ROLLBACK_UNAVAILABLE`: this run stopped nothing; the message says why
   (no snapshot, already restored, a source checkout, a daemon on another
-  release, or a caller inside the daemon's tree). When it says Ravi is not
-  running under PM2, an earlier rollback was cut after its stop: run the
-  commands it gives, in order, with nothing started meanwhile.
+  release, or a caller inside the daemon's tree). It says Ravi is not running
+  under PM2 only when no supervisor holds the update lock: then an earlier
+  rollback was cut after its stop. Run the commands it gives, one per line and
+  in order, with nothing started meanwhile; they are also kept in
+  `finish-by-hand.txt` in the snapshot's directory.
 
 ## Rollback
 

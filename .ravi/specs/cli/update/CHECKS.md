@@ -177,7 +177,11 @@
   recording the outcome, the update lock held for it (refused while another
   process holds it, free after), a closed terminal after the first stop not
   cutting the rollback (a real detached process, SIGHUP to the command's
-  process group), the refusal inside the daemon's tree, and the usage errors
+  process group), `UPDATE_IN_PROGRESS` instead of the cut-short commands while
+  another process holds the update lock (and the cut-short refusal once it is
+  free, one command per line and kept in `finish-by-hand.txt`), a result that
+  cannot be written not failing a rollback that ran, the refusal inside the
+  daemon's tree, and the usage errors
   (a selector with `--rollback`, `--execute` alone); and the schema phase
   line at 3.261109.1, compared as versions.
 - `bun test src/update-preflight.test.ts` MUST also prove a second supervisor

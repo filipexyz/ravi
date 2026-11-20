@@ -260,11 +260,19 @@ CLI that run installed.
   when there is no update snapshot, when the latest one was already restored
   (or a restore of it was cut short), when the daemon does not run from a
   global install, when the daemon's verified release is not the target of
-  that update, or when the caller runs inside the daemon's process tree. When
-  neither process runs under PM2 next to an unused snapshot (a rollback cut
-  after its stop), the refusal MUST say so and give the commands that finish
-  it by hand: the snapshot's restore and the previous release's install and
-  start, or, once a restore ran, its `restore.json` and the install and start.
+  that update, or when the caller runs inside the daemon's process tree. Before
+  planning, it MUST refuse with `UPDATE_IN_PROGRESS` while another process's
+  supervisor holds the update lock (an update, or a rollback whose command was
+  cut), pointing at `supervisor-result.json` and `supervisor.log`; that probe
+  records no refusal. Only then, when neither process runs under PM2 next to an
+  unused snapshot (a rollback cut after its stop), the refusal MUST say so and
+  give the commands that finish it by hand: the snapshot's restore and the
+  previous release's install and start, or, once a restore ran, its
+  `restore.json` and the install and start. Commands in a refusal or a failure
+  MUST come one per line after where they are kept (`finish-by-hand.txt` next to
+  the snapshot, or `supervisor-result.json`): a message line past 2048
+  characters reaches the operator as `[redacted:oversize]`. A result the
+  supervisor cannot write MUST NOT turn a rollback that ran into a failure.
 - It takes no release selector, and `--execute` without `--rollback` is a
   usage error. Its supervisor MUST hold `<state>/updates/update.lock` while it
   runs (`UPDATE_IN_PROGRESS` when another update holds it). A rollback that stops
