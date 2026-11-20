@@ -1830,10 +1830,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/credentials-store.ts | 87 | fixed | binding retained / no recognized error surface | src/runtime/credentials-store.ts:5fa4671927e8c37f289ded1a |
 | runtime-chat | src/runtime/daemon-restart-resume.ts | 272 | fixed | binding retained / no recognized error surface | src/runtime/daemon-restart-resume.ts:5bd341dd1bb44fd731706f3f |
 | runtime-chat | src/runtime/daemon-restart-resume.ts | 279 | fixed | binding retained / no recognized error surface | src/runtime/daemon-restart-resume.ts:5aa3f4c09d77703124f07b8f |
-| runtime-chat | src/runtime/delivery-queue.ts | 782 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:98b688efb0b84bff6adf0e68 |
-| runtime-chat | src/runtime/delivery-queue.ts | 801 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:a717aade523ae78f6d2748d7 |
-| runtime-chat | src/runtime/delivery-queue.ts | 1014 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:bb2022bcefeb349c6e90cfe8 |
-| runtime-chat | src/runtime/delivery-queue.ts | 1033 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:0df1261d59f9e3c16d31eff6 |
+| runtime-chat | src/runtime/delivery-queue.ts | 789 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:98b688efb0b84bff6adf0e68 |
+| runtime-chat | src/runtime/delivery-queue.ts | 808 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:a717aade523ae78f6d2748d7 |
+| runtime-chat | src/runtime/delivery-queue.ts | 1021 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:bb2022bcefeb349c6e90cfe8 |
+| runtime-chat | src/runtime/delivery-queue.ts | 1040 | fixed | binding retained / no recognized error surface | src/runtime/delivery-queue.ts:0df1261d59f9e3c16d31eff6 |
 | runtime-chat | src/runtime/generated-media-allocation.ts | 119 | fixed | binding retained / no recognized error surface | src/runtime/generated-media-allocation.ts:3e41a33801681fbb46ec16d2 |
 | runtime-chat | src/runtime/generated-media-allocation.ts | 134 | fixed | binding retained / no recognized error surface | src/runtime/generated-media-allocation.ts:f43a3ab11d96a36ccc69f193 |
 | runtime-chat | src/runtime/generated-media-allocation.ts | 175 | fixed | binding retained / no recognized error surface | src/runtime/generated-media-allocation.ts:6bbe11eb84ce7474b1a25304 |
@@ -1901,7 +1901,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/host-hooks.ts | 505 | fixed | binding retained / no recognized error surface | src/runtime/host-hooks.ts:1294281309897e6d88b6c17c |
 | runtime-chat | src/runtime/host-services.ts | 839 | triaged-follow-up | rejection-without-binding | src/runtime/host-services.ts:5360deba0585f6db9ae0489e |
 | runtime-chat | src/runtime/host-services.ts | 872 | triaged-follow-up | rejection-without-binding | src/runtime/host-services.ts:5360deba0585f6db9ae0489e |
-| sessions | src/runtime/host-session.ts | 581 | triaged-follow-up | rejection-without-binding | src/runtime/host-session.ts:dbc4363ca5a44e3e1bc6811e |
+| sessions | src/runtime/host-session.ts | 594 | triaged-follow-up | rejection-without-binding | src/runtime/host-session.ts:dbc4363ca5a44e3e1bc6811e |
 | runtime-chat | src/runtime/host-subscriptions.ts | 193 | fixed | binding retained / no recognized error surface | src/runtime/host-subscriptions.ts:e3b606d88f7de30df1125e01 |
 | runtime-chat | src/runtime/host-subscriptions.ts | 198 | fixed | binding retained / no recognized error surface | src/runtime/host-subscriptions.ts:7b51dde255a3e70c4aef4f10 |
 | runtime-chat | src/runtime/host-subscriptions.ts | 229 | fixed | binding retained / no recognized error surface | src/runtime/host-subscriptions.ts:58950f6103ab982ce4161620 |

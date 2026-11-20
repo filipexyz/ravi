@@ -77,6 +77,13 @@ export interface RuntimeUserMessage extends RuntimePromptMessage {
   yieldedRequest?: string;
   /** Bounded capacity retry budget travels with this logical input across physical attempts. */
   providerCapacityRetry?: ProviderCapacityRetryState;
+  /**
+   * The input of a turn that is re-run after a failure that is known not to have delivered anything (a
+   * credential retry). It keeps its own cohort: a message queued behind it is not folded into its prompt,
+   * so a follow-up still waits for the answer to the retried request. Unlike `replay` it asks the provider
+   * to reconcile nothing, and the retry is a fresh physical delivery.
+   */
+  retainsInputCohort?: boolean;
 }
 
 export function runtimeTurnAttemptTerminalEventType(
@@ -334,13 +341,19 @@ export function stashCurrentTurnRuntimeMessages(
       options.reconcileCurrentTurn || safety.replayable
         ? getReplayablePendingRuntimeMessages(session)
         : getPendingRuntimeTurnSuccessors(session)
-    ).map((message) =>
-      cloneRuntimeMessageForStash(
+    ).map((message) => {
+      const stashed = cloneRuntimeMessageForStash(
         message,
         options.reconcileCurrentTurn ? currentTurnPendingIds : undefined,
         safety.replayable,
-      ),
-    );
+      );
+      // A reconciled turn keeps its cohort through `replay`. A turn re-run after a known failure keeps it
+      // through its own marker: restored into an idle session, the follow-up queued behind it is releasable
+      // at once, and nothing else would stop it from being folded into the retried request's prompt.
+      return !stashed.replay && message.pendingId && currentTurnPendingIds.has(message.pendingId)
+        ? { ...stashed, retainsInputCohort: true }
+        : stashed;
+    });
 
   if (messages.length === 0) {
     return 0;

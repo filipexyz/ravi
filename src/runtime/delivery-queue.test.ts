@@ -1770,6 +1770,55 @@ describe("runtime delivery queue", () => {
     ]);
   });
 
+  it("restores a retried turn apart from the follow-up queued behind it, which still waits for the retried answer", async () => {
+    // Ordinary channel messages from one sender on one surface: nothing isolates either turn, so only the
+    // stash can keep the `after_response` follow-up out of the retried request's prompt.
+    const source = {
+      channel: "whatsapp",
+      accountId: "wa",
+      chatId: "dm:owner",
+      actorType: "contact" as const,
+      contactId: "owner",
+    };
+    const request = createQueuedRuntimeUserMessage({ prompt: "Analyze this change", source });
+    request.clientMessageId = "ravi:failed-attempt";
+    const followUp = createQueuedRuntimeUserMessage({
+      prompt: "After answering, summarize your conclusion",
+      source,
+      deliveryBarrier: "after_response",
+    });
+    const failed = makeStreamingSession({
+      pendingMessages: [request, followUp],
+      currentTurnPendingIds: [request.pendingId!],
+    });
+
+    // A credential retry stashes the turn and what is queued behind it. The turn is marked as a cohort of its
+    // own, and not as a replay: nothing was delivered, so the provider has nothing to reconcile.
+    const stash = new Map<string, RuntimeUserMessage[]>();
+    expect(stashCurrentTurnRuntimeMessages("dev", failed, stash)).toBe(2);
+    expect(stash.get("dev")?.map((message) => message.retainsInputCohort)).toEqual([true, undefined]);
+    expect(stash.get("dev")?.map((message) => message.replay)).toEqual([undefined, undefined]);
+
+    // The restart restores both into an idle session through the real generator.
+    const restored = makeStreamingSession();
+    const generator = createRuntimeMessageGenerator({ sessionName: "dev", session: restored, stashedMessages: stash });
+    const retried = await generator.next();
+    expect(retried.value?.message.content).toContain("Analyze this change");
+    expect(retried.value?.message.content).not.toContain("summarize your conclusion");
+    expect(retried.value?.replay).toBe(false);
+
+    // The follow-up runs only after the answer to the retried request.
+    restored.turnActive = false;
+    restored.onTurnComplete?.();
+    const next = await generator.next();
+    expect(next.value?.message.content).toContain("summarize your conclusion");
+    expect(next.value?.message.content).not.toContain("Analyze this change");
+    restored.done = true;
+    restored.turnActive = false;
+    restored.onTurnComplete?.();
+    await generator.return(undefined);
+  });
+
   it("stashes only the successor when an interrupted turn was intentionally superseded", () => {
     const active = createQueuedRuntimeUserMessage(channelPrompt("old work", "turn-a"));
     const steering = createQueuedRuntimeUserMessage(channelPrompt("new direction", "turn-b"));
