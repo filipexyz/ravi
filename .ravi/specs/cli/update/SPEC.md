@@ -198,8 +198,10 @@ CLI that run installed.
   (`daemon-schema-owner.lock` and each `<store>.schema.lock`) while it copies.
   The manifest is written last. Only the latest update's snapshot is kept, in
   `<state>/updates/snapshots/<id>/`.
-- A snapshot that cannot be taken after the stop MUST NOT stop the update. The
-  update then runs without a rollback, and its result says why.
+- A snapshot that cannot be taken after the stop MUST NOT start the target, on
+  any update that can roll back (the second pass after a waypoint included):
+  the release that wrote the state MUST come back on it by itself, with
+  nothing to restore, and the result is `rolled-back`, saying why.
 - When the target does not converge, does not stay up for the stability
   window, or the rebind fails after the snapshot, the supervisor MUST roll
   back:
