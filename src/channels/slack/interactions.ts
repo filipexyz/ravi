@@ -15,6 +15,8 @@ export interface SlackInteractionResponseUrlInput {
 export interface SlackInteractionResponseInput {
   readonly responseUrlId: string;
   readonly payload: Record<string, unknown>;
+  /** Deadline of the post; defaults to `SLACK_RESPONSE_URL_TIMEOUT_MS`. */
+  readonly timeoutMs?: number;
 }
 
 const DEFAULT_RESPONSE_URL_TTL_MS = 30 * 60 * 1000;
@@ -26,7 +28,7 @@ const DEFAULT_RESPONSE_URL_TTL_MS = 30 * 60 * 1000;
  * that fails visibly in the log instead of as a Slack 4xx.
  */
 export const SLACK_RESPONSE_URL_MAX_USES = 5;
-const SLACK_RESPONSE_URL_TIMEOUT_MS = 15_000;
+export const SLACK_RESPONSE_URL_TIMEOUT_MS = 15_000;
 
 interface SlackInteractionResponseUrlRow {
   id: string;
@@ -104,7 +106,7 @@ export async function respondToSlackInteraction(
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input.payload),
     // A hung Slack host must not hold a consumer loop (`/ravi` answers through here).
-    signal: AbortSignal.timeout(SLACK_RESPONSE_URL_TIMEOUT_MS),
+    signal: AbortSignal.timeout(input.timeoutMs ?? SLACK_RESPONSE_URL_TIMEOUT_MS),
   });
   const text = await response.text();
   if (!response.ok) {
@@ -121,10 +123,16 @@ export async function respondToSlackInteraction(
   };
 }
 
+/** A workspace host: one DNS label under slack.com, as in Slack's Socket Mode slash command example. */
+const SLACK_WORKSPACE_HOST = /^[a-z0-9][a-z0-9-]{0,62}\.slack\.com$/;
+
 /**
  * Slack posts interaction handles under `/actions/` (Block Kit, shortcuts) and
- * slash-command handles under `/commands/`. Any other host or path is not a
- * handle Slack issued, and is never posted to.
+ * slash-command handles under `/commands/`. The host is `hooks.slack.com`, or
+ * the workspace's own `<workspace>.slack.com`: Slack's Socket Mode example for a
+ * slash command shows `https://<workspace>.slack.com/commands/...`, while its HTTP
+ * example shows `https://hooks.slack.com/commands/...`. Any other host or path is
+ * not a handle Slack issued, and is never posted to.
  */
 export function isAllowedSlackInteractionResponseUrl(value: string): boolean {
   let url: URL;
@@ -135,7 +143,7 @@ export function isAllowedSlackInteractionResponseUrl(value: string): boolean {
   }
   return (
     url.protocol === "https:" &&
-    url.hostname === "hooks.slack.com" &&
+    (url.hostname === "hooks.slack.com" || SLACK_WORKSPACE_HOST.test(url.hostname)) &&
     !url.username &&
     !url.password &&
     !url.port &&

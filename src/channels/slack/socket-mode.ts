@@ -83,11 +83,12 @@ import {
   type SlackInstanceAliasResolution,
   type SlackScopedIdentityResolution,
 } from "./instance-alias.js";
-import { storeSlackInteractionResponseUrl } from "./interactions.js";
+import { respondToSlackInteraction, storeSlackInteractionResponseUrl } from "./interactions.js";
 import {
   buildSlackCommandEvent,
   readSlackCommandPayload,
   slackCommandAckPayload,
+  slackCommandMessage,
   SLACK_COMMAND_ENVELOPE_TYPE,
   SLACK_COMMAND_TOPIC,
   verifySlackCommandOrigin,
@@ -141,6 +142,9 @@ const SLACK_SESSION_CREATED_TOPIC = "ravi.inbound.session.created";
 const DEFAULT_SLACK_AUTH_TEST_FAILURE_RETRY_MS = 5_000;
 const DEFAULT_SLACK_AUTH_TEST_TIMEOUT_MS = 5_000;
 const DEFAULT_SLACK_USER_LOOKUP_TIMEOUT_MS = 5_000;
+/** How long a command envelope id is remembered: longer than Slack retries it and than the daemon runs it. */
+const SLACK_COMMAND_DEDUPE_MS = 10 * 60_000;
+const SLACK_COMMAND_DEDUPE_MAX = 5_000;
 /**
  * One App Home publish. With auth.test's 5 s before it, an envelope stuck on
  * both still settles inside the 10 s work-drain deadline.
@@ -763,6 +767,11 @@ export class SlackSocketModeService {
   private readonly seenEnvelopeIds = new RecentIdCache();
   /** The app id the first slash command of this connection named; later commands must agree. */
   private commandAppId: string | undefined;
+  /**
+   * Command envelope ids, kept for the retry window and apart from `seenEnvelopeIds`: a repeated
+   * command can close another batch of threads, so unrelated traffic must not evict its id.
+   */
+  private readonly seenCommandEnvelopeIds = new Map<string, number>();
   private readonly userProfiles = new Map<string, SlackUserProfile | null>();
   private readonly channelNames = new Map<string, string>();
   private readonly lookupFailures = new Map<string, number>();
@@ -997,6 +1006,8 @@ export class SlackSocketModeService {
     envelope: SlackSocketEnvelope,
     ack: (envelopeId: string, payload?: Record<string, unknown>) => Promise<void> | void,
   ): Promise<"duplicate" | "ignored" | "processed"> {
+    // When the command arrived, before any await: a pause after the ack must not make an old command look new.
+    const receivedAt = this.now();
     const envelopeId = cleanSlackId(envelope.envelope_id);
     const command = readSlackCommandPayload(envelope.payload);
     const staticAnswer = command ? slackCommandAckPayload(command) : undefined;
@@ -1009,10 +1020,7 @@ export class SlackSocketModeService {
       });
       return "ignored";
     }
-    if (envelopeId) {
-      if (this.seenEnvelopeIds.has(envelopeId)) return "duplicate";
-      this.seenEnvelopeIds.add(envelopeId);
-    }
+    if (envelopeId && !this.rememberCommandEnvelope(envelopeId, receivedAt)) return "duplicate";
 
     const identity = await this.resolveLocalBotIdentity();
     const verdict = verifySlackCommandOrigin(command, {
@@ -1053,20 +1061,60 @@ export class SlackSocketModeService {
       return "ignored";
     }
 
-    await this.publishInteraction(
-      SLACK_COMMAND_TOPIC,
-      buildSlackCommandEvent({
-        payload: command,
+    try {
+      await this.publishInteraction(
+        SLACK_COMMAND_TOPIC,
+        buildSlackCommandEvent({
+          payload: command,
+          accountId: this.options.accountId,
+          routeAccountId: this.options.routeAccountId ?? this.options.accountId,
+          instanceId: this.options.instanceId ?? this.options.accountId,
+          envelopeId,
+          responseUrlId,
+          ackedWithHelp: answerInAck,
+          receivedAt,
+        }) as unknown as Record<string, unknown>,
+      );
+    } catch (error) {
+      // The command was acked, and an empty ack shows nothing: say that it did not go through. It is
+      // never published again, so it cannot run later.
+      log.warn("Slack slash command could not be handed to Ravi", {
         accountId: this.options.accountId,
-        routeAccountId: this.options.routeAccountId ?? this.options.accountId,
-        instanceId: this.options.instanceId ?? this.options.accountId,
-        envelopeId,
-        responseUrlId,
-        ackedWithHelp: answerInAck,
-        receivedAt: this.now(),
-      }) as unknown as Record<string, unknown>,
-    );
+        error: error instanceof Error ? error.message : String(error),
+      });
+      if (responseUrlId) {
+        await respondToSlackInteraction({
+          responseUrlId,
+          payload: slackCommandMessage(
+            "I could not hand that command to Ravi, so nothing ran. Try again in a moment.",
+          ) as unknown as Record<string, unknown>,
+        }).catch((respondError) =>
+          log.warn("Slack slash command failure answer was not delivered", {
+            accountId: this.options.accountId,
+            error: respondError instanceof Error ? respondError.message : String(respondError),
+          }),
+        );
+      }
+      return "ignored";
+    }
     return "processed";
+  }
+
+  /** True when the envelope id is new; remembers it for the retry window, capped. */
+  private rememberCommandEnvelope(envelopeId: string, now: number): boolean {
+    for (const [id, seenAt] of this.seenCommandEnvelopeIds) {
+      // Insertion order is age order: stop at the first one still inside the window.
+      if (now - seenAt <= SLACK_COMMAND_DEDUPE_MS) break;
+      this.seenCommandEnvelopeIds.delete(id);
+    }
+    if (this.seenCommandEnvelopeIds.has(envelopeId)) return false;
+    this.seenCommandEnvelopeIds.set(envelopeId, now);
+    while (this.seenCommandEnvelopeIds.size > SLACK_COMMAND_DEDUPE_MAX) {
+      const oldest = this.seenCommandEnvelopeIds.keys().next().value;
+      if (oldest === undefined) break;
+      this.seenCommandEnvelopeIds.delete(oldest);
+    }
+    return true;
   }
 
   resumePendingInboundEnvelopes(): Promise<{ scanned: number; processed: number; busy: number; failed: number }> {

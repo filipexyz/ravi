@@ -6700,7 +6700,11 @@ describe("Slack slash commands (/ravi)", () => {
   });
 
   function commandService(
-    input: { authTest?: () => Promise<{ ok: boolean; bot_id?: string; user_id?: string; team_id?: string }> } = {},
+    input: {
+      authTest?: () => Promise<{ ok: boolean; bot_id?: string; user_id?: string; team_id?: string }>;
+      publish?: (topic: string, payload: Record<string, unknown>) => Promise<void>;
+      now?: () => number;
+    } = {},
   ) {
     const published: Array<{ topic: string; payload: Record<string, unknown> }> = [];
     const prompts: unknown[] = [];
@@ -6722,9 +6726,12 @@ describe("Slack slash commands (/ravi)", () => {
       publishPrompt: async (_sessionName, payload) => {
         prompts.push(payload);
       },
-      publishInteraction: async (topic, payload) => {
-        published.push({ topic, payload });
-      },
+      publishInteraction:
+        input.publish ??
+        (async (topic, payload) => {
+          published.push({ topic, payload });
+        }),
+      ...(input.now ? { now: input.now } : {}),
       webClient: {
         authTest: input.authTest ?? (async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" })),
       } as never,
@@ -6920,5 +6927,82 @@ describe("Slack slash commands (/ravi)", () => {
     expect(result).toBe("ignored");
     expect(calls).toHaveLength(1);
     expect(published).toHaveLength(0);
+  });
+
+  it("takes the workspace-hosted response URL that Slack's Socket Mode example shows", async () => {
+    const { service, published } = commandService();
+    // From docs.slack.dev/apis/events-api/using-socket-mode: the handle lives on the workspace host.
+    const workspaceUrl = "https://rilke.slack.com/commands/T0SNL8S4S/37053613554/YMB2ZESDLNjNLqSFZ1quhNAh";
+
+    const result = await service.handleEnvelope(
+      commandEnvelope("env-cmd-workspace-host", { response_url: workspaceUrl }),
+      acks().ack,
+    );
+
+    expect(result).toBe("processed");
+    expect(published).toHaveLength(1);
+    expect(published[0]?.payload.responseUrlId).toEqual(expect.any(String));
+    expect(JSON.stringify(published[0]?.payload)).not.toContain("rilke.slack.com");
+  });
+
+  it("keeps a command's envelope id for the retry window, whatever else arrives", async () => {
+    const { service, published } = commandService();
+
+    expect(await service.handleEnvelope(commandEnvelope("env-cmd-first", { text: "help" }), acks().ack)).toBe(
+      "processed",
+    );
+    // More unrelated command envelopes than the interaction cache holds (1,000).
+    for (let index = 0; index < 1_005; index += 1) {
+      await service.handleEnvelope(commandEnvelope(`env-cmd-other-${index}`, { text: "help" }), acks().ack);
+    }
+
+    expect(await service.handleEnvelope(commandEnvelope("env-cmd-first", { text: "help" }), acks().ack)).toBe(
+      "duplicate",
+    );
+    expect(published.filter((entry) => entry.payload.envelopeId === "env-cmd-first")).toHaveLength(1);
+  });
+
+  it("tells the person when the command could not be handed over, and never publishes it again", async () => {
+    let attempts = 0;
+    const posts: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
+      input: string | URL | Request,
+      init?: RequestInit,
+    ) => {
+      posts.push({ url: String(input), body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+      return new Response("ok", { status: 200 });
+    }) as unknown as typeof fetch);
+    try {
+      const { service } = commandService({
+        publish: async () => {
+          attempts += 1;
+          throw new Error("NATS connection is closed");
+        },
+      });
+
+      const result = await service.handleEnvelope(commandEnvelope("env-cmd-nopublish"), acks().ack);
+
+      expect(result).toBe("ignored");
+      expect(attempts).toBe(1);
+      expect(posts).toHaveLength(1);
+      expect(posts[0]?.url).toBe(RESPONSE_URL);
+      expect(posts[0]?.body).toMatchObject({ response_type: "ephemeral" });
+      expect(String(posts[0]?.body.text)).toContain("nothing ran");
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("stamps a command when it arrives, not after the awaits that follow the ack", async () => {
+    let clock = 1_800_000_000_000;
+    const { service, published } = commandService({ now: () => clock });
+    const slowAck = async () => {
+      // The process stalls for two minutes between the ack and the publication.
+      clock += 120_000;
+    };
+
+    await service.handleEnvelope(commandEnvelope("env-cmd-stamp"), slowAck);
+
+    expect(published[0]?.payload.receivedAt).toBe(1_800_000_000_000);
   });
 });

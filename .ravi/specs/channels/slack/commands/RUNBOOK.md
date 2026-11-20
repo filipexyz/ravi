@@ -19,7 +19,9 @@ installed most recently.
 ## Check it works
 
 In a DM with the app, type `/ravi`. The help appears at once, only for you. Then
-`/ravi status`.
+`/ravi status`. The DM needs the app's Messages Tab on, with users allowed to send
+messages and slash commands from it (App Home in the app's settings). Without
+it, type the command in a channel the app is in.
 
 ## Nothing answers
 
@@ -45,7 +47,11 @@ In a DM with the app, type `/ravi`. The help appears at once, only for you. Then
 
 ## See what was run
 
-Every command, refused or not, is published on `ravi.audit.slack_command`:
+Every command that reaches the daemon, refused or not, is published on
+`ravi.audit.slack_command`. The runner refuses some commands before it publishes
+them (from another workspace, with an origin it could not verify, unreadable, or
+with no response URL and no static answer): those appear only in the runner's log
+(`ravi channels logs`).
 
 ```bash
 ravi events replay --subject ravi.audit.slack_command --since 1h

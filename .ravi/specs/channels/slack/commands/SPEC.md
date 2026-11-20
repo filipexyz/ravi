@@ -144,18 +144,24 @@ on the session of the DM or channel they are typed in, never on a thread.
   that also checks the limit, before the request, so two callers cannot take the
   last one. It MUST be given back when Slack answers and refuses, and MUST stay
   spent when the request fails without an answer. A handle MUST be accepted only
-  on `https://hooks.slack.com/actions/` or `https://hooks.slack.com/commands/`,
-  and a post MUST have a deadline.
+  on `hooks.slack.com` or one `<workspace>.slack.com` host, under `/actions/` or
+  `/commands/`, over https with no port and no credentials: Slack's Socket Mode
+  example for a slash command shows `https://<workspace>.slack.com/commands/...`
+  and its HTTP example `https://hooks.slack.com/commands/...`. A post MUST have a
+  deadline.
 - An unexpected failure MUST be answered with a retry message and MUST NOT
   expose the error text.
 
 ### Audit
 
-- Every command, including the refused and the static, MUST publish
-  `ravi.audit.slack_command` with the contact, the Slack user, the chat, the
+- Every command that reaches the daemon, including the refused and the static,
+  MUST publish `ravi.audit.slack_command` with the contact, the Slack user, the chat, the
   session, the subcommand, the decision (`allowed`, `denied`, `info`, `error`)
   and a result code. It MUST NOT carry the text typed, a thread name, the
-  `response_url` or any token. A failed audit publish MUST NOT fail the command.
+  `response_url` or any token. A failed audit publish MUST NOT fail the command. What the runner refuses
+  before it publishes (another workspace, an unverified origin, an unreadable
+  payload, no response URL with no static answer) is visible only in the runner's
+  log.
 
 ## Out of scope for this feature
 

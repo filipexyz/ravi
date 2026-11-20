@@ -5,7 +5,9 @@
 - A slash command MUST NOT enter the durable Slack inbox, MUST NOT publish a session prompt and MUST NOT be published twice for one envelope id.
 - A command from another workspace, from a runner that cannot read its own workspace, or from another app than the one the connection named MUST be dropped.
 - A command with no usable `response_url` and no static answer MUST NOT run.
-- A `response_url` on `https://hooks.slack.com/commands/` MUST be accepted, and any other host or path MUST be refused.
+- A `response_url` on `https://hooks.slack.com/commands/` or on `https://<workspace>.slack.com/commands/` MUST be accepted, and any other host, path, port or credential MUST be refused.
+- A command that cannot be handed to Ravi MUST be answered to the person once and MUST NOT be published again.
+- A command envelope id MUST be remembered for the retry window, whatever other envelopes arrive, and a command MUST be stamped when it arrives, before any await.
 - The sixth post to one response handle MUST be refused before any request is made, two callers that arrive together MUST NOT both take the last use, a post Slack refuses MUST give its use back and a request that fails without an answer MUST NOT.
 - A Slack user with no contact MUST get a private refusal and MUST NOT run any operation.
 - A contact without access to the chat's session MUST NOT read it; a contact with access but without `modify` MUST NOT close a thread or stop a turn.
@@ -19,7 +21,12 @@
 - `close idle` MUST NOT close a thread that has a turn running, work queued or recent activity in the runtime's records, even when its health sample says idle or its lifecycle date is old.
 - `stop` MUST say nothing is running when no turn is, and MUST NOT claim a stop after a timeout.
 - A command older than 60 seconds, or stamped in the future, MUST NOT run.
-- Every command MUST publish `ravi.audit.slack_command` without the text typed, the thread name, the `response_url` or a token.
+- Every command that reaches the daemon MUST publish `ravi.audit.slack_command` without the text typed, the thread name, the `response_url` or a token. A command the runner refuses before publishing is visible only in the runner's log.
+- A failure while resolving the person, the session or the authority MUST be answered with a retry message and audited.
+- A chat whose route forces a session of another agent MUST NOT run a command.
+- A command that goes stale while the access metadata loads MUST NOT run.
+- `close idle` MUST NOT let refused threads use up its batch: it MUST count only the closes it made and MUST bound the tries.
+- Stopping the consumer MUST wait for the command being answered.
 - `bun test src/channels/slack/slash-commands.test.ts src/channels/slack/slash-command-handler.test.ts src/channels/slack/interactions.test.ts src/cli/command-access.test.ts` MUST pass.
 - `bun test src/channels/slack/socket-mode.test.ts -t "slash commands"` MUST pass.
 - `bun run typecheck` MUST pass.

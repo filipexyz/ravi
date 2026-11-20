@@ -20,6 +20,23 @@ describe("Slack interaction response boundary", () => {
       false,
     );
     expect(isAllowedSlackInteractionResponseUrl("https://hooks.slack.com/services/T1/B1/secret")).toBe(false);
+    // The workspace host: Slack's Socket Mode example for a slash command shows rilke.slack.com.
+    expect(
+      isAllowedSlackInteractionResponseUrl(
+        "https://rilke.slack.com/commands/T0SNL8S4S/37053613554/YMB2ZESDLNjNLqSFZ1quhNAh",
+      ),
+    ).toBe(true);
+    expect(isAllowedSlackInteractionResponseUrl("https://rilke.slack.com/actions/T1/B1/secret")).toBe(true);
+    expect(isAllowedSlackInteractionResponseUrl("https://slack.com/commands/T1/B1/secret")).toBe(false);
+    expect(isAllowedSlackInteractionResponseUrl("https://a.b.slack.com/commands/T1/B1/secret")).toBe(false);
+    expect(isAllowedSlackInteractionResponseUrl("https://-bad.slack.com/commands/T1/B1/secret")).toBe(false);
+    expect(isAllowedSlackInteractionResponseUrl("https://evil-slack.com/commands/T1/B1/secret")).toBe(false);
+    expect(isAllowedSlackInteractionResponseUrl("https://rilke.slack.com.attacker.test/commands/T1/B1/secret")).toBe(
+      false,
+    );
+    expect(isAllowedSlackInteractionResponseUrl("https://rilke.slack.com:8443/commands/T1/B1/secret")).toBe(false);
+    expect(isAllowedSlackInteractionResponseUrl("http://rilke.slack.com/commands/T1/B1/secret")).toBe(false);
+    expect(isAllowedSlackInteractionResponseUrl("https://rilke.slack.com/api/chat.postMessage")).toBe(false);
     expect(isAllowedSlackInteractionResponseUrl("https://hooks.slack.com/commandsx/T1/B1/secret")).toBe(false);
     expect(isAllowedSlackInteractionResponseUrl("https://user:pass@hooks.slack.com/commands/T1/B1/secret")).toBe(false);
   });
@@ -156,21 +173,24 @@ describe("Slack response handle uses", () => {
     }
   });
 
-  it("gives the post a deadline, so a hung Slack host cannot hold the caller", async () => {
-    let signal: AbortSignal | null | undefined;
-    const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
-      _input: string | URL | Request,
-      init?: RequestInit,
-    ) => {
-      signal = init?.signal;
-      return new Response("ok", { status: 200 });
-    }) as unknown as typeof fetch);
+  it("abandons a post that never answers once its deadline passes", async () => {
+    const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
+      ((_input: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          // A hung Slack host: nothing answers, and only the deadline's abort ends the request.
+          init?.signal?.addEventListener("abort", () => reject(new Error("aborted by the deadline")));
+        })) as unknown as typeof fetch,
+    );
     try {
-      await respondToSlackInteraction({ responseUrlId: handle(), payload: { text: "x" } });
+      const responseUrlId = handle();
 
-      expect(signal).toBeInstanceOf(AbortSignal);
+      await expect(respondToSlackInteraction({ responseUrlId, payload: { text: "x" }, timeoutMs: 30 })).rejects.toThrow(
+        /aborted by the deadline/,
+      );
+      // Slack may have taken that post: the use stays spent.
+      expect(usedCount(responseUrlId)).toBe(1);
     } finally {
       fetchSpy.mockRestore();
     }
-  });
+  }, 2_000);
 });

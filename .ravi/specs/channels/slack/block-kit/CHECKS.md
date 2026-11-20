@@ -24,8 +24,8 @@
   `replace_original` for ephemeral interactive messages.
 - Block Kit specs and skill docs MUST keep Canvas as a separate document
   surface.
-- A response handle MUST accept only `https://hooks.slack.com/actions/` and
-  `https://hooks.slack.com/commands/`, MUST refuse the sixth post before any
+- A response handle MUST accept only `hooks.slack.com` and one `<workspace>.slack.com`
+  host under `/actions/` or `/commands/`, MUST refuse the sixth post before any
   request, and MUST give each post a deadline. Two callers racing for the last
   use MUST NOT both post.
 - Socket Mode MUST answer `app_home_opened` with `tab: "home"` by publishing a

@@ -79,6 +79,8 @@ export const SLACK_COMMAND_RUNTIME_CONTROL_TOPIC = "ravi.session.runtime.control
 const RUNTIME_CONTROL_TIMEOUT_MS = 10_000;
 const MAX_LISTED_THREADS = 12;
 const MAX_IDLE_CLOSES = 25;
+/** Closes tried in one call, refused ones included: a thread that keeps refusing must not hide the ones behind it. */
+const MAX_IDLE_ATTEMPTS = 100;
 /** Page size when every open thread of a session is walked (the store caps a page at 500). */
 const THREAD_PAGE_SIZE = 200;
 const TITLE_MAX_LENGTH = 70;
@@ -110,6 +112,8 @@ export interface SlackCommandAudit {
 export type SlackCommandSessionResolution =
   | { readonly kind: "session"; readonly session: SessionEntry; readonly agentId: string }
   | { readonly kind: "session_missing"; readonly agentId: string; readonly sessionKey: string }
+  /** The route forces a session that belongs to another agent: normal intake refuses it too. */
+  | { readonly kind: "route_conflict" }
   | { readonly kind: "no_route" };
 
 /** What an operation needs from the command metadata the CLI declares for it. */
@@ -213,9 +217,12 @@ export function resolveSlackCommandSession(
   if (!matched) return { kind: "no_route" };
   const sessionKey = previewCommittedSessionKey(matched, { threadId: undefined });
   const session = getSession(sessionKey);
-  return session
-    ? { kind: "session", session, agentId: matched.agentId }
-    : { kind: "session_missing", agentId: matched.agentId, sessionKey };
+  if (!session) return { kind: "session_missing", agentId: matched.agentId, sessionKey };
+  // A route can force a session by name. If that session belongs to another agent than the route's,
+  // normal intake refuses the message when it commits the route (RouteSessionAgentConflictError); a
+  // command that ran there would hand the other agent's session to whoever holds a right over it.
+  if (session.agentId !== matched.agentId) return { kind: "route_conflict" };
+  return { kind: "session", session, agentId: matched.agentId };
 }
 
 // ---------------------------------------------------------------------------
@@ -496,95 +503,121 @@ export async function handleSlackCommand(
     }
   };
 
-  const age = now() - event.receivedAt;
-  if (age > SLACK_COMMAND_MAX_AGE_MS || age < -SLACK_COMMAND_MAX_AGE_MS) {
+  const refuseStale = async (): Promise<SlackCommandOutcome> => {
     await reply(slackCommandMessage("That command arrived late and was *not run*. Run it again."));
     return record({ decision: "denied", code: "stale" });
-  }
+  };
+  if (isStale(event, now())) return refuseStale();
 
-  contactId = (deps.contactForSlackUser ?? slackUserContactId)(event.userId, event.instanceId);
+  // Everything from here is covered by one handler: a failure while resolving the person, the
+  // session or the authority is answered and audited like any other, not left to the consumer's log.
+  const execute = async (): Promise<SlackCommandOutcome> => {
+    contactId = (deps.contactForSlackUser ?? slackUserContactId)(event.userId, event.instanceId);
 
-  if (!isAction(parse)) {
-    // Static text. The runner put it in the ack; only when Slack would not take
-    // it there does the daemon say it, so nobody gets it twice.
-    if (!event.ackedWithHelp) await reply(helpFor(event, parse));
-    return record({ decision: "info", code: "help" });
-  }
-
-  if (!contactId) {
-    await reply(
-      slackCommandMessage(
-        "I don't recognize you in this workspace, so nothing ran. Ask whoever administers Ravi to link your Slack user to a contact.",
-      ),
-    );
-    return record({ decision: "denied", code: "unknown_user" });
-  }
-
-  const resolution = (deps.resolveSession ?? resolveSlackCommandSession)(event, config);
-  if (resolution.kind === "no_route") {
-    await reply(slackCommandMessage("No agent answers in this chat."));
-    return record({ decision: "info", code: "no_route" });
-  }
-  if (resolution.kind === "session_missing") {
-    await reply(
-      slackCommandMessage(
-        `Agent \`${resolution.agentId}\` answers here, but there is no session yet: nobody has spoken in this chat.`,
-      ),
-    );
-    return record({ decision: "info", code: "session_missing" });
-  }
-  session = resolution.session;
-
-  // Authority: this contact, and only this contact. Reads need access to the
-  // session; changes need to modify it and hold the command's own capability.
-  const capabilities = (deps.capabilitiesFor ?? ((id) => materializeSubjectCapabilities("contact", id)))(contactId);
-  const need = SESSION_ACCESS_BY_ACTION[parse.kind];
-  if (!contactCan(contactId, capabilities, need, "session", sessionRef(session))) {
-    await reply(
-      slackCommandMessage(
-        need === "modify"
-          ? `You are not allowed to change session \`${sessionRef(session)}\`.`
-          : `You do not have access to session \`${sessionRef(session)}\`.`,
-      ),
-    );
-    return record({ decision: "denied", code: need === "modify" ? "not_authorized_modify" : "not_authorized_access" });
-  }
-
-  const operation =
-    parse.kind === "stop" ? "interrupt" : parse.kind === "status" || parse.kind === "threads" ? null : "close-thread";
-  if (operation) {
-    const inherited = await (deps.inheritedAccess ?? defaultInheritedAccess)(operation);
-    if (!inherited) {
-      // No declared metadata means no way to ask the CLI's question: refuse.
-      await reply(slackCommandMessage("I could not check your permission for this command, so nothing ran."));
-      return record({ decision: "error", code: "access_metadata_missing" });
+    if (!isAction(parse)) {
+      // Static text. The runner put it in the ack; only when Slack would not take
+      // it there does the daemon say it, so nobody gets it twice.
+      if (!event.ackedWithHelp) await reply(helpFor(event, parse));
+      return record({ decision: "info", code: "help" });
     }
-    const verdict = (deps.commandAccess ?? enforceCliCommandAccess)({
-      source: "slack-command",
-      subject: { type: "contact", id: contactId },
-      group: inherited.group,
-      command: inherited.command,
-      access: inherited.access,
-      input: {},
-    });
-    if (!verdict.allowed) {
-      const capability = verdict.denialDetails?.capability;
+
+    if (!contactId) {
       await reply(
         slackCommandMessage(
-          `You are not allowed to ${operation === "interrupt" ? "stop turns" : "close threads"}${capability ? ` (missing \`${capability}\`)` : ""}.`,
+          "I don't recognize you in this workspace, so nothing ran. Ask whoever administers Ravi to link your Slack user to a contact.",
         ),
       );
-      return record({ decision: "denied", code: "not_authorized_command" });
+      return record({ decision: "denied", code: "unknown_user" });
     }
-  }
+
+    const resolution = (deps.resolveSession ?? resolveSlackCommandSession)(event, config);
+    if (resolution.kind === "no_route") {
+      await reply(slackCommandMessage("No agent answers in this chat."));
+      return record({ decision: "info", code: "no_route" });
+    }
+    if (resolution.kind === "route_conflict") {
+      await reply(
+        slackCommandMessage(
+          "The route for this chat forces a session that belongs to another agent, so nothing ran. An operator has to fix the route.",
+        ),
+      );
+      return record({ decision: "error", code: "route_conflict" });
+    }
+    if (resolution.kind === "session_missing") {
+      await reply(
+        slackCommandMessage(
+          `Agent \`${resolution.agentId}\` answers here, but there is no session yet: nobody has spoken in this chat.`,
+        ),
+      );
+      return record({ decision: "info", code: "session_missing" });
+    }
+    session = resolution.session;
+
+    // Authority: this contact, and only this contact. Reads need access to the
+    // session; changes need to modify it and hold the command's own capability.
+    const capabilities = (deps.capabilitiesFor ?? ((id) => materializeSubjectCapabilities("contact", id)))(contactId);
+    const need = SESSION_ACCESS_BY_ACTION[parse.kind];
+    if (!contactCan(contactId, capabilities, need, "session", sessionRef(session))) {
+      await reply(
+        slackCommandMessage(
+          need === "modify"
+            ? `You are not allowed to change session \`${sessionRef(session)}\`.`
+            : `You do not have access to session \`${sessionRef(session)}\`.`,
+        ),
+      );
+      return record({
+        decision: "denied",
+        code: need === "modify" ? "not_authorized_modify" : "not_authorized_access",
+      });
+    }
+
+    const operation =
+      parse.kind === "stop" ? "interrupt" : parse.kind === "status" || parse.kind === "threads" ? null : "close-thread";
+    if (operation) {
+      const inherited = await (deps.inheritedAccess ?? defaultInheritedAccess)(operation);
+      if (!inherited) {
+        // No declared metadata means no way to ask the CLI's question: refuse.
+        await reply(slackCommandMessage("I could not check your permission for this command, so nothing ran."));
+        return record({ decision: "error", code: "access_metadata_missing" });
+      }
+      const verdict = (deps.commandAccess ?? enforceCliCommandAccess)({
+        source: "slack-command",
+        subject: { type: "contact", id: contactId },
+        group: inherited.group,
+        command: inherited.command,
+        access: inherited.access,
+        input: {},
+      });
+      if (!verdict.allowed) {
+        const capability = verdict.denialDetails?.capability;
+        await reply(
+          slackCommandMessage(
+            `You are not allowed to ${operation === "interrupt" ? "stop turns" : "close threads"}${capability ? ` (missing \`${capability}\`)` : ""}.`,
+          ),
+        );
+        return record({ decision: "denied", code: "not_authorized_command" });
+      }
+    }
+
+    // Loading the CLI's access metadata can take a while the first time: freshness is checked again
+    // right before anything changes.
+    if (isStale(event, now())) return refuseStale();
+
+    return await record(await run(parse, event, session, config, deps, now, reply));
+  };
 
   try {
-    return await record(await run(parse, event, session, config, deps, now, reply));
+    return await execute();
   } catch (error) {
     log.warn("Slack command failed", { subcommand: parse.kind, error: errorText(error) });
     await reply(slackCommandMessage("I could not run that right now. Try again in a moment."));
     return record({ decision: "error", code: "failed" });
   }
+}
+
+function isStale(event: SlackCommandEvent, at: number): boolean {
+  const age = at - event.receivedAt;
+  return age > SLACK_COMMAND_MAX_AGE_MS || age < -SLACK_COMMAND_MAX_AGE_MS;
 }
 
 function helpFor(event: SlackCommandEvent, parse: SlackCommandParse): SlackCommandMessage {
@@ -684,7 +717,7 @@ async function run(
       let examined = 0;
       const refused = new Map<string, number>();
       for (const thread of candidates) {
-        if (attempted >= MAX_IDLE_CLOSES) break;
+        if (closed >= MAX_IDLE_CLOSES || attempted >= MAX_IDLE_ATTEMPTS) break;
         examined += 1;
         // The health label is a sample; the runtime's records are the truth. Read them now: a
         // thread that got new instructions, or finished work, since the list was read is not idle.
@@ -696,7 +729,8 @@ async function run(
         attempted += 1;
         const result = await closeThread(index.parentSessionKey, thread.requestId);
         if (result.kind === "closed") {
-          closed += 1;
+          // Another close that won the race leaves nothing for this call to count.
+          if (result.changed) closed += 1;
           continue;
         }
         const reason = result.kind === "refused" ? result.code : "THREAD_NOT_FOUND";
@@ -722,7 +756,12 @@ async function run(
       }
       if (active > 0) lines.push(`• ${active} skipped: recent activity or work in progress.`);
       if (examined < candidates.length) {
-        lines.push(`${candidates.length - examined} more for the next round: run the command again.`);
+        const left = candidates.length - examined;
+        lines.push(
+          closed > 0
+            ? `${left} more for the next round: run the command again.`
+            : `${left} more not tried: nothing closed, so running it again will not get further until the refusals above are resolved.`,
+        );
       }
       await reply(slackCommandMessage(lines.join("\n")));
       return { decision: "allowed", code: "ok" };
@@ -796,6 +835,7 @@ function errorText(error: unknown): string {
 // Daemon consumer
 
 let consumerStop: (() => void) | null = null;
+let activeCommand: Promise<unknown> | null = null;
 
 /** Daemon: answers `/ravi` (`ravi.inbound.command`, its own queue group). */
 export async function startSlackCommandConsumer(
@@ -814,9 +854,12 @@ export async function startSlackCommandConsumer(
       for await (const event of stream) {
         if (stopped) return;
         try {
-          await handleSlackCommand(event.data, deps);
+          activeCommand = handleSlackCommand(event.data, deps);
+          await activeCommand;
         } catch (error) {
           log.warn("Failed to answer a Slack command", { error: errorText(error) });
+        } finally {
+          activeCommand = null;
         }
       }
     } catch (error) {
@@ -825,7 +868,12 @@ export async function startSlackCommandConsumer(
   })();
 }
 
-export function stopSlackCommandConsumer(): void {
+export async function stopSlackCommandConsumer(): Promise<void> {
   consumerStop?.();
   consumerStop = null;
+  // The command being answered finishes first: it may still have its reply and its audit event to
+  // send, and shutdown closes NATS and the database right after this returns.
+  await activeCommand?.catch((error) =>
+    log.debug("In-flight Slack command ended with an error", { error: errorText(error) }),
+  );
 }

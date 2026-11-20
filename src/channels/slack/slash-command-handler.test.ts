@@ -542,7 +542,7 @@ describe("what each command does", () => {
     expect(text(h.replies[0])).toContain("Closed 1 thread idle for more than 12 h");
   });
 
-  it("close idle: reports what refused, and does at most a batch", async () => {
+  it("close idle: reports what refused, and closes at most 25 per call", async () => {
     const threads = Array.from({ length: 30 }, (_, index) =>
       thread({ requestId: `req-${index}`, updatedAt: NOW - (100 + index) * 3_600_000 }),
     );
@@ -558,11 +558,11 @@ describe("what each command does", () => {
 
     await handleSlackCommand(eventFor("close idle"), h.deps);
 
-    expect(h.calls.close).toHaveLength(25);
+    expect(h.calls.close).toHaveLength(27);
     const reply = text(h.replies[0]);
-    expect(reply).toMatch(/Closed \d+ threads/);
-    expect(reply).toContain("refused: `THREAD_TRIGGERS_PENDING`");
-    expect(reply).toContain("5 more for the next round");
+    expect(reply).toContain("Closed 25 threads");
+    expect(reply).toContain("2 refused: `THREAD_TRIGGERS_PENDING`");
+    expect(reply).toContain("3 more for the next round");
   });
 
   it("close idle: says when nothing is idle", async () => {
@@ -1068,5 +1068,160 @@ describe("a configured external authority", () => {
     const h = real();
 
     expect(await handleSlackCommand(eventFor("status"), h.deps)).toEqual({ decision: "allowed", code: "ok" });
+  });
+});
+
+describe("review round: conflicts, freshness, failures, batches and shutdown", () => {
+  const HOUR = 3_600_000;
+
+  it("refuses a chat whose route forces a session that belongs to another agent", () => {
+    if (!dbGetAgent("main")) dbCreateAgent({ id: "main", cwd: "/tmp/main" });
+    if (!dbGetAgent("ravi-voice")) dbCreateAgent({ id: "ravi-voice", cwd: "/tmp/voice" });
+    getOrCreateSession("agent:ravi-voice:main", "ravi-voice", "/tmp/voice", { name: "voice-main" });
+    const config = {
+      agents: { main: { id: "main", cwd: "/tmp/main" }, "ravi-voice": { id: "ravi-voice", cwd: "/tmp/voice" } },
+      // The route sends this DM to `main` but forces the session named voice-main, which is ravi-voice's.
+      routes: [{ pattern: "U0PERSON", accountId: ACCOUNT, agent: "main", channel: "slack", session: "voice-main" }],
+      defaultAgent: "main",
+      defaultDmScope: "main",
+      accountAgents: {},
+      instanceToAccount: {},
+      instances: {},
+    } as unknown as RouterConfig;
+
+    expect(resolveSlackCommandSession(eventFor("status", { channelId: "D0CHAT" }), config)).toEqual({
+      kind: "route_conflict",
+    });
+  });
+
+  it("tells the person about a conflicting route and runs nothing", async () => {
+    const h = harness({ resolveSession: () => ({ kind: "route_conflict" }) });
+
+    expect(await handleSlackCommand(eventFor("stop"), h.deps)).toEqual({ decision: "error", code: "route_conflict" });
+    expect(text(h.replies[0])).toContain("forces a session that belongs to another agent");
+    expect(h.calls.interrupt).toBe(0);
+  });
+
+  it("does not stop a turn whose command went stale while the access metadata loaded", async () => {
+    let clock = NOW;
+    const h = harness({
+      now: () => clock,
+      inheritedAccess: async (operation) => {
+        // The first import of the CLI's access metadata took longer than the freshness window.
+        clock += SLACK_COMMAND_MAX_AGE_MS + 1;
+        return {
+          group: "sessions.runtime",
+          command: operation,
+          access: { kind: "mutate", resource: "sessions", action: operation, risk: "medium" },
+        };
+      },
+    });
+
+    expect(await handleSlackCommand(eventFor("stop"), h.deps)).toEqual({ decision: "denied", code: "stale" });
+    expect(h.calls.interrupt).toBe(0);
+    expect(text(h.replies[0])).toContain("*not run*");
+  });
+
+  it("answers and audits a failure while resolving the session, not only while running", async () => {
+    const h = harness({
+      resolveSession: () => {
+        throw new Error("database is locked: /Users/someone/.ravi/ravi.db");
+      },
+    });
+
+    expect(await handleSlackCommand(eventFor("status"), h.deps)).toEqual({ decision: "error", code: "failed" });
+    expect(text(h.replies[0])).toContain("I could not run that right now");
+    expect(text(h.replies[0])).not.toContain("locked");
+    expect(h.audits).toMatchObject([{ decision: "error", code: "failed", subcommand: "status" }]);
+  });
+
+  it("close idle: refusals do not use up the batch, so the threads behind them are reached", async () => {
+    const threads = Array.from({ length: 30 }, (_, index) =>
+      thread({ requestId: `req-${index}`, updatedAt: NOW - (200 - index) * HOUR }),
+    );
+    const h = harness({
+      threads: () => threadIndex(threads),
+      closeThread: async (_parent, ref) => {
+        h.calls.close.push(["agent:main:main", ref]);
+        return Number(ref.replace("req-", "")) < 28
+          ? { kind: "refused", name: ref, code: "THREAD_TRIGGERS_PENDING", message: "x" }
+          : { kind: "closed", name: ref, changed: true };
+      },
+    });
+
+    await handleSlackCommand(eventFor("close idle"), h.deps);
+
+    expect(h.calls.close).toHaveLength(30);
+    expect(text(h.replies[0])).toContain("Closed 2 threads");
+    expect(text(h.replies[0])).toContain("28 refused: `THREAD_TRIGGERS_PENDING`");
+  });
+
+  it("close idle: says that running it again will not help when every try was refused", async () => {
+    const threads = Array.from({ length: 120 }, (_, index) =>
+      thread({ requestId: `req-${index}`, updatedAt: NOW - (300 - index) * HOUR }),
+    );
+    const h = harness({
+      threads: () => threadIndex(threads),
+      closeThread: async (_parent, ref) => {
+        h.calls.close.push(["agent:main:main", ref]);
+        return { kind: "refused", name: ref, code: "THREAD_TRIGGERS_PENDING", message: "x" };
+      },
+    });
+
+    await handleSlackCommand(eventFor("close idle"), h.deps);
+
+    // Bounded: it does not walk all of them just to be refused by each.
+    expect(h.calls.close).toHaveLength(100);
+    const reply = text(h.replies[0]);
+    expect(reply).toContain("Closed 0 threads");
+    expect(reply).toContain("20 more not tried: nothing closed");
+    expect(reply).not.toContain("run the command again");
+  });
+
+  it("close idle: does not count a thread another close had already closed", async () => {
+    const h = harness({
+      threads: () => threadIndex([thread({ requestId: "raced", updatedAt: NOW - 100 * HOUR })]),
+      closeThread: async (_parent, ref) => ({ kind: "closed", name: ref, changed: false }),
+    });
+
+    await handleSlackCommand(eventFor("close idle"), h.deps);
+
+    expect(text(h.replies[0])).toContain("Closed 0 threads");
+  });
+
+  it("waits for the command it is answering before it reports stopped", async () => {
+    let release!: () => void;
+    const answered = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let startedAnswering!: () => void;
+    const answering = new Promise<void>((resolve) => {
+      startedAnswering = resolve;
+    });
+    const h = harness({
+      respond: async () => {
+        startedAnswering();
+        await answered;
+      },
+    });
+    const stream = (async function* () {
+      yield { topic: "ravi.inbound.command", data: eventFor("status") };
+      await new Promise<never>(() => {});
+    })();
+    await startSlackCommandConsumer({ subscribe: () => stream } as never, h.deps);
+    await answering;
+
+    let stopped = false;
+    const stopping = stopSlackCommandConsumer().then(() => {
+      stopped = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(stopped).toBe(false);
+
+    release();
+    await stopping;
+    expect(stopped).toBe(true);
+    // The audit event of the command that was in flight was published before shutdown could close NATS.
+    expect(h.audits).toHaveLength(1);
   });
 });
