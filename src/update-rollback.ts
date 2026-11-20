@@ -624,7 +624,8 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
           install,
           ...startCommands,
         ]
-      : [install, ...startCommands];
+      : // Nothing to restore: only what PM2 still lists goes, before that release comes back.
+        ["pm2 delete ravi-channels", "pm2 delete ravi", install, ...startCommands];
   let restored: { candidateDir: string; restoredAt: string } | null = null;
   let step: UpdateRollbackStep = "stop";
   const failed = (failedStep: UpdateRollbackStep, message: string, commands: string[]): UpdateRollbackOutcome => {
@@ -652,7 +653,9 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
     manifest
       ? unrestoredSnapshot(reason, manifest)
       : `${reason} The state is untouched: no snapshot was taken and nothing ran on it after Ravi ` +
-        `${plan.previousRelease}. Once every stopped process has exited, install and start Ravi ${plan.previousRelease}.`;
+        `${plan.previousRelease}. Once every stopped process has exited` +
+        `${deps.stoppedPids?.length ? ` (\`ps -p ${deps.stoppedPids.join(",")}\` lists none)` : ""}, remove what PM2 ` +
+        `still lists, then install and start Ravi ${plan.previousRelease}: nothing may start beside a live one.`;
   const unrestoredSnapshot = (reason: string, manifest: UpdateSnapshotManifest) =>
     `${reason} Nothing was restored: the state is still what Ravi ${manifest.targetRelease} wrote. ` +
     `The snapshot of Ravi ${plan.previousRelease}'s state is intact in ${snapshotDir}. The commands stop both ` +

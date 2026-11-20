@@ -455,7 +455,10 @@ describe("update rollback", () => {
     expect(refused).toMatchObject({ ok: false, step: "stop", restoredAt: null });
     if (refused.ok) throw new Error("unreachable");
     expect(refused.message).toContain("The state is untouched");
+    expect(refused.message).toContain("`ps -p 300,301` lists none");
     expect(refused.commands).toEqual([
+      "pm2 delete ravi-channels",
+      "pm2 delete ravi",
       "bun install -g ravi.bot@3.1.0",
       "ravi daemon start",
       "ravi channels start",
@@ -968,6 +971,76 @@ describe("update supervisor with a rollback plan", () => {
     expect(result?.message).toContain("stopped before it began");
   });
 
+  it("does not start the target without the snapshot, on any pass: the release that wrote the state comes back", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false });
+    const since = Date.now() - 1_000;
+
+    expect(
+      await fixture.rebind({
+        takeSnapshot: () => {
+          throw new Error("copy failed");
+        },
+      }),
+    ).toBe(false);
+    // Stopped, not replaced: no start of the target, and the rollback with nothing to restore.
+    expect(fixture.events).toEqual(["delete:ravi-channels", "delete:ravi"]);
+    expect(fixture.rolledBack).toEqual([null]);
+    const result = readUpdateSupervisorResult(since, fixture.stateDir);
+    expect(result).toMatchObject({ outcome: "rolled-back", previousRelease: "3.1.0" });
+    expect(result?.message).toContain(
+      "could be taken (the snapshot failed (copy failed)), so Ravi 3.2.0 was not started",
+    );
+  });
+
+  it("keeps the result a second pass recorded before it threw", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false });
+    const since = Date.now() - 1_000;
+    let prepared: string | null = null;
+    let readiness: "ready" | "adopt-on-start" = "adopt-on-start";
+    let hopped = false;
+
+    expect(
+      await fixture.rebind({
+        assertPrepared: () => readiness,
+        preparedStateRelease: () => prepared,
+        hopThroughWaypoint: async (dependencies) => {
+          prepared = dependencies.waypoint;
+          fixture.bringUp(dependencies.waypoint);
+          readiness = "ready";
+          hopped = true;
+          return { ok: true };
+        },
+        // The target's start throws on the second pass, after its snapshot: that pass rolls back and records it.
+        run: async (command, args) => {
+          if (hopped && args[0] === "start") throw new Error("pm2 crashed while starting the target");
+          return fixture.run(command, args);
+        },
+      }),
+    ).toBe(false);
+    const result = readUpdateSupervisorResult(since, fixture.stateDir);
+    expect(result).toMatchObject({ outcome: "rolled-back" });
+    expect(result?.message).not.toContain("stopped before it began");
+  });
+
+  it("warns about a stopped runner only once the waypoint could have started it", async () => {
+    for (const [step, expected] of [
+      ["install", []],
+      ["start", ["may have run it for its boot record"]],
+      ["prepare", ["ran it for its boot record"]],
+    ] as const) {
+      const fixture = supervisorFixture({ targetNeverReady: false, channelsStopped: true });
+      const since = Date.now() - 1_000;
+      await fixture.rebind({
+        assertPrepared: () => "adopt-on-start",
+        preparedStateRelease: () => null,
+        hopThroughWaypoint: async () => ({ ok: false, step, message: "it failed" }),
+      });
+      const warnings = readUpdateSupervisorResult(since, fixture.stateDir)?.warnings ?? [];
+      expect(warnings.length).toBe(expected.length);
+      for (const [index, text] of expected.entries()) expect(warnings[index]).toContain(text);
+    }
+  });
+
   it("leaves the waypoint running and says so when the target cannot be installed again", async () => {
     const fixture = supervisorFixture({ targetNeverReady: false });
     const since = Date.now() - 1_000;
@@ -1226,6 +1299,45 @@ describe("update waypoint", () => {
     const outcome = await hopThroughWaypoint(waypointFixture({ unreadableAfterInstall: true }).deps);
     expect(outcome).toMatchObject({ ok: false, step: "start" });
     expect(outcome.ok ? "" : outcome.message).toContain("Unable to read the managed PM2 processes");
+  });
+
+  it("counts the daemon in the read that passed the readiness check, not one PM2 put in its place", async () => {
+    const { deps, bundle } = waypointFixture();
+    const inner = deps.getProcesses;
+    let reads = 0;
+    deps.getProcesses = () => {
+      const list = inner();
+      const daemon = list.find((process) => process.name === "ravi");
+      if (daemon && daemon.pid < 900 && (reads += 1) === 2) {
+        // PM2 replaced the daemon right after the check passed; the new one has its own boot record.
+        const replacement = { ...daemon, pid: 900, startedAt: (daemon.startedAt ?? 0) + 1 };
+        boot(deps.stateDir, replacement, bundle, "3.261113.2");
+        list.splice(list.indexOf(daemon), 1, replacement);
+      }
+      return list;
+    };
+    expect(await hopThroughWaypoint(deps)).toMatchObject({ ok: false, step: "prepare" });
+  });
+
+  it("checks both processes are up before a window of 0", async () => {
+    const { deps } = waypointFixture();
+    deps.stabilityWindowMs = 0;
+    const inner = deps.getProcesses;
+    let channelsSeen = 0;
+    deps.getProcesses = () => {
+      const list = inner();
+      // The daemon wrote its records, then exited, once the runner was up.
+      if (list.some((process) => process.name === "ravi-channels") && (channelsSeen += 1) > 1) {
+        const daemon = list.findIndex((process) => process.name === "ravi");
+        if (daemon >= 0) list.splice(daemon, 1);
+      }
+      return list;
+    };
+    expect(await hopThroughWaypoint(deps)).toMatchObject({
+      ok: false,
+      step: "prepare",
+      message: expect.stringContaining("not both up"),
+    });
   });
 
   it("stops at the step that failed", async () => {

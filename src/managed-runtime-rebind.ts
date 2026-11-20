@@ -758,25 +758,23 @@ export async function rebindManagedRuntimeProcesses(
       commands: outcome.commands,
     });
   };
-  const unprotected = (reason: string) =>
-    `Ravi ${target.version} did not converge (${reason}). No snapshot was taken (${warnings.join("; ") || "unknown reason"}), ` +
-    "so nothing was rolled back.";
+  // Both processes of the release that wrote the state are stopped. Without its snapshot nothing new starts on that
+  // state (neither a waypoint nor the target, on any pass): it is untouched, and that release comes back on it by
+  // itself (the installed package is the target's by now). A stopped process that never exits, or a release that
+  // cannot be installed or started again, leaves the host stopped; the result names the commands.
+  if (!snapshot) {
+    await rollBack(
+      "",
+      null,
+      (hop ? `The state needs the waypoint Ravi ${hop}, but no` : "No") +
+        ` snapshot of Ravi ${rollbackPlan.previousRelease}'s state could be taken ` +
+        `(${warnings.join("; ") || "unknown reason"}), so ${hop ? "neither the waypoint nor " : ""}Ravi ` +
+        `${target.version} was ${hop ? "" : "not "}started`,
+    );
+    return false;
+  }
 
   if (hop) {
-    // Both processes of the release that wrote the state are stopped. Without its snapshot the waypoint has no
-    // rollback, so it is not taken: the state is untouched, and that release comes back on it by itself (the
-    // installed package is the target's by now). Only a stopped process that never exits leaves the host stopped:
-    // nothing starts beside it, and the result names the commands.
-    if (!snapshot) {
-      await rollBack(
-        "",
-        null,
-        `The state needs the waypoint Ravi ${hop}, but no snapshot of Ravi ${rollbackPlan.previousRelease}'s state ` +
-          `could be taken (${warnings.join("; ") || "unknown reason"}), so neither the waypoint nor Ravi ` +
-          `${target.version} was started`,
-      );
-      return false;
-    }
     let outcome: WaypointHopOutcome;
     try {
       outcome = await (dependencies.hopThroughWaypoint ?? hopThroughWaypoint)({
@@ -834,13 +832,13 @@ export async function rebindManagedRuntimeProcesses(
           `it began (${reason}). Nothing else changed; run the update again.`,
         { commands: ["ravi daemon status", `ravi update --version ${target.version}`] },
       );
+    const secondPassAt = Date.now();
     try {
       // The waypoint started the runner only for its boot record: one that was stopped before stays stopped.
       if (channels?.status !== "online" && (await remove(CHANNELS_PM2_PROCESS_NAME)) !== 0) {
         afterWaypoint("PM2 could not remove the waypoint's channel runner");
         return false;
       }
-      const secondPassAt = Date.now();
       const converged = await rebindManagedRuntimeProcesses(managedRuntimeSnapshot(getProcesses()), target, {
         ...dependencies,
         afterWaypoint: true,
@@ -852,7 +850,8 @@ export async function rebindManagedRuntimeProcesses(
         afterWaypoint("PM2 changed before it could stop the waypoint's processes");
       return converged;
     } catch (cause) {
-      afterWaypoint((cause as Error).message);
+      // A pass that recorded its own end (a rollback to the waypoint, say) keeps it.
+      if (!readUpdateSupervisorResult(secondPassAt, stateDir)) afterWaypoint((cause as Error).message);
       return false;
     }
   }
@@ -861,9 +860,7 @@ export async function rebindManagedRuntimeProcesses(
   try {
     converged = await replace();
   } catch (error) {
-    const reason = `the rebind failed: ${(error as Error).message}`;
-    if (snapshot) await rollBack(reason, snapshot);
-    else record("failed", unprotected(reason));
+    await rollBack(`the rebind failed: ${(error as Error).message}`, snapshot);
     throw error;
   }
   if (converged) {
@@ -880,9 +877,7 @@ export async function rebindManagedRuntimeProcesses(
     );
     return true;
   }
-  const reason = "it did not converge, or did not stay up for the stability window";
-  if (snapshot) await rollBack(reason, snapshot);
-  else record("failed", unprotected(reason));
+  await rollBack("it did not converge, or did not stay up for the stability window", snapshot);
   return false;
 }
 
