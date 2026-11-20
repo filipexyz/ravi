@@ -548,7 +548,7 @@ describe("a follow addressed to a thread child through the real turn start", () 
     return threadChat;
   }
 
-  function followFire(source: Record<string, unknown>): RuntimeLaunchPrompt {
+  function followFire(source: object): RuntimeLaunchPrompt {
     return {
       prompt: "[Trigger: gh-follow] CI completed",
       _trigger: true,
