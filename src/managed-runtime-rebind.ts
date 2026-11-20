@@ -174,11 +174,16 @@ function describeRollbackFailure(outcome: Extract<UpdateRollbackOutcome, { ok: f
   return `the automatic rollback stopped at ${outcome.step}: ${outcome.message}`;
 }
 
-function resolveStabilityWindowMs(dependencies: ManagedRuntimeRebindDependencies): number {
-  if (dependencies.stabilityWindowMs !== undefined) return Math.max(0, dependencies.stabilityWindowMs);
-  const raw = process.env[MANAGED_RUNTIME_STABILITY_WINDOW_ENV]?.trim();
+/** The stability window from `RAVI_UPDATE_STABILITY_WINDOW_MS` (at most 300 s), or 30 s. */
+export function configuredStabilityWindowMs(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env[MANAGED_RUNTIME_STABILITY_WINDOW_ENV]?.trim();
   if (raw && /^\d+$/.test(raw)) return Math.min(Number(raw), MAX_STABILITY_WINDOW_MS);
   return DEFAULT_STABILITY_WINDOW_MS;
+}
+
+function resolveStabilityWindowMs(dependencies: ManagedRuntimeRebindDependencies): number {
+  if (dependencies.stabilityWindowMs !== undefined) return Math.max(0, dependencies.stabilityWindowMs);
+  return configuredStabilityWindowMs();
 }
 
 /** The configured window, shortened to end by the deadline. */

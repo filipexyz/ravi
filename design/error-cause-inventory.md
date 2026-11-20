@@ -859,24 +859,24 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/triggers.ts | 1266 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:f45789305da03b5f801eb2b5 |
 | cli | src/cli/commands/triggers.ts | 1329 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:6afdd45893577312faf8ac24 |
 | cli | src/cli/commands/triggers.ts | 1390 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:7a08226adeb271f19ef0aac9 |
-| cli | src/cli/commands/update.ts | 255 | triaged-follow-up | catch-without-binding | src/cli/commands/update.ts:35bb94b5f65dda0c3dc10610 |
-| cli | src/cli/commands/update.ts | 269 | triaged-follow-up | catch-without-binding | src/cli/commands/update.ts:5595b1c0101d56d7095f155e |
-| cli | src/cli/commands/update.ts | 314 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/update.ts:c3087cc8cd175cfa03f6a954 |
-| cli | src/cli/commands/update.ts | 524 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:1fdd9e4af1ee541db180402e |
-| cli | src/cli/commands/update.ts | 540 | triaged-follow-up | catch-without-binding | src/cli/commands/update.ts:9e93198754850aea4173871b |
-| cli | src/cli/commands/update.ts | 583 | triaged-follow-up | catch-without-binding | src/cli/commands/update.ts:93e288a912d18b45a71a8cd0 |
-| cli | src/cli/commands/update.ts | 634 | no-cause | Optional intake warning must not initialize local state or fail a completed update when the gateway is unavailable. | src/cli/commands/update.ts:8c7f44f7e8c1d5096b50084a |
-| cli | src/cli/commands/update.ts | 704 | triaged-follow-up | catch-without-binding | src/cli/commands/update.ts:4182d0cbe2f493f2d9b69f88 |
-| cli | src/cli/commands/update.ts | 835 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:474caae717eddaa7c894e6f1 |
-| cli | src/cli/commands/update.ts | 876 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:956532064255dadc3dee0348 |
-| cli | src/cli/commands/update.ts | 917 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:a9c6d086c3ce450848169299 |
-| cli | src/cli/commands/update.ts | 1115 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:1314e4fbd85b4898447778eb |
-| cli | src/cli/commands/update.ts | 1154 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:de4e17f1bd9bee37fd1b5125 |
-| cli | src/cli/commands/update.ts | 1190 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:153fdae06b54cd32ce81efaa |
-| cli | src/cli/commands/update.ts | 1220 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:1537fb9b4fe45204f72415a2 |
-| cli | src/cli/commands/update.ts | 1274 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:74bbfa2976253cbe237bad91 |
+| cli | src/cli/commands/update.ts | 256 | triaged-follow-up | catch-without-binding | src/cli/commands/update.ts:35bb94b5f65dda0c3dc10610 |
+| cli | src/cli/commands/update.ts | 270 | triaged-follow-up | catch-without-binding | src/cli/commands/update.ts:5595b1c0101d56d7095f155e |
+| cli | src/cli/commands/update.ts | 315 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/update.ts:c3087cc8cd175cfa03f6a954 |
+| cli | src/cli/commands/update.ts | 525 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:1fdd9e4af1ee541db180402e |
+| cli | src/cli/commands/update.ts | 541 | triaged-follow-up | catch-without-binding | src/cli/commands/update.ts:9e93198754850aea4173871b |
+| cli | src/cli/commands/update.ts | 584 | triaged-follow-up | catch-without-binding | src/cli/commands/update.ts:93e288a912d18b45a71a8cd0 |
+| cli | src/cli/commands/update.ts | 635 | no-cause | Optional intake warning must not initialize local state or fail a completed update when the gateway is unavailable. | src/cli/commands/update.ts:8c7f44f7e8c1d5096b50084a |
+| cli | src/cli/commands/update.ts | 705 | triaged-follow-up | catch-without-binding | src/cli/commands/update.ts:4182d0cbe2f493f2d9b69f88 |
+| cli | src/cli/commands/update.ts | 836 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:474caae717eddaa7c894e6f1 |
+| cli | src/cli/commands/update.ts | 877 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:956532064255dadc3dee0348 |
+| cli | src/cli/commands/update.ts | 918 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:a9c6d086c3ce450848169299 |
+| cli | src/cli/commands/update.ts | 1116 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:1314e4fbd85b4898447778eb |
+| cli | src/cli/commands/update.ts | 1155 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:de4e17f1bd9bee37fd1b5125 |
+| cli | src/cli/commands/update.ts | 1194 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:153fdae06b54cd32ce81efaa |
+| cli | src/cli/commands/update.ts | 1224 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:1537fb9b4fe45204f72415a2 |
 | cli | src/cli/commands/update.ts | 1280 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:74bbfa2976253cbe237bad91 |
-| cli | src/cli/commands/update.ts | 1310 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:c33f18a27e6494675a063425 |
+| cli | src/cli/commands/update.ts | 1286 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:74bbfa2976253cbe237bad91 |
+| cli | src/cli/commands/update.ts | 1316 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:c33f18a27e6494675a063425 |
 | cli | src/cli/commands/watch.ts | 558 | fixed | binding retained / no recognized error surface | src/cli/commands/watch.ts:fbff794a5bddadc3ca9ea59f |
 | cli | src/cli/commands/widgets.ts | 68 | triaged-follow-up | catch-without-binding | src/cli/commands/widgets.ts:8c447b55c38f008aa381b929 |
 | cli | src/cli/commands/widgets.ts | 80 | triaged-follow-up | catch-without-binding | src/cli/commands/widgets.ts:13d9ce0b17bf6fda14a722e3 |
@@ -1510,23 +1510,23 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | mail | src/mail/client.ts | 226 | fixed | binding retained / no recognized error surface | src/mail/client.ts:b920208fa920df66333f7b0a |
 | mailbox | src/mailbox/db.ts | 1334 | triaged-follow-up | catch-without-binding | src/mailbox/db.ts:f43dcb2b37c443b0aa9129a8 |
 | mailbox | src/mailbox/db.ts | 1344 | triaged-follow-up | catch-without-binding | src/mailbox/db.ts:cc4dfd2e54bc8341e5292796 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 232 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:4a827ce10671c294ac54a992 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 301 | triaged-follow-up | catch-without-binding | src/managed-runtime-rebind.ts:dd856169db1b4b768e670ba3 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 545 | no-cause | A failed liveness probe cannot prove a supervised successor, so preserve the predecessor. | src/managed-runtime-rebind.ts:b43d3dac13a0ff957072832b |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 618 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:63dc9f40c32a704cc7614693 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 640 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:a6f06efe8a4d6a612eac9823 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 716 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:cf24067bbb8806b7b387fb55 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 751 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:92f5d50a89239a1cae72b182 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 760 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:483a4563b318c2c6006f2d61 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 818 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:7237f8b2d6f9928499bd5390 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 836 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:9f2438fb6133c71f601d6b45 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 884 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:00fc922d938f6439bbaf0721 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 919 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:6a77dbe236f5601dbd8dc222 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 939 | no-cause | No refusal file (or an unreadable one) means the supervisor recorded no refusal. | src/managed-runtime-rebind.ts:f6fcd3fc7c99cdcaf0541e85 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 963 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:367f51c6f1f1d71874a5939f |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 987 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:1ebee7d3bdd4356114ec83da |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1016 | no-cause | Without a log file the supervisor runs as before, output ignored; a refusal still reaches the CLI through its file. | src/managed-runtime-rebind.ts:4b7988dfa2bbd21b4038d48b |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1055 | no-cause | A supervisor that cannot start reaches the CLI as a run that did not converge; the update fails on that result. | src/managed-runtime-rebind.ts:95d81aa49a91bab2e800eab6 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 237 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:4a827ce10671c294ac54a992 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 306 | triaged-follow-up | catch-without-binding | src/managed-runtime-rebind.ts:dd856169db1b4b768e670ba3 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 550 | no-cause | A failed liveness probe cannot prove a supervised successor, so preserve the predecessor. | src/managed-runtime-rebind.ts:b43d3dac13a0ff957072832b |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 623 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:63dc9f40c32a704cc7614693 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 645 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:a6f06efe8a4d6a612eac9823 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 721 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:cf24067bbb8806b7b387fb55 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 756 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:92f5d50a89239a1cae72b182 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 765 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:483a4563b318c2c6006f2d61 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 823 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:7237f8b2d6f9928499bd5390 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 841 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:9f2438fb6133c71f601d6b45 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 889 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:00fc922d938f6439bbaf0721 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 924 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:6a77dbe236f5601dbd8dc222 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 944 | no-cause | No refusal file (or an unreadable one) means the supervisor recorded no refusal. | src/managed-runtime-rebind.ts:f6fcd3fc7c99cdcaf0541e85 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 968 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:367f51c6f1f1d71874a5939f |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 992 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:1ebee7d3bdd4356114ec83da |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1021 | no-cause | Without a log file the supervisor runs as before, output ignored; a refusal still reaches the CLI through its file. | src/managed-runtime-rebind.ts:4b7988dfa2bbd21b4038d48b |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1060 | no-cause | A supervisor that cannot start reaches the CLI as a run that did not converge; the update fails on that result. | src/managed-runtime-rebind.ts:95d81aa49a91bab2e800eab6 |
 | managed-runtime.ts | src/managed-runtime.ts | 63 | triaged-follow-up | catch-without-binding | src/managed-runtime.ts:c7e943a5a8535897215a0df9 |
 | managed-runtime.ts | src/managed-runtime.ts | 78 | triaged-follow-up | catch-without-binding | src/managed-runtime.ts:23aa5ff5991b0e94a5873d35 |
 | managed-runtime.ts | src/managed-runtime.ts | 91 | triaged-follow-up | catch-without-binding | src/managed-runtime.ts:91f9c7ce96f25678f32c79a6 |

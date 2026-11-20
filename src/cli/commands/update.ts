@@ -2,7 +2,7 @@ import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   buildManagedRuntimeIdentity,
   findRaviPackageRoot,
@@ -16,6 +16,7 @@ import {
 } from "../../managed-runtime.js";
 import {
   acquireUpdateSupervisorLock,
+  configuredStabilityWindowMs,
   managedRuntimeSnapshot,
   runManagedRuntimeCommand,
   runManagedRuntimeRebindSupervisor,
@@ -1182,7 +1183,10 @@ async function runOperatorRollback(
       1,
     );
   }
-  const stateDir = getRaviStateDir(env);
+  // One absolute directory for the plan, the restore, the lock and the previous release's CLI: a relative value
+  // would otherwise mean the operator's cwd here and the package directory once that CLI starts.
+  const stateDir = resolve(getRaviStateDir(env));
+  const rollbackEnv = { ...env, RAVI_STATE_DIR: stateDir };
   const getProcesses = deps.rollbackRuntime?.getProcesses ?? readManagedProcesses;
   let rollback: OperatorRollbackPlan;
   try {
@@ -1231,7 +1235,9 @@ async function runOperatorRollback(
       run: runManagedRuntimeCommand,
       getProcesses: () => getPm2Processes({ strict: true }),
       pidAlive: (pid) => processExitState(pid) !== "exited",
-      env,
+      env: rollbackEnv,
+      // The same window as the update's own rollback (RAVI_UPDATE_STABILITY_WINDOW_MS).
+      stabilityWindowMs: configuredStabilityWindowMs(env),
     });
   } finally {
     lock.release();

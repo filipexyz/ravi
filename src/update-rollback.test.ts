@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { rebindManagedRuntimeProcesses } from "./managed-runtime-rebind.js";
 import { resolveManagedRuntimeTargetFromPackageRoot } from "./managed-runtime.js";
 import type { Pm2Process } from "./pm2.js";
@@ -992,6 +992,43 @@ describe("ravi update --rollback", () => {
     expect(() => planOperatorRollback({ stateDir: other.stateDir, processes: other.processes })).toThrow(
       UPDATE_ROLLBACK_UNAVAILABLE,
     );
+  });
+
+  it("hands the rollback one absolute state directory and the configured window", async () => {
+    const { stateDir, processes } = operatorRollbackFixture();
+    const seen: Array<{ stateDir: string; envStateDir?: string; window?: number }> = [];
+    const rollbackRuntime = {
+      getProcesses: () => processes,
+      rollBack: async (dependencies: UpdateRollbackDependencies) => {
+        seen.push({
+          stateDir: dependencies.stateDir,
+          envStateDir: dependencies.env?.RAVI_STATE_DIR,
+          window: dependencies.stabilityWindowMs,
+        });
+        return {
+          ok: true as const,
+          target: dependencies.manifest as never,
+          restoredAt: "2026-11-20T01:00:00.000Z",
+          candidateDir: join(stateDir, "candidate"),
+        };
+      },
+    };
+    // The operator names the state directory relative to their cwd; the previous release's CLI starts elsewhere.
+    const relativeStateDir = relative(process.cwd(), stateDir);
+    for (const window of ["120000", "0"]) {
+      await runUpdate(
+        { rollback: true, execute: true, json: true },
+        {
+          env: { PATH: "/usr/bin", RAVI_STATE_DIR: relativeStateDir, RAVI_UPDATE_STABILITY_WINDOW_MS: window },
+          insideDaemonTree: () => false,
+          rollbackRuntime,
+        },
+      );
+    }
+    expect(seen).toEqual([
+      { stateDir, envStateDir: stateDir, window: 120_000 },
+      { stateDir, envStateDir: stateDir, window: 0 },
+    ]);
   });
 
   it("previews by default, rolls back with --execute, and runs only from a terminal", async () => {
