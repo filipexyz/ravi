@@ -182,6 +182,8 @@ function rollbackFixture(
     untouched?: boolean;
     /** PM2 lists a daemon again (pid 310) that the rollback removes and that never exits. */
     reRegistered?: boolean;
+    /** PM2 lists a runner again too (pid 311). */
+    reRegisteredRunner?: boolean;
     /** `pm2 delete` throws. */
     deleteThrows?: boolean;
   } = {},
@@ -192,9 +194,14 @@ function rollbackFixture(
   const bundle = install.target.bundlePath;
   const epoch = Math.ceil(statSync(bundle).mtimeMs) + 1;
   let processes: Pm2Process[] = input.untouched
-    ? input.reRegistered
-      ? [pm2Process("ravi", bundle, install.root, { pm_id: 7, pid: 310, startedAt: epoch })]
-      : []
+    ? [
+        ...(input.reRegisteredRunner
+          ? [pm2Process("ravi-channels", bundle, install.root, { pm_id: 8, pid: 311, startedAt: epoch })]
+          : []),
+        ...(input.reRegistered
+          ? [pm2Process("ravi", bundle, install.root, { pm_id: 7, pid: 310, startedAt: epoch })]
+          : []),
+      ]
     : [
         pm2Process("ravi", bundle, install.root, { pm_id: 5, pid: 300, startedAt: epoch }),
         pm2Process("ravi-channels", bundle, install.root, { pm_id: 6, pid: 301, startedAt: epoch }),
@@ -345,6 +352,13 @@ describe("update rollback", () => {
       if (outcome.ok) throw new Error("unreachable");
       expect(outcome.message).toContain("`ps -p 300,301,310` lists none");
     }
+    // Every pid PM2 lists is named before the first removal: the runner's removal throws, the daemon is still named.
+    const both = rollbackFixture({ untouched: true, reRegistered: true, reRegisteredRunner: true, deleteThrows: true });
+    const cut = await rollBackUpdate(both.deps);
+    if (cut.ok) throw new Error("unreachable");
+    expect(cut.message).toContain("`ps -p 300,301,311,310` lists none");
+    // Remove first, then wait for the exit: a process PM2 still lists only exits once removed.
+    expect(cut.message.indexOf("remove what PM2 still lists")).toBeLessThan(cut.message.indexOf("`ps -p"));
   });
 
   it("leaves the restored state and the exact commands when the previous release cannot be installed", async () => {
@@ -810,6 +824,8 @@ describe("update supervisor with a rollback plan", () => {
     const since = Date.now() - 1_000;
     let prepared: string | null = null;
     let readiness: "ready" | "adopt-on-start" = "adopt-on-start";
+    let hopped = false;
+    let reads = 0;
 
     expect(
       await fixture.rebind({
@@ -817,16 +833,25 @@ describe("update supervisor with a rollback plan", () => {
         preparedStateRelease: () => prepared,
         hopThroughWaypoint: async (dependencies) => {
           prepared = dependencies.waypoint;
-          // Only the runner is up when the update to the target reads PM2: that pass returns at once.
-          fixture.bringUp(dependencies.waypoint, ["ravi-channels"]);
+          fixture.bringUp(dependencies.waypoint);
           readiness = "ready";
+          hopped = true;
           return { ok: true };
+        },
+        // After the waypoint, the update to the target reads another daemon than the one the waypoint handed over:
+        // that pass returns at once, before it records anything.
+        getProcesses: () => {
+          const list = fixture.processes();
+          if (!hopped || (reads += 1) !== 2) return list;
+          return list.map((process) => (process.name === "ravi" ? { ...process, pid: process.pid + 500 } : process));
         },
       }),
     ).toBe(false);
     const result = readUpdateSupervisorResult(since, fixture.stateDir);
     expect(result).toMatchObject({ outcome: "failed" });
-    expect(result?.message).toContain("stopped before it began");
+    expect(result?.message).toContain(
+      "stopped before it began (PM2 changed before it could stop the waypoint's processes)",
+    );
   });
 
   it("does not start the target without the snapshot, on any pass: the release that wrote the state comes back", async () => {
@@ -953,7 +978,10 @@ describe("update supervisor with a rollback plan", () => {
     expect(fixture.events.filter((event) => event.startsWith("start:"))).toEqual([]);
     const result = readUpdateSupervisorResult(since, fixture.stateDir);
     expect(result).toMatchObject({ outcome: "failed" });
-    expect(result?.message).toContain("PM2 shows no daemon of the waypoint online");
+    // Nothing runs: the message says so, and the first command starts the daemon.
+    expect(result?.message).toContain("PM2 shows no daemon online: nothing runs now");
+    expect(result?.message).not.toContain("runs on it");
+    expect(result?.commands[0]).toBe("ravi daemon start");
   });
 
   it("waits for the waypoint's runner to exit before the update to the target", async () => {
@@ -982,6 +1010,36 @@ describe("update supervisor with a rollback plan", () => {
     const result = readUpdateSupervisorResult(since, fixture.stateDir);
     expect(result).toMatchObject({ outcome: "failed" });
     expect(result?.message).toContain(`channel runner (pid ${runnerPid}) did not exit`);
+    // A process PM2 no longer lists: the operator confirms it is gone before the next update.
+    expect(result?.message).toContain("confirm it is gone");
+    expect(result?.commands[0]).toBe(`ps -p ${runnerPid}`);
+  });
+
+  it("waits for the waypoint's runner that exits a moment after its removal, then updates to the target", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false, channelsStopped: true });
+    let prepared: string | null = null;
+    let readiness: "ready" | "adopt-on-start" = "adopt-on-start";
+    let runnerPid = 0;
+    let checks = 0;
+
+    expect(
+      await fixture.rebind({
+        assertPrepared: () => readiness,
+        preparedStateRelease: () => prepared,
+        hopThroughWaypoint: async (dependencies) => {
+          prepared = dependencies.waypoint;
+          fixture.bringUp(dependencies.waypoint);
+          runnerPid = fixture.processes().find((process) => process.name === "ravi-channels")!.pid;
+          readiness = "ready";
+          return { ok: true };
+        },
+        // The removed runner is still there for its first three checks, then gone.
+        pidAlive: (pid) =>
+          (pid === runnerPid && (checks += 1) <= 3) || fixture.processes().some((process) => process.pid === pid),
+      }),
+    ).toBe(true);
+    expect(checks).toBeGreaterThan(3);
+    expect(fixture.events).toContain("start:ravi");
   });
 
   it("leaves the waypoint running and says so when the target cannot be installed again", async () => {

@@ -801,6 +801,27 @@ export async function rebindManagedRuntimeProcesses(
           `it began (${reason}). Nothing else changed; run the update again.`,
         { commands: ["ravi daemon status", `ravi update --version ${target.version}`] },
       );
+    // Two ends where "runs on it, nothing else changed" is not true: no daemon is up, or a process PM2 no longer
+    // lists is still alive.
+    const noDaemonAfterWaypoint = () =>
+      record(
+        "failed",
+        `Ravi ${hop} prepared the state, but PM2 shows no daemon online: nothing runs now, and the update to Ravi ` +
+          `${target.version} did not begin. The installed package is already Ravi ${target.version}, which adopts ` +
+          "the state the waypoint prepared: start the daemon, check it, and run the update again.",
+        { commands: ["ravi daemon start", "ravi daemon status", `ravi update --version ${target.version}`] },
+      );
+    const runnerLeftAfterWaypoint = (pids: number[]) =>
+      record(
+        "failed",
+        `Ravi ${hop} prepared the state and its daemon runs on it, but its channel runner (pid ${pids.join(", ")}) ` +
+          `did not exit after PM2 removed it, so the update to Ravi ${target.version} did not begin. PM2 no ` +
+          "longer lists that process and the next update would not see it: confirm it is gone before running the " +
+          "update again.",
+        {
+          commands: [`ps -p ${pids.join(",")}`, "ravi daemon status", `ravi update --version ${target.version}`],
+        },
+      );
     const secondPassAt = Date.now();
     try {
       // The waypoint started the runner only for its boot record: one that was stopped before stays stopped. Removed
@@ -822,7 +843,7 @@ export async function rebindManagedRuntimeProcesses(
           if (clock() <= before) break;
         }
         if (!runnerPids.every(gone)) {
-          afterWaypoint(`the waypoint's channel runner (pid ${runnerPids.join(", ")}) did not exit after its removal`);
+          runnerLeftAfterWaypoint(runnerPids);
           return false;
         }
       }
@@ -830,7 +851,7 @@ export async function rebindManagedRuntimeProcesses(
       // with an empty list), that pass would have nothing to stop and would return at once without the target.
       const waypointProcesses = getProcesses();
       if (!waypointProcesses.some((process) => process.name === PM2_PROCESS_NAME && process.status === "online")) {
-        afterWaypoint("PM2 shows no daemon of the waypoint online, so there is nothing to update to the target");
+        noDaemonAfterWaypoint();
         return false;
       }
       const converged = await rebindManagedRuntimeProcesses(managedRuntimeSnapshot(waypointProcesses), target, {
