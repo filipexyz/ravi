@@ -267,6 +267,14 @@ export interface SlackViewsPushInput {
   readonly view: Record<string, unknown>;
 }
 
+/** App Home tab view for one user (`views.publish`). */
+export interface SlackViewsPublishInput {
+  readonly userId: string;
+  readonly view: Record<string, unknown>;
+  /** Slack's view hash, to refuse publishing over a newer view. */
+  readonly hash?: string;
+}
+
 export interface SlackViewsResponse extends SlackApiResponse {
   readonly view?: Record<string, unknown>;
 }
@@ -539,6 +547,18 @@ export class SlackWebApiClient {
       trigger_id: input.triggerId,
       view: input.view,
     });
+  }
+
+  async viewsPublish(input: SlackViewsPublishInput): Promise<SlackViewsResponse> {
+    return this.apiJsonRequest<SlackViewsResponse>(
+      "views.publish",
+      this.botToken,
+      compactBody({
+        user_id: input.userId,
+        view: input.view,
+        hash: input.hash,
+      }),
+    );
   }
 
   async authTest(options: { signal?: AbortSignal } = {}): Promise<SlackAuthTestResponse> {

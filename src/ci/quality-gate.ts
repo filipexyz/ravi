@@ -69,6 +69,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/markdown-delivery.test.ts",
     // Thread root card and its brief: shell-typed `\n` decoded into line breaks.
     "src/channels/slack/thread-card.test.ts",
+    // Default App Home: app_home_opened parsing and a valid view within Block Kit limits.
+    "src/channels/slack/app-home.test.ts",
     "src/channels/slack/thread-text.test.ts",
     // Native channel readiness: broker connection, backend prerequisites, queued-but-undeliverable warnings.
     "src/channels/native-readiness.test.ts",

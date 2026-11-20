@@ -32,9 +32,9 @@ The channel config `slack-main` points to the tokens (credential connection `sla
 At [api.slack.com/apps](https://api.slack.com/apps), choose **Create New App > From scratch**. Ravi does not ship an app manifest, so set these by hand:
 
 1. **Socket Mode:** turn it on and create the app-level token with the `connections:write` scope. Copy it (`xapp-...`).
-2. **Event Subscriptions:** turn it on and subscribe to the bot events `message.im`, `message.channels`, `message.groups`, `message.mpim` and `app_mention` (plus `reaction_added` for reaction triggers).
+2. **Event Subscriptions:** turn it on and subscribe to the bot events `message.im`, `message.channels`, `message.groups`, `message.mpim`, `app_mention` and `app_home_opened` (plus `reaction_added` for reaction triggers).
 3. **Interactivity & Shortcuts:** turn it on. Approval buttons need it.
-4. **App Home:** turn on the **Messages Tab** and allow users to send messages from it, or you cannot DM the app.
+4. **App Home:** turn on the **Messages Tab** and allow users to send messages from it, or you cannot DM the app. Turn on the **Home Tab** too: Ravi fills it (see [The Home tab](#the-home-tab)).
 5. **OAuth & Permissions:** add the bot scopes below. Leave token rotation off: Ravi does not refresh tokens.
 6. **Install to Workspace** and copy the **Bot User OAuth Token** (`xoxb-...`).
 
@@ -214,6 +214,14 @@ ravi channels restart
 
 The agent then puts an hourglass reaction on your message and removes it when done. `RAVI_SLACK_REACTION_PRESENCE=always` shows both.
 
+### The Home tab
+
+When someone opens the app's **Home** tab, Ravi publishes a default Home for that person: the agent's name, its description, how to talk to it (the Messages tab, or a mention in a channel the app is in) and a note that nothing else is set up there yet. The agent is the one that answers that person's DMs.
+
+- The description is the one the org directory shows. Set it with `ravi agents set main description "Answers questions about sales"` (300 characters at most). The Home never shows the agent's instructions or files: anyone in the workspace can open the tab.
+- The Home is published again only when its content changes, the next time the person opens it.
+- It needs the `app_home_opened` event and the Home Tab turned on. With the event missing, the tab stays empty. With the tab off, the runner log says `Slack App Home not published: the Home Tab is off`.
+
 ## Approvals
 
 When a turn asks for something the agent's ceiling does not cover and the request goes to approval, Ravi sends a card with **Approve** and **Reject** buttons privately to each person who can grant it: an ephemeral message in the chat the request came from, which only that person sees, or a message in their DM with the app when they are not in that chat. Nobody else sees the card. Only agents on the Pi and Grok providers ask. On Claude and Codex, a shell command outside the ceiling is refused at once, and on every provider a `ravi` command group outside it is refused without asking.
@@ -249,6 +257,7 @@ ravi channels status                               # health: ready ... connected
 - **Nothing in the log:** the app is not in the channel, an event subscription is missing, or the app was not reinstalled after a scope change.
 - **Answers without tools:** your Slack ID is not linked to your contact on `slack-main`. Check with `ravi contacts check <your contact>`.
 - **Approve does nothing:** Interactivity is off in the Slack app.
+- **The Home tab stays empty or loading:** subscribe the `app_home_opened` event and turn on the Home Tab (step 1), reinstall the app, run `ravi channels restart`, then open the tab again.
 - **No approval card arrives and the request is refused:** nobody who can grant it has their Slack user linked to their contact on `slack-main`. Check with `ravi contacts check <your contact>` (see [Approvals](#approvals)).
 
 More in [Troubleshooting](/guides/troubleshooting).
