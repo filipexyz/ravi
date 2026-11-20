@@ -98,7 +98,23 @@ CLI that run installed.
   (`state_schema_versions`, `1:<release>`), needs the waypoint 3.261113.2.
   When the update can roll back (a global install whose running release
   proved itself with a boot receipt) and that release is older than the
-  waypoint, the supervisor MUST take the waypoint by itself:
+  waypoint, the supervisor MUST take the waypoint by itself. A daemon online
+  under PM2 with no boot receipt for its process (a release before
+  3.261104.2) MAY take it too, with a rollback to the release known by weaker
+  evidence, and only with every guard: PM2's record of the daemon
+  (`pm2_env.version`, which PM2 reads from the package.json nearest the
+  script each time it launches it), only when that script is inside this
+  install's package (not a launcher or another install) and the version is a
+  Ravi release before 3.261104.2; or the operator's `--running-release`,
+  which MUST be such a release and MUST agree with PM2's record when that one
+  is usable. A daemon with a receipt is decided by the receipt alone, and a
+  `--running-release` given then MUST be reported as not used. Whatever
+  fails MUST refuse with the reason (fail closed, never a guess), and the
+  refusal MUST ask for `--running-release` only when that settles it (PM2's
+  record missing, not a Ravi release, or not the daemon's). After such a
+  rollback the restored release is proven by PM2's record (launched from this
+  install's package, with that version), as it writes no receipt.
+  Taking the waypoint:
   - stop both processes and snapshot the state, as an update that can roll
     back does. Without that snapshot the waypoint MUST NOT be taken, and the
     supervisor MUST bring the release that wrote the state back on it by
@@ -287,6 +303,27 @@ CLI that run installed.
   `supervisor-result.json`): a message line past 2048
   characters reaches the operator as `[redacted:oversize]`. A result the
   supervisor cannot write MUST NOT turn a rollback that ran into a failure.
+- Before any stop, an update that can roll back and `ravi update --rollback`
+  MUST find the release they would install again in the registry the
+  installer reads (a probe with a timeout), and refuse otherwise
+  (`UPDATE_PREVIOUS_RELEASE_UNAVAILABLE` for an update,
+  `UPDATE_ROLLBACK_UNAVAILABLE` for the rollback): found out after the stop,
+  the host stays down. After the probe, the update MUST check again that each
+  managed process is the one it started from (pid and start time) and refuse
+  with `UPDATE_RUNTIME_CHANGED` before any stop or snapshot when PM2 started
+  one again meanwhile: that process runs the installed target, and the
+  snapshot would keep its writes as the previous release's state. The registry is the installer's: its environment
+  (`BUN_CONFIG_REGISTRY` for bun, `npm_config_registry`), then `~/.npmrc` (the
+  last `registry=` line; bun reads it over its `bunfig.toml`), then bun's
+  `[install] registry`, then `https://registry.npmjs.org`.
+- The probe reads secrets and MUST keep them: the `_authToken` that `~/.npmrc`
+  gives the registry's own host goes to that host only, in the request
+  header, and is never printed, logged or recorded; a message, a recorded
+  refusal (`supervisor-refused.json`) or an error cause names the registry
+  without user, password, query and fragment, and the error of the request
+  goes on only as its name, code and a message with those taken out. Only an
+  http or https registry is asked or named: any other value (`user:pw@host`
+  parses as a scheme) is refused without being echoed.
 - It takes no release selector, and `--execute` without `--rollback` is a
   usage error. Its supervisor MUST hold `<state>/updates/update.lock` while it
   runs (`UPDATE_IN_PROGRESS` when another update holds it). A rollback that stops

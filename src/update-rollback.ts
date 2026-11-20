@@ -35,6 +35,7 @@ import {
   type ManagedRuntimeTarget,
 } from "./managed-runtime.js";
 import { CHANNELS_PM2_PROCESS_NAME, clearedPm2ContextEnv, PM2_PROCESS_NAME, type Pm2Process } from "./pm2.js";
+import { readRuntimeBootReceipt } from "./runtime-process-identity.js";
 import { observeStableManagedRuntime } from "./runtime-stability.js";
 import { compareRaviVersions } from "./update-preflight.js";
 import { settleThreadFenceLeftovers } from "./threads/fence-adoption.js";
@@ -52,13 +53,140 @@ import {
 export type GlobalInstallMethod = "bun" | "npm";
 
 export type UpdateRollbackPlan = {
-  /** The release the daemon was running, proven by its boot receipt: the one that wrote the state. */
+  /** The release the daemon was running: the one that wrote the state. */
   previousRelease: string;
   method: GlobalInstallMethod;
   /** The global install the target went into; the previous release goes back to the same place. */
   packageRoot: string;
   channelsOnline: boolean;
+  /**
+   * How `previousRelease` is known: the daemon's boot receipt, with the bundle's digest; for a daemon that writes
+   * none, the version PM2 recorded when it launched it, or the operator's `--running-release`. Absent means
+   * `receipt`. The rollback proves the release runs again the same way: by its receipt, or by PM2's record.
+   */
+  evidence?: "receipt" | "pm2" | "declared";
 };
+
+/** The first release whose processes write a boot receipt; an older one is known by PM2's record or its operator. */
+export const BOOT_RECEIPTS_RELEASE = "3.261104.2";
+
+/** A Ravi release number, such as 3.261101.3. */
+export function isRaviRelease(value: string): boolean {
+  return /^\d+\.\d{6}\.\d+$/.test(value);
+}
+
+/** `askOperator`: the operator's `--running-release` can settle what stopped the plan. */
+export type UnreceiptedRelease = { plan: UpdateRollbackPlan } | { reason: string; askOperator: boolean };
+
+/**
+ * The release of an online daemon that wrote no boot receipt (a release before 3.261104.2), so the update can take
+ * the waypoint with a rollback to it. Null when this does not apply: no global install, no daemon online, or a daemon
+ * with a receipt, which decides by itself (`resolveUpdateRollbackPlan`).
+ *
+ * Weaker evidence than a receipt, which carries the bundle's digest: PM2 reads `pm2_env.version` from the
+ * package.json nearest the script it launches, each time it launches it. That counts only when the script is inside
+ * this install's package (not a launcher or another install), and only as a release that writes no receipt: a later
+ * one would have written one, so PM2 and the state would disagree. The operator's `--running-release` stands in when
+ * PM2's record is not usable, and must agree with it when it is. Whatever fails gives the reason, and the update
+ * refuses: it never guesses.
+ */
+export function resolveUnreceiptedRollbackPlan(input: {
+  target: ManagedRuntimeTarget;
+  processes: Pm2Process[];
+  stateDir: string;
+  declaredRelease?: string | null;
+}): UnreceiptedRelease | null {
+  const method = globalInstallMethodOf(input.target.cwd);
+  const daemon = input.processes.find((process) => process.name === PM2_PROCESS_NAME);
+  // An online registration with no process (PM2 keeps one when a launcher fails) is no running release at all.
+  const running = daemon?.status === "online" && Number.isInteger(daemon.pid) && daemon.pid > 0;
+  if (!method || !daemon || !running || readRuntimeBootReceipt(daemon, input.stateDir)) return null;
+  const channelsOnline = input.processes.some(
+    (process) => process.name === CHANNELS_PM2_PROCESS_NAME && process.status === "online",
+  );
+  const plan = (previousRelease: string, evidence: "pm2" | "declared"): UnreceiptedRelease => ({
+    plan: { previousRelease, method, packageRoot: input.target.cwd, channelsOnline, evidence },
+  });
+  const writesReceipts = (release: string) => compareRaviVersions(release, BOOT_RECEIPTS_RELEASE) >= 0;
+
+  // PM2's record, when it is the daemon's: launched from a script of this install's package.
+  const recorded = daemon.version && daemon.version !== "N/A" ? daemon.version : null;
+  const pm2Problem = !insidePackage(daemon.execPath, input.target.cwd)
+    ? "PM2 launches the daemon from a script outside this install's package (a launcher, or another install), so " +
+      "the version it recorded is not the daemon's release"
+    : !recorded
+      ? "PM2 recorded no version for the daemon"
+      : !isRaviRelease(recorded)
+        ? `PM2 recorded ${recorded} for the daemon, which is not a Ravi release`
+        : null;
+  const pm2Release = pm2Problem ? null : recorded;
+
+  const declared = input.declaredRelease;
+  if (declared) {
+    if (!isRaviRelease(declared))
+      return { reason: `--running-release ${declared} is not a Ravi release`, askOperator: false };
+    if (writesReceipts(declared))
+      return {
+        reason: `--running-release says Ravi ${declared}, a release that writes a boot record`,
+        askOperator: false,
+      };
+    if (pm2Release && pm2Release !== declared)
+      return {
+        reason: `PM2 recorded Ravi ${pm2Release} for the daemon, not the ${declared} given with --running-release`,
+        askOperator: false,
+      };
+    return plan(declared, "declared");
+  }
+  if (!pm2Release) return { reason: pm2Problem ?? "PM2 recorded no version for the daemon", askOperator: true };
+  if (writesReceipts(pm2Release))
+    return {
+      reason: `PM2 recorded Ravi ${pm2Release} for the daemon, a release that writes a boot record`,
+      askOperator: false,
+    };
+  return plan(pm2Release, "pm2");
+}
+
+function insidePackage(path: string | null | undefined, packageRoot: string): boolean {
+  return Boolean(path) && normalizeRuntimePath(findRaviPackageRoot(path!)) === normalizeRuntimePath(packageRoot);
+}
+
+/**
+ * Whether PM2 runs `release` from this install, for a release that writes no receipt: online, launched from a script
+ * of the install's package and, for the daemon, with that version recorded. The runner may run through bun (its
+ * bundle is then the first argument), and PM2 records bun's version for it instead.
+ */
+function pm2RunsRelease(
+  processes: Pm2Process[],
+  name: typeof PM2_PROCESS_NAME | typeof CHANNELS_PM2_PROCESS_NAME,
+  target: ManagedRuntimeTarget,
+  release: string,
+): boolean {
+  const current = processes.find((process) => process.name === name);
+  // PM2 keeps an online registration with PID 0 when a launcher fails: that runs nothing.
+  if (!current || current.status !== "online" || !Number.isInteger(current.pid) || current.pid <= 0) return false;
+  if (name === CHANNELS_PM2_PROCESS_NAME)
+    return insidePackage(current.execPath, target.cwd) || insidePackage(current.args?.[0], target.cwd);
+  return insidePackage(current.execPath, target.cwd) && current.version === release;
+}
+
+/** `managedRuntimeMatchesTarget` for a release that writes no receipt, from what PM2 records. */
+function pm2MatchesRelease(
+  previousProcesses: ManagedRuntimeProcessSnapshot[],
+  processes: Pm2Process[],
+  target: ManagedRuntimeTarget,
+  release: string,
+): boolean {
+  for (const name of [PM2_PROCESS_NAME, CHANNELS_PM2_PROCESS_NAME] as const) {
+    const previous = previousProcesses.find((process) => process.name === name);
+    if (!previous) continue;
+    if (previous.status !== "online") {
+      if (processes.some((process) => process.name === name)) return false;
+      continue;
+    }
+    if (!pm2RunsRelease(processes, name, target, release)) return false;
+  }
+  return true;
+}
 
 /** Which global installer owns this package directory; null for a source checkout or anything else. */
 export function globalInstallMethodOf(packageRoot: string): GlobalInstallMethod | null {
@@ -95,16 +223,210 @@ export function resolveUpdateRollbackPlan(input: {
     method,
     packageRoot: input.target.cwd,
     channelsOnline: identity.channels.online,
+    evidence: "receipt",
   };
 }
 
 export const UPDATE_ROLLBACK_UNAVAILABLE = "UPDATE_ROLLBACK_UNAVAILABLE";
 
+export const UPDATE_PREVIOUS_RELEASE_UNAVAILABLE = "UPDATE_PREVIOUS_RELEASE_UNAVAILABLE";
+
+/** Whether the npm registry answers for `ravi.bot@<release>`: a rollback installs it again. */
+export type ReleaseAvailability = { ok: true } | { ok: false; reason: string; cause?: unknown };
+
+/**
+ * A probe before any stop: the release a rollback would install again must be in the registry now. Found out after
+ * the stop (a release that does not exist, a typo in `--running-release`), the host stays down; on a host with no
+ * shell access nobody can fix that by hand.
+ */
+export async function releaseInRegistry(
+  release: string,
+  method: GlobalInstallMethod = "bun",
+  options: { env?: NodeJS.ProcessEnv; home?: string; fetchRelease?: typeof fetch } = {},
+): Promise<ReleaseAvailability> {
+  const registry = installerRegistry(method, options.env ?? process.env, options.home ?? homedir());
+  // Only an http or https registry is asked; any other value is refused without being echoed.
+  if (!httpRegistry(registry.url))
+    return { ok: false, reason: `${NOT_AN_HTTP_REGISTRY} cannot be asked for ravi.bot@${release}` };
+  const url = `${registry.url}/ravi.bot/${encodeURIComponent(release)}`;
+  // Every message and record names the registry this way; the address the request goes to is never shown.
+  const shown = displayedRegistry(registry.url);
+  let response: Response;
+  try {
+    response = await (options.fetchRelease ?? fetch)(url, {
+      headers: registry.headers,
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (cause) {
+    return registryUnanswered(release, shown, [url, registry.url], cause);
+  }
+  if (response.status === 404) return { ok: false, reason: `ravi.bot@${release} is not in the registry at ${shown}` };
+  if (!response.ok)
+    return { ok: false, reason: `the registry at ${shown} answered ${response.status} for ravi.bot@${release}` };
+  return { ok: true };
+}
+
+const NOT_AN_HTTP_REGISTRY = "the configured registry (not an http(s) URL)";
+
+/**
+ * The registry as an http or https URL, or null. Any other value is neither shown nor asked: a URL parser reads
+ * `user:password@host/path` as the scheme `user:`, so its password would pass for a path.
+ */
+function httpRegistry(url: string): URL | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    // no-cause: A value that does not parse is not an http(s) URL; it is neither shown nor asked.
+    return null;
+  }
+  return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed : null;
+}
+
+/**
+ * The registry as a message or a record names it: without user, password, query and fragment, any of which can carry
+ * a credential (`https://user:password@host/`). A value that is not an http or https URL is not shown at all.
+ */
+export function displayedRegistry(url: string): string {
+  const shown = httpRegistry(url);
+  if (!shown) return NOT_AN_HTTP_REGISTRY;
+  shown.username = "";
+  shown.password = "";
+  shown.search = "";
+  shown.hash = "";
+  return shown.toString().replace(/\/+$/, "");
+}
+
+/**
+ * A registry that does not answer is a reason to refuse too. Its error goes on only as its name, its code and its
+ * message with the request's addresses (and a password in them) taken out: the raw error of `fetch` can carry the
+ * address the request went to, credentials included.
+ */
+function registryUnanswered(release: string, shown: string, addresses: string[], cause: unknown): ReleaseAvailability {
+  const error = cause instanceof Error ? cause : null;
+  // The whole addresses first (they become the shown one), then the credentials in any form left (they become ***).
+  const credentials = addresses.flatMap((address) => {
+    try {
+      const { password, username } = new URL(address);
+      return [password, safeDecode(password), ...(username.length >= 3 ? [username, safeDecode(username)] : [])];
+    } catch {
+      // no-cause: An address that is not a URL has no credential to take apart; it is taken out as a whole.
+      return [];
+    }
+  });
+  const longestFirst = (values: string[]) =>
+    values.filter((value) => value.length > 0).sort((a, b) => b.length - a.length);
+  let message = error ? error.message : String(cause);
+  for (const address of longestFirst(addresses)) message = message.split(address).join(shown);
+  for (const credential of longestFirst(credentials)) message = message.split(credential).join("***");
+  const code = (error as { code?: unknown } | null)?.code;
+  const sanitized = new Error(`${typeof code === "string" ? `${code}: ` : ""}${message}`);
+  sanitized.name = error?.name ?? "Error";
+  if (typeof code === "string") (sanitized as Error & { code?: string }).code = code;
+  return {
+    ok: false,
+    reason: `the registry at ${shown} did not answer for ravi.bot@${release} (${sanitized.message})`,
+    cause: sanitized,
+  };
+}
+
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    // no-cause: A value that does not decode is taken out as written.
+    return value;
+  }
+}
+
+const PUBLIC_REGISTRY = "https://registry.npmjs.org";
+
+/**
+ * The registry the installer reads ravi.bot from, so the probe sees what the install sees (a mirror included): its
+ * environment first (`BUN_CONFIG_REGISTRY` for bun, `npm_config_registry`), then `~/.npmrc` (both read it, and bun
+ * prefers it to its own config; the last `registry=` line wins), then bun's `bunfig.toml` `[install] registry`, then
+ * the public registry. An `_authToken` that `~/.npmrc` gives that same host goes along, `${VAR}` expanded from the
+ * environment, and only to it: never printed, recorded or sent to another host.
+ */
+export function installerRegistry(
+  method: GlobalInstallMethod,
+  env: NodeJS.ProcessEnv = process.env,
+  home: string = homedir(),
+): { url: string; headers: Record<string, string> } {
+  const read = (path: string): string | null => {
+    try {
+      return readFileSync(path, "utf8");
+    } catch {
+      // no-cause: A config file that does not exist (or cannot be read) does not set the registry.
+      return null;
+    }
+  };
+  const expand = (value: string) => value.replace(/\$\{([A-Za-z0-9_]+)\}/g, (_, name: string) => env[name] ?? "");
+  const npmrc = read(join(home, ".npmrc"));
+  // The last line for a key wins, as in npm's ini reading.
+  const npmrcValue = (key: string): string | null => {
+    let value: string | null = null;
+    for (const line of (npmrc ?? "").split("\n")) {
+      const match = /^\s*([^=#;]+?)\s*=\s*(.*?)\s*$/.exec(line);
+      if (match && match[1] === key) value = expand(match[2]!);
+    }
+    return value;
+  };
+  const bunfigRegistry = (): string | null => {
+    const bunfig =
+      read(join(env.XDG_CONFIG_HOME ?? join(home, ".config"), ".bunfig.toml")) ?? read(join(home, ".bunfig.toml"));
+    const install = bunfig ? /\[install\]([\s\S]*?)(?:\n\[|$)/.exec(bunfig)?.[1] : undefined;
+    if (!install) return null;
+    const value =
+      /\bregistry\s*=\s*"([^"]+)"/.exec(install) ?? /\bregistry\s*=\s*\{[^}]*\burl\s*=\s*"([^"]+)"/.exec(install);
+    return value ? expand(value[1]!) : null;
+  };
+  // bun reads `~/.npmrc` over its own `bunfig.toml` for the registry.
+  const configured =
+    (method === "bun" ? env.BUN_CONFIG_REGISTRY : undefined) ??
+    env.npm_config_registry ??
+    env.NPM_CONFIG_REGISTRY ??
+    npmrcValue("registry") ??
+    (method === "bun" ? bunfigRegistry() : null);
+  const url = (configured?.trim() || PUBLIC_REGISTRY).replace(/\/+$/, "");
+  let token: string | null = null;
+  try {
+    const { host, pathname } = new URL(url);
+    token = npmrcValue(`//${host}${pathname.replace(/\/+$/, "")}/:_authToken`) ?? npmrcValue(`//${host}/:_authToken`);
+  } catch {
+    // no-cause: A registry that is not a URL gets no token; the probe then reports what that address answered.
+  }
+  return { url, headers: token ? { authorization: `Bearer ${token}` } : {} };
+}
+
+/** The update would have no way back: the release it rolls back to cannot be installed now. Nothing was stopped. */
+export class UpdatePreviousReleaseUnavailableError extends Error {
+  readonly code = UPDATE_PREVIOUS_RELEASE_UNAVAILABLE;
+  constructor(
+    input: { reason: string; previousRelease: string; targetVersion: string; declared: boolean },
+    options?: ErrorOptions,
+  ) {
+    super(
+      `${UPDATE_PREVIOUS_RELEASE_UNAVAILABLE}: ${input.reason}, and this update goes back to Ravi ` +
+        `${input.previousRelease} only by installing it again. Nothing was stopped: Ravi ${input.previousRelease} keeps ` +
+        `serving, but the installed package is already Ravi ${input.targetVersion}. ` +
+        (input.declared
+          ? "That release came from --running-release: check it and run the same `ravi update` again."
+          : "Run the same `ravi update` again once the registry has it; `ravi daemon status` shows what runs meanwhile."),
+      options,
+    );
+    this.name = "UpdatePreviousReleaseUnavailableError";
+  }
+}
+
 /** `ravi update --rollback` cannot go back from here; nothing was stopped. */
 export class UpdateRollbackUnavailableError extends Error {
   readonly code = UPDATE_ROLLBACK_UNAVAILABLE;
-  constructor(reason: string) {
-    super(`${UPDATE_ROLLBACK_UNAVAILABLE}: ${reason}${reason.endsWith("\n") ? "" : " "}This run stopped nothing.`);
+  constructor(reason: string, options?: ErrorOptions) {
+    super(
+      `${UPDATE_ROLLBACK_UNAVAILABLE}: ${reason}${reason.endsWith("\n") ? "" : " "}This run stopped nothing.`,
+      options,
+    );
     this.name = "UpdateRollbackUnavailableError";
   }
 }
@@ -269,6 +591,8 @@ export type OperatorRollbackSupervisorDependencies = {
   installMethod?: GlobalInstallMethod | null;
   rollBack?: typeof rollBackUpdate;
   recordResult?: typeof recordUpdateSupervisorResult;
+  /** `releaseInRegistry` (tests). */
+  releaseAvailable?: (release: string, method: GlobalInstallMethod) => Promise<ReleaseAvailability>;
 };
 
 /** A result that cannot be written (a full disk) does not undo the rollback that ran: say so, and go on. */
@@ -294,6 +618,13 @@ export async function superviseOperatorRollback(deps: OperatorRollbackSupervisor
     throw new UpdateRollbackUnavailableError(
       `the last snapshot is now ${manifest.id} (${manifest.createdAt}), not the ${deps.snapshotId} the preview ` +
         "named; preview again.",
+    );
+  // The same probe as an update's, before any stop: the rollback installs that release again.
+  const available = await (deps.releaseAvailable ?? releaseInRegistry)(plan.previousRelease, plan.method);
+  if (!available.ok)
+    throw new UpdateRollbackUnavailableError(
+      `${available.reason}, and the rollback installs Ravi ${plan.previousRelease} again, so it cannot run now.`,
+      { cause: available.cause },
     );
   let outcome: UpdateRollbackOutcome;
   try {
@@ -734,7 +1065,14 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
 
     // 4. Started by that release's own CLI, with its own launcher and registration.
     step = "start";
+    // A release known by PM2's record or by its operator writes no receipt: PM2's record proves it runs again.
+    const receipted = (plan.evidence ?? "receipt") === "receipt";
+    const matches = (processes: Pm2Process[]) =>
+      receipted
+        ? managedRuntimeMatchesTarget(deps.previousProcesses, processes, target, { stateDir })
+        : pm2MatchesRelease(deps.previousProcesses, processes, target, plan.previousRelease);
     const member = (name: typeof PM2_PROCESS_NAME | typeof CHANNELS_PM2_PROCESS_NAME) => {
+      if (!receipted) return pm2RunsRelease(deps.getProcesses(), name, target, plan.previousRelease);
       const identity = buildManagedRuntimeIdentity(deps.getProcesses(), target.bundlePath, -1, { stateDir });
       const current = name === PM2_PROCESS_NAME ? identity.daemon : identity.channels;
       return (
@@ -814,18 +1152,14 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
     // 5. Saved and checked like an update, then held for the stability window.
     step = "verify";
     const save = await deps.run("pm2", ["save", "--force"], { env, stream: false });
-    if (
-      !save.success ||
-      !managedRuntimeMatchesTarget(deps.previousProcesses, deps.getProcesses(), target, { stateDir })
-    ) {
+    if (!save.success || !matches(deps.getProcesses())) {
       return failed(
         "verify",
         `Ravi ${plan.previousRelease} was started on ${onState}, but ${save.success ? "its processes do not match it" : "PM2 could not save its process list"}.`,
         ["ravi daemon status", "ravi channels status", "pm2 save --force"],
       );
     }
-    const converged = (processes: Pm2Process[]) =>
-      daemonReady(processes) && managedRuntimeMatchesTarget(deps.previousProcesses, processes, target, { stateDir });
+    const converged = (processes: Pm2Process[]) => daemonReady(processes) && matches(processes);
     const stable = await observeStableManagedRuntime({
       getProcesses: deps.getProcesses,
       isConverged: converged,

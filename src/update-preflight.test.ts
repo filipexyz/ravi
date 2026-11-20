@@ -113,6 +113,30 @@ describe("fence adoption waypoint", () => {
   });
 });
 
+describe("waypoint for a daemon with no boot record", () => {
+  it("says why the update could not tell its release, and asks for --running-release only when that settles it", () => {
+    const asks = new UpdateWaypointRequiredError(null, "3.261120.1", null, {
+      reason: "PM2 recorded no version for the daemon",
+      askOperator: true,
+    }).message;
+    expect(asks).toContain(
+      "That daemon wrote no boot record (releases before 3.261104.2), and PM2 recorded no version for the daemon.",
+    );
+    expect(asks).toContain("run the same `ravi update` from a terminal with `--running-release <release>`");
+    expect(asks).toContain(`ravi update --version ${FENCE_ADOPTION_MINIMUM_RELEASE}`);
+
+    const refuses = new UpdateWaypointRequiredError(null, "3.261120.1", null, {
+      reason: "PM2 recorded Ravi 3.261105.0 for the daemon, a release that writes a boot record",
+      askOperator: false,
+    }).message;
+    expect(refuses).toContain("a release that writes a boot record.");
+    expect(refuses).not.toContain("--running-release <release>");
+    expect(refuses).toContain(`ravi update --version ${FENCE_ADOPTION_MINIMUM_RELEASE}`);
+
+    expect(new UpdateWaypointRequiredError(null, "3.261120.1").message).not.toContain("boot record");
+  });
+});
+
 describe("waypoint for a source checkout", () => {
   it("gives checkout steps, since a source install does not accept --version", () => {
     let refusal: unknown;
@@ -294,6 +318,46 @@ describe("supervisor refusal reaches the CLI", () => {
     const expectedDeadline = spawnedAt + MANAGED_RUNTIME_REBIND_TIMEOUT_MS - SUPERVISOR_EXIT_MARGIN_MS;
     expect(plans[1]?.stabilityWindowMs).toBeUndefined();
     expect(Math.abs((plans[1]?.stabilityDeadlineMs ?? 0) - expectedDeadline)).toBeLessThan(1_000);
+  });
+
+  it("carries --running-release from the CLI to the rebind, and refuses a request with anything else", async () => {
+    const packageRoot = join(stateDir, "package");
+    mkdirSync(join(packageRoot, "dist", "bundle"), { recursive: true });
+    writeFileSync(join(packageRoot, "package.json"), JSON.stringify({ name: "ravi.bot", version: "3.261119.9" }));
+    writeFileSync(join(packageRoot, "dist", "bundle", "index.js"), "");
+    const target = {
+      bundlePath: realpathSync(join(packageRoot, "dist", "bundle", "index.js")),
+      cwd: realpathSync(packageRoot),
+      version: "3.261119.9",
+    };
+    const invocation = buildManagedRuntimeRebindSupervisorInvocation(
+      target,
+      [pm2("ravi", 10)],
+      { PATH: "/usr/bin", RAVI_STATE_DIR: stateDir },
+      { declaredRunningRelease: "3.261101.3" },
+    );
+    const plans: unknown[] = [];
+    const rebind = async (_previous: unknown, _target: unknown, plan?: unknown) => {
+      plans.push(plan);
+      return true;
+    };
+    process.env[REBIND_ENV] = invocation.env[REBIND_ENV];
+    expect(await maybeRunManagedRuntimeRebindFromEnv(() => false, rebind)).toBe(true);
+    expect(plans).toEqual([{ stabilityWindowMs: 0, declaredRunningRelease: "3.261101.3" }]);
+
+    // Without the flag, the request and the plan are what they were.
+    const plain = buildManagedRuntimeRebindSupervisorInvocation(target, [pm2("ravi", 10)], { PATH: "/usr/bin" });
+    process.env[REBIND_ENV] = plain.env[REBIND_ENV];
+    expect(await maybeRunManagedRuntimeRebindFromEnv(() => false, rebind)).toBe(true);
+    expect(plans[1]).toEqual({ stabilityWindowMs: 0 });
+
+    const malformed = JSON.parse(Buffer.from(invocation.env[REBIND_ENV]!, "base64url").toString("utf8"));
+    malformed.declaredRunningRelease = "latest";
+    process.env[REBIND_ENV] = Buffer.from(JSON.stringify(malformed)).toString("base64url");
+    await expect(maybeRunManagedRuntimeRebindFromEnv(() => false, rebind)).rejects.toThrow(
+      "Invalid managed runtime rebind request",
+    );
+    expect(plans).toHaveLength(2);
   });
 
   it("refuses a second supervisor while another one holds the update lock, before any stop", async () => {

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { Database } from "bun:sqlite";
 import {
   chmodSync,
@@ -21,6 +21,7 @@ import {
   decodeManagedRuntimeRebindRequest,
   type ManagedRuntimeSupervisorOutcome,
   maybeRunManagedRuntimeRebindFromEnv,
+  readSupervisorRefusal,
   rebindManagedRuntimeProcesses,
   UPDATE_IN_PROGRESS,
   updateSupervisorRunning,
@@ -36,10 +37,16 @@ import {
   globalInstallMethodOf,
   previousReleaseCliEnv,
   readUpdateSupervisorResult,
+  resolveUnreceiptedRollbackPlan,
   resolveUpdateRollbackPlan,
   planOperatorRollback,
   rollBackUpdate,
   superviseOperatorRollback,
+  displayedRegistry,
+  installerRegistry,
+  releaseInRegistry,
+  UpdatePreviousReleaseUnavailableError,
+  UpdateRollbackUnavailableError,
   UPDATE_ROLLBACK_UNAVAILABLE,
   type UpdateRollbackDependencies,
   type UpdateRollbackPlan,
@@ -138,6 +145,7 @@ describe("update rollback plan", () => {
       method: "bun",
       packageRoot: install.root,
       channelsOnline: true,
+      evidence: "receipt",
     });
   });
 
@@ -172,6 +180,107 @@ describe("update rollback plan", () => {
   });
 });
 
+describe("the release of a daemon that wrote no boot record", () => {
+  const LAUNCHER = "/usr/local/bin/ravi-launcher";
+
+  /** A daemon of a release before the boot records (3.261101.3), as PM2 records it, under the target's install. */
+  function unreceipted(overrides: Partial<Pm2Process> = {}, input: { declared?: string; receipt?: boolean } = {}) {
+    const stateDir = tempDir("ravi-rollback-state-");
+    const install = globalInstall("3.261120.1");
+    const startedAt = Math.ceil(statSync(install.target.bundlePath).mtimeMs) + 1;
+    const daemon = pm2Process("ravi", install.target.bundlePath, install.root, {
+      startedAt,
+      version: "3.261101.3",
+      ...overrides,
+    });
+    // The runner runs through bun: PM2 records bun's version for it.
+    const channels = pm2Process("ravi-channels", install.target.bundlePath, install.root, {
+      startedAt,
+      version: "1.3.3",
+    });
+    if (input.receipt) boot(stateDir, daemon, install.target.bundlePath, "3.261105.0");
+    const resolve = () =>
+      resolveUnreceiptedRollbackPlan({
+        target: install.target,
+        processes: [daemon, channels],
+        stateDir,
+        declaredRelease: input.declared ?? null,
+      });
+    return { install, resolve };
+  }
+
+  it("takes the version PM2 recorded when it launched the daemon from this install's package", () => {
+    const { install, resolve } = unreceipted();
+    expect(resolve()).toEqual({
+      plan: {
+        previousRelease: "3.261101.3",
+        method: "bun",
+        packageRoot: install.root,
+        channelsOnline: true,
+        evidence: "pm2",
+      },
+    });
+    // The last release before the boot records counts; the first release that writes them would have left one.
+    expect(unreceipted({ version: "3.261104.1" }).resolve()).toMatchObject({ plan: { previousRelease: "3.261104.1" } });
+    expect(unreceipted({ version: "3.261104.2" }).resolve()).toEqual({
+      reason: "PM2 recorded Ravi 3.261104.2 for the daemon, a release that writes a boot record",
+      askOperator: false,
+    });
+  });
+
+  it("asks the operator when PM2's record is not the daemon's: a launcher, no version, or not a Ravi release", () => {
+    for (const [overrides, reason] of [
+      [{ execPath: LAUNCHER }, "PM2 launches the daemon from a script outside this install's package"],
+      [{ execPath: null }, "PM2 launches the daemon from a script outside this install's package"],
+      [{ version: null }, "PM2 recorded no version for the daemon"],
+      [{ version: "N/A" }, "PM2 recorded no version for the daemon"],
+      [{ version: "1.3.3" }, "PM2 recorded 1.3.3 for the daemon, which is not a Ravi release"],
+    ] as const) {
+      const result = unreceipted(overrides).resolve();
+      expect(result).toMatchObject({ askOperator: true });
+      expect(result && "reason" in result ? result.reason : "").toContain(reason);
+    }
+  });
+
+  it("takes --running-release where PM2's record is not usable, and refuses one that PM2 or the state contradict", () => {
+    expect(unreceipted({ execPath: LAUNCHER }, { declared: "3.261101.2" }).resolve()).toMatchObject({
+      plan: { previousRelease: "3.261101.2", evidence: "declared" },
+    });
+    expect(unreceipted({}, { declared: "3.261101.3" }).resolve()).toMatchObject({
+      plan: { previousRelease: "3.261101.3", evidence: "declared" },
+    });
+    expect(unreceipted({}, { declared: "3.261101.2" }).resolve()).toEqual({
+      reason: "PM2 recorded Ravi 3.261101.3 for the daemon, not the 3.261101.2 given with --running-release",
+      askOperator: false,
+    });
+    expect(unreceipted({ version: null }, { declared: "3.261104.2" }).resolve()).toEqual({
+      reason: "--running-release says Ravi 3.261104.2, a release that writes a boot record",
+      askOperator: false,
+    });
+    expect(unreceipted({ version: null }, { declared: "v3.261101.3" }).resolve()).toEqual({
+      reason: "--running-release v3.261101.3 is not a Ravi release",
+      askOperator: false,
+    });
+  });
+
+  it("leaves a daemon with a boot record, a daemon that is not online, and a checkout to the receipt rule", () => {
+    expect(unreceipted({}, { receipt: true }).resolve()).toBeNull();
+    expect(unreceipted({}, { receipt: true, declared: "3.261101.2" }).resolve()).toBeNull();
+    expect(unreceipted({ status: "stopped" }).resolve()).toBeNull();
+    expect(unreceipted({ pid: 0 }).resolve()).toBeNull();
+
+    const checkout = tempDir("ravi-rollback-checkout-");
+    mkdirSync(join(checkout, "dist", "bundle"), { recursive: true });
+    writeFileSync(join(checkout, "package.json"), JSON.stringify({ name: "ravi.bot", version: "3.261120.1" }));
+    writeFileSync(join(checkout, "dist", "bundle", "index.js"), "// bundle\n");
+    const target = resolveManagedRuntimeTargetFromPackageRoot(checkout)!;
+    const daemon = pm2Process("ravi", target.bundlePath, target.cwd, { startedAt: 5, version: "3.261101.3" });
+    expect(
+      resolveUnreceiptedRollbackPlan({ target, processes: [daemon], stateDir: tempDir("ravi-rollback-state-") }),
+    ).toBeNull();
+  });
+});
+
 function rollbackFixture(
   input: {
     failInstall?: boolean;
@@ -181,6 +290,11 @@ function rollbackFixture(
     throwAfterRestore?: boolean;
     /** The release rolled back to; 3.1.0 predates the schema phase records. */
     previousRelease?: string;
+    /**
+     * A release known by PM2's record, which writes no boot receipt: what PM2 records for the daemon the release's
+     * CLI starts (by default that release, launched from the install's bundle).
+     */
+    unreceipted?: { pm2Version?: string; launcher?: boolean; pidZero?: boolean; runnerOutside?: boolean };
     /** No snapshot: the update already stopped both processes (pids 300 and 301), and the state is untouched. */
     untouched?: boolean;
     /** PM2 lists a daemon again (pid 310) that the rollback removes and that never exits. */
@@ -213,20 +327,40 @@ function rollbackFixture(
   const order: string[] = [];
   let nextPid = 400;
   const start = (name: "ravi" | "ravi-channels") => {
+    const recorded = input.unreceipted
+      ? name === "ravi"
+        ? {
+            version: input.unreceipted.pm2Version ?? previousRelease,
+            ...(input.unreceipted.launcher ? { execPath: "/usr/local/bin/ravi-launcher" } : {}),
+            ...(input.unreceipted.pidZero ? { pid: 0 } : {}),
+          }
+        : {
+            version: "1.3.3",
+            // A runner of another install: neither its script nor its bundle argument is in this package.
+            ...(input.unreceipted.runnerOutside
+              ? {
+                  execPath: "/usr/local/bin/bun",
+                  args: ["/elsewhere/ravi.bot/dist/bundle/index.js", "channels", "run"],
+                }
+              : {}),
+          }
+      : {};
     const process = pm2Process(name, bundle, install.root, {
       pm_id: nextPid,
       pid: nextPid,
       startedAt: epoch + nextPid,
+      ...recorded,
     });
     nextPid += 1;
     processes.push(process);
-    boot(stateDir, process, bundle, previousRelease);
+    if (!input.unreceipted) boot(stateDir, process, bundle, previousRelease);
   };
   const plan: UpdateRollbackPlan = {
     previousRelease,
     method: "bun",
     packageRoot: install.root,
     channelsOnline: true,
+    ...(input.unreceipted ? { evidence: "pm2" as const } : {}),
   };
   const manifest = {
     id: "20261119T200000Z-abcdef",
@@ -347,6 +481,29 @@ describe("update rollback", () => {
     ]);
     // The previous CLI picks its own bundle and runs outside any runtime context.
     expect(calls[3]!.env).toEqual({ PATH: "/bin" });
+  });
+
+  it("proves a release that writes no receipt by PM2's record of the daemon it launched from the install", async () => {
+    const { deps, calls } = rollbackFixture({ previousRelease: "3.261101.3", unreceipted: {} });
+    const outcome = await rollBackUpdate(deps);
+
+    expect(outcome).toMatchObject({ ok: true, restoredAt: "2026-11-19T20:01:00.000Z" });
+    expect(calls.map((call) => [call.command, ...call.args].join(" "))).toContain(
+      "bun install -g --force ravi.bot@3.261101.3",
+    );
+  });
+
+  it("does not count a restored daemon that PM2 records as another release or launches from outside", async () => {
+    // PID 0: PM2 kept an online registration after its launcher failed.
+    for (const unreceipted of [
+      { pm2Version: "3.261101.2" },
+      { launcher: true },
+      { pidZero: true },
+      { runnerOutside: true },
+    ]) {
+      const { deps } = rollbackFixture({ previousRelease: "3.261101.3", unreceipted });
+      expect(await rollBackUpdate(deps)).toMatchObject({ ok: false, step: "start" });
+    }
   });
 
   it("brings the release back on its untouched state without a snapshot, once the stopped processes exited", async () => {
@@ -516,7 +673,12 @@ describe("update rollback", () => {
 });
 
 describe("update supervisor with a rollback plan", () => {
-  function supervisorFixture(input: { targetNeverReady: boolean; channelsStopped?: boolean }) {
+  function supervisorFixture(input: {
+    targetNeverReady: boolean;
+    channelsStopped?: boolean;
+    /** What PM2 recorded for the running daemon (`pm2_env.version`). */
+    daemonVersion?: string;
+  }) {
     const stateDir = tempDir("ravi-rollback-state-");
     // Convergence reads boot receipts from the process state directory.
     process.env.RAVI_STATE_DIR = stateDir;
@@ -529,7 +691,12 @@ describe("update supervisor with a rollback plan", () => {
     database.run("INSERT INTO t (v) VALUES ('previous')");
     database.close();
     let processes: Pm2Process[] = [
-      pm2Process("ravi", bundle, install.root, { pm_id: 1, pid: 10, startedAt: epoch }),
+      pm2Process("ravi", bundle, install.root, {
+        pm_id: 1,
+        pid: 10,
+        startedAt: epoch,
+        ...(input.daemonVersion ? { version: input.daemonVersion } : {}),
+      }),
       pm2Process(
         "ravi-channels",
         bundle,
@@ -541,6 +708,7 @@ describe("update supervisor with a rollback plan", () => {
     let time = 0;
     let nextPmId = 3;
     const rolledBack: (UpdateSnapshotManifest | null)[] = [];
+    const rolledBackPlans: UpdateRollbackPlan[] = [];
     const rolledBackPids: (number[] | undefined)[] = [];
     const run = async (_command: string, args: string[]) => {
       if (args[0] === "delete") {
@@ -585,6 +753,7 @@ describe("update supervisor with a rollback plan", () => {
           stabilityWindowMs: 0,
           // The predecessor would coordinate if this update could not roll back.
           schemaPhase: (process) => (process.pid === 10 ? "ready" : input.targetNeverReady ? null : "ready"),
+          releaseAvailable: async () => ({ ok: true as const }),
           rollbackPlan: () => ({
             previousRelease: "3.1.0",
             method: "bun",
@@ -595,6 +764,7 @@ describe("update supervisor with a rollback plan", () => {
           planSnapshot: (plan) => planUpdateSnapshot({ ...plan, reflink: () => false, free: () => 1e12 }),
           rollBack: async (dependencies) => {
             rolledBack.push(dependencies.manifest);
+            rolledBackPlans.push(dependencies.plan);
             rolledBackPids.push(dependencies.stoppedPids);
             return {
               ok: true,
@@ -621,7 +791,17 @@ describe("update supervisor with a rollback plan", () => {
         boot(stateDir, process, bundle, version);
       }
     };
-    return { stateDir, events, rolledBack, rolledBackPids, rebind, run, bringUp, processes: () => processes };
+    return {
+      stateDir,
+      events,
+      rolledBack,
+      rolledBackPlans,
+      rolledBackPids,
+      rebind,
+      run,
+      bringUp,
+      processes: () => processes,
+    };
   }
 
   it("stops both before the target starts, snapshots, and rolls back when the target never gets ready", async () => {
@@ -965,6 +1145,147 @@ describe("update supervisor with a rollback plan", () => {
     }
   });
 
+  it("refuses before any stop when the release a rollback would install again is not in the registry", async () => {
+    for (const [overrides, declared] of [
+      // An update that can roll back by its receipt.
+      [{}, false],
+      // A waypoint taken from --running-release, with a release that does not exist.
+      [
+        {
+          assertPrepared: () => "adopt-on-start" as const,
+          preparedStateRelease: () => null,
+          rollbackPlan: () => null,
+          declaredRunningRelease: "3.261101.9",
+        },
+        true,
+      ],
+    ] as const) {
+      const fixture = supervisorFixture({ targetNeverReady: false });
+      const mutations: string[][] = [];
+      const refusal = await fixture
+        .rebind({
+          ...overrides,
+          releaseAvailable: async (release) => ({
+            ok: false,
+            reason: `ravi.bot@${release} is not in the npm registry`,
+          }),
+          run: async (command, args) => {
+            mutations.push(args);
+            return fixture.run(command, args);
+          },
+        })
+        .then(
+          () => null,
+          (error: Error) => error,
+        );
+      expect(refusal?.message).toContain("UPDATE_PREVIOUS_RELEASE_UNAVAILABLE");
+      expect(refusal?.message).toContain("is not in the npm registry");
+      expect(refusal?.message.includes("came from --running-release")).toBe(declared);
+      expect(mutations).toEqual([]);
+    }
+  });
+
+  it("refuses before the snapshot when PM2 starts the daemon again while the registry is asked", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false });
+    const mutations: string[][] = [];
+    let restarted = false;
+    const refusal = await fixture
+      .rebind({
+        // PM2 starts the daemon again during the probe: same name, new pid and start time, on the installed target.
+        releaseAvailable: async () => {
+          restarted = true;
+          return { ok: true as const };
+        },
+        getProcesses: () =>
+          fixture
+            .processes()
+            .map((process) =>
+              restarted && process.name === "ravi"
+                ? { ...process, pid: 99, startedAt: (process.startedAt ?? 0) + 5_000, createdAt: 2 }
+                : process,
+            ),
+        run: async (command, args) => {
+          mutations.push(args);
+          return fixture.run(command, args);
+        },
+      })
+      .then(
+        () => null,
+        (error: Error & { code?: string }) => error,
+      );
+    expect(restarted).toBe(true);
+    expect(refusal?.code).toBe("UPDATE_RUNTIME_CHANGED");
+    expect(refusal?.message).toContain("(ravi pid 10 -> 99)");
+    expect(refusal?.message).toContain("Nothing was stopped and no snapshot was taken.");
+    // Not one PM2 mutation, and no snapshot.
+    expect(mutations).toEqual([]);
+    expect(existsSync(updateSnapshotsDir(fixture.stateDir))).toBe(false);
+    // Unchanged processes: the update goes on past the probe as before.
+    const control = supervisorFixture({ targetNeverReady: false });
+    expect(await control.rebind()).toBe(true);
+    expect(control.events.slice(0, 2)).toEqual(["delete:ravi-channels", "delete:ravi"]);
+  });
+
+  it("does not repeat that --running-release is not used once the waypoint took it", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false });
+    let prepared: string | null = null;
+    let readiness: "ready" | "adopt-on-start" = "adopt-on-start";
+    let passes = 0;
+    const lines: string[] = [];
+    const errors = spyOn(console, "error").mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+    try {
+      await fixture.rebind({
+        assertPrepared: () => readiness,
+        preparedStateRelease: () => prepared,
+        declaredRunningRelease: "3.261101.3",
+        // No receipt on the first pass (the flag decides); the waypoint's receipt on the second.
+        rollbackPlan: () =>
+          (passes += 1) === 1
+            ? null
+            : { previousRelease: "3.261113.2", method: "bun", packageRoot: "/unused", channelsOnline: true },
+        unreceiptedRollbackPlan: () => ({
+          plan: {
+            previousRelease: "3.261101.3",
+            method: "bun",
+            packageRoot: "/unused",
+            channelsOnline: true,
+            evidence: "declared",
+          },
+        }),
+        hopThroughWaypoint: async (dependencies) => {
+          prepared = dependencies.waypoint;
+          fixture.bringUp(dependencies.waypoint);
+          readiness = "ready";
+          return { ok: true };
+        },
+      });
+    } finally {
+      errors.mockRestore();
+    }
+    expect(passes).toBe(2);
+    expect(lines.some((line) => line.includes("is not used"))).toBe(false);
+  });
+
+  it("says when --running-release is not used because the daemon has a boot record", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false });
+    const lines: string[] = [];
+    const errors = spyOn(console, "error").mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+    try {
+      await fixture.rebind({ declaredRunningRelease: "3.261101.3" });
+    } finally {
+      errors.mockRestore();
+    }
+    expect(
+      lines.some((line) =>
+        line.includes("--running-release 3.261101.3 is not used: the daemon has a boot record for Ravi 3.1.0"),
+      ),
+    ).toBe(true);
+  });
+
   it("does not start the target without the snapshot on the second pass either: the waypoint comes back", async () => {
     const fixture = supervisorFixture({ targetNeverReady: false });
     const since = Date.now() - 1_000;
@@ -1136,6 +1457,79 @@ describe("update supervisor with a rollback plan", () => {
       "ravi daemon status",
       "ravi update --version 3.2.0",
     ]);
+  });
+
+  it("takes the waypoint for a daemon with no boot record by PM2's record, and rolls back to that release", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false, daemonVersion: "3.261101.3" });
+    const since = Date.now() - 1_000;
+
+    expect(
+      await fixture.rebind({
+        assertPrepared: () => "adopt-on-start",
+        preparedStateRelease: () => null,
+        rollbackPlan: () => null,
+        hopThroughWaypoint: async () => ({ ok: false, step: "start", message: "ravi did not come up" }),
+      }),
+    ).toBe(false);
+    expect(fixture.rolledBackPlans).toMatchObject([{ previousRelease: "3.261101.3", evidence: "pm2" }]);
+    expect(readUpdateSupervisorResult(since, fixture.stateDir)).toMatchObject({
+      outcome: "rolled-back",
+      previousRelease: "3.261101.3",
+    });
+  });
+
+  it("takes the operator's --running-release when PM2's record is not the daemon's", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false });
+
+    expect(
+      await fixture.rebind({
+        assertPrepared: () => "adopt-on-start",
+        preparedStateRelease: () => null,
+        rollbackPlan: () => null,
+        declaredRunningRelease: "3.261101.2",
+        hopThroughWaypoint: async () => ({ ok: false, step: "start", message: "ravi did not come up" }),
+      }),
+    ).toBe(false);
+    expect(fixture.rolledBackPlans).toMatchObject([{ previousRelease: "3.261101.2", evidence: "declared" }]);
+  });
+
+  it("refuses the waypoint before any stop with the reason when the daemon's release is unknown", async () => {
+    for (const [input, declared, reason, asks] of [
+      [{}, undefined, "PM2 recorded no version for the daemon", true],
+      [
+        { daemonVersion: "3.261101.3" },
+        "3.261101.2",
+        "PM2 recorded Ravi 3.261101.3 for the daemon, not the 3.261101.2 given with --running-release",
+        false,
+      ],
+    ] as const) {
+      const fixture = supervisorFixture({ targetNeverReady: false, ...input });
+      const mutations: string[][] = [];
+      const refusal = await fixture
+        .rebind({
+          assertPrepared: () => "adopt-on-start",
+          preparedStateRelease: () => null,
+          rollbackPlan: () => null,
+          declaredRunningRelease: declared,
+          hopThroughWaypoint: async () => {
+            throw new Error("the waypoint must not run");
+          },
+          run: async (command, args) => {
+            mutations.push(args);
+            return fixture.run(command, args);
+          },
+        })
+        .then(
+          () => null,
+          (error: Error) => error,
+        );
+      expect(refusal?.message).toContain(UPDATE_WAYPOINT_REQUIRED);
+      expect(refusal?.message).toContain(
+        `That daemon wrote no boot record (releases before 3.261104.2), and ${reason}.`,
+      );
+      expect(refusal?.message.includes("with `--running-release <release>`")).toBe(asks);
+      expect(mutations).toEqual([]);
+    }
   });
 
   it("refuses the waypoint before any stop without a rollback, or as a downgrade", async () => {
@@ -1521,6 +1915,7 @@ describe("ravi update --rollback", () => {
       superviseOperatorRollback({
         stateDir,
         snapshotId,
+        releaseAvailable: async () => ({ ok: true }),
         getProcesses: () => processes,
         run: async () => ({ success: true, output: "" }),
         bunPath: "/usr/local/bin/bun",
@@ -1546,6 +1941,22 @@ describe("ravi update --rollback", () => {
         },
       });
 
+    // The release it would install again is not in the registry: refused under the lock, before any stop.
+    await expect(
+      superviseOperatorRollback({
+        stateDir,
+        snapshotId: manifest!.id,
+        getProcesses: () => processes,
+        run: async () => ({ success: true, output: "" }),
+        bunPath: "/usr/local/bin/bun",
+        pidAlive: () => false,
+        releaseAvailable: async () => ({ ok: false, reason: "ravi.bot@3.1.0 is not in the npm registry" }),
+        rollBack: async () => {
+          throw new Error("must not roll back");
+        },
+      }),
+    ).rejects.toThrow("ravi.bot@3.1.0 is not in the npm registry");
+
     // Another snapshot than the one previewed: refused under the lock, before any stop.
     await expect(supervise("20261120T000000Z-abcdef", true)).rejects.toThrow(UPDATE_ROLLBACK_UNAVAILABLE);
     expect(calls).toHaveLength(0);
@@ -1565,6 +1976,7 @@ describe("ravi update --rollback", () => {
       await superviseOperatorRollback({
         stateDir,
         snapshotId: manifest!.id,
+        releaseAvailable: async () => ({ ok: true }),
         getProcesses: () => processes,
         run: async () => ({ success: true, output: "" }),
         bunPath: "/usr/local/bin/bun",
@@ -1792,6 +2204,7 @@ describe("ravi update --rollback", () => {
     expect(decodeManagedRuntimeRebindRequest(invocation.env[env]!).rollback).toEqual({ snapshotId: manifest!.id });
     const rolledBack: string[] = [];
     const overrides = {
+      releaseAvailable: async () => ({ ok: true as const }),
       getProcesses: () => processes,
       rollBack: async (dependencies: UpdateRollbackDependencies) => {
         rolledBack.push(dependencies.manifest!.id);
@@ -1960,7 +2373,7 @@ describe("ravi update --rollback", () => {
       `import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { maybeRunManagedRuntimeRebindFromEnv } from ${JSON.stringify(join(repo, "src/managed-runtime-rebind.ts"))};
 const processes = JSON.parse(readFileSync(${JSON.stringify(processesFile)}, "utf8"));
-await maybeRunManagedRuntimeRebindFromEnv(() => false, undefined, { getProcesses: () => processes, rollBack: ${fakeRollBack} });
+await maybeRunManagedRuntimeRebindFromEnv(() => false, undefined, { releaseAvailable: async () => ({ ok: true }), getProcesses: () => processes, rollBack: ${fakeRollBack} });
 `,
     );
     const ravi = join(stateDir, "ravi.db");
@@ -2044,3 +2457,225 @@ function rolledBackOutcome(stateDir: string): ManagedRuntimeSupervisorOutcome {
     logPath: null,
   };
 }
+
+describe("the registry probe before any stop", () => {
+  const answering = (status: number | Error) => {
+    const urls: Array<{ url: string; authorization?: string }> = [];
+    const fetchRelease = (async (url: string, init?: RequestInit) => {
+      urls.push({ url, authorization: (init?.headers as Record<string, string> | undefined)?.authorization });
+      if (status instanceof Error) throw status;
+      return new Response("{}", { status });
+    }) as typeof fetch;
+    return { urls, fetchRelease };
+  };
+
+  it("refuses unless the registry has the release: 404, any other status, no answer", async () => {
+    const env = {};
+    const home = tempDir("ravi-registry-home-");
+    const ok = answering(200);
+    expect(await releaseInRegistry("3.1.0", "bun", { env, home, fetchRelease: ok.fetchRelease })).toEqual({ ok: true });
+    expect(ok.urls[0]!.url).toBe("https://registry.npmjs.org/ravi.bot/3.1.0");
+    for (const [status, reason] of [
+      [404, "ravi.bot@3.1.0 is not in the registry at https://registry.npmjs.org"],
+      [503, "the registry at https://registry.npmjs.org answered 503 for ravi.bot@3.1.0"],
+      [429, "answered 429"],
+      [new Error("getaddrinfo ENOTFOUND"), "did not answer for ravi.bot@3.1.0 (getaddrinfo ENOTFOUND)"],
+      [new DOMException("The operation timed out.", "TimeoutError"), "did not answer for ravi.bot@3.1.0"],
+    ] as const) {
+      const probe = answering(status);
+      const result = await releaseInRegistry("3.1.0", "bun", { env, home, fetchRelease: probe.fetchRelease });
+      expect(result.ok).toBe(false);
+      expect(result.ok ? "" : result.reason).toContain(reason);
+      // The error goes on cleaned: its name and message, never the raw error of the request.
+      if (status instanceof Error)
+        expect(result.ok ? undefined : result.cause).toMatchObject({ name: status.name, message: status.message });
+    }
+  });
+
+  it("asks the registry the installer uses: its environment, bun's config, .npmrc with its token", () => {
+    const home = tempDir("ravi-registry-home-");
+    expect(installerRegistry("npm", {}, home)).toEqual({ url: "https://registry.npmjs.org", headers: {} });
+    expect(installerRegistry("npm", { npm_config_registry: "https://mirror.example/npm/" }, home).url).toBe(
+      "https://mirror.example/npm",
+    );
+    expect(
+      installerRegistry(
+        "bun",
+        { BUN_CONFIG_REGISTRY: "https://bun.example", npm_config_registry: "https://npm.example" },
+        home,
+      ).url,
+    ).toBe("https://bun.example");
+    // npm does not read BUN_CONFIG_REGISTRY.
+    expect(installerRegistry("npm", { BUN_CONFIG_REGISTRY: "https://bun.example" }, home).url).toBe(
+      "https://registry.npmjs.org",
+    );
+    writeFileSync(join(home, ".bunfig.toml"), '[install]\nregistry = "https://bunfig.example/"\n');
+    expect(installerRegistry("bun", { XDG_CONFIG_HOME: join(home, "none") }, home).url).toBe("https://bunfig.example");
+    writeFileSync(
+      join(home, ".npmrc"),
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: `${NPM_TOKEN}` is .npmrc's own syntax, read as text.
+      "registry=https://private.example/npm/\n//private.example/npm/:_authToken=${NPM_TOKEN}\n",
+    );
+    expect(installerRegistry("npm", { NPM_TOKEN: "t0ken" }, home)).toEqual({
+      url: "https://private.example/npm",
+      headers: { authorization: "Bearer t0ken" },
+    });
+  });
+
+  it("follows the installers' order: bun reads .npmrc over bunfig, and the last registry= line wins", () => {
+    const home = tempDir("ravi-registry-home-");
+    const env = { XDG_CONFIG_HOME: join(home, "none") };
+    writeFileSync(join(home, ".bunfig.toml"), '[install]\nregistry = "https://bunfig.example/"\n');
+    expect(installerRegistry("bun", env, home).url).toBe("https://bunfig.example");
+    writeFileSync(join(home, ".npmrc"), "registry=https://first.example/\nregistry=https://last.example/\n");
+    expect(installerRegistry("bun", env, home).url).toBe("https://last.example");
+    expect(installerRegistry("npm", env, home).url).toBe("https://last.example");
+    // The environment still comes first.
+    expect(installerRegistry("bun", { ...env, BUN_CONFIG_REGISTRY: "https://bun.example" }, home).url).toBe(
+      "https://bun.example",
+    );
+  });
+
+  it("sends the .npmrc token only to its own host", async () => {
+    const home = tempDir("ravi-registry-home-");
+    writeFileSync(
+      join(home, ".npmrc"),
+      "registry=https://mirror.example/npm/\n//other.example/:_authToken=OTHER_HOST_TOKEN\n",
+    );
+    expect(installerRegistry("npm", {}, home)).toEqual({ url: "https://mirror.example/npm", headers: {} });
+    const probe = answering(200);
+    expect(await releaseInRegistry("3.1.0", "npm", { env: {}, home, fetchRelease: probe.fetchRelease })).toEqual({
+      ok: true,
+    });
+    expect(probe.urls).toEqual([{ url: "https://mirror.example/npm/ravi.bot/3.1.0", authorization: undefined }]);
+    writeFileSync(join(home, ".npmrc"), "registry=https://mirror.example/npm/\n//mirror.example/:_authToken=MINE\n");
+    expect(installerRegistry("npm", {}, home).headers).toEqual({ authorization: "Bearer MINE" });
+  });
+
+  it("never shows a credential of the registry address: messages, cause and the recorded refusal", async () => {
+    const home = tempDir("ravi-registry-home-");
+    const env = { npm_config_registry: "https://alice:S3CR3T%40pass@mirror.example/npm/?token=QSECRET#FRAGSECRET" };
+    const secrets = ["S3CR3T", "alice", "QSECRET", "FRAGSECRET", "S3CR3T@pass"];
+    const clean = (text: string) => {
+      for (const secret of secrets) expect(text).not.toContain(secret);
+    };
+    const refusals: Array<{ reason: string; cause?: unknown }> = [];
+    for (const status of [404, 503] as const) {
+      const result = await releaseInRegistry("3.1.0", "npm", {
+        env,
+        home,
+        fetchRelease: answering(status).fetchRelease,
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) refusals.push(result);
+    }
+    expect(refusals[0]!.reason).toBe("ravi.bot@3.1.0 is not in the registry at https://mirror.example/npm");
+    // The raw error of `fetch` can carry the address it was given, password included.
+    const raw = Object.assign(
+      new Error(
+        "Unable to connect: https://alice:S3CR3T%40pass@mirror.example/npm/?token=QSECRET#FRAGSECRET/ravi.bot/3.1.0 " +
+          "(alice:S3CR3T@pass)",
+      ),
+      { code: "ConnectionRefused", path: "https://alice:S3CR3T%40pass@mirror.example/npm/" },
+    );
+    const unanswered = await releaseInRegistry("3.1.0", "npm", {
+      env,
+      home,
+      fetchRelease: answering(raw).fetchRelease,
+    });
+    expect(unanswered.ok).toBe(false);
+    if (!unanswered.ok) refusals.push(unanswered);
+    expect((unanswered as { cause: Error & { code?: string } }).cause).toMatchObject({ code: "ConnectionRefused" });
+    for (const refusal of refusals) {
+      clean(refusal.reason);
+      clean(JSON.stringify(refusal.cause ?? null));
+      clean(String((refusal.cause as Error | undefined)?.message ?? ""));
+      for (const error of [
+        new UpdatePreviousReleaseUnavailableError(
+          { reason: refusal.reason, previousRelease: "3.1.0", targetVersion: "3.2.0", declared: false },
+          { cause: refusal.cause },
+        ),
+        new UpdateRollbackUnavailableError(refusal.reason, { cause: refusal.cause }),
+      ])
+        clean(`${error.message} ${String((error.cause as Error | undefined)?.message ?? "")}`);
+    }
+    // What the supervisor records for the command.
+    const stateDir = tempDir("ravi-registry-state-");
+    const install = globalInstall("3.2.0");
+    process.env.RAVI_STATE_DIR = stateDir;
+    const variable = "RAVI_INTERNAL_UPDATE_RUNTIME_REBIND";
+    process.env[variable] = buildManagedRuntimeRebindSupervisorInvocation(install.target, [], { PATH: "/usr/bin" }).env[
+      variable
+    ];
+    try {
+      await expect(
+        maybeRunManagedRuntimeRebindFromEnv(
+          () => false,
+          async () => {
+            throw new UpdatePreviousReleaseUnavailableError(
+              { reason: refusals[2]!.reason, previousRelease: "3.1.0", targetVersion: "3.2.0", declared: false },
+              { cause: refusals[2]!.cause },
+            );
+          },
+        ),
+      ).rejects.toThrow("UPDATE_PREVIOUS_RELEASE_UNAVAILABLE");
+    } finally {
+      delete process.env[variable];
+    }
+    const recorded = readFileSync(join(stateDir, "updates", "supervisor-refused.json"), "utf8");
+    expect(recorded).toContain("https://mirror.example/npm");
+    clean(recorded);
+  });
+
+  it("shows and asks only an http or https registry: any other value is refused without being echoed", async () => {
+    const home = tempDir("ravi-registry-home-");
+    const placeholder = "the configured registry (not an http(s) URL)";
+    // `alice:SECRETPW@mirror.example/npm` parses as the scheme `alice:` with the password in its path.
+    for (const configured of [
+      "alice:SECRETPW@mirror.example/npm",
+      "ftp://bob:FTPSECRET@mirror.example/",
+      "file:///home/carol/FILESECRET",
+      "not a url SPACESECRET",
+    ]) {
+      const probe = answering(200);
+      const result = await releaseInRegistry("3.1.0", "npm", {
+        env: { npm_config_registry: configured },
+        home,
+        fetchRelease: probe.fetchRelease,
+      });
+      expect(probe.urls).toEqual([]);
+      expect(result).toEqual({ ok: false, reason: `${placeholder} cannot be asked for ravi.bot@3.1.0` });
+      expect(displayedRegistry(configured)).toBe(placeholder);
+    }
+    expect(displayedRegistry("https://dave:PW@mirror.example/npm/?token=Q#F")).toBe("https://mirror.example/npm");
+    expect(displayedRegistry("http://127.0.0.1:4873/")).toBe("http://127.0.0.1:4873");
+  });
+
+  it("records a missing release as a refusal the command reports with its code", async () => {
+    const stateDir = tempDir("ravi-registry-state-");
+    const install = globalInstall("3.2.0");
+    process.env.RAVI_STATE_DIR = stateDir;
+    const env = "RAVI_INTERNAL_UPDATE_RUNTIME_REBIND";
+    const invocation = buildManagedRuntimeRebindSupervisorInvocation(install.target, [], { PATH: "/usr/bin" });
+    const since = Date.now() - 1_000;
+    process.env[env] = invocation.env[env];
+    try {
+      await expect(
+        maybeRunManagedRuntimeRebindFromEnv(
+          () => false,
+          async () => {
+            throw new UpdatePreviousReleaseUnavailableError({
+              reason: "ravi.bot@3.1.0 is not in the registry at https://registry.npmjs.org",
+              previousRelease: "3.1.0",
+              targetVersion: "3.2.0",
+              declared: false,
+            });
+          },
+        ),
+      ).rejects.toThrow("UPDATE_PREVIOUS_RELEASE_UNAVAILABLE");
+    } finally {
+      delete process.env[env];
+    }
+    expect(readSupervisorRefusal(since, stateDir)).toMatchObject({ code: "UPDATE_PREVIOUS_RELEASE_UNAVAILABLE" });
+  });
+});

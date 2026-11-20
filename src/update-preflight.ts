@@ -69,6 +69,11 @@ export class UpdateWaypointRequiredError extends Error {
     readonly targetVersion: string,
     /** The checkout the runtime runs from; source installs do not accept `ravi update --version`. */
     readonly sourceCheckout: string | null = null,
+    /**
+     * Why the update could not tell the release of a daemon that wrote no boot record; `askOperator` when
+     * `--running-release` can settle it (`resolveUnreceiptedRollbackPlan`).
+     */
+    readonly runningReleaseUnknown: { reason: string; askOperator: boolean } | null = null,
   ) {
     const checkout = sourceCheckout ? shellQuote(sourceCheckout) : "";
     const steps = sourceCheckout
@@ -87,7 +92,17 @@ export class UpdateWaypointRequiredError extends Error {
         `and Ravi ${targetVersion} adopts a state written before the thread fence only from ` +
         `${FENCE_ADOPTION_MINIMUM_RELEASE}. Nothing was stopped: the running daemon keeps serving, but the ` +
         `${sourceCheckout ? "checkout" : "installed package"} is already Ravi ${targetVersion}, and a restart ` +
-        `before the waypoint would start it on this state. ${steps}`,
+        `before the waypoint would start it on this state. ` +
+        (runningReleaseUnknown
+          ? "The update takes the waypoint by itself only when it knows the release the running daemon was started " +
+            "with, to roll back to it if the waypoint fails. That daemon wrote no boot record (releases before " +
+            `3.261104.2), and ${runningReleaseUnknown.reason}. ` +
+            (runningReleaseUnknown.askOperator
+              ? "If you know that release, run the same `ravi update` from a terminal with " +
+                "`--running-release <release>`, and the update takes the waypoint with a rollback to it. Otherwise: "
+              : "") +
+            steps
+          : steps),
     );
     this.name = "UpdateWaypointRequiredError";
   }

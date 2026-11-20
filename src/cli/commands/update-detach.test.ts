@@ -15,7 +15,7 @@ import {
   updateRunPaths,
   type DetachedSpawn,
 } from "../update-run.js";
-import { runUpdate, type RaviUpdateHandoff } from "./update.js";
+import { runUpdate, type RaviUpdateHandoff, updateCommandArgs } from "./update.js";
 
 const RUN_ID = "20261119T191542Z-a1b2c3";
 const SCRIPT = "/opt/ravi/node_modules/ravi.bot/dist/bundle/index.js";
@@ -65,6 +65,24 @@ describe("ravi update inside the daemon process tree", () => {
     RAVI_STATE_DIR: stateDir,
     RAVI_CONTEXT_KEY: "ctx-from-agent-turn",
     RAVI_SESSION_NAME: "main",
+  });
+
+  it("hands --running-release to the detached child, and refuses it with --rollback or as anything but a release", async () => {
+    expect(updateCommandArgs({ next: true, runningRelease: "3.261101.3" })).toEqual([
+      "update",
+      "--next",
+      "--running-release",
+      "3.261101.3",
+      "--json",
+    ]);
+    for (const options of [
+      { rollback: true, runningRelease: "3.261101.3", json: true },
+      { next: true, runningRelease: "latest", json: true },
+    ]) {
+      await expect(
+        runUpdate(options, { env: baseEnv(), insideDaemonTree: () => false, spawnDetached: recordingSpawn([]) }),
+      ).rejects.toMatchObject({ code: "USAGE_ERROR" });
+    }
   });
 
   it("hands the request to a detached child and installs or stops nothing itself", async () => {

@@ -134,6 +134,19 @@ describe("buildPm2Env", () => {
 });
 
 describe("PM2 process start identity", () => {
+  it("reads the version PM2 recorded when it launched the process, and nothing else", () => {
+    const [daemon, channels, other] = parsePm2Processes(
+      JSON.stringify([
+        { name: "ravi", pid: 1, pm_id: 1, pm2_env: { status: "online", version: "3.261101.3" } },
+        { name: "ravi-channels", pid: 2, pm_id: 2, pm2_env: { status: "online", version: "1.3.3" } },
+        { name: "other", pid: 3, pm_id: 3, pm2_env: { status: "online", version: 7 } },
+      ]),
+    );
+    expect(daemon?.version).toBe("3.261101.3");
+    expect(channels?.version).toBe("1.3.3");
+    expect(other?.version).toBeNull();
+  });
+
   it("uses pm_uptime for the current PID independently of PM2 registration time", () => {
     const [process] = parsePm2Processes(
       JSON.stringify([

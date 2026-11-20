@@ -99,9 +99,27 @@ authorizes no database or package downgrade by hand: the update's own rollback
 - After the waypoint and the update to the target, two snapshots are kept until
   the next update: the target's way back to 3.261113.2, and the state before
   the waypoint, of the release that wrote it (for a restore by hand).
+- `UPDATE_PREVIOUS_RELEASE_UNAVAILABLE`: the release the update would roll back
+  to is not in the registry the installer reads (or it did not answer), so the
+  update stopped nothing. The message names that registry (without any
+  credential; a token from `~/.npmrc` went only to its own host). When the
+  release came from `--running-release`, check that value; otherwise run the
+  update again once the registry has it.
+- `UPDATE_RUNTIME_CHANGED`: PM2 started Ravi again while the update checked
+  the registry, so the update stopped nothing and took no snapshot (a process
+  started now runs the installed package). Run `ravi daemon status`, then the
+  same `ravi update` again.
 - `UPDATE_WAYPOINT_REQUIRED`: the update could not take the waypoint by itself
-  (a source checkout, a daemon with no boot receipt, or a running release not
-  older than the waypoint). Nothing was stopped; run the commands it names.
+  (a source checkout, a running release not older than the waypoint, or a
+  daemon with no boot record whose release it could not tell). Nothing was
+  stopped. When it asks for `--running-release`, PM2's record is not the
+  daemon's: if you know the release the daemon was started with (the one
+  installed before this update), run the same `ravi update` with
+  `--running-release <release>`; otherwise run the commands it names.
+- A daemon with no boot record (before 3.261104.2) takes the waypoint by
+  itself when PM2 launched it from the install's bundle: its rollback goes to
+  the version PM2 recorded. That is weaker than a boot record (no digest of the
+  bundle); `supervisor.log` says which evidence the update used.
 
 ## Going back by hand
 
