@@ -11,8 +11,11 @@
  */
 
 import { unlinkSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import type { ManagedDaemonProcess } from "./cli/daemon-restart-supervision.js";
+import { readDaemonSchemaPhase } from "./db/daemon-schema-owner.js";
 import {
   buildManagedRuntimeIdentity,
   resolveManagedRuntimeTargetFromPackageRoot,
@@ -22,9 +25,10 @@ import { CHANNELS_PM2_PROCESS_NAME, PM2_PROCESS_NAME, type Pm2Process } from "./
 import { readLastRuntimeBootReceipt } from "./runtime-process-identity.js";
 import { observeStableManagedRuntime } from "./runtime-stability.js";
 import { compareRaviVersions, readPreparedStateRelease } from "./update-preflight.js";
-import { previousReleaseCliEnv, type GlobalInstallMethod } from "./update-rollback.js";
+import { previousReleaseCliEnv, SCHEMA_PHASE_RECEIPTS_RELEASE, type GlobalInstallMethod } from "./update-rollback.js";
 
-export type WaypointHopStep = "install" | "start" | "prepare" | "reinstall-target";
+/** `unknown`: the hop itself threw, outside a step it tracks. */
+export type WaypointHopStep = "install" | "start" | "prepare" | "reinstall-target" | "unknown";
 
 export type WaypointHopOutcome = { ok: true } | { ok: false; step: WaypointHopStep; message: string };
 
@@ -50,6 +54,8 @@ export type WaypointHopDependencies = {
   resolveTarget?: (packageRoot: string) => ManagedRuntimeTarget | null;
   /** Release that last prepared the state (test seam; default `readPreparedStateRelease`). */
   preparedRelease?: () => string | null;
+  /** Schema phase of a daemon (`readDaemonSchemaPhase`): the waypoint's daemon counts only at `ready`. */
+  schemaPhase?: (process: ManagedDaemonProcess) => "waiting" | "owned" | "ready" | null;
   startTimeoutMs?: number;
   prepareTimeoutMs?: number;
   stabilityWindowMs?: number;
@@ -76,6 +82,29 @@ export function waypointPreparedState(
 }
 
 export async function hopThroughWaypoint(deps: WaypointHopDependencies): Promise<WaypointHopOutcome> {
+  const log = deps.log ?? ((line: string) => console.error(`ravi update waypoint: ${line}`));
+  const failed = (step: WaypointHopStep, message: string): WaypointHopOutcome => {
+    log(`failed at ${step}: ${message}`);
+    return { ok: false, step, message };
+  };
+  let step: WaypointHopStep = "install";
+  try {
+    return await hopSteps(deps, (current) => {
+      step = current;
+    });
+  } catch (cause) {
+    // A strict PM2 read, an unreadable state: whatever escapes ends as a failure of the step it happened in.
+    return failed(
+      step,
+      `the waypoint stopped on an unexpected error (${cause instanceof Error ? cause.message : String(cause)})`,
+    );
+  }
+}
+
+async function hopSteps(
+  deps: WaypointHopDependencies,
+  enter: (step: WaypointHopStep) => void,
+): Promise<WaypointHopOutcome> {
   const { stateDir, waypoint, target } = deps;
   const now = deps.now ?? Date.now;
   const wait = deps.wait ?? ((ms: number) => delay(ms));
@@ -106,12 +135,13 @@ export async function hopThroughWaypoint(deps: WaypointHopDependencies): Promise
         // no-cause: The global lockfile may not exist; the update removes it the same way before installing.
       }
     }
+    // Not the supervisor's cwd: that is the package directory these installs replace.
     const result = await deps.run(
       deps.method,
       deps.method === "bun"
         ? ["install", "-g", "--force", `ravi.bot@${release}`]
         : ["install", "-g", `ravi.bot@${release}`],
-      { env, stream: false },
+      { cwd: homedir(), env, stream: false },
     );
     const installed = resolveTarget(deps.packageRoot);
     if (result.success && installed?.version === release) return { installed, detail: "" };
@@ -124,16 +154,39 @@ export async function hopThroughWaypoint(deps: WaypointHopDependencies): Promise
   };
 
   // 1. The waypoint, in the same install.
+  enter("install");
   log(`installing Ravi ${waypoint}, the release this state must go through before Ravi ${target.version}`);
   const waypointInstall = await install(waypoint);
   const waypointTarget = waypointInstall.installed;
   if (!waypointTarget) return failed("install", `Ravi ${waypoint} could not be installed (${waypointInstall.detail})`);
 
-  // 2. Both processes, through the waypoint's own CLI: the target's adoption needs a boot record of each.
+  // 2. Both processes, through the waypoint's own CLI: the target's adoption needs a boot record of each. The daemon
+  // writes its boot record before it prepares the stores, so it counts only at schema phase `ready`, and the same
+  // process must stay there.
+  enter("start");
+  const phase = deps.schemaPhase ?? ((process: ManagedDaemonProcess) => readDaemonSchemaPhase(process, stateDir));
+  const phaseRecorded = compareRaviVersions(waypoint, SCHEMA_PHASE_RECEIPTS_RELEASE) >= 0;
+  let readyDaemon: { pmId: number; pid: number; startedAt: number | undefined } | null = null;
+  const daemonReady = (processes: Pm2Process[]) => {
+    const current = processes.find((process) => process.name === PM2_PROCESS_NAME && process.status === "online");
+    if (!current) return false;
+    const startedAt = current.startedAt ?? undefined;
+    if (
+      readyDaemon &&
+      (current.pm_id !== readyDaemon.pmId || current.pid !== readyDaemon.pid || startedAt !== readyDaemon.startedAt)
+    )
+      return false;
+    if (!phaseRecorded) return true;
+    return (
+      phase({ name: current.name, pmId: current.pm_id, pid: current.pid, status: current.status, startedAt }) ===
+      "ready"
+    );
+  };
   const runsWaypoint = (processes: Pm2Process[], name: typeof PM2_PROCESS_NAME | typeof CHANNELS_PM2_PROCESS_NAME) => {
     const identity = buildManagedRuntimeIdentity(processes, waypointTarget.bundlePath, -1, { stateDir });
     const current = name === PM2_PROCESS_NAME ? identity.daemon : identity.channels;
-    return current.online && current.identityVerified && !current.stale && current.runningVersion === waypoint;
+    const running = current.online && current.identityVerified && !current.stale && current.runningVersion === waypoint;
+    return running && (name !== PM2_PROCESS_NAME || daemonReady(processes));
   };
   const startTimeoutMs = deps.startTimeoutMs ?? 120_000;
   for (const [name, command] of [
@@ -148,10 +201,18 @@ export async function hopThroughWaypoint(deps: WaypointHopDependencies): Promise
     });
     log(started.output.trim());
     if (!started.success || !(await waitFor(() => runsWaypoint(deps.getProcesses(), name), startTimeoutMs)))
-      return failed("start", `${name} did not come up running Ravi ${waypoint}`);
+      return failed(
+        "start",
+        `${name} did not come up running Ravi ${waypoint}${name === PM2_PROCESS_NAME ? " and ready" : ""}`,
+      );
+    if (name === PM2_PROCESS_NAME) {
+      const daemon = deps.getProcesses().find((process) => process.name === PM2_PROCESS_NAME);
+      readyDaemon = daemon ? { pmId: daemon.pm_id, pid: daemon.pid, startedAt: daemon.startedAt ?? undefined } : null;
+    }
   }
 
   // 3. Prepared the way the target reads it, then held for the window.
+  enter("prepare");
   const prepared = () => waypointPreparedState(stateDir, waypoint, preparedRelease()).prepared;
   if (!(await waitFor(prepared, deps.prepareTimeoutMs ?? 120_000))) {
     const { missing } = waypointPreparedState(stateDir, waypoint, preparedRelease());
@@ -168,6 +229,7 @@ export async function hopThroughWaypoint(deps: WaypointHopDependencies): Promise
   if (!stable) return failed("prepare", `Ravi ${waypoint} did not stay up for the stability window`);
 
   // 4. The target again, in the same install; the waypoint keeps running from memory until the update replaces it.
+  enter("reinstall-target");
   log(`Ravi ${waypoint} prepared the state; installing Ravi ${target.version} again`);
   const targetInstall = await install(target.version);
   if (!targetInstall.installed)

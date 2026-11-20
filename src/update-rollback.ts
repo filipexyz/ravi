@@ -17,6 +17,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { ManagedDaemonProcess } from "./cli/daemon-restart-supervision.js";
@@ -410,7 +411,8 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
       plan.method === "bun"
         ? ["install", "-g", "--force", `ravi.bot@${plan.previousRelease}`]
         : ["install", "-g", `ravi.bot@${plan.previousRelease}`],
-      { env, stream: false },
+      // Not the supervisor's cwd: that is the package directory this install replaces.
+      { cwd: homedir(), env, stream: false },
     );
     const target = (deps.resolveTarget ?? resolveManagedRuntimeTargetFromPackageRoot)(plan.packageRoot);
     if (!reinstall.success || !target || target.version !== plan.previousRelease) {

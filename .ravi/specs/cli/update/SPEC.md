@@ -98,20 +98,28 @@ CLI that run installed.
   proved itself with a boot receipt) and that release is older than the
   waypoint, the supervisor MUST take the waypoint by itself:
   - stop both processes and snapshot the state, as an update that can roll
-    back does;
+    back does. Without that snapshot the waypoint MUST NOT be taken: the state
+    is untouched, and the result names the commands that install and start
+    the release that wrote it again;
   - install 3.261113.2 in the same global install and start the daemon, then
     the channel runner, through its own CLI (`daemon start`, `channels
-    start`), without target routing or runtime context; both, because the
-    target's adoption needs a boot record of each;
+    start`), without target routing or runtime context, and with installs run
+    outside the package directory they replace; both, because the target's
+    adoption needs a boot record of each. The daemon counts only at schema
+    phase `ready` (the same process, for the whole window) before the runner
+    starts;
   - count the waypoint once the state shows its readiness markers (3.261113.2
     or later) and the last boot record of `ravi` and `ravi-channels` was
     written by 3.261113.2 with its bundle, and both held for the stability
     window;
   - install the target again and update from the waypoint to the target, as
-    any update (its own snapshot, and a rollback to the waypoint). A second
-    waypoint on that update MUST be refused, not taken.
-  A waypoint that fails to install, start, prepare the state or hold MUST roll
-  back to the release that wrote the state (its snapshot and its exact
+    any update (its own snapshot, and a rollback to the waypoint). A runner
+    that was stopped before the update MUST be removed again before that
+    pass, so it stays stopped. A second waypoint on that pass MUST NOT be
+    taken, and a pass that stops before it begins MUST be recorded as
+    `failed`, with the waypoint running on the state it prepared.
+  A waypoint that fails to install, start, prepare the state or hold, or
+  throws, MUST roll back to the release that wrote the state (its snapshot and its exact
   release), and the result says the waypoint failed. A target that cannot be
   installed again leaves the waypoint running on the state it prepared, and the
   result names the command to retry.

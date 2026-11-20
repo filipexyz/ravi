@@ -659,20 +659,45 @@ export async function rebindManagedRuntimeProcesses(
     "so nothing was rolled back.";
 
   if (hop) {
-    // Both processes of the release that wrote the state are stopped and the state is in the snapshot.
-    const outcome = await (dependencies.hopThroughWaypoint ?? hopThroughWaypoint)({
-      stateDir,
-      waypoint: hop,
-      target,
-      method: rollbackPlan.method,
-      packageRoot: rollbackPlan.packageRoot,
-      bunPath,
-      run,
-      getProcesses,
-      now: dependencies.now,
-      wait: dependencies.wait,
-      stabilityWindowMs: dependencies.rollbackStabilityWindowMs ?? resolveStabilityWindowMs({}),
-    });
+    // Both processes of the release that wrote the state are stopped. Without its snapshot the waypoint has no
+    // rollback, so it is not taken: the state is untouched, and the commands bring that release back.
+    if (!snapshot) {
+      record(
+        "failed",
+        `The state needs the waypoint Ravi ${hop}, but no snapshot of Ravi ${rollbackPlan.previousRelease}'s state ` +
+          `could be taken (${warnings.join("; ") || "unknown reason"}), so the waypoint was not taken. Both ` +
+          `processes are stopped and the state is untouched: install Ravi ${rollbackPlan.previousRelease} and start ` +
+          "it, then run the update again.",
+        {
+          commands: [
+            `${rollbackPlan.method} install -g ravi.bot@${rollbackPlan.previousRelease}`,
+            "ravi daemon start",
+            ...(channels?.status === "online" ? ["ravi channels start"] : []),
+            "ravi daemon status",
+          ],
+        },
+      );
+      return false;
+    }
+    let outcome: WaypointHopOutcome;
+    try {
+      outcome = await (dependencies.hopThroughWaypoint ?? hopThroughWaypoint)({
+        stateDir,
+        waypoint: hop,
+        target,
+        method: rollbackPlan.method,
+        packageRoot: rollbackPlan.packageRoot,
+        bunPath,
+        run,
+        getProcesses,
+        now: dependencies.now,
+        wait: dependencies.wait,
+        schemaPhase: phase,
+        stabilityWindowMs: dependencies.rollbackStabilityWindowMs ?? resolveStabilityWindowMs({}),
+      });
+    } catch (cause) {
+      outcome = { ok: false, step: "unknown", message: (cause as Error).message };
+    }
     if (!outcome.ok) {
       if (outcome.step === "reinstall-target") {
         // The waypoint runs on the state it prepared: a release of its own, on its own state.
@@ -684,16 +709,31 @@ export async function rebindManagedRuntimeProcesses(
         );
         return false;
       }
-      const reason = `the waypoint Ravi ${hop} failed at ${outcome.step}: ${outcome.message}`;
-      if (snapshot) await rollBack(reason, snapshot);
-      else record("failed", unprotected(reason));
+      await rollBack(`the waypoint Ravi ${hop} failed at ${outcome.step}: ${outcome.message}`, snapshot);
       return false;
     }
     console.error(`ravi update: Ravi ${hop} prepared the state; updating it to Ravi ${target.version}`);
-    return rebindManagedRuntimeProcesses(managedRuntimeSnapshot(getProcesses()), target, {
-      ...dependencies,
-      afterWaypoint: true,
-    });
+    const afterWaypoint = (reason: string) =>
+      record(
+        "failed",
+        `Ravi ${hop} prepared the state and runs on it, but the update to Ravi ${target.version} stopped before ` +
+          `it began (${reason}). Nothing else changed; run the update again.`,
+        { commands: ["ravi daemon status", `ravi update --version ${target.version}`] },
+      );
+    try {
+      // The waypoint started the runner only for its boot record: one that was stopped before stays stopped.
+      if (channels?.status !== "online" && (await remove(CHANNELS_PM2_PROCESS_NAME)) !== 0) {
+        afterWaypoint("PM2 could not remove the waypoint's channel runner");
+        return false;
+      }
+      return await rebindManagedRuntimeProcesses(managedRuntimeSnapshot(getProcesses()), target, {
+        ...dependencies,
+        afterWaypoint: true,
+      });
+    } catch (cause) {
+      afterWaypoint((cause as Error).message);
+      return false;
+    }
   }
 
   let converged: boolean;

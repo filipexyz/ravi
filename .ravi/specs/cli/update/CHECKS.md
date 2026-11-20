@@ -150,10 +150,15 @@
   (3.261113.2 only for a pre-fence state prepared by an older release or
   none); the hop that installs it, starts both processes through its CLI with
   no runtime context, waits for the prepared state and reinstalls the target,
-  stopping at the step that failed; the prepared state counted only with the
+  stopping at the step that failed (an error inside a step included), waiting
+  for the waypoint's daemon to be ready before the runner, and installing
+  outside the package directory; the prepared state counted only with the
   markers and a boot record of both processes from the waypoint; and in the
-  supervisor, the waypoint taken by itself then the update to the target, a
-  second waypoint refused, a failed waypoint rolled back to the release that
+  supervisor, the waypoint taken by itself then the update to the target, no
+  waypoint without a snapshot (with the commands back), a waypoint that throws
+  rolled back, a second pass that stops before it begins recorded, a runner
+  that was stopped staying stopped, a second waypoint not taken, a failed
+  waypoint rolled back to the release that
   wrote the state, a target that cannot be installed again leaving the
   waypoint running, and a refusal before any stop without a rollback or as a
   downgrade.
