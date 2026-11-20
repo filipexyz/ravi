@@ -177,7 +177,12 @@ ravi sessions thread-configure <thread> [--provider <provider|clear>] [--model <
   parent, or by any path that is not the thread's own turn (no close context, a
   context that no longer exists, another session's), is the parent's decision and
   MUST stand: the queued instruction cannot be retracted and still runs, but it
-  does not reopen the thread. Only a parent's `thread.message` for that child
+  does not reopen the thread. A repeated close of a thread that is already closed
+  is a no-op (`changed: false`) and does not record who asked: a parent that runs
+  `close-thread` after the thread closed itself does not take the close, and a
+  queued instruction delivered afterwards still reopens the thread (the card shows
+  it). Recording the later closer is a known gap, not behavior to rely on. Only a
+  parent's `thread.message` for that child
   reopens: a report, an attention notice, an instruction for another child, an
   open record and a replay or a capacity retry of an instruction that was already
   delivered (it is not a new delivery) leave the lifecycle alone. A failure to
