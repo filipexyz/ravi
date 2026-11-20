@@ -28,6 +28,7 @@ RAVI_STATE_DIR="$(mktemp -d)" GITHUB_BASE_REF=dev bun src/ci/run-quality-gate.ts
 - `bun test src/router/state-boundary.test.ts` accepts a valid installed PID
   even with the real version banner, and refuses mismatched PID, invalid manager
   PID files and a foreground parent with no PID file despite inherited labels.
+- A launched daemon whose fake `pm2 jlist` answers after 2.6 s MUST open the real state, and the registry reader MUST retry within 20 s in total, then refuse when PM2 never answers or answers garbage (`bun test src/router/state-boundary.test.ts`).
 - The canonical managed-runtime launcher generates the admitted channel PM2 registration (`bun <bundle> channels run`). A mismatched PID, name, interpreter, bundle, role, command or additional arguments MUST refuse real-state access.
 - Tests, source/build code and linked worktrees refuse the same path even with inherited PM2 env and daemon-looking argv, as do a `daemon run` / `channels run` entry PM2 does not supervise and an installed CLI that carries a runtime context. Explicit isolated state remains usable.
 - The installed operator CLI MUST open real state the daemon prepared and read and write it, in a unit fixture and as a real launched process; it MUST create no database file, and a script that merely loads the installed package MUST NOT get the role (`bun test src/router/state-boundary.test.ts`).

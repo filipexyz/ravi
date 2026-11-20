@@ -87,5 +87,63 @@ Adapters SHOULD use process or credential-scoped locks before opening external s
   unknown. A daemon-only installation need not invent a missing runner.
 - Status and package/env mutations MUST name each stale process and its
   explicit restart command. Staleness detection MUST NOT restart any process.
+  The only restart a runner initiates is the refusal relaunch below.
 - Existing legacy state MUST be visible as unknown until an explicit restart
   writes a verifiable receipt; adding a guard for new starts alone is insufficient.
+
+## Release drift after a daemon restart
+
+State is prepared for one exact release (`state_schema_versions`), and a runner
+never migrates it. When the installed daemon moves to a newer release, a runner
+still executing the previous bundle is refused by that guard on every call that
+re-checks it (`STATE_SCHEMA_NOT_READY`) while its sockets stay connected and PM2
+still reports it online. The runner MUST NOT stay in that state:
+
+- A runner MUST count consecutive `STATE_SCHEMA_NOT_READY` refusals of its
+  outbound publish reconcile loop. A pass that clears the guard, and a failure
+  for another reason (it proves nothing about the guard), MUST reset the count;
+  only the pass also clears the refusal the runner reports in its health.
+- After 3 consecutive refusals, and only when the installed bundle (read from
+  disk at decision time) is a different release from the one the process is
+  running, the runner MUST drain, exit with status 75 and let its supervisor
+  relaunch it onto the installed release. A failed or slow drain MUST NOT keep
+  a refused runner alive: exit is forced after a bounded wait.
+- A refusal while the installed release equals the running release (the daemon
+  has not prepared state yet) and an unreadable installed release MUST NOT
+  restart the runner: restarting could not help, and staleness alone never
+  restarts a runner.
+- The relaunch MUST happen at most once per process: after it the releases match,
+  so it cannot loop.
+- Only non-`STATE_SCHEMA_NOT_READY` failures and stale-but-accepted runners keep
+  the explicit-restart behaviour above.
+
+## Release drift is visible where operators look
+
+The relaunch only helps a runner that already runs this code, and only when a
+restart can help. The same condition MUST also be visible without reading the
+runner's log:
+
+- `ravi channels status` MUST report health `degraded` with reason
+  `release_drift` when the runner and the daemon booted with different releases,
+  comparing the `runningVersion` of their boot receipts, and MUST put both
+  releases, why it matters and the restart command in `warnings`. A release that
+  cannot be verified (no receipt for the PID and start time yet) MUST be treated
+  as unknown, never as drift.
+- A runner whose state guard refuses its reconcile passes MUST report that in its
+  health snapshot as a `degraded` entry of `adapters` with id
+  `runner:release-guard` and reason `state_refused`, from the second refused pass
+  with no accepted pass between them until the first accepted one. A single
+  refused pass MUST NOT be reported: every daemon boot, on the same release too,
+  deletes the state marker while it prepares the stores, and one pass can fall in
+  that window. `ravi channels status` MUST report health `degraded` with reason
+  `state_refused` for it, whether the releases match or not. The snapshot MUST
+  NOT gain a field for it.
+- `ravi doctor` MUST report `channels.runner_release`: `fail` when the releases
+  differ, `warn` when only the runner reports a refused guard (evidence on its
+  own, unless verified different releases already make it a `fail`), `skip` otherwise when a release cannot be
+  verified or a process is not online. The runner's own report
+  comes from a bounded NATS probe; a runner that does not answer MUST NOT hold
+  the doctor.
+- Process liveness, stale code on its own and a connected socket MUST NOT turn
+  this verdict on or off: they stay reported as `stale`, `codeStale` and adapter
+  status.

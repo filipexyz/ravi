@@ -15,6 +15,8 @@ import {
 import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { createChannelRunnerHealthSnapshot, type ChannelRunnerRuntimeStatus } from "../../channels/health.js";
+import { runnerReleaseGuardAdapter } from "../../channels/runner-release-status.js";
+import { writeRuntimeBootReceipt } from "../../runtime-process-identity.js";
 import { dbGetChannel } from "../../router/router-db.js";
 import { buildChannelsPm2StartArgs } from "../../daemon-stdin.js";
 import {
@@ -476,6 +478,116 @@ describe("channels live status", () => {
     });
     expect((payload.warnings as string[]).join("\n")).toContain("ravi channels restart");
     expect(JSON.stringify(payload)).not.toContain("secret-fixture");
+  });
+
+  /** A package installed in place, as `bun add -g` leaves it: what is on disk is the newest release. */
+  function installedPackage(version: string) {
+    const cwd = join(stateDir!, "installed");
+    const bundlePath = join(cwd, "dist/bundle/index.js");
+    mkdirSync(join(cwd, "dist/bundle"), { recursive: true });
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ name: "ravi.bot", version }));
+    writeFileSync(bundlePath, "// installed code");
+    return { cwd, bundlePath };
+  }
+
+  /** The processes as PM2 lists them, each with the boot receipt its own bundle wrote for its PID and start time. */
+  function bootedProcesses(bundlePath: string, cwd: string, versions: { daemon: string; runner: string }) {
+    const startedAt = 1_721_563_200_000;
+    const daemon = {
+      name: "ravi",
+      pm_id: 1,
+      pid: 1234,
+      status: "online",
+      cpu: 0,
+      memory: 0,
+      cwd,
+      execPath: bundlePath,
+      args: ["daemon", "run"],
+      startedAt,
+    };
+    const runner = {
+      ...ONLINE_CHANNELS_PROCESS,
+      cwd,
+      execPath: "/usr/bin/bun",
+      args: [bundlePath, "channels", "run"],
+      startedAt,
+    };
+    for (const [entry, name, runningVersion] of [
+      [daemon, "ravi", versions.daemon],
+      [runner, "ravi-channels", versions.runner],
+    ] as const) {
+      writeRuntimeBootReceipt({
+        schemaVersion: 1,
+        name,
+        pid: entry.pid,
+        startedAt,
+        bundlePath,
+        runningVersion,
+        bundle: null,
+        envFile: join(stateDir!, ".env"),
+        env: null,
+        capturedAt: startedAt + 100,
+      });
+    }
+    return [daemon, runner];
+  }
+
+  it("reports a runner on another release than its daemon as degraded while its sockets stay healthy", async () => {
+    // 2026-11-19: `bun add -g` replaced the package, the daemon restarted onto 3.261119.9, the runner kept running 3.261119.6.
+    const { cwd, bundlePath } = installedPackage("3.261119.9");
+    const processes = bootedProcesses(bundlePath, cwd, { daemon: "3.261119.9", runner: "3.261119.6" });
+
+    const payload = await buildChannelsLiveStatusJson({
+      pm2Available: true,
+      processes,
+      probe: async () => ({ reachable: true, snapshot: liveRunnerStatus() }),
+      now: () => 1_721_563_204_000,
+    });
+
+    expect(payload).toMatchObject({
+      channels: { runningVersion: "3.261119.6", diskVersion: "3.261119.9" },
+      health: { status: "degraded", reachable: true, reason: "release_drift" },
+    });
+    expect(payload.warnings as string[]).toContain(
+      "ravi-channels runs 3.261119.6 but the daemon runs 3.261119.9: the state guard refuses a runner on another release, so replies stay queued while PM2 still reports it online. Run: ravi channels restart",
+    );
+  });
+
+  it("keeps a runner on its daemon's release ready, and names no release problem", async () => {
+    const { cwd, bundlePath } = installedPackage("3.261119.9");
+    const processes = bootedProcesses(bundlePath, cwd, { daemon: "3.261119.9", runner: "3.261119.9" });
+
+    const payload = await buildChannelsLiveStatusJson({
+      pm2Available: true,
+      processes,
+      probe: async () => ({ reachable: true, snapshot: liveRunnerStatus() }),
+    });
+
+    expect(payload).toMatchObject({ health: { status: "ready", reachable: true } });
+    expect((payload.health as Record<string, unknown>).reason).toBeUndefined();
+    expect((payload.warnings as string[]).join("\n")).not.toContain("state guard");
+  });
+
+  it("reports a runner that says its state guard refuses it as degraded, even on matching releases", async () => {
+    const { cwd, bundlePath } = installedPackage("3.261119.9");
+    const processes = bootedProcesses(bundlePath, cwd, { daemon: "3.261119.9", runner: "3.261119.9" });
+    const refused = createChannelRunnerHealthSnapshot({
+      ...liveRunnerStatus(),
+      adapters: [...liveRunnerStatus().adapters, runnerReleaseGuardAdapter()],
+    });
+
+    const payload = await buildChannelsLiveStatusJson({
+      pm2Available: true,
+      processes,
+      probe: async () => ({ reachable: true, snapshot: refused }),
+    });
+
+    expect(payload).toMatchObject({ health: { status: "degraded", reachable: true, reason: "state_refused" } });
+    expect(payload.warnings as string[]).toContain(
+      'ravi-channels is refused by its state guard (runner 3.261119.9, daemon 3.261119.9): state is not prepared for its release, so replies stay queued. Run: ravi daemon restart -m "prepare state"',
+    );
+    // The runner's report alone already makes an older reader degrade: it is a plain degraded adapter.
+    expect(classifyChannelRunnerHealth(refused)).toBe("degraded");
   });
 
   it("separates PM2 process liveness from runner and Slack readiness", async () => {

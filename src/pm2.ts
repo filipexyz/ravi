@@ -19,6 +19,12 @@ const PM2_ENV_DENYLIST = [
   "RAVI_HOST_CLI_GATEWAY",
   "RAVI_DAEMON_RESTART_HANDOFF",
   "RAVI_DAEMON_RESTART_HANDOFF_WORKER",
+  // Markers of a detached `ravi update` run (src/cli/update-run.ts). A service
+  // started by the update worker must not inherit them: a later update from
+  // inside that service would skip the handoff and write over the old run.
+  "RAVI_UPDATE_HANDOFF",
+  "RAVI_UPDATE_HANDOFF_WORKER",
+  "RAVI_UPDATE_RUN_ID",
   "RAVI_SESSION_KEY",
   "RAVI_SESSION_NAME",
   "RAVI_SESSION_TOKEN",

@@ -43,6 +43,10 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/socket-mode.test.ts",
     // `channels start` liveness: PM2-online runner probed on its PID health subject, stale ones bounced.
     "src/channels/runner-liveness.test.ts",
+    // Runner left on the previous release after a daemon restart: refused by the state guard, relaunches once.
+    "src/channels/runner-release-guard.test.ts",
+    // What status and doctor say about it: runner and daemon on different releases, or a runner its guard refuses.
+    "src/channels/runner-release-status.test.ts",
     // `sessions attach` seeds a routed Slack channel's chat before its first message.
     "src/channels/slack/route-seeded-chat.test.ts",
     // Direct Slack sends: `ravi link` private links go out unfurl-free; author email lookup.
@@ -232,6 +236,10 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/hooks/": [
     // Secret stripping moved from a Bash PreToolUse hook to the runtime spawn env.
     "src/runtime/agent-env-policy.test.ts",
+    // The PreCompact memory agent spawns Claude Code through the same env filter.
+    "src/hooks/pre-compact-spawn-env.test.ts",
+    // ...and its tools are limited to Read/Edit/Write by the SDK's `tools` option plus a guard that reads the SDK's hook input.
+    "src/hooks/pre-compact-tool-guard.test.ts",
     "src/hooks/gh-watch.test.ts",
     "src/hooks/gh-pr-publish.test.ts",
     "src/hooks/gh-follow-sweep.test.ts",

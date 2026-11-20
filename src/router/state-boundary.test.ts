@@ -23,7 +23,11 @@ import {
   isSchemaConsumer,
   isSchemaConsumerOf,
   openStateDatabase,
+  PM2_JLIST_ATTEMPT_TIMEOUTS_MS,
+  readPm2Registry,
   type DatabaseBoundaryOptions,
+  type Pm2JlistResult,
+  type Pm2JlistRunner,
 } from "../db/state-boundary.js";
 import { buildChannelsPm2Env, buildDaemonPm2StartArgs } from "../daemon-stdin.js";
 import { buildManagedRuntimeRebindPlan } from "../managed-runtime-rebind.js";
@@ -82,6 +86,20 @@ function channelsFromLauncher(options: ReturnType<typeof fixture>) {
     argv: [process.execPath, ...args],
     registeredProcesses: () => [entry],
   } satisfies DatabaseBoundaryOptions;
+}
+/** Copies the boundary and its imports into the fixture release, as the installed package lays them out. */
+function installRelease(options: ReturnType<typeof fixture>) {
+  copyFileSync(resolve(import.meta.dir, "../db/state-boundary.ts"), options.modulePath);
+  copyFileSync(resolve(import.meta.dir, "../pm2-output.ts"), join(options.homeDir, "release", "dist", "pm2-output.ts"));
+  const fixtureDist = join(options.homeDir, "release", "dist");
+  mkdirSync(join(fixtureDist, "threads"));
+  copyFileSync(resolve(import.meta.dir, "../threads/schema-fence.ts"), join(fixtureDist, "threads", "schema-fence.ts"));
+  copyFileSync(resolve(import.meta.dir, "../db/schema-lock.ts"), join(fixtureDist, "db", "schema-lock.ts"));
+  mkdirSync(join(options.homeDir, "release", "dist", "utils"));
+  copyFileSync(
+    resolve(import.meta.dir, "../utils/account-home.ts"),
+    join(options.homeDir, "release", "dist", "utils", "account-home.ts"),
+  );
 }
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
@@ -143,23 +161,7 @@ it.each([false, true])(
     const options = fixture();
     const realState = join(options.homeDir, ".ravi");
     mkdirSync(realState);
-    copyFileSync(resolve(import.meta.dir, "../db/state-boundary.ts"), options.modulePath);
-    copyFileSync(
-      resolve(import.meta.dir, "../pm2-output.ts"),
-      join(options.homeDir, "release", "dist", "pm2-output.ts"),
-    );
-    const fixtureDist = join(options.homeDir, "release", "dist");
-    mkdirSync(join(fixtureDist, "threads"));
-    copyFileSync(
-      resolve(import.meta.dir, "../threads/schema-fence.ts"),
-      join(fixtureDist, "threads", "schema-fence.ts"),
-    );
-    copyFileSync(resolve(import.meta.dir, "../db/schema-lock.ts"), join(fixtureDist, "db", "schema-lock.ts"));
-    mkdirSync(join(options.homeDir, "release", "dist", "utils"));
-    copyFileSync(
-      resolve(import.meta.dir, "../utils/account-home.ts"),
-      join(options.homeDir, "release", "dist", "utils", "account-home.ts"),
-    );
+    installRelease(options);
     const entry = options.argv[1];
     const target = join(realState, "ravi.db");
     writeFileSync(
@@ -234,6 +236,92 @@ it.each([false, true])(
     expect(launch(["agents", "list"]).status).not.toBe(0);
   },
 );
+
+it("a daemon whose `pm2 jlist` answers after the old 2 s limit still opens the real state", () => {
+  // Siqueira (1 vCPU): `pm2 jlist` took 2.0–3.6 s under load and the guard
+  // refused the PM2-registered daemon and channels runner as unregistered.
+  const options = fixture();
+  const realState = join(options.homeDir, ".ravi");
+  mkdirSync(realState);
+  installRelease(options);
+  const entry = options.argv[1];
+  const target = join(realState, "ravi.db");
+  writeFileSync(
+    entry,
+    `import { openStateDatabase } from '../db/state-boundary.ts';
+    const db = openStateDatabase(${JSON.stringify(target)}, undefined, { homeDir: ${JSON.stringify(options.homeDir)} });
+    db.exec('CREATE TABLE IF NOT EXISTS launched (id TEXT)'); db.close();`,
+  );
+  const bin = join(options.homeDir, "bin");
+  mkdirSync(bin);
+  const pm2Home = join(options.homeDir, "pm2");
+  mkdirSync(pm2Home);
+  writeFileSync(join(pm2Home, "pm2.pid"), String(process.pid));
+  writeFileSync(
+    join(bin, "pm2"),
+    `#!/usr/bin/env bun\nawait Bun.sleep(2600);\nconsole.log(JSON.stringify([{pid:process.ppid,name:'ravi',pm2_env:{pm_exec_path:${JSON.stringify(entry)},args:['daemon','run']}}]));\n`,
+  );
+  chmodSync(join(bin, "pm2"), 0o755);
+  const launched = spawnSync(process.execPath, [entry, "daemon", "run"], {
+    env: { PATH: `${bin}:${process.env.PATH}`, PM2_HOME: pm2Home },
+    encoding: "utf8",
+    timeout: 15_000,
+  });
+  expect(launched.stderr).not.toContain("Refusing the real Ravi state");
+  expect(launched.status).toBe(0);
+  expect(existsSync(target)).toBe(true);
+}, 20_000);
+
+it("retries a slow or failed `pm2 jlist` within a finite bound and refuses when PM2 never answers", () => {
+  const registry = JSON.stringify([{ pid: 1234, name: "ravi", pm2_env: { pm_exec_path: "/x", args: [] } }]);
+  const timedOut = (): Pm2JlistResult => ({
+    stdout: "",
+    status: null,
+    error: Object.assign(new Error("spawnSync pm2 ETIMEDOUT"), { code: "ETIMEDOUT" }),
+  });
+  const limits: number[] = [];
+  const slowThenAnswers: Pm2JlistRunner = (timeoutMs) => {
+    limits.push(timeoutMs);
+    return limits.length === 1 ? timedOut() : { stdout: registry, status: 0 };
+  };
+  expect(readPm2Registry(slowThenAnswers)).toEqual(JSON.parse(registry));
+  expect(limits).toEqual([...PM2_JLIST_ATTEMPT_TIMEOUTS_MS]);
+  expect(PM2_JLIST_ATTEMPT_TIMEOUTS_MS[0]).toBeGreaterThan(2_000);
+  expect(PM2_JLIST_ATTEMPT_TIMEOUTS_MS.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(20_000);
+
+  // Never answering, or answering garbage, can only refuse.
+  let calls = 0;
+  expect(
+    readPm2Registry(() => {
+      calls++;
+      return timedOut();
+    }),
+  ).toEqual([]);
+  expect(calls).toBe(PM2_JLIST_ATTEMPT_TIMEOUTS_MS.length);
+  expect(readPm2Registry(() => ({ stdout: "not json", status: 0 }))).toEqual([]);
+  // No pm2 binary: no point waiting for a retry.
+  calls = 0;
+  expect(
+    readPm2Registry(() => {
+      calls++;
+      return { stdout: "", status: null, error: Object.assign(new Error("ENOENT"), { code: "ENOENT" }) };
+    }),
+  ).toEqual([]);
+  expect(calls).toBe(1);
+
+  // The registry it returns decides as before: a slow answer grants only to the registered daemon.
+  const options = fixture();
+  const path = join(options.homeDir, ".ravi", "ravi.db");
+  const registered = daemon(options);
+  const entries = registered.registeredProcesses?.() ?? [];
+  let attempt = 0;
+  const slowRegistry = () =>
+    readPm2Registry(() => (attempt++ === 0 ? timedOut() : { stdout: JSON.stringify(entries), status: 0 }));
+  expect(() => assertDatabaseTargetAllowed(path, { ...registered, registeredProcesses: slowRegistry })).not.toThrow();
+  expect(() =>
+    assertDatabaseTargetAllowed(path, { ...registered, registeredProcesses: () => readPm2Registry(timedOut) }),
+  ).toThrow("Refusing the real Ravi state");
+});
 
 it("leaves schema/data intact when a non-daemon attempts destructive initialization", () => {
   const options = fixture();

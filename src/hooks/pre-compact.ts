@@ -3,14 +3,16 @@
  *
  * SDK PreCompact hook that reads the transcript before compaction
  * and extracts important memories using a cheap model.
- * The model has access to Read/Edit/Write tools restricted to MEMORY.md
- * and Read-only access to a temp transcript file.
+ * The model has only Read/Edit/Write (`tools`), no settings sources, and a
+ * PreToolUse guard that limits writes to MEMORY.md and memory/ and reads to the
+ * agent cwd plus a temp transcript file (see createMemoryAgentToolGuard).
  */
 
-import { existsSync, readFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { join, dirname, resolve } from "node:path";
+import { existsSync, readFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { basename, join, dirname, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { query, type HookInput } from "@anthropic-ai/claude-agent-sdk";
+import { filterAgentRuntimeBaseEnv } from "../runtime/agent-env-policy.js";
 import { logger } from "../utils/logger.js";
 import { parseTranscript, formatTranscript } from "./transcript-parser.js";
 
@@ -52,6 +54,8 @@ export interface PreCompactHookOptions {
   memoryModel?: string;
   /** Include tool calls in transcript (default: false) */
   includeTools?: boolean;
+  /** Claude Code executable to spawn (default: the SDK's own resolution). Tests point it at a fake. */
+  pathToClaudeCodeExecutable?: string;
 }
 
 /**
@@ -239,52 +243,12 @@ Preste atenção especial a:
         mkdirSync(dirname(memoryPath), { recursive: true });
         mkdirSync(memoryDir, { recursive: true });
 
-        // Hook to restrict file access
-        // - Transcript file: Read only
-        // - MEMORY.md + memory/*.md: Read/Edit/Write
-        // - Everything else under CWD: Read only
-        const fileAccessHook = async (toolInput: Record<string, unknown>, _toolUseId: string | null | undefined) => {
-          const filePath = (toolInput.file_path as string) || "";
-          const normalizedPath = resolve(agentCwd, filePath);
-
-          const isRead = !("old_string" in toolInput) && !("content" in toolInput);
-          const isTranscript = normalizedPath === transcriptTmpPath;
-          const isMemory = normalizedPath === memoryPath;
-          const isMemoryDir = normalizedPath.startsWith(memoryDir + "/");
-
-          // MEMORY.md + memory/*.md: full access (read + write)
-          if (isMemory || isMemoryDir) {
-            return { decision: "approve" as const };
-          }
-
-          // Read-only: allow transcript and any file under agent CWD
-          // (e.g. AGENTS.md, HEARTBEAT.md — useful context for memory extraction)
-          if (isRead) {
-            const isUnderCwd = normalizedPath.startsWith(agentCwd + "/") || normalizedPath === agentCwd;
-            if (isTranscript || isUnderCwd) {
-              return { decision: "approve" as const };
-            }
-          }
-
-          // Block writes to anything other than MEMORY.md and memory/
-          if (!isRead) {
-            log.warn("Memory agent tried to write unauthorized file", {
-              attempted: normalizedPath,
-            });
-            return {
-              decision: "block" as const,
-              reason: `Escrita permitida apenas em: ${memoryPath} e ${memoryDir}/`,
-            };
-          }
-
-          log.warn("Memory agent tried to access file outside allowed paths", {
-            attempted: normalizedPath,
-          });
-          return {
-            decision: "block" as const,
-            reason: `Acesso negado. Leitura permitida em: ${agentCwd}/ e ${transcriptTmpPath}. Escrita apenas em: ${memoryPath} e ${memoryDir}/`,
-          };
-        };
+        const fileAccessHook = createMemoryAgentToolGuard({
+          agentCwd,
+          memoryPath,
+          memoryDir,
+          transcriptPath: transcriptTmpPath,
+        });
 
         // Use query with Read/Edit/Write tools
         const result = query({
@@ -292,9 +256,25 @@ Preste atenção especial a:
           options: {
             model: modelToUse,
             cwd: agentCwd,
-            permissionMode: "bypassPermissions",
-            allowDangerouslySkipPermissions: true,
-            allowedTools: ["Read", "Edit", "Write"],
+            // Without `env` the SDK spawns Claude Code with the whole daemon env.
+            // Same boundary as a Claude turn (see runtime/agent-env-policy.ts).
+            env: filterAgentRuntimeBaseEnv(process.env, { runtimeProviderId: "claude" }),
+            ...(options.pathToClaudeCodeExecutable
+              ? { pathToClaudeCodeExecutable: options.pathToClaudeCodeExecutable }
+              : {}),
+            // `tools` is what removes every other tool (Bash included) from the
+            // model; `allowedTools` only auto-approves. `dontAsk` denies what is
+            // not pre-approved, so nothing is waved through by bypassPermissions.
+            tools: [...MEMORY_AGENT_TOOLS],
+            allowedTools: [...MEMORY_AGENT_TOOLS],
+            permissionMode: "dontAsk",
+            // Do not load the daemon user's ~/.claude/settings.json or the agent
+            // cwd's .claude/settings.json (hooks, MCP servers, plugins).
+            settingSources: [],
+            stderr: (data: string) => {
+              const text = data.trim();
+              if (text) log.warn("Memory agent stderr", { sessionId, stderr: text.slice(0, 2000) });
+            },
             hooks: {
               PreToolUse: [{ hooks: [fileAccessHook] }],
             },
@@ -350,6 +330,110 @@ REGRAS:
     log.info("PreCompact hook returning (extraction scheduled)", { sessionId });
     return {};
   };
+}
+
+/** The only tools the memory agent has. Everything else is removed, not just unapproved. */
+export const MEMORY_AGENT_TOOLS = ["Read", "Edit", "Write"] as const;
+
+export interface MemoryAgentToolGuardPaths {
+  agentCwd: string;
+  memoryPath: string;
+  memoryDir: string;
+  transcriptPath: string;
+}
+
+type MemoryAgentGuardOutput = {
+  decision: "approve" | "block";
+  reason?: string;
+  hookSpecificOutput: {
+    hookEventName: "PreToolUse";
+    permissionDecision: "allow" | "deny";
+    permissionDecisionReason?: string;
+  };
+};
+
+/**
+ * PreToolUse guard for the memory agent. It reads the SDK's shape
+ * (`tool_name` + nested `tool_input`) and denies by default:
+ * - any tool outside Read/Edit/Write;
+ * - a missing or non-string `file_path`;
+ * - a write (Edit/Write) outside MEMORY.md and memory/;
+ * - a read outside the agent cwd and the transcript copy.
+ * Paths are resolved through symlinks, so a link inside the cwd cannot reach out.
+ */
+export function createMemoryAgentToolGuard(paths: MemoryAgentToolGuardPaths) {
+  const root = (path: string) => canonicalPath(path) ?? resolve(path);
+  const cwd = root(paths.agentCwd);
+  const memoryPath = root(paths.memoryPath);
+  const memoryDir = root(paths.memoryDir);
+  const transcriptPath = root(paths.transcriptPath);
+  const allowedTools: readonly string[] = MEMORY_AGENT_TOOLS;
+
+  const approve = (): MemoryAgentGuardOutput => ({
+    decision: "approve",
+    hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" },
+  });
+  const block = (reason: string): MemoryAgentGuardOutput => ({
+    decision: "block",
+    reason,
+    hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason },
+  });
+
+  return async (hookInput: HookInput): Promise<MemoryAgentGuardOutput> => {
+    // Only PreToolUse carries these fields; anything else has no tool and is denied below.
+    const input = hookInput as { tool_name?: unknown; tool_input?: unknown };
+    const toolName = typeof input.tool_name === "string" ? input.tool_name : "";
+    if (!allowedTools.includes(toolName)) {
+      log.warn("Memory agent tried to use a tool outside Read/Edit/Write", { tool: toolName || "(none)" });
+      return block(`Ferramenta não permitida: ${toolName || "(desconhecida)"}. Apenas Read, Edit e Write.`);
+    }
+
+    const toolInput =
+      input.tool_input && typeof input.tool_input === "object" ? (input.tool_input as Record<string, unknown>) : {};
+    const rawPath = toolInput.file_path;
+    if (typeof rawPath !== "string" || rawPath.length === 0 || rawPath.includes("\0")) {
+      return block("file_path ausente ou inválido.");
+    }
+    const target = canonicalPath(resolve(paths.agentCwd, rawPath));
+    if (target === null) return block("Caminho não verificável.");
+
+    const inMemory = target === memoryPath || target.startsWith(memoryDir + sep);
+    if (toolName === "Read") {
+      const inCwd = target === cwd || target.startsWith(cwd + sep);
+      if (inMemory || inCwd || target === transcriptPath) return approve();
+      log.warn("Memory agent tried to read outside allowed paths", { attempted: target });
+      return block(`Leitura permitida em: ${cwd}/ e ${transcriptPath}.`);
+    }
+
+    if (inMemory) return approve();
+    log.warn("Memory agent tried to write unauthorized file", { attempted: target });
+    return block(`Escrita permitida apenas em: ${memoryPath} e ${memoryDir}/`);
+  };
+}
+
+/**
+ * realpath of the deepest existing ancestor + the not-yet-existing tail, so symlinks cannot hide an escape.
+ * Null when the path cannot be verified (a loop, no permission): the guard blocks it.
+ */
+function canonicalPath(path: string): string | null {
+  const absolute = resolve(path);
+  let existing = absolute;
+  const tail: string[] = [];
+  for (;;) {
+    try {
+      return join(realpathSync(existing), ...tail);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") {
+        log.warn("Memory agent path could not be verified", { path: absolute, code });
+        return null;
+      }
+      const parent = dirname(existing);
+      if (parent === existing) return absolute;
+      tail.unshift(basename(existing));
+      existing = parent;
+    }
+  }
 }
 
 /**
