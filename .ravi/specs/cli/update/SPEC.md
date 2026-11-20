@@ -319,9 +319,11 @@ CLI that run installed.
 - The probe reads secrets and MUST keep them. It sends the credential the
   installer would send to that registry, to its host only, in the request
   header: what `~/.npmrc` gives that host first (`_authToken`, then `_auth`,
-  then `username` with `_password`), as bun applies it over its own entry;
+  then `username` with `_password`, on the registry's path or any parent of
+  it, most specific first), as bun applies it over its own entry;
   else the token, or the user and password, of bun's `[install] registry`
-  entry when that entry is the registry used; else a `user:password@` in the
+  entry when that entry is the registry used (TOML basic or literal strings;
+  a whole value `$NAME` read from the environment, as bun does); else a `user:password@` in the
   address, as Basic and taken off the address asked. None of them is ever printed, logged or recorded; a 401 or 403
   names which one went along, never its value; a message, a recorded
   refusal (`supervisor-refused.json`) or an error cause names the registry

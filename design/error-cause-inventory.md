@@ -2307,19 +2307,19 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | update-rollback.ts | src/update-rollback.ts | 329 | no-cause | An address that is not a URL has no credential to take apart; it is taken out as a whole. | src/update-rollback.ts:e374f3f5868f5f5b08e5da51 |
 | update-rollback.ts | src/update-rollback.ts | 354 | no-cause | A value that does not decode is taken out as written. | src/update-rollback.ts:0185a332953d180b0730acfa |
 | update-rollback.ts | src/update-rollback.ts | 395 | no-cause | A config file that does not exist (or cannot be read) does not set the registry. | src/update-rollback.ts:c34eb062c861985cc8a28fcf |
-| update-rollback.ts | src/update-rollback.ts | 447 | no-cause | A registry that is not a URL gets no credential; the probe refuses to ask it. | src/update-rollback.ts:6c005ac97536ff40d8fb45a2 |
-| update-rollback.ts | src/update-rollback.ts | 547 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:e2dd225a4842bfcfdd7514bb |
-| update-rollback.ts | src/update-rollback.ts | 557 | no-cause | A snapshot without a readable manifest is incomplete; the next older one is checked. | src/update-rollback.ts:6bb0c5607571c133e81bd616 |
-| update-rollback.ts | src/update-rollback.ts | 669 | no-cause | The same commands follow in the message; the file is only their durable copy. | src/update-rollback.ts:967a8be8a811b9e3dcf811af |
-| update-rollback.ts | src/update-rollback.ts | 749 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:11124bd592d32ab924410736 |
-| update-rollback.ts | src/update-rollback.ts | 775 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:0788f4f5ca72c37dc895d844 |
-| update-rollback.ts | src/update-rollback.ts | 841 | no-cause | No result file (or an unreadable one) means this supervisor recorded no outcome. | src/update-rollback.ts:950ea65e82ee458d1b4c547f |
-| update-rollback.ts | src/update-rollback.ts | 1015 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:29fca22363e6e4395ba0b7db |
-| update-rollback.ts | src/update-rollback.ts | 1033 | no-cause | The failure below already carries the cause; these commands only need to be safe to print. | src/update-rollback.ts:146a5a481dd1b0ef4b8f4a2a |
-| update-rollback.ts | src/update-rollback.ts | 1058 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:0f29d21958b8aebf676684e4 |
-| update-rollback.ts | src/update-rollback.ts | 1064 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:6fba620b78ad9db9a9b7093f |
-| update-rollback.ts | src/update-rollback.ts | 1085 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:4fc4c71229c10cca5b4e7791 |
-| update-rollback.ts | src/update-rollback.ts | 1148 | no-cause | The global lockfile may not exist; the update removes it the same way before installing. | src/update-rollback.ts:5b282885b7f89bdc377e0129 |
+| update-rollback.ts | src/update-rollback.ts | 460 | no-cause | A registry that is not a URL gets no credential; the probe refuses to ask it. | src/update-rollback.ts:6c005ac97536ff40d8fb45a2 |
+| update-rollback.ts | src/update-rollback.ts | 567 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:e2dd225a4842bfcfdd7514bb |
+| update-rollback.ts | src/update-rollback.ts | 577 | no-cause | A snapshot without a readable manifest is incomplete; the next older one is checked. | src/update-rollback.ts:6bb0c5607571c133e81bd616 |
+| update-rollback.ts | src/update-rollback.ts | 689 | no-cause | The same commands follow in the message; the file is only their durable copy. | src/update-rollback.ts:967a8be8a811b9e3dcf811af |
+| update-rollback.ts | src/update-rollback.ts | 769 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:11124bd592d32ab924410736 |
+| update-rollback.ts | src/update-rollback.ts | 795 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:0788f4f5ca72c37dc895d844 |
+| update-rollback.ts | src/update-rollback.ts | 861 | no-cause | No result file (or an unreadable one) means this supervisor recorded no outcome. | src/update-rollback.ts:950ea65e82ee458d1b4c547f |
+| update-rollback.ts | src/update-rollback.ts | 1035 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:29fca22363e6e4395ba0b7db |
+| update-rollback.ts | src/update-rollback.ts | 1053 | no-cause | The failure below already carries the cause; these commands only need to be safe to print. | src/update-rollback.ts:146a5a481dd1b0ef4b8f4a2a |
+| update-rollback.ts | src/update-rollback.ts | 1078 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:0f29d21958b8aebf676684e4 |
+| update-rollback.ts | src/update-rollback.ts | 1084 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:6fba620b78ad9db9a9b7093f |
+| update-rollback.ts | src/update-rollback.ts | 1105 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:4fc4c71229c10cca5b4e7791 |
+| update-rollback.ts | src/update-rollback.ts | 1168 | no-cause | The global lockfile may not exist; the update removes it the same way before installing. | src/update-rollback.ts:5b282885b7f89bdc377e0129 |
 | update-snapshot.ts | src/update-snapshot.ts | 137 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:58f28d04a4b48fd2e0237f55 |
 | update-snapshot.ts | src/update-snapshot.ts | 163 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:a1e50333d614882b3da68e21 |
 | update-snapshot.ts | src/update-snapshot.ts | 185 | no-cause | A filesystem without clones takes full copies; the space check accounts for them. | src/update-snapshot.ts:1023bb66947de74380272342 |

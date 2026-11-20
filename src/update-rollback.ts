@@ -409,18 +409,31 @@ function readInstallerRegistry(method: GlobalInstallMethod, env: NodeJS.ProcessE
     return value;
   };
   type BunRegistry = { url: string; token: string | null; username: string | null; password: string | null };
+  // A TOML string: basic, in double quotes, with its escapes, or literal, in single quotes.
+  const tomlString = "\"((?:[^\"\\\\]|\\\\.)*)\"|'([^']*)'";
+  const unescape = (basic: string): string =>
+    basic.replace(/\\(u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|.)/g, (_, escape: string) => {
+      if (escape.length > 1) return String.fromCodePoint(Number.parseInt(escape.slice(1), 16));
+      return ({ b: "\b", t: "\t", n: "\n", f: "\f", r: "\r" } as Record<string, string>)[escape] ?? escape;
+    });
+  // bun reads a whole value `$NAME` (or `${NAME}`) from the environment, as its `getAuto` does.
+  const bunValue = (basic: string | undefined, literal: string | undefined): string => {
+    const value = basic !== undefined ? unescape(basic) : (literal ?? "");
+    const whole = /^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$/.exec(value);
+    return whole ? (env[whole[1]!] ?? "") : expand(value);
+  };
   const bunfigRegistry = (): BunRegistry | null => {
     const bunfig =
       read(join(env.XDG_CONFIG_HOME ?? join(home, ".config"), ".bunfig.toml")) ?? read(join(home, ".bunfig.toml"));
     const install = bunfig ? /\[install\]([\s\S]*?)(?:\n\[|$)/.exec(bunfig)?.[1] : undefined;
     if (!install) return null;
-    const plain = /\bregistry\s*=\s*"([^"]+)"/.exec(install);
-    if (plain) return { url: expand(plain[1]!), token: null, username: null, password: null };
+    const plain = new RegExp(`\\bregistry\\s*=\\s*(?:${tomlString})`).exec(install);
+    if (plain) return { url: bunValue(plain[1], plain[2]), token: null, username: null, password: null };
     // A quoted value may hold a brace (`"${TOKEN}"`): the entry ends at the first brace outside quotes.
-    const entry = /\bregistry\s*=\s*\{((?:"[^"]*"|[^}"])*)\}/.exec(install)?.[1];
+    const entry = /\bregistry\s*=\s*\{((?:"(?:[^"\\]|\\.)*"|'[^']*'|[^}"'])*)\}/.exec(install)?.[1];
     const field = (name: string): string | null => {
-      const match = entry ? new RegExp(`\\b${name}\\s*=\\s*"([^"]*)"`).exec(entry) : null;
-      return match ? expand(match[1]!) : null;
+      const match = entry ? new RegExp(`\\b${name}\\s*=\\s*(?:${tomlString})`).exec(entry) : null;
+      return match ? bunValue(match[1], match[2]) : null;
     };
     const url = field("url");
     return url ? { url, token: field("token"), username: field("username"), password: field("password") } : null;
@@ -456,7 +469,14 @@ function readInstallerRegistry(method: GlobalInstallMethod, env: NodeJS.ProcessE
     parsed.password = "";
     url = parsed.toString().replace(/\/+$/, "");
   }
-  const scopes = parsed ? [`//${parsed.host}${parsed.pathname.replace(/\/+$/, "")}/`, `//${parsed.host}/`] : [];
+  // Every scope of that host, most specific first, as npm and bun look a credential up: `//host/a/b/`, `//host/a/`,
+  // `//host/`.
+  const segments = parsed ? parsed.pathname.split("/").filter(Boolean) : [];
+  const scopes = parsed
+    ? segments
+        .map((_, index) => `//${parsed!.host}/${segments.slice(0, segments.length - index).join("/")}/`)
+        .concat(`//${parsed.host}/`)
+    : [];
   const scoped = (key: string): string | null => {
     for (const scope of scopes) {
       const value = npmrcValue(`${scope}:${key}`);

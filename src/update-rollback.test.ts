@@ -2718,7 +2718,29 @@ describe("the registry probe before any stop", () => {
       '[install]\nregistry = { url = "https://bun.example/npm/", username = "ann", password = "pw" }\n',
     );
     expect((await asked("bun", env)).authorization).toBe(basic("ann:pw"));
+    // bun's documented `$NAME`, a TOML literal string, and a basic string with an escape.
+    for (const [token, sent] of [
+      ['"$BUN_TOKEN"', "bun-T0KEN"],
+      ["'LIT-T0KEN'", "LIT-T0KEN"],
+      ['"q\\"t0ken"', 'q"t0ken'],
+    ] as const) {
+      writeFileSync(
+        join(home, ".bunfig.toml"),
+        `[install]\nregistry = { url = 'https://bun.example/npm/', token = ${token} }\n`,
+      );
+      expect(await asked("bun", env)).toEqual({
+        url: "https://bun.example/npm/ravi.bot/3.1.0",
+        authorization: `Bearer ${sent}`,
+      });
+    }
     rmSync(join(home, ".bunfig.toml"));
+    // A credential on a parent path of the registry is the installer's too.
+    writeFileSync(
+      join(home, ".npmrc"),
+      `registry=https://mirror.example/team/npm/\n//mirror.example/team/:_auth=${Buffer.from("finn:pw5").toString("base64")}\n`,
+    );
+    expect((await asked("npm", {})).authorization).toBe(basic("finn:pw5"));
+    rmSync(join(home, ".npmrc"));
     // A user and password in the address go as Basic, never in the address asked.
     expect(await asked("npm", { npm_config_registry: "https://bob:p%40ss@mirror.example/npm/" })).toEqual({
       url: "https://mirror.example/npm/ravi.bot/3.1.0",
