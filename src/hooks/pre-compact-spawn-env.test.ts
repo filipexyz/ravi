@@ -20,11 +20,30 @@ it("spawns the memory agent with the provider env filter and the tool limit, not
     executable,
     // process.execPath in the shebang: the filtered PATH need not hold `node`.
     // Written to a temp name and renamed, so the test never reads a half-written ledger.
+    // The first stdin line is the SDK's `initialize` control_request; it carries the hooks the
+    // query registered. If nothing arrives in 3 s the ledger is still written, with `hooks: null`.
     `#!${process.execPath}
 const fs = require("node:fs");
-fs.writeFileSync(${JSON.stringify(`${ledger}.tmp`)}, JSON.stringify({ env: Object.keys(process.env), argv: process.argv.slice(2) }));
-fs.renameSync(${JSON.stringify(`${ledger}.tmp`)}, ${JSON.stringify(ledger)});
-process.exit(1);
+let done = false;
+function finish(initialize) {
+  if (done) return;
+  done = true;
+  const request = initialize && initialize.request ? initialize.request : null;
+  const subtype = request ? (request.subtype ?? null) : null;
+  const hooks = request ? (request.hooks ?? null) : null;
+  fs.writeFileSync(${JSON.stringify(`${ledger}.tmp`)}, JSON.stringify({ env: Object.keys(process.env), argv: process.argv.slice(2), subtype, hooks }));
+  fs.renameSync(${JSON.stringify(`${ledger}.tmp`)}, ${JSON.stringify(ledger)});
+  process.exit(1);
+}
+let buffer = "";
+process.stdin.on("data", (chunk) => {
+  buffer += chunk;
+  const newline = buffer.indexOf("\\n");
+  if (newline < 0) return;
+  try { finish(JSON.parse(buffer.slice(0, newline))); } catch { finish(null); }
+});
+process.stdin.on("end", () => finish(null));
+setTimeout(() => finish(null), 3000);
 `,
   );
   chmodSync(executable, 0o755);
@@ -67,7 +86,14 @@ process.exit(1);
       await new Promise((done) => setTimeout(done, 50));
     }
     expect(existsSync(ledger), "fake Claude Code never ran: was the SDK mocked by another test file?").toBe(true);
-    const { env: names, argv }: { env: string[]; argv: string[] } = JSON.parse(readFileSync(ledger, "utf8"));
+    const {
+      env: names,
+      argv,
+      subtype,
+      hooks,
+    }: { env: string[]; argv: string[]; subtype: string | null; hooks: { PreToolUse?: unknown[] } | null } = JSON.parse(
+      readFileSync(ledger, "utf8"),
+    );
     for (const name of Object.keys(dropped)) {
       expect(names).not.toContain(name);
     }
@@ -82,6 +108,14 @@ process.exit(1);
     expect(argv).toContain("--permission-mode=dontAsk");
     expect(argv.some((arg) => arg.startsWith("--setting-sources"))).toBe(true);
     expect(argv.find((arg) => arg.startsWith("--setting-sources"))).toMatch(/^--setting-sources(=|$)/);
+    // The guard is the only path restriction (allowedTools in dontAsk approves any path), so a
+    // query that stops registering it fails silently. The SDK sends it in `initialize`.
+    // The exact shape matters: an entry without a callback guards nothing, and a `matcher`
+    // that never matches (e.g. `Write|Edit`) silently drops the guard for `Read`.
+    expect(subtype, "the SDK no longer sends initialize first").toBe("initialize");
+    expect(hooks?.PreToolUse, "PreToolUse guard not registered with the query").toEqual([
+      { hookCallbackIds: [expect.any(String)] },
+    ]);
     expect(argv).not.toContain("--allow-dangerously-skip-permissions");
     expect(argv).not.toContain("--dangerously-skip-permissions");
     expect(argv.some((arg) => arg.startsWith("--permission-mode=bypass"))).toBe(false);
