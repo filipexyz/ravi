@@ -22,6 +22,7 @@ import {
   maybeRunManagedRuntimeRebindFromEnv,
   rebindManagedRuntimeProcesses,
   UPDATE_IN_PROGRESS,
+  updateSupervisorRunning,
 } from "./managed-runtime-rebind.js";
 import { resolveManagedRuntimeTargetFromPackageRoot } from "./managed-runtime.js";
 import type { Pm2Process } from "./pm2.js";
@@ -1440,9 +1441,20 @@ describe("ravi update --rollback", () => {
 
   it("refuses with the commands to finish by hand when nothing runs next to an unused snapshot", () => {
     const { stateDir, manifest } = operatorRollbackFixture();
-    let message = "";
+    const keptFile = join(updateSnapshotsDir(stateDir), manifest!.id, "finish-by-hand.txt");
+    // The preview writes nothing.
+    let preview = "";
     try {
       planOperatorRollback({ stateDir, processes: [], installMethod: "bun" });
+    } catch (error) {
+      preview = (error as Error).message;
+    }
+    expect(preview).toContain("bun install -g ravi.bot@3.1.0\nravi daemon start");
+    expect(preview).not.toContain("finish-by-hand.txt");
+    expect(existsSync(keptFile)).toBe(false);
+    let message = "";
+    try {
+      planOperatorRollback({ stateDir, processes: [], installMethod: "bun", keepCommands: true });
     } catch (error) {
       message = (error as Error).message;
     }
@@ -1453,7 +1465,7 @@ describe("ravi update --rollback", () => {
     // One command per line (a line past 2048 characters would not reach the operator), also kept in a file.
     expect(message).toContain("bun install -g ravi.bot@3.1.0\nravi daemon start\nravi channels start");
     expect(message.split("\n").every((line) => line.length < 2048)).toBe(true);
-    const kept = readFileSync(join(updateSnapshotsDir(stateDir), manifest!.id, "finish-by-hand.txt"), "utf8");
+    const kept = readFileSync(keptFile, "utf8");
     expect(kept).toContain("bun install -g ravi.bot@3.1.0\nravi daemon start\n");
     expect(message).toContain("This run stopped nothing.");
 
@@ -1584,6 +1596,12 @@ describe("ravi update --rollback", () => {
     );
     expect(cut?.code).toBe(UPDATE_ROLLBACK_UNAVAILABLE);
     expect(cut?.message).toContain("not running under PM2");
+  });
+
+  it("probes the update lock without creating anything where no update ever ran", () => {
+    const stateDir = tempDir("ravi-probe-state-");
+    expect(updateSupervisorRunning(stateDir)).toBe(false);
+    expect(readdirSync(stateDir)).toEqual([]);
   });
 
   it("holds the update lock for the rollback: refused while another supervisor holds it, free after", async () => {

@@ -1119,12 +1119,16 @@ export const UPDATE_IN_PROGRESS = "UPDATE_IN_PROGRESS";
  */
 /**
  * Whether another process's update supervisor holds `<state>/updates/update.lock` now. A probe: it records no
- * refusal (the running supervisor's own command reads those), and any error but a busy lock is thrown.
+ * refusal (the running supervisor's own command reads those), creates nothing where no update ever ran, and any
+ * error but a busy lock is thrown.
  */
 export function updateSupervisorRunning(stateDir: string = getRaviStateDir()): boolean {
+  const path = join(stateDir, "updates", "update.lock");
+  // No lock file: no supervisor ever ran here, and the probe creates nothing.
+  if (!existsSync(path)) return false;
   let lock: { release(): void };
   try {
-    lock = acquireSchemaFileLock(join(stateDir, "updates", "update.lock"), 0);
+    lock = acquireSchemaFileLock(path, 0);
   } catch (cause) {
     if (cause instanceof SchemaLockBusyError) return true;
     throw cause;
