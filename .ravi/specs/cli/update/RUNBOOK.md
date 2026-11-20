@@ -88,8 +88,16 @@ authorizes no database or package downgrade by hand: the update's own rollback
   the next update: the target's way back to 3.261113.2, and the state before
   the waypoint, of the release that wrote it (for a restore by hand).
 - `UPDATE_WAYPOINT_REQUIRED`: the update could not take the waypoint by itself
-  (a source checkout, a daemon with no boot receipt, or a running release not
-  older than the waypoint). Nothing was stopped; run the commands it names.
+  (a source checkout, a running release not older than the waypoint, or a
+  daemon with no boot record whose release it could not tell). Nothing was
+  stopped. When it asks for `--running-release`, PM2's record is not the
+  daemon's: if you know the release the daemon was started with (the one
+  installed before this update), run the same `ravi update` with
+  `--running-release <release>`; otherwise run the commands it names.
+- A daemon with no boot record (before 3.261104.2) takes the waypoint by
+  itself when PM2 launched it from the install's bundle: its rollback goes to
+  the version PM2 recorded. That is weaker than a boot record (no digest of the
+  bundle); `supervisor.log` says which evidence the update used.
 
 ## Going back by hand
 

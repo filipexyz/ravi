@@ -96,7 +96,22 @@ CLI that run installed.
   (`state_schema_versions`, `1:<release>`), needs the waypoint 3.261113.2.
   When the update can roll back (a global install whose running release
   proved itself with a boot receipt) and that release is older than the
-  waypoint, the supervisor MUST take the waypoint by itself:
+  waypoint, the supervisor MUST take the waypoint by itself. A daemon online
+  under PM2 with no boot receipt for its process (a release before
+  3.261104.2) MAY take it too, with a rollback to the release known by weaker
+  evidence, and only with every guard: PM2's record of the daemon
+  (`pm2_env.version`, which PM2 reads from the package.json nearest the
+  script each time it launches it), only when that script is inside this
+  install's package (not a launcher or another install) and the version is a
+  Ravi release before 3.261104.2; or the operator's `--running-release`,
+  which MUST be such a release and MUST agree with PM2's record when that one
+  is usable. A daemon with a receipt is decided by the receipt alone. Whatever
+  fails MUST refuse with the reason (fail closed, never a guess), and the
+  refusal MUST ask for `--running-release` only when that settles it (PM2's
+  record missing, not a Ravi release, or not the daemon's). After such a
+  rollback the restored release is proven by PM2's record (launched from this
+  install's package, with that version), as it writes no receipt.
+  Taking the waypoint:
   - stop both processes and snapshot the state, as an update that can roll
     back does. Without that snapshot the waypoint MUST NOT be taken, and the
     supervisor MUST bring the release that wrote the state back on it by
