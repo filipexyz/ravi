@@ -229,6 +229,26 @@ CLI that run installed.
   `UPDATE_ROLLBACK_FAILED` from that record. A CLI that stops waiting earlier
   reports a generic failure, and the record still holds the outcome.
 
+## Operator rollback (`ravi update --rollback`)
+
+- `ravi update --rollback` MUST go back to the release before the last update,
+  with its state as of that update's snapshot, through the update's own
+  rollback: stop both processes, restore under the store locks, reinstall
+  the exact previous release in the same global install, start it through
+  its own CLI, and hold it for the stability window.
+- It MUST be a preview unless `--execute` is given (the contract's dry-run,
+  exit 3), naming the release it leaves, the release it goes back to, the
+  snapshot's time and where what was written since then is kept.
+- Before stopping anything it MUST refuse with `UPDATE_ROLLBACK_UNAVAILABLE`
+  when there is no update snapshot, when the latest one was already restored
+  (or a restore of it was cut short), when the daemon does not run from a
+  global install, when the daemon's verified release is not the target of
+  that update, or when the caller runs inside the daemon's process tree.
+- It takes no release selector, and `--execute` without `--rollback` is a
+  usage error. It MUST hold `<state>/updates/update.lock` while it runs
+  (`UPDATE_IN_PROGRESS` when another update holds it). A rollback that stops
+  MUST end as `UPDATE_ROLLBACK_FAILED` with the step and the commands.
+
 ## Detached execution
 
 - `ravi update` started inside the daemon's process tree (an agent tool, a

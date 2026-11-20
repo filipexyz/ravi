@@ -16,6 +16,7 @@ import { rebindManagedRuntimeProcesses } from "./managed-runtime-rebind.js";
 import { resolveManagedRuntimeTargetFromPackageRoot } from "./managed-runtime.js";
 import type { Pm2Process } from "./pm2.js";
 import { observeRuntimeBoot, writeRuntimeBootReceipt } from "./runtime-process-identity.js";
+import { runUpdate } from "./cli/commands/update.js";
 import { requiredFenceAdoptionWaypoint, UPDATE_WAYPOINT_REQUIRED } from "./update-preflight.js";
 import { hopThroughWaypoint, type WaypointHopDependencies, waypointPreparedState } from "./update-waypoint.js";
 import {
@@ -23,12 +24,15 @@ import {
   previousReleaseCliEnv,
   readUpdateSupervisorResult,
   resolveUpdateRollbackPlan,
+  planOperatorRollback,
   rollBackUpdate,
+  UPDATE_ROLLBACK_UNAVAILABLE,
   type UpdateRollbackDependencies,
   type UpdateRollbackPlan,
 } from "./update-rollback.js";
 import {
   planUpdateSnapshot,
+  takeUpdateSnapshot,
   UPDATE_SNAPSHOT_SPACE,
   UpdateSnapshotRestoreError,
   updateSnapshotsDir,
@@ -326,6 +330,16 @@ describe("update rollback", () => {
     expect(outcome).toMatchObject({ ok: false, step: "start", restoredAt: "2026-11-19T20:01:00.000Z" });
     expect(calls.some((call) => call.args.includes("channels"))).toBe(false);
     expect(calls.some((call) => call.args[0] === "save")).toBe(false);
+  });
+
+  it("draws the schema phase line at 3.261109.1, compared as versions", async () => {
+    // At the line the phase is required; just below it, and a later patch of an older day, it is not.
+    expect(await rollBackUpdate(rollbackFixture({ phase: null, previousRelease: "3.261109.1" }).deps)).toMatchObject({
+      ok: false,
+      step: "start",
+    });
+    for (const previousRelease of ["3.261107.7", "3.261104.10"])
+      expect(await rollBackUpdate(rollbackFixture({ phase: null, previousRelease }).deps)).toMatchObject({ ok: true });
   });
 
   it("proves a release older than the schema phase records by its receipt and the window", async () => {
@@ -914,5 +928,111 @@ describe("update waypoint", () => {
       );
     expect(waypointPreparedState(stateDir, "3.261113.2", "3.261113.2")).toEqual({ prepared: true, missing: [] });
     expect(waypointPreparedState(stateDir, "3.261113.2", "3.261104.2").prepared).toBe(false);
+  });
+});
+
+/** A host on 3.2.0 after an update from 3.1.0 that kept its snapshot. */
+function operatorRollbackFixture(input: { running?: string; restored?: boolean; noSnapshot?: boolean } = {}) {
+  const stateDir = tempDir("ravi-operator-rollback-");
+  const install = globalInstall("3.2.0");
+  const bundle = install.target.bundlePath;
+  const epoch = Math.ceil(statSync(bundle).mtimeMs) + 1;
+  const ravi = join(stateDir, "ravi.db");
+  const database = new Database(ravi, { create: true });
+  database.run("CREATE TABLE t (v TEXT)");
+  database.close();
+  const manifest = input.noSnapshot
+    ? null
+    : takeUpdateSnapshot({
+        stateDir,
+        stores: [ravi],
+        method: "copy",
+        previousRelease: "3.1.0",
+        targetRelease: "3.2.0",
+      });
+  if (manifest && input.restored)
+    writeFileSync(join(updateSnapshotsDir(stateDir), manifest.id, "restore.json"), '{"phase":"restored"}\n');
+  const processes = [
+    pm2Process("ravi", bundle, install.root, { pm_id: 1, pid: 10, startedAt: epoch }),
+    pm2Process("ravi-channels", bundle, install.root, { pm_id: 2, pid: 20, startedAt: epoch }),
+  ];
+  for (const process of processes) boot(stateDir, process, bundle, input.running ?? "3.2.0");
+  return { stateDir, install, processes, manifest };
+}
+
+describe("ravi update --rollback", () => {
+  it("plans the way back to the release before the last update, from its target", () => {
+    const { stateDir, install, processes, manifest } = operatorRollbackFixture();
+    const planned = planOperatorRollback({ stateDir, processes });
+
+    expect(planned.manifest.id).toBe(manifest!.id);
+    expect(planned.runningRelease).toBe("3.2.0");
+    expect(planned.plan).toEqual({
+      previousRelease: "3.1.0",
+      method: "bun",
+      packageRoot: install.root,
+      channelsOnline: true,
+    });
+    expect(planned.previousProcesses.map((process) => process.name)).toEqual(["ravi", "ravi-channels"]);
+  });
+
+  it("refuses with nothing stopped when it cannot go back from here", () => {
+    const none = operatorRollbackFixture({ noSnapshot: true });
+    expect(() => planOperatorRollback({ stateDir: none.stateDir, processes: none.processes })).toThrow(
+      "there is no update snapshot",
+    );
+    const used = operatorRollbackFixture({ restored: true });
+    expect(() => planOperatorRollback({ stateDir: used.stateDir, processes: used.processes })).toThrow(
+      "was already restored",
+    );
+    const other = operatorRollbackFixture({ running: "3.3.0" });
+    expect(() => planOperatorRollback({ stateDir: other.stateDir, processes: other.processes })).toThrow(
+      "the daemon runs Ravi 3.3.0",
+    );
+    expect(() => planOperatorRollback({ stateDir: other.stateDir, processes: other.processes })).toThrow(
+      UPDATE_ROLLBACK_UNAVAILABLE,
+    );
+  });
+
+  it("previews by default, rolls back with --execute, and runs only from a terminal", async () => {
+    const { stateDir, processes } = operatorRollbackFixture();
+    const env = { PATH: "/usr/bin", RAVI_STATE_DIR: stateDir };
+    const plans: string[] = [];
+    const rollbackRuntime = {
+      getProcesses: () => processes,
+      rollBack: async (dependencies: UpdateRollbackDependencies) => {
+        plans.push(dependencies.plan.previousRelease);
+        return {
+          ok: true as const,
+          target: dependencies.manifest as never,
+          restoredAt: "2026-11-20T01:00:00.000Z",
+          candidateDir: join(stateDir, "candidate"),
+        };
+      },
+    };
+
+    await expect(
+      runUpdate({ rollback: true, json: true }, { env, insideDaemonTree: () => false, rollbackRuntime }),
+    ).rejects.toMatchObject({ code: "WRITE_REQUIRES_EXECUTE" });
+    expect(plans).toEqual([]);
+
+    expect(
+      await runUpdate(
+        { rollback: true, execute: true, json: true },
+        { env, insideDaemonTree: () => false, rollbackRuntime },
+      ),
+    ).toMatchObject({ success: true, mode: "rollback", from: "3.2.0", to: "3.1.0" });
+    expect(plans).toEqual(["3.1.0"]);
+
+    await expect(
+      runUpdate({ rollback: true, execute: true, json: true }, { env, insideDaemonTree: () => true, rollbackRuntime }),
+    ).rejects.toMatchObject({ code: UPDATE_ROLLBACK_UNAVAILABLE });
+    await expect(
+      runUpdate({ rollback: true, next: true, json: true }, { env, insideDaemonTree: () => false, rollbackRuntime }),
+    ).rejects.toMatchObject({ code: "USAGE_ERROR" });
+    await expect(
+      runUpdate({ execute: true, json: true }, { env, insideDaemonTree: () => false, rollbackRuntime }),
+    ).rejects.toMatchObject({ code: "USAGE_ERROR" });
+    expect(plans).toEqual(["3.1.0"]);
   });
 });

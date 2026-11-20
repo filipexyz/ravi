@@ -38,7 +38,7 @@ These docs follow the `next` release channel (`ravi.bot@next`). The `latest` cha
     ravi --version
     ```
 
-    If Ravi is already installed, `ravi update --next` moves it to the `next` channel.
+    If Ravi is already installed, `ravi update --next` moves it to the `next` channel. On a host that already runs Ravi, always update with `ravi update`, never with `bun add -g`: `ravi update` stops and starts the daemon and the channel runner on the new release, keeps a snapshot of the state, and rolls back on its own when the new release does not come up. `ravi update --rollback` shows how to go back to the release before the last update, with its state; add `--execute` to do it.
   </Step>
   <Step title="Run the setup wizard">
     ```bash

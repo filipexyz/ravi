@@ -162,6 +162,13 @@
   wrote the state, a target that cannot be installed again leaving the
   waypoint running, and a refusal before any stop without a rollback or as a
   downgrade.
+- `bun test src/update-rollback.test.ts` MUST also prove `ravi update
+  --rollback`: the plan back from the last update's target with its snapshot,
+  the refusals before any stop (no snapshot, already restored, a daemon on
+  another release), the preview by default and the rollback with
+  `--execute`, the refusal inside the daemon's tree, and the usage errors
+  (a selector with `--rollback`, `--execute` alone); and the schema phase
+  line at 3.261109.1, compared as versions.
 - `bun test src/update-preflight.test.ts` MUST also prove a second supervisor
   refused with `UPDATE_IN_PROGRESS`, before its rebind, while another process
   holds the update lock, and running once that process is gone.

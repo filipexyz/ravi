@@ -9,9 +9,11 @@
 
 import {
   closeSync,
+  existsSync,
   fsyncSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
   renameSync,
   unlinkSync,
@@ -25,6 +27,7 @@ import { readDaemonSchemaPhase } from "./db/daemon-schema-owner.js";
 import {
   buildManagedRuntimeIdentity,
   findRaviPackageRoot,
+  managedRuntimeBundlePath,
   managedRuntimeMatchesTarget,
   normalizeRuntimePath,
   resolveManagedRuntimeTargetFromPackageRoot,
@@ -37,6 +40,7 @@ import { compareRaviVersions } from "./update-preflight.js";
 import { settleThreadFenceLeftovers } from "./threads/fence-adoption.js";
 import {
   acquireStateStoreOwnership,
+  readUpdateSnapshot,
   restoreUpdateSnapshot,
   UpdateSnapshotRestoreError,
   updateSnapshotManualRestoreCommands,
@@ -90,6 +94,95 @@ export function resolveUpdateRollbackPlan(input: {
     method,
     packageRoot: input.target.cwd,
     channelsOnline: identity.channels.online,
+  };
+}
+
+export const UPDATE_ROLLBACK_UNAVAILABLE = "UPDATE_ROLLBACK_UNAVAILABLE";
+
+/** `ravi update --rollback` cannot go back from here; nothing was stopped. */
+export class UpdateRollbackUnavailableError extends Error {
+  readonly code = UPDATE_ROLLBACK_UNAVAILABLE;
+  constructor(reason: string) {
+    super(`${UPDATE_ROLLBACK_UNAVAILABLE}: ${reason} Nothing was stopped.`);
+    this.name = "UpdateRollbackUnavailableError";
+  }
+}
+
+const SNAPSHOT_ID = /^\d{8}T\d{6}Z-[0-9a-f]{6}$/;
+
+/** The newest snapshot with a readable manifest, or null. */
+export function latestUpdateSnapshot(stateDir: string): UpdateSnapshotManifest | null {
+  let ids: string[];
+  try {
+    ids = readdirSync(updateSnapshotsDir(stateDir));
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw cause;
+  }
+  for (const id of ids
+    .filter((entry) => SNAPSHOT_ID.test(entry))
+    .sort()
+    .reverse()) {
+    try {
+      return readUpdateSnapshot(stateDir, id);
+    } catch {
+      // no-cause: A snapshot without a readable manifest is incomplete; the next older one is checked.
+    }
+  }
+  return null;
+}
+
+export type OperatorRollbackPlan = {
+  manifest: UpdateSnapshotManifest;
+  plan: UpdateRollbackPlan;
+  /** The release the daemon runs now: the last update's target. */
+  runningRelease: string;
+  /** What runs now; the rollback brings back the processes that are online. */
+  previousProcesses: ManagedRuntimeProcessSnapshot[];
+};
+
+/**
+ * `ravi update --rollback`: back to the release before the last update, with its state as of that update's snapshot.
+ * Only from the release that update installed (its target, proven by the daemon's boot receipt), from a global
+ * install, with a snapshot that was not restored yet. Read only.
+ */
+export function planOperatorRollback(input: { stateDir: string; processes: Pm2Process[] }): OperatorRollbackPlan {
+  const manifest = latestUpdateSnapshot(input.stateDir);
+  if (!manifest)
+    throw new UpdateRollbackUnavailableError(
+      "there is no update snapshot to go back to; only an update that could roll back keeps one.",
+    );
+  if (existsSync(join(updateSnapshotsDir(input.stateDir), manifest.id, "restore.json")))
+    throw new UpdateRollbackUnavailableError(
+      `the snapshot of ${manifest.createdAt} was already restored, or a restore of it was cut short (see its ` +
+        "restore.json).",
+    );
+  const bundlePath = managedRuntimeBundlePath(input.processes.find((process) => process.name === PM2_PROCESS_NAME));
+  const packageRoot = findRaviPackageRoot(bundlePath);
+  const method = packageRoot ? globalInstallMethodOf(packageRoot) : null;
+  if (!bundlePath || !packageRoot || !method)
+    throw new UpdateRollbackUnavailableError(
+      "the daemon does not run from a global install of Ravi (bun or npm); a source checkout is switched by hand.",
+    );
+  const identity = buildManagedRuntimeIdentity(input.processes, bundlePath, -1, { stateDir: input.stateDir });
+  const running = identity.daemon.online && identity.daemon.identityVerified ? identity.daemon.runningVersion : null;
+  if (running !== manifest.targetRelease)
+    throw new UpdateRollbackUnavailableError(
+      `the last snapshot belongs to the update from Ravi ${manifest.previousRelease} to Ravi ` +
+        `${manifest.targetRelease}, and the daemon runs ${running ? `Ravi ${running}` : "no verified release"}.`,
+    );
+  return {
+    manifest,
+    runningRelease: running,
+    plan: {
+      previousRelease: manifest.previousRelease,
+      method,
+      packageRoot,
+      channelsOnline: identity.channels.online,
+    },
+    previousProcesses: input.processes
+      .filter((process) => process.name === PM2_PROCESS_NAME || process.name === CHANNELS_PM2_PROCESS_NAME)
+      .map(({ name, status, pid, createdAt }) => ({ name, status, pid, createdAt: createdAt ?? null })),
   };
 }
 

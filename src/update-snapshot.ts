@@ -433,7 +433,8 @@ function moveFile(source: string, destination: string): void {
 
 export type UpdateSnapshotMove = { from: string; to: string; done: boolean };
 
-function shellQuote(value: string): string {
+/** POSIX single quotes: exact for any path, `$`, backquotes and quotes included. */
+export function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 

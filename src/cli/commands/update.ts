@@ -14,11 +14,28 @@ import {
   resolveManagedRuntimeTargetFromPackageRoot,
   type ManagedRuntimeTarget,
 } from "../../managed-runtime.js";
-import { managedRuntimeSnapshot, runManagedRuntimeRebindSupervisor } from "../../managed-runtime-rebind.js";
+import {
+  acquireUpdateSupervisorLock,
+  managedRuntimeSnapshot,
+  runManagedRuntimeCommand,
+  runManagedRuntimeRebindSupervisor,
+  UPDATE_IN_PROGRESS,
+} from "../../managed-runtime-rebind.js";
+import { processExitState } from "../../runtime-maintenance.js";
+import {
+  planOperatorRollback,
+  rollBackUpdate,
+  UPDATE_ROLLBACK_UNAVAILABLE,
+  UpdateRollbackUnavailableError,
+  type OperatorRollbackPlan,
+  type UpdateRollbackDependencies,
+  type UpdateRollbackOutcome,
+} from "../../update-rollback.js";
+import { updateSnapshotsDir } from "../../update-snapshot.js";
 import { CHANNELS_PM2_PROCESS_NAME, getPm2Processes, PM2_PROCESS_NAME, type Pm2Process } from "../../pm2.js";
 import type { ChannelConfig } from "../../router/router-db.js";
 import { getRaviStateDir } from "../../utils/paths.js";
-import { CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
+import { CONTRACT_EXIT_USAGE, contractDryRun, contractFail } from "../agent-contract.js";
 import {
   type DaemonTreePosition,
   locateInDaemonProcessTree,
@@ -50,6 +67,9 @@ export interface RaviUpdateOptions {
   version?: string;
   expectedIntegrity?: string;
   json?: boolean;
+  /** Back to the release before the last update, with its state (preview unless `execute`). */
+  rollback?: boolean;
+  execute?: boolean;
 }
 
 /** A global `ravi.bot` package installed through bun or npm. */
@@ -126,6 +146,23 @@ export interface UpdateExecutionDeps {
   waitUntilDetached?: () => Promise<boolean>;
   spawnDetached?: DetachedSpawn;
   exit?: (code: number) => never;
+  /** `ravi update --rollback` (tests): the PM2 reads and the rollback itself. */
+  rollbackRuntime?: {
+    getProcesses: () => Pm2Process[];
+    rollBack?: (dependencies: UpdateRollbackDependencies) => Promise<UpdateRollbackOutcome>;
+  };
+}
+
+export interface RaviUpdateRollbackResult {
+  success: true;
+  mode: "rollback";
+  package: string;
+  from: string;
+  to: string;
+  snapshotAt: string;
+  restoredAt: string;
+  candidateDir: string;
+  message: string;
 }
 
 export interface SourceUpdateOutcomeInput {
@@ -735,6 +772,16 @@ function reportSourceUpdate(
 }
 
 function assertUpdateSelectors(options: RaviUpdateOptions): void {
+  if (options.rollback && (options.next || options.stable || options.version || options.expectedIntegrity)) {
+    fail(
+      "--rollback goes back to the release before the last update; it takes no release selector.",
+      "USAGE_ERROR",
+      CONTRACT_EXIT_USAGE,
+    );
+  }
+  if (options.execute && !options.rollback) {
+    fail("--execute applies only to --rollback.", "USAGE_ERROR", CONTRACT_EXIT_USAGE);
+  }
   const selectorCount =
     Number(Boolean(options.next)) + Number(Boolean(options.stable)) + Number(Boolean(options.version));
   if (selectorCount > 1) {
@@ -1115,10 +1162,110 @@ function readDaemonTreePosition(
   }
 }
 
+/**
+ * `ravi update --rollback`: back to the release before the last update, with its state as of that update's snapshot,
+ * through the update's own rollback (`update-rollback.ts`). A preview unless `--execute`; only from a terminal,
+ * because it stops the daemon; one update at a time (`<state>/updates/update.lock`).
+ */
+async function runOperatorRollback(
+  options: RaviUpdateOptions,
+  deps: UpdateExecutionDeps,
+  env: NodeJS.ProcessEnv,
+  position: DaemonTreePosition,
+): Promise<RaviUpdateRollbackResult> {
+  assertUpdateSelectors(options);
+  if (position.inside) {
+    throw new UpdateFailure(
+      "ravi update --rollback stops the daemon, so it runs only from a terminal, outside the daemon's process " +
+        "tree. Nothing was stopped.",
+      UPDATE_ROLLBACK_UNAVAILABLE,
+      1,
+    );
+  }
+  const stateDir = getRaviStateDir(env);
+  const getProcesses = deps.rollbackRuntime?.getProcesses ?? readManagedProcesses;
+  let rollback: OperatorRollbackPlan;
+  try {
+    rollback = planOperatorRollback({ stateDir, processes: getProcesses() });
+  } catch (cause) {
+    if (cause instanceof UpdateRollbackUnavailableError)
+      throw new UpdateFailure(cause.message, UPDATE_ROLLBACK_UNAVAILABLE, 1, { cause });
+    throw cause;
+  }
+  const { manifest, plan } = rollback;
+  const candidateDir = join(updateSnapshotsDir(stateDir), manifest.id, "candidate");
+  if (!options.execute) {
+    contractDryRun(
+      "ravi update",
+      {
+        action: "rollback",
+        from: rollback.runningRelease,
+        to: plan.previousRelease,
+        snapshotId: manifest.id,
+        snapshotAt: manifest.createdAt,
+        discarded:
+          `What Ravi ${manifest.targetRelease} wrote since ${manifest.createdAt} leaves the live state; its files ` +
+          `are kept in ${candidateDir}.`,
+        install: `${plan.method} install -g ravi.bot@${plan.previousRelease}`,
+        processes: rollback.previousProcesses
+          .filter((process) => process.status === "online")
+          .map((process) => process.name),
+      },
+      { asJson: options.json },
+    );
+  }
+  let lock: { release(): void };
+  try {
+    lock = acquireUpdateSupervisorLock(stateDir);
+  } catch (cause) {
+    throw new UpdateFailure((cause as Error).message, UPDATE_IN_PROGRESS, 1, { cause });
+  }
+  let outcome: UpdateRollbackOutcome;
+  try {
+    outcome = await (deps.rollbackRuntime?.rollBack ?? rollBackUpdate)({
+      stateDir,
+      plan,
+      manifest,
+      previousProcesses: rollback.previousProcesses,
+      bunPath: deps.execPath ?? process.execPath,
+      run: runManagedRuntimeCommand,
+      getProcesses: () => getPm2Processes({ strict: true }),
+      pidAlive: (pid) => processExitState(pid) !== "exited",
+      env,
+    });
+  } finally {
+    lock.release();
+  }
+  if (!outcome.ok) {
+    throw new UpdateFailure(
+      `ravi update --rollback stopped at ${outcome.step}: ${outcome.message}` +
+        (outcome.commands.length ? ` Next: ${outcome.commands.join(" ; ")}` : ""),
+      "UPDATE_ROLLBACK_FAILED",
+      1,
+    );
+  }
+  const result: RaviUpdateRollbackResult = {
+    success: true,
+    mode: "rollback",
+    package: PACKAGE_NAME,
+    from: rollback.runningRelease,
+    to: plan.previousRelease,
+    snapshotAt: manifest.createdAt,
+    restoredAt: outcome.restoredAt,
+    candidateDir: outcome.candidateDir,
+    message:
+      `Ravi ${plan.previousRelease} runs again on its state as of ${manifest.createdAt}. What Ravi ` +
+      `${rollback.runningRelease} wrote since then is kept in ${outcome.candidateDir}.`,
+  };
+  if (options.json) console.log(JSON.stringify(result));
+  else console.log(result.message);
+  return result;
+}
+
 export async function runUpdate(
   options: RaviUpdateOptions = {},
   deps: UpdateExecutionDeps = {},
-): Promise<RaviUpdateResult | RaviUpdateHandoff> {
+): Promise<RaviUpdateResult | RaviUpdateHandoff | RaviUpdateRollbackResult> {
   const reporter = createReporter(options.json === true);
   const env = deps.env ?? process.env;
   let position: DaemonTreePosition = { inside: false, daemonCwd: null };
@@ -1126,6 +1273,13 @@ export async function runUpdate(
     position = readDaemonTreePosition(options, deps, env);
   } catch (error) {
     failUpdate(options, error);
+  }
+  if (options.rollback) {
+    try {
+      return await runOperatorRollback(options, deps, env, position);
+    } catch (error) {
+      failUpdate(options, error);
+    }
   }
   const execution = decideUpdateExecution({
     handoffEnv: env[UPDATE_HANDOFF_ENV],

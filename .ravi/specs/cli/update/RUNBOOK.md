@@ -78,6 +78,17 @@ authorizes no database or package downgrade by hand: the update's own rollback
   (a source checkout, a daemon with no boot receipt, or a running release not
   older than the waypoint). Nothing was stopped; run the commands it names.
 
+## Going back by hand
+
+- `ravi update --rollback` shows the way back to the release before the last
+  update: the release it leaves, the one it restores, the snapshot's time and
+  where what was written since then is kept. Add `--execute` to do it, from a
+  terminal. It works only from the release that update installed, and only
+  once per snapshot.
+- `UPDATE_ROLLBACK_UNAVAILABLE`: nothing was stopped; the message says why
+  (no snapshot, already restored, a source checkout, a daemon on another
+  release, or a caller inside the daemon's tree).
+
 ## Rollback
 
 - `UPDATE_ROLLED_BACK`: the target did not converge, and the previous release

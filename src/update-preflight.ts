@@ -12,6 +12,7 @@
 import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { shellQuote } from "./update-snapshot.js";
 
 /** The oldest release whose pre-fence state a fence-adopting release accepts. */
 export const FENCE_ADOPTION_MINIMUM_RELEASE = "3.261113.2";
@@ -69,7 +70,7 @@ export class UpdateWaypointRequiredError extends Error {
     /** The checkout the runtime runs from; source installs do not accept `ravi update --version`. */
     readonly sourceCheckout: string | null = null,
   ) {
-    const checkout = JSON.stringify(sourceCheckout);
+    const checkout = sourceCheckout ? shellQuote(sourceCheckout) : "";
     const steps = sourceCheckout
       ? `From a terminal, run \`git -C ${checkout} fetch --tags\` and ` +
         `\`git -C ${checkout} switch --detach v${FENCE_ADOPTION_MINIMUM_RELEASE}\`, ` +
@@ -77,7 +78,9 @@ export class UpdateWaypointRequiredError extends Error {
         '`ravi daemon restart -m "waypoint"` and `ravi channels restart`; ' +
         "confirm both processes are online on it with `ravi daemon status`, then run `ravi update --next`."
       : `From a terminal, run \`ravi update --version ${FENCE_ADOPTION_MINIMUM_RELEASE}\` now, confirm both ` +
-        "processes are online on it with `ravi daemon status`, then run `ravi update --next`.";
+        "processes are online on it with `ravi daemon status`, then run `ravi update --next`. If that last " +
+        "command says the runtime did not converge, run `ravi daemon status` and wait for the daemon to be ready " +
+        "before you restart anything: the daemon adopts the state when it starts.";
     super(
       `${UPDATE_WAYPOINT_REQUIRED}: this state was last prepared by ` +
         `${preparedRelease ? `Ravi ${preparedRelease}` : `a Ravi release older than ${FENCE_ADOPTION_MINIMUM_RELEASE}`}, ` +

@@ -209,6 +209,15 @@ export function supervisorStabilityPlan(
   return { stabilityDeadlineMs: startedAt + budgetMs - SUPERVISOR_EXIT_MARGIN_MS };
 }
 
+/** Runs a command and collects its output; the rollback and `ravi update --rollback` use it too. */
+export function runManagedRuntimeCommand(
+  command: string,
+  args: string[],
+  options: RunOptions = {},
+): Promise<RunResult> {
+  return runCommand(command, args, options);
+}
+
 function runCommand(command: string, args: string[], options: RunOptions = {}): Promise<RunResult> {
   return new Promise((resolve) => {
     let child: ReturnType<typeof spawn>;
