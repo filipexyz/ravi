@@ -66,8 +66,10 @@ authorizes no database or package downgrade by hand: the update's own rollback
   daemon wrote a boot receipt, 3.261104.2 on). It takes two installs and two
   boots; `supervisor.log` shows each step. A CLI older than this change stops
   waiting before that ends: read the outcome in
-  `<state>/updates/supervisor-result.json` before acting, and do not restart
-  anything while the update runs.
+  `<state>/updates/supervisor-result.json` before acting (only once its `at` is
+  later than the update's start: the file keeps the previous update's result
+  until this one records its own), and do not restart anything while the
+  update runs.
 - `UPDATE_ROLLED_BACK` naming the waypoint: 3.261113.2 did not install, start,
   prepare the state or hold, and the release that wrote the state runs again on
   its own state. Report the step from the message.

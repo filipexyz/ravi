@@ -200,13 +200,19 @@ async function hopSteps(
       stream: false,
     });
     log(started.output.trim());
-    if (!started.success || !(await waitFor(() => runsWaypoint(deps.getProcesses(), name), startTimeoutMs)))
+    // The daemon that counts is the one in the read that passed: a later read may show a replacement not yet ready.
+    let checked: Pm2Process[] = [];
+    const up = () => {
+      checked = deps.getProcesses();
+      return runsWaypoint(checked, name);
+    };
+    if (!started.success || !(await waitFor(up, startTimeoutMs)))
       return failed(
         "start",
         `${name} did not come up running Ravi ${waypoint}${name === PM2_PROCESS_NAME ? " and ready" : ""}`,
       );
     if (name === PM2_PROCESS_NAME) {
-      const daemon = deps.getProcesses().find((process) => process.name === PM2_PROCESS_NAME);
+      const daemon = checked.find((process) => process.name === PM2_PROCESS_NAME);
       readyDaemon = daemon ? { pmId: daemon.pm_id, pid: daemon.pid, startedAt: daemon.startedAt ?? undefined } : null;
     }
   }
@@ -218,10 +224,14 @@ async function hopSteps(
     const { missing } = waypointPreparedState(stateDir, waypoint, preparedRelease());
     return failed("prepare", `Ravi ${waypoint} runs but did not prepare the state: missing ${missing.join("; ")}`);
   }
+  const bothUp = (processes: Pm2Process[]) =>
+    runsWaypoint(processes, PM2_PROCESS_NAME) && runsWaypoint(processes, CHANNELS_PM2_PROCESS_NAME);
+  // Up now, not only by its records: a window of 0 reads PM2 once and checks nothing.
+  if (!bothUp(deps.getProcesses()))
+    return failed("prepare", `Ravi ${waypoint} prepared the state, but its processes are not both up on it`);
   const stable = await observeStableManagedRuntime({
     getProcesses: deps.getProcesses,
-    isConverged: (processes) =>
-      runsWaypoint(processes, PM2_PROCESS_NAME) && runsWaypoint(processes, CHANNELS_PM2_PROCESS_NAME),
+    isConverged: bothUp,
     windowMs: deps.stabilityWindowMs ?? 30_000,
     now,
     wait,
