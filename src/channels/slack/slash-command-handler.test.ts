@@ -4,8 +4,8 @@ import { join } from "node:path";
 
 import type { CliCommandAccessInput } from "../../cli/command-access.js";
 import { addContactTag, createContact, linkContactIdentity } from "../../contacts.js";
-import { getOrCreateSession, matchRoute } from "../../router/index.js";
-import { type ContextCapability, dbCreateAgent, dbGetAgent } from "../../router/router-db.js";
+import { attachChatToSession, getOrCreateSession, matchRoute } from "../../router/index.js";
+import { type ContextCapability, dbCreateAgent, dbGetAgent, dbUpsertChat } from "../../router/router-db.js";
 import type { RouterConfig, SessionEntry } from "../../router/types.js";
 import { RUNTIME_NO_ACTIVE_TURN, RUNTIME_SESSION_NOT_ACTIVE } from "../../runtime/runtime-control-errors.js";
 import type { RuntimeControlResult } from "../../runtime/types.js";
@@ -661,6 +661,19 @@ describe("the chat a command was typed in", () => {
 
     expect(resolved).toMatchObject({ kind: "session", agentId: "ravi-voice" });
     expect(resolved.kind === "session" && resolved.session.sessionKey).toBe(seeded.sessionKey);
+  });
+
+  it("a chat attached to another session answers from that session, not from the route", () => {
+    seedSession("D0CHAT", "U0PERSON", "main");
+    if (!dbGetAgent("ravi-voice")) dbCreateAgent({ id: "ravi-voice", cwd: "/tmp/voice" });
+    const attached = getOrCreateSession("agent:ravi-voice:main", "ravi-voice", "/tmp/voice", { name: "voice-main" });
+    const chat = dbUpsertChat({ channel: "slack", instanceId: INSTANCE, platformChatId: "D0CHAT", chatType: "dm" });
+    attachChatToSession({ sessionKey: attached.sessionKey, chatId: chat.id, role: "primary", attachedByType: "user" });
+
+    const resolved = resolveSlackCommandSession(eventFor("status", { channelId: "D0CHAT" }), config());
+
+    expect(resolved).toMatchObject({ kind: "session", agentId: "ravi-voice" });
+    expect(resolved.kind === "session" && resolved.session.sessionKey).toBe(attached.sessionKey);
   });
 
   it("a channel no route names answers nothing", () => {
