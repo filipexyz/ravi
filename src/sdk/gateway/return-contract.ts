@@ -4,7 +4,7 @@ import { logger } from "../../utils/logger.js";
 import type { JsonIssue } from "./errors.js";
 
 const log = logger.child("gateway:return-contract");
-const MAX_PASSES = 8;
+const MAX_PASSES = 200;
 const violationCounts = new Map<string, number>();
 
 export interface ReturnContractViolation {
@@ -31,67 +31,133 @@ export interface ReturnContractResult {
  * a caller whose mutation already happened: retrying it would repeat the side effect.
  */
 export function enforceReturnContract(schema: ZodTypeAny, value: unknown): ReturnContractResult {
-  const first = schema.safeParse(value);
-  if (first.success) return { value, violation: null };
-
   const working = structuredCloneJson(value);
   const allPaths: Array<Array<string | number>> = [];
   const removed = new Set<string>();
   const invalid = new Set<string>();
   const issues: JsonIssue[] = [];
-  let pending: ZodError = first.error;
   const current: unknown = working;
+  let seen = false;
 
+  // One edit per pass, validated again each time: removing an array element shifts every later
+  // path, so edits computed from a single validation would hit the wrong sibling.
   for (let pass = 0; pass < MAX_PASSES; pass++) {
-    const edits: Array<{ path: Array<string | number>; key: string | number; undeclared: boolean }> = [];
-    for (const issue of pending.issues) {
-      const base = issue.path.map(coerce);
-      issues.push({ path: base, code: issue.code, message: issue.message });
-      allPaths.push(base);
-      if (issue.code === "unrecognized_keys") {
-        for (const key of (issue as { keys: string[] }).keys) edits.push({ path: base, key, undeclared: true });
-      } else if (base.length > 0) {
-        edits.push({ path: base.slice(0, -1), key: base[base.length - 1]!, undeclared: false });
-      } else {
-        invalid.add("<root>");
+    const result = schema.safeParse(current);
+    if (result.success) {
+      // Strip-mode objects accept undeclared keys and drop them from the parsed copy only.
+      const extras = collectStripped(current, result.data, []);
+      for (const path of extras) {
+        const parent = walk(current, path.slice(0, -1));
+        if (parent && typeof parent === "object" && !Array.isArray(parent)) {
+          delete (parent as Record<string, unknown>)[String(path[path.length - 1])];
+        }
+        removed.add(path.join("."));
+        allPaths.push(path);
+        issues.push({ path, code: "unrecognized_keys", message: "Undeclared field removed (strip mode)." });
+        seen = true;
       }
+      break;
     }
-    // Higher array indexes first, so removing one element does not shift the next edit.
-    edits.sort((a, b) => (typeof b.key === "number" && typeof a.key === "number" ? b.key - a.key : 0));
-    let changed = false;
-    for (const edit of edits) {
-      const parent = walk(current, edit.path);
-      if (parent === undefined || parent === null || typeof parent !== "object") continue;
+    seen = true;
+    const flat = flattenIssues((result.error as ZodError).issues as ZodIssueLike[], []);
+    for (const issue of flat) {
+      issues.push({ path: issue.path, code: issue.code, message: issue.message });
+      allPaths.push(issue.path);
+    }
+    // Deepest issue first: it removes the smallest piece that makes the value invalid.
+    const ranked = [...flat].sort((x, y) => y.path.length - x.path.length);
+    let applied = false;
+    for (const issue of ranked) {
+      const edit = editFor(issue);
+      if (!edit) continue;
       const dotted = [...edit.path, edit.key].join(".");
+      const parent = walk(current, edit.path);
+      if (parent === null || typeof parent !== "object") continue;
       if (Array.isArray(parent)) {
         if (typeof edit.key !== "number" || edit.key >= parent.length) continue;
         parent.splice(edit.key, 1);
       } else {
         const record = parent as Record<string, unknown>;
-        if (!(String(edit.key) in record)) {
-          // Required field the handler never set: nothing to omit, still a violation.
-          if (!edit.undeclared) invalid.add(dotted);
-          continue;
-        }
+        // A required field the handler never set has nothing to omit: still a violation.
+        if (!(String(edit.key) in record)) continue;
         delete record[String(edit.key)];
       }
       (edit.undeclared ? removed : invalid).add(dotted);
-      changed = true;
+      applied = true;
+      break;
     }
-    const next = schema.safeParse(current);
-    if (next.success || !changed) break;
-    pending = next.error;
+    if (!applied) {
+      for (const issue of flat) invalid.add(issue.path.join(".") || "<root>");
+      break;
+    }
   }
 
+  if (!seen) return { value, violation: null };
   return {
     value: current,
-    violation: {
-      paths: allPaths,
-      removedFields: [...removed],
-      invalidFields: [...invalid],
-      issues,
-    },
+    violation: { paths: allPaths, removedFields: [...removed], invalidFields: [...invalid], issues },
   };
+}
+
+interface ZodIssueLike {
+  code: string;
+  message: string;
+  path: PropertyKey[];
+  keys?: string[];
+  errors?: ZodIssueLike[][];
+}
+
+interface FlatIssue {
+  code: string;
+  message: string;
+  path: Array<string | number>;
+  keys?: string[];
+}
+
+/** Union failures carry their branch issues, with paths relative to the union: keep the closest branch. */
+function flattenIssues(list: ZodIssueLike[], prefix: Array<string | number>): FlatIssue[] {
+  const out: FlatIssue[] = [];
+  for (const issue of list) {
+    const path = [...prefix, ...issue.path.map(coerce)];
+    if (issue.code === "invalid_union" && Array.isArray(issue.errors) && issue.errors.length > 0) {
+      const closest = issue.errors.reduce((best, branch) => (branch.length < best.length ? branch : best));
+      out.push(...flattenIssues(closest, path));
+    } else {
+      out.push({ code: issue.code, message: issue.message, path, ...(issue.keys ? { keys: issue.keys } : {}) });
+    }
+  }
+  return out;
+}
+
+function editFor(issue: FlatIssue): { path: Array<string | number>; key: string | number; undeclared: boolean } | null {
+  if (issue.code === "unrecognized_keys" && issue.keys && issue.keys.length > 0) {
+    return { path: issue.path, key: issue.keys[0]!, undeclared: true };
+  }
+  if (issue.path.length === 0) return null;
+  return { path: issue.path.slice(0, -1), key: issue.path[issue.path.length - 1]!, undeclared: false };
+}
+
+/** Keys present in the original value that the parsed copy dropped (strip-mode objects). */
+function collectStripped(
+  original: unknown,
+  parsed: unknown,
+  path: Array<string | number>,
+): Array<Array<string | number>> {
+  const out: Array<Array<string | number>> = [];
+  if (original === null || typeof original !== "object" || parsed === null || typeof parsed !== "object") return out;
+  if (Array.isArray(original)) {
+    if (!Array.isArray(parsed) || parsed.length !== original.length) return out;
+    for (let i = 0; i < original.length; i++) out.push(...collectStripped(original[i], parsed[i], [...path, i]));
+    return out;
+  }
+  if (Array.isArray(parsed)) return out;
+  const o = original as Record<string, unknown>;
+  const p = parsed as Record<string, unknown>;
+  for (const key of Object.keys(o)) {
+    if (!(key in p)) out.push([...path, key]);
+    else out.push(...collectStripped(o[key], p[key], [...path, key]));
+  }
+  return out;
 }
 
 /** First occurrence per command and field set is logged; every occurrence is counted. */

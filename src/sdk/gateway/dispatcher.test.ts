@@ -204,6 +204,37 @@ class GatewayDemoCommands {
     };
   }
 
+  @Command({ name: "mutate-array", description: "Invalid element before an object with an invalid field" })
+  @CommandAccess({ kind: "mutate", resource: "demo", action: "mutate-array", risk: "low" })
+  @Returns(z.object({ items: z.array(z.object({ id: z.string(), label: z.string() }).strict()) }).strict())
+  mutateArray() {
+    GatewayDemoCommands.applied++;
+    return {
+      items: [null, { id: "b", label: "x", keep: "x" }, { id: "c", label: "ok" }],
+    } as unknown as { items: Array<{ id: string; label: string }> };
+  }
+
+  @Command({ name: "mutate-strip", description: "Strip-mode schema, handler returns an undeclared field" })
+  @CommandAccess({ kind: "mutate", resource: "demo", action: "mutate-strip", risk: "low" })
+  @Returns(z.object({ ok: z.literal(true), nested: z.object({ id: z.string() }) }))
+  mutateStrip() {
+    GatewayDemoCommands.applied++;
+    return { ok: true as const, secret: "x", nested: { id: "n", leaked: 1 } };
+  }
+
+  @Command({ name: "mutate-union", description: "Root union, handler returns an invalid field in a branch" })
+  @CommandAccess({ kind: "mutate", resource: "demo", action: "mutate-union", risk: "low" })
+  @Returns(
+    z.union([
+      z.object({ kind: z.literal("a"), id: z.string() }).strict(),
+      z.object({ kind: z.literal("b"), count: z.number() }).strict(),
+    ]),
+  )
+  mutateUnion() {
+    GatewayDemoCommands.applied++;
+    return { kind: "b" as const, count: 2, extra: true } as unknown as { kind: "b"; count: number };
+  }
+
   @Command({ name: "broken", description: "Returns wrong shape" })
   @CommandAccess({ kind: "read", resource: "demo", action: "broken", risk: "low" })
   @Returns(z.object({ ok: z.literal(true) }))
@@ -929,6 +960,31 @@ describe("dispatch — validation", () => {
     expect(body).not.toHaveProperty("count");
     expect(body.items).toEqual(["a", "b"]);
     expect(returnContractViolationCount()).toBeGreaterThan(before);
+  });
+
+  it("keeps valid sibling fields when an array element and a later element both need repair", async () => {
+    const result = await dispatch(findCmd("demo.mutate-array"), {}, {}, { contextRecord: demoContext });
+    expect(result.response.status).toBe(200);
+    expect(await result.response.json()).toEqual({
+      items: [
+        { id: "b", label: "x" },
+        { id: "c", label: "ok" },
+      ],
+    });
+  });
+
+  it("removes and reports undeclared fields on strip-mode mutation schemas", async () => {
+    const before = returnContractViolationCount();
+    const result = await dispatch(findCmd("demo.mutate-strip"), {}, {}, { contextRecord: demoContext });
+    expect(result.response.status).toBe(200);
+    expect(await result.response.json()).toEqual({ ok: true, nested: { id: "n" } });
+    expect(returnContractViolationCount()).toBeGreaterThan(before);
+  });
+
+  it("repairs a root-union mutation result through its closest branch", async () => {
+    const result = await dispatch(findCmd("demo.mutate-union"), {}, {}, { contextRecord: demoContext });
+    expect(result.response.status).toBe(200);
+    expect(await result.response.json()).toEqual({ kind: "b", count: 2 });
   });
 
   it("returns a canonical HTTP 500 contract when handler return shape is wrong", async () => {
