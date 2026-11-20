@@ -2450,6 +2450,24 @@ describe("SessionCommands attach hints", () => {
       expect(storedSlackThreadRequests.size).toBe(1);
     });
 
+    it("answers a keyed retry whose explicit model no longer fits the provider the parent now lends, without validating it again", async () => {
+      seedWhatsAppTurnInSlackAttachedSession("dm");
+      (resolvedSession as any).runtimeProviderOverride = "codex";
+      const first = await create("Resumo da semana", { key: "weekly-summary", model: "gpt-6-astra" });
+      expect(first.child).toMatchObject({ providerOverride: "codex", modelOverride: "gpt-6-astra" });
+
+      // gpt-6-astra belongs to codex, not to pi: a request this parent would create now is refused for it.
+      (resolvedSession as any).runtimeProviderOverride = "pi";
+      await expect(create("Outro assunto", { model: "gpt-6-astra" })).rejects.toMatchObject({
+        code: "THREAD_MODEL_INVALID",
+      });
+
+      const again = await create("Resumo da semana", { key: "weekly-summary", model: "gpt-6-astra" });
+
+      expect(again).toMatchObject({ replayed: true, requestId: first.requestId, child: { providerOverride: "codex" } });
+      expect(storedSlackThreadRequests.size).toBe(1);
+    });
+
     it("refuses a key reused with another provider the caller passed", async () => {
       seedWhatsAppTurnInSlackAttachedSession("dm");
       await create("Resumo da semana", { key: "weekly-summary", provider: "codex" });

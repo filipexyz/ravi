@@ -54,7 +54,10 @@
       insert found another request's (two first calls racing on one key), while a
       racing call that asked for the same thing MUST get the same request;
       a retry whose provider came from the parent MUST still
-      match after the parent's provider override changed; a key over 200
+      match after the parent's provider override changed, even when its explicit
+      model no longer fits the provider the parent now lends (a repeat is not
+      validated against the runtime again, only a request that would be created
+      is); a key over 200
       characters MUST yield `USAGE_ERROR`
       (`src/channels/slack/thread-request-replay.test.ts`,
       `src/cli/commands/sessions.test.ts`,

@@ -7187,25 +7187,6 @@ export class SessionCommands {
     // agent default while `--model` was measured against a different runtime.
     const inheritedProvider = creationTarget.parentSession.runtimeProviderOverride?.trim() || undefined;
     const resolvedProvider = normalizedProvider ?? inheritedProvider;
-    // Mirror child materialization: only explicit overrides travel, while the
-    // model and unpinned provider come from the agent/defaults, not parent history.
-    const childRuntime = resolveEffectiveSessionRuntime({
-      session: {
-        agentId: creationTarget.parentSession.agentId,
-        runtimeProviderOverride: resolvedProvider as RuntimeProviderId | undefined,
-        modelOverride: normalizedModel,
-      },
-      agent:
-        getAgent(creationTarget.parentSession.agentId) ??
-        loadRouterConfig().agents[creationTarget.parentSession.agentId] ??
-        null,
-    });
-    if (childRuntime.model.value && childRuntime.model.source !== "runtime_default") {
-      const validation = validateRuntimeModelSelector(childRuntime.provider.value, childRuntime.model.value);
-      if (!validation.ok) {
-        throw slackThreadError("THREAD_MODEL_INVALID", validation.error ?? "Invalid thread model.");
-      }
-    }
     const requestedBy = resolveSlackThreadRequester();
 
     // A call whose outcome the caller lost (a timeout, an interrupted turn, a retry after an error) repeats
@@ -7243,6 +7224,31 @@ export class SessionCommands {
       });
       requestId = recent?.requestId ?? `slack-thread:${randomUUID()}`;
       replayed = recent !== null;
+    }
+
+    // A repeat is answered from what was accepted: its runtime was checked then, and the provider the parent lends
+    // may have changed since, so checking it again would refuse a retry that changed nothing the caller passed.
+    // Only a request this call creates has to fit the runtime it resolves now.
+    if (!replayed) {
+      // Mirror child materialization: only explicit overrides travel, while the
+      // model and unpinned provider come from the agent/defaults, not parent history.
+      const childRuntime = resolveEffectiveSessionRuntime({
+        session: {
+          agentId: creationTarget.parentSession.agentId,
+          runtimeProviderOverride: resolvedProvider as RuntimeProviderId | undefined,
+          modelOverride: normalizedModel,
+        },
+        agent:
+          getAgent(creationTarget.parentSession.agentId) ??
+          loadRouterConfig().agents[creationTarget.parentSession.agentId] ??
+          null,
+      });
+      if (childRuntime.model.value && childRuntime.model.source !== "runtime_default") {
+        const validation = validateRuntimeModelSelector(childRuntime.provider.value, childRuntime.model.value);
+        if (!validation.ok) {
+          throw slackThreadError("THREAD_MODEL_INVALID", validation.error ?? "Invalid thread model.");
+        }
+      }
     }
 
     // For a request that already exists this changes nothing and returns what was stored, so the job and the
