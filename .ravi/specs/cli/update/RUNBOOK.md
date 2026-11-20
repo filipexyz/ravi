@@ -73,8 +73,10 @@ authorizes no database or package downgrade by hand: the update's own rollback
 - `UPDATE_ROLLED_BACK` naming the waypoint: 3.261113.2 did not install, start,
   prepare the state or hold, and the release that wrote the state runs again on
   its own state. Report the step from the message.
-- `UPDATE_ROLLED_BACK` with "no snapshot ... could be taken": the waypoint was
-  not taken, and the release that wrote the state runs again on it, untouched.
+- `UPDATE_ROLLED_BACK` with "no snapshot ... could be taken": neither the target
+  nor (when the state needed one) the waypoint was started, and the release that
+  wrote the state runs again on it, untouched. This holds for any update that
+  can roll back, the second pass after a waypoint included.
   Fix what the warning names (a process that did not exit, a store still
   owned, a copy error), then run the update again. If that rollback failed,
   the result says why: a stopped process never exited (nothing starts beside

@@ -774,7 +774,14 @@ export async function rebindManagedRuntimeProcesses(
         afterWaypoint("PM2 could not remove the waypoint's channel runner");
         return false;
       }
-      const converged = await rebindManagedRuntimeProcesses(managedRuntimeSnapshot(getProcesses()), target, {
+      // The update to the target replaces the waypoint's daemon: with none online (its registration gone, PM2 back
+      // with an empty list), that pass would have nothing to stop and would return at once without the target.
+      const waypointProcesses = getProcesses();
+      if (!waypointProcesses.some((process) => process.name === PM2_PROCESS_NAME && process.status === "online")) {
+        afterWaypoint("PM2 shows no daemon of the waypoint online, so there is nothing to update to the target");
+        return false;
+      }
+      const converged = await rebindManagedRuntimeProcesses(managedRuntimeSnapshot(waypointProcesses), target, {
         ...dependencies,
         afterWaypoint: true,
         carriedWarnings: warnings,
@@ -818,8 +825,8 @@ export async function rebindManagedRuntimeProcesses(
 
 /**
  * The predecessors are gone and no daemon owns the stores: copy them. A
- * snapshot that cannot be taken leaves the update without a rollback, as
- * before this existed, and says why.
+ * snapshot that cannot be taken says why, and the update starts nothing new on
+ * that state: the release that wrote it comes back on it, untouched.
  */
 async function snapshotStoppedState(input: {
   stateDir: string;
