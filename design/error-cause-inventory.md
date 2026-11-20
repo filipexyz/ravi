@@ -2323,9 +2323,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | update-snapshot.ts | src/update-snapshot.ts | 349 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:9ad62d26a23f5087718bd9e3 |
 | update-snapshot.ts | src/update-snapshot.ts | 420 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:71b9563b2e932e62c049e096 |
 | update-snapshot.ts | src/update-snapshot.ts | 431 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:f17321acb76c9338a8022836 |
-| update-snapshot.ts | src/update-snapshot.ts | 556 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:e331049c21c46adcd7503b04 |
-| update-snapshot.ts | src/update-snapshot.ts | 578 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:d068542ebca9337d4a7f9da2 |
-| update-snapshot.ts | src/update-snapshot.ts | 581 | no-cause | The journal write failed too; the error below still carries every move and the commands. | src/update-snapshot.ts:1a1c06b2c58216955a1ff528 |
+| update-snapshot.ts | src/update-snapshot.ts | 557 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:e331049c21c46adcd7503b04 |
+| update-snapshot.ts | src/update-snapshot.ts | 579 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:d068542ebca9337d4a7f9da2 |
+| update-snapshot.ts | src/update-snapshot.ts | 582 | no-cause | The journal write failed too; the error below still carries every move and the commands. | src/update-snapshot.ts:1a1c06b2c58216955a1ff528 |
 | update-waypoint.ts | src/update-waypoint.ts | 95 | fixed | binding retained / no recognized error surface | src/update-waypoint.ts:076101a9683751c5a4d92190 |
 | update-waypoint.ts | src/update-waypoint.ts | 134 | no-cause | The global lockfile may not exist; the update removes it the same way before installing. | src/update-waypoint.ts:698a8ed5be02ea79b1e12d26 |
 | utils | src/utils/account-home.ts | 44 | no-cause | Missing or invalid OS account evidence disables implicit real-state transport. | src/utils/account-home.ts:0a27194e3f3a6cd9fbc44887 |

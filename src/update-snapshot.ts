@@ -477,7 +477,8 @@ export function updateSnapshotManualRestoreCommands(stateDir: string, manifest: 
     for (const suffix of LIVE_SUFFIXES) {
       const live = shellQuote(`${store}${suffix}`);
       const to = shellQuote(join(aside, `${index}-${basename(store)}${suffix}`));
-      commands.push(`if [ -e ${live} ]; then mkdir -p ${shellQuote(aside)} && mv -n ${live} ${to}; fi`);
+      // `test`, not `[ … ]`: the CLI's diagnostic redactor replaces a bracketed expression with "[redacted:opaque]".
+      commands.push(`if test -e ${live}; then mkdir -p ${shellQuote(aside)} && mv -n ${live} ${to}; fi`);
     }
   });
   for (const file of manifest.files) {
