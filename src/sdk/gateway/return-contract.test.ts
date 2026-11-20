@@ -64,6 +64,16 @@ describe("enforceReturnContract", () => {
     expect(result.value).not.toHaveProperty("extra");
   });
 
+  it("removes an array element that fails two checks once, keeping its valid siblings", () => {
+    const schema = z.object({ tags: z.array(z.string().min(5).regex(/^x/)) });
+    const result = enforceReturnContract(schema, { tags: ["ab", "xxxxxx", "xyzzzz"] });
+    expect(result.value).toEqual({ tags: ["xxxxxx", "xyzzzz"] });
+    expect(result.violation?.invalidFields).toEqual(["tags.*"]);
+  });
+
+  // Known limitation (review N6, #914): an object whose parse adds a key (`.default()`) is not
+  // verified, so an extra next to it passes unreported. No mutation @Returns uses `default` today.
+
   it("reports a required field it cannot omit instead of looking repaired", () => {
     const result = enforceReturnContract(z.object({ id: z.string() }).strict(), {});
     expect(result.violation?.invalidFields).toEqual(["id"]);

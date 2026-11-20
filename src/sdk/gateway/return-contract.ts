@@ -183,16 +183,24 @@ function flattenIssues(list: ZodIssueLike[], prefix: Path): FlatIssue[] {
 /** Every edit that removes one offending piece. Required fields the handler never set have nothing to omit. */
 function editsFor(issues: FlatIssue[], root: unknown): Edit[] {
   const edits: Edit[] = [];
+  const seen = new Set<string>();
+  const push = (edit: Edit) => {
+    // Two issues on the same piece (an element failing two checks) must remove it once: a second splice would take its sibling.
+    const id = JSON.stringify([edit.path, edit.key, edit.undeclared]);
+    if (seen.has(id)) return;
+    seen.add(id);
+    edits.push(edit);
+  };
   for (const issue of issues) {
     if (issue.code === "unrecognized_keys" && issue.keys) {
-      for (const key of issue.keys) edits.push({ path: issue.path, key, undeclared: true });
+      for (const key of issue.keys) push({ path: issue.path, key, undeclared: true });
     } else if (issue.path.length > 0) {
       const path = issue.path.slice(0, -1);
       const key = issue.path[issue.path.length - 1]!;
       const parent = walk(root, path);
       if (parent === null || typeof parent !== "object") continue;
       if (Array.isArray(parent) ? typeof key === "number" && key < parent.length : String(key) in parent) {
-        edits.push({ path, key, undeclared: false });
+        push({ path, key, undeclared: false });
       }
     }
   }
