@@ -90,6 +90,10 @@ authorizes no database or package downgrade by hand: the update's own rollback
 - After the waypoint and the update to the target, two snapshots are kept until
   the next update: the target's way back to 3.261113.2, and the state before
   the waypoint, of the release that wrote it (for a restore by hand).
+- `UPDATE_PREVIOUS_RELEASE_UNAVAILABLE`: the release the update would roll back
+  to is not in the npm registry (or it did not answer), so the update stopped
+  nothing. When it came from `--running-release`, check that value; otherwise
+  run the update again once the registry has it.
 - `UPDATE_WAYPOINT_REQUIRED`: the update could not take the waypoint by itself
   (a source checkout, a running release not older than the waypoint, or a
   daemon with no boot record whose release it could not tell). Nothing was

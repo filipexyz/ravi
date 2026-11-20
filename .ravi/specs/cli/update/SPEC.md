@@ -107,7 +107,8 @@ CLI that run installed.
   install's package (not a launcher or another install) and the version is a
   Ravi release before 3.261104.2; or the operator's `--running-release`,
   which MUST be such a release and MUST agree with PM2's record when that one
-  is usable. A daemon with a receipt is decided by the receipt alone. Whatever
+  is usable. A daemon with a receipt is decided by the receipt alone, and a
+  `--running-release` given then MUST be reported as not used. Whatever
   fails MUST refuse with the reason (fail closed, never a guess), and the
   refusal MUST ask for `--running-release` only when that settles it (PM2's
   record missing, not a Ravi release, or not the daemon's). After such a
@@ -291,6 +292,11 @@ CLI that run installed.
   `supervisor-result.json`): a message line past 2048
   characters reaches the operator as `[redacted:oversize]`. A result the
   supervisor cannot write MUST NOT turn a rollback that ran into a failure.
+- Before any stop, an update that can roll back and `ravi update --rollback`
+  MUST find the release they would install again in the npm registry (a
+  probe with a timeout), and refuse otherwise (`UPDATE_PREVIOUS_RELEASE_UNAVAILABLE`
+  for an update, `UPDATE_ROLLBACK_UNAVAILABLE` for the rollback): found out
+  after the stop, the host stays down.
 - It takes no release selector, and `--execute` without `--rollback` is a
   usage error. Its supervisor MUST hold `<state>/updates/update.lock` while it
   runs (`UPDATE_IN_PROGRESS` when another update holds it). A rollback that stops

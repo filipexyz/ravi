@@ -158,7 +158,10 @@
   a daemon with no boot record, the release from PM2's record or
   `--running-release` with every guard (launcher, no version, not a release,
   a release that writes receipts, PM2 and the flag disagreeing; a receipt
-  decides alone), the rollback proving it by PM2's record, and the refusal
+  decides alone and the flag is reported as not used), the rollback proving it
+  by PM2's record (the daemon's version and PID, the runner's package), the
+  release a rollback would install again probed in the registry before any
+  stop (update and `--rollback`), and the refusal
   asking for `--running-release` only when that settles it; no
   waypoint without a snapshot (the release that wrote the state brought back on
   it, untouched; in the rollback, nothing restored and nothing started while a

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { Database } from "bun:sqlite";
 import {
   existsSync,
@@ -285,7 +285,7 @@ function rollbackFixture(
      * A release known by PM2's record, which writes no boot receipt: what PM2 records for the daemon the release's
      * CLI starts (by default that release, launched from the install's bundle).
      */
-    unreceipted?: { pm2Version?: string; launcher?: boolean; pidZero?: boolean };
+    unreceipted?: { pm2Version?: string; launcher?: boolean; pidZero?: boolean; runnerOutside?: boolean };
     /** No snapshot: the update already stopped both processes (pids 300 and 301), and the state is untouched. */
     untouched?: boolean;
   } = {},
@@ -312,7 +312,16 @@ function rollbackFixture(
             ...(input.unreceipted.launcher ? { execPath: "/usr/local/bin/ravi-launcher" } : {}),
             ...(input.unreceipted.pidZero ? { pid: 0 } : {}),
           }
-        : { version: "1.3.3" }
+        : {
+            version: "1.3.3",
+            // A runner of another install: neither its script nor its bundle argument is in this package.
+            ...(input.unreceipted.runnerOutside
+              ? {
+                  execPath: "/usr/local/bin/bun",
+                  args: ["/elsewhere/ravi.bot/dist/bundle/index.js", "channels", "run"],
+                }
+              : {}),
+          }
       : {};
     const process = pm2Process(name, bundle, install.root, {
       pm_id: nextPid,
@@ -430,7 +439,12 @@ describe("update rollback", () => {
 
   it("does not count a restored daemon that PM2 records as another release or launches from outside", async () => {
     // PID 0: PM2 kept an online registration after its launcher failed.
-    for (const unreceipted of [{ pm2Version: "3.261101.2" }, { launcher: true }, { pidZero: true }]) {
+    for (const unreceipted of [
+      { pm2Version: "3.261101.2" },
+      { launcher: true },
+      { pidZero: true },
+      { runnerOutside: true },
+    ]) {
       const { deps } = rollbackFixture({ previousRelease: "3.261101.3", unreceipted });
       expect(await rollBackUpdate(deps)).toMatchObject({ ok: false, step: "start" });
     }
@@ -662,6 +676,7 @@ describe("update supervisor with a rollback plan", () => {
           stabilityWindowMs: 0,
           // The predecessor would coordinate if this update could not roll back.
           schemaPhase: (process) => (process.pid === 10 ? "ready" : input.targetNeverReady ? null : "ready"),
+          releaseAvailable: async () => ({ ok: true as const }),
           rollbackPlan: () => ({
             previousRelease: "3.1.0",
             method: "bun",
@@ -1040,6 +1055,64 @@ describe("update supervisor with a rollback plan", () => {
       expect(warnings.length).toBe(expected.length);
       for (const [index, text] of expected.entries()) expect(warnings[index]).toContain(text);
     }
+  });
+
+  it("refuses before any stop when the release a rollback would install again is not in the registry", async () => {
+    for (const [overrides, declared] of [
+      // An update that can roll back by its receipt.
+      [{}, false],
+      // A waypoint taken from --running-release, with a release that does not exist.
+      [
+        {
+          assertPrepared: () => "adopt-on-start" as const,
+          preparedStateRelease: () => null,
+          rollbackPlan: () => null,
+          declaredRunningRelease: "3.261101.9",
+        },
+        true,
+      ],
+    ] as const) {
+      const fixture = supervisorFixture({ targetNeverReady: false });
+      const mutations: string[][] = [];
+      const refusal = await fixture
+        .rebind({
+          ...overrides,
+          releaseAvailable: async (release) => ({
+            ok: false,
+            reason: `ravi.bot@${release} is not in the npm registry`,
+          }),
+          run: async (command, args) => {
+            mutations.push(args);
+            return fixture.run(command, args);
+          },
+        })
+        .then(
+          () => null,
+          (error: Error) => error,
+        );
+      expect(refusal?.message).toContain("UPDATE_PREVIOUS_RELEASE_UNAVAILABLE");
+      expect(refusal?.message).toContain("is not in the npm registry");
+      expect(refusal?.message.includes("came from --running-release")).toBe(declared);
+      expect(mutations).toEqual([]);
+    }
+  });
+
+  it("says when --running-release is not used because the daemon has a boot record", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false });
+    const lines: string[] = [];
+    const errors = spyOn(console, "error").mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+    try {
+      await fixture.rebind({ declaredRunningRelease: "3.261101.3" });
+    } finally {
+      errors.mockRestore();
+    }
+    expect(
+      lines.some((line) =>
+        line.includes("--running-release 3.261101.3 is not used: the daemon has a boot record for Ravi 3.1.0"),
+      ),
+    ).toBe(true);
   });
 
   it("leaves the waypoint running and says so when the target cannot be installed again", async () => {
@@ -1481,6 +1554,7 @@ describe("ravi update --rollback", () => {
       superviseOperatorRollback({
         stateDir,
         snapshotId,
+        releaseAvailable: async () => ({ ok: true }),
         getProcesses: () => processes,
         run: async () => ({ success: true, output: "" }),
         bunPath: "/usr/local/bin/bun",
@@ -1506,6 +1580,22 @@ describe("ravi update --rollback", () => {
         },
       });
 
+    // The release it would install again is not in the registry: refused under the lock, before any stop.
+    await expect(
+      superviseOperatorRollback({
+        stateDir,
+        snapshotId: manifest!.id,
+        getProcesses: () => processes,
+        run: async () => ({ success: true, output: "" }),
+        bunPath: "/usr/local/bin/bun",
+        pidAlive: () => false,
+        releaseAvailable: async () => ({ ok: false, reason: "ravi.bot@3.1.0 is not in the npm registry" }),
+        rollBack: async () => {
+          throw new Error("must not roll back");
+        },
+      }),
+    ).rejects.toThrow("ravi.bot@3.1.0 is not in the npm registry");
+
     // Another snapshot than the one previewed: refused under the lock, before any stop.
     await expect(supervise("20261120T000000Z-abcdef", true)).rejects.toThrow(UPDATE_ROLLBACK_UNAVAILABLE);
     expect(calls).toHaveLength(0);
@@ -1525,6 +1615,7 @@ describe("ravi update --rollback", () => {
       await superviseOperatorRollback({
         stateDir,
         snapshotId: manifest!.id,
+        releaseAvailable: async () => ({ ok: true }),
         getProcesses: () => processes,
         run: async () => ({ success: true, output: "" }),
         bunPath: "/usr/local/bin/bun",
@@ -1619,6 +1710,7 @@ describe("ravi update --rollback", () => {
     expect(decodeManagedRuntimeRebindRequest(invocation.env[env]!).rollback).toEqual({ snapshotId: manifest!.id });
     const rolledBack: string[] = [];
     const overrides = {
+      releaseAvailable: async () => ({ ok: true as const }),
       getProcesses: () => processes,
       rollBack: async (dependencies: UpdateRollbackDependencies) => {
         rolledBack.push(dependencies.manifest!.id);
@@ -1786,7 +1878,7 @@ describe("ravi update --rollback", () => {
       `import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { maybeRunManagedRuntimeRebindFromEnv } from ${JSON.stringify(join(repo, "src/managed-runtime-rebind.ts"))};
 const processes = JSON.parse(readFileSync(${JSON.stringify(processesFile)}, "utf8"));
-await maybeRunManagedRuntimeRebindFromEnv(() => false, undefined, { getProcesses: () => processes, rollBack: ${fakeRollBack} });
+await maybeRunManagedRuntimeRebindFromEnv(() => false, undefined, { releaseAvailable: async () => ({ ok: true }), getProcesses: () => processes, rollBack: ${fakeRollBack} });
 `,
     );
     const ravi = join(stateDir, "ravi.db");

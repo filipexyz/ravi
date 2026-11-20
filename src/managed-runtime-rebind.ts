@@ -54,7 +54,11 @@ import {
   recordUpdateSupervisorResult,
   globalInstallMethodOf,
   isRaviRelease,
+  type ReleaseAvailability,
+  releaseInRegistry,
   resolveUnreceiptedRollbackPlan,
+  UPDATE_PREVIOUS_RELEASE_UNAVAILABLE,
+  UpdatePreviousReleaseUnavailableError,
   resolveUpdateRollbackPlan,
   rollBackUpdate,
   superviseOperatorRollback,
@@ -179,6 +183,8 @@ type ManagedRuntimeRebindDependencies = {
   declaredRunningRelease?: string | null;
   /** `resolveUnreceiptedRollbackPlan` (tests). */
   unreceiptedRollbackPlan?: typeof resolveUnreceiptedRollbackPlan;
+  /** Whether the release a rollback would install again is in the registry (`releaseInRegistry`; tests). */
+  releaseAvailable?: (release: string) => Promise<ReleaseAvailability>;
   storePaths?: (stateDir: string) => string[];
   /** Set on the update that follows a waypoint: what the first pass noted, recorded with this pass's result. */
   carriedWarnings?: string[];
@@ -467,6 +473,11 @@ export async function rebindManagedRuntimeProcesses(
     processes: initial,
     stateDir,
   });
+  if (dependencies.declaredRunningRelease && rollbackPlan)
+    console.error(
+      `ravi update: --running-release ${dependencies.declaredRunningRelease} is not used: the daemon has a boot ` +
+        `record for Ravi ${rollbackPlan.previousRelease}, which decides`,
+    );
   // A daemon with no boot receipt, for the waypoint only: PM2's record of it, or the operator's --running-release,
   // each behind its guards. Whatever fails refuses with the reason (fail closed).
   let runningReleaseUnknown: { reason: string; askOperator: boolean } | null = null;
@@ -490,6 +501,18 @@ export async function rebindManagedRuntimeProcesses(
   const hop =
     waypoint && rollbackPlan && compareRaviVersions(rollbackPlan.previousRelease, waypoint) < 0 ? waypoint : null;
   if (waypoint && !hop) refuseWaypoint(runningReleaseUnknown);
+  // The release a rollback would install again must be in the registry before any stop: found out after it (a
+  // release that does not exist, a typo in --running-release), the host stays down. `ravi update --rollback` too.
+  if (rollbackPlan) {
+    const available = await (dependencies.releaseAvailable ?? releaseInRegistry)(rollbackPlan.previousRelease);
+    if (!available.ok)
+      throw new UpdatePreviousReleaseUnavailableError({
+        reason: available.reason,
+        previousRelease: rollbackPlan.previousRelease,
+        targetVersion: target.version,
+        declared: rollbackPlan.evidence === "declared",
+      });
+  }
   const stores = rollbackPlan ? (dependencies.storePaths ?? updateStorePaths)(stateDir) : [];
   const snapshotPlan = rollbackPlan
     ? (dependencies.planSnapshot ?? planUpdateSnapshot)({
@@ -1099,7 +1122,11 @@ export async function maybeRunManagedRuntimeRebindFromEnv(
     } catch (error) {
       // Refusals before any stop: the running release keeps serving, and the reason reaches the CLI.
       const code = (error as { code?: unknown } | null)?.code;
-      if (code === UPDATE_WAYPOINT_REQUIRED || code === UPDATE_SNAPSHOT_SPACE) {
+      if (
+        code === UPDATE_WAYPOINT_REQUIRED ||
+        code === UPDATE_SNAPSHOT_SPACE ||
+        code === UPDATE_PREVIOUS_RELEASE_UNAVAILABLE
+      ) {
         throw recordSupervisorRefusal(code, (error as Error).message);
       }
       throw error;
