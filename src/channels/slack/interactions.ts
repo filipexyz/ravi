@@ -77,15 +77,28 @@ export async function respondToSlackInteraction(
     .get(input.responseUrlId) as SlackInteractionResponseUrlRow | undefined;
   if (!row) throw new Error(`Slack interaction response handle not found: ${input.responseUrlId}`);
   if (row.expires_at <= now) throw new Error(`Slack interaction response handle expired: ${input.responseUrlId}`);
-  if (row.used_count >= SLACK_RESPONSE_URL_MAX_USES) {
-    throw new Error(
-      `Slack interaction response handle exhausted (${SLACK_RESPONSE_URL_MAX_USES} uses): ${input.responseUrlId}`,
-    );
-  }
   if (!isAllowedSlackInteractionResponseUrl(row.response_url)) {
     throw new Error(`Slack interaction response handle is not trusted: ${input.responseUrlId}`);
   }
 
+  // The use is taken BEFORE the request, in one statement that also checks the limit: the count
+  // is shared by every caller (this process, another daemon, `ravi slack interaction-respond`),
+  // and a check followed by a count after the await would let two of them both take the last slot.
+  const reserved = getDb()
+    .prepare(
+      `UPDATE slack_interaction_response_urls
+        SET used_count = used_count + 1, last_used_at = ?
+        WHERE id = ? AND used_count < ?`,
+    )
+    .run(now, input.responseUrlId, SLACK_RESPONSE_URL_MAX_USES);
+  if (reserved.changes !== 1) {
+    throw new Error(
+      `Slack interaction response handle exhausted (${SLACK_RESPONSE_URL_MAX_USES} uses): ${input.responseUrlId}`,
+    );
+  }
+
+  // A request that fails or times out leaves the use spent: Slack may have taken it, and counting
+  // one too many is safe where counting one too few is not.
   const response = await fetch(row.response_url, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -95,15 +108,12 @@ export async function respondToSlackInteraction(
   });
   const text = await response.text();
   if (!response.ok) {
+    // Slack answered and refused: that post is not one of the handle's uses.
+    getDb()
+      .prepare("UPDATE slack_interaction_response_urls SET used_count = used_count - 1 WHERE id = ? AND used_count > 0")
+      .run(input.responseUrlId);
     throw new Error(`Slack interaction response failed: ${response.status} ${response.statusText}`);
   }
-  getDb()
-    .prepare(
-      `UPDATE slack_interaction_response_urls
-        SET used_count = used_count + 1, last_used_at = ?
-        WHERE id = ?`,
-    )
-    .run(now, input.responseUrlId);
   return {
     ok: true,
     status: response.status,

@@ -25,6 +25,8 @@ receives every installed workspace's commands on one socket, so the workspace is
 checked against the instance's own bot, and the app is pinned for the
 connection.
 
+"Idle" is read from the runtime. The health label of a thread is a sample taken every so often, and the lifecycle date does not move when a parent sends a thread new instructions, so a thread restarted a minute ago can look a day old. The command reads the runtime's own records, thread by thread, right before closing it, and counts every open thread instead of the newest page.
+
 Commands are never replayed. They are not stored in the durable inbox, and the
 daemon refuses one older than a minute, because a `stop` typed ten minutes ago
 must not run after a restart.

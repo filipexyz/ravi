@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { getDb } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import {
   isAllowedSlackInteractionResponseUrl,
@@ -82,6 +83,74 @@ describe("Slack response handle uses", () => {
           /failed: 500/,
         );
       }
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  function usedCount(responseUrlId: string): number {
+    return (
+      getDb()
+        .prepare("SELECT used_count AS used FROM slack_interaction_response_urls WHERE id = ?")
+        .get(responseUrlId) as {
+        used: number;
+      }
+    ).used;
+  }
+
+  it("gives the last use to one of two callers that arrive together", async () => {
+    const resolvers: Array<(response: Response) => void> = [];
+    let posts = 0;
+    const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((() => {
+      posts += 1;
+      return new Promise<Response>((resolve) => resolvers.push(resolve));
+    }) as unknown as typeof fetch);
+    try {
+      const responseUrlId = handle();
+      getDb()
+        .prepare("UPDATE slack_interaction_response_urls SET used_count = ? WHERE id = ?")
+        .run(SLACK_RESPONSE_URL_MAX_USES - 1, responseUrlId);
+
+      const first = respondToSlackInteraction({ responseUrlId, payload: { text: "first" } });
+      // The first request is still in flight when the second caller arrives.
+      await expect(respondToSlackInteraction({ responseUrlId, payload: { text: "second" } })).rejects.toThrow(
+        /exhausted/,
+      );
+      resolvers[0]?.(new Response("ok", { status: 200 }));
+      await expect(first).resolves.toMatchObject({ ok: true });
+
+      expect(posts).toBe(1);
+      expect(usedCount(responseUrlId)).toBe(SLACK_RESPONSE_URL_MAX_USES);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("keeps the use spent when the request fails without an answer, because Slack may have taken it", async () => {
+    const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async () => {
+      throw new Error("The operation timed out.");
+    }) as unknown as typeof fetch);
+    try {
+      const responseUrlId = handle();
+
+      await expect(respondToSlackInteraction({ responseUrlId, payload: { text: "x" } })).rejects.toThrow(/timed out/);
+
+      expect(usedCount(responseUrlId)).toBe(1);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("gives the use back when Slack answers and refuses", async () => {
+    const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
+      (async () => new Response("nope", { status: 404, statusText: "Not Found" })) as unknown as typeof fetch,
+    );
+    try {
+      const responseUrlId = handle();
+
+      await expect(respondToSlackInteraction({ responseUrlId, payload: { text: "x" } })).rejects.toThrow(/failed: 404/);
+
+      expect(usedCount(responseUrlId)).toBe(0);
     } finally {
       fetchSpy.mockRestore();
     }

@@ -26,7 +26,8 @@
   surface.
 - A response handle MUST accept only `https://hooks.slack.com/actions/` and
   `https://hooks.slack.com/commands/`, MUST refuse the sixth post before any
-  request, and MUST give each post a deadline.
+  request, and MUST give each post a deadline. Two callers racing for the last
+  use MUST NOT both post.
 - Socket Mode MUST answer `app_home_opened` with `tab: "home"` by publishing a
   valid `type: "home"` view through `views.publish` for the event's user, and
   MUST ignore `tab: "messages"`.

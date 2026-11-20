@@ -24,7 +24,7 @@ import { type CommandAccessOptions, getCommandAccessMetadata } from "../../cli/d
 import { slackUserContactId } from "../../cloud-agents/chat-people.js";
 import { configStore } from "../../config-store.js";
 import { nats as runtimeNats } from "../../nats.js";
-import { canWithCapabilities, materializeSubjectCapabilities } from "../../permissions/provider-runtime.js";
+import { authorizePermission, materializeSubjectCapabilities } from "../../permissions/provider-runtime.js";
 import {
   findSessionByAttachedChat,
   getSession,
@@ -34,7 +34,7 @@ import {
 } from "../../router/index.js";
 import { type ContextCapability, dbFindChat } from "../../router/router-db.js";
 import type { RouterConfig, SessionEntry } from "../../router/types.js";
-import { listRuntimeTurnAttempts } from "../../runtime/crash-recovery-store.js";
+import { listRuntimePromptQueue, listRuntimeTurnAttempts } from "../../runtime/crash-recovery-store.js";
 import { applyProviderModelRule } from "../../runtime/model-catalog.js";
 import { RUNTIME_NO_ACTIVE_TURN, RUNTIME_SESSION_NOT_ACTIVE } from "../../runtime/runtime-control-errors.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
@@ -58,10 +58,15 @@ import {
 import {
   closeSlackThreadRecord,
   findSlackThreadForParent,
-  listSlackThreadsForSession,
   type SlackThreadSummary,
   slackThreadParentSessionKey,
+  summarizeSlackThread,
 } from "./thread-lifecycle.js";
+import {
+  countSlackThreadLifecyclesByParent,
+  listSlackThreadLifecyclesByParent,
+  type SlackThreadLifecycleRecord,
+} from "./thread-lifecycle-store.js";
 
 const log = logger.child("channels:slack:commands");
 
@@ -74,6 +79,8 @@ export const SLACK_COMMAND_RUNTIME_CONTROL_TOPIC = "ravi.session.runtime.control
 const RUNTIME_CONTROL_TIMEOUT_MS = 10_000;
 const MAX_LISTED_THREADS = 12;
 const MAX_IDLE_CLOSES = 25;
+/** Page size when every open thread of a session is walked (the store caps a page at 500). */
+const THREAD_PAGE_SIZE = 200;
 const TITLE_MAX_LENGTH = 70;
 
 export type SlackCommandDecision = "allowed" | "denied" | "info" | "error";
@@ -112,6 +119,27 @@ export interface InheritedCommandAccess {
   readonly access: CommandAccessOptions;
 }
 
+/**
+ * The threads a session owns, with no silent ceiling: `count` counts them all,
+ * `newest` reads the page that is shown, and `touchedBefore` walks every open
+ * thread, so cleanup sees the old ones even when many newer threads exist.
+ */
+export interface SlackThreadIndex {
+  readonly parentSessionKey: string;
+  readonly parentSessionName: string;
+  count(): number;
+  newest(limit: number): SlackThreadSummary[];
+  /** Open threads whose lifecycle was last touched at or before `cutoff`, oldest first. */
+  touchedBefore(cutoff: number): SlackThreadSummary[];
+}
+
+export interface SlackThreadActivity {
+  /** A turn is running, or work is already queued for it. */
+  readonly busy: boolean;
+  /** The latest sign of life: lifecycle, runtime attempts, the child session, the health observation. */
+  readonly lastActivityAt: number;
+}
+
 export type SlackCommandCloseResult =
   | { readonly kind: "closed"; readonly name: string; readonly changed: boolean }
   | { readonly kind: "not_found" }
@@ -126,11 +154,9 @@ export interface SlackCommandDeps {
   capabilitiesFor?: (contactId: string) => ContextCapability[];
   commandAccess?: (input: CliCommandAccessInput) => CliCommandAccessResult;
   inheritedAccess?: (operation: "close-thread" | "interrupt") => Promise<InheritedCommandAccess | undefined>;
-  listThreads?: (session: SessionEntry) => {
-    parentSessionKey: string;
-    parentSessionName: string;
-    threads: SlackThreadSummary[];
-  };
+  threads?: (session: SessionEntry) => SlackThreadIndex;
+  /** What a thread is doing right now, read at the moment it is needed. */
+  activity?: (thread: SlackThreadSummary) => SlackThreadActivity;
   closeThread?: (parentSessionKey: string, threadRef: string) => Promise<SlackCommandCloseResult>;
   activeTurn?: (sessionKey: string) => { turnId: string; startedAt: number } | null;
   describeRuntime?: (session: SessionEntry, config: RouterConfig) => string;
@@ -218,10 +244,10 @@ export function formatSlackCommandAge(ms: number): string {
   return `${Math.floor(hours / 24)} d`;
 }
 
-function threadStateLabel(thread: SlackThreadSummary): string {
+function threadStateLabel(thread: SlackThreadSummary, busy: boolean): string {
   const state = thread.turnHealth?.state;
   const parts: string[] = [];
-  if (state === "running") parts.push("working");
+  if (busy) parts.push("working");
   else if (state === "attention") parts.push("needs attention");
   else if (state === "interrupted") parts.push("interrupted");
   else parts.push("idle");
@@ -251,6 +277,27 @@ function isAction(parse: SlackCommandParse): parse is Extract<SlackCommandParse,
   return !isSlackCommandAnsweredInAck(parse);
 }
 
+/**
+ * Whether the contact holds a right, asked the way the command-level check asks
+ * it: the capabilities AND the contact as subject, so a configured external
+ * authority sees who acts and can refuse what the local grants would allow.
+ */
+function contactCan(
+  contactId: string,
+  capabilities: ContextCapability[],
+  permission: string,
+  objectType: string,
+  objectId: string,
+): boolean {
+  return authorizePermission({
+    subject: { type: "contact", id: contactId },
+    capabilities,
+    permission,
+    objectType,
+    objectId,
+  }).allowed;
+}
+
 function sessionRef(session: SessionEntry): string {
   return session.name ?? session.sessionKey;
 }
@@ -272,6 +319,61 @@ async function defaultInheritedAccess(
 
 // ---------------------------------------------------------------------------
 // Default dependencies
+
+function defaultThreadIndex(session: SessionEntry): SlackThreadIndex {
+  const parentSessionKey = slackThreadParentSessionKey(session.sessionKey);
+  const parent = parentSessionKey === session.sessionKey ? session : getSession(parentSessionKey);
+  return {
+    parentSessionKey,
+    parentSessionName: parent?.name ?? parentSessionKey,
+    count: () => countSlackThreadLifecyclesByParent(parentSessionKey),
+    newest: (limit) => listSlackThreadLifecyclesByParent(parentSessionKey, { limit }).map(summarizeSlackThread),
+    touchedBefore: (cutoff) => {
+      // Page by page, with no ceiling. A thread opened while this walks shifts the pages by one,
+      // so a record can be seen twice: the set keeps each once, and a record missed at the edge
+      // is simply found by the next run.
+      const seen = new Map<string, SlackThreadLifecycleRecord>();
+      for (let offset = 0; ; offset += THREAD_PAGE_SIZE) {
+        const page = listSlackThreadLifecyclesByParent(parentSessionKey, { limit: THREAD_PAGE_SIZE, offset });
+        for (const record of page) {
+          if (record.status === "open" && record.updatedAt <= cutoff) seen.set(record.requestId, record);
+        }
+        if (page.length < THREAD_PAGE_SIZE) break;
+      }
+      return [...seen.values()].sort((a, b) => a.updatedAt - b.updatedAt).map(summarizeSlackThread);
+    },
+  };
+}
+
+/**
+ * What a thread is doing now, from the runtime's own records and not from the
+ * health label, which is a sample taken every so often. The lifecycle
+ * `updatedAt` does not move when a parent sends new instructions, so the last
+ * activity is the latest of that, the child session's own update, its turn
+ * attempts (start, heartbeat, completion) and the health sample.
+ */
+function defaultThreadActivity(now: () => number) {
+  return (thread: SlackThreadSummary): SlackThreadActivity => {
+    const stamps = [thread.updatedAt, thread.turnHealth?.lastSignalAt ?? 0];
+    let busy = thread.turnHealth?.state === "running";
+    const childKey = thread.childSessionKey;
+    if (childKey) {
+      const child = getSession(childKey);
+      if (child) stamps.push(child.updatedAt);
+      for (const attempt of listRuntimeTurnAttempts({ sessionKey: childKey, limit: 3 })) {
+        stamps.push(attempt.startedAt, attempt.lastHeartbeatAt, attempt.completedAt ?? 0);
+        if (attempt.status === "running" && attempt.completedAt === null && attempt.leaseExpiresAt > now()) busy = true;
+      }
+      const queued = listRuntimePromptQueue({
+        sessionKey: childKey,
+        statuses: ["queued", "leased", "starting"],
+        limit: 1,
+      });
+      if (queued.length > 0) busy = true;
+    }
+    return { busy, lastActivityAt: Math.max(...stamps) };
+  };
+}
 
 async function defaultCloseThread(parentSessionKey: string, threadRef: string): Promise<SlackCommandCloseResult> {
   const record = findSlackThreadForParent(parentSessionKey, threadRef);
@@ -437,7 +539,7 @@ export async function handleSlackCommand(
   // session; changes need to modify it and hold the command's own capability.
   const capabilities = (deps.capabilitiesFor ?? ((id) => materializeSubjectCapabilities("contact", id)))(contactId);
   const need = SESSION_ACCESS_BY_ACTION[parse.kind];
-  if (!canWithCapabilities(capabilities, need, "session", sessionRef(session))) {
+  if (!contactCan(contactId, capabilities, need, "session", sessionRef(session))) {
     await reply(
       slackCommandMessage(
         need === "modify"
@@ -501,42 +603,42 @@ async function run(
   now: () => number,
   reply: (message: SlackCommandMessage) => Promise<void>,
 ): Promise<SlackCommandOutcome> {
-  const listThreads = deps.listThreads ?? ((target: SessionEntry) => listSlackThreadsForSession(target));
+  const threadIndex = deps.threads ?? defaultThreadIndex;
+  const activityOf = deps.activity ?? defaultThreadActivity(now);
   const name = sessionRef(session);
   const label = escapeMrkdwn(name);
 
   switch (parse.kind) {
     case "status": {
-      const listed = listThreads(session);
+      const index = threadIndex(session);
       const turn = (deps.activeTurn ?? defaultActiveTurn(now))(session.sessionKey);
       const runtime = (deps.describeRuntime ?? defaultDescribeRuntime)(session, config);
       const lines = [
         `*Who answers here*: agent \`${session.agentId}\` · session \`${label}\``,
         `*Model*: ${escapeMrkdwn(runtime)}`,
         `*Now*: ${turn ? `working for ${formatSlackCommandAge(now() - turn.startedAt)}` : "idle"}`,
-        `*Open threads*: ${listed.threads.length}`,
+        `*Open threads*: ${index.count()}`,
       ];
       await reply(slackCommandMessage(lines.join("\n")));
       return { decision: "allowed", code: "ok" };
     }
 
     case "threads": {
-      const listed = listThreads(session);
-      if (listed.threads.length === 0) {
+      const index = threadIndex(session);
+      const total = index.count();
+      if (total === 0) {
         await reply(slackCommandMessage(`No open threads in \`${label}\`.`));
         return { decision: "allowed", code: "ok" };
       }
-      const ordered = [...listed.threads].sort((a, b) => b.updatedAt - a.updatedAt);
-      const shown = ordered.slice(0, MAX_LISTED_THREADS);
+      const shown = index.newest(MAX_LISTED_THREADS);
       const lines = shown.map((thread) => {
         const threadName = thread.childSessionName ?? thread.requestId;
         const title = thread.title ? ` ${oneLine(thread.title)}` : "";
-        return `• \`${escapeMrkdwn(threadName)}\`${title} (${formatSlackCommandAge(now() - thread.updatedAt)}; ${threadStateLabel(thread)})`;
+        const activity = activityOf(thread);
+        return `• \`${escapeMrkdwn(threadName)}\`${title} (${formatSlackCommandAge(now() - activity.lastActivityAt)}; ${threadStateLabel(thread, activity.busy)})`;
       });
-      if (ordered.length > shown.length) lines.push(`… and ${ordered.length - shown.length} more`);
-      await reply(
-        slackCommandMessage([`*Open threads in \`${label}\`* (${listed.threads.length})`, ...lines].join("\n")),
-      );
+      if (total > shown.length) lines.push(`… and ${total - shown.length} more`);
+      await reply(slackCommandMessage([`*Open threads in \`${label}\`* (${total})`, ...lines].join("\n")));
       return { decision: "allowed", code: "ok" };
     }
 
@@ -567,24 +669,32 @@ async function run(
 
     case "close_idle": {
       const closeThread = deps.closeThread ?? defaultCloseThread;
-      const listed = listThreads(session);
+      const index = threadIndex(session);
       const cutoff = now() - parse.hours * 3_600_000;
-      const idle = listed.threads
+      // Old by lifecycle, nothing waiting on anyone. Whether it is idle is decided below,
+      // thread by thread, right before each close.
+      const candidates = index
+        .touchedBefore(cutoff)
         .filter(
-          (thread) =>
-            thread.status === "open" &&
-            thread.updatedAt <= cutoff &&
-            thread.turnHealth?.state !== "running" &&
-            thread.openDecisionCount === 0 &&
-            thread.pendingAnswerCount === 0 &&
-            !thread.parentReturn.pending,
-        )
-        .sort((a, b) => a.updatedAt - b.updatedAt);
-      const batch = idle.slice(0, MAX_IDLE_CLOSES);
+          (thread) => thread.openDecisionCount === 0 && thread.pendingAnswerCount === 0 && !thread.parentReturn.pending,
+        );
+      let attempted = 0;
       let closed = 0;
+      let active = 0;
+      let examined = 0;
       const refused = new Map<string, number>();
-      for (const thread of batch) {
-        const result = await closeThread(listed.parentSessionKey, thread.requestId);
+      for (const thread of candidates) {
+        if (attempted >= MAX_IDLE_CLOSES) break;
+        examined += 1;
+        // The health label is a sample; the runtime's records are the truth. Read them now: a
+        // thread that got new instructions, or finished work, since the list was read is not idle.
+        const activity = activityOf(thread);
+        if (activity.busy || activity.lastActivityAt > cutoff) {
+          active += 1;
+          continue;
+        }
+        attempted += 1;
+        const result = await closeThread(index.parentSessionKey, thread.requestId);
         if (result.kind === "closed") {
           closed += 1;
           continue;
@@ -592,8 +702,14 @@ async function run(
         const reason = result.kind === "refused" ? result.code : "THREAD_NOT_FOUND";
         refused.set(reason, (refused.get(reason) ?? 0) + 1);
       }
-      if (idle.length === 0) {
-        await reply(slackCommandMessage(`No thread in \`${label}\` has been idle for more than ${parse.hours} h.`));
+      if (attempted === 0) {
+        await reply(
+          slackCommandMessage(
+            active > 0
+              ? `No thread in \`${label}\` has been idle for more than ${parse.hours} h: ${active} old ${plural(active, "thread has", "threads have")} recent activity or work in progress.`
+              : `No thread in \`${label}\` has been idle for more than ${parse.hours} h.`,
+          ),
+        );
         return { decision: "allowed", code: "none_idle" };
       }
       const lines = [
@@ -604,8 +720,9 @@ async function run(
           `• ${count} refused: \`${code}\`${code === "THREAD_TRIGGERS_PENDING" ? " (still receives active triggers)" : ""}`,
         );
       }
-      if (idle.length > batch.length) {
-        lines.push(`${idle.length - batch.length} more for the next round: run the command again.`);
+      if (active > 0) lines.push(`• ${active} skipped: recent activity or work in progress.`);
+      if (examined < candidates.length) {
+        lines.push(`${candidates.length - examined} more for the next round: run the command again.`);
       }
       await reply(slackCommandMessage(lines.join("\n")));
       return { decision: "allowed", code: "ok" };

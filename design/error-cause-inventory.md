@@ -373,7 +373,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels-slack | src/channels/slack/gateway-mode.ts | 96 | triaged-follow-up | catch-without-binding | src/channels/slack/gateway-mode.ts:94ab31de7f88390dc30e18c0 |
 | channels-slack | src/channels/slack/gateway-mode.ts | 116 | triaged-follow-up | catch-without-binding | src/channels/slack/gateway-mode.ts:fa170b140df66597c90bfeda |
 | channels-slack | src/channels/slack/gateway-mode.ts | 120 | triaged-follow-up | rejection-without-binding | src/channels/slack/gateway-mode.ts:af5ff13f2404ec68722a901f |
-| channels-slack | src/channels/slack/interactions.ts | 123 | triaged-follow-up | catch-without-binding | src/channels/slack/interactions.ts:59c242f5fb155229f527cccf |
+| channels-slack | src/channels/slack/interactions.ts | 133 | triaged-follow-up | catch-without-binding | src/channels/slack/interactions.ts:59c242f5fb155229f527cccf |
 | channels-slack | src/channels/slack/markdown-delivery.ts | 72 | fixed | binding retained / no recognized error surface | src/channels/slack/markdown-delivery.ts:b64e41ad9e82c5dce6e2f224 |
 | channels-slack | src/channels/slack/markdown-delivery.ts | 109 | fixed | binding retained / no recognized error surface | src/channels/slack/markdown-delivery.ts:d5742b505b8947c6348c1c2e |
 | channels-slack | src/channels/slack/markdown-delivery.ts | 165 | fixed | binding retained / no recognized error surface | src/channels/slack/markdown-delivery.ts:c40422f2f15dc317209de693 |
@@ -381,14 +381,14 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels-slack | src/channels/slack/markdown-delivery.ts | 228 | fixed | binding retained / no recognized error surface | src/channels/slack/markdown-delivery.ts:4a85aef485bafb017a517f3f |
 | channels-slack | src/channels/slack/markdown-delivery.ts | 229 | fixed | binding retained / no recognized error surface | src/channels/slack/markdown-delivery.ts:66640d2f4afb11a2c7d272fc |
 | channels-slack | src/channels/slack/media.ts | 181 | triaged-follow-up | catch-without-binding | src/channels/slack/media.ts:c080cae772801e60d5e1b98b |
-| channels-slack | src/channels/slack/slash-command-handler.ts | 283 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:03a4a67ddda0feadd2d227b3 |
-| channels-slack | src/channels/slack/slash-command-handler.ts | 312 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:83bb2ac9351fc8f2055738d9 |
-| channels-slack | src/channels/slack/slash-command-handler.ts | 376 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:6e02caf50bd27fc6f2c53edd |
-| channels-slack | src/channels/slack/slash-command-handler.ts | 392 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:ac555364ad5dd8ab6d0f9fcc |
-| channels-slack | src/channels/slack/slash-command-handler.ts | 481 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:23f534fe087b3795ab5c4e38 |
-| channels-slack | src/channels/slack/slash-command-handler.ts | 618 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:186afb785f9146f349fb4d63 |
-| channels-slack | src/channels/slack/slash-command-handler.ts | 701 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:82f265b96804272a4f43bcb9 |
-| channels-slack | src/channels/slack/slash-command-handler.ts | 705 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:76b7afcbe65a4a88fa9f0450 |
+| channels-slack | src/channels/slack/slash-command-handler.ts | 385 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:03a4a67ddda0feadd2d227b3 |
+| channels-slack | src/channels/slack/slash-command-handler.ts | 414 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:83bb2ac9351fc8f2055738d9 |
+| channels-slack | src/channels/slack/slash-command-handler.ts | 478 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:6e02caf50bd27fc6f2c53edd |
+| channels-slack | src/channels/slack/slash-command-handler.ts | 494 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:ac555364ad5dd8ab6d0f9fcc |
+| channels-slack | src/channels/slack/slash-command-handler.ts | 583 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:23f534fe087b3795ab5c4e38 |
+| channels-slack | src/channels/slack/slash-command-handler.ts | 735 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:186afb785f9146f349fb4d63 |
+| channels-slack | src/channels/slack/slash-command-handler.ts | 818 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:82f265b96804272a4f43bcb9 |
+| channels-slack | src/channels/slack/slash-command-handler.ts | 822 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:76b7afcbe65a4a88fa9f0450 |
 | channels-slack | src/channels/slack/socket-mode.ts | 377 | triaged-follow-up | catch-without-binding | src/channels/slack/socket-mode.ts:e700c67eb64c04a391bc3ef0 |
 | channels-slack | src/channels/slack/socket-mode.ts | 449 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:f9d1467f6e1de69cf31a8d52 |
 | channels-slack | src/channels/slack/socket-mode.ts | 530 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:6099dacad897d9487e5c0270 |
@@ -425,7 +425,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels-slack | src/channels/slack/thread-attention-admission.ts | 158 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-attention-admission.ts:87ca3b3b96aa8165f25da5a3 |
 | channels-slack | src/channels/slack/thread-instruction-delivery.ts | 55 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-instruction-delivery.ts:86caa88fda886e9f1d90ef1c |
 | channels-slack | src/channels/slack/thread-instruction-delivery.ts | 88 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-instruction-delivery.ts:f47d4f934b5335fdb1dc0240 |
-| channels-slack | src/channels/slack/thread-lifecycle-store.ts | 979 | no-cause | A malformed origin only loses the WhatsApp return; the completion then stays in Slack, as before origins existed. | src/channels/slack/thread-lifecycle-store.ts:4698d4a028fe7f5e71a7700a |
+| channels-slack | src/channels/slack/thread-lifecycle-store.ts | 998 | no-cause | A malformed origin only loses the WhatsApp return; the completion then stays in Slack, as before origins existed. | src/channels/slack/thread-lifecycle-store.ts:4698d4a028fe7f5e71a7700a |
 | channels-slack | src/channels/slack/thread-lifecycle.ts | 208 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:b911f7b0646fdb37c1036be1 |
 | channels-slack | src/channels/slack/thread-lifecycle.ts | 221 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3931e436098dcef7fb8f6040 |
 | channels-slack | src/channels/slack/thread-lifecycle.ts | 242 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:0c07e521d00e171ade1709c5 |

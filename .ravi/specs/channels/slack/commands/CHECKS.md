@@ -6,14 +6,17 @@
 - A command from another workspace, from a runner that cannot read its own workspace, or from another app than the one the connection named MUST be dropped.
 - A command with no usable `response_url` and no static answer MUST NOT run.
 - A `response_url` on `https://hooks.slack.com/commands/` MUST be accepted, and any other host or path MUST be refused.
-- The sixth post to one response handle MUST be refused before any request is made.
+- The sixth post to one response handle MUST be refused before any request is made, two callers that arrive together MUST NOT both take the last use, a post Slack refuses MUST give its use back and a request that fails without an answer MUST NOT.
 - A Slack user with no contact MUST get a private refusal and MUST NOT run any operation.
 - A contact without access to the chat's session MUST NOT read it; a contact with access but without `modify` MUST NOT close a thread or stop a turn.
 - A contact that modifies the session but lacks the CLI's capability for the operation MUST be refused, and the check MUST run as `slack-command` with the contact as subject.
 - A `slack-command` check without a contact MUST be denied, and neither an agent's runtime context nor the local operator MUST be able to stand in for the contact.
 - The owner contact MUST be able to run every command.
+- A configured external authority MUST be able to refuse a command's read of a session the contact's local grants allow.
 - `close` MUST show the active triggers that hold a thread open and the way out, and MUST explain the other refusals.
+- `status` MUST count every open thread, and `close idle` MUST reach old threads behind more newer ones than a page holds.
 - `close idle` MUST skip threads that are working, have an open question, have an answer not delivered or a return pending, and MUST stop at 25 per call.
+- `close idle` MUST NOT close a thread that has a turn running, work queued or recent activity in the runtime's records, even when its health sample says idle or its lifecycle date is old.
 - `stop` MUST say nothing is running when no turn is, and MUST NOT claim a stop after a timeout.
 - A command older than 60 seconds, or stamped in the future, MUST NOT run.
 - Every command MUST publish `ravi.audit.slack_command` without the text typed, the thread name, the `response_url` or a token.

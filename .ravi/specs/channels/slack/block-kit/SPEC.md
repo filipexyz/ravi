@@ -117,7 +117,9 @@ O handle so aceita `https://hooks.slack.com/actions/` (interacoes) e
 `https://hooks.slack.com/commands/` (slash commands, ver `channels/slack/commands`);
 qualquer outro host ou caminho e recusado. Cada handle aceita no maximo cinco
 respostas (limite do Slack): a sexta e recusada antes de qualquer requisicao, e
-cada resposta tem prazo.
+cada resposta tem prazo. O uso e reservado antes da requisicao, numa unica
+instrucao que tambem confere o limite, e so volta quando o Slack responde e
+recusa.
 
 ## Automacoes
 

@@ -1,11 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { readFileSync } from "node:fs";
+import { generateKeyPairSync, sign as signPayload } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { CliCommandAccessInput } from "../../cli/command-access.js";
 import { addContactTag, createContact, linkContactIdentity } from "../../contacts.js";
+import {
+  canonicalize,
+  EXTERNAL_AUTHORITY_ASSERTION_SETTING,
+  EXTERNAL_AUTHORITY_PUBKEY_SETTING,
+  resetExternalAuthorityCacheForTests,
+} from "../../permissions/external-authority-provider.js";
+import { PERMISSION_PROVIDER_IDS_SETTING } from "../../permissions/provider-registry.js";
 import { attachChatToSession, getOrCreateSession, matchRoute } from "../../router/index.js";
-import { type ContextCapability, dbCreateAgent, dbGetAgent, dbUpsertChat } from "../../router/router-db.js";
+import {
+  type ContextCapability,
+  dbCreateAgent,
+  dbGetAgent,
+  dbSetSetting,
+  dbUpsertChat,
+} from "../../router/router-db.js";
+import { createRuntimeBootEpoch, createRuntimeTurnAttempt } from "../../runtime/crash-recovery-store.js";
 import type { RouterConfig, SessionEntry } from "../../router/types.js";
 import { RUNTIME_NO_ACTIVE_TURN, RUNTIME_SESSION_NOT_ACTIVE } from "../../runtime/runtime-control-errors.js";
 import type { RuntimeControlResult } from "../../runtime/types.js";
@@ -18,10 +33,12 @@ import {
   SLACK_COMMAND_QUEUE_GROUP,
   type SlackCommandAudit,
   type SlackCommandDeps,
+  type SlackThreadIndex,
   startSlackCommandConsumer,
   stopSlackCommandConsumer,
 } from "./slash-command-handler.js";
 import { buildSlackCommandEvent, readSlackCommandPayload } from "./slash-commands.js";
+import { registerInboundSlackThread } from "./thread-lifecycle-store.js";
 import type { SlackThreadSummary } from "./thread-lifecycle.js";
 
 const NOW = 1_800_000_000_000;
@@ -99,6 +116,19 @@ function thread(overrides: Partial<SlackThreadSummary> = {}): SlackThreadSummary
   } as SlackThreadSummary;
 }
 
+function threadIndex(threads: SlackThreadSummary[], parentSessionKey = "agent:main:main"): SlackThreadIndex {
+  return {
+    parentSessionKey,
+    parentSessionName: "main",
+    count: () => threads.length,
+    newest: (limit) => [...threads].sort((a, b) => b.createdAt - a.createdAt).slice(0, limit),
+    touchedBefore: (cutoff) =>
+      threads
+        .filter((entry) => entry.status === "open" && entry.updatedAt <= cutoff)
+        .sort((a, b) => a.updatedAt - b.updatedAt),
+  };
+}
+
 interface Harness {
   deps: SlackCommandDeps;
   replies: Array<Record<string, unknown>>;
@@ -129,10 +159,12 @@ function harness(overrides: Partial<SlackCommandDeps> & { capabilities?: Context
       calls.access.push(input);
       return { allowed: true, errorMessage: "", attempted: [] };
     },
-    listThreads: () => {
+    threads: () => {
       calls.list += 1;
-      return { parentSessionKey: "agent:main:main", parentSessionName: "main", threads: [] };
+      return threadIndex([]);
     },
+    // Without a runtime to ask: a thread is busy when its health sample says so, and last active when its lifecycle did.
+    activity: (summary) => ({ busy: summary.turnHealth?.state === "running", lastActivityAt: summary.updatedAt }),
     closeThread: async (parent, ref) => {
       calls.close.push([parent, ref]);
       return { kind: "closed", name: ref, changed: true };
@@ -360,11 +392,7 @@ describe("static answers", () => {
 describe("what each command does", () => {
   it("status: who answers, with what model, working or not, and the open threads", async () => {
     const h = harness({
-      listThreads: () => ({
-        parentSessionKey: "agent:main:main",
-        parentSessionName: "main",
-        threads: [thread(), thread({ requestId: "req-2" })],
-      }),
+      threads: () => threadIndex([thread(), thread({ requestId: "req-2" })]),
       activeTurn: () => ({ turnId: "turn-1", startedAt: NOW - 3 * 60_000 }),
     });
 
@@ -398,7 +426,7 @@ describe("what each command does", () => {
       }),
     );
     const h = harness({
-      listThreads: () => ({ parentSessionKey: "agent:main:main", parentSessionName: "main", threads: many }),
+      threads: () => threadIndex(many),
     });
 
     await handleSlackCommand(eventFor("threads"), h.deps);
@@ -504,7 +532,7 @@ describe("what each command does", () => {
       thread({ requestId: "closed", updatedAt: NOW - 30 * 3_600_000, status: "closed" }),
     ];
     const h = harness({
-      listThreads: () => ({ parentSessionKey: "agent:main:main", parentSessionName: "main", threads }),
+      threads: () => threadIndex(threads),
     });
 
     const outcome = await handleSlackCommand(eventFor("close idle 12h"), h.deps);
@@ -519,7 +547,7 @@ describe("what each command does", () => {
       thread({ requestId: `req-${index}`, updatedAt: NOW - (100 + index) * 3_600_000 }),
     );
     const h = harness({
-      listThreads: () => ({ parentSessionKey: "agent:main:main", parentSessionName: "main", threads }),
+      threads: () => threadIndex(threads),
       closeThread: async (_parent, ref) => {
         h.calls.close.push(["agent:main:main", ref]);
         return Number(ref.replace("req-", "")) % 10 === 0
@@ -602,7 +630,7 @@ describe("what each command does", () => {
 
   it("answers an unexpected failure with a retry, never with the error", async () => {
     const h = harness({
-      listThreads: () => {
+      threads: () => {
         throw new Error("SQLITE_BUSY: /secret/path");
       },
     });
@@ -808,5 +836,237 @@ describe("with the real contacts, permissions and CLI access metadata", () => {
 
     expect(await handleSlackCommand(eventFor("stop"), h.deps)).toEqual({ decision: "denied", code: "unknown_user" });
     expect(h.calls.interrupt).toBe(0);
+  });
+});
+
+describe("close idle decides from what the runtime says now, thread by thread", () => {
+  function oldThread(requestId: string) {
+    return thread({ requestId, childSessionName: requestId, updatedAt: NOW - 100 * 3_600_000 });
+  }
+
+  it("skips a thread restarted after it was listed: its health sample is stale", async () => {
+    const h = harness({
+      threads: () => threadIndex([oldThread("restarted")]),
+      // The lifecycle is old and the sample says idle, but the runtime has a turn running right now.
+      activity: () => ({ busy: true, lastActivityAt: NOW - 100 * 3_600_000 }),
+    });
+
+    const outcome = await handleSlackCommand(eventFor("close idle 12h"), h.deps);
+
+    expect(outcome).toEqual({ decision: "allowed", code: "none_idle" });
+    expect(h.calls.close).toEqual([]);
+    expect(text(h.replies[0])).toContain("recent activity or work in progress");
+  });
+
+  it("skips a thread that finished new work minutes ago, whatever its lifecycle date says", async () => {
+    const h = harness({
+      threads: () => threadIndex([oldThread("just-finished")]),
+      activity: () => ({ busy: false, lastActivityAt: NOW - 5 * 60_000 }),
+    });
+
+    expect(await handleSlackCommand(eventFor("close idle 12h"), h.deps)).toEqual({
+      decision: "allowed",
+      code: "none_idle",
+    });
+    expect(h.calls.close).toEqual([]);
+  });
+
+  it("closes the idle ones and says how many it left alone", async () => {
+    const h = harness({
+      threads: () => threadIndex([oldThread("idle"), oldThread("busy")]),
+      activity: (summary) =>
+        summary.requestId === "busy"
+          ? { busy: true, lastActivityAt: NOW }
+          : { busy: false, lastActivityAt: NOW - 100 * 3_600_000 },
+    });
+
+    await handleSlackCommand(eventFor("close idle 12h"), h.deps);
+
+    expect(h.calls.close).toEqual([["agent:main:main", "idle"]]);
+    expect(text(h.replies[0])).toContain("Closed 1 thread");
+    expect(text(h.replies[0])).toContain("1 skipped: recent activity or work in progress");
+  });
+
+  it("shows how long a thread has been quiet by its activity, not by its lifecycle date", async () => {
+    const h = harness({
+      threads: () => threadIndex([oldThread("worked-recently")]),
+      activity: () => ({ busy: false, lastActivityAt: NOW - 7 * 60_000 }),
+    });
+
+    await handleSlackCommand(eventFor("threads"), h.deps);
+
+    expect(text(h.replies[0])).toContain("(7 min; idle)");
+  });
+});
+
+describe("every thread of a session, from the real store", () => {
+  const HOUR = 3_600_000;
+  const PARENT_KEY = "agent:main:main";
+
+  function register(index: number, seenAt: number, childKey = `agent:main:thread-${index}`) {
+    return registerInboundSlackThread({
+      requestId: `req-${index}`,
+      parentSessionKey: PARENT_KEY,
+      parentSessionName: "main",
+      childSessionKey: childKey,
+      childSessionName: `main-t-${index}`,
+      accountId: ACCOUNT,
+      instanceId: INSTANCE,
+      platformChatId: "C0CHAN",
+      threadCanonicalChatId: `chat-${index}`,
+      providerThreadId: `${index}.1`,
+      seenAt,
+    });
+  }
+
+  // The real index and the real activity; only the effects are faked.
+  function realThreads(real: number): Harness {
+    return harness({ now: () => real, threads: undefined, activity: undefined });
+  }
+
+  it("counts them all and finds the old ones behind more newer threads than one page holds", async () => {
+    const real = Date.now();
+    for (let index = 0; index < 10; index += 1) register(index, real - 100 * HOUR);
+    for (let index = 10; index < 260; index += 1) register(index, real - 1 * HOUR);
+    const h = realThreads(real);
+
+    await handleSlackCommand(eventFor("status", { receivedAt: real }), h.deps);
+    await handleSlackCommand(eventFor("close idle 12h", { receivedAt: real }), h.deps);
+
+    expect(text(h.replies[0])).toContain("*Open threads*: 260");
+    expect(h.calls.close.map(([, ref]) => ref).sort()).toEqual(
+      Array.from({ length: 10 }, (_, index) => `req-${index}`).sort(),
+    );
+  });
+
+  it("shows the newest page and says how many more there are", async () => {
+    const real = Date.now();
+    for (let index = 0; index < 20; index += 1) register(index, real - (100 - index) * HOUR);
+    const h = realThreads(real);
+
+    await handleSlackCommand(eventFor("threads", { receivedAt: real }), h.deps);
+
+    const reply = text(h.replies[0]);
+    expect(reply).toContain("(20)");
+    expect(reply).toContain("main-t-19");
+    expect(reply).not.toContain("main-t-0`");
+    expect(reply).toContain("… and 8 more");
+  });
+
+  it("does not close a thread whose child session moved recently, though its lifecycle is old", async () => {
+    const real = Date.now();
+    register(1, real - 100 * HOUR, "agent:main:child-1");
+    getOrCreateSession("agent:main:child-1", "main", "/tmp/main", { name: "child-1" });
+    const h = realThreads(real);
+
+    const outcome = await handleSlackCommand(eventFor("close idle 12h", { receivedAt: real }), h.deps);
+
+    expect(outcome).toEqual({ decision: "allowed", code: "none_idle" });
+    expect(h.calls.close).toEqual([]);
+    expect(text(h.replies[0])).toContain("recent activity or work in progress");
+  });
+
+  it("does not close a thread with a turn running in the runtime, whatever its sample says", async () => {
+    const real = Date.now();
+    register(1, real - 100 * HOUR, "agent:main:child-2");
+    const boot = createRuntimeBootEpoch({
+      instanceId: "handler-test",
+      pid: process.pid,
+      startedAt: real - 100 * HOUR,
+      lastHeartbeatAt: real - 100 * HOUR,
+      leaseExpiresAt: real + 60_000,
+    });
+    createRuntimeTurnAttempt({
+      turnId: "turn-child-2",
+      runId: "run-child-2",
+      sessionKey: "agent:main:child-2",
+      sessionName: "child-2",
+      agentId: "main",
+      provider: "codex",
+      model: "test",
+      bootEpoch: boot.bootEpoch,
+      startedAt: real - 100 * HOUR,
+      lastHeartbeatAt: real - 100 * HOUR,
+      leaseExpiresAt: real + 60_000,
+      checkpoint: {},
+      originKind: "human",
+      deliveryBarrier: "after_tool",
+    });
+    const h = realThreads(real);
+
+    await handleSlackCommand(eventFor("close idle 12h", { receivedAt: real }), h.deps);
+
+    expect(h.calls.close).toEqual([]);
+  });
+
+  it("closes a thread with no sign of life since the cutoff", async () => {
+    const real = Date.now();
+    register(1, real - 100 * HOUR, "agent:main:child-3");
+    const h = realThreads(real);
+
+    await handleSlackCommand(eventFor("close idle 12h", { receivedAt: real }), h.deps);
+
+    expect(h.calls.close).toEqual([[PARENT_KEY, "req-1"]]);
+  });
+});
+
+describe("a configured external authority", () => {
+  afterEach(() => resetExternalAuthorityCacheForTests());
+
+  function configureExternalAuthority(subject: string, scope: Array<Record<string, unknown>>): void {
+    const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+    const payload = { iss: "issuer", sub: subject, exp: Math.floor(Date.now() / 1000) + 60, scope };
+    const sig = signPayload(null, Buffer.from(canonicalize(payload)), privateKey).toString("base64");
+    const assertionPath = join(stateDir!, "assertion.json");
+    writeFileSync(assertionPath, JSON.stringify({ ...payload, sig }));
+    dbSetSetting(PERMISSION_PROVIDER_IDS_SETTING, "context-capabilities,external-authority");
+    dbSetSetting(EXTERNAL_AUTHORITY_ASSERTION_SETTING, assertionPath);
+    dbSetSetting(EXTERNAL_AUTHORITY_PUBKEY_SETTING, publicKey.export({ type: "spki", format: "pem" }).toString());
+    resetExternalAuthorityCacheForTests();
+  }
+
+  function seedOwner() {
+    const contact = createContact({ phone: "5511900000001", name: "Ana", status: "allowed" });
+    addContactTag(contact.phone, "permission-owner");
+    linkContactIdentity(contact.id, { channel: "slack", platformUserId: "U0PERSON", instanceId: INSTANCE });
+    return contact;
+  }
+
+  function real(): Harness {
+    return harness({
+      contactForSlackUser: undefined,
+      capabilitiesFor: undefined,
+      commandAccess: undefined,
+      inheritedAccess: undefined,
+    });
+  }
+
+  it("can refuse a read the contact's local grants would allow", async () => {
+    const owner = seedOwner();
+    // The authority speaks for this contact and covers only another session.
+    configureExternalAuthority(`contact:${owner.id}`, [
+      { permission: "access", objectType: "session", objectId: "other" },
+    ]);
+    const h = real();
+
+    expect(await handleSlackCommand(eventFor("status"), h.deps)).toEqual({
+      decision: "denied",
+      code: "not_authorized_access",
+    });
+    expect(await handleSlackCommand(eventFor("threads"), h.deps)).toEqual({
+      decision: "denied",
+      code: "not_authorized_access",
+    });
+    expect(h.calls.list).toBe(0);
+  });
+
+  it("lets the read through when its scope covers the session", async () => {
+    const owner = seedOwner();
+    configureExternalAuthority(`contact:${owner.id}`, [
+      { permission: "access", objectType: "session", objectId: "main" },
+    ]);
+    const h = real();
+
+    expect(await handleSlackCommand(eventFor("status"), h.deps)).toEqual({ decision: "allowed", code: "ok" });
   });
 });

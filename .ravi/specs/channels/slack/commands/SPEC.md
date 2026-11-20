@@ -47,14 +47,23 @@ status`). A word Ravi does not know, an empty text and `help` all show the help.
 |---|---|---|
 | `help` | lists the commands, under the name the command was typed with | nothing |
 | `status` | which agent and session answer in this chat, the model, whether a turn is running and for how long, how many threads are open | access to the session |
-| `threads` | open threads of the session: name, title, age, state (newest first, at most 12) | access to the session |
+| `threads` | open threads of the session: name, title, time since the last activity, state (the newest 12, under an exact count) | access to the session |
 | `close <thread>` | closes one thread, named as `threads` shows it (also by request id or Slack `thread_ts`) | to modify the session and to hold the capability of `sessions close-thread` |
 | `close idle [Nh]` | closes the threads with no activity for more than N hours (default 12, 1 to 720), at most 25 per call | the same as `close` |
 | `stop` | interrupts the turn running in the session of this chat; the queue goes on | to modify the session and to hold the capability of `sessions runtime interrupt` |
 
-`close idle` MUST skip a thread that has a turn running, an open question, an
-undelivered answer or a return still pending to the channel session, and MUST
-tell how many remain when it stopped at the limit. `close` MUST show why a
+`close idle` MUST consider every open thread of the session, with no page
+ceiling, and `status` MUST count them all. It MUST decide idleness from the
+runtime's own records, read right before each close and not from a listing read
+earlier: the latest of the lifecycle update, the child session's update, its
+turn attempts (start, heartbeat, completion) and the health sample MUST be older
+than the cutoff, and no turn MUST be running and no prompt queued for it. The
+health label is a sample taken every so often, and the lifecycle date does not
+move when a parent sends new instructions, so neither alone decides. It MUST
+skip a thread with an open question, an undelivered answer or a return still
+pending to the channel session, MUST say how many it skipped for recent activity
+or work in progress, and MUST tell how many remain when it stopped at the
+limit. `close` MUST show why a
 thread did not close: the active triggers that hold it (`THREAD_TRIGGERS_PENDING`,
 with their ids and the `ravi triggers set <id> replySession <channel-session>`
 way out), an open question (`THREAD_DECISIONS_PENDING`), a pending return
@@ -111,8 +120,10 @@ on the session of the DM or channel they are typed in, never on a thread.
   yet MUST say which agent would answer and that nobody has spoken there.
 - Authority MUST be the contact's own and MUST come from the same permission
   providers the CLI uses: the capabilities the contact's tags and grants
-  materialize to. Reading (`status`, `threads`) MUST require `access` on the
-  session. Changing (`close`, `close idle`, `stop`) MUST require `modify` on the
+  materialize to. Every check MUST name the contact as subject as well as carry
+  its capabilities, so a configured external authority is consulted and can
+  refuse what the local grants would allow. Reading (`status`, `threads`) MUST
+  require `access` on the session. Changing (`close`, `close idle`, `stop`) MUST require `modify` on the
   session AND the capability the CLI asks for the operation it calls
   (`sessions close-thread`, `sessions runtime interrupt`), read from the access
   metadata the CLI declares for that operation so it cannot drift. When that
@@ -129,9 +140,12 @@ on the session of the DM or channel they are typed in, never on a thread.
 
 - Every answer MUST be ephemeral, posted through the stored `response_url`.
   A `response_url` handle MUST be posted to at most five times (Slack's limit),
-  the sixth refused before any request, MUST be accepted only on
-  `https://hooks.slack.com/actions/` or `https://hooks.slack.com/commands/`, and
-  a post MUST have a deadline.
+  the sixth refused before any request. The use MUST be taken in one statement
+  that also checks the limit, before the request, so two callers cannot take the
+  last one. It MUST be given back when Slack answers and refuses, and MUST stay
+  spent when the request fails without an answer. A handle MUST be accepted only
+  on `https://hooks.slack.com/actions/` or `https://hooks.slack.com/commands/`,
+  and a post MUST have a deadline.
 - An unexpected failure MUST be answered with a retry message and MUST NOT
   expose the error text.
 
