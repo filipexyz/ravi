@@ -150,6 +150,18 @@ This baseline is not enough for message edits or arbitrary prompt-history forks.
   snapshots. Ownership MUST be checked at the mutation after every intervening
   await. An old turn still records its output, terminal, costs and additive
   usage, but MUST NOT overwrite a replacement's native state or context snapshot.
+- A turn that may still be re-run (a credential retry, the recovery of a turn
+  that never ended) MUST be stashed together with every message queued behind
+  it, in queue order, so the restart around the retry reads the whole queue: a
+  `thread-send` instruction or an `after_response` follow-up that was already
+  waiting is not lost. A superseded turn, and a turn that cannot be re-run,
+  stash only their successors. The re-run turn's own messages MUST keep a
+  cohort of their own (`retainsInputCohort`; a reconciled turn keeps it through
+  `replay`): restored into an idle session, a successor is releasable at once,
+  and without the marker an `after_response` follow-up from the same sender on
+  the same surface would be folded into the retried request's prompt instead of
+  waiting for its answer. The marker asks the provider to reconcile nothing; the
+  retry is a fresh physical delivery.
 - Login / not-logged-in stubs (for example `Not logged in · Please run /login`) MUST be classified as `turn.failed` / auth error. They MUST NOT be saved as assistant transcript rows and MUST NOT be emitted to a bound chat.
 - Ravi MUST NOT clear compatible provider state solely because a terminal callback is missing. When an adapter can reconcile an ambiguous delivery, Ravi MUST preserve session continuity and the stable logical delivery id through recovery.
 - A provider that supports fork MUST define how parent provider state maps into the child or rebased session.
