@@ -36,7 +36,7 @@ export interface PermissionProviderCommandAccess {
 
 export interface PermissionProviderCliCommandOperation {
   kind: "cli-command";
-  source: "cli" | "tool" | "gateway";
+  source: "cli" | "tool" | "gateway" | "slack-command";
   group: string;
   command: string;
   fullName: string;

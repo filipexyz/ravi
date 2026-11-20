@@ -1,0 +1,22 @@
+# Checks
+
+- A `slash_commands` envelope MUST be acked and MUST be published as `ravi.inbound.command` without the token and without the `response_url`.
+- Help, usage and an unknown word MUST be answered inside the ack when Slack accepts a payload there, and MUST leave the ack empty when it does not.
+- A slash command MUST NOT enter the durable Slack inbox, MUST NOT publish a session prompt and MUST NOT be published twice for one envelope id.
+- A command from another workspace, from a runner that cannot read its own workspace, or from another app than the one the connection named MUST be dropped.
+- A command with no usable `response_url` and no static answer MUST NOT run.
+- A `response_url` on `https://hooks.slack.com/commands/` MUST be accepted, and any other host or path MUST be refused.
+- The sixth post to one response handle MUST be refused before any request is made.
+- A Slack user with no contact MUST get a private refusal and MUST NOT run any operation.
+- A contact without access to the chat's session MUST NOT read it; a contact with access but without `modify` MUST NOT close a thread or stop a turn.
+- A contact that modifies the session but lacks the CLI's capability for the operation MUST be refused, and the check MUST run as `slack-command` with the contact as subject.
+- A `slack-command` check without a contact MUST be denied, and neither an agent's runtime context nor the local operator MUST be able to stand in for the contact.
+- The owner contact MUST be able to run every command.
+- `close` MUST show the active triggers that hold a thread open and the way out, and MUST explain the other refusals.
+- `close idle` MUST skip threads that are working, have an open question, have an answer not delivered or a return pending, and MUST stop at 25 per call.
+- `stop` MUST say nothing is running when no turn is, and MUST NOT claim a stop after a timeout.
+- A command older than 60 seconds, or stamped in the future, MUST NOT run.
+- Every command MUST publish `ravi.audit.slack_command` without the text typed, the thread name, the `response_url` or a token.
+- `bun test src/channels/slack/slash-commands.test.ts src/channels/slack/slash-command-handler.test.ts src/channels/slack/interactions.test.ts src/cli/command-access.test.ts` MUST pass.
+- `bun test src/channels/slack/socket-mode.test.ts -t "slash commands"` MUST pass.
+- `bun run typecheck` MUST pass.

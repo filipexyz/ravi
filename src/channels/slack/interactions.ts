@@ -19,10 +19,20 @@ export interface SlackInteractionResponseInput {
 
 const DEFAULT_RESPONSE_URL_TTL_MS = 30 * 60 * 1000;
 
+/**
+ * Slack accepts at most five posts to one `response_url`
+ * (docs.slack.dev/interactivity/handling-user-interaction). The sixth is
+ * refused here, before the request, so a command that answers more than
+ * that fails visibly in the log instead of as a Slack 4xx.
+ */
+export const SLACK_RESPONSE_URL_MAX_USES = 5;
+const SLACK_RESPONSE_URL_TIMEOUT_MS = 15_000;
+
 interface SlackInteractionResponseUrlRow {
   id: string;
   response_url: string;
   expires_at: number;
+  used_count: number;
 }
 
 export function storeSlackInteractionResponseUrl(input: SlackInteractionResponseUrlInput): string {
@@ -63,10 +73,15 @@ export async function respondToSlackInteraction(
   ensureSlackInteractionResponseUrlTable();
   const now = Date.now();
   const row = getDb()
-    .prepare("SELECT id, response_url, expires_at FROM slack_interaction_response_urls WHERE id = ?")
+    .prepare("SELECT id, response_url, expires_at, used_count FROM slack_interaction_response_urls WHERE id = ?")
     .get(input.responseUrlId) as SlackInteractionResponseUrlRow | undefined;
   if (!row) throw new Error(`Slack interaction response handle not found: ${input.responseUrlId}`);
   if (row.expires_at <= now) throw new Error(`Slack interaction response handle expired: ${input.responseUrlId}`);
+  if (row.used_count >= SLACK_RESPONSE_URL_MAX_USES) {
+    throw new Error(
+      `Slack interaction response handle exhausted (${SLACK_RESPONSE_URL_MAX_USES} uses): ${input.responseUrlId}`,
+    );
+  }
   if (!isAllowedSlackInteractionResponseUrl(row.response_url)) {
     throw new Error(`Slack interaction response handle is not trusted: ${input.responseUrlId}`);
   }
@@ -75,6 +90,8 @@ export async function respondToSlackInteraction(
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input.payload),
+    // A hung Slack host must not hold a consumer loop (`/ravi` answers through here).
+    signal: AbortSignal.timeout(SLACK_RESPONSE_URL_TIMEOUT_MS),
   });
   const text = await response.text();
   if (!response.ok) {
@@ -94,6 +111,11 @@ export async function respondToSlackInteraction(
   };
 }
 
+/**
+ * Slack posts interaction handles under `/actions/` (Block Kit, shortcuts) and
+ * slash-command handles under `/commands/`. Any other host or path is not a
+ * handle Slack issued, and is never posted to.
+ */
 export function isAllowedSlackInteractionResponseUrl(value: string): boolean {
   let url: URL;
   try {
@@ -108,7 +130,7 @@ export function isAllowedSlackInteractionResponseUrl(value: string): boolean {
     !url.password &&
     !url.port &&
     !url.hash &&
-    url.pathname.startsWith("/actions/")
+    (url.pathname.startsWith("/actions/") || url.pathname.startsWith("/commands/"))
   );
 }
 
