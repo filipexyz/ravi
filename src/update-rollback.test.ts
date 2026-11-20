@@ -42,6 +42,7 @@ import {
   planOperatorRollback,
   rollBackUpdate,
   superviseOperatorRollback,
+  displayedRegistry,
   installerRegistry,
   releaseInRegistry,
   UpdatePreviousReleaseUnavailableError,
@@ -2583,6 +2584,30 @@ describe("the registry probe before any stop", () => {
     const recorded = readFileSync(join(stateDir, "updates", "supervisor-refused.json"), "utf8");
     expect(recorded).toContain("https://mirror.example/npm");
     clean(recorded);
+  });
+
+  it("shows and asks only an http or https registry: any other value is refused without being echoed", async () => {
+    const home = tempDir("ravi-registry-home-");
+    const placeholder = "the configured registry (not an http(s) URL)";
+    // `alice:SECRETPW@mirror.example/npm` parses as the scheme `alice:` with the password in its path.
+    for (const configured of [
+      "alice:SECRETPW@mirror.example/npm",
+      "ftp://bob:FTPSECRET@mirror.example/",
+      "file:///home/carol/FILESECRET",
+      "not a url SPACESECRET",
+    ]) {
+      const probe = answering(200);
+      const result = await releaseInRegistry("3.1.0", "npm", {
+        env: { npm_config_registry: configured },
+        home,
+        fetchRelease: probe.fetchRelease,
+      });
+      expect(probe.urls).toEqual([]);
+      expect(result).toEqual({ ok: false, reason: `${placeholder} cannot be asked for ravi.bot@3.1.0` });
+      expect(displayedRegistry(configured)).toBe(placeholder);
+    }
+    expect(displayedRegistry("https://dave:PW@mirror.example/npm/?token=Q#F")).toBe("https://mirror.example/npm");
+    expect(displayedRegistry("http://127.0.0.1:4873/")).toBe("http://127.0.0.1:4873");
   });
 
   it("records a missing release as a refusal the command reports with its code", async () => {

@@ -245,6 +245,9 @@ export async function releaseInRegistry(
   options: { env?: NodeJS.ProcessEnv; home?: string; fetchRelease?: typeof fetch } = {},
 ): Promise<ReleaseAvailability> {
   const registry = installerRegistry(method, options.env ?? process.env, options.home ?? homedir());
+  // Only an http or https registry is asked; any other value is refused without being echoed.
+  if (!httpRegistry(registry.url))
+    return { ok: false, reason: `${NOT_AN_HTTP_REGISTRY} cannot be asked for ravi.bot@${release}` };
   const url = `${registry.url}/ravi.bot/${encodeURIComponent(release)}`;
   // Every message and record names the registry this way; the address the request goes to is never shown.
   const shown = displayedRegistry(registry.url);
@@ -263,18 +266,30 @@ export async function releaseInRegistry(
   return { ok: true };
 }
 
+const NOT_AN_HTTP_REGISTRY = "the configured registry (not an http(s) URL)";
+
+/**
+ * The registry as an http or https URL, or null. Any other value is neither shown nor asked: a URL parser reads
+ * `user:password@host/path` as the scheme `user:`, so its password would pass for a path.
+ */
+function httpRegistry(url: string): URL | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    // no-cause: A value that does not parse is not an http(s) URL; it is neither shown nor asked.
+    return null;
+  }
+  return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed : null;
+}
+
 /**
  * The registry as a message or a record names it: without user, password, query and fragment, any of which can carry
- * a credential (`https://user:password@host/`). An address that is not a URL is not shown at all.
+ * a credential (`https://user:password@host/`). A value that is not an http or https URL is not shown at all.
  */
 export function displayedRegistry(url: string): string {
-  let shown: URL;
-  try {
-    shown = new URL(url);
-  } catch {
-    // no-cause: An address that is not a URL cannot be cleaned, so it is not shown; nothing else is lost.
-    return "the configured registry (not a URL)";
-  }
+  const shown = httpRegistry(url);
+  if (!shown) return NOT_AN_HTTP_REGISTRY;
   shown.username = "";
   shown.password = "";
   shown.search = "";

@@ -317,7 +317,9 @@ CLI that run installed.
   header, and is never printed, logged or recorded; a message, a recorded
   refusal (`supervisor-refused.json`) or an error cause names the registry
   without user, password, query and fragment, and the error of the request
-  goes on only as its name, code and a message with those taken out.
+  goes on only as its name, code and a message with those taken out. Only an
+  http or https registry is asked or named: any other value (`user:pw@host`
+  parses as a scheme) is refused without being echoed.
 - It takes no release selector, and `--execute` without `--rollback` is a
   usage error. Its supervisor MUST hold `<state>/updates/update.lock` while it
   runs (`UPDATE_IN_PROGRESS` when another update holds it). A rollback that stops
