@@ -12,7 +12,13 @@ import {
 import { writeCachedActorBinding } from "../cloud-auth/actor-bindings.js";
 import { type AgentConfig } from "../router/index.js";
 import { dbCanonicalizeDmChatForContact, dbUpsertChat } from "../router/router-db.js";
-import { attachChatToSession, getOrCreateSession, resetSession, resolveSession } from "../router/sessions.js";
+import {
+  attachChatToSession,
+  getOrCreateSession,
+  resetSession,
+  resolveSession,
+  updateSessionSource,
+} from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { TriggerRunAuthority } from "../triggers/authority.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
@@ -589,5 +595,78 @@ describe("a parent's queued thread instruction through the real turn start", () 
     const otherTurn = await startTurn({ sessionKey: CHILD_KEY, sessionName: CHILD_NAME, prompt: elsewhere });
     expect(getSlackThreadLifecycle(record.requestId)?.status).toBe("closed");
     await otherTurn.end();
+  });
+});
+
+describe("a follow addressed to a thread child through the real turn start", () => {
+  const PARENT_KEY = `agent:${AGENT_ID}:slack:ravi-slack:C123`;
+  const THREAD_TS = "1713000000.000100";
+  const CHILD_KEY = `${PARENT_KEY}:thread:${THREAD_TS}`;
+  const CHILD_NAME = "slack-follow-child";
+
+  /** A thread child whose only attachment is the thread's own chat, as `create-thread` makes it. */
+  function seedThreadChild() {
+    getOrCreateSession(PARENT_KEY, AGENT_ID, stateDir!, { name: "slack-follow-parent" });
+    getOrCreateSession(CHILD_KEY, AGENT_ID, stateDir!, { name: CHILD_NAME });
+    const threadChat = dbUpsertChat({
+      channel: "slack",
+      instanceId: "slack-instance",
+      platformChatId: `C123#${THREAD_TS}`,
+      chatType: "thread",
+    });
+    attachOutput(CHILD_KEY, threadChat.id);
+    return threadChat;
+  }
+
+  function followFire(source: object): RuntimeLaunchPrompt {
+    return {
+      prompt: "[Trigger: gh-follow] CI completed",
+      _trigger: true,
+      _triggerId: TRIGGER_ID,
+      source: source as never,
+    };
+  }
+
+  it("answers in the thread when the runner addresses a follow to its open thread child, and nowhere when it does not", async () => {
+    const threadChat = seedThreadChild();
+    registerInboundSlackThread({
+      parentSessionKey: PARENT_KEY,
+      parentSessionName: "slack-follow-parent",
+      childSessionKey: CHILD_KEY,
+      childSessionName: CHILD_NAME,
+      accountId: "ravi-slack",
+      instanceId: "slack-instance",
+      platformChatId: "C123",
+      threadCanonicalChatId: threadChat.id,
+      providerThreadId: THREAD_TS,
+    });
+    // A programmatic child remembers the channel root as its last chat and the timestamp apart from it.
+    updateSessionSource(CHILD_KEY, { channel: "slack", accountId: "ravi-slack", chatId: "C123" });
+    const { sourceForReplySession } = await import("../triggers/runner.js");
+    const thread = { channel: "slack", accountId: "ravi-slack", chatId: "C123" };
+    const forFollow = sourceForReplySession(
+      { replySource: { ...thread, threadId: THREAD_TS } },
+      resolveSession(CHILD_KEY),
+    );
+    const forPlain = sourceForReplySession({ replySource: thread }, resolveSession(CHILD_KEY));
+
+    // The source the runner builds for a follow armed on the open thread leads the reply into that thread.
+    const answered = await startTurn({
+      sessionKey: CHILD_KEY,
+      sessionName: CHILD_NAME,
+      prompt: followFire(forFollow!),
+    });
+    expect(answered.streaming.currentReplyTarget).toMatchObject({
+      channel: "slack",
+      chatId: "C123",
+      threadId: THREAD_TS,
+      canonicalChatId: threadChat.id,
+    });
+    await answered.end();
+
+    // The root-only source it used to build cannot be matched to the thread's attachment: the reply had nowhere to go.
+    const dropped = await startTurn({ sessionKey: CHILD_KEY, sessionName: CHILD_NAME, prompt: followFire(forPlain!) });
+    expect(dropped.streaming.currentReplyTarget ?? null).toBeNull();
+    await dropped.end();
   });
 });

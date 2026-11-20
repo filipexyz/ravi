@@ -55,6 +55,10 @@ If close reports `THREAD_DECISIONS_PENDING`, run `ravi decisions list --thread <
 - **A queued instruction cannot be retracted.** A correction sent with `--immediate` runs first and the earlier instruction still runs after it. Name the pending one in the correction ("when X arrives, ignore it"), or wait for the turn to end.
 - **A hard crash of the daemon loses queued instructions.** They are in memory until delivered; a graceful restart snapshots them and a crash does not. A credential retry or the recovery of a turn that never ended keeps them: they are stashed with the turn and run after the restart. After an unexpected restart, ask the thread for its state with `ravi sessions threads --json` and resend what it has not acknowledged.
 
+## CI of a PR a thread published
+
+While the thread is open, the CI, merge and review events of a PR it published reach the thread, not the channel session (the follow is the thread's; see SPEC). The channel session that merges learns of them only if the thread reports: `ravi sessions report "<CI conclusion on SHA / merged / change request>"`. If a channel session waits for a PR and hears nothing, read the thread (`ravi sessions threads --json`, `ravi sessions read <thread>`) and the PR checks (`gh api repos/<repo>/commits/<sha>/check-runs`). After the thread closes, the follow belongs to the channel session again and wakes it directly.
+
 ## Close refused by active triggers
 
 For `THREAD_TRIGGERS_PENDING`, inspect every id in `triggerIds` with `ravi triggers show <id> --json`. Repoint each to its durable owner using `ravi triggers set <id> replySession <parent-session>`, inspect the saved target and activation verdict, then retry `ravi sessions close-thread`. Do not disable a live CI follow merely to close its thread. Generated `gh-follow` subscriptions use the parent automatically; maintenance repairs old thread targets, including closed/pruned children.

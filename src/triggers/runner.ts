@@ -17,6 +17,7 @@ import { getLocalWatchRunner } from "../watch/local-runner.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import { canonicalChannelId } from "../channels/capabilities.js";
+import { findSlackThreadLifecycleByChildSession } from "../channels/slack/thread-lifecycle-store.js";
 import { dbGetInstance, getDefaultAgentId } from "../router/router-db.js";
 import { deriveSourceFromSessionKey } from "../router/session-key.js";
 import {
@@ -216,6 +217,46 @@ export function sourceFromSessionEntry(
     accountId: session.lastAccountId ?? "",
     chatId: session.lastTo,
   };
+}
+
+/** Where a trigger's turn is delivered: the chat, and for a Slack thread the thread's own address too. */
+export interface TriggerPromptSource {
+  channel: string;
+  accountId: string;
+  chatId: string;
+  instanceId?: string;
+  canonicalChatId?: string;
+  threadId?: string;
+}
+
+/**
+ * The source a trigger's turn gets in its reply session.
+ *
+ * A follow armed for an open Slack thread (its reply source carries the thread id, see
+ * `resolveDurableFollowOwner`) goes to the thread child in its own thread: the thread's chat, its
+ * canonical id and its timestamp, the address `thread-send` uses. The session's last chat is the
+ * channel root, and a root-only source cannot be matched to the thread's attachment, so a reply
+ * built from it never reaches the thread. Every other trigger keeps the session's last chat.
+ */
+export function sourceForReplySession(
+  trigger: Pick<Trigger, "replySource">,
+  session: { sessionKey?: string; lastChannel?: string; lastAccountId?: string; lastTo?: string } | null | undefined,
+): TriggerPromptSource | undefined {
+  if (trigger.replySource?.threadId && session?.sessionKey) {
+    const thread = findSlackThreadLifecycleByChildSession(session.sessionKey);
+    // A closed thread is no longer addressed in its thread: the parent owns its follow by then.
+    if (thread?.status === "open" && thread.providerThreadId && thread.threadCanonicalChatId) {
+      return {
+        channel: "slack",
+        accountId: thread.accountId,
+        instanceId: thread.instanceId,
+        chatId: thread.platformChatId,
+        canonicalChatId: thread.threadCanonicalChatId,
+        threadId: thread.providerThreadId,
+      };
+    }
+  }
+  return sourceFromSessionEntry(session);
 }
 
 export function isTriggerOriginatedEvent(topic: string, data: unknown): boolean {
@@ -696,7 +737,7 @@ export class TriggerRunner {
     const agentCwd = expandHome(agent.cwd);
 
     let sessionName: string;
-    let source: { channel: string; accountId: string; chatId: string } | undefined;
+    let source: TriggerPromptSource | undefined;
     // The trigger as stored now: who owns it decides which session is its own.
     const stored = dbGetTrigger(trigger.id);
     // Whether this fire is its owner's: decided before the session is chosen,
@@ -713,7 +754,7 @@ export class TriggerRunner {
         // Another trigger's own session never stands in for the main session.
         if (resolved?.name && sessionAdmitsTriggerFire(resolved)) {
           sessionName = resolved.name;
-          source = sourceFromSessionEntry(resolved);
+          source = sourceForReplySession(trigger, resolved);
         } else {
           // Fallback: derive source from session key and use main session
           source = deriveSourceFromSessionKey(trigger.replySession) ?? undefined;
@@ -766,7 +807,7 @@ export class TriggerRunner {
       // Derive source from replySession for isolated sessions too
       if (trigger.replySession) {
         source =
-          sourceFromSessionEntry(resolveSession(trigger.replySession)) ??
+          sourceForReplySession(trigger, resolveSession(trigger.replySession)) ??
           deriveSourceFromSessionKey(trigger.replySession) ??
           undefined;
       }
@@ -828,7 +869,7 @@ export class TriggerRunner {
 
       if (trigger.replySession) {
         source =
-          sourceFromSessionEntry(resolveSession(trigger.replySession)) ??
+          sourceForReplySession(trigger, resolveSession(trigger.replySession)) ??
           deriveSourceFromSessionKey(trigger.replySession) ??
           undefined;
       } else if (!trigger.replySource) {

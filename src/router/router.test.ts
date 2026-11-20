@@ -16,13 +16,16 @@ import {
   dbUpdateContextRuntimeState,
   dbDeleteChannel,
   dbDeleteInstance,
+  dbDeleteSettingIfValue,
   dbGetAgent,
   dbGetChannel,
   dbGetChatReadingList,
+  dbGetSetting,
   dbListChannels,
   dbListContexts,
   dbPruneContexts,
   dbPruneStaleRows,
+  dbSetSetting,
   dbUpdateAgent,
   dbUpdateChannel,
   dbUpsertChannel,
@@ -772,5 +775,39 @@ describe("read watchdog checkpoint probe", () => {
     expect(pinned).toHaveLength(1);
     expect(pinned[0]).toBe(1700);
     watchdog.dispose();
+  });
+});
+
+describe("settings compare-and-delete", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-router-settings-compare-delete-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("deletes a setting only while it still holds the value the caller read", () => {
+    dbSetSetting("test.compare-and-delete", "first");
+
+    // A value another writer saved in the meantime is left alone.
+    dbSetSetting("test.compare-and-delete", "second");
+    expect(dbDeleteSettingIfValue("test.compare-and-delete", "first")).toBe(false);
+    expect(dbGetSetting("test.compare-and-delete")).toBe("second");
+
+    // The caller that read the current value removes it, once.
+    expect(dbDeleteSettingIfValue("test.compare-and-delete", "second")).toBe(true);
+    expect(dbGetSetting("test.compare-and-delete")).toBeNull();
+    expect(dbDeleteSettingIfValue("test.compare-and-delete", "second")).toBe(false);
+  });
+
+  it("does not touch other settings", () => {
+    dbSetSetting("test.keeps", "value");
+    dbSetSetting("test.removed", "value");
+
+    expect(dbDeleteSettingIfValue("test.removed", "value")).toBe(true);
+    expect(dbGetSetting("test.keeps")).toBe("value");
+    expect(dbDeleteSettingIfValue("test.missing", "value")).toBe(false);
   });
 });

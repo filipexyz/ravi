@@ -6472,6 +6472,7 @@ interface PreparedStatements {
   upsertSetting: Statement;
   getSetting: Statement;
   deleteSetting: Statement;
+  deleteSettingIfValue: Statement;
   listSettings: Statement;
   // Skill gate rules
   upsertSkillGateRule: Statement;
@@ -6624,6 +6625,7 @@ function getStatements(): PreparedStatements {
     `),
     getSetting: database.prepare("SELECT * FROM settings WHERE key = ?"),
     deleteSetting: database.prepare("DELETE FROM settings WHERE key = ?"),
+    deleteSettingIfValue: database.prepare("DELETE FROM settings WHERE key = ? AND value = ?"),
     listSettings: database.prepare("SELECT * FROM settings ORDER BY key"),
 
     // Skill gate rules
@@ -10175,6 +10177,16 @@ export function dbSetSetting(key: string, value: string): void {
 export function dbDeleteSetting(key: string): boolean {
   const s = getStatements();
   s.deleteSetting.run(key);
+  return getDbChanges() > 0;
+}
+
+/**
+ * Delete a setting only while it still holds `expected`, in one statement. A value another writer
+ * saved in the meantime is left alone: whoever read `expected` earlier must not erase a newer one.
+ */
+export function dbDeleteSettingIfValue(key: string, expected: string): boolean {
+  const s = getStatements();
+  s.deleteSettingIfValue.run(key, expected);
   return getDbChanges() > 0;
 }
 
