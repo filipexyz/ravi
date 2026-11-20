@@ -20116,6 +20116,7 @@ export type SessionsConversationsSendReturn = {
 /** Input shape for `sessions.create-thread`. */
 export type SessionsCreateThreadInput = {
   effort?: string;
+  idempotencyKey?: string;
   message: string;
   model?: string;
   provider?: string;
@@ -20151,6 +20152,7 @@ export type SessionsCreateThreadReturn = {
   publishPending: boolean;
   publishedNow: boolean;
   queued: true;
+  replayed?: boolean;
   requestId: string;
   slack: {
     accountId: string;

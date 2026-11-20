@@ -7590,6 +7590,7 @@ export class RaviClient {
     /** Create a native Slack thread and start a child session in it */
     createThread: async (message: string, options?: {
       effort?: string;
+      idempotencyKey?: string;
       model?: string;
       provider?: string;
       session?: string;

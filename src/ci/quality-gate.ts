@@ -64,6 +64,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/thread-parent-return.test.ts",
     // Parent-owned thread runtime options: lifecycle authorization, validation and atomic configuration.
     "src/channels/slack/thread-runtime.test.ts",
+    // `create-thread` repeats: the idempotency key's request id, and the recent identical request an asker repeats.
+    "src/channels/slack/thread-request-replay.test.ts",
     // Agent Markdown as Slack Block Kit: safe splits, documents as canvases or files, mrkdwn fallback.
     "src/channels/slack/markdown-layout.test.ts",
     "src/channels/slack/markdown-delivery.test.ts",

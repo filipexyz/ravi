@@ -2714,6 +2714,28 @@ describe("thread command remote relay", () => {
     expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE_MODEL_TOKEN_798");
   });
 
+  it("relays a reused idempotency key with local copy that says what to do instead", async () => {
+    const remote = await relay(
+      "sessions create-thread",
+      new ContractError(
+        "sessions create-thread",
+        "THREAD_IDEMPOTENCY_KEY_REUSED",
+        "This idempotency key already created a thread; token=PRIVATE_KEY_TOKEN_798",
+        1,
+        {
+          ...errorDiagnostic("This idempotency key already created a thread; token=PRIVATE_KEY_TOKEN_798", {
+            operation: "sessions create-thread",
+          }),
+          ...{},
+        },
+      ),
+    );
+    expect(remote).toMatchObject({ code: "THREAD_IDEMPOTENCY_KEY_REUSED", exitCode: 1 });
+    expect(remote?.message).toContain("Thread was not created");
+    expect(remote?.details.suggestedAction).toContain("--idempotency-key");
+    expect(JSON.stringify(remote?.envelope())).not.toContain("PRIVATE_KEY_TOKEN_798");
+  });
+
   it("relays a report outside a thread with local copy instead of Remote command failed", async () => {
     const remote = await relay(
       "sessions report",

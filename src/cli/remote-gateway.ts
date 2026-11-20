@@ -553,6 +553,12 @@ const THREAD_COMMAND_COPY: Readonly<Record<string, { message: string; suggestedA
     suggestedAction:
       "Pass a compatible --provider and --model together (for example --provider codex --model gpt-6-astra).",
   },
+  THREAD_IDEMPOTENCY_KEY_REUSED: {
+    message:
+      "Thread was not created: this idempotency key already created a thread with a different message or runtime.",
+    suggestedAction:
+      "Reuse the same message and options to get the existing request back, or pass a new --idempotency-key for a different thread.",
+  },
   THREAD_NOT_THREAD_CHILD: {
     message: "This command is available only inside a Slack thread child session.",
     suggestedAction: "Run it from the Slack thread's own session, or pass --session <thread session>",
