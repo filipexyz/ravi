@@ -35,6 +35,7 @@ import {
   type ManagedRuntimeTarget,
 } from "./managed-runtime.js";
 import { CHANNELS_PM2_PROCESS_NAME, clearedPm2ContextEnv, PM2_PROCESS_NAME, type Pm2Process } from "./pm2.js";
+import { readRuntimeBootReceipt } from "./runtime-process-identity.js";
 import { observeStableManagedRuntime } from "./runtime-stability.js";
 import { compareRaviVersions } from "./update-preflight.js";
 import { settleThreadFenceLeftovers } from "./threads/fence-adoption.js";
@@ -51,13 +52,137 @@ import {
 export type GlobalInstallMethod = "bun" | "npm";
 
 export type UpdateRollbackPlan = {
-  /** The release the daemon was running, proven by its boot receipt: the one that wrote the state. */
+  /** The release the daemon was running: the one that wrote the state. */
   previousRelease: string;
   method: GlobalInstallMethod;
   /** The global install the target went into; the previous release goes back to the same place. */
   packageRoot: string;
   channelsOnline: boolean;
+  /**
+   * How `previousRelease` is known: the daemon's boot receipt, with the bundle's digest; for a daemon that writes
+   * none, the version PM2 recorded when it launched it, or the operator's `--running-release`. Absent means
+   * `receipt`. The rollback proves the release runs again the same way: by its receipt, or by PM2's record.
+   */
+  evidence?: "receipt" | "pm2" | "declared";
 };
+
+/** The first release whose processes write a boot receipt; an older one is known by PM2's record or its operator. */
+export const BOOT_RECEIPTS_RELEASE = "3.261104.2";
+
+/** A Ravi release number, such as 3.261101.3. */
+export function isRaviRelease(value: string): boolean {
+  return /^\d+\.\d{6}\.\d+$/.test(value);
+}
+
+/** `askOperator`: the operator's `--running-release` can settle what stopped the plan. */
+export type UnreceiptedRelease = { plan: UpdateRollbackPlan } | { reason: string; askOperator: boolean };
+
+/**
+ * The release of an online daemon that wrote no boot receipt (a release before 3.261104.2), so the update can take
+ * the waypoint with a rollback to it. Null when this does not apply: no global install, no daemon online, or a daemon
+ * with a receipt, which decides by itself (`resolveUpdateRollbackPlan`).
+ *
+ * Weaker evidence than a receipt, which carries the bundle's digest: PM2 reads `pm2_env.version` from the
+ * package.json nearest the script it launches, each time it launches it. That counts only when the script is inside
+ * this install's package (not a launcher or another install), and only as a release that writes no receipt: a later
+ * one would have written one, so PM2 and the state would disagree. The operator's `--running-release` stands in when
+ * PM2's record is not usable, and must agree with it when it is. Whatever fails gives the reason, and the update
+ * refuses: it never guesses.
+ */
+export function resolveUnreceiptedRollbackPlan(input: {
+  target: ManagedRuntimeTarget;
+  processes: Pm2Process[];
+  stateDir: string;
+  declaredRelease?: string | null;
+}): UnreceiptedRelease | null {
+  const method = globalInstallMethodOf(input.target.cwd);
+  const daemon = input.processes.find((process) => process.name === PM2_PROCESS_NAME);
+  if (!method || !daemon || daemon.status !== "online" || readRuntimeBootReceipt(daemon, input.stateDir)) return null;
+  const channelsOnline = input.processes.some(
+    (process) => process.name === CHANNELS_PM2_PROCESS_NAME && process.status === "online",
+  );
+  const plan = (previousRelease: string, evidence: "pm2" | "declared"): UnreceiptedRelease => ({
+    plan: { previousRelease, method, packageRoot: input.target.cwd, channelsOnline, evidence },
+  });
+  const writesReceipts = (release: string) => compareRaviVersions(release, BOOT_RECEIPTS_RELEASE) >= 0;
+
+  // PM2's record, when it is the daemon's: launched from a script of this install's package.
+  const recorded = daemon.version && daemon.version !== "N/A" ? daemon.version : null;
+  const pm2Problem = !insidePackage(daemon.execPath, input.target.cwd)
+    ? "PM2 launches the daemon from a script outside this install's package (a launcher, or another install), so " +
+      "the version it recorded is not the daemon's release"
+    : !recorded
+      ? "PM2 recorded no version for the daemon"
+      : !isRaviRelease(recorded)
+        ? `PM2 recorded ${recorded} for the daemon, which is not a Ravi release`
+        : null;
+  const pm2Release = pm2Problem ? null : recorded;
+
+  const declared = input.declaredRelease;
+  if (declared) {
+    if (!isRaviRelease(declared))
+      return { reason: `--running-release ${declared} is not a Ravi release`, askOperator: false };
+    if (writesReceipts(declared))
+      return {
+        reason: `--running-release says Ravi ${declared}, a release that writes a boot record`,
+        askOperator: false,
+      };
+    if (pm2Release && pm2Release !== declared)
+      return {
+        reason: `PM2 recorded Ravi ${pm2Release} for the daemon, not the ${declared} given with --running-release`,
+        askOperator: false,
+      };
+    return plan(declared, "declared");
+  }
+  if (!pm2Release) return { reason: pm2Problem ?? "PM2 recorded no version for the daemon", askOperator: true };
+  if (writesReceipts(pm2Release))
+    return {
+      reason: `PM2 recorded Ravi ${pm2Release} for the daemon, a release that writes a boot record`,
+      askOperator: false,
+    };
+  return plan(pm2Release, "pm2");
+}
+
+function insidePackage(path: string | null | undefined, packageRoot: string): boolean {
+  return Boolean(path) && normalizeRuntimePath(findRaviPackageRoot(path!)) === normalizeRuntimePath(packageRoot);
+}
+
+/**
+ * Whether PM2 runs `release` from this install, for a release that writes no receipt: online, launched from a script
+ * of the install's package and, for the daemon, with that version recorded. The runner may run through bun (its
+ * bundle is then the first argument), and PM2 records bun's version for it instead.
+ */
+function pm2RunsRelease(
+  processes: Pm2Process[],
+  name: typeof PM2_PROCESS_NAME | typeof CHANNELS_PM2_PROCESS_NAME,
+  target: ManagedRuntimeTarget,
+  release: string,
+): boolean {
+  const current = processes.find((process) => process.name === name);
+  if (!current || current.status !== "online") return false;
+  if (name === CHANNELS_PM2_PROCESS_NAME)
+    return insidePackage(current.execPath, target.cwd) || insidePackage(current.args?.[0], target.cwd);
+  return insidePackage(current.execPath, target.cwd) && current.version === release;
+}
+
+/** `managedRuntimeMatchesTarget` for a release that writes no receipt, from what PM2 records. */
+function pm2MatchesRelease(
+  previousProcesses: ManagedRuntimeProcessSnapshot[],
+  processes: Pm2Process[],
+  target: ManagedRuntimeTarget,
+  release: string,
+): boolean {
+  for (const name of [PM2_PROCESS_NAME, CHANNELS_PM2_PROCESS_NAME] as const) {
+    const previous = previousProcesses.find((process) => process.name === name);
+    if (!previous) continue;
+    if (previous.status !== "online") {
+      if (processes.some((process) => process.name === name)) return false;
+      continue;
+    }
+    if (!pm2RunsRelease(processes, name, target, release)) return false;
+  }
+  return true;
+}
 
 /** Which global installer owns this package directory; null for a source checkout or anything else. */
 export function globalInstallMethodOf(packageRoot: string): GlobalInstallMethod | null {
@@ -94,6 +219,7 @@ export function resolveUpdateRollbackPlan(input: {
     method,
     packageRoot: input.target.cwd,
     channelsOnline: identity.channels.online,
+    evidence: "receipt",
   };
 }
 
@@ -520,7 +646,14 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
 
     // 4. Started by that release's own CLI, with its own launcher and registration.
     step = "start";
+    // A release known by PM2's record or by its operator writes no receipt: PM2's record proves it runs again.
+    const receipted = (plan.evidence ?? "receipt") === "receipt";
+    const matches = (processes: Pm2Process[]) =>
+      receipted
+        ? managedRuntimeMatchesTarget(deps.previousProcesses, processes, target, { stateDir })
+        : pm2MatchesRelease(deps.previousProcesses, processes, target, plan.previousRelease);
     const member = (name: typeof PM2_PROCESS_NAME | typeof CHANNELS_PM2_PROCESS_NAME) => {
+      if (!receipted) return pm2RunsRelease(deps.getProcesses(), name, target, plan.previousRelease);
       const identity = buildManagedRuntimeIdentity(deps.getProcesses(), target.bundlePath, -1, { stateDir });
       const current = name === PM2_PROCESS_NAME ? identity.daemon : identity.channels;
       return (
@@ -600,18 +733,14 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
     // 5. Saved and checked like an update, then held for the stability window.
     step = "verify";
     const save = await deps.run("pm2", ["save", "--force"], { env, stream: false });
-    if (
-      !save.success ||
-      !managedRuntimeMatchesTarget(deps.previousProcesses, deps.getProcesses(), target, { stateDir })
-    ) {
+    if (!save.success || !matches(deps.getProcesses())) {
       return failed(
         "verify",
         `Ravi ${plan.previousRelease} was started on the restored state, but ${save.success ? "its processes do not match it" : "PM2 could not save its process list"}.`,
         ["ravi daemon status", "ravi channels status", "pm2 save --force"],
       );
     }
-    const converged = (processes: Pm2Process[]) =>
-      daemonReady(processes) && managedRuntimeMatchesTarget(deps.previousProcesses, processes, target, { stateDir });
+    const converged = (processes: Pm2Process[]) => daemonReady(processes) && matches(processes);
     const stable = await observeStableManagedRuntime({
       getProcesses: deps.getProcesses,
       isConverged: converged,

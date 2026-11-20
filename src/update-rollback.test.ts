@@ -23,6 +23,7 @@ import {
   globalInstallMethodOf,
   previousReleaseCliEnv,
   readUpdateSupervisorResult,
+  resolveUnreceiptedRollbackPlan,
   resolveUpdateRollbackPlan,
   planOperatorRollback,
   rollBackUpdate,
@@ -123,6 +124,7 @@ describe("update rollback plan", () => {
       method: "bun",
       packageRoot: install.root,
       channelsOnline: true,
+      evidence: "receipt",
     });
   });
 
@@ -157,6 +159,106 @@ describe("update rollback plan", () => {
   });
 });
 
+describe("the release of a daemon that wrote no boot record", () => {
+  const LAUNCHER = "/usr/local/bin/ravi-launcher";
+
+  /** A daemon of a release before the boot records (3.261101.3), as PM2 records it, under the target's install. */
+  function unreceipted(overrides: Partial<Pm2Process> = {}, input: { declared?: string; receipt?: boolean } = {}) {
+    const stateDir = tempDir("ravi-rollback-state-");
+    const install = globalInstall("3.261120.1");
+    const startedAt = Math.ceil(statSync(install.target.bundlePath).mtimeMs) + 1;
+    const daemon = pm2Process("ravi", install.target.bundlePath, install.root, {
+      startedAt,
+      version: "3.261101.3",
+      ...overrides,
+    });
+    // The runner runs through bun: PM2 records bun's version for it.
+    const channels = pm2Process("ravi-channels", install.target.bundlePath, install.root, {
+      startedAt,
+      version: "1.3.3",
+    });
+    if (input.receipt) boot(stateDir, daemon, install.target.bundlePath, "3.261105.0");
+    const resolve = () =>
+      resolveUnreceiptedRollbackPlan({
+        target: install.target,
+        processes: [daemon, channels],
+        stateDir,
+        declaredRelease: input.declared ?? null,
+      });
+    return { install, resolve };
+  }
+
+  it("takes the version PM2 recorded when it launched the daemon from this install's package", () => {
+    const { install, resolve } = unreceipted();
+    expect(resolve()).toEqual({
+      plan: {
+        previousRelease: "3.261101.3",
+        method: "bun",
+        packageRoot: install.root,
+        channelsOnline: true,
+        evidence: "pm2",
+      },
+    });
+    // The last release before the boot records counts; the first release that writes them would have left one.
+    expect(unreceipted({ version: "3.261104.1" }).resolve()).toMatchObject({ plan: { previousRelease: "3.261104.1" } });
+    expect(unreceipted({ version: "3.261104.2" }).resolve()).toEqual({
+      reason: "PM2 recorded Ravi 3.261104.2 for the daemon, a release that writes a boot record",
+      askOperator: false,
+    });
+  });
+
+  it("asks the operator when PM2's record is not the daemon's: a launcher, no version, or not a Ravi release", () => {
+    for (const [overrides, reason] of [
+      [{ execPath: LAUNCHER }, "PM2 launches the daemon from a script outside this install's package"],
+      [{ execPath: null }, "PM2 launches the daemon from a script outside this install's package"],
+      [{ version: null }, "PM2 recorded no version for the daemon"],
+      [{ version: "N/A" }, "PM2 recorded no version for the daemon"],
+      [{ version: "1.3.3" }, "PM2 recorded 1.3.3 for the daemon, which is not a Ravi release"],
+    ] as const) {
+      const result = unreceipted(overrides).resolve();
+      expect(result).toMatchObject({ askOperator: true });
+      expect(result && "reason" in result ? result.reason : "").toContain(reason);
+    }
+  });
+
+  it("takes --running-release where PM2's record is not usable, and refuses one that PM2 or the state contradict", () => {
+    expect(unreceipted({ execPath: LAUNCHER }, { declared: "3.261101.2" }).resolve()).toMatchObject({
+      plan: { previousRelease: "3.261101.2", evidence: "declared" },
+    });
+    expect(unreceipted({}, { declared: "3.261101.3" }).resolve()).toMatchObject({
+      plan: { previousRelease: "3.261101.3", evidence: "declared" },
+    });
+    expect(unreceipted({}, { declared: "3.261101.2" }).resolve()).toEqual({
+      reason: "PM2 recorded Ravi 3.261101.3 for the daemon, not the 3.261101.2 given with --running-release",
+      askOperator: false,
+    });
+    expect(unreceipted({ version: null }, { declared: "3.261104.2" }).resolve()).toEqual({
+      reason: "--running-release says Ravi 3.261104.2, a release that writes a boot record",
+      askOperator: false,
+    });
+    expect(unreceipted({ version: null }, { declared: "v3.261101.3" }).resolve()).toEqual({
+      reason: "--running-release v3.261101.3 is not a Ravi release",
+      askOperator: false,
+    });
+  });
+
+  it("leaves a daemon with a boot record, a daemon that is not online, and a checkout to the receipt rule", () => {
+    expect(unreceipted({}, { receipt: true }).resolve()).toBeNull();
+    expect(unreceipted({}, { receipt: true, declared: "3.261101.2" }).resolve()).toBeNull();
+    expect(unreceipted({ status: "stopped" }).resolve()).toBeNull();
+
+    const checkout = tempDir("ravi-rollback-checkout-");
+    mkdirSync(join(checkout, "dist", "bundle"), { recursive: true });
+    writeFileSync(join(checkout, "package.json"), JSON.stringify({ name: "ravi.bot", version: "3.261120.1" }));
+    writeFileSync(join(checkout, "dist", "bundle", "index.js"), "// bundle\n");
+    const target = resolveManagedRuntimeTargetFromPackageRoot(checkout)!;
+    const daemon = pm2Process("ravi", target.bundlePath, target.cwd, { startedAt: 5, version: "3.261101.3" });
+    expect(
+      resolveUnreceiptedRollbackPlan({ target, processes: [daemon], stateDir: tempDir("ravi-rollback-state-") }),
+    ).toBeNull();
+  });
+});
+
 function rollbackFixture(
   input: {
     failInstall?: boolean;
@@ -166,6 +268,11 @@ function rollbackFixture(
     throwAfterRestore?: boolean;
     /** The release rolled back to; 3.1.0 predates the schema phase records. */
     previousRelease?: string;
+    /**
+     * A release known by PM2's record, which writes no boot receipt: what PM2 records for the daemon the release's
+     * CLI starts (by default that release, launched from the install's bundle).
+     */
+    unreceipted?: { pm2Version?: string; launcher?: boolean };
   } = {},
 ) {
   const previousRelease = input.previousRelease ?? "3.1.0";
@@ -181,20 +288,30 @@ function rollbackFixture(
   const order: string[] = [];
   let nextPid = 400;
   const start = (name: "ravi" | "ravi-channels") => {
+    const recorded = input.unreceipted
+      ? name === "ravi"
+        ? {
+            version: input.unreceipted.pm2Version ?? previousRelease,
+            ...(input.unreceipted.launcher ? { execPath: "/usr/local/bin/ravi-launcher" } : {}),
+          }
+        : { version: "1.3.3" }
+      : {};
     const process = pm2Process(name, bundle, install.root, {
       pm_id: nextPid,
       pid: nextPid,
       startedAt: epoch + nextPid,
+      ...recorded,
     });
     nextPid += 1;
     processes.push(process);
-    boot(stateDir, process, bundle, previousRelease);
+    if (!input.unreceipted) boot(stateDir, process, bundle, previousRelease);
   };
   const plan: UpdateRollbackPlan = {
     previousRelease,
     method: "bun",
     packageRoot: install.root,
     channelsOnline: true,
+    ...(input.unreceipted ? { evidence: "pm2" as const } : {}),
   };
   const manifest = {
     id: "20261119T200000Z-abcdef",
@@ -280,6 +397,23 @@ describe("update rollback", () => {
     ]);
     // The previous CLI picks its own bundle and runs outside any runtime context.
     expect(calls[3]!.env).toEqual({ PATH: "/bin" });
+  });
+
+  it("proves a release that writes no receipt by PM2's record of the daemon it launched from the install", async () => {
+    const { deps, calls } = rollbackFixture({ previousRelease: "3.261101.3", unreceipted: {} });
+    const outcome = await rollBackUpdate(deps);
+
+    expect(outcome).toMatchObject({ ok: true, restoredAt: "2026-11-19T20:01:00.000Z" });
+    expect(calls.map((call) => [call.command, ...call.args].join(" "))).toContain(
+      "bun install -g --force ravi.bot@3.261101.3",
+    );
+  });
+
+  it("does not count a restored daemon that PM2 records as another release or launches from outside", async () => {
+    for (const unreceipted of [{ pm2Version: "3.261101.2" }, { launcher: true }]) {
+      const { deps } = rollbackFixture({ previousRelease: "3.261101.3", unreceipted });
+      expect(await rollBackUpdate(deps)).toMatchObject({ ok: false, step: "start" });
+    }
   });
 
   it("leaves the restored state and the exact commands when the previous release cannot be installed", async () => {
@@ -396,7 +530,12 @@ describe("update rollback", () => {
 });
 
 describe("update supervisor with a rollback plan", () => {
-  function supervisorFixture(input: { targetNeverReady: boolean; channelsStopped?: boolean }) {
+  function supervisorFixture(input: {
+    targetNeverReady: boolean;
+    channelsStopped?: boolean;
+    /** What PM2 recorded for the running daemon (`pm2_env.version`). */
+    daemonVersion?: string;
+  }) {
     const stateDir = tempDir("ravi-rollback-state-");
     // Convergence reads boot receipts from the process state directory.
     process.env.RAVI_STATE_DIR = stateDir;
@@ -409,7 +548,12 @@ describe("update supervisor with a rollback plan", () => {
     database.run("INSERT INTO t (v) VALUES ('previous')");
     database.close();
     let processes: Pm2Process[] = [
-      pm2Process("ravi", bundle, install.root, { pm_id: 1, pid: 10, startedAt: epoch }),
+      pm2Process("ravi", bundle, install.root, {
+        pm_id: 1,
+        pid: 10,
+        startedAt: epoch,
+        ...(input.daemonVersion ? { version: input.daemonVersion } : {}),
+      }),
       pm2Process(
         "ravi-channels",
         bundle,
@@ -421,6 +565,7 @@ describe("update supervisor with a rollback plan", () => {
     let time = 0;
     let nextPmId = 3;
     const rolledBack: UpdateSnapshotManifest[] = [];
+    const rolledBackPlans: UpdateRollbackPlan[] = [];
     const run = async (_command: string, args: string[]) => {
       if (args[0] === "delete") {
         const current = processes.find((process) => String(process.pm_id) === args[1]);
@@ -474,6 +619,7 @@ describe("update supervisor with a rollback plan", () => {
           planSnapshot: (plan) => planUpdateSnapshot({ ...plan, reflink: () => false, free: () => 1e12 }),
           rollBack: async (dependencies) => {
             rolledBack.push(dependencies.manifest);
+            rolledBackPlans.push(dependencies.plan);
             return {
               ok: true,
               target: install.target,
@@ -499,7 +645,7 @@ describe("update supervisor with a rollback plan", () => {
         boot(stateDir, process, bundle, version);
       }
     };
-    return { stateDir, events, rolledBack, rebind, run, bringUp, processes: () => processes };
+    return { stateDir, events, rolledBack, rolledBackPlans, rebind, run, bringUp, processes: () => processes };
   }
 
   it("stops both before the target starts, snapshots, and rolls back when the target never gets ready", async () => {
@@ -730,6 +876,79 @@ describe("update supervisor with a rollback plan", () => {
     const result = readUpdateSupervisorResult(since, fixture.stateDir);
     expect(result).toMatchObject({ outcome: "failed" });
     expect(result?.commands).toEqual(["ravi daemon status", "ravi update --version 3.2.0"]);
+  });
+
+  it("takes the waypoint for a daemon with no boot record by PM2's record, and rolls back to that release", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false, daemonVersion: "3.261101.3" });
+    const since = Date.now() - 1_000;
+
+    expect(
+      await fixture.rebind({
+        assertPrepared: () => "adopt-on-start",
+        preparedStateRelease: () => null,
+        rollbackPlan: () => null,
+        hopThroughWaypoint: async () => ({ ok: false, step: "start", message: "ravi did not come up" }),
+      }),
+    ).toBe(false);
+    expect(fixture.rolledBackPlans).toMatchObject([{ previousRelease: "3.261101.3", evidence: "pm2" }]);
+    expect(readUpdateSupervisorResult(since, fixture.stateDir)).toMatchObject({
+      outcome: "rolled-back",
+      previousRelease: "3.261101.3",
+    });
+  });
+
+  it("takes the operator's --running-release when PM2's record is not the daemon's", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false });
+
+    expect(
+      await fixture.rebind({
+        assertPrepared: () => "adopt-on-start",
+        preparedStateRelease: () => null,
+        rollbackPlan: () => null,
+        declaredRunningRelease: "3.261101.2",
+        hopThroughWaypoint: async () => ({ ok: false, step: "start", message: "ravi did not come up" }),
+      }),
+    ).toBe(false);
+    expect(fixture.rolledBackPlans).toMatchObject([{ previousRelease: "3.261101.2", evidence: "declared" }]);
+  });
+
+  it("refuses the waypoint before any stop with the reason when the daemon's release is unknown", async () => {
+    for (const [input, declared, reason, asks] of [
+      [{}, undefined, "PM2 recorded no version for the daemon", true],
+      [
+        { daemonVersion: "3.261101.3" },
+        "3.261101.2",
+        "PM2 recorded Ravi 3.261101.3 for the daemon, not the 3.261101.2 given with --running-release",
+        false,
+      ],
+    ] as const) {
+      const fixture = supervisorFixture({ targetNeverReady: false, ...input });
+      const mutations: string[][] = [];
+      const refusal = await fixture
+        .rebind({
+          assertPrepared: () => "adopt-on-start",
+          preparedStateRelease: () => null,
+          rollbackPlan: () => null,
+          declaredRunningRelease: declared,
+          hopThroughWaypoint: async () => {
+            throw new Error("the waypoint must not run");
+          },
+          run: async (command, args) => {
+            mutations.push(args);
+            return fixture.run(command, args);
+          },
+        })
+        .then(
+          () => null,
+          (error: Error) => error,
+        );
+      expect(refusal?.message).toContain(UPDATE_WAYPOINT_REQUIRED);
+      expect(refusal?.message).toContain(
+        `That daemon wrote no boot record (releases before 3.261104.2), and ${reason}.`,
+      );
+      expect(refusal?.message.includes("with `--running-release <release>`")).toBe(asks);
+      expect(mutations).toEqual([]);
+    }
   });
 
   it("refuses the waypoint before any stop without a rollback, or as a downgrade", async () => {

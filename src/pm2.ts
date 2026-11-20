@@ -121,6 +121,11 @@ export interface Pm2Process {
   createdAt?: number | null;
   /** Start of this PID; PM2 created_at survives some restarts and is not process age. */
   startedAt?: number | null;
+  /**
+   * `pm2_env.version`: the version PM2 read, when it started the process, from the package of the script it runs
+   * (Ravi's for a daemon started from the bundle; the runtime's when PM2 runs a binary such as bun).
+   */
+  version?: string | null;
 }
 
 /**
@@ -144,6 +149,7 @@ export function parsePm2Processes(raw: string): Pm2Process[] {
       : [],
     createdAt: typeof p.pm2_env?.created_at === "number" ? p.pm2_env.created_at : null,
     startedAt: typeof p.pm2_env?.pm_uptime === "number" ? p.pm2_env.pm_uptime : null,
+    version: typeof p.pm2_env?.version === "string" ? p.pm2_env.version : null,
   }));
 }
 

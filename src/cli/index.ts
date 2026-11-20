@@ -223,6 +223,10 @@ program
   .option("--stable", "Switch to stable releases (npm @latest tag)")
   .option("--rollback", "Go back to the release before the last update, with its state (a preview; add --execute)")
   .option("--execute", "Apply --rollback")
+  .option(
+    "--running-release <release>",
+    "The release the running daemon was started with, when it wrote no boot record (lets the update take a waypoint)",
+  )
   .option("--json", "Print a machine-readable result")
   .action(async (options: RaviUpdateOptions) => {
     refuseRootCommandInRuntimeSession("update", options.json);

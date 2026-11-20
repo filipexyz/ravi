@@ -53,6 +53,8 @@ import {
   readUpdateSupervisorResult,
   recordUpdateSupervisorResult,
   globalInstallMethodOf,
+  isRaviRelease,
+  resolveUnreceiptedRollbackPlan,
   resolveUpdateRollbackPlan,
   rollBackUpdate,
   type UpdateRollbackDependencies,
@@ -123,6 +125,8 @@ type ManagedRuntimeRebindRequest = {
   schemaVersion: 1;
   target: ManagedRuntimeTarget;
   previousProcesses: ManagedRuntimeProcessSnapshot[];
+  /** `ravi update --running-release`: the release the running daemon was started with, when it wrote no boot record. */
+  declaredRunningRelease?: string;
 };
 
 type ManagedRuntimeRebindDependencies = {
@@ -166,6 +170,10 @@ type ManagedRuntimeRebindDependencies = {
   hopThroughWaypoint?: (dependencies: WaypointHopDependencies) => Promise<WaypointHopOutcome>;
   /** Set on the update that follows a waypoint: a second waypoint means the first did not prepare the state. */
   afterWaypoint?: boolean;
+  /** The release the operator says the running daemon was started with (`ravi update --running-release`). */
+  declaredRunningRelease?: string | null;
+  /** `resolveUnreceiptedRollbackPlan` (tests). */
+  unreceiptedRollbackPlan?: typeof resolveUnreceiptedRollbackPlan;
   storePaths?: (stateDir: string) => string[];
 };
 
@@ -339,7 +347,11 @@ export function decodeManagedRuntimeRebindRequest(encoded: string): ManagedRunti
     return { name: entry.name, status: entry.status, pid: entry.pid, createdAt: entry.createdAt };
   });
 
-  return { schemaVersion: 1, target, previousProcesses };
+  const declared = input.declaredRunningRelease;
+  if (declared !== undefined && (typeof declared !== "string" || !isRaviRelease(declared))) {
+    throw new Error("Invalid managed runtime rebind request");
+  }
+  return { schemaVersion: 1, target, previousProcesses, ...(declared ? { declaredRunningRelease: declared } : {}) };
 }
 
 async function waitForManagedRuntimeTarget(
@@ -395,8 +407,8 @@ export async function rebindManagedRuntimeProcesses(
       : null;
   const waypoint = requiredFenceAdoptionWaypoint({ readiness, preparedRelease });
   const sourceCheckout = existsSync(join(target.cwd, ".git")) ? target.cwd : null;
-  const refuseWaypoint = (): never => {
-    throw new UpdateWaypointRequiredError(preparedRelease, target.version, sourceCheckout);
+  const refuseWaypoint = (runningReleaseUnknown: { reason: string; askOperator: boolean } | null = null): never => {
+    throw new UpdateWaypointRequiredError(preparedRelease, target.version, sourceCheckout, runningReleaseUnknown);
   };
   // Refused at once, before PM2 is read: a checkout is switched by its operator, only a global install can be rolled
   // back, and a second waypoint means the first did not prepare the state.
@@ -422,16 +434,34 @@ export async function rebindManagedRuntimeProcesses(
   }
 
   // Before any stop: whether this update can roll back, and room on the disk for its snapshot.
-  const rollbackPlan = (dependencies.rollbackPlan ?? resolveUpdateRollbackPlan)({
+  let rollbackPlan = (dependencies.rollbackPlan ?? resolveUpdateRollbackPlan)({
     target,
     processes: initial,
     stateDir,
   });
+  // A daemon with no boot receipt, for the waypoint only: PM2's record of it, or the operator's --running-release,
+  // each behind its guards. Whatever fails refuses with the reason (fail closed).
+  let runningReleaseUnknown: { reason: string; askOperator: boolean } | null = null;
+  if (waypoint && !rollbackPlan) {
+    const unreceipted = (dependencies.unreceiptedRollbackPlan ?? resolveUnreceiptedRollbackPlan)({
+      target,
+      processes: initial,
+      stateDir,
+      declaredRelease: dependencies.declaredRunningRelease ?? null,
+    });
+    if (unreceipted && "plan" in unreceipted) {
+      rollbackPlan = unreceipted.plan;
+      console.error(
+        `ravi update: the running daemon wrote no boot record; taking its release as Ravi ${rollbackPlan.previousRelease} ` +
+          `from ${rollbackPlan.evidence === "declared" ? "--running-release" : "the version PM2 recorded when it launched it"}`,
+      );
+    } else if (unreceipted) runningReleaseUnknown = unreceipted;
+  }
   // The waypoint is taken by the update only with a rollback to the release that wrote this state, and never as a
   // downgrade of that release.
   const hop =
     waypoint && rollbackPlan && compareRaviVersions(rollbackPlan.previousRelease, waypoint) < 0 ? waypoint : null;
-  if (waypoint && !hop) refuseWaypoint();
+  if (waypoint && !hop) refuseWaypoint(runningReleaseUnknown);
   const stores = rollbackPlan ? (dependencies.storePaths ?? updateStorePaths)(stateDir) : [];
   const snapshotPlan = rollbackPlan ? (dependencies.planSnapshot ?? planUpdateSnapshot)({ stateDir, stores }) : null;
   const gone = (pid: number): boolean =>
@@ -850,11 +880,13 @@ export function buildManagedRuntimeRebindSupervisorInvocation(
   target: ManagedRuntimeTarget,
   processes: Pm2Process[],
   baseEnv: NodeJS.ProcessEnv = process.env,
+  options: { declaredRunningRelease?: string | null } = {},
 ): { command: string; args: string[]; cwd: string; env: Record<string, string> } {
   const request: ManagedRuntimeRebindRequest = {
     schemaVersion: 1,
     target,
     previousProcesses: managedRuntimeSnapshot(processes),
+    ...(options.declaredRunningRelease ? { declaredRunningRelease: options.declaredRunningRelease } : {}),
   };
   const env = buildPm2Env({
     ...(baseEnv as Record<string, string>),
@@ -964,7 +996,11 @@ export async function maybeRunManagedRuntimeRebindFromEnv(
     const plan = supervisorStabilityPlan(declaredBudget, Date.now() - process.uptime() * 1000);
     let converged: boolean;
     try {
-      converged = await rebind(request.previousProcesses, request.target, plan);
+      converged = await rebind(
+        request.previousProcesses,
+        request.target,
+        request.declaredRunningRelease ? { ...plan, declaredRunningRelease: request.declaredRunningRelease } : plan,
+      );
     } catch (error) {
       // Refusals before any stop: the running release keeps serving, and the reason reaches the CLI.
       const code = (error as { code?: unknown } | null)?.code;
@@ -1029,10 +1065,11 @@ export async function runManagedRuntimeRebindSupervisor(
   target: ManagedRuntimeTarget,
   processes: Pm2Process[],
   stateDir: string = getRaviStateDir(),
+  options: { declaredRunningRelease?: string | null } = {},
 ): Promise<ManagedRuntimeSupervisorOutcome> {
   const startedAt = Date.now();
   const log = openSupervisorLog(stateDir);
-  const converged = await superviseManagedRuntimeRebind(target, processes, log?.fd);
+  const converged = await superviseManagedRuntimeRebind(target, processes, log?.fd, options);
   return {
     converged,
     // A refusal is recorded before any stop, so only an unconverged run can carry one.
@@ -1046,8 +1083,9 @@ function superviseManagedRuntimeRebind(
   target: ManagedRuntimeTarget,
   processes: Pm2Process[],
   logFd: number | undefined,
+  options: { declaredRunningRelease?: string | null },
 ): Promise<boolean> {
-  const invocation = buildManagedRuntimeRebindSupervisorInvocation(target, processes);
+  const invocation = buildManagedRuntimeRebindSupervisorInvocation(target, processes, process.env, options);
   return new Promise((resolve) => {
     let child: ReturnType<typeof spawn>;
     try {

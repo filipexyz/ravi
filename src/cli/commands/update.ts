@@ -25,6 +25,7 @@ import {
 import { processExitState } from "../../runtime-maintenance.js";
 import {
   planOperatorRollback,
+  isRaviRelease,
   rollBackUpdate,
   UPDATE_ROLLBACK_UNAVAILABLE,
   UpdateRollbackUnavailableError,
@@ -71,6 +72,11 @@ export interface RaviUpdateOptions {
   /** Back to the release before the last update, with its state (preview unless `execute`). */
   rollback?: boolean;
   execute?: boolean;
+  /**
+   * The release the running daemon was started with, when it wrote no boot record (before 3.261104.2): lets the
+   * update take the waypoint with a rollback to it. Checked against PM2's record when that one is usable.
+   */
+  runningRelease?: string;
 }
 
 /** A global `ravi.bot` package installed through bun or npm. */
@@ -647,6 +653,7 @@ async function reconcileManagedRuntime(
   previousProcesses: Pm2Process[],
   target: ManagedRuntimeTarget,
   reporter: UpdateReporter,
+  declaredRunningRelease: string | null = null,
 ): Promise<{ restarted: boolean; runtime: ManagedRuntimeState }> {
   const current = describeManagedRuntime(previousProcesses);
   reporter.line();
@@ -657,7 +664,9 @@ async function reconcileManagedRuntime(
   }
 
   reporter.log(`Rebinding managed runtime to Ravi ${target.version} (${target.cwd})`);
-  const supervisor = await runManagedRuntimeRebindSupervisor(target, previousProcesses);
+  const supervisor = await runManagedRuntimeRebindSupervisor(target, previousProcesses, undefined, {
+    declaredRunningRelease,
+  });
   // The supervisor refused before stopping anything: its reason is the result.
   if (supervisor.refusal) fail(supervisor.refusal.message, supervisorRefusalCode(supervisor.refusal.code));
   // The target did not converge and the supervisor rolled back (or tried): that is the result.
@@ -783,6 +792,18 @@ function assertUpdateSelectors(options: RaviUpdateOptions): void {
   if (options.execute && !options.rollback) {
     fail("--execute applies only to --rollback.", "USAGE_ERROR", CONTRACT_EXIT_USAGE);
   }
+  if (options.runningRelease !== undefined) {
+    if (options.rollback) {
+      fail("--running-release applies to an update, not to --rollback.", "USAGE_ERROR", CONTRACT_EXIT_USAGE);
+    }
+    if (!isRaviRelease(options.runningRelease)) {
+      fail(
+        `--running-release takes a Ravi release such as 3.261101.3, not ${JSON.stringify(options.runningRelease)}.`,
+        "USAGE_ERROR",
+        CONTRACT_EXIT_USAGE,
+      );
+    }
+  }
   const selectorCount =
     Number(Boolean(options.next)) + Number(Boolean(options.stable)) + Number(Boolean(options.version));
   if (selectorCount > 1) {
@@ -802,6 +823,7 @@ export function updateCommandArgs(options: RaviUpdateOptions): string[] {
   if (options.expectedIntegrity) args.push("--expected-integrity", options.expectedIntegrity);
   if (options.next) args.push("--next");
   if (options.stable) args.push("--stable");
+  if (options.runningRelease) args.push("--running-release", options.runningRelease);
   args.push("--json");
   return args;
 }
@@ -983,7 +1005,12 @@ async function performUpdate(options: RaviUpdateOptions, reporter: UpdateReporte
     });
     reportSourceUpdate(outcome, target, branch, previousVersion, reporter);
 
-    const { restarted, runtime } = await reconcileManagedRuntime(previousProcesses, target, reporter);
+    const { restarted, runtime } = await reconcileManagedRuntime(
+      previousProcesses,
+      target,
+      reporter,
+      options.runningRelease ?? null,
+    );
     if (runtime.rebound && outcome.pathCli && !outcome.pathCli.updated) {
       reporter.line("  The daemon now runs from this checkout; `ravi daemon status` from the PATH install reports");
       reporter.line("  drift until that install is updated too.");
@@ -1061,7 +1088,12 @@ async function performUpdate(options: RaviUpdateOptions, reporter: UpdateReporte
     reporter.warn(`Warning: ${warning}`);
   }
 
-  const { restarted, runtime } = await reconcileManagedRuntime(previousProcesses, target, reporter);
+  const { restarted, runtime } = await reconcileManagedRuntime(
+    previousProcesses,
+    target,
+    reporter,
+    options.runningRelease ?? null,
+  );
   warnings.push(...reportManagedRuntimeWarnings(target, reporter));
   const runnerWarning = await readNativeChannelRunnerUpdateWarning(previousProcesses);
   if (runnerWarning) {
