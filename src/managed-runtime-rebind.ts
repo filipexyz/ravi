@@ -806,8 +806,8 @@ export async function rebindManagedRuntimeProcesses(
     const noDaemonAfterWaypoint = () =>
       record(
         "failed",
-        `Ravi ${hop} prepared the state, but PM2 shows no daemon online: nothing runs now, and the update to Ravi ` +
-          `${target.version} did not begin. The installed package is already Ravi ${target.version}, which adopts ` +
+        `Ravi ${hop} prepared the state, but PM2 shows no daemon online, so the update to Ravi ` +
+          `${target.version} did not begin (a channel runner may still be up). The installed package is already Ravi ${target.version}, which adopts ` +
           "the state the waypoint prepared: start the daemon, check it, and run the update again.",
         { commands: ["ravi daemon start", "ravi daemon status", `ravi update --version ${target.version}`] },
       );
