@@ -2298,12 +2298,12 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | tui | src/tui/lib/input-history.ts | 14 | triaged-follow-up | catch-without-binding | src/tui/lib/input-history.ts:307d7d7adaa92d5a3705559b |
 | tui | src/tui/lib/input-history.ts | 24 | triaged-follow-up | catch-without-binding | src/tui/lib/input-history.ts:c2418d294c4b5fca100de629 |
 | update-rollback.ts | src/update-rollback.ts | 156 | no-cause | No result file (or an unreadable one) means this supervisor recorded no outcome. | src/update-rollback.ts:950ea65e82ee458d1b4c547f |
-| update-rollback.ts | src/update-rollback.ts | 325 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:b8e47d3e1420377b9d371a30 |
-| update-rollback.ts | src/update-rollback.ts | 341 | no-cause | The failure below already carries the cause; these commands only need to be safe to print. | src/update-rollback.ts:146a5a481dd1b0ef4b8f4a2a |
-| update-rollback.ts | src/update-rollback.ts | 367 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:0f29d21958b8aebf676684e4 |
-| update-rollback.ts | src/update-rollback.ts | 373 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:6fba620b78ad9db9a9b7093f |
-| update-rollback.ts | src/update-rollback.ts | 394 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:4fc4c71229c10cca5b4e7791 |
-| update-rollback.ts | src/update-rollback.ts | 441 | no-cause | The global lockfile may not exist; the update removes it the same way before installing. | src/update-rollback.ts:5b282885b7f89bdc377e0129 |
+| update-rollback.ts | src/update-rollback.ts | 328 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:890533a45b7e0cbfbb34a079 |
+| update-rollback.ts | src/update-rollback.ts | 344 | no-cause | The failure below already carries the cause; these commands only need to be safe to print. | src/update-rollback.ts:146a5a481dd1b0ef4b8f4a2a |
+| update-rollback.ts | src/update-rollback.ts | 370 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:0f29d21958b8aebf676684e4 |
+| update-rollback.ts | src/update-rollback.ts | 376 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:6fba620b78ad9db9a9b7093f |
+| update-rollback.ts | src/update-rollback.ts | 397 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:4fc4c71229c10cca5b4e7791 |
+| update-rollback.ts | src/update-rollback.ts | 444 | no-cause | The global lockfile may not exist; the update removes it the same way before installing. | src/update-rollback.ts:5b282885b7f89bdc377e0129 |
 | update-snapshot.ts | src/update-snapshot.ts | 137 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:58f28d04a4b48fd2e0237f55 |
 | update-snapshot.ts | src/update-snapshot.ts | 163 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:a1e50333d614882b3da68e21 |
 | update-snapshot.ts | src/update-snapshot.ts | 185 | no-cause | A filesystem without clones takes full copies; the space check accounts for them. | src/update-snapshot.ts:1023bb66947de74380272342 |
