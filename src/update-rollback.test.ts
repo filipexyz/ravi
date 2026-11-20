@@ -20,6 +20,7 @@ import {
   decodeManagedRuntimeRebindRequest,
   type ManagedRuntimeSupervisorOutcome,
   maybeRunManagedRuntimeRebindFromEnv,
+  readSupervisorRefusal,
   rebindManagedRuntimeProcesses,
   UPDATE_IN_PROGRESS,
   updateSupervisorRunning,
@@ -40,6 +41,9 @@ import {
   planOperatorRollback,
   rollBackUpdate,
   superviseOperatorRollback,
+  installerRegistry,
+  releaseInRegistry,
+  UpdatePreviousReleaseUnavailableError,
   UPDATE_ROLLBACK_UNAVAILABLE,
   type UpdateRollbackDependencies,
   type UpdateRollbackPlan,
@@ -1140,6 +1144,48 @@ describe("update supervisor with a rollback plan", () => {
     }
   });
 
+  it("does not repeat that --running-release is not used once the waypoint took it", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false });
+    let prepared: string | null = null;
+    let readiness: "ready" | "adopt-on-start" = "adopt-on-start";
+    let passes = 0;
+    const lines: string[] = [];
+    const errors = spyOn(console, "error").mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+    try {
+      await fixture.rebind({
+        assertPrepared: () => readiness,
+        preparedStateRelease: () => prepared,
+        declaredRunningRelease: "3.261101.3",
+        // No receipt on the first pass (the flag decides); the waypoint's receipt on the second.
+        rollbackPlan: () =>
+          (passes += 1) === 1
+            ? null
+            : { previousRelease: "3.261113.2", method: "bun", packageRoot: "/unused", channelsOnline: true },
+        unreceiptedRollbackPlan: () => ({
+          plan: {
+            previousRelease: "3.261101.3",
+            method: "bun",
+            packageRoot: "/unused",
+            channelsOnline: true,
+            evidence: "declared",
+          },
+        }),
+        hopThroughWaypoint: async (dependencies) => {
+          prepared = dependencies.waypoint;
+          fixture.bringUp(dependencies.waypoint);
+          readiness = "ready";
+          return { ok: true };
+        },
+      });
+    } finally {
+      errors.mockRestore();
+    }
+    expect(passes).toBe(2);
+    expect(lines.some((line) => line.includes("is not used"))).toBe(false);
+  });
+
   it("says when --running-release is not used because the daemon has a boot record", async () => {
     const fixture = supervisorFixture({ targetNeverReady: false });
     const lines: string[] = [];
@@ -2190,3 +2236,94 @@ function rolledBackOutcome(stateDir: string): ManagedRuntimeSupervisorOutcome {
     logPath: null,
   };
 }
+
+describe("the registry probe before any stop", () => {
+  const answering = (status: number | Error) => {
+    const urls: Array<{ url: string; authorization?: string }> = [];
+    const fetchRelease = (async (url: string, init?: RequestInit) => {
+      urls.push({ url, authorization: (init?.headers as Record<string, string> | undefined)?.authorization });
+      if (status instanceof Error) throw status;
+      return new Response("{}", { status });
+    }) as typeof fetch;
+    return { urls, fetchRelease };
+  };
+
+  it("refuses unless the registry has the release: 404, any other status, no answer", async () => {
+    const env = {};
+    const home = tempDir("ravi-registry-home-");
+    const ok = answering(200);
+    expect(await releaseInRegistry("3.1.0", "bun", { env, home, fetchRelease: ok.fetchRelease })).toEqual({ ok: true });
+    expect(ok.urls[0]!.url).toBe("https://registry.npmjs.org/ravi.bot/3.1.0");
+    for (const [status, reason] of [
+      [404, "ravi.bot@3.1.0 is not in the registry at https://registry.npmjs.org"],
+      [503, "the registry at https://registry.npmjs.org answered 503 for ravi.bot@3.1.0"],
+      [429, "answered 429"],
+      [new Error("getaddrinfo ENOTFOUND"), "did not answer for ravi.bot@3.1.0 (getaddrinfo ENOTFOUND)"],
+      [new DOMException("The operation timed out.", "TimeoutError"), "did not answer for ravi.bot@3.1.0"],
+    ] as const) {
+      const probe = answering(status);
+      const result = await releaseInRegistry("3.1.0", "bun", { env, home, fetchRelease: probe.fetchRelease });
+      expect(result.ok).toBe(false);
+      expect(result.ok ? "" : result.reason).toContain(reason);
+      if (status instanceof Error) expect(result.ok ? undefined : result.cause).toBe(status);
+    }
+  });
+
+  it("asks the registry the installer uses: its environment, bun's config, .npmrc with its token", () => {
+    const home = tempDir("ravi-registry-home-");
+    expect(installerRegistry("npm", {}, home)).toEqual({ url: "https://registry.npmjs.org", headers: {} });
+    expect(installerRegistry("npm", { npm_config_registry: "https://mirror.example/npm/" }, home).url).toBe(
+      "https://mirror.example/npm",
+    );
+    expect(
+      installerRegistry(
+        "bun",
+        { BUN_CONFIG_REGISTRY: "https://bun.example", npm_config_registry: "https://npm.example" },
+        home,
+      ).url,
+    ).toBe("https://bun.example");
+    // npm does not read BUN_CONFIG_REGISTRY.
+    expect(installerRegistry("npm", { BUN_CONFIG_REGISTRY: "https://bun.example" }, home).url).toBe(
+      "https://registry.npmjs.org",
+    );
+    writeFileSync(join(home, ".bunfig.toml"), '[install]\nregistry = "https://bunfig.example/"\n');
+    expect(installerRegistry("bun", { XDG_CONFIG_HOME: join(home, "none") }, home).url).toBe("https://bunfig.example");
+    writeFileSync(
+      join(home, ".npmrc"),
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: `${NPM_TOKEN}` is .npmrc's own syntax, read as text.
+      "registry=https://private.example/npm/\n//private.example/npm/:_authToken=${NPM_TOKEN}\n",
+    );
+    expect(installerRegistry("npm", { NPM_TOKEN: "t0ken" }, home)).toEqual({
+      url: "https://private.example/npm",
+      headers: { authorization: "Bearer t0ken" },
+    });
+  });
+
+  it("records a missing release as a refusal the command reports with its code", async () => {
+    const stateDir = tempDir("ravi-registry-state-");
+    const install = globalInstall("3.2.0");
+    process.env.RAVI_STATE_DIR = stateDir;
+    const env = "RAVI_INTERNAL_UPDATE_RUNTIME_REBIND";
+    const invocation = buildManagedRuntimeRebindSupervisorInvocation(install.target, [], { PATH: "/usr/bin" });
+    const since = Date.now() - 1_000;
+    process.env[env] = invocation.env[env];
+    try {
+      await expect(
+        maybeRunManagedRuntimeRebindFromEnv(
+          () => false,
+          async () => {
+            throw new UpdatePreviousReleaseUnavailableError({
+              reason: "ravi.bot@3.1.0 is not in the registry at https://registry.npmjs.org",
+              previousRelease: "3.1.0",
+              targetVersion: "3.2.0",
+              declared: false,
+            });
+          },
+        ),
+      ).rejects.toThrow("UPDATE_PREVIOUS_RELEASE_UNAVAILABLE");
+    } finally {
+      delete process.env[env];
+    }
+    expect(readSupervisorRefusal(since, stateDir)).toMatchObject({ code: "UPDATE_PREVIOUS_RELEASE_UNAVAILABLE" });
+  });
+});

@@ -54,6 +54,7 @@ import {
   recordUpdateSupervisorResult,
   globalInstallMethodOf,
   isRaviRelease,
+  type GlobalInstallMethod,
   type ReleaseAvailability,
   releaseInRegistry,
   resolveUnreceiptedRollbackPlan,
@@ -184,7 +185,7 @@ type ManagedRuntimeRebindDependencies = {
   /** `resolveUnreceiptedRollbackPlan` (tests). */
   unreceiptedRollbackPlan?: typeof resolveUnreceiptedRollbackPlan;
   /** Whether the release a rollback would install again is in the registry (`releaseInRegistry`; tests). */
-  releaseAvailable?: (release: string) => Promise<ReleaseAvailability>;
+  releaseAvailable?: (release: string, method: GlobalInstallMethod) => Promise<ReleaseAvailability>;
   storePaths?: (stateDir: string) => string[];
   /** Set on the update that follows a waypoint: what the first pass noted, recorded with this pass's result. */
   carriedWarnings?: string[];
@@ -473,7 +474,8 @@ export async function rebindManagedRuntimeProcesses(
     processes: initial,
     stateDir,
   });
-  if (dependencies.declaredRunningRelease && rollbackPlan)
+  // Only on the first pass: after the waypoint, the flag has done its part and the waypoint's receipt decides.
+  if (dependencies.declaredRunningRelease && rollbackPlan && !dependencies.afterWaypoint)
     console.error(
       `ravi update: --running-release ${dependencies.declaredRunningRelease} is not used: the daemon has a boot ` +
         `record for Ravi ${rollbackPlan.previousRelease}, which decides`,
@@ -504,7 +506,10 @@ export async function rebindManagedRuntimeProcesses(
   // The release a rollback would install again must be in the registry before any stop: found out after it (a
   // release that does not exist, a typo in --running-release), the host stays down. `ravi update --rollback` too.
   if (rollbackPlan) {
-    const available = await (dependencies.releaseAvailable ?? releaseInRegistry)(rollbackPlan.previousRelease);
+    const available = await (dependencies.releaseAvailable ?? releaseInRegistry)(
+      rollbackPlan.previousRelease,
+      rollbackPlan.method,
+    );
     if (!available.ok)
       throw new UpdatePreviousReleaseUnavailableError(
         {

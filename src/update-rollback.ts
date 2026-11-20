@@ -240,25 +240,90 @@ export type ReleaseAvailability = { ok: true } | { ok: false; reason: string; ca
  */
 export async function releaseInRegistry(
   release: string,
-  fetchRelease: typeof fetch = fetch,
+  method: GlobalInstallMethod = "bun",
+  options: { env?: NodeJS.ProcessEnv; home?: string; fetchRelease?: typeof fetch } = {},
 ): Promise<ReleaseAvailability> {
+  const registry = installerRegistry(method, options.env ?? process.env, options.home ?? homedir());
+  const url = `${registry.url}/ravi.bot/${encodeURIComponent(release)}`;
   let response: Response;
   try {
-    response = await fetchRelease(`https://registry.npmjs.org/ravi.bot/${encodeURIComponent(release)}`, {
+    response = await (options.fetchRelease ?? fetch)(url, {
+      headers: registry.headers,
       signal: AbortSignal.timeout(15_000),
     });
   } catch (cause) {
-    return registryUnanswered(release, cause);
+    return registryUnanswered(release, registry.url, cause);
   }
-  if (response.status === 404) return { ok: false, reason: `ravi.bot@${release} is not in the npm registry` };
+  if (response.status === 404)
+    return { ok: false, reason: `ravi.bot@${release} is not in the registry at ${registry.url}` };
   if (!response.ok)
-    return { ok: false, reason: `the npm registry answered ${response.status} for ravi.bot@${release}` };
+    return { ok: false, reason: `the registry at ${registry.url} answered ${response.status} for ravi.bot@${release}` };
   return { ok: true };
 }
 
 /** A registry that does not answer is a reason to refuse too; the error stays with it as the cause. */
-function registryUnanswered(release: string, cause: unknown): ReleaseAvailability {
-  return { ok: false, reason: `the npm registry did not answer for ravi.bot@${release} (${describe(cause)})`, cause };
+function registryUnanswered(release: string, registry: string, cause: unknown): ReleaseAvailability {
+  return {
+    ok: false,
+    reason: `the registry at ${registry} did not answer for ravi.bot@${release} (${describe(cause)})`,
+    cause,
+  };
+}
+
+const PUBLIC_REGISTRY = "https://registry.npmjs.org";
+
+/**
+ * The registry the installer reads ravi.bot from, so the probe sees what the install sees (a mirror included): its
+ * environment first (`BUN_CONFIG_REGISTRY` for bun, `npm_config_registry`), then its config (bun's `bunfig.toml`
+ * `[install] registry`, then `~/.npmrc`, which both read), then the public registry. An `_authToken` that `~/.npmrc`
+ * gives that host goes along, `${VAR}` expanded from the environment.
+ */
+export function installerRegistry(
+  method: GlobalInstallMethod,
+  env: NodeJS.ProcessEnv = process.env,
+  home: string = homedir(),
+): { url: string; headers: Record<string, string> } {
+  const read = (path: string): string | null => {
+    try {
+      return readFileSync(path, "utf8");
+    } catch {
+      // no-cause: A config file that does not exist (or cannot be read) does not set the registry.
+      return null;
+    }
+  };
+  const expand = (value: string) => value.replace(/\$\{([A-Za-z0-9_]+)\}/g, (_, name: string) => env[name] ?? "");
+  const npmrc = read(join(home, ".npmrc"));
+  const npmrcValue = (key: string): string | null => {
+    for (const line of (npmrc ?? "").split("\n")) {
+      const match = /^\s*([^=#;]+?)\s*=\s*(.*?)\s*$/.exec(line);
+      if (match && match[1] === key) return expand(match[2]!);
+    }
+    return null;
+  };
+  const bunfigRegistry = (): string | null => {
+    const bunfig =
+      read(join(env.XDG_CONFIG_HOME ?? join(home, ".config"), ".bunfig.toml")) ?? read(join(home, ".bunfig.toml"));
+    const install = bunfig ? /\[install\]([\s\S]*?)(?:\n\[|$)/.exec(bunfig)?.[1] : undefined;
+    if (!install) return null;
+    const value =
+      /\bregistry\s*=\s*"([^"]+)"/.exec(install) ?? /\bregistry\s*=\s*\{[^}]*\burl\s*=\s*"([^"]+)"/.exec(install);
+    return value ? expand(value[1]!) : null;
+  };
+  const configured =
+    (method === "bun" ? env.BUN_CONFIG_REGISTRY : undefined) ??
+    env.npm_config_registry ??
+    env.NPM_CONFIG_REGISTRY ??
+    (method === "bun" ? bunfigRegistry() : null) ??
+    npmrcValue("registry");
+  const url = (configured?.trim() || PUBLIC_REGISTRY).replace(/\/+$/, "");
+  let token: string | null = null;
+  try {
+    const { host, pathname } = new URL(url);
+    token = npmrcValue(`//${host}${pathname.replace(/\/+$/, "")}/:_authToken`) ?? npmrcValue(`//${host}/:_authToken`);
+  } catch {
+    // no-cause: A registry that is not a URL gets no token; the probe then reports what that address answered.
+  }
+  return { url, headers: token ? { authorization: `Bearer ${token}` } : {} };
 }
 
 /** The update would have no way back: the release it rolls back to cannot be installed now. Nothing was stopped. */
@@ -437,7 +502,7 @@ export type OperatorRollbackSupervisorDependencies = {
   rollBack?: typeof rollBackUpdate;
   recordResult?: typeof recordUpdateSupervisorResult;
   /** `releaseInRegistry` (tests). */
-  releaseAvailable?: (release: string) => Promise<ReleaseAvailability>;
+  releaseAvailable?: (release: string, method: GlobalInstallMethod) => Promise<ReleaseAvailability>;
 };
 
 /** A result that cannot be written (a full disk) does not undo the rollback that ran: say so, and go on. */
@@ -465,7 +530,7 @@ export async function superviseOperatorRollback(deps: OperatorRollbackSupervisor
         "named; preview again.",
     );
   // The same probe as an update's, before any stop: the rollback installs that release again.
-  const available = await (deps.releaseAvailable ?? releaseInRegistry)(plan.previousRelease);
+  const available = await (deps.releaseAvailable ?? releaseInRegistry)(plan.previousRelease, plan.method);
   if (!available.ok)
     throw new UpdateRollbackUnavailableError(
       `${available.reason}, and the rollback installs Ravi ${plan.previousRelease} again, so it cannot run now.`,
