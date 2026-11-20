@@ -257,6 +257,7 @@ describe("the release of a daemon that wrote no boot record", () => {
     expect(unreceipted({}, { receipt: true }).resolve()).toBeNull();
     expect(unreceipted({}, { receipt: true, declared: "3.261101.2" }).resolve()).toBeNull();
     expect(unreceipted({ status: "stopped" }).resolve()).toBeNull();
+    expect(unreceipted({ pid: 0 }).resolve()).toBeNull();
 
     const checkout = tempDir("ravi-rollback-checkout-");
     mkdirSync(join(checkout, "dist", "bundle"), { recursive: true });
@@ -283,7 +284,7 @@ function rollbackFixture(
      * A release known by PM2's record, which writes no boot receipt: what PM2 records for the daemon the release's
      * CLI starts (by default that release, launched from the install's bundle).
      */
-    unreceipted?: { pm2Version?: string; launcher?: boolean };
+    unreceipted?: { pm2Version?: string; launcher?: boolean; pidZero?: boolean };
     /** No snapshot: the update already stopped both processes (pids 300 and 301), and the state is untouched. */
     untouched?: boolean;
   } = {},
@@ -308,6 +309,7 @@ function rollbackFixture(
         ? {
             version: input.unreceipted.pm2Version ?? previousRelease,
             ...(input.unreceipted.launcher ? { execPath: "/usr/local/bin/ravi-launcher" } : {}),
+            ...(input.unreceipted.pidZero ? { pid: 0 } : {}),
           }
         : { version: "1.3.3" }
       : {};
@@ -426,7 +428,8 @@ describe("update rollback", () => {
   });
 
   it("does not count a restored daemon that PM2 records as another release or launches from outside", async () => {
-    for (const unreceipted of [{ pm2Version: "3.261101.2" }, { launcher: true }]) {
+    // PID 0: PM2 kept an online registration after its launcher failed.
+    for (const unreceipted of [{ pm2Version: "3.261101.2" }, { launcher: true }, { pidZero: true }]) {
       const { deps } = rollbackFixture({ previousRelease: "3.261101.3", unreceipted });
       expect(await rollBackUpdate(deps)).toMatchObject({ ok: false, step: "start" });
     }

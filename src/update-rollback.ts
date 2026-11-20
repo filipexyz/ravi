@@ -97,7 +97,9 @@ export function resolveUnreceiptedRollbackPlan(input: {
 }): UnreceiptedRelease | null {
   const method = globalInstallMethodOf(input.target.cwd);
   const daemon = input.processes.find((process) => process.name === PM2_PROCESS_NAME);
-  if (!method || !daemon || daemon.status !== "online" || readRuntimeBootReceipt(daemon, input.stateDir)) return null;
+  // An online registration with no process (PM2 keeps one when a launcher fails) is no running release at all.
+  const running = daemon?.status === "online" && Number.isInteger(daemon.pid) && daemon.pid > 0;
+  if (!method || !daemon || !running || readRuntimeBootReceipt(daemon, input.stateDir)) return null;
   const channelsOnline = input.processes.some(
     (process) => process.name === CHANNELS_PM2_PROCESS_NAME && process.status === "online",
   );
@@ -159,7 +161,8 @@ function pm2RunsRelease(
   release: string,
 ): boolean {
   const current = processes.find((process) => process.name === name);
-  if (!current || current.status !== "online") return false;
+  // PM2 keeps an online registration with PID 0 when a launcher fails: that runs nothing.
+  if (!current || current.status !== "online" || !Number.isInteger(current.pid) || current.pid <= 0) return false;
   if (name === CHANNELS_PM2_PROCESS_NAME)
     return insidePackage(current.execPath, target.cwd) || insidePackage(current.args?.[0], target.cwd);
   return insidePackage(current.execPath, target.cwd) && current.version === release;

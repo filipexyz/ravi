@@ -2300,16 +2300,16 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | tui | src/tui/index.tsx | 15 | fixed | binding retained / no recognized error surface | src/tui/index.tsx:e9e34e915d63b949a11bf3f4 |
 | tui | src/tui/lib/input-history.ts | 14 | triaged-follow-up | catch-without-binding | src/tui/lib/input-history.ts:307d7d7adaa92d5a3705559b |
 | tui | src/tui/lib/input-history.ts | 24 | triaged-follow-up | catch-without-binding | src/tui/lib/input-history.ts:c2418d294c4b5fca100de629 |
-| update-rollback.ts | src/update-rollback.ts | 244 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:e2dd225a4842bfcfdd7514bb |
-| update-rollback.ts | src/update-rollback.ts | 254 | no-cause | A snapshot without a readable manifest is incomplete; the next older one is checked. | src/update-rollback.ts:6bb0c5607571c133e81bd616 |
-| update-rollback.ts | src/update-rollback.ts | 392 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:11124bd592d32ab924410736 |
-| update-rollback.ts | src/update-rollback.ts | 480 | no-cause | No result file (or an unreadable one) means this supervisor recorded no outcome. | src/update-rollback.ts:950ea65e82ee458d1b4c547f |
-| update-rollback.ts | src/update-rollback.ts | 646 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:6ef3b8550c7390ee14fddd7a |
-| update-rollback.ts | src/update-rollback.ts | 662 | no-cause | The failure below already carries the cause; these commands only need to be safe to print. | src/update-rollback.ts:146a5a481dd1b0ef4b8f4a2a |
-| update-rollback.ts | src/update-rollback.ts | 686 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:0f29d21958b8aebf676684e4 |
-| update-rollback.ts | src/update-rollback.ts | 692 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:6fba620b78ad9db9a9b7093f |
-| update-rollback.ts | src/update-rollback.ts | 713 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:4fc4c71229c10cca5b4e7791 |
-| update-rollback.ts | src/update-rollback.ts | 760 | no-cause | The global lockfile may not exist; the update removes it the same way before installing. | src/update-rollback.ts:5b282885b7f89bdc377e0129 |
+| update-rollback.ts | src/update-rollback.ts | 247 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:e2dd225a4842bfcfdd7514bb |
+| update-rollback.ts | src/update-rollback.ts | 257 | no-cause | A snapshot without a readable manifest is incomplete; the next older one is checked. | src/update-rollback.ts:6bb0c5607571c133e81bd616 |
+| update-rollback.ts | src/update-rollback.ts | 395 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:11124bd592d32ab924410736 |
+| update-rollback.ts | src/update-rollback.ts | 483 | no-cause | No result file (or an unreadable one) means this supervisor recorded no outcome. | src/update-rollback.ts:950ea65e82ee458d1b4c547f |
+| update-rollback.ts | src/update-rollback.ts | 649 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:6ef3b8550c7390ee14fddd7a |
+| update-rollback.ts | src/update-rollback.ts | 665 | no-cause | The failure below already carries the cause; these commands only need to be safe to print. | src/update-rollback.ts:146a5a481dd1b0ef4b8f4a2a |
+| update-rollback.ts | src/update-rollback.ts | 689 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:0f29d21958b8aebf676684e4 |
+| update-rollback.ts | src/update-rollback.ts | 695 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:6fba620b78ad9db9a9b7093f |
+| update-rollback.ts | src/update-rollback.ts | 716 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:4fc4c71229c10cca5b4e7791 |
+| update-rollback.ts | src/update-rollback.ts | 763 | no-cause | The global lockfile may not exist; the update removes it the same way before installing. | src/update-rollback.ts:5b282885b7f89bdc377e0129 |
 | update-snapshot.ts | src/update-snapshot.ts | 137 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:58f28d04a4b48fd2e0237f55 |
 | update-snapshot.ts | src/update-snapshot.ts | 163 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:a1e50333d614882b3da68e21 |
 | update-snapshot.ts | src/update-snapshot.ts | 185 | no-cause | A filesystem without clones takes full copies; the space check accounts for them. | src/update-snapshot.ts:1023bb66947de74380272342 |
