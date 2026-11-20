@@ -282,9 +282,10 @@ describe("Git Data API publication boundary", () => {
     expect(f.watches[0]!.placement).toBe("local");
     expect(f.triggers[0]).toMatchObject({
       name: "gh-follow:o/r#9",
-      replySession: "publishing-parent",
+      // The open thread that published owns the follow, in that thread; its close hands it to the parent.
+      replySession: "publishing-thread",
       agentId: "main",
-      replySource: parentSource,
+      replySource: { ...parentSource, threadId: "1.2" },
       topic: "ravi.watch.github.>",
       enabled: true,
     });
@@ -314,8 +315,8 @@ describe("Git Data API publication boundary", () => {
     expect(f.triggers).toHaveLength(1);
     expect(f.triggers[0]).toMatchObject({
       enabled: true,
-      replySession: "publishing-parent",
-      replySource: parentSource,
+      replySession: "publishing-thread",
+      replySource: { ...parentSource, threadId: "1.2" },
       topic: "ravi.watch.github.>",
     });
     expect(f.watches.some((watch) => watch.placement === "local")).toBe(true);
@@ -455,7 +456,7 @@ describe("Git Data API publication boundary", () => {
       };
       await expect(publishGhPr(input, f.deps)).rejects.toMatchObject({ code: "PUBLICATION_SESSION_REQUIRED" });
       if (phase === "before-follow") expect(f.triggers).toHaveLength(0);
-      else expect(f.triggers[0]!.replySession).toBe("publishing-parent");
+      else expect(f.triggers[0]!.replySession).toBe("publishing-thread");
     },
   );
 

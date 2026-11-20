@@ -41,7 +41,7 @@ gh api repos/<repo>/check-runs/<job_id>/annotations --jq '.[] | .message'
 
 ## Before merging a pull request that touches the launcher or the preload guards
 
-The push run no longer has a macOS job, so the `@next` release waits for none. For a pull request that touches the paths listed in `SPEC.md` (managed runtime launcher, PM2, retained preload guards, `ci.yml`), read the two macOS jobs on its head before merging. `success` goes on. `cancelled` with no steps is a missing runner: re-run it and wait. `failure` with steps blocks the merge, even when `Quality Gate` is green. Other pull requests need no macOS job to be green.
+The push run no longer has a macOS job, so the `@next` release waits for none. For a pull request that touches the paths listed in `SPEC.md` (managed runtime launcher, PM2, state boundary and schema fence, retained preload guards, `ci.yml`), read the two macOS jobs on its head before merging. `success` goes on. `cancelled` with no steps is a missing runner: re-run it and wait. `failure` with steps blocks the merge, even when `Quality Gate` is green. Other pull requests need no macOS job to be green.
 
 ## When The Gate Says A Test File Runs In No CI Job
 

@@ -3,6 +3,7 @@ import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { CliExpectedError } from "../../cli/expected-error.js";
 import { ContractError } from "../../cli/agent-contract.js";
 import { resolveTriggerActivation } from "../../triggers/activation.js";
+import { isGhFollowTriggerName } from "../../triggers/follow-trigger-names.js";
 import { dbListTriggers } from "../../triggers/triggers-db.js";
 import { randomUUID } from "node:crypto";
 import { executeWrite } from "../../db/write-retry.js";
@@ -152,6 +153,8 @@ export interface RegisterInboundSlackThreadInput {
 export interface CloseSlackThreadLifecycleResult {
   record: SlackThreadLifecycleRecord;
   changed: boolean;
+  /** The PR follows `handOffFollows` moved to the parent in the transaction that closed the thread. */
+  handedOffTriggerIds?: string[];
 }
 
 export function createSlackThreadLifecycle(input: CreateSlackThreadLifecycleInput): SlackThreadLifecycleRecord {
@@ -502,6 +505,13 @@ export function closeSlackThreadLifecycle(input: {
   returnResult?: string;
   closeContextId?: string;
   closedAt?: number;
+  /**
+   * Moves the PR follows addressed to this child to its durable parent. It runs in the same
+   * transaction as the close, after every refusal has been decided, and rolls back with it: a close
+   * that is refused (a pending decision, another active trigger) leaves the follows with the thread.
+   * With it, an active PR follow no longer blocks the close; any other active trigger still does.
+   */
+  handOffFollows?: (database: ReturnType<typeof getDb>) => string[];
 }): CloseSlackThreadLifecycleResult {
   const now = input.closedAt ?? Date.now();
   const returnResult = cleanOptional(input.returnResult);
@@ -524,7 +534,9 @@ export function closeSlackThreadLifecycle(input: {
           (trigger) =>
             !!trigger.replySession &&
             (trigger.replySession === existing.childSessionKey || trigger.replySession === existing.childSessionName) &&
-            resolveTriggerActivation(trigger).state === "active",
+            resolveTriggerActivation(trigger).state === "active" &&
+            // A PR follow that `handOffFollows` will move is not a reason to refuse.
+            !(input.handOffFollows && isGhFollowTriggerName(trigger.name)),
         )
         .map((trigger) => trigger.id);
       if (triggerIds.length) {
@@ -559,6 +571,8 @@ export function closeSlackThreadLifecycle(input: {
       if (existing.status === "closed") {
         return { record: existing, changed: false };
       }
+      // Every refusal is behind us: only a close that goes through moves the follows.
+      const handedOffTriggerIds = input.handOffFollows?.(database) ?? [];
       const nextSequence = existing.closeSequence + 1;
       const parentEventId = returnResult ? `slack-thread-close:${existing.requestId}:${nextSequence}` : null;
       const updated = runThreadMutation(
@@ -597,6 +611,7 @@ export function closeSlackThreadLifecycle(input: {
       return {
         record: selectSlackThreadLifecycle(database, existing.requestId),
         changed: true,
+        ...(handedOffTriggerIds.length ? { handedOffTriggerIds } : {}),
       };
     },
     { label: "slack_thread_lifecycle_close" },

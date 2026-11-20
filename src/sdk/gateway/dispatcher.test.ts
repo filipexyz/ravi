@@ -27,6 +27,7 @@ import { invalidateTaskProfileCatalogCache } from "../../tasks/profiles.js";
 import systemProfiles from "../../tasks/profile-catalog/system-profiles.json" with { type: "json" };
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { dispatch, type AuditEvent } from "./dispatcher.js";
+import { returnContractViolationCount } from "./return-contract.js";
 import { createHash } from "node:crypto";
 import { recordTurnRead } from "../../knowledge/store/turn-reads.js";
 import { setWriteAfterReadDefaultsForTests } from "../../knowledge/safety/write-after-read.js";
@@ -155,6 +156,83 @@ class GatewayDemoCommands {
       ...(ctx?.cwd ? { cwd: ctx.cwd } : {}),
       ...(ctx?.source ? { source: ctx.source } : {}),
     };
+  }
+
+  /** Counts applied effects, so a test can tell a retried mutation from a single one. */
+  static applied = 0;
+
+  @Command({ name: "mutate-extra", description: "Mutation whose handler returns an undeclared field" })
+  @CommandAccess({ kind: "mutate", resource: "demo", action: "mutate-extra", risk: "low" })
+  @Returns(z.object({ ok: z.literal(true), nested: z.object({ id: z.string() }).strict() }).strict())
+  mutateExtra() {
+    GatewayDemoCommands.applied++;
+    return { ok: true as const, extra: 1, nested: { id: "n1", leaked: true } };
+  }
+
+  /** The pre-#901 `create-thread` contract: strict, without `origin`, while the handler returns it. */
+  @Command({ name: "mutate-thread-origin", description: "create-thread before #901" })
+  @CommandAccess({ kind: "mutate", resource: "demo", action: "mutate-thread-origin", risk: "low" })
+  @Returns(
+    z
+      .object({
+        status: z.literal("queued"),
+        requestId: z.string(),
+        slack: z.object({ channelId: z.string() }),
+      })
+      .strict(),
+  )
+  mutateThreadOrigin() {
+    GatewayDemoCommands.applied++;
+    return {
+      status: "queued" as const,
+      requestId: "req-1",
+      slack: { channelId: "C1" },
+      origin: { channel: "whatsapp", canonicalChatId: null },
+    };
+  }
+
+  @Command({ name: "mutate-missing", description: "Mutation whose handler omits and mistypes declared fields" })
+  @CommandAccess({ kind: "mutate", resource: "demo", action: "mutate-missing", risk: "low" })
+  @Returns(z.object({ ok: z.literal(true), id: z.string(), count: z.number(), items: z.array(z.string()) }))
+  mutateMissing() {
+    GatewayDemoCommands.applied++;
+    return { ok: true as const, count: "three", items: ["a", 7, "b"] } as unknown as {
+      ok: true;
+      id: string;
+      count: number;
+      items: string[];
+    };
+  }
+
+  @Command({ name: "mutate-array", description: "Invalid element before an object with an invalid field" })
+  @CommandAccess({ kind: "mutate", resource: "demo", action: "mutate-array", risk: "low" })
+  @Returns(z.object({ items: z.array(z.object({ id: z.string(), label: z.string() }).strict()) }).strict())
+  mutateArray() {
+    GatewayDemoCommands.applied++;
+    return {
+      items: [null, { id: "b", label: "x", keep: "x" }, { id: "c", label: "ok" }],
+    } as unknown as { items: Array<{ id: string; label: string }> };
+  }
+
+  @Command({ name: "mutate-strip", description: "Strip-mode schema, handler returns an undeclared field" })
+  @CommandAccess({ kind: "mutate", resource: "demo", action: "mutate-strip", risk: "low" })
+  @Returns(z.object({ ok: z.literal(true), nested: z.object({ id: z.string() }) }))
+  mutateStrip() {
+    GatewayDemoCommands.applied++;
+    return { ok: true as const, secret: "x", nested: { id: "n", leaked: 1 } };
+  }
+
+  @Command({ name: "mutate-union", description: "Root union, handler returns an invalid field in a branch" })
+  @CommandAccess({ kind: "mutate", resource: "demo", action: "mutate-union", risk: "low" })
+  @Returns(
+    z.union([
+      z.object({ kind: z.literal("a"), id: z.string() }).strict(),
+      z.object({ kind: z.literal("b"), count: z.number() }).strict(),
+    ]),
+  )
+  mutateUnion() {
+    GatewayDemoCommands.applied++;
+    return { kind: "b" as const, count: 2, extra: true } as unknown as { kind: "b"; count: number };
   }
 
   @Command({ name: "broken", description: "Returns wrong shape" })
@@ -845,6 +923,68 @@ describe("dispatch — validation", () => {
     });
     expect(JSON.stringify(body)).not.toContain(secret);
     expect(JSON.stringify(audits.events)).not.toContain(secret);
+  });
+
+  it("never fails a mutation after its effect: undeclared fields are removed and reported", async () => {
+    const before = returnContractViolationCount();
+    GatewayDemoCommands.applied = 0;
+    const audits = captureAudits();
+    const result = await dispatch(
+      findCmd("demo.mutate-extra"),
+      {},
+      {},
+      { contextRecord: demoContext, emitAudit: audits.emit },
+    );
+    expect(result.response.status).toBe(200);
+    expect(await result.response.json()).toEqual({ ok: true, nested: { id: "n1" } });
+    expect(GatewayDemoCommands.applied).toBe(1);
+    expect(returnContractViolationCount()).toBe(before + 1);
+    expect(audits.events[0]).toMatchObject({ isError: false, outcome: "succeeded" });
+  });
+
+  it("returns the declared shape for create-thread's undeclared origin, without COMMAND_FAILED", async () => {
+    const result = await dispatch(findCmd("demo.mutate-thread-origin"), {}, {}, { contextRecord: demoContext });
+    expect(result.response.status).toBe(200);
+    const body = (await result.response.json()) as Record<string, unknown>;
+    expect(body).toEqual({ status: "queued", requestId: "req-1", slack: { channelId: "C1" } });
+    expect(body).not.toHaveProperty("origin");
+    expect(body).not.toHaveProperty("error");
+  });
+
+  it("omits declared fields that are missing or mistyped on a mutation and reports them", async () => {
+    const before = returnContractViolationCount();
+    const result = await dispatch(findCmd("demo.mutate-missing"), {}, {}, { contextRecord: demoContext });
+    expect(result.response.status).toBe(200);
+    const body = (await result.response.json()) as Record<string, unknown>;
+    expect(body.ok).toBe(true);
+    expect(body).not.toHaveProperty("count");
+    expect(body.items).toEqual(["a", "b"]);
+    expect(returnContractViolationCount()).toBeGreaterThan(before);
+  });
+
+  it("keeps valid sibling fields when an array element and a later element both need repair", async () => {
+    const result = await dispatch(findCmd("demo.mutate-array"), {}, {}, { contextRecord: demoContext });
+    expect(result.response.status).toBe(200);
+    expect(await result.response.json()).toEqual({
+      items: [
+        { id: "b", label: "x" },
+        { id: "c", label: "ok" },
+      ],
+    });
+  });
+
+  it("removes and reports undeclared fields on strip-mode mutation schemas", async () => {
+    const before = returnContractViolationCount();
+    const result = await dispatch(findCmd("demo.mutate-strip"), {}, {}, { contextRecord: demoContext });
+    expect(result.response.status).toBe(200);
+    expect(await result.response.json()).toEqual({ ok: true, nested: { id: "n" } });
+    expect(returnContractViolationCount()).toBeGreaterThan(before);
+  });
+
+  it("repairs a root-union mutation result through its closest branch", async () => {
+    const result = await dispatch(findCmd("demo.mutate-union"), {}, {}, { contextRecord: demoContext });
+    expect(result.response.status).toBe(200);
+    expect(await result.response.json()).toEqual({ kind: "b", count: 2 });
   });
 
   it("returns a canonical HTTP 500 contract when handler return shape is wrong", async () => {
