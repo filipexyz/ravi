@@ -28,8 +28,10 @@ let done = false;
 function finish(initialize) {
   if (done) return;
   done = true;
-  const hooks = initialize && initialize.request ? (initialize.request.hooks ?? null) : null;
-  fs.writeFileSync(${JSON.stringify(`${ledger}.tmp`)}, JSON.stringify({ env: Object.keys(process.env), argv: process.argv.slice(2), hooks }));
+  const request = initialize && initialize.request ? initialize.request : null;
+  const subtype = request ? (request.subtype ?? null) : null;
+  const hooks = request ? (request.hooks ?? null) : null;
+  fs.writeFileSync(${JSON.stringify(`${ledger}.tmp`)}, JSON.stringify({ env: Object.keys(process.env), argv: process.argv.slice(2), subtype, hooks }));
   fs.renameSync(${JSON.stringify(`${ledger}.tmp`)}, ${JSON.stringify(ledger)});
   process.exit(1);
 }
@@ -87,8 +89,9 @@ setTimeout(() => finish(null), 3000);
     const {
       env: names,
       argv,
+      subtype,
       hooks,
-    }: { env: string[]; argv: string[]; hooks: { PreToolUse?: unknown[] } | null } = JSON.parse(
+    }: { env: string[]; argv: string[]; subtype: string | null; hooks: { PreToolUse?: unknown[] } | null } = JSON.parse(
       readFileSync(ledger, "utf8"),
     );
     for (const name of Object.keys(dropped)) {
@@ -107,8 +110,12 @@ setTimeout(() => finish(null), 3000);
     expect(argv.find((arg) => arg.startsWith("--setting-sources"))).toMatch(/^--setting-sources(=|$)/);
     // The guard is the only path restriction (allowedTools in dontAsk approves any path), so a
     // query that stops registering it fails silently. The SDK sends it in `initialize`.
-    expect(hooks?.PreToolUse, "PreToolUse guard not registered with the query").toBeArray();
-    expect(hooks?.PreToolUse?.length).toBeGreaterThan(0);
+    // The exact shape matters: an entry without a callback guards nothing, and a `matcher`
+    // that never matches (e.g. `Write|Edit`) silently drops the guard for `Read`.
+    expect(subtype, "the SDK no longer sends initialize first").toBe("initialize");
+    expect(hooks?.PreToolUse, "PreToolUse guard not registered with the query").toEqual([
+      { hookCallbackIds: [expect.any(String)] },
+    ]);
     expect(argv).not.toContain("--allow-dangerously-skip-permissions");
     expect(argv).not.toContain("--dangerously-skip-permissions");
     expect(argv.some((arg) => arg.startsWith("--permission-mode=bypass"))).toBe(false);
