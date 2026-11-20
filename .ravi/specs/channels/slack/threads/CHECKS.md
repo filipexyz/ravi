@@ -61,6 +61,15 @@
       (`src/runtime/session-dispatcher.test.ts` with the real thread record and
       `closeSlackThread`, `src/channels/slack/thread-lifecycle.test.ts`,
       `src/runtime/runtime-request-builder.trigger-owner.test.ts`).
+- [ ] Only the thread's own close is undone by that delivery. A close made in a
+      parent's turn, with no close context, or with a close context that does not
+      exist MUST leave the record `closed` while the instruction still runs, and a
+      replay or a capacity retry of an instruction already delivered MUST NOT
+      count as a new delivery, so it MUST NOT reopen either. Reopening on any
+      close, or on a replay, MUST fail these tests
+      (`src/channels/slack/thread-lifecycle.test.ts`,
+      `src/runtime/session-dispatcher.test.ts`,
+      `src/runtime/runtime-request-builder.trigger-owner.test.ts`).
 - [ ] The channel-root variant MUST route follow-ups on an existing thread's
       subject to that thread and relay between threads; the thread variant MUST
       ask for relays through `thread.report`.

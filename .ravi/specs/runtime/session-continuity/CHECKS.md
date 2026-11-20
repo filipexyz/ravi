@@ -14,6 +14,13 @@
   running until its canonical terminal; immediate delivery retains its meaning.
 - Suspend old terminal accounting, consume its successor through a replacement's
   real generator, then finish the old terminal: no second copy enters the stash.
+- Stash a turn that will be re-run with an `after_response` instruction and a
+  later message queued behind it, once for a credential retry and once with
+  `reconcileCurrentTurn`: the stash holds the turn and both successors in queue
+  order, and only the reconciled turn is marked `replay`. A credential failure
+  before the first tool with a successor queued stashes the successor too. A
+  superseded turn keeps stashing only its successors
+  (`src/runtime/delivery-queue.test.ts`, `src/runtime/session-trace.test.ts`).
 - Replace the slot across model-switch, terminal-feedback and recovery awaits:
   old cleanup cannot remove/reset the replacement or overwrite its native/context
   state; old-turn accounting remains recorded exactly once.
