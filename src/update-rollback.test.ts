@@ -956,6 +956,34 @@ describe("update supervisor with a rollback plan", () => {
     expect(result?.message).toContain("PM2 shows no daemon of the waypoint online");
   });
 
+  it("waits for the waypoint's runner to exit before the update to the target", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false, channelsStopped: true });
+    const since = Date.now() - 1_000;
+    let prepared: string | null = null;
+    let readiness: "ready" | "adopt-on-start" = "adopt-on-start";
+    let runnerPid = 0;
+
+    expect(
+      await fixture.rebind({
+        assertPrepared: () => readiness,
+        preparedStateRelease: () => prepared,
+        hopThroughWaypoint: async (dependencies) => {
+          prepared = dependencies.waypoint;
+          fixture.bringUp(dependencies.waypoint);
+          runnerPid = fixture.processes().find((process) => process.name === "ravi-channels")!.pid;
+          readiness = "ready";
+          return { ok: true };
+        },
+        // PM2 removed the runner, but its process does not exit.
+        pidAlive: (pid) => pid === runnerPid || fixture.processes().some((process) => process.pid === pid),
+      }),
+    ).toBe(false);
+    expect(fixture.events.filter((event) => event.startsWith("start:"))).toEqual([]);
+    const result = readUpdateSupervisorResult(since, fixture.stateDir);
+    expect(result).toMatchObject({ outcome: "failed" });
+    expect(result?.message).toContain(`channel runner (pid ${runnerPid}) did not exit`);
+  });
+
   it("leaves the waypoint running and says so when the target cannot be installed again", async () => {
     const fixture = supervisorFixture({ targetNeverReady: false });
     const since = Date.now() - 1_000;

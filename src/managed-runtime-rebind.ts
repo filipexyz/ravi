@@ -803,10 +803,28 @@ export async function rebindManagedRuntimeProcesses(
       );
     const secondPassAt = Date.now();
     try {
-      // The waypoint started the runner only for its boot record: one that was stopped before stays stopped.
-      if (channels?.status !== "online" && (await remove(CHANNELS_PM2_PROCESS_NAME)) !== 0) {
-        afterWaypoint("PM2 could not remove the waypoint's channel runner");
-        return false;
+      // The waypoint started the runner only for its boot record: one that was stopped before stays stopped. Removed
+      // is not gone: the next pass takes its snapshot only once that runner's process has exited too.
+      if (channels?.status !== "online") {
+        const runnerPids = getProcesses()
+          .filter((process) => process.name === CHANNELS_PM2_PROCESS_NAME && process.pid > 0)
+          .map((process) => process.pid);
+        if ((await remove(CHANNELS_PM2_PROCESS_NAME)) !== 0) {
+          afterWaypoint("PM2 could not remove the waypoint's channel runner");
+          return false;
+        }
+        const clock = dependencies.now ?? Date.now;
+        const pause = dependencies.wait ?? ((ms: number) => delay(ms));
+        const deadline = clock() + 30_000;
+        while (!runnerPids.every(gone) && clock() < deadline) {
+          const before = clock();
+          await pause(250);
+          if (clock() <= before) break;
+        }
+        if (!runnerPids.every(gone)) {
+          afterWaypoint(`the waypoint's channel runner (pid ${runnerPids.join(", ")}) did not exit after its removal`);
+          return false;
+        }
       }
       // The update to the target replaces the waypoint's daemon: with none online (its registration gone, PM2 back
       // with an empty list), that pass would have nothing to stop and would return at once without the target.
