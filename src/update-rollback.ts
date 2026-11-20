@@ -245,6 +245,7 @@ export async function releaseInRegistry(
   options: { env?: NodeJS.ProcessEnv; home?: string; fetchRelease?: typeof fetch } = {},
 ): Promise<ReleaseAvailability> {
   const registry = readInstallerRegistry(method, options.env ?? process.env, options.home ?? homedir());
+  if (registry.problem) return { ok: false, reason: `${registry.problem}, so ravi.bot@${release} cannot be looked up` };
   // Only an http or https registry is asked; any other value is refused without being echoed.
   if (!httpRegistry(registry.url))
     return { ok: false, reason: `${NOT_AN_HTTP_REGISTRY} cannot be asked for ravi.bot@${release}` };
@@ -386,6 +387,8 @@ type InstallerRegistry = {
   credential: string | null;
   /** Every credential value, to take out of any text that could quote them. */
   secrets: string[];
+  /** Why the installer's configuration cannot be read as the installer would (the check refuses), or null. */
+  problem: string | null;
 };
 
 function readInstallerRegistry(method: GlobalInstallMethod, env: NodeJS.ProcessEnv, home: string): InstallerRegistry {
@@ -399,21 +402,48 @@ function readInstallerRegistry(method: GlobalInstallMethod, env: NodeJS.ProcessE
   };
   const expand = (value: string) => value.replace(/\$\{([A-Za-z0-9_]+)\}/g, (_, name: string) => env[name] ?? "");
   const npmrc = read(join(home, ".npmrc"));
-  // The last line for a key wins, as in npm's ini reading.
+  // The last line for a key wins, as in npm's ini reading. Cut at the first `=` (linear, whatever the line holds),
+  // and a value in quotes loses them, as npm and bun read `_authToken="${NPM_TOKEN}"`.
+  const unquote = (value: string): string => {
+    const quote = value[0];
+    if (value.length < 2 || (quote !== '"' && quote !== "'") || value[value.length - 1] !== quote) return value;
+    if (quote === '"') {
+      try {
+        const parsed: unknown = JSON.parse(value);
+        if (typeof parsed === "string") return parsed;
+      } catch {
+        // no-cause: Not a JSON string: the text between the quotes is the value.
+      }
+    }
+    return value.slice(1, -1);
+  };
   const npmrcValue = (key: string): string | null => {
     let value: string | null = null;
     for (const line of (npmrc ?? "").split("\n")) {
-      const match = /^\s*([^=#;]+?)\s*=\s*(.*?)\s*$/.exec(line);
-      if (match && match[1] === key) value = expand(match[2]!);
+      const entry = line.trim();
+      if (!entry || entry[0] === "#" || entry[0] === ";") continue;
+      const equals = entry.indexOf("=");
+      if (equals <= 0 || entry.slice(0, equals).trim() !== key) continue;
+      value = expand(unquote(entry.slice(equals + 1).trim()));
     }
     return value;
   };
   type BunRegistry = { url: string; token: string | null; username: string | null; password: string | null };
   // A TOML string: basic, in double quotes, with its escapes, or literal, in single quotes.
   const tomlString = "\"((?:[^\"\\\\]|\\\\.)*)\"|'([^']*)'";
+  // A code point outside Unicode (`\UFFFFFFFF`) or a lone surrogate is not a character: bun refuses the file, and so
+  // does the check, with a reason instead of a thrown RangeError.
+  let problem: string | null = null;
   const unescape = (basic: string): string =>
     basic.replace(/\\(u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|.)/g, (_, escape: string) => {
-      if (escape.length > 1) return String.fromCodePoint(Number.parseInt(escape.slice(1), 16));
+      if (escape.length > 1) {
+        const code = Number.parseInt(escape.slice(1), 16);
+        if (code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) {
+          problem = "bun's install registry in bunfig.toml has an escape that is not a character";
+          return "";
+        }
+        return String.fromCodePoint(code);
+      }
       return ({ b: "\b", t: "\t", n: "\n", f: "\f", r: "\r" } as Record<string, string>)[escape] ?? escape;
     });
   // bun reads a whole value `$NAME` (or `${NAME}`) from the environment, as its `getAuto` does.
@@ -450,8 +480,9 @@ function readInstallerRegistry(method: GlobalInstallMethod, env: NodeJS.ProcessE
   const raw = (configured?.trim() || PUBLIC_REGISTRY).replace(/\/+$/, "");
   const secrets: string[] = [];
   const basic = (user: string, password: string) => {
-    secrets.push(user, password);
-    return `Basic ${Buffer.from(`${user}:${password}`, "utf8").toString("base64")}`;
+    const encoded = Buffer.from(`${user}:${password}`, "utf8").toString("base64");
+    secrets.push(user, password, encoded);
+    return `Basic ${encoded}`;
   };
   let url = raw;
   let parsed: URL | null = null;
@@ -522,6 +553,7 @@ function readInstallerRegistry(method: GlobalInstallMethod, env: NodeJS.ProcessE
     headers: authorization ? { authorization } : {},
     credential,
     secrets: secrets.filter((value) => value.length >= 3),
+    problem,
   };
 }
 

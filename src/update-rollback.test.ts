@@ -2822,6 +2822,80 @@ describe("the registry probe before any stop", () => {
     expect(bare.ok ? "" : bare.reason).toContain("asked with no credential");
   });
 
+  it("reads a quoted ~/.npmrc value as the installers do", async () => {
+    const home = tempDir("ravi-registry-home-");
+    for (const [line, env, sent] of [
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: `${NPM_TOKEN}` is .npmrc's own syntax, read as text.
+      ['//mirror.example/:_authToken="${NPM_TOKEN}"', { NPM_TOKEN: "ci-T0KEN" }, "ci-T0KEN"],
+      ["//mirror.example/:_authToken='single-T0KEN'", {}, "single-T0KEN"],
+      ["//mirror.example/:_authToken=plain-T0KEN", {}, "plain-T0KEN"],
+    ] as const) {
+      writeFileSync(join(home, ".npmrc"), `registry=https://mirror.example/npm/\n${line}\n`);
+      expect(installerRegistry("npm", env, home).headers).toEqual({ authorization: `Bearer ${sent}` });
+    }
+  });
+
+  it("reads a pathological ~/.npmrc in linear time, and refuses a bunfig escape that is not a character", async () => {
+    const home = tempDir("ravi-registry-home-");
+    // A line of spaces made the old line pattern cubic: seconds per read, a dozen reads per check.
+    writeFileSync(
+      join(home, ".npmrc"),
+      `${" ".repeat(5_000)}\nregistry=https://mirror.example/a/b/\n//mirror.example/:_authToken=T0KEN\n${"=".repeat(5_000)}\n`,
+    );
+    const started = performance.now();
+    expect(installerRegistry("npm", {}, home)).toEqual({
+      url: "https://mirror.example/a/b",
+      headers: { authorization: "Bearer T0KEN" },
+    });
+    expect(performance.now() - started).toBeLessThan(2_000);
+    rmSync(join(home, ".npmrc"));
+    for (const escape of ["\\UFFFFFFFF", "\\uD800"]) {
+      writeFileSync(
+        join(home, ".bunfig.toml"),
+        `[install]\nregistry = { url = "https://bun.example/npm/", token = "x${escape}y" }\n`,
+      );
+      const probe = answering(200);
+      expect(await releaseInRegistry("3.1.0", "bun", { env: {}, home, fetchRelease: probe.fetchRelease })).toEqual({
+        ok: false,
+        reason:
+          "bun's install registry in bunfig.toml has an escape that is not a character, so ravi.bot@3.1.0 cannot be looked up",
+      });
+      expect(probe.urls).toEqual([]);
+    }
+  });
+
+  it("takes every credential value out of a request error that quotes it", async () => {
+    const home = tempDir("ravi-registry-home-");
+    const cases: Array<[NodeJS.ProcessEnv, string, string[]]> = [];
+    writeFileSync(
+      join(home, ".npmrc"),
+      "registry=https://mirror.example/npm/\n//mirror.example/:_authToken=SECRET-T0KEN\n",
+    );
+    cases.push([{}, "Bearer SECRET-T0KEN", ["SECRET-T0KEN"]]);
+    const encoded = Buffer.from("gina:pw-SECRET").toString("base64");
+    cases.push([
+      { npm_config_registry: "https://gina:pw-SECRET@other.example/npm/" },
+      `Basic ${encoded}`,
+      ["pw-SECRET", encoded, "gina"],
+    ]);
+    for (const [env, header, secrets] of cases) {
+      // fetch quotes a header value it refuses (a \r inside it, for one).
+      const refused = new TypeError(`Header 'authorization' has invalid value: '${header}'`);
+      const result = await releaseInRegistry("3.1.0", "npm", {
+        env,
+        home,
+        fetchRelease: answering(refused).fetchRelease,
+      });
+      const reason = result.ok ? "" : result.reason;
+      const cause = result.ok ? "" : String((result.cause as Error | undefined)?.message ?? "");
+      expect(reason).toContain("***");
+      for (const secret of secrets) {
+        expect(reason).not.toContain(secret);
+        expect(cause).not.toContain(secret);
+      }
+    }
+  });
+
   it("records PM2 starting the daemon again during the probe as a refusal the command reports", async () => {
     const stateDir = tempDir("ravi-registry-state-");
     const install = globalInstall("3.2.0");

@@ -166,7 +166,10 @@
   even over a bunfig token for the same registry, then bun's install registry
   token or user and password, then `user:password@` taken off the address;
   another host's credential never sent; a 401 or 403 naming the credential,
-  never its value), the processes checked again after the probe (a PM2
+  never its value; a quoted `~/.npmrc` value read without its quotes; a
+  pathological `~/.npmrc` read in linear time; a bunfig escape that is not a
+  character refused before any request; every credential value, the Basic
+  header's included, taken out of a request error that quotes it), the processes checked again after the probe (a PM2
   restart refused as `UPDATE_RUNTIME_CHANGED`, recorded through the
   supervisor's entry; a failed read tried once more), and the refusal
   asking for `--running-release` only when that settles it; no
