@@ -90,6 +90,8 @@
       refresh published and no intent saved; a refresh event that fails MUST leave
       the intent set so `gh-follow` maintenance publishes it again, once, until it
       succeeds; a closed thread MUST resolve to the parent
+      The follow's instruction MUST tell a thread that another session started to
+      report CI, merge or review news to that session with `ravi sessions report`
       (`src/hooks/gh-watch.test.ts`, `src/pr/service.test.ts`,
       `src/triggers/__tests__/runner-named-session.test.ts`,
       `src/channels/slack/thread-lifecycle.test.ts`).

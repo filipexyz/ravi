@@ -1336,6 +1336,14 @@ describe("durable PR follow owner", () => {
     expect(dbGetTrigger(result.triggerId!)!.replySession).toBe("parent");
   });
 
+  it("tells a thread that owns a PR follow to report what changes its parent's work", () => {
+    // The follow no longer wakes the channel session for a PR a thread published, so the thread carries the news.
+    const message = buildGhFollowTriggerInput("o/r", 7, childContext).message;
+    expect(message).toContain("`ravi sessions report`");
+    expect(message).toContain("the CI conclusion on the head SHA");
+    expect(message).toContain("if you are not a thread, ignore this sentence");
+  });
+
   it("keeps an open thread's follow with the thread when another session observes the PR", async () => {
     seed();
     const old = dbCreateTrigger({
