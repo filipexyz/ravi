@@ -180,6 +180,10 @@ function rollbackFixture(
     previousRelease?: string;
     /** No snapshot: the update already stopped both processes (pids 300 and 301), and the state is untouched. */
     untouched?: boolean;
+    /** PM2 lists a daemon again (pid 310) that the rollback removes and that never exits. */
+    reRegistered?: boolean;
+    /** `pm2 delete` throws. */
+    deleteThrows?: boolean;
   } = {},
 ) {
   const previousRelease = input.previousRelease ?? "3.1.0";
@@ -188,7 +192,9 @@ function rollbackFixture(
   const bundle = install.target.bundlePath;
   const epoch = Math.ceil(statSync(bundle).mtimeMs) + 1;
   let processes: Pm2Process[] = input.untouched
-    ? []
+    ? input.reRegistered
+      ? [pm2Process("ravi", bundle, install.root, { pm_id: 7, pid: 310, startedAt: epoch })]
+      : []
     : [
         pm2Process("ravi", bundle, install.root, { pm_id: 5, pid: 300, startedAt: epoch }),
         pm2Process("ravi-channels", bundle, install.root, { pm_id: 6, pid: 301, startedAt: epoch }),
@@ -244,7 +250,7 @@ function rollbackFixture(
         );
       return processes;
     },
-    pidAlive: (pid) => input.stuckPid === true && pid === 300,
+    pidAlive: (pid) => (input.stuckPid === true && pid === 300) || (input.reRegistered === true && pid === 310),
     schemaPhase: () => (input.phase === undefined ? "ready" : input.phase),
     stabilityWindowMs: 1_000,
     startTimeoutMs: 2_000,
@@ -266,6 +272,7 @@ function rollbackFixture(
     log: () => {},
     run: async (command, args, options) => {
       calls.push({ command, args, env: options?.env });
+      if (command === "pm2" && args[0] === "delete" && input.deleteThrows) throw new Error("pm2 is not answering");
       if (command === "pm2" && args[0] === "delete") {
         processes = processes.filter((process) => String(process.pm_id) !== args[1]);
       } else if (command === "bun" && args[0] === "install") {
@@ -329,6 +336,15 @@ describe("update rollback", () => {
       "ravi daemon status",
     ]);
     expect(stuck.calls).toEqual([]);
+
+    // A process PM2 lists again is removed and waited for too, and named with the others; also when the removal throws.
+    for (const deleteThrows of [false, true]) {
+      const again = rollbackFixture({ untouched: true, reRegistered: true, deleteThrows });
+      const outcome = await rollBackUpdate(again.deps);
+      expect(outcome).toMatchObject({ ok: false, step: "stop" });
+      if (outcome.ok) throw new Error("unreachable");
+      expect(outcome.message).toContain("`ps -p 300,301,310` lists none");
+    }
   });
 
   it("leaves the restored state and the exact commands when the previous release cannot be installed", async () => {

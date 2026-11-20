@@ -514,6 +514,9 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
       : // Nothing to restore: only what PM2 still lists goes, before that release comes back.
         ["pm2 delete ravi-channels", "pm2 delete ravi", install, ...startCommands];
   let restored: { candidateDir: string; restoredAt: string } | null = null;
+  // Every process the rollback waits for: the ones the update stopped, and the ones it removes from PM2 itself.
+  const waited = new Set<number>((deps.stoppedPids ?? []).filter((pid) => pid > 0));
+  const exitCheck = () => (waited.size ? ` (\`ps -p ${[...waited].join(",")}\` lists none)` : "");
   let step: UpdateRollbackStep = "stop";
   const failed = (failedStep: UpdateRollbackStep, message: string, commands: string[]): UpdateRollbackOutcome => {
     log(`failed at ${failedStep}: ${message}`);
@@ -541,7 +544,7 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
       ? unrestoredSnapshot(reason, manifest)
       : `${reason} The state is untouched: no snapshot was taken and nothing ran on it after Ravi ` +
         `${plan.previousRelease}. Once every stopped process has exited` +
-        `${deps.stoppedPids?.length ? ` (\`ps -p ${deps.stoppedPids.join(",")}\` lists none)` : ""}, remove what PM2 ` +
+        `${exitCheck()}, remove what PM2 ` +
         `still lists, then install and start Ravi ${plan.previousRelease}: nothing may start beside a live one.`;
   const unrestoredSnapshot = (reason: string, manifest: UpdateSnapshotManifest) =>
     `${reason} Nothing was restored: the state is still what Ravi ${manifest.targetRelease} wrote. ` +
@@ -580,7 +583,7 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
           : manifest
             ? `The state may still be what Ravi ${manifest.targetRelease} wrote; the snapshot is in ${snapshotDir}.`
             : `The state is untouched; once every stopped process has exited` +
-              `${deps.stoppedPids?.length ? ` (\`ps -p ${deps.stoppedPids.join(",")}\` lists none)` : ""}, remove ` +
+              `${exitCheck()}, remove ` +
               `what PM2 still lists, then install and start Ravi ${plan.previousRelease}.`),
       commands,
     );
@@ -638,7 +641,7 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
         ? `stopping Ravi ${manifest.targetRelease} to restore the state Ravi ${plan.previousRelease} wrote`
         : `bringing Ravi ${plan.previousRelease} back on its untouched state`,
     );
-    const pids = new Set<number>((deps.stoppedPids ?? []).filter((pid) => pid > 0));
+    const pids = waited;
     for (const name of [CHANNELS_PM2_PROCESS_NAME, PM2_PROCESS_NAME]) {
       for (const entry of deps.getProcesses().filter((process) => process.name === name)) {
         if (entry.pid > 0) pids.add(entry.pid);
