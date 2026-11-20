@@ -148,6 +148,8 @@ export interface UpdateExecutionDeps {
     getProcesses: () => Pm2Process[];
     /** The detached supervisor that runs the rollback (`runManagedRuntimeRebindSupervisor`). */
     supervise?: typeof runManagedRuntimeRebindSupervisor;
+    /** The Ravi package this command runs from; by default the one of `process.argv[1]`. */
+    ownPackageRoot?: string | null;
   };
 }
 
@@ -1206,7 +1208,10 @@ async function runOperatorRollback(
     );
   }
   const getProcesses = deps.rollbackRuntime?.getProcesses ?? readManagedProcesses;
-  const ownRoot = findRaviPackageRoot(process.argv[1] ?? "");
+  const ownRoot =
+    deps.rollbackRuntime?.ownPackageRoot !== undefined
+      ? deps.rollbackRuntime.ownPackageRoot
+      : findRaviPackageRoot(process.argv[1] ?? "");
   const installMethod = ownRoot ? globalInstallMethodOf(ownRoot) : null;
   const processes = getProcesses();
   let rollback: OperatorRollbackPlan;
@@ -1218,6 +1223,26 @@ async function runOperatorRollback(
     throw cause;
   }
   const { manifest, plan } = rollback;
+  // The rollback runs in the supervisor of the daemon's own install. A release from before `ravi update --rollback`
+  // there would not know the request (it refuses it, schema 2, and stops nothing), so only this command's own
+  // release runs it, and a preview from another install says so first.
+  const target = resolveManagedRuntimeTargetFromPackageRoot(plan.packageRoot);
+  if (!target)
+    throw new UpdateFailure(
+      `The bundle of the running Ravi in ${plan.packageRoot} could not be resolved. This run stopped nothing.`,
+      UPDATE_ROLLBACK_UNAVAILABLE,
+      1,
+    );
+  const ownRelease = readRaviVersion(ownRoot);
+  if (ownRelease !== target.version)
+    throw new UpdateFailure(
+      `${UPDATE_ROLLBACK_UNAVAILABLE}: the daemon runs from ${plan.packageRoot}, which holds Ravi ${target.version}, ` +
+        `and this ravi is ${ownRelease ? `Ravi ${ownRelease} from ${ownRoot}` : "not an installed Ravi"}. The ` +
+        "rollback runs in the daemon's install: run `ravi update --rollback` with the ravi installed there. This run " +
+        "stopped nothing.",
+      UPDATE_ROLLBACK_UNAVAILABLE,
+      1,
+    );
   const candidateDir = join(updateSnapshotsDir(stateDir), manifest.id, "candidate");
   if (!options.execute) {
     contractDryRun(
@@ -1241,13 +1266,6 @@ async function runOperatorRollback(
   }
   // The stop, restore, reinstall and start run in the update supervisor: a detached process that holds the update
   // lock and outlives this command, so a closed terminal or a Ctrl-C does not leave the host half rolled back.
-  const target = resolveManagedRuntimeTargetFromPackageRoot(plan.packageRoot);
-  if (!target)
-    throw new UpdateFailure(
-      `The bundle of the running Ravi in ${plan.packageRoot} could not be resolved. This run stopped nothing.`,
-      UPDATE_ROLLBACK_UNAVAILABLE,
-      1,
-    );
   const supervisor = await (deps.rollbackRuntime?.supervise ?? runManagedRuntimeRebindSupervisor)(
     target,
     processes,

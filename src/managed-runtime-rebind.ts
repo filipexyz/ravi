@@ -123,7 +123,11 @@ export type ManagedRuntimeRebindStep =
   | { action: "save"; args: string[] };
 
 type ManagedRuntimeRebindRequest = {
-  schemaVersion: 1;
+  /**
+   * 1: a rebind on the target (an update). 2: a rollback, and only a rollback: a supervisor from before
+   * `ravi update --rollback` accepts schema 1 alone, so it refuses a rollback instead of reading it as a rebind.
+   */
+  schemaVersion: 1 | 2;
   target: ManagedRuntimeTarget;
   previousProcesses: ManagedRuntimeProcessSnapshot[];
   /** `ravi update --rollback --execute`: the supervisor rolls back to the snapshot the preview named, no rebind. */
@@ -320,7 +324,11 @@ export function decodeManagedRuntimeRebindRequest(encoded: string): ManagedRunti
   }
   if (!parsed || typeof parsed !== "object") throw new Error("Invalid managed runtime rebind request");
   const input = parsed as Partial<ManagedRuntimeRebindRequest>;
-  if (input.schemaVersion !== 1 || !input.target || !Array.isArray(input.previousProcesses)) {
+  if (
+    (input.schemaVersion !== 1 && input.schemaVersion !== 2) ||
+    !input.target ||
+    !Array.isArray(input.previousProcesses)
+  ) {
     throw new Error("Invalid managed runtime rebind request");
   }
 
@@ -352,21 +360,19 @@ export function decodeManagedRuntimeRebindRequest(encoded: string): ManagedRunti
   });
 
   const rollback = input.rollback;
+  // Schema 2 is a rollback and a rollback is schema 2: read as schema 1, it would be a rebind on the running release.
   if (
-    rollback !== undefined &&
-    (!rollback ||
-      typeof rollback !== "object" ||
-      typeof rollback.snapshotId !== "string" ||
-      !/^\d{8}T\d{6}Z-[0-9a-f]{6}$/.test(rollback.snapshotId))
+    (input.schemaVersion === 2) !== (rollback !== undefined) ||
+    (rollback !== undefined &&
+      (!rollback ||
+        typeof rollback !== "object" ||
+        typeof rollback.snapshotId !== "string" ||
+        !/^\d{8}T\d{6}Z-[0-9a-f]{6}$/.test(rollback.snapshotId)))
   ) {
     throw new Error("Invalid managed runtime rebind request");
   }
-  return {
-    schemaVersion: 1,
-    target,
-    previousProcesses,
-    ...(rollback ? { rollback: { snapshotId: rollback.snapshotId } } : {}),
-  };
+  if (rollback) return { schemaVersion: 2, target, previousProcesses, rollback: { snapshotId: rollback.snapshotId } };
+  return { schemaVersion: 1, target, previousProcesses };
 }
 
 async function waitForManagedRuntimeTarget(
@@ -965,12 +971,10 @@ export function buildManagedRuntimeRebindSupervisorInvocation(
   baseEnv: NodeJS.ProcessEnv = process.env,
   options: { rollback?: { snapshotId: string } } = {},
 ): { command: string; args: string[]; cwd: string; env: Record<string, string> } {
-  const request: ManagedRuntimeRebindRequest = {
-    schemaVersion: 1,
-    target,
-    previousProcesses: managedRuntimeSnapshot(processes),
-    ...(options.rollback ? { rollback: options.rollback } : {}),
-  };
+  // A rollback goes as schema 2: a supervisor from before `ravi update --rollback` refuses it, stopping nothing.
+  const request: ManagedRuntimeRebindRequest = options.rollback
+    ? { schemaVersion: 2, target, previousProcesses: managedRuntimeSnapshot(processes), rollback: options.rollback }
+    : { schemaVersion: 1, target, previousProcesses: managedRuntimeSnapshot(processes) };
   const env = buildPm2Env({
     ...(baseEnv as Record<string, string>),
     RAVI_BUNDLE: target.bundlePath,

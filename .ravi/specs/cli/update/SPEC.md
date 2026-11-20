@@ -262,9 +262,16 @@ CLI that run installed.
   snapshot's time and where what was written since then is kept.
 - Before stopping anything it MUST refuse with `UPDATE_ROLLBACK_UNAVAILABLE`
   when there is no update snapshot, when the latest one was already restored
-  (or a restore of it was cut short), when the daemon does not run from a
-  global install, when the daemon's verified release is not the target of
-  that update, or when the caller runs inside the daemon's process tree. Before
+  (or a restore of it was cut short), when a copy its manifest lists is
+  missing or is not the size it was copied with, when the daemon does not run
+  from a global install, when the daemon's verified release is not the target
+  of that update, when the command's own release is not the one installed
+  where the daemon runs from (the rollback runs in that install's supervisor),
+  or when the caller runs inside the daemon's process tree. The rollback
+  itself, automatic or not, MUST check the snapshot's copies again before its
+  first `pm2 delete` and stop nothing when one is gone. Its request to the
+  supervisor MUST be schema 2, which a supervisor from before
+  `ravi update --rollback` refuses instead of reading it as a rebind. Before
   planning, it MUST refuse with `UPDATE_IN_PROGRESS` while another process's
   supervisor holds the update lock (an update, or a rollback whose command was
   cut), pointing at `supervisor-result.json` and `supervisor.log`; that probe
@@ -272,7 +279,8 @@ CLI that run installed.
   unused snapshot (a rollback cut after its stop), the refusal MUST say so and
   give the commands that finish it by hand: the snapshot's restore and the
   previous release's install and start, or, once a restore ran, its
-  `restore.json` and the install and start. Commands in a refusal or a failure
+  `restore.json` and the install and start; a snapshot that cannot be put back
+  gives only the start of the release that wrote the state. Commands in a refusal or a failure
   MUST come one per line after where they are kept (`finish-by-hand.txt` next to
   the snapshot, written by a run with `--execute` and never by the preview, or
   `supervisor-result.json`): a message line past 2048

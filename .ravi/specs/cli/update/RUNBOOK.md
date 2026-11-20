@@ -118,8 +118,11 @@ authorizes no database or package downgrade by hand: the update's own rollback
   hand: wait for `<state>/updates/supervisor-result.json`, and follow
   `<state>/updates/supervisor.log` meanwhile.
 - `UPDATE_ROLLBACK_UNAVAILABLE`: this run stopped nothing; the message says why
-  (no snapshot, already restored, a source checkout, a daemon on another
-  release, or a caller inside the daemon's tree). It says Ravi is not running
+  (no snapshot, already restored, a snapshot copy that is gone or not its
+  size, a source checkout, a daemon on another release, a `ravi` from another
+  install than the daemon's, or a caller inside the daemon's tree). For the
+  last two, run `ravi update --rollback` from a terminal with the `ravi` of the
+  daemon's install. It says Ravi is not running
   under PM2 only when no supervisor holds the update lock: then an earlier
   rollback was cut after its stop. Run the commands it gives, one per line and
   in order, with nothing started meanwhile. The preview prints them and writes
