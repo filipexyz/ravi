@@ -161,8 +161,8 @@ export interface RaviUpdateRollbackResult {
   from: string;
   to: string;
   snapshotAt: string;
-  restoredAt: string;
-  candidateDir: string;
+  restoredAt: string | null;
+  candidateDir: string | null;
   message: string;
 }
 

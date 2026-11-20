@@ -1510,23 +1510,23 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | mail | src/mail/client.ts | 226 | fixed | binding retained / no recognized error surface | src/mail/client.ts:b920208fa920df66333f7b0a |
 | mailbox | src/mailbox/db.ts | 1334 | triaged-follow-up | catch-without-binding | src/mailbox/db.ts:f43dcb2b37c443b0aa9129a8 |
 | mailbox | src/mailbox/db.ts | 1344 | triaged-follow-up | catch-without-binding | src/mailbox/db.ts:cc4dfd2e54bc8341e5292796 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 237 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:4a827ce10671c294ac54a992 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 306 | triaged-follow-up | catch-without-binding | src/managed-runtime-rebind.ts:dd856169db1b4b768e670ba3 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 550 | no-cause | A failed liveness probe cannot prove a supervised successor, so preserve the predecessor. | src/managed-runtime-rebind.ts:b43d3dac13a0ff957072832b |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 623 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:63dc9f40c32a704cc7614693 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 645 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:a6f06efe8a4d6a612eac9823 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 721 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:cf24067bbb8806b7b387fb55 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 756 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:92f5d50a89239a1cae72b182 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 765 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:483a4563b318c2c6006f2d61 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 823 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:7237f8b2d6f9928499bd5390 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 841 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:9f2438fb6133c71f601d6b45 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 889 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:00fc922d938f6439bbaf0721 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 924 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:6a77dbe236f5601dbd8dc222 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 944 | no-cause | No refusal file (or an unreadable one) means the supervisor recorded no refusal. | src/managed-runtime-rebind.ts:f6fcd3fc7c99cdcaf0541e85 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 968 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:367f51c6f1f1d71874a5939f |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 992 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:1ebee7d3bdd4356114ec83da |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1021 | no-cause | Without a log file the supervisor runs as before, output ignored; a refusal still reaches the CLI through its file. | src/managed-runtime-rebind.ts:4b7988dfa2bbd21b4038d48b |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1060 | no-cause | A supervisor that cannot start reaches the CLI as a run that did not converge; the update fails on that result. | src/managed-runtime-rebind.ts:95d81aa49a91bab2e800eab6 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 244 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:4a827ce10671c294ac54a992 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 313 | triaged-follow-up | catch-without-binding | src/managed-runtime-rebind.ts:dd856169db1b4b768e670ba3 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 558 | no-cause | A failed liveness probe cannot prove a supervised successor, so preserve the predecessor. | src/managed-runtime-rebind.ts:b43d3dac13a0ff957072832b |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 631 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:63dc9f40c32a704cc7614693 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 662 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:acf803f4308f59e92a8bd062 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 745 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:cf24067bbb8806b7b387fb55 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 793 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:92f5d50a89239a1cae72b182 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 802 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:483a4563b318c2c6006f2d61 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 864 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:7237f8b2d6f9928499bd5390 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 883 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:9f2438fb6133c71f601d6b45 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 931 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:00fc922d938f6439bbaf0721 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 966 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:6a77dbe236f5601dbd8dc222 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 986 | no-cause | No refusal file (or an unreadable one) means the supervisor recorded no refusal. | src/managed-runtime-rebind.ts:f6fcd3fc7c99cdcaf0541e85 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1010 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:367f51c6f1f1d71874a5939f |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1034 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:1ebee7d3bdd4356114ec83da |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1063 | no-cause | Without a log file the supervisor runs as before, output ignored; a refusal still reaches the CLI through its file. | src/managed-runtime-rebind.ts:4b7988dfa2bbd21b4038d48b |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1102 | no-cause | A supervisor that cannot start reaches the CLI as a run that did not converge; the update fails on that result. | src/managed-runtime-rebind.ts:95d81aa49a91bab2e800eab6 |
 | managed-runtime.ts | src/managed-runtime.ts | 63 | triaged-follow-up | catch-without-binding | src/managed-runtime.ts:c7e943a5a8535897215a0df9 |
 | managed-runtime.ts | src/managed-runtime.ts | 78 | triaged-follow-up | catch-without-binding | src/managed-runtime.ts:23aa5ff5991b0e94a5873d35 |
 | managed-runtime.ts | src/managed-runtime.ts | 91 | triaged-follow-up | catch-without-binding | src/managed-runtime.ts:91f9c7ce96f25678f32c79a6 |
@@ -2301,12 +2301,12 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | update-rollback.ts | src/update-rollback.ts | 118 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:e2dd225a4842bfcfdd7514bb |
 | update-rollback.ts | src/update-rollback.ts | 128 | no-cause | A snapshot without a readable manifest is incomplete; the next older one is checked. | src/update-rollback.ts:6bb0c5607571c133e81bd616 |
 | update-rollback.ts | src/update-rollback.ts | 249 | no-cause | No result file (or an unreadable one) means this supervisor recorded no outcome. | src/update-rollback.ts:950ea65e82ee458d1b4c547f |
-| update-rollback.ts | src/update-rollback.ts | 398 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:8475683d265ecd380c32e18d |
-| update-rollback.ts | src/update-rollback.ts | 414 | no-cause | The failure below already carries the cause; these commands only need to be safe to print. | src/update-rollback.ts:146a5a481dd1b0ef4b8f4a2a |
-| update-rollback.ts | src/update-rollback.ts | 457 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:275ecc6f9e8d149ffe6d2a93 |
-| update-rollback.ts | src/update-rollback.ts | 463 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:64d4ee24c169f758a8ecccf8 |
-| update-rollback.ts | src/update-rollback.ts | 484 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:53243d6cd67eafda5692ef98 |
-| update-rollback.ts | src/update-rollback.ts | 497 | no-cause | The global lockfile may not exist; the update removes it the same way before installing. | src/update-rollback.ts:5b282885b7f89bdc377e0129 |
+| update-rollback.ts | src/update-rollback.ts | 415 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:6ef3b8550c7390ee14fddd7a |
+| update-rollback.ts | src/update-rollback.ts | 431 | no-cause | The failure below already carries the cause; these commands only need to be safe to print. | src/update-rollback.ts:146a5a481dd1b0ef4b8f4a2a |
+| update-rollback.ts | src/update-rollback.ts | 455 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:0f29d21958b8aebf676684e4 |
+| update-rollback.ts | src/update-rollback.ts | 461 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:6fba620b78ad9db9a9b7093f |
+| update-rollback.ts | src/update-rollback.ts | 482 | fixed | binding retained / no recognized error surface | src/update-rollback.ts:4fc4c71229c10cca5b4e7791 |
+| update-rollback.ts | src/update-rollback.ts | 529 | no-cause | The global lockfile may not exist; the update removes it the same way before installing. | src/update-rollback.ts:5b282885b7f89bdc377e0129 |
 | update-snapshot.ts | src/update-snapshot.ts | 137 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:58f28d04a4b48fd2e0237f55 |
 | update-snapshot.ts | src/update-snapshot.ts | 163 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:a1e50333d614882b3da68e21 |
 | update-snapshot.ts | src/update-snapshot.ts | 185 | no-cause | A filesystem without clones takes full copies; the space check accounts for them. | src/update-snapshot.ts:1023bb66947de74380272342 |
@@ -2314,11 +2314,11 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | update-snapshot.ts | src/update-snapshot.ts | 307 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:d43458ef8409be4c11552da4 |
 | update-snapshot.ts | src/update-snapshot.ts | 330 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:f1f091783e5f6c5d54bed45c |
 | update-snapshot.ts | src/update-snapshot.ts | 346 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:9ad62d26a23f5087718bd9e3 |
-| update-snapshot.ts | src/update-snapshot.ts | 415 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:71b9563b2e932e62c049e096 |
-| update-snapshot.ts | src/update-snapshot.ts | 426 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:f17321acb76c9338a8022836 |
-| update-snapshot.ts | src/update-snapshot.ts | 551 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:e331049c21c46adcd7503b04 |
-| update-snapshot.ts | src/update-snapshot.ts | 573 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:d068542ebca9337d4a7f9da2 |
-| update-snapshot.ts | src/update-snapshot.ts | 576 | no-cause | The journal write failed too; the error below still carries every move and the commands. | src/update-snapshot.ts:1a1c06b2c58216955a1ff528 |
+| update-snapshot.ts | src/update-snapshot.ts | 417 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:71b9563b2e932e62c049e096 |
+| update-snapshot.ts | src/update-snapshot.ts | 428 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:f17321acb76c9338a8022836 |
+| update-snapshot.ts | src/update-snapshot.ts | 553 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:e331049c21c46adcd7503b04 |
+| update-snapshot.ts | src/update-snapshot.ts | 575 | fixed | binding retained / no recognized error surface | src/update-snapshot.ts:d068542ebca9337d4a7f9da2 |
+| update-snapshot.ts | src/update-snapshot.ts | 578 | no-cause | The journal write failed too; the error below still carries every move and the commands. | src/update-snapshot.ts:1a1c06b2c58216955a1ff528 |
 | update-waypoint.ts | src/update-waypoint.ts | 95 | fixed | binding retained / no recognized error surface | src/update-waypoint.ts:076101a9683751c5a4d92190 |
 | update-waypoint.ts | src/update-waypoint.ts | 134 | no-cause | The global lockfile may not exist; the update removes it the same way before installing. | src/update-waypoint.ts:698a8ed5be02ea79b1e12d26 |
 | utils | src/utils/account-home.ts | 44 | no-cause | Missing or invalid OS account evidence disables implicit real-state transport. | src/utils/account-home.ts:0a27194e3f3a6cd9fbc44887 |
