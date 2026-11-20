@@ -1185,6 +1185,47 @@ describe("update supervisor with a rollback plan", () => {
     }
   });
 
+  it("refuses before the snapshot when PM2 starts the daemon again while the registry is asked", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false });
+    const mutations: string[][] = [];
+    let restarted = false;
+    const refusal = await fixture
+      .rebind({
+        // PM2 starts the daemon again during the probe: same name, new pid and start time, on the installed target.
+        releaseAvailable: async () => {
+          restarted = true;
+          return { ok: true as const };
+        },
+        getProcesses: () =>
+          fixture
+            .processes()
+            .map((process) =>
+              restarted && process.name === "ravi"
+                ? { ...process, pid: 99, startedAt: (process.startedAt ?? 0) + 5_000, createdAt: 2 }
+                : process,
+            ),
+        run: async (command, args) => {
+          mutations.push(args);
+          return fixture.run(command, args);
+        },
+      })
+      .then(
+        () => null,
+        (error: Error & { code?: string }) => error,
+      );
+    expect(restarted).toBe(true);
+    expect(refusal?.code).toBe("UPDATE_RUNTIME_CHANGED");
+    expect(refusal?.message).toContain("(ravi pid 10 -> 99)");
+    expect(refusal?.message).toContain("Nothing was stopped and no snapshot was taken.");
+    // Not one PM2 mutation, and no snapshot.
+    expect(mutations).toEqual([]);
+    expect(existsSync(updateSnapshotsDir(fixture.stateDir))).toBe(false);
+    // Unchanged processes: the update goes on past the probe as before.
+    const control = supervisorFixture({ targetNeverReady: false });
+    expect(await control.rebind()).toBe(true);
+    expect(control.events.slice(0, 2)).toEqual(["delete:ravi-channels", "delete:ravi"]);
+  });
+
   it("does not repeat that --running-release is not used once the waypoint took it", async () => {
     const fixture = supervisorFixture({ targetNeverReady: false });
     let prepared: string | null = null;

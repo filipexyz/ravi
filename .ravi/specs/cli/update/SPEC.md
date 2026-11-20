@@ -308,7 +308,11 @@ CLI that run installed.
   installer reads (a probe with a timeout), and refuse otherwise
   (`UPDATE_PREVIOUS_RELEASE_UNAVAILABLE` for an update,
   `UPDATE_ROLLBACK_UNAVAILABLE` for the rollback): found out after the stop,
-  the host stays down. The registry is the installer's: its environment
+  the host stays down. After the probe, the update MUST check again that each
+  managed process is the one it started from (pid and start time) and refuse
+  with `UPDATE_RUNTIME_CHANGED` before any stop or snapshot when PM2 started
+  one again meanwhile: that process runs the installed target, and the
+  snapshot would keep its writes as the previous release's state. The registry is the installer's: its environment
   (`BUN_CONFIG_REGISTRY` for bun, `npm_config_registry`), then `~/.npmrc` (the
   last `registry=` line; bun reads it over its `bunfig.toml`), then bun's
   `[install] registry`, then `https://registry.npmjs.org`.

@@ -463,15 +463,7 @@ export async function rebindManagedRuntimeProcesses(
   if (channels?.status === "online" && daemon?.status !== "online") return false;
 
   const initial = getProcesses();
-  for (const previous of previousProcesses) {
-    const matches = initial.filter((process) => process.name === previous.name);
-    if (
-      matches.length !== 1 ||
-      matches[0]!.pid !== previous.pid ||
-      (previous.createdAt !== null && matches[0]!.createdAt !== previous.createdAt)
-    )
-      return false;
-  }
+  if (changedManagedProcesses(previousProcesses, initial)) return false;
 
   // Before any stop: whether this update can roll back, and room on the disk for its snapshot.
   let rollbackPlan = (dependencies.rollbackPlan ?? resolveUpdateRollbackPlan)({
@@ -525,6 +517,10 @@ export async function rebindManagedRuntimeProcesses(
         },
         { cause: available.cause },
       );
+    // The probe can wait 15 s. A daemon PM2 started again meanwhile runs the installed package, the target, and
+    // writes the state, which the snapshot would then keep as the previous release's: the same check again.
+    const changed = changedManagedProcesses(previousProcesses, getProcesses());
+    if (changed) throw new UpdateRuntimeChangedError(changed, target.version, rollbackPlan.previousRelease);
   }
   const stores = rollbackPlan ? (dependencies.storePaths ?? updateStorePaths)(stateDir) : [];
   const snapshotPlan = rollbackPlan
@@ -1186,7 +1182,8 @@ export async function maybeRunManagedRuntimeRebindFromEnv(
       if (
         code === UPDATE_WAYPOINT_REQUIRED ||
         code === UPDATE_SNAPSHOT_SPACE ||
-        code === UPDATE_PREVIOUS_RELEASE_UNAVAILABLE
+        code === UPDATE_PREVIOUS_RELEASE_UNAVAILABLE ||
+        code === UPDATE_RUNTIME_CHANGED
       ) {
         throw recordSupervisorRefusal(code, (error as Error).message);
       }
@@ -1200,6 +1197,41 @@ export async function maybeRunManagedRuntimeRebindFromEnv(
 }
 
 export const UPDATE_IN_PROGRESS = "UPDATE_IN_PROGRESS";
+export const UPDATE_RUNTIME_CHANGED = "UPDATE_RUNTIME_CHANGED";
+
+/**
+ * How the managed processes differ from the ones the update started from (`ravi pid 10 -> 99`), or null when each one
+ * is still the same incarnation: one entry by that name, same pid, same start time.
+ */
+export function changedManagedProcesses(
+  previousProcesses: ManagedRuntimeProcessSnapshot[],
+  processes: Pm2Process[],
+): string | null {
+  for (const previous of previousProcesses) {
+    const matches = processes.filter((process) => process.name === previous.name);
+    if (matches.length !== 1) return `${previous.name} is listed ${matches.length} times, not once`;
+    if (
+      matches[0]!.pid !== previous.pid ||
+      (previous.createdAt !== null && matches[0]!.createdAt !== previous.createdAt)
+    )
+      return `${previous.name} pid ${previous.pid} -> ${matches[0]!.pid}`;
+  }
+  return null;
+}
+
+/** PM2 started a managed process again while the update checked, before any stop or snapshot. */
+export class UpdateRuntimeChangedError extends Error {
+  readonly code = UPDATE_RUNTIME_CHANGED;
+  constructor(changed: string, targetVersion: string, previousRelease: string) {
+    super(
+      `${UPDATE_RUNTIME_CHANGED}: PM2 started Ravi again while the update checked the registry (${changed}). A ` +
+        `process started now runs the installed package, Ravi ${targetVersion}, and may already write the state, ` +
+        `which a snapshot would keep as Ravi ${previousRelease}'s. Nothing was stopped and no snapshot was taken. ` +
+        "Run `ravi daemon status` to see what runs, then the same `ravi update` again.",
+    );
+    this.name = "UpdateRuntimeChangedError";
+  }
+}
 
 /**
  * One update supervisor per state directory, for its whole life: a second one would prune the first one's

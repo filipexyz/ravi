@@ -105,6 +105,10 @@ authorizes no database or package downgrade by hand: the update's own rollback
   credential; a token from `~/.npmrc` went only to its own host). When the
   release came from `--running-release`, check that value; otherwise run the
   update again once the registry has it.
+- `UPDATE_RUNTIME_CHANGED`: PM2 started Ravi again while the update checked
+  the registry, so the update stopped nothing and took no snapshot (a process
+  started now runs the installed package). Run `ravi daemon status`, then the
+  same `ravi update` again.
 - `UPDATE_WAYPOINT_REQUIRED`: the update could not take the waypoint by itself
   (a source checkout, a running release not older than the waypoint, or a
   daemon with no boot record whose release it could not tell). Nothing was

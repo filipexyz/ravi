@@ -1513,23 +1513,23 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | mailbox | src/mailbox/db.ts | 1344 | triaged-follow-up | catch-without-binding | src/mailbox/db.ts:cc4dfd2e54bc8341e5292796 |
 | managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 268 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:4a827ce10671c294ac54a992 |
 | managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 337 | triaged-follow-up | catch-without-binding | src/managed-runtime-rebind.ts:dd856169db1b4b768e670ba3 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 651 | no-cause | A failed liveness probe cannot prove a supervised successor, so preserve the predecessor. | src/managed-runtime-rebind.ts:b43d3dac13a0ff957072832b |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 724 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:63dc9f40c32a704cc7614693 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 755 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:acf803f4308f59e92a8bd062 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 830 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:cf24067bbb8806b7b387fb55 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 934 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:3711ded88737e8e7b3434290 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 944 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:742bd31d9378dff0bbac2933 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1002 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:7237f8b2d6f9928499bd5390 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1021 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:9f2438fb6133c71f601d6b45 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1074 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:00fc922d938f6439bbaf0721 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1109 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:6a77dbe236f5601dbd8dc222 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1129 | no-cause | No refusal file (or an unreadable one) means the supervisor recorded no refusal. | src/managed-runtime-rebind.ts:f6fcd3fc7c99cdcaf0541e85 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1165 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:10cad93d10f2bfd85c40b4f4 |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1183 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:4d8d67bc569b75f736b1aade |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1220 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:b6a3ddafd652f8e19b2422df |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1231 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:1ebee7d3bdd4356114ec83da |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1260 | no-cause | Without a log file the supervisor runs as before, output ignored; a refusal still reaches the CLI through its file. | src/managed-runtime-rebind.ts:4b7988dfa2bbd21b4038d48b |
-| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1312 | no-cause | A supervisor that cannot start reaches the CLI as a run that did not converge; the update fails on that result. | src/managed-runtime-rebind.ts:95d81aa49a91bab2e800eab6 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 647 | no-cause | A failed liveness probe cannot prove a supervised successor, so preserve the predecessor. | src/managed-runtime-rebind.ts:b43d3dac13a0ff957072832b |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 720 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:63dc9f40c32a704cc7614693 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 751 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:acf803f4308f59e92a8bd062 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 826 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:cf24067bbb8806b7b387fb55 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 930 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:3711ded88737e8e7b3434290 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 940 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:742bd31d9378dff0bbac2933 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 998 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:7237f8b2d6f9928499bd5390 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1017 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:9f2438fb6133c71f601d6b45 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1070 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:00fc922d938f6439bbaf0721 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1105 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:6a77dbe236f5601dbd8dc222 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1125 | no-cause | No refusal file (or an unreadable one) means the supervisor recorded no refusal. | src/managed-runtime-rebind.ts:f6fcd3fc7c99cdcaf0541e85 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1161 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:10cad93d10f2bfd85c40b4f4 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1179 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:2426af2759c3a940e60174f9 |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1252 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:b6a3ddafd652f8e19b2422df |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1263 | fixed | binding retained / no recognized error surface | src/managed-runtime-rebind.ts:1ebee7d3bdd4356114ec83da |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1292 | no-cause | Without a log file the supervisor runs as before, output ignored; a refusal still reaches the CLI through its file. | src/managed-runtime-rebind.ts:4b7988dfa2bbd21b4038d48b |
+| managed-runtime-rebind.ts | src/managed-runtime-rebind.ts | 1344 | no-cause | A supervisor that cannot start reaches the CLI as a run that did not converge; the update fails on that result. | src/managed-runtime-rebind.ts:95d81aa49a91bab2e800eab6 |
 | managed-runtime.ts | src/managed-runtime.ts | 63 | triaged-follow-up | catch-without-binding | src/managed-runtime.ts:c7e943a5a8535897215a0df9 |
 | managed-runtime.ts | src/managed-runtime.ts | 78 | triaged-follow-up | catch-without-binding | src/managed-runtime.ts:23aa5ff5991b0e94a5873d35 |
 | managed-runtime.ts | src/managed-runtime.ts | 91 | triaged-follow-up | catch-without-binding | src/managed-runtime.ts:91f9c7ce96f25678f32c79a6 |
