@@ -65,6 +65,10 @@ let agentMessageByRef: Record<string, unknown> | null = null;
 const agentChatActionCounts = new Map<string, { ownMessageCount: number; ownTextMessageCount: number }>();
 let stickerCatalog: Array<Record<string, unknown>> = [];
 const publishedOutboundJobs: Array<Record<string, unknown>> = [];
+const savedOutboundJobs = new Map<
+  string,
+  { status: "pending" | "published" | "suppressed"; job: Record<string, unknown> }
+>();
 const createdSlackThreadLifecycles: Array<Record<string, unknown>> = [];
 /** The lifecycle table as the real store keeps it: the first insert for a request id wins, repeats change nothing. */
 const storedSlackThreadRequests = new Map<string, Record<string, unknown>>();
@@ -231,8 +235,12 @@ mock.module("../../omni/session-stream.js", () => ({
 }));
 
 mock.module("../../channels/outbound-publish-outbox.js", () => ({
+  // The outbox keeps the first job it accepts for a key and answers a repeat from it.
+  getChannelOutboundPublishJob: (idempotencyKey: string) => savedOutboundJobs.get(idempotencyKey) ?? null,
   publishChannelOutboundJobDurably: mock(async (job: Record<string, unknown>) => {
     publishedOutboundJobs.push(job);
+    const key = (job as any).request.idempotencyKey as string;
+    if (!savedOutboundJobs.has(key)) savedOutboundJobs.set(key, { status: "pending", job });
     return {
       ok: true,
       publishedNow: true,
@@ -729,6 +737,7 @@ beforeEach(() => {
   agentChatActionCounts.clear();
   stickerCatalog = [];
   publishedOutboundJobs.length = 0;
+  savedOutboundJobs.clear();
   createdSlackThreadLifecycles.length = 0;
   storedSlackThreadRequests.clear();
   recentSlackThreadRequestQueries.length = 0;
@@ -2384,6 +2393,62 @@ describe("SessionCommands attach hints", () => {
 
       expect(storedSlackThreadRequests.size).toBe(1);
       expect(publishedOutboundJobs).toHaveLength(1);
+    });
+
+    it("matches a keyed retry after the provider the parent lent it changed, since the caller never passed one", async () => {
+      seedWhatsAppTurnInSlackAttachedSession("dm");
+      (resolvedSession as any).runtimeProviderOverride = "codex";
+      const first = await create("Resumo da semana", { key: "weekly-summary" });
+      expect(first.child.providerOverride).toBe("codex");
+
+      delete (resolvedSession as any).runtimeProviderOverride;
+      const again = await create("Resumo da semana", { key: "weekly-summary" });
+
+      expect(again).toMatchObject({ replayed: true, requestId: first.requestId, child: { providerOverride: "codex" } });
+      expect(storedSlackThreadRequests.size).toBe(1);
+    });
+
+    it("refuses a key reused with another provider the caller passed", async () => {
+      seedWhatsAppTurnInSlackAttachedSession("dm");
+      await create("Resumo da semana", { key: "weekly-summary", provider: "codex" });
+
+      await expect(create("Resumo da semana", { key: "weekly-summary", provider: "claude" })).rejects.toMatchObject({
+        code: "THREAD_IDEMPOTENCY_KEY_REUSED",
+      });
+      expect(storedSlackThreadRequests.size).toBe(1);
+    });
+
+    it("publishes the job the outbox saved, so renaming the parent is not a conflict for a queued repeat", async () => {
+      seedWhatsAppTurnInSlackAttachedSession("dm");
+      await create("Resumo da semana", { key: "weekly-summary" });
+
+      (resolvedSession as any).name = "dev-renamed";
+      const again = await create("Resumo da semana", { key: "weekly-summary" });
+
+      expect(again.replayed).toBe(true);
+      expect(publishedOutboundJobs).toHaveLength(2);
+      // The saved job still names the parent as it was; a job rebuilt now would say "dev-renamed".
+      expect((publishedOutboundJobs[1] as any).request.origin.sessionName).toBe("dev-main");
+    });
+
+    it("returns the request a key created even after its thread ended, with nothing to publish", async () => {
+      seedWhatsAppTurnInSlackAttachedSession("dm");
+      const first = await create("Resumo da semana", { key: "weekly-summary" });
+      for (const status of ["closed", "failed"]) {
+        storedSlackThreadRequests.get(first.requestId)!.status = status;
+
+        const again = await create("Resumo da semana", { key: "weekly-summary" });
+
+        expectReturnShape(sessionCreateThreadReturnSchema, again);
+        expect(again).toMatchObject({
+          replayed: true,
+          requestId: first.requestId,
+          publishedNow: false,
+          publishPending: false,
+        });
+      }
+      expect(publishedOutboundJobs).toHaveLength(1);
+      expect(storedSlackThreadRequests.size).toBe(1);
     });
 
     it("rejects an --idempotency-key longer than 200 characters before it creates anything", async () => {

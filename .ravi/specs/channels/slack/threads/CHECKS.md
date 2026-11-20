@@ -45,10 +45,14 @@
       `queued`, `root_delivered`, `starting` or `open`. The repeat MUST answer
       `replayed: true` with the stored `requestId`, origin and options, create no
       lifecycle row and no second outbound job, and publish nothing once the
-      request is past `queued`; a `failed` or `closed` request MUST NOT be
-      repeated; the same key with another message or options MUST refuse with
-      `THREAD_IDEMPOTENCY_KEY_REUSED` and change nothing; a key over 200 characters
-      MUST yield `USAGE_ERROR`
+      request is past `queued`; the automatic match MUST skip a `failed` or
+      `closed` request while an explicit key MUST still return the request it
+      created; a repeat MUST publish the job the outbox saved, so renaming the
+      parent between the two calls is not a conflict; the same key with another
+      message or options MUST refuse with `THREAD_IDEMPOTENCY_KEY_REUSED` and
+      change nothing, but a retry whose provider came from the parent MUST still
+      match after the parent's provider override changed; a key over 200
+      characters MUST yield `USAGE_ERROR`
       (`src/channels/slack/thread-request-replay.test.ts`,
       `src/cli/commands/sessions.test.ts`,
       `src/cli/commands/sessions-create-thread-gateway.test.ts`,

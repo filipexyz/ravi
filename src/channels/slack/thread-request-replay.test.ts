@@ -105,6 +105,20 @@ describe("slackThreadRequestMatches", () => {
       false,
     );
   });
+
+  it("leaves out a provider the parent lent, since the caller never passed it, and nothing else", () => {
+    const lent = { providerFromParent: true };
+    // The parent's provider override changed after the thread was asked for: the retry now resolves another one.
+    expect(slackThreadRequestMatches(stored, { ...stored, providerOverride: "claude" }, lent)).toBe(true);
+    expect(slackThreadRequestMatches(stored, { ...stored, providerOverride: undefined }, lent)).toBe(true);
+    // Without the flag the provider is part of the request, as it is for a provider the caller passed.
+    expect(
+      slackThreadRequestMatches(stored, { ...stored, providerOverride: "claude" }, { providerFromParent: false }),
+    ).toBe(false);
+    // The rest of the request still has to match.
+    expect(slackThreadRequestMatches(stored, { ...stored, modelOverride: "gpt-6-astra" }, lent)).toBe(false);
+    expect(slackThreadRequestMatches(stored, { ...stored, initialPrompt: "Another message" }, lent)).toBe(false);
+  });
 });
 
 describe("createSlackThreadLifecycle with a request id that already exists", () => {

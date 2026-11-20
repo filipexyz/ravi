@@ -120,7 +120,10 @@ import {
 import { nativeChannelCredentialConfigured } from "../../channels/account-resolution.js";
 import { overlayMediaSendAvailability, resolveRuntimeMediaSendCapabilities } from "../media-send-access.js";
 import { buildChannelChatActionJob } from "../../channels/outbound-stream.js";
-import { publishChannelOutboundJobDurably } from "../../channels/outbound-publish-outbox.js";
+import {
+  getChannelOutboundPublishJob,
+  publishChannelOutboundJobDurably,
+} from "../../channels/outbound-publish-outbox.js";
 import { resolveRouteSeededSlackChat } from "../../channels/slack/route-seeded-chat.js";
 import {
   createSlackThreadLifecycle,
@@ -494,6 +497,9 @@ export const sessionCreateThreadReturnSchema = z
     nextAttemptAt: z.number().optional(),
     // `true` when this call found the request it asks for instead of creating one: the same
     // `--idempotency-key`, or the same asker repeating the same message within two minutes.
+    // A key always returns the request it created, whatever its thread is now (closed or failed
+    // too): `status` and `child.status` describe the acceptance, and `ravi sessions threads --all`
+    // the live state. Only the two-minute match skips a request that ended.
     // Additive, so it stays optional: a daemon that predates it does not send it.
     replayed: z.boolean().optional(),
     parentSession: z.object({
@@ -7217,7 +7223,7 @@ export class SessionCommands {
     if (explicitKey) {
       requestId = slackThreadRequestIdForKey(creationTarget.parentSession.sessionKey, explicitKey);
       const stored = getSlackThreadLifecycle(requestId);
-      if (stored && !slackThreadRequestMatches(stored, identity)) {
+      if (stored && !slackThreadRequestMatches(stored, identity, { providerFromParent: !normalizedProvider })) {
         throw slackThreadError(
           "THREAD_IDEMPOTENCY_KEY_REUSED",
           "This idempotency key already created a thread with a different message or runtime.",
@@ -7281,9 +7287,15 @@ export class SessionCommands {
         ...(requestedRuntimeLabel ? { runtime: requestedRuntimeLabel } : {}),
       },
     });
-    // The outbox keys the job by the request id, so publishing a request it already holds sends nothing new. A
-    // repeat of a thread whose root card is already out (status past `queued`) has nothing left to publish.
-    const published = replayed && lifecycle.status !== "queued" ? null : await publishChannelOutboundJobDurably(job);
+    // The outbox keys the job by the request id, so publishing a request it already holds sends nothing new. What it
+    // holds is what it accepted, whatever the parent is called now: its fingerprint includes the parent's name, so a
+    // job rebuilt after a rename would conflict with the saved one. A repeat of a thread whose root card is already
+    // out (status past `queued`), or whose saved job was suppressed, has nothing left to publish.
+    const savedJob = replayed ? getChannelOutboundPublishJob(job.request.idempotencyKey) : null;
+    const published =
+      replayed && (lifecycle.status !== "queued" || savedJob?.status === "suppressed")
+        ? null
+        : await publishChannelOutboundJobDurably(savedJob && savedJob.status !== "suppressed" ? savedJob.job : job);
     // `satisfies` ties this literal to the declared return schema: a key added here and not declared there is a
     // compile error, not a 500 (or a field the gateway silently drops) after the thread already exists.
     const payload = {

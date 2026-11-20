@@ -17,7 +17,9 @@ afterAll(() => mock.restore());
 
 const { cleanupIsolatedRaviState, createIsolatedRaviState } = await import("../../test/ravi-state.js");
 const { dbCreateAgent, dbUpsertChannel, dbUpsertChat, getDb } = await import("../../router/router-db.js");
-const { attachChatToSession, getOrCreateSession, getSession } = await import("../../router/sessions.js");
+const { attachChatToSession, getOrCreateSession, getSession, renameSessionName } = await import(
+  "../../router/sessions.js"
+);
 const { buildRegistry } = await import("../registry-snapshot.js");
 const { dispatch } = await import("../../sdk/gateway/dispatcher.js");
 const { returnContractViolationCount } = await import("../../sdk/gateway/return-contract.js");
@@ -41,6 +43,8 @@ const context = {
     // The thread is asked for on behalf of this session, so the caller must be able to reach and change it.
     { permission: "access", objectType: "session", objectId: "main-slack", source: "test" },
     { permission: "modify", objectType: "session", objectId: "main-slack", source: "test" },
+    { permission: "access", objectType: "session", objectId: "main-renamed", source: "test" },
+    { permission: "modify", objectType: "session", objectId: "main-renamed", source: "test" },
   ],
   metadata: { authorityMode: "delegated" },
   createdAt: Date.now(),
@@ -182,6 +186,24 @@ describe("sessions create-thread through the gateway, with the real handler", ()
     expect(other.body.requestId).not.toBe(first.body.requestId);
     expect(count("slack_thread_lifecycle")).toBe(2);
     expect(count("channel_outbound_publish_jobs")).toBe(2);
+  });
+
+  it("answers a repeat after the parent was renamed with the job the outbox saved, not a conflict with it", async () => {
+    // The outbox fingerprints the whole request, including the name of the session that asked: a job rebuilt
+    // under the new name would be refused as a different job for the same key.
+    await createThread({ message: "Investigate the branch", idempotencyKey: "fix-origin" });
+    renameSessionName("agent:ravi:slack:ravi-slack:D1", "main-renamed");
+
+    const again = await createThread({
+      message: "Investigate the branch",
+      idempotencyKey: "fix-origin",
+      session: "main-renamed",
+    });
+
+    expect(again.status).toBe(200);
+    expect(again.body).toMatchObject({ replayed: true });
+    expect(count("slack_thread_lifecycle")).toBe(1);
+    expect(count("channel_outbound_publish_jobs")).toBe(1);
   });
 });
 

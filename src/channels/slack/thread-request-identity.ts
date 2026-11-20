@@ -35,18 +35,24 @@ export function normalizeSlackThreadOption(value: string | undefined): string | 
   return normalized ? normalized : null;
 }
 
-/** Whether a stored request is the one `identity` describes. */
+/**
+ * Whether a stored request is the one `identity` describes. A provider the caller did not pass is the parent's,
+ * resolved when the thread was asked for; it is not part of what the caller asked, so `providerFromParent` leaves
+ * it out: a retry of the same command still matches after the parent's provider override changed.
+ */
 export function slackThreadRequestMatches(
   record: Pick<
     SlackThreadLifecycleRecord,
     "initialPrompt" | "modelOverride" | "providerOverride" | "effortOverride" | "thinkingLevel"
   >,
   identity: SlackThreadRequestIdentity,
+  options: { providerFromParent?: boolean } = {},
 ): boolean {
   return (
     record.initialPrompt === identity.initialPrompt.trim() &&
     (record.modelOverride ?? null) === normalizeSlackThreadOption(identity.modelOverride) &&
-    (record.providerOverride ?? null) === normalizeSlackThreadOption(identity.providerOverride) &&
+    (options.providerFromParent === true ||
+      (record.providerOverride ?? null) === normalizeSlackThreadOption(identity.providerOverride)) &&
     (record.effortOverride ?? null) === normalizeSlackThreadOption(identity.effortOverride) &&
     (record.thinkingLevel ?? null) === normalizeSlackThreadOption(identity.thinkingLevel)
   );
