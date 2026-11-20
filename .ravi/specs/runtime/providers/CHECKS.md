@@ -42,6 +42,8 @@
 - `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>` MUST be passed or dropped together; `git config --list` MUST still run in an agent shell when the daemon env carries the trio.
 - Names in `RAVI_AGENT_ENV_PASSTHROUGH` MUST reach the provider; names not listed MUST NOT.
 - Codex stored-session control MUST spawn without daemon secrets (`src/runtime/codex-control-env.test.ts`).
+- The PreCompact memory agent MUST spawn without daemon secrets (`src/hooks/pre-compact-spawn-env.test.ts`).
+- The PreCompact memory agent MUST receive `--tools=Read,Edit,Write`, `--permission-mode=dontAsk` and `--setting-sources`, and MUST NOT receive `--allow-dangerously-skip-permissions` (`src/hooks/pre-compact-spawn-env.test.ts`, with a fake Claude Code that records its flags). Its PreToolUse guard MUST block, on the SDK's `tool_name`/`tool_input` shape, any tool outside Read/Edit/Write (Bash with `env; cat ~/.ssh/id_rsa`), a Write outside `MEMORY.md` and `memory/`, a Read outside the agent cwd and the transcript copy, and a symlink that leaves the cwd; it MUST approve a Write to `MEMORY.md` (`src/hooks/pre-compact-tool-guard.test.ts`).
 - `RAVI_*`/`OMNI_*` names MUST pass only from the explicit list: `RAVI_STATE_DIR`, `RAVI_GATEWAY_URL`, `OMNI_API_URL` pass; `RAVI_GATEWAY_INTERNAL`, `RAVI_IDENTITYD_*` and an unlisted `RAVI_SIGNING_SALT` do not.
 - `*_PAT` names MUST be dropped; a token-shaped value (`sk-`, `ghp_`, `github_pat_`, `xox…-`, JWT, PEM, `AKIA`) MUST be dropped under any allowed name, and ordinary paths MUST still pass.
 - Every job MUST start without daemon secrets, also when actually spawned, whoever created it (`src/jobs/jobs.test.ts`); a name in `RAVI_AGENT_ENV_PASSTHROUGH` still reaches it.
