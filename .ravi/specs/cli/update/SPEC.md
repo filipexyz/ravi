@@ -27,7 +27,9 @@ normative: true
 - Reconciliation MUST verify the successor's boot identity against the updated
   bundle. A new disk package version or matching PM2 path alone MUST NOT prove
   a live process adopted the update.
-- A managed process that was stopped MUST NOT be started by the update.
+- A managed process that was stopped MUST NOT be started by the update. One
+  exception: the waypoint (below) starts a stopped channel runner for its boot
+  record and removes it again before the update to the target, with a warning.
 - The result MUST expose warnings naming stale or unverifiable siblings and
   the explicit commands needed to reconcile them. Missing native intake MUST
   be reported when native channels are enabled.
