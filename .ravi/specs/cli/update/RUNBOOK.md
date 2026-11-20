@@ -122,8 +122,9 @@ authorizes no database or package downgrade by hand: the update's own rollback
   release, or a caller inside the daemon's tree). It says Ravi is not running
   under PM2 only when no supervisor holds the update lock: then an earlier
   rollback was cut after its stop. Run the commands it gives, one per line and
-  in order, with nothing started meanwhile; they are also kept in
-  `finish-by-hand.txt` in the snapshot's directory.
+  in order, with nothing started meanwhile. The preview prints them and writes
+  nothing; a run with `--execute` (which stops nothing in that case) also keeps
+  them in `finish-by-hand.txt` in the snapshot's directory.
 
 ## Rollback
 
