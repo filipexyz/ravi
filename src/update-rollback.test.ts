@@ -508,6 +508,10 @@ describe("update rollback", () => {
       expect(outcome).toMatchObject({ ok: false, step: "stop" });
       if (outcome.ok) throw new Error("unreachable");
       expect(outcome.message).toContain("`ps -p 300,301,310` lists none");
+      // Remove first, then wait for the exit, on both paths (the guidance and the unexpected error).
+      const removeAt = outcome.message.indexOf("emove what PM2 still lists");
+      expect(removeAt).toBeGreaterThanOrEqual(0);
+      expect(removeAt).toBeLessThan(outcome.message.indexOf("`ps -p"));
     }
     // Every pid PM2 lists is named before the first removal: the runner's removal throws, the daemon is still named.
     const both = rollbackFixture({ untouched: true, reRegistered: true, reRegisteredRunner: true, deleteThrows: true });
@@ -515,6 +519,7 @@ describe("update rollback", () => {
     if (cut.ok) throw new Error("unreachable");
     expect(cut.message).toContain("`ps -p 300,301,311,310` lists none");
     // Remove first, then wait for the exit: a process PM2 still lists only exits once removed.
+    expect(cut.message.indexOf("remove what PM2 still lists")).toBeGreaterThanOrEqual(0);
     expect(cut.message.indexOf("remove what PM2 still lists")).toBeLessThan(cut.message.indexOf("`ps -p"));
   });
 
@@ -1237,6 +1242,34 @@ describe("update supervisor with a rollback plan", () => {
     expect(result?.message).toContain("so Ravi 3.2.0 was not started");
   });
 
+  it("says only that no daemon is online when the waypoint's runner is still up", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false });
+    const since = Date.now() - 1_000;
+    let prepared: string | null = null;
+    let readiness: "ready" | "adopt-on-start" = "adopt-on-start";
+
+    expect(
+      await fixture.rebind({
+        assertPrepared: () => readiness,
+        preparedStateRelease: () => prepared,
+        // The runner was online before the update and stays up; the waypoint's daemon is gone.
+        hopThroughWaypoint: async (dependencies) => {
+          prepared = dependencies.waypoint;
+          fixture.bringUp(dependencies.waypoint, ["ravi-channels"]);
+          readiness = "ready";
+          return { ok: true };
+        },
+      }),
+    ).toBe(false);
+    expect(fixture.processes().some((process) => process.name === "ravi-channels" && process.status === "online")).toBe(
+      true,
+    );
+    const result = readUpdateSupervisorResult(since, fixture.stateDir);
+    expect(result?.message).toContain("PM2 shows no daemon online");
+    expect(result?.message).not.toContain("nothing runs");
+    expect(result?.commands[0]).toBe("ravi daemon start");
+  });
+
   it("does not report a second pass as done when PM2 shows no daemon of the waypoint", async () => {
     const fixture = supervisorFixture({ targetNeverReady: false, channelsStopped: true });
     const since = Date.now() - 1_000;
@@ -1258,9 +1291,10 @@ describe("update supervisor with a rollback plan", () => {
     expect(fixture.events.filter((event) => event.startsWith("start:"))).toEqual([]);
     const result = readUpdateSupervisorResult(since, fixture.stateDir);
     expect(result).toMatchObject({ outcome: "failed" });
-    // Nothing runs: the message says so, and the first command starts the daemon.
-    expect(result?.message).toContain("PM2 shows no daemon online: nothing runs now");
+    // No daemon: the message says only that, and the first command starts the daemon.
+    expect(result?.message).toContain("PM2 shows no daemon online, so the update to Ravi 3.2.0 did not begin");
     expect(result?.message).not.toContain("runs on it");
+    expect(result?.message).not.toContain("nothing runs");
     expect(result?.commands[0]).toBe("ravi daemon start");
     // The CLI prints these through its redactor: they come out whole.
     for (const text of [result!.message, ...result!.commands]) expect(redactDiagnosticText(text)).toBe(text);
