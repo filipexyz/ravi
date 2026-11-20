@@ -117,7 +117,7 @@ A trigger is owned by the turn that created it. The owner decides who the trigge
 
 ## PR follow recipient lifetime
 
-- A generated `gh-follow` MUST use the durable parent session when its publisher is a Slack thread. It MUST capture the channel root as reply-source fallback, never the child's thread.
+- A generated `gh-follow` armed from a Slack thread belongs to that thread's child while the thread is `open`: the child's agent, session and key, with a reply source that carries the thread id, delivered into the thread (see "Reply account and channel" below and `channels/slack/threads`). It belongs to the durable parent session once the thread is closed or pruned, and closing an open thread hands its generated PR follows to the parent inside the close transaction. A parent-owned follow MUST capture the channel root as reply-source fallback, never the child's thread. A follow that is not a PR follow (`page-comment:*`) is always the parent's.
 - Pending PR-number resolution MUST recover the parent from the durable lifecycle even after the child closes or is pruned. Missing/ambiguous thread lineage or a missing parent MUST fail closed; failed pending registrations MUST stay queued for retry within their existing expiry.
 - Reuse and maintenance MUST reconcile existing generated follows using the saved owner's lifecycle, not a new observer's session. A repaired row MUST refresh the runner. Unrelated trigger recipients MUST NOT be changed.
 - Manual Git Data API publication MUST explicitly ensure/register its follow: raw API calls alone do not pass through the `gh pr create` observer. Completion MUST verify ready state, active follow and durable reply owner.

@@ -14,7 +14,11 @@ import type { ChannelOutboundJob } from "../outbound-stream.js";
 import { deleteSession, getOrCreateSession, getSession, listSessionSubscriptions } from "../../router/index.js";
 import { dbCreateTrigger, dbGetTrigger, dbUpdateTrigger } from "../../triggers/triggers-db.js";
 import { dbDeleteTrigger } from "../../triggers/triggers-db.js";
-import { triggersRefreshPending } from "../../triggers/refresh-intent.js";
+import {
+  markTriggersRefreshPending,
+  readTriggersRefreshPending,
+  triggersRefreshPending,
+} from "../../triggers/refresh-intent.js";
 import { runGhFollowMaintenance } from "../../hooks/gh-follow-sweep.js";
 import { askDecisionRecord } from "../../decisions/store.js";
 import { dbCreateAgent } from "../../router/router-db.js";
@@ -1088,6 +1092,72 @@ describe("Slack thread orchestration", () => {
         refreshes++;
       });
       expect(refreshes).toBe(1);
+    });
+
+    it("keeps the intent another close saved while this close's refresh event was in flight", async () => {
+      let newerIntent: string | undefined;
+      const publishEvent = mock(async (topic: string) => {
+        // Another close commits its own handoff, and so its own intent, while this publish is awaited.
+        if (topic === "ravi.triggers.refresh") newerIntent = markTriggersRefreshPending(Date.now() + 1);
+      });
+      const { child, dependencies, follow } = await threadWithFollow(publishEvent);
+
+      expect((await closeSlackThread(child, "done", dependencies)).changed).toBe(true);
+      expect(dbGetTrigger(follow.id)!.replySession).toBe("ravi-parent");
+
+      // This close cleared the intent it saved, not the newer one: that close's own publish may still fail.
+      expect(newerIntent).toBeDefined();
+      expect(readTriggersRefreshPending()).toBe(newerIntent!);
+
+      // So follow maintenance still publishes it, once, and then the intent is gone.
+      let refreshes = 0;
+      const swept = await runGhFollowMaintenance({
+        readPending: () => [],
+        listPrStates: () => new Map([[7, "OPEN"]]),
+        listWatches: () => [],
+        ensureWatches: async () => {},
+        emitTriggersRefresh: async () => {
+          refreshes++;
+        },
+      });
+      expect(swept.refreshRepublished).toBe(true);
+      // (The sweep also publishes when it repairs a row, so only that it published is asserted.)
+      expect(refreshes).toBeGreaterThan(0);
+      expect(triggersRefreshPending()).toBe(false);
+    });
+
+    it("does not clear an intent saved while the sweep's own refresh event was in flight", async () => {
+      const lost = mock(async (topic: string) => {
+        if (topic === "ravi.triggers.refresh") throw new Error("broker disconnected");
+      });
+      const { child, dependencies } = await threadWithFollow(lost);
+      expect((await closeSlackThread(child, "done", dependencies)).changed).toBe(true);
+      expect(triggersRefreshPending()).toBe(true);
+      const publishedIntent = readTriggersRefreshPending();
+
+      let newerIntent: string | undefined;
+      const maintain = (emitTriggersRefresh: () => Promise<void>) =>
+        runGhFollowMaintenance({
+          readPending: () => [],
+          listPrStates: () => new Map([[7, "OPEN"]]),
+          listWatches: () => [],
+          ensureWatches: async () => {},
+          emitTriggersRefresh,
+        });
+
+      // A close commits a new intent while the sweep's event is being published.
+      const first = await maintain(async () => {
+        newerIntent ??= markTriggersRefreshPending(Date.now() + 1);
+      });
+      expect(first.refreshRepublished).toBe(true);
+      expect(newerIntent).toBeDefined();
+      expect(newerIntent).not.toBe(publishedIntent);
+      // The sweep published what it had read, so it clears that; the newer one stays for the next sweep.
+      expect(readTriggersRefreshPending()).toBe(newerIntent!);
+
+      const second = await maintain(async () => {});
+      expect(second.refreshRepublished).toBe(true);
+      expect(triggersRefreshPending()).toBe(false);
     });
   });
 

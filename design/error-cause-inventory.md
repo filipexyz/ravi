@@ -424,11 +424,11 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels-slack | src/channels/slack/thread-lifecycle.ts | 464 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:ff35a488b1d608b91dcc7f92 |
 | channels-slack | src/channels/slack/thread-lifecycle.ts | 524 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:2c6a661603d61cec45ee5b83 |
 | channels-slack | src/channels/slack/thread-lifecycle.ts | 639 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3480b77cb404aa4d76ef5053 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 677 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:b7a227b58d5b81458560c6ae |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 689 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:79070e050ee994049ecf949b |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 703 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3830479576acbc9a4faf42e7 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 756 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3128594da318c7d29f0f5eb0 |
-| channels-slack | src/channels/slack/thread-lifecycle.ts | 1178 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:168c889a92f9cf70994d3983 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 680 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:b7a227b58d5b81458560c6ae |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 692 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:79070e050ee994049ecf949b |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 706 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3830479576acbc9a4faf42e7 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 759 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:3128594da318c7d29f0f5eb0 |
+| channels-slack | src/channels/slack/thread-lifecycle.ts | 1181 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-lifecycle.ts:168c889a92f9cf70994d3983 |
 | channels-slack | src/channels/slack/thread-requester.ts | 34 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-requester.ts:906a166dfda93a7451e16429 |
 | channels-slack | src/channels/slack/thread-requester.ts | 64 | triaged-follow-up | catch-without-binding | src/channels/slack/thread-requester.ts:518fbe45995656bbf2c7b34e |
 | channels-slack | src/channels/slack/thread-requester.ts | 73 | triaged-follow-up | catch-without-binding | src/channels/slack/thread-requester.ts:4e96a74ec3eda3554d5b7d4b |
@@ -1194,16 +1194,16 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | hooks | src/hooks/gh-follow-pending.ts | 42 | triaged-follow-up | catch-without-binding | src/hooks/gh-follow-pending.ts:07c422a62374ce2f7d8b3b03 |
 | hooks | src/hooks/gh-follow-sweep.ts | 168 | triaged-follow-up | catch-without-binding | src/hooks/gh-follow-sweep.ts:8c3f1ef822281326b679b66b |
 | hooks | src/hooks/gh-follow-sweep.ts | 190 | triaged-follow-up | catch-without-binding | src/hooks/gh-follow-sweep.ts:f3bf41d6556d70accdf2d57c |
-| hooks | src/hooks/gh-follow-sweep.ts | 226 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:6223ccaafa108bf1a0eb3593 |
-| hooks | src/hooks/gh-follow-sweep.ts | 243 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:925559a6c81a9d4ea76b13cf |
-| hooks | src/hooks/gh-follow-sweep.ts | 264 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:8ab86bb8d0f0b0adae455dd3 |
-| hooks | src/hooks/gh-follow-sweep.ts | 283 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:cb13312de2b6e72394e0bbc3 |
-| hooks | src/hooks/gh-follow-sweep.ts | 297 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:9ffb9f94565cfd0d871c64f1 |
-| hooks | src/hooks/gh-follow-sweep.ts | 315 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:fc0dbf4a0e8435d77d3678d6 |
-| hooks | src/hooks/gh-follow-sweep.ts | 323 | triaged-follow-up | catch-without-binding | src/hooks/gh-follow-sweep.ts:6136337e8208a653f431fa70 |
-| hooks | src/hooks/gh-follow-sweep.ts | 359 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:68025f093570a3eea6f0e99f |
-| hooks | src/hooks/gh-follow-sweep.ts | 373 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:b53ab0d130807a6b05e97125 |
-| hooks | src/hooks/gh-follow-sweep.ts | 437 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:8cb91fffe47bdc0cae186f89 |
+| hooks | src/hooks/gh-follow-sweep.ts | 229 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:6223ccaafa108bf1a0eb3593 |
+| hooks | src/hooks/gh-follow-sweep.ts | 246 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:925559a6c81a9d4ea76b13cf |
+| hooks | src/hooks/gh-follow-sweep.ts | 267 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:8ab86bb8d0f0b0adae455dd3 |
+| hooks | src/hooks/gh-follow-sweep.ts | 286 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:cb13312de2b6e72394e0bbc3 |
+| hooks | src/hooks/gh-follow-sweep.ts | 300 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:9ffb9f94565cfd0d871c64f1 |
+| hooks | src/hooks/gh-follow-sweep.ts | 318 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:fc0dbf4a0e8435d77d3678d6 |
+| hooks | src/hooks/gh-follow-sweep.ts | 326 | triaged-follow-up | catch-without-binding | src/hooks/gh-follow-sweep.ts:6136337e8208a653f431fa70 |
+| hooks | src/hooks/gh-follow-sweep.ts | 362 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:68025f093570a3eea6f0e99f |
+| hooks | src/hooks/gh-follow-sweep.ts | 376 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:b53ab0d130807a6b05e97125 |
+| hooks | src/hooks/gh-follow-sweep.ts | 440 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:8cb91fffe47bdc0cae186f89 |
 | hooks | src/hooks/gh-pr-publish.ts | 139 | fixed | binding retained / no recognized error surface | src/hooks/gh-pr-publish.ts:21b7ea1410bb22bbfc408308 |
 | hooks | src/hooks/gh-watch.ts | 768 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:8073d9576e24b20742de4a05 |
 | hooks | src/hooks/gh-watch.ts | 800 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:15462fd7c975cd3568f4bc2c |
@@ -1740,23 +1740,23 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | router | src/router/router-db.ts | 4662 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:9391d670114c9a3871e896d5 |
 | router | src/router/router-db.ts | 4672 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:e9217495330394f009456cea |
 | router | src/router/router-db.ts | 6444 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:43c23c5e241d9586cfa149b5 |
-| router | src/router/router-db.ts | 6871 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:4a7d7eed604431861685eee8 |
-| router | src/router/router-db.ts | 6895 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:4a7d7eed604431861685eee8 |
-| router | src/router/router-db.ts | 6909 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:4a7d7eed604431861685eee8 |
-| router | src/router/router-db.ts | 6969 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:35ca113d904e1c3360cd46d6 |
-| router | src/router/router-db.ts | 6982 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:35ca113d904e1c3360cd46d6 |
-| router | src/router/router-db.ts | 7002 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:c2c58dbb1c84b84aac859580 |
-| router | src/router/router-db.ts | 7030 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:a027472d886ff1c7e468a908 |
-| router | src/router/router-db.ts | 7038 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:a027472d886ff1c7e468a908 |
-| router | src/router/router-db.ts | 7046 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:a027472d886ff1c7e468a908 |
-| router | src/router/router-db.ts | 9355 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:b3899c33992830f470985efb |
-| router | src/router/router-db.ts | 9387 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:b3899c33992830f470985efb |
-| router | src/router/router-db.ts | 9739 | triaged-follow-up | cause-not-forwarded-at-surface | src/router/router-db.ts:6a1e1eedfc68e60affed72f0 |
-| router | src/router/router-db.ts | 9972 | triaged-follow-up | cause-not-forwarded-at-surface | src/router/router-db.ts:454c1d7739a0c56467723de6 |
-| router | src/router/router-db.ts | 10595 | triaged-follow-up | cause-not-forwarded-at-surface | src/router/router-db.ts:7d283c7fdec8206ee1c0ed64 |
-| router | src/router/router-db.ts | 10626 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:eb6c608285aac837be753ebb |
-| router | src/router/router-db.ts | 11947 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:f5c7494ddf693b7a4aa5bf9e |
-| router | src/router/router-db.ts | 11950 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:015f3a21ffe76e22671668bf |
+| router | src/router/router-db.ts | 6873 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:4a7d7eed604431861685eee8 |
+| router | src/router/router-db.ts | 6897 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:4a7d7eed604431861685eee8 |
+| router | src/router/router-db.ts | 6911 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:4a7d7eed604431861685eee8 |
+| router | src/router/router-db.ts | 6971 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:35ca113d904e1c3360cd46d6 |
+| router | src/router/router-db.ts | 6984 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:35ca113d904e1c3360cd46d6 |
+| router | src/router/router-db.ts | 7004 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:c2c58dbb1c84b84aac859580 |
+| router | src/router/router-db.ts | 7032 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:a027472d886ff1c7e468a908 |
+| router | src/router/router-db.ts | 7040 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:a027472d886ff1c7e468a908 |
+| router | src/router/router-db.ts | 7048 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:a027472d886ff1c7e468a908 |
+| router | src/router/router-db.ts | 9357 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:b3899c33992830f470985efb |
+| router | src/router/router-db.ts | 9389 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:b3899c33992830f470985efb |
+| router | src/router/router-db.ts | 9741 | triaged-follow-up | cause-not-forwarded-at-surface | src/router/router-db.ts:6a1e1eedfc68e60affed72f0 |
+| router | src/router/router-db.ts | 9974 | triaged-follow-up | cause-not-forwarded-at-surface | src/router/router-db.ts:454c1d7739a0c56467723de6 |
+| router | src/router/router-db.ts | 10607 | triaged-follow-up | cause-not-forwarded-at-surface | src/router/router-db.ts:7d283c7fdec8206ee1c0ed64 |
+| router | src/router/router-db.ts | 10638 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:eb6c608285aac837be753ebb |
+| router | src/router/router-db.ts | 11959 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:f5c7494ddf693b7a4aa5bf9e |
+| router | src/router/router-db.ts | 11962 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:015f3a21ffe76e22671668bf |
 | sessions | src/router/sessions.ts | 934 | fixed | binding retained / no recognized error surface | src/router/sessions.ts:7d1bb7744cf9f62680b55377 |
 | sessions | src/router/sessions.ts | 948 | triaged-follow-up | catch-without-binding | src/router/sessions.ts:4cea4fc40c424fe5e35e394b |
 | sessions | src/router/sessions.ts | 1570 | fixed | binding retained / no recognized error surface | src/router/sessions.ts:c6829bbd0def352b36c4b5d7 |

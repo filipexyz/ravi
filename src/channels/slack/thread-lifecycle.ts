@@ -652,6 +652,9 @@ export async function closeSlackThreadRecord(
       );
     }
   }
+  // The intent this close saved with its handoff. Only that one is cleared after the refresh event:
+  // a close that saved a newer intent while this publish was in flight keeps its own.
+  let refreshIntent: string | undefined;
   const closed = closeSlackThreadLifecycle({
     childSessionKey: existing.childSessionKey,
     requestId: existing.requestId,
@@ -666,14 +669,14 @@ export async function closeSlackThreadRecord(
       );
       // The runner keeps delivering to the recipient it loaded until it is told to reload. The intent
       // is saved with the handoff, so a lost refresh event is published again (follow maintenance).
-      if (moved.length) markTriggersRefreshPending();
+      if (moved.length) refreshIntent = markTriggersRefreshPending();
       return moved;
     },
   });
   if (closed.handedOffTriggerIds?.length) {
     try {
       await dependencies.publishEvent("ravi.triggers.refresh", {});
-      clearTriggersRefreshPending();
+      if (refreshIntent !== undefined) clearTriggersRefreshPending(refreshIntent);
     } catch (error) {
       log.warn("Triggers refresh after a thread close was not published; follow maintenance will retry it", {
         requestId: existing.requestId,

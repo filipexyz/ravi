@@ -89,12 +89,14 @@
       by another active trigger MUST leave the follows with the thread, with no
       refresh published and no intent saved; a refresh event that fails MUST leave
       the intent set so `gh-follow` maintenance publishes it again, once, until it
-      succeeds; a closed thread MUST resolve to the parent
+      succeeds; an intent that another close saved while a publish was in flight MUST
+      survive that publish's clear (the clear compares the token it read), for the
+      close's own publish and for the sweep's; a closed thread MUST resolve to the parent
       The follow's instruction MUST tell a thread that another session started to
       report CI, merge or review news to that session with `ravi sessions report`
       (`src/hooks/gh-watch.test.ts`, `src/pr/service.test.ts`,
       `src/triggers/__tests__/runner-named-session.test.ts`,
-      `src/channels/slack/thread-lifecycle.test.ts`).
+      `src/channels/slack/thread-lifecycle.test.ts`, `src/triggers/refresh-intent.test.ts`).
 - [ ] A session rename MUST refuse a name an open thread saves for another
       child session, even when that child is gone
       (`src/router/thread-identity.test.ts`).
