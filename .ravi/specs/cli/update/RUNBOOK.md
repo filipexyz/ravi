@@ -85,6 +85,13 @@ authorizes no database or package downgrade by hand: the update's own rollback
 - A runner that was stopped ran while the waypoint took its boot record, and
   could process queued inbound and outbound messages meanwhile; the result's
   warnings say so.
+- `failed` with "PM2 shows no daemon online: nothing runs now": the waypoint
+  prepared the state but no daemon is up. Run `ravi daemon start` (the
+  installed package is the target, which adopts that state), check it with
+  `ravi daemon status`, then run the update again.
+- `failed` with "its channel runner (pid N) did not exit": PM2 no longer lists
+  that process. Confirm it is gone (`ps -p N` lists none) before running the
+  update again; the next update would not see it.
 - `failed` with "could not be installed again": 3.261113.2 runs on the state it
   prepared, which is a valid release of its own. Run the commands the result
   names, the install first (the package directory may hold no runnable bundle),
