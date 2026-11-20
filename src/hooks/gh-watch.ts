@@ -654,7 +654,7 @@ export function buildGhFollowTriggerInput(
   return {
     name: ghFollowTriggerName(repo, prNumber),
     topic: GH_PR_FOLLOW_TOPIC,
-    message: `Activity on ${repo}#${prNumber} (PR lifecycle, CI result or a new comment). Tell the user in one short line what changed — state and title, the CI conclusion, or who commented and what they said — and include the url from this event. A bot comment that asks nothing of the user (author ending in [bot]): answer @@SILENT@@.`,
+    message: `Activity on ${repo}#${prNumber} (PR lifecycle, CI result or a new comment). Tell the user in one short line what changed — state and title, the CI conclusion, or who commented and what they said — and include the url from this event. If you are a Slack thread that another session started, also tell that session what changes what it must do, with \`ravi sessions report\`: the CI conclusion on the head SHA, the PR merged or closed, or a review that asks for changes; if you are not a thread, ignore this sentence. A bot comment that asks nothing of the user (author ending in [bot]): answer @@SILENT@@.`,
     agentId: context.agentId,
     accountId: context.accountId,
     replySession: context.sessionName ?? context.sessionKey,
@@ -670,7 +670,8 @@ export function buildGhFollowTriggerInput(
 
 /** The lifecycle survives pruning, including delayed `gh pr create` resolution. */
 export function resolveGhFollowContext(context: GhWatchFollowContext, database?: Database): GhWatchFollowContext {
-  return resolveDurableFollowOwner(context, "PR follow", database);
+  // An open thread's PR follow addresses the thread that published; closing the thread hands it to the parent.
+  return resolveDurableFollowOwner(context, "PR follow", database, { openThreadOwns: true });
 }
 
 /** Reconcile the saved owner's lifecycle; a new observer must not steal a follow. */

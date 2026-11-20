@@ -57,6 +57,9 @@ import {
   resolveUnreceiptedRollbackPlan,
   resolveUpdateRollbackPlan,
   rollBackUpdate,
+  superviseOperatorRollback,
+  UPDATE_ROLLBACK_UNAVAILABLE,
+  type OperatorRollbackSupervisorDependencies,
   type UpdateRollbackDependencies,
   type UpdateRollbackOutcome,
   type UpdateRollbackPlan,
@@ -127,6 +130,8 @@ type ManagedRuntimeRebindRequest = {
   previousProcesses: ManagedRuntimeProcessSnapshot[];
   /** `ravi update --running-release`: the release the running daemon was started with, when it wrote no boot record. */
   declaredRunningRelease?: string;
+  /** `ravi update --rollback --execute`: the supervisor rolls back to the snapshot the preview named, no rebind. */
+  rollback?: { snapshotId: string };
 };
 
 type ManagedRuntimeRebindDependencies = {
@@ -175,6 +180,13 @@ type ManagedRuntimeRebindDependencies = {
   /** `resolveUnreceiptedRollbackPlan` (tests). */
   unreceiptedRollbackPlan?: typeof resolveUnreceiptedRollbackPlan;
   storePaths?: (stateDir: string) => string[];
+  /** Set on the update that follows a waypoint: what the first pass noted, recorded with this pass's result. */
+  carriedWarnings?: string[];
+  /**
+   * Set on the update that follows a waypoint: the snapshot taken before the waypoint, of the state of the release
+   * that wrote it. Kept when this pass takes its own, so the way back to that release survives until the next update.
+   */
+  keptSnapshot?: UpdateSnapshotManifest;
 };
 
 /** What the rebind ended with, for the result left to the CLI. */
@@ -351,7 +363,23 @@ export function decodeManagedRuntimeRebindRequest(encoded: string): ManagedRunti
   if (declared !== undefined && (typeof declared !== "string" || !isRaviRelease(declared))) {
     throw new Error("Invalid managed runtime rebind request");
   }
-  return { schemaVersion: 1, target, previousProcesses, ...(declared ? { declaredRunningRelease: declared } : {}) };
+  const rollback = input.rollback;
+  if (
+    rollback !== undefined &&
+    (!rollback ||
+      typeof rollback !== "object" ||
+      typeof rollback.snapshotId !== "string" ||
+      !/^\d{8}T\d{6}Z-[0-9a-f]{6}$/.test(rollback.snapshotId))
+  ) {
+    throw new Error("Invalid managed runtime rebind request");
+  }
+  return {
+    schemaVersion: 1,
+    target,
+    previousProcesses,
+    ...(declared ? { declaredRunningRelease: declared } : {}),
+    ...(rollback ? { rollback: { snapshotId: rollback.snapshotId } } : {}),
+  };
 }
 
 async function waitForManagedRuntimeTarget(
@@ -536,7 +564,10 @@ export async function rebindManagedRuntimeProcesses(
     if ((await remove(PM2_PROCESS_NAME)) !== 0) return false;
   }
 
-  const warnings: string[] = [];
+  const warnings: string[] = [...(dependencies.carriedWarnings ?? [])];
+  const stoppedPids = initial
+    .filter((process) => process.name === PM2_PROCESS_NAME || process.name === CHANNELS_PM2_PROCESS_NAME)
+    .map((process) => process.pid);
   // Nothing owns the state and the target has not started: the snapshot is the previous release's state.
   const snapshot =
     rollbackPlan && snapshotPlan
@@ -546,9 +577,7 @@ export async function rebindManagedRuntimeProcesses(
           plan: snapshotPlan,
           rollbackPlan,
           target,
-          pids: initial
-            .filter((process) => process.name === PM2_PROCESS_NAME || process.name === CHANNELS_PM2_PROCESS_NAME)
-            .map((process) => process.pid),
+          pids: stoppedPids,
           gone,
           warnings,
           dependencies,
@@ -654,13 +683,22 @@ export async function rebindManagedRuntimeProcesses(
       console.error(`ravi update: could not record the supervisor result: ${(cause as Error).message}`);
     }
   };
-  const rollBack = async (reason: string, manifest: UpdateSnapshotManifest): Promise<void> => {
+  /**
+   * Back to the release that wrote the state: from `manifest`, or, with none, on that state untouched (the update
+   * stopped both processes but took no snapshot). `headline` replaces "the target did not converge".
+   */
+  const rollBack = async (
+    reason: string,
+    manifest: UpdateSnapshotManifest | null,
+    headline = `Ravi ${target.version} did not converge (${reason})`,
+  ): Promise<void> => {
     let outcome: UpdateRollbackOutcome;
     try {
       outcome = await (dependencies.rollBack ?? rollBackUpdate)({
         stateDir,
         plan: rollbackPlan,
         manifest,
+        ...(manifest ? {} : { stoppedPids }),
         previousProcesses,
         bunPath,
         run,
@@ -674,14 +712,22 @@ export async function rebindManagedRuntimeProcesses(
       });
     } catch (cause) {
       // Never an unrecorded end: the result names where to look for what the rollback did.
-      const snapshotDir = join(updateSnapshotsDir(stateDir), manifest.id);
+      const snapshotDir = manifest ? join(updateSnapshotsDir(stateDir), manifest.id) : null;
       outcome = {
         ok: false,
         step: "unknown",
-        message:
-          `the rollback threw (${(cause as Error).message}). Whether the state was restored is in ` +
-          `${join(snapshotDir, "restore.json")}; the snapshot is in ${snapshotDir}.`,
-        commands: ["ravi daemon status", "pm2 jlist", `cat ${join(snapshotDir, "restore.json")}`],
+        message: snapshotDir
+          ? `the rollback threw (${(cause as Error).message}). Whether the state was restored is in ` +
+            `${join(snapshotDir, "restore.json")}; the snapshot is in ${snapshotDir}.`
+          : `bringing Ravi ${rollbackPlan.previousRelease} back threw (${(cause as Error).message}); the state is untouched.`,
+        commands: snapshotDir
+          ? ["ravi daemon status", "pm2 jlist", `cat ${join(snapshotDir, "restore.json")}`]
+          : [
+              `${rollbackPlan.method} install -g ravi.bot@${rollbackPlan.previousRelease}`,
+              "ravi daemon start",
+              ...(rollbackPlan.channelsOnline ? ["ravi channels start"] : []),
+              "ravi daemon status",
+            ],
         restoredAt: null,
         candidateDir: null,
       };
@@ -689,23 +735,22 @@ export async function rebindManagedRuntimeProcesses(
     if (outcome.ok) {
       record(
         "rolled-back",
-        `Ravi ${target.version} did not converge (${reason}). The update rolled back: Ravi ${rollbackPlan.previousRelease} ` +
-          `runs again on its state as of ${manifest.createdAt}. What Ravi ${target.version} wrote between ` +
-          `${manifest.createdAt} and ${outcome.restoredAt} is not in the live state; its files are kept in ` +
-          `${outcome.candidateDir}.`,
+        manifest
+          ? `${headline}. The update rolled back: Ravi ${rollbackPlan.previousRelease} ` +
+              `runs again on its state as of ${manifest.createdAt}. What Ravi ${target.version} wrote between ` +
+              `${manifest.createdAt} and ${outcome.restoredAt} is not in the live state; its files are kept in ` +
+              `${outcome.candidateDir}.`
+          : `${headline}. Ravi ${rollbackPlan.previousRelease} runs again on its untouched state; nothing else ` +
+              "changed. Run the update again once the snapshot can be taken.",
         { restoredAt: outcome.restoredAt, candidateDir: outcome.candidateDir },
       );
       return;
     }
-    record(
-      "rollback-failed",
-      `Ravi ${target.version} did not converge (${reason}), and ${describeRollbackFailure(outcome)}`,
-      {
-        restoredAt: outcome.restoredAt,
-        candidateDir: outcome.candidateDir,
-        commands: outcome.commands,
-      },
-    );
+    record("rollback-failed", `${headline}, and ${describeRollbackFailure(outcome)}`, {
+      restoredAt: outcome.restoredAt,
+      candidateDir: outcome.candidateDir,
+      commands: outcome.commands,
+    });
   };
   const unprotected = (reason: string) =>
     `Ravi ${target.version} did not converge (${reason}). No snapshot was taken (${warnings.join("; ") || "unknown reason"}), ` +
@@ -713,25 +758,25 @@ export async function rebindManagedRuntimeProcesses(
 
   if (hop) {
     // Both processes of the release that wrote the state are stopped. Without its snapshot the waypoint has no
-    // rollback, so it is not taken: the state is untouched, and the commands bring that release back.
+    // rollback, so it is not taken: the state is untouched, and that release comes back on it by itself (the
+    // installed package is the target's by now). Only a stopped process that never exits leaves the host stopped:
+    // nothing starts beside it, and the result names the commands.
     if (!snapshot) {
-      record(
-        "failed",
+      await rollBack(
+        "",
+        null,
         `The state needs the waypoint Ravi ${hop}, but no snapshot of Ravi ${rollbackPlan.previousRelease}'s state ` +
-          `could be taken (${warnings.join("; ") || "unknown reason"}), so the waypoint was not taken. Both ` +
-          `processes are stopped and the state is untouched: install Ravi ${rollbackPlan.previousRelease} and start ` +
-          "it, then run the update again.",
-        {
-          commands: [
-            `${rollbackPlan.method} install -g ravi.bot@${rollbackPlan.previousRelease}`,
-            "ravi daemon start",
-            ...(channels?.status === "online" ? ["ravi channels start"] : []),
-            "ravi daemon status",
-          ],
-        },
+          `could be taken (${warnings.join("; ") || "unknown reason"}), so neither the waypoint nor Ravi ` +
+          `${target.version} was started`,
       );
       return false;
     }
+    // The runner goes up for the waypoint's boot record even when it was stopped.
+    if (channels?.status !== "online")
+      warnings.push(
+        `the channel runner was stopped; the waypoint Ravi ${hop} ran it for its boot record, and while it ran it ` +
+          "processed queued inbound and outbound messages",
+      );
     let outcome: WaypointHopOutcome;
     try {
       outcome = await (dependencies.hopThroughWaypoint ?? hopThroughWaypoint)({
@@ -753,12 +798,18 @@ export async function rebindManagedRuntimeProcesses(
     }
     if (!outcome.ok) {
       if (outcome.step === "reinstall-target") {
-        // The waypoint runs on the state it prepared: a release of its own, on its own state.
+        // The waypoint runs from memory on the state it prepared; the install holds what the message says.
         record(
           "failed",
           `Ravi ${hop} prepared the state and runs on it, but Ravi ${target.version} could not be installed ` +
-            `again (${outcome.message}). Nothing else changed; run the update again.`,
-          { commands: ["ravi daemon status", `ravi update --version ${target.version}`] },
+            `again (${outcome.message}). Install it with the first command, then run the update again.`,
+          {
+            commands: [
+              `${rollbackPlan.method} install -g ravi.bot@${target.version}`,
+              "ravi daemon status",
+              `ravi update --version ${target.version}`,
+            ],
+          },
         );
         return false;
       }
@@ -779,10 +830,17 @@ export async function rebindManagedRuntimeProcesses(
         afterWaypoint("PM2 could not remove the waypoint's channel runner");
         return false;
       }
-      return await rebindManagedRuntimeProcesses(managedRuntimeSnapshot(getProcesses()), target, {
+      const secondPassAt = Date.now();
+      const converged = await rebindManagedRuntimeProcesses(managedRuntimeSnapshot(getProcesses()), target, {
         ...dependencies,
         afterWaypoint: true,
+        carriedWarnings: warnings,
+        keptSnapshot: snapshot,
       });
+      // Every end of that pass is recorded, also one that returned before it could roll back.
+      if (!converged && !readUpdateSupervisorResult(secondPassAt, stateDir))
+        afterWaypoint("PM2 changed before it could stop the waypoint's processes");
+      return converged;
     } catch (cause) {
       afterWaypoint((cause as Error).message);
       return false;
@@ -804,6 +862,10 @@ export async function rebindManagedRuntimeProcesses(
       `Ravi ${target.version} converged and stayed up for the stability window.` +
         (snapshot
           ? ` The snapshot of Ravi ${rollbackPlan.previousRelease}'s state is kept in ${join(updateSnapshotsDir(stateDir), snapshot.id)} until the next update.`
+          : "") +
+        (dependencies.keptSnapshot
+          ? ` So is the one taken before the waypoint, of Ravi ${dependencies.keptSnapshot.previousRelease}'s state, in ` +
+            `${join(updateSnapshotsDir(stateDir), dependencies.keptSnapshot.id)}.`
           : ""),
     );
     return true;
@@ -863,6 +925,7 @@ async function snapshotStoppedState(input: {
       method: input.plan.method,
       previousRelease: input.rollbackPlan.previousRelease,
       targetRelease: input.target.version,
+      keep: input.dependencies.keptSnapshot?.id ?? null,
     });
     console.error(
       `ravi update: snapshot ${snapshot.id} of Ravi ${input.rollbackPlan.previousRelease}'s state taken (${input.plan.method})`,
@@ -880,13 +943,14 @@ export function buildManagedRuntimeRebindSupervisorInvocation(
   target: ManagedRuntimeTarget,
   processes: Pm2Process[],
   baseEnv: NodeJS.ProcessEnv = process.env,
-  options: { declaredRunningRelease?: string | null } = {},
+  options: { declaredRunningRelease?: string | null; rollback?: { snapshotId: string } } = {},
 ): { command: string; args: string[]; cwd: string; env: Record<string, string> } {
   const request: ManagedRuntimeRebindRequest = {
     schemaVersion: 1,
     target,
     previousProcesses: managedRuntimeSnapshot(processes),
     ...(options.declaredRunningRelease ? { declaredRunningRelease: options.declaredRunningRelease } : {}),
+    ...(options.rollback ? { rollback: options.rollback } : {}),
   };
   const env = buildPm2Env({
     ...(baseEnv as Record<string, string>),
@@ -982,6 +1046,8 @@ export function readSupervisorRefusal(sinceMs: number, stateDir: string = getRav
 export async function maybeRunManagedRuntimeRebindFromEnv(
   insideDaemonTree: () => boolean = () => isInsideDaemonProcessTree({ strict: true }),
   rebind: typeof rebindManagedRuntimeProcesses = rebindManagedRuntimeProcesses,
+  /** The operator rollback's PM2 reads and rollback (tests). */
+  rollbackOverrides: Partial<OperatorRollbackSupervisorDependencies> = {},
 ): Promise<boolean> {
   const encoded = process.env[MANAGED_RUNTIME_REBIND_ENV];
   if (!encoded) return false;
@@ -992,6 +1058,30 @@ export async function maybeRunManagedRuntimeRebindFromEnv(
   const lock = acquireUpdateSupervisorLock();
   try {
     const request = decodeManagedRuntimeRebindRequest(encoded);
+    if (request.rollback) {
+      let rolledBack: boolean;
+      try {
+        rolledBack = await superviseOperatorRollback({
+          stateDir: getRaviStateDir(),
+          snapshotId: request.rollback.snapshotId,
+          getProcesses: () => getPm2Processes({ strict: true }),
+          run: runManagedRuntimeCommand,
+          bunPath: process.execPath,
+          pidAlive: (pid) => processExitState(pid) !== "exited",
+          env: process.env,
+          stabilityWindowMs: configuredStabilityWindowMs(process.env),
+          installMethod: globalInstallMethodOf(request.target.cwd),
+          ...rollbackOverrides,
+        });
+      } catch (error) {
+        // Refused under the lock, before any stop: the reason reaches the CLI.
+        if ((error as { code?: unknown } | null)?.code === UPDATE_ROLLBACK_UNAVAILABLE)
+          throw recordSupervisorRefusal(UPDATE_ROLLBACK_UNAVAILABLE, (error as Error).message);
+        throw error;
+      }
+      if (!rolledBack) throw new Error("ravi update --rollback did not bring the previous release back");
+      return true;
+    }
     // The CLI started waiting when it spawned this process.
     const plan = supervisorStabilityPlan(declaredBudget, Date.now() - process.uptime() * 1000);
     let converged: boolean;
@@ -1065,7 +1155,15 @@ export async function runManagedRuntimeRebindSupervisor(
   target: ManagedRuntimeTarget,
   processes: Pm2Process[],
   stateDir: string = getRaviStateDir(),
-  options: { declaredRunningRelease?: string | null } = {},
+  /**
+   * `declaredRunningRelease`: `ravi update --running-release`; `rollback`: run `ravi update --rollback --execute` in
+   * the supervisor; `env`: the supervisor's environment.
+   */
+  options: {
+    declaredRunningRelease?: string | null;
+    rollback?: { snapshotId: string };
+    env?: NodeJS.ProcessEnv;
+  } = {},
 ): Promise<ManagedRuntimeSupervisorOutcome> {
   const startedAt = Date.now();
   const log = openSupervisorLog(stateDir);
@@ -1083,9 +1181,12 @@ function superviseManagedRuntimeRebind(
   target: ManagedRuntimeTarget,
   processes: Pm2Process[],
   logFd: number | undefined,
-  options: { declaredRunningRelease?: string | null },
+  options: { declaredRunningRelease?: string | null; rollback?: { snapshotId: string }; env?: NodeJS.ProcessEnv },
 ): Promise<boolean> {
-  const invocation = buildManagedRuntimeRebindSupervisorInvocation(target, processes, process.env, options);
+  const invocation = buildManagedRuntimeRebindSupervisorInvocation(target, processes, options.env ?? process.env, {
+    declaredRunningRelease: options.declaredRunningRelease,
+    rollback: options.rollback,
+  });
   return new Promise((resolve) => {
     let child: ReturnType<typeof spawn>;
     try {

@@ -2,13 +2,19 @@
  * A parent's `thread-send` waits behind the thread's running turn (follow-up delivery), so the thread
  * can close itself in that turn, with its own `--return`, before the instruction reaches it.
  *
- * Delivery is the moment the thread starts working on the instruction. A thread that closed in the
- * meantime is reopened then, the same transition `thread-send` makes when it publishes to a closed
+ * Delivery is the moment the thread starts working on the instruction. A thread that closed ITSELF in
+ * the meantime is reopened then, the same transition `thread-send` makes when it publishes to a closed
  * thread. Without it the thread works on a record that says `closed`: the close that ends that work
  * is a no-op (`changed: false`), its `--return` is dropped, and the parent never hears of the result.
+ *
+ * A close the parent (or an operator, from a terminal) made stands. Closing does not cancel an
+ * instruction already queued, so the thread still works on it, but delivering it never undoes the
+ * parent's decision. And only a first delivery counts: a message that comes back (a replay of an
+ * unfinished turn, a retry after provider capacity) is not a new instruction.
  */
 
 import type { RuntimeLaunchPrompt } from "../../runtime/message-types.js";
+import { dbGetContext } from "../../router/router-db.js";
 import { logger } from "../../utils/logger.js";
 import {
   getSlackThreadLifecycle,
@@ -39,8 +45,10 @@ export function reopenThreadsForDeliveredInstructions(
     if (reopened.includes(lifecycle.requestId)) continue;
     try {
       const current = getSlackThreadLifecycle(lifecycle.requestId);
-      // A record that is open, gone, or bound to another child is not this instruction's to reopen.
+      // A record that is open, gone, or bound to another child is not this instruction's to reopen,
+      // and neither is one that somebody else closed.
       if (current?.status !== "closed" || current.childSessionKey !== lifecycle.childSessionKey) continue;
+      if (!closedByThreadItself(current)) continue;
       const record = reopenSlackThreadLifecycle(lifecycle.requestId);
       reopened.push(lifecycle.requestId);
       void refreshReopenedCard(record, dependencies.refreshCard);
@@ -52,6 +60,16 @@ export function reopenThreadsForDeliveredInstructions(
     }
   }
   return reopened;
+}
+
+/**
+ * Whether the close ran in a turn of the thread's own session. The close records the context it ran
+ * in, and that context names its session; a close from the parent's turn, from a terminal (no
+ * context) or from a context that is gone is not the thread's own, and stands.
+ */
+function closedByThreadItself(record: SlackThreadLifecycleRecord): boolean {
+  if (!record.closeContextId || !record.childSessionKey) return false;
+  return dbGetContext(record.closeContextId)?.sessionKey === record.childSessionKey;
 }
 
 /** The root card follows the lifecycle, as it does when `thread-send` reopens a thread at publish. */

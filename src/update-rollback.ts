@@ -229,7 +229,7 @@ export const UPDATE_ROLLBACK_UNAVAILABLE = "UPDATE_ROLLBACK_UNAVAILABLE";
 export class UpdateRollbackUnavailableError extends Error {
   readonly code = UPDATE_ROLLBACK_UNAVAILABLE;
   constructor(reason: string) {
-    super(`${UPDATE_ROLLBACK_UNAVAILABLE}: ${reason} Nothing was stopped.`);
+    super(`${UPDATE_ROLLBACK_UNAVAILABLE}: ${reason} This run stopped nothing.`);
     this.name = "UpdateRollbackUnavailableError";
   }
 }
@@ -272,12 +272,22 @@ export type OperatorRollbackPlan = {
  * Only from the release that update installed (its target, proven by the daemon's boot receipt), from a global
  * install, with a snapshot that was not restored yet. Read only.
  */
-export function planOperatorRollback(input: { stateDir: string; processes: Pm2Process[] }): OperatorRollbackPlan {
+export function planOperatorRollback(input: {
+  stateDir: string;
+  processes: Pm2Process[];
+  /** How this Ravi was installed, for the commands when nothing runs (the daemon's install is unknown then). */
+  installMethod?: GlobalInstallMethod | null;
+}): OperatorRollbackPlan {
   const manifest = latestUpdateSnapshot(input.stateDir);
   if (!manifest)
     throw new UpdateRollbackUnavailableError(
       "there is no update snapshot to go back to; only an update that could roll back keeps one.",
     );
+  // Nothing under PM2 next to an unused snapshot: a rollback (or an update) stopped both processes and was cut.
+  if (
+    !input.processes.some((process) => process.name === PM2_PROCESS_NAME || process.name === CHANNELS_PM2_PROCESS_NAME)
+  )
+    throw new UpdateRollbackUnavailableError(cutShort(input.stateDir, manifest, input.installMethod ?? null));
   if (existsSync(join(updateSnapshotsDir(input.stateDir), manifest.id, "restore.json")))
     throw new UpdateRollbackUnavailableError(
       `the snapshot of ${manifest.createdAt} was already restored, or a restore of it was cut short (see its ` +
@@ -310,6 +320,101 @@ export function planOperatorRollback(input: { stateDir: string; processes: Pm2Pr
       .filter((process) => process.name === PM2_PROCESS_NAME || process.name === CHANNELS_PM2_PROCESS_NAME)
       .map(({ name, status, pid, createdAt }) => ({ name, status, pid, createdAt: createdAt ?? null })),
   };
+}
+
+/** What to tell when neither process runs: the state may be the target's, half restored, or restored. */
+function cutShort(stateDir: string, manifest: UpdateSnapshotManifest, method: GlobalInstallMethod | null): string {
+  const directory = join(updateSnapshotsDir(stateDir), manifest.id);
+  const install = method
+    ? `${method} install -g ravi.bot@${manifest.previousRelease}`
+    : `bun install -g ravi.bot@${manifest.previousRelease} (npm install -g for an npm install)`;
+  const start = [install, "ravi daemon start", "ravi channels start", "ravi daemon status"];
+  if (existsSync(join(directory, "restore.json")))
+    return (
+      `Ravi is not running under PM2, and a restore of the snapshot of ${manifest.createdAt} ran: a rollback ` +
+      `stopped after it. ${directory}/restore.json lists every move and whether it was done; once all are done, ` +
+      `bring Ravi ${manifest.previousRelease} back: ${start.join(" ; ")}`
+    );
+  return (
+    `Ravi is not running under PM2, and the snapshot of ${manifest.createdAt} (Ravi ${manifest.previousRelease}'s ` +
+    `state, before the update to Ravi ${manifest.targetRelease}) was not restored: a rollback may have stopped both ` +
+    "processes and been cut. To go back by hand, with nothing started meanwhile: " +
+    [...updateSnapshotManualRestoreCommands(stateDir, manifest), ...start].join(" ; ")
+  );
+}
+
+export type OperatorRollbackSupervisorDependencies = {
+  stateDir: string;
+  /** The snapshot the operator's preview named: under the lock, the plan must still be about it. */
+  snapshotId: string;
+  getProcesses: () => Pm2Process[];
+  run: UpdateRollbackDependencies["run"];
+  bunPath: string;
+  pidAlive: (pid: number) => boolean;
+  env?: NodeJS.ProcessEnv;
+  stabilityWindowMs?: number;
+  installMethod?: GlobalInstallMethod | null;
+  rollBack?: typeof rollBackUpdate;
+};
+
+/**
+ * `ravi update --rollback --execute`, in the update supervisor: a detached process that holds the update lock and
+ * outlives the CLI, so a closed terminal or a Ctrl-C after the first stop cuts nothing. The plan is made again under
+ * the lock (the operator previewed it without one) and must be about the snapshot the preview named. The outcome goes
+ * to `supervisor-result.json`, where the CLI, or the operator after a cut, reads it.
+ */
+export async function superviseOperatorRollback(deps: OperatorRollbackSupervisorDependencies): Promise<boolean> {
+  const { stateDir } = deps;
+  const { manifest, plan, previousProcesses, runningRelease } = planOperatorRollback({
+    stateDir,
+    processes: deps.getProcesses(),
+    installMethod: deps.installMethod ?? null,
+  });
+  if (manifest.id !== deps.snapshotId)
+    throw new UpdateRollbackUnavailableError(
+      `the last snapshot is now ${manifest.id} (${manifest.createdAt}), not the ${deps.snapshotId} the preview ` +
+        "named; preview again.",
+    );
+  let outcome: UpdateRollbackOutcome;
+  try {
+    outcome = await (deps.rollBack ?? rollBackUpdate)({
+      stateDir,
+      plan,
+      manifest,
+      previousProcesses,
+      bunPath: deps.bunPath,
+      run: deps.run,
+      getProcesses: deps.getProcesses,
+      pidAlive: deps.pidAlive,
+      env: deps.env,
+      stabilityWindowMs: deps.stabilityWindowMs,
+    });
+  } catch (cause) {
+    outcome = {
+      ok: false,
+      step: "unknown",
+      message: `the rollback threw (${describe(cause)}); ${join(updateSnapshotsDir(stateDir), manifest.id, "restore.json")} says what was restored.`,
+      commands: ["ravi daemon status", "pm2 jlist"],
+      restoredAt: null,
+      candidateDir: null,
+    };
+  }
+  recordUpdateSupervisorResult(stateDir, {
+    outcome: outcome.ok ? "rolled-back" : "rollback-failed",
+    targetRelease: runningRelease,
+    previousRelease: plan.previousRelease,
+    snapshotId: manifest.id,
+    snapshotAt: manifest.createdAt,
+    restoredAt: outcome.restoredAt,
+    candidateDir: outcome.candidateDir,
+    message: outcome.ok
+      ? `Ravi ${plan.previousRelease} runs again on its state as of ${manifest.createdAt}. What Ravi ` +
+        `${runningRelease} wrote since then is kept in ${outcome.candidateDir}.`
+      : `ravi update --rollback stopped at ${outcome.step}: ${outcome.message}`,
+    commands: outcome.ok ? [] : outcome.commands,
+    warnings: [],
+  });
+  return outcome.ok;
 }
 
 const SUPERVISOR_RESULT_FILE = "supervisor-result.json";
@@ -406,7 +511,8 @@ type RunOptions = { cwd?: string; env?: NodeJS.ProcessEnv; stream?: boolean };
 export type UpdateRollbackStep = "stop" | "restore" | "reinstall" | "start" | "verify" | "unknown";
 
 export type UpdateRollbackOutcome =
-  | { ok: true; target: ManagedRuntimeTarget; restoredAt: string; candidateDir: string }
+  /** `restoredAt`/`candidateDir` are null when there was no snapshot to restore (`manifest: null`). */
+  | { ok: true; target: ManagedRuntimeTarget; restoredAt: string | null; candidateDir: string | null }
   | {
       ok: false;
       step: UpdateRollbackStep;
@@ -419,7 +525,13 @@ export type UpdateRollbackOutcome =
 export type UpdateRollbackDependencies = {
   stateDir: string;
   plan: UpdateRollbackPlan;
-  manifest: UpdateSnapshotManifest;
+  /**
+   * The snapshot to put back. Null when the update stopped both processes but took no snapshot: the state is the
+   * previous release's own, untouched, so nothing is restored and that release only comes back on it.
+   */
+  manifest: UpdateSnapshotManifest | null;
+  /** Processes the update already stopped: nothing starts until they have exited. */
+  stoppedPids?: number[];
   /** The processes before the update: the rollback brings back the ones that were online. */
   previousProcesses: ManagedRuntimeProcessSnapshot[];
   bunPath: string;
@@ -471,7 +583,9 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
   const log = deps.log ?? ((line: string) => console.error(`ravi update rollback: ${line}`));
   const env = previousReleaseCliEnv(deps.env ?? process.env);
   const phase = deps.schemaPhase ?? ((process: ManagedDaemonProcess) => readDaemonSchemaPhase(process, stateDir));
-  const snapshotDir = join(updateSnapshotsDir(stateDir), manifest.id);
+  const snapshotDir = manifest ? join(updateSnapshotsDir(stateDir), manifest.id) : null;
+  const onState = manifest ? "the restored state" : "its untouched state";
+  const stateIs = manifest ? "The state is restored" : "The state is untouched";
   const install =
     plan.method === "bun"
       ? `bun install -g ravi.bot@${plan.previousRelease}`
@@ -482,13 +596,16 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
     "ravi daemon status",
   ];
   // Every live file of each store goes aside (WAL and shared memory included) before a snapshot file comes back.
-  const manualRestore = () => [
-    "pm2 delete ravi-channels",
-    "pm2 delete ravi",
-    ...updateSnapshotManualRestoreCommands(stateDir, manifest),
-    install,
-    ...startCommands,
-  ];
+  const manualRestore = () =>
+    manifest
+      ? [
+          "pm2 delete ravi-channels",
+          "pm2 delete ravi",
+          ...updateSnapshotManualRestoreCommands(stateDir, manifest),
+          install,
+          ...startCommands,
+        ]
+      : [install, ...startCommands];
   let restored: { candidateDir: string; restoredAt: string } | null = null;
   let step: UpdateRollbackStep = "stop";
   const failed = (failedStep: UpdateRollbackStep, message: string, commands: string[]): UpdateRollbackOutcome => {
@@ -513,6 +630,11 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
     }
   };
   const unrestored = (reason: string) =>
+    manifest
+      ? unrestoredSnapshot(reason, manifest)
+      : `${reason} The state is untouched: no snapshot was taken and nothing ran on it after Ravi ` +
+        `${plan.previousRelease}. Once every stopped process has exited, install and start Ravi ${plan.previousRelease}.`;
+  const unrestoredSnapshot = (reason: string, manifest: UpdateSnapshotManifest) =>
     `${reason} Nothing was restored: the state is still what Ravi ${manifest.targetRelease} wrote. ` +
     `The snapshot of Ravi ${plan.previousRelease}'s state is intact in ${snapshotDir}. The commands stop both ` +
     "processes, move every live file of each store aside (its WAL and shared memory too, so none is left next " +
@@ -544,35 +666,16 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
     return failed(
       step,
       `The rollback stopped at ${step} on an unexpected error (${describe(cause)}). ` +
-        (restored
+        (restored && manifest
           ? `The state is restored to the snapshot of ${manifest.createdAt}.`
-          : `The state may still be what Ravi ${manifest.targetRelease} wrote; the snapshot is in ${snapshotDir}.`),
+          : manifest
+            ? `The state may still be what Ravi ${manifest.targetRelease} wrote; the snapshot is in ${snapshotDir}.`
+            : "The state is untouched."),
       commands,
     );
   }
 
-  async function rollBackSteps(): Promise<UpdateRollbackOutcome> {
-    // 1. Stop the target. Only a process that is gone cannot write after the restore.
-    log(`stopping Ravi ${manifest.targetRelease} to restore the state Ravi ${plan.previousRelease} wrote`);
-    const pids = new Set<number>();
-    for (const name of [CHANNELS_PM2_PROCESS_NAME, PM2_PROCESS_NAME]) {
-      for (const entry of deps.getProcesses().filter((process) => process.name === name)) {
-        if (entry.pid > 0) pids.add(entry.pid);
-        const result = await deps.run("pm2", ["delete", String(entry.pm_id)], { env, stream: false });
-        if (!result.success) {
-          return failed(
-            "stop",
-            unrestored(`PM2 could not remove ${name} (pm_id ${entry.pm_id}): ${result.output.trim()}.`),
-            manualRestore(),
-          );
-        }
-      }
-    }
-    if (!(await waitFor(() => [...pids].every((pid) => !deps.pidAlive(pid)), deps.exitTimeoutMs ?? 30_000))) {
-      return failed("stop", unrestored("A removed process did not exit."), manualRestore());
-    }
-
-    // 2. Restore under the store locks, then settle what an adoption the target started left behind.
+  async function restoreSnapshot(manifest: UpdateSnapshotManifest): Promise<UpdateRollbackOutcome | null> {
     let ownership: { release(): void };
     try {
       ownership = (deps.acquireOwnership ?? acquireStateStoreOwnership)(
@@ -614,8 +717,42 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
         [install, ...startCommands],
       );
     }
+    return null;
+  }
 
-    // 3. The release that wrote the restored state, in the same install.
+  async function rollBackSteps(): Promise<UpdateRollbackOutcome> {
+    // 1. Stop the target. Only a process that is gone cannot write after the restore.
+    log(
+      manifest
+        ? `stopping Ravi ${manifest.targetRelease} to restore the state Ravi ${plan.previousRelease} wrote`
+        : `bringing Ravi ${plan.previousRelease} back on its untouched state`,
+    );
+    const pids = new Set<number>((deps.stoppedPids ?? []).filter((pid) => pid > 0));
+    for (const name of [CHANNELS_PM2_PROCESS_NAME, PM2_PROCESS_NAME]) {
+      for (const entry of deps.getProcesses().filter((process) => process.name === name)) {
+        if (entry.pid > 0) pids.add(entry.pid);
+        const result = await deps.run("pm2", ["delete", String(entry.pm_id)], { env, stream: false });
+        if (!result.success) {
+          return failed(
+            "stop",
+            unrestored(`PM2 could not remove ${name} (pm_id ${entry.pm_id}): ${result.output.trim()}.`),
+            manualRestore(),
+          );
+        }
+      }
+    }
+    if (!(await waitFor(() => [...pids].every((pid) => !deps.pidAlive(pid)), deps.exitTimeoutMs ?? 30_000))) {
+      return failed("stop", unrestored("A removed process did not exit."), manualRestore());
+    }
+
+    // 2. Restore under the store locks, then settle what an adoption the target started left behind. Without a
+    // snapshot the state is untouched: nothing ran on it after the previous release.
+    if (manifest) {
+      const failure = await restoreSnapshot(manifest);
+      if (failure) return failure;
+    }
+
+    // 3. The release that wrote the state, in the same install.
     step = "reinstall";
     if (plan.method === "bun") {
       try {
@@ -637,7 +774,7 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
     if (!reinstall.success || !target || target.version !== plan.previousRelease) {
       return failed(
         "reinstall",
-        `The state is restored, but Ravi ${plan.previousRelease} could not be installed ` +
+        `${stateIs}, but Ravi ${plan.previousRelease} could not be installed ` +
           `(${reinstall.success ? `the install resolved to ${target?.version ?? "no runnable bundle"}` : reinstall.output.trim().split("\n").slice(-3).join(" ")}). ` +
           "Nothing is running.",
         [install, ...startCommands],
@@ -699,7 +836,7 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
     ) {
       return failed(
         "start",
-        `Ravi ${plan.previousRelease} is installed and the state is restored, but its daemon did not come up ` +
+        `Ravi ${plan.previousRelease} is installed and ${stateIs.toLowerCase()}, but its daemon did not come up ` +
           "running it and ready on that state.",
         [...startCommands, "pm2 logs ravi --lines 200 --nostream"],
       );
@@ -724,7 +861,7 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
       if (!started) {
         return failed(
           "start",
-          `The daemon runs Ravi ${plan.previousRelease} on the restored state, but the channel runner did not come up.`,
+          `The daemon runs Ravi ${plan.previousRelease} on ${onState}, but the channel runner did not come up.`,
           ["ravi channels start", "ravi channels status"],
         );
       }
@@ -736,7 +873,7 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
     if (!save.success || !matches(deps.getProcesses())) {
       return failed(
         "verify",
-        `Ravi ${plan.previousRelease} was started on the restored state, but ${save.success ? "its processes do not match it" : "PM2 could not save its process list"}.`,
+        `Ravi ${plan.previousRelease} was started on ${onState}, but ${save.success ? "its processes do not match it" : "PM2 could not save its process list"}.`,
         ["ravi daemon status", "ravi channels status", "pm2 save --force"],
       );
     }
@@ -751,12 +888,17 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
     if (!stable) {
       return failed(
         "verify",
-        `Ravi ${plan.previousRelease} came up on the restored state, but did not stay up for the stability window ` +
+        `Ravi ${plan.previousRelease} came up on ${onState}, but did not stay up for the stability window ` +
           "(a process restarted, or the daemon left ready).",
         ["ravi daemon status", "ravi channels status", "pm2 logs ravi --lines 200 --nostream"],
       );
     }
     log(`rolled back to Ravi ${plan.previousRelease}`);
-    return { ok: true, target, restoredAt: restored.restoredAt, candidateDir: restored.candidateDir };
+    return {
+      ok: true,
+      target,
+      restoredAt: restored?.restoredAt ?? null,
+      candidateDir: restored?.candidateDir ?? null,
+    };
   }
 }

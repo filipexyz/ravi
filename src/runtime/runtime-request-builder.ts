@@ -1024,8 +1024,13 @@ async function buildRuntimeStartRequestInternal(
       stopActiveContextLease?.();
       stopActiveContextLease = undefined;
       // A parent's instruction that waited behind this thread's last turn starts work here: a thread that
-      // closed itself in that turn is reopened, so the close that ends this work reaches the parent.
-      reopenThreadsForDeliveredInstructions(input.deliverableMessages.map((message) => message.launchPrompt));
+      // closed itself in that turn is reopened, so the close that ends this work reaches the parent. A
+      // message that comes back (a replay of an unfinished turn, a capacity retry) is not a new delivery.
+      reopenThreadsForDeliveredInstructions(
+        input.deliverableMessages
+          .filter((message) => message.replay !== true && message.providerCapacityRetry === undefined)
+          .map((message) => message.launchPrompt),
+      );
       const queuedTurnPrompt = findRuntimeTurnPrompt(input.deliverableMessages);
       // A trigger's owner goes only with the one fire it was published with.
       let turnPrompt = withoutSharedTriggerAuthority(queuedTurnPrompt ?? prompt, input.deliverableMessages.length);

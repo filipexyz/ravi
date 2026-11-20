@@ -98,14 +98,18 @@ CLI that run installed.
   proved itself with a boot receipt) and that release is older than the
   waypoint, the supervisor MUST take the waypoint by itself:
   - stop both processes and snapshot the state, as an update that can roll
-    back does. Without that snapshot the waypoint MUST NOT be taken: the state
-    is untouched, and the result names the commands that install and start
-    the release that wrote it again;
+    back does. Without that snapshot the waypoint MUST NOT be taken, and the
+    supervisor MUST bring the release that wrote the state back on it by
+    itself, with nothing to restore (the state is untouched): install it in the
+    same place and start it through its own CLI, as a rollback does, once every
+    stopped process has exited. Only a stopped process that never exits leaves
+    the host stopped; the result then names the commands;
   - install 3.261113.2 in the same global install and start the daemon, then
     the channel runner, through its own CLI (`daemon start`, `channels
     start`), without target routing or runtime context, and with installs run
     outside the package directory they replace; both, because the target's
-    adoption needs a boot record of each. The daemon counts only at schema
+    adoption needs a boot record of each, so a runner that was stopped runs
+    for that time, and the result MUST say so in its warnings. The daemon counts only at schema
     phase `ready` (the same process, for the whole window) before the runner
     starts;
   - count the waypoint once the state shows its readiness markers (3.261113.2
@@ -113,7 +117,9 @@ CLI that run installed.
     written by 3.261113.2 with its bundle, and both held for the stability
     window;
   - install the target again and update from the waypoint to the target, as
-    any update (its own snapshot, and a rollback to the waypoint). A runner
+    any update (its own snapshot, and a rollback to the waypoint). That pass
+    MUST keep the snapshot taken before the waypoint until the next update,
+    and record whatever ends it, also a return before it could roll back. A runner
     that was stopped before the update MUST be removed again before that
     pass, so it stays stopped. A second waypoint on that pass MUST NOT be
     taken, and a pass that stops before it begins MUST be recorded as
@@ -122,14 +128,16 @@ CLI that run installed.
   throws, MUST roll back to the release that wrote the state (its snapshot and its exact
   release), and the result says the waypoint failed. A target that cannot be
   installed again leaves the waypoint running on the state it prepared, and the
-  result names the command to retry.
+  result names the commands to install the target and retry, the install first:
+  the package directory may hold no runnable bundle.
 - Otherwise (a source checkout, no rollback, or a running release not older
   than the waypoint), before it stops anything, the supervisor MUST refuse with
   `UPDATE_WAYPOINT_REQUIRED`. The refusal MUST name the exact commands: `ravi update --version 3.261113.2`,
   `ravi daemon status`, then `ravi update --next`. A source checkout does not
   accept `--version`, so there the refusal MUST give the checkout steps
-  instead, as commands that run as written: `git -C "<checkout>" fetch --tags`,
-  `git -C "<checkout>" switch --detach v3.261113.2`, build, then
+  instead, as commands that run as written, the path in POSIX single quotes:
+  `git -C '<checkout>' fetch --tags`,
+  `git -C '<checkout>' switch --detach v3.261113.2`, build, then
   `ravi daemon restart -m "waypoint"` and `ravi channels restart`. It MUST say that the installed package (or the checkout) is
   already the target release, because a restart before the waypoint would
   start it on that state.
@@ -235,7 +243,13 @@ CLI that run installed.
   with its state as of that update's snapshot, through the update's own
   rollback: stop both processes, restore under the store locks, reinstall
   the exact previous release in the same global install, start it through
-  its own CLI, and hold it for the stability window.
+  its own CLI, and hold it for the stability window. With `--execute` all of
+  it MUST run in the update supervisor, the same detached process as an
+  update's rebind, which outlives the command: a closed terminal, a lost SSH
+  session or a Ctrl-C after the first stop MUST NOT cut it. The supervisor
+  MUST make the plan again under the update lock and refuse, before any stop,
+  when the latest snapshot is not the one the preview named; the outcome goes
+  to `<state>/updates/supervisor-result.json`, which the command reports.
 - It MUST be a preview unless `--execute` is given (the contract's dry-run,
   exit 3), naming the release it leaves, the release it goes back to, the
   snapshot's time and where what was written since then is kept.
@@ -243,10 +257,14 @@ CLI that run installed.
   when there is no update snapshot, when the latest one was already restored
   (or a restore of it was cut short), when the daemon does not run from a
   global install, when the daemon's verified release is not the target of
-  that update, or when the caller runs inside the daemon's process tree.
+  that update, or when the caller runs inside the daemon's process tree. When
+  neither process runs under PM2 next to an unused snapshot (a rollback cut
+  after its stop), the refusal MUST say so and give the commands that finish
+  it by hand: the snapshot's restore and the previous release's install and
+  start, or, once a restore ran, its `restore.json` and the install and start.
 - It takes no release selector, and `--execute` without `--rollback` is a
-  usage error. It MUST hold `<state>/updates/update.lock` while it runs
-  (`UPDATE_IN_PROGRESS` when another update holds it). A rollback that stops
+  usage error. Its supervisor MUST hold `<state>/updates/update.lock` while it
+  runs (`UPDATE_IN_PROGRESS` when another update holds it). A rollback that stops
   MUST end as `UPDATE_ROLLBACK_FAILED` with the step and the commands.
 
 ## Detached execution

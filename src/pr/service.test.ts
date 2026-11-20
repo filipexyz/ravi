@@ -121,7 +121,8 @@ describe("publication lifecycle across object upload", () => {
     f = publicationFixture();
     const input = threadInput();
     const prepared = await preparePublication(input, f.request);
-    expect(prepared.plan.replySession).toBe("publisher");
+    // The open thread that publishes is the one the follow reaches; its close moves the follow to the parent.
+    expect(prepared.plan.replySession).toBe("publisher-thread");
     let closed = false;
     const request: GithubRequest = async (endpoint, method, body) => {
       const value = await f.request(endpoint, method, body);
@@ -139,6 +140,18 @@ describe("publication lifecycle across object upload", () => {
       replySource: { channel: "slack", accountId: "slack", chatId: "C-test" },
     });
     expect(f.triggers[0]!.replySource?.threadId).toBeUndefined();
+  });
+
+  it("arms the CI follow for the open thread that published, in that thread", async () => {
+    f = publicationFixture();
+    const prepared = await preparePublication(threadInput(), f.request);
+    const result = await executePublication(prepared, f.request, f.options);
+    expect(result.follow.replySession).toBe("publisher-thread");
+    expect(f.triggers).toHaveLength(1);
+    expect(f.triggers[0]).toMatchObject({
+      replySession: "publisher-thread",
+      replySource: { channel: "slack", accountId: "slack", chatId: "C-test", threadId: "1.2" },
+    });
   });
 });
 

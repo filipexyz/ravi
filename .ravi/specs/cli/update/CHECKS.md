@@ -155,7 +155,11 @@
   outside the package directory; the prepared state counted only with the
   markers and a boot record of both processes from the waypoint; and in the
   supervisor, the waypoint taken by itself then the update to the target, no
-  waypoint without a snapshot (with the commands back), a waypoint that throws
+  waypoint without a snapshot (the release that wrote the state brought back on
+  it, untouched; in the rollback, nothing restored and nothing started while a
+  stopped process lives), the snapshot taken before the waypoint kept through
+  the second pass, a warning when a stopped runner ran for the waypoint, a
+  second pass that returns before it could roll back recorded, a waypoint that throws
   rolled back, a second pass that stops before it begins recorded, a runner
   that was stopped staying stopped, a second waypoint not taken, a failed
   waypoint rolled back to the release that
@@ -165,8 +169,15 @@
 - `bun test src/update-rollback.test.ts` MUST also prove `ravi update
   --rollback`: the plan back from the last update's target with its snapshot,
   the refusals before any stop (no snapshot, already restored, a daemon on
-  another release), the preview by default and the rollback with
-  `--execute`, the refusal inside the daemon's tree, and the usage errors
+  another release), the commands to finish by hand when nothing runs next to
+  an unused snapshot, the preview by default and the rollback with
+  `--execute` through the supervisor (one absolute state directory, the
+  previewed snapshot; a refusal or a failed rollback reported from what it
+  recorded), the supervisor rolling back only the previewed snapshot and
+  recording the outcome, the update lock held for it (refused while another
+  process holds it, free after), a closed terminal after the first stop not
+  cutting the rollback (a real detached process, SIGHUP to the command's
+  process group), the refusal inside the daemon's tree, and the usage errors
   (a selector with `--rollback`, `--execute` alone); and the schema phase
   line at 3.261109.1, compared as versions.
 - `bun test src/update-preflight.test.ts` MUST also prove a second supervisor

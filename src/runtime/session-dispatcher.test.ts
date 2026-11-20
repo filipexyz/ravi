@@ -21,6 +21,8 @@ import {
   createRuntimeMessageGenerator,
   getDeliverableRuntimeMessages,
 } from "./delivery-queue.js";
+import { createRuntimeContext } from "./context-registry.js";
+import { runWithContext } from "../cli/context.js";
 import { KNOWLEDGE_AUDIENCE_LINES } from "../knowledge/turn/preamble.js";
 import { RuntimeHostSubscriptions } from "./host-subscriptions.js";
 import { stashPendingRuntimeMessages, type RuntimeUserMessage } from "./host-session.js";
@@ -3779,8 +3781,18 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       expect(working.pendingMessages).toHaveLength(1);
       expect(getSlackThreadLifecycle(requestId)?.status).toBe("open");
 
-      // That turn has not seen the instruction yet and closes the thread with its own result.
-      const first = await closeSlackThread(child, "R1", dependencies);
+      // That turn has not seen the instruction yet and closes the thread with its own result: the close
+      // runs in a turn of the thread's own session, which is what marks it as the thread's own close.
+      const threadTurn = createRuntimeContext({
+        kind: "turn-runtime",
+        agentId: child.agentId,
+        sessionKey: child.sessionKey,
+        sessionName: childName,
+        capabilities: [],
+      });
+      const first = await runWithContext({ contextId: threadTurn.contextId, sessionKey: child.sessionKey }, () =>
+        closeSlackThread(child, "R1", dependencies),
+      );
       expect(first.changed).toBe(true);
       expect(getSlackThreadLifecycle(requestId)?.status).toBe("closed");
       expect(returnsToParent()).toHaveLength(1);
@@ -3813,7 +3825,9 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       expect(cards).toEqual([`${requestId}:open`]);
 
       // The thread finishes that work and closes with the second result: it is not dropped.
-      const second = await closeSlackThread(child, "R2", dependencies);
+      const second = await runWithContext({ contextId: threadTurn.contextId, sessionKey: child.sessionKey }, () =>
+        closeSlackThread(child, "R2", dependencies),
+      );
       expect(second.changed).toBe(true);
       expect(second.parentReturnDelivered).toBe(true);
       expect(getSlackThreadLifecycle(requestId)).toMatchObject({ status: "closed", closeResult: "R2" });
