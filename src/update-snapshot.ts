@@ -364,11 +364,13 @@ export function takeUpdateSnapshot(input: {
   method: UpdateSnapshotMethod;
   previousRelease: string;
   targetRelease: string;
+  /** A snapshot that survives this one (the one taken before a waypoint); every other earlier one goes. */
+  keep?: string | null;
   now?: () => Date;
 }): UpdateSnapshotManifest {
   const root = updateSnapshotsDir(input.stateDir);
   mkdirSync(root, { recursive: true, mode: 0o700 });
-  pruneUpdateSnapshots(root);
+  pruneUpdateSnapshots(root, input.keep ?? null);
   pruneStoreSiblings(input.stores);
   const id = createUpdateSnapshotId(input.now?.() ?? new Date());
   const directory = join(root, id);

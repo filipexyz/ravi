@@ -155,7 +155,11 @@
   outside the package directory; the prepared state counted only with the
   markers and a boot record of both processes from the waypoint; and in the
   supervisor, the waypoint taken by itself then the update to the target, no
-  waypoint without a snapshot (with the commands back), a waypoint that throws
+  waypoint without a snapshot (the release that wrote the state brought back on
+  it, untouched; in the rollback, nothing restored and nothing started while a
+  stopped process lives), the snapshot taken before the waypoint kept through
+  the second pass, a warning when a stopped runner ran for the waypoint, a
+  second pass that returns before it could roll back recorded, a waypoint that throws
   rolled back, a second pass that stops before it begins recorded, a runner
   that was stopped staying stopped, a second waypoint not taken, a failed
   waypoint rolled back to the release that

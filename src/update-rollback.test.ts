@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -162,6 +163,8 @@ function rollbackFixture(
     throwAfterRestore?: boolean;
     /** The release rolled back to; 3.1.0 predates the schema phase records. */
     previousRelease?: string;
+    /** No snapshot: the update already stopped both processes (pids 300 and 301), and the state is untouched. */
+    untouched?: boolean;
   } = {},
 ) {
   const previousRelease = input.previousRelease ?? "3.1.0";
@@ -169,10 +172,12 @@ function rollbackFixture(
   const install = globalInstall("3.2.0");
   const bundle = install.target.bundlePath;
   const epoch = Math.ceil(statSync(bundle).mtimeMs) + 1;
-  let processes: Pm2Process[] = [
-    pm2Process("ravi", bundle, install.root, { pm_id: 5, pid: 300, startedAt: epoch }),
-    pm2Process("ravi-channels", bundle, install.root, { pm_id: 6, pid: 301, startedAt: epoch }),
-  ];
+  let processes: Pm2Process[] = input.untouched
+    ? []
+    : [
+        pm2Process("ravi", bundle, install.root, { pm_id: 5, pid: 300, startedAt: epoch }),
+        pm2Process("ravi-channels", bundle, install.root, { pm_id: 6, pid: 301, startedAt: epoch }),
+      ];
   const calls: Array<{ command: string; args: string[]; env?: NodeJS.ProcessEnv }> = [];
   const order: string[] = [];
   let nextPid = 400;
@@ -205,7 +210,8 @@ function rollbackFixture(
   const deps: UpdateRollbackDependencies = {
     stateDir,
     plan,
-    manifest,
+    manifest: input.untouched ? null : manifest,
+    ...(input.untouched ? { stoppedPids: [300, 301] } : {}),
     previousProcesses: [
       { name: "ravi", status: "online", pid: 10, createdAt: 1 },
       { name: "ravi-channels", status: "online", pid: 20, createdAt: 1 },
@@ -278,6 +284,35 @@ describe("update rollback", () => {
     expect(calls[3]!.env).toEqual({ PATH: "/bin" });
   });
 
+  it("brings the release back on its untouched state without a snapshot, once the stopped processes exited", async () => {
+    const { deps, calls, order, install } = rollbackFixture({ untouched: true });
+    const outcome = await rollBackUpdate(deps);
+
+    expect(outcome).toMatchObject({ ok: true, restoredAt: null, candidateDir: null });
+    // Nothing to restore: no store lock, no restore.
+    expect(order).toEqual([]);
+    expect(calls.map((call) => [call.command, ...call.args].join(" "))).toEqual([
+      "bun install -g --force ravi.bot@3.1.0",
+      `/usr/local/bin/bun ${install.target.bundlePath} daemon start`,
+      `/usr/local/bin/bun ${install.target.bundlePath} channels start`,
+      "pm2 save --force",
+    ]);
+
+    // A stopped process that never exits: nothing starts beside it.
+    const stuck = rollbackFixture({ untouched: true, stuckPid: true });
+    const refused = await rollBackUpdate(stuck.deps);
+    expect(refused).toMatchObject({ ok: false, step: "stop", restoredAt: null });
+    if (refused.ok) throw new Error("unreachable");
+    expect(refused.message).toContain("The state is untouched");
+    expect(refused.commands).toEqual([
+      "bun install -g ravi.bot@3.1.0",
+      "ravi daemon start",
+      "ravi channels start",
+      "ravi daemon status",
+    ]);
+    expect(stuck.calls).toEqual([]);
+  });
+
   it("leaves the restored state and the exact commands when the previous release cannot be installed", async () => {
     const { deps, calls } = rollbackFixture({ failInstall: true });
     const outcome = await rollBackUpdate(deps);
@@ -301,7 +336,7 @@ describe("update rollback", () => {
     expect(order).toEqual([]);
     if (outcome.ok) throw new Error("unreachable");
     const live = join(deps.stateDir, "ravi.db");
-    const snapshotDir = join(updateSnapshotsDir(deps.stateDir), deps.manifest.id);
+    const snapshotDir = join(updateSnapshotsDir(deps.stateDir), deps.manifest!.id);
     // The target's WAL and shared memory go aside with the database, before the snapshot file comes back.
     const aside = outcome.commands.findIndex((command) => command.includes(`'${live}-wal'`));
     const back = outcome.commands.indexOf(`mv -n '${join(snapshotDir, "files", "0-ravi.db")}' '${live}'`);
@@ -406,7 +441,7 @@ describe("update supervisor with a rollback plan", () => {
     const events: string[] = [];
     let time = 0;
     let nextPmId = 3;
-    const rolledBack: UpdateSnapshotManifest[] = [];
+    const rolledBack: (UpdateSnapshotManifest | null)[] = [];
     const run = async (_command: string, args: string[]) => {
       if (args[0] === "delete") {
         const current = processes.find((process) => String(process.pm_id) === args[1]);
@@ -472,8 +507,8 @@ describe("update supervisor with a rollback plan", () => {
         },
       );
     /** Both processes running `version`, as the waypoint's own CLI leaves them. */
-    const bringUp = (version: string) => {
-      for (const name of ["ravi", "ravi-channels"] as const) {
+    const bringUp = (version: string, names: Array<"ravi" | "ravi-channels"> = ["ravi", "ravi-channels"]) => {
+      for (const name of names) {
         const pmId = nextPmId++;
         const process = pm2Process(name, bundle, install.root, {
           pm_id: pmId,
@@ -569,7 +604,11 @@ describe("update supervisor with a rollback plan", () => {
       "delete:ravi",
     ]);
     expect(fixture.events).toContain("start:ravi");
-    expect(readUpdateSupervisorResult(since, fixture.stateDir)).toMatchObject({ outcome: "converged" });
+    const result = readUpdateSupervisorResult(since, fixture.stateDir);
+    expect(result).toMatchObject({ outcome: "converged" });
+    // The snapshot taken before the waypoint survives the one taken before the target.
+    expect(readdirSync(updateSnapshotsDir(fixture.stateDir))).toHaveLength(2);
+    expect(result?.message).toContain("So is the one taken before the waypoint, of Ravi 3.1.0's state");
   });
 
   it("does not take a second waypoint when the first left the state unprepared", async () => {
@@ -612,7 +651,7 @@ describe("update supervisor with a rollback plan", () => {
     expect(result?.message).toContain("the waypoint Ravi 3.261113.2 failed at start: ravi did not come up");
   });
 
-  it("does not take the waypoint without a snapshot, and names the commands that bring the release back", async () => {
+  it("does not take the waypoint without a snapshot, and brings the release that wrote the state back", async () => {
     const fixture = supervisorFixture({ targetNeverReady: false });
     const since = Date.now() - 1_000;
 
@@ -628,16 +667,14 @@ describe("update supervisor with a rollback plan", () => {
         },
       }),
     ).toBe(false);
-    expect(fixture.rolledBack).toHaveLength(0);
+    // Not left stopped: the release that wrote the state comes back on it, with nothing to restore.
+    expect(fixture.rolledBack).toEqual([null]);
+    expect(fixture.events).toEqual(["delete:ravi-channels", "delete:ravi"]);
     const result = readUpdateSupervisorResult(since, fixture.stateDir);
-    expect(result).toMatchObject({ outcome: "failed" });
-    expect(result?.message).toContain("so the waypoint was not taken");
-    expect(result?.commands).toEqual([
-      "bun install -g ravi.bot@3.1.0",
-      "ravi daemon start",
-      "ravi channels start",
-      "ravi daemon status",
-    ]);
+    expect(result).toMatchObject({ outcome: "rolled-back", previousRelease: "3.1.0", snapshotId: null });
+    expect(result?.message).toContain("so neither the waypoint nor Ravi 3.2.0 was started");
+    expect(result?.message).toContain("Ravi 3.1.0 runs again on its untouched state");
+    expect(result?.warnings).toEqual(["the snapshot failed (copy failed)"]);
   });
 
   it("rolls back when the waypoint throws, and records a second pass that stops before it began", async () => {
@@ -698,7 +735,37 @@ describe("update supervisor with a rollback plan", () => {
     ).toBe(true);
     expect(fixture.processes().some((process) => process.name === "ravi-channels")).toBe(false);
     expect(fixture.events.filter((event) => event === "start:ravi-channels")).toEqual([]);
-    expect(readUpdateSupervisorResult(since, fixture.stateDir)).toMatchObject({ outcome: "converged" });
+    const result = readUpdateSupervisorResult(since, fixture.stateDir);
+    expect(result).toMatchObject({ outcome: "converged" });
+    // The runner ran meanwhile, and the result says so.
+    expect(result?.warnings).toEqual([
+      "the channel runner was stopped; the waypoint Ravi 3.261113.2 ran it for its boot record, and while it ran " +
+        "it processed queued inbound and outbound messages",
+    ]);
+  });
+
+  it("records a second pass that returns before it could roll back", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false });
+    const since = Date.now() - 1_000;
+    let prepared: string | null = null;
+    let readiness: "ready" | "adopt-on-start" = "adopt-on-start";
+
+    expect(
+      await fixture.rebind({
+        assertPrepared: () => readiness,
+        preparedStateRelease: () => prepared,
+        hopThroughWaypoint: async (dependencies) => {
+          prepared = dependencies.waypoint;
+          // Only the runner is up when the update to the target reads PM2: that pass returns at once.
+          fixture.bringUp(dependencies.waypoint, ["ravi-channels"]);
+          readiness = "ready";
+          return { ok: true };
+        },
+      }),
+    ).toBe(false);
+    const result = readUpdateSupervisorResult(since, fixture.stateDir);
+    expect(result).toMatchObject({ outcome: "failed" });
+    expect(result?.message).toContain("stopped before it began");
   });
 
   it("leaves the waypoint running and says so when the target cannot be installed again", async () => {
@@ -715,7 +782,13 @@ describe("update supervisor with a rollback plan", () => {
     expect(fixture.rolledBack).toHaveLength(0);
     const result = readUpdateSupervisorResult(since, fixture.stateDir);
     expect(result).toMatchObject({ outcome: "failed" });
-    expect(result?.commands).toEqual(["ravi daemon status", "ravi update --version 3.2.0"]);
+    // The install may hold anything after a failed install: the commands begin by installing the target.
+    expect(result?.message).toContain("could not be installed again (registry unreachable)");
+    expect(result?.commands).toEqual([
+      "bun install -g ravi.bot@3.2.0",
+      "ravi daemon status",
+      "ravi update --version 3.2.0",
+    ]);
   });
 
   it("refuses the waypoint before any stop without a rollback, or as a downgrade", async () => {
