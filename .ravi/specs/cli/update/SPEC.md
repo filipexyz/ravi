@@ -102,14 +102,16 @@ CLI that run installed.
     supervisor MUST bring the release that wrote the state back on it by
     itself, with nothing to restore (the state is untouched): install it in the
     same place and start it through its own CLI, as a rollback does, once every
-    stopped process has exited. Only a stopped process that never exits leaves
-    the host stopped; the result then names the commands;
+    stopped process has exited. A stopped process that never exits, or a
+    release that cannot be installed or started again, leaves the host
+    stopped; the result then names the commands;
   - install 3.261113.2 in the same global install and start the daemon, then
     the channel runner, through its own CLI (`daemon start`, `channels
     start`), without target routing or runtime context, and with installs run
     outside the package directory they replace; both, because the target's
     adoption needs a boot record of each, so a runner that was stopped runs
-    for that time, and the result MUST say so in its warnings. The daemon counts only at schema
+    for that time, and the result MUST say so in its warnings once the hop got
+    that far (and that it may have run, when the hop stopped while starting). The daemon counts only at schema
     phase `ready` (the same process, for the whole window) before the runner
     starts;
   - count the waypoint once the state shows its readiness markers (3.261113.2
@@ -119,6 +121,7 @@ CLI that run installed.
   - install the target again and update from the waypoint to the target, as
     any update (its own snapshot, and a rollback to the waypoint). That pass
     MUST keep the snapshot taken before the waypoint until the next update,
+    and its space check MUST NOT count that kept snapshot as room,
     and record whatever ends it, also a return before it could roll back. A runner
     that was stopped before the update MUST be removed again before that
     pass, so it stays stopped. A second waypoint on that pass MUST NOT be

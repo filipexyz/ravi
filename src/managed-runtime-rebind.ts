@@ -150,7 +150,7 @@ type ManagedRuntimeRebindDependencies = {
     processes: Pm2Process[];
     stateDir: string;
   }) => UpdateRollbackPlan | null;
-  planSnapshot?: (input: { stateDir: string; stores: string[] }) => UpdateSnapshotPlan;
+  planSnapshot?: (input: { stateDir: string; stores: string[]; keep?: string | null }) => UpdateSnapshotPlan;
   takeSnapshot?: typeof takeUpdateSnapshot;
   acquireOwnership?: (stateDir: string, stores: string[], timeoutMs: number) => { release(): void };
   rollBack?: (dependencies: UpdateRollbackDependencies) => Promise<UpdateRollbackOutcome>;
@@ -426,7 +426,13 @@ export async function rebindManagedRuntimeProcesses(
     waypoint && rollbackPlan && compareRaviVersions(rollbackPlan.previousRelease, waypoint) < 0 ? waypoint : null;
   if (waypoint && !hop) refuseWaypoint();
   const stores = rollbackPlan ? (dependencies.storePaths ?? updateStorePaths)(stateDir) : [];
-  const snapshotPlan = rollbackPlan ? (dependencies.planSnapshot ?? planUpdateSnapshot)({ stateDir, stores }) : null;
+  const snapshotPlan = rollbackPlan
+    ? (dependencies.planSnapshot ?? planUpdateSnapshot)({
+        stateDir,
+        stores,
+        keep: dependencies.keptSnapshot?.id ?? null,
+      })
+    : null;
   const gone = (pid: number): boolean =>
     dependencies.pidAlive ? !dependencies.pidAlive(pid) : processExitState(pid) === "exited";
 
@@ -706,12 +712,6 @@ export async function rebindManagedRuntimeProcesses(
       );
       return false;
     }
-    // The runner goes up for the waypoint's boot record even when it was stopped.
-    if (channels?.status !== "online")
-      warnings.push(
-        `the channel runner was stopped; the waypoint Ravi ${hop} ran it for its boot record, and while it ran it ` +
-          "processed queued inbound and outbound messages",
-      );
     let outcome: WaypointHopOutcome;
     try {
       outcome = await (dependencies.hopThroughWaypoint ?? hopThroughWaypoint)({
@@ -730,6 +730,16 @@ export async function rebindManagedRuntimeProcesses(
       });
     } catch (cause) {
       outcome = { ok: false, step: "unknown", message: (cause as Error).message };
+    }
+    // A runner that was stopped goes up for the waypoint's boot record, once the hop gets that far.
+    if (channels?.status !== "online") {
+      const step = outcome.ok ? null : outcome.step;
+      const ran = outcome.ok || step === "prepare" || step === "reinstall-target";
+      if (ran || step === "start" || step === "unknown")
+        warnings.push(
+          `the channel runner was stopped; the waypoint Ravi ${hop} ${ran ? "ran" : "may have run"} it for its boot ` +
+            "record, and while it ran it could process queued inbound and outbound messages",
+        );
     }
     if (!outcome.ok) {
       if (outcome.step === "reinstall-target") {

@@ -442,6 +442,7 @@ describe("update supervisor with a rollback plan", () => {
     let time = 0;
     let nextPmId = 3;
     const rolledBack: (UpdateSnapshotManifest | null)[] = [];
+    const rolledBackPids: (number[] | undefined)[] = [];
     const run = async (_command: string, args: string[]) => {
       if (args[0] === "delete") {
         const current = processes.find((process) => String(process.pm_id) === args[1]);
@@ -495,6 +496,7 @@ describe("update supervisor with a rollback plan", () => {
           planSnapshot: (plan) => planUpdateSnapshot({ ...plan, reflink: () => false, free: () => 1e12 }),
           rollBack: async (dependencies) => {
             rolledBack.push(dependencies.manifest);
+            rolledBackPids.push(dependencies.stoppedPids);
             return {
               ok: true,
               target: install.target,
@@ -520,7 +522,7 @@ describe("update supervisor with a rollback plan", () => {
         boot(stateDir, process, bundle, version);
       }
     };
-    return { stateDir, events, rolledBack, rebind, run, bringUp, processes: () => processes };
+    return { stateDir, events, rolledBack, rolledBackPids, rebind, run, bringUp, processes: () => processes };
   }
 
   it("stops both before the target starts, snapshots, and rolls back when the target never gets ready", async () => {
@@ -580,11 +582,16 @@ describe("update supervisor with a rollback plan", () => {
     let prepared: string | null = null;
     let readiness: "ready" | "adopt-on-start" = "adopt-on-start";
     const hops: string[] = [];
+    const kept: (string | null | undefined)[] = [];
 
     expect(
       await fixture.rebind({
         assertPrepared: () => readiness,
         preparedStateRelease: () => prepared,
+        planSnapshot: (plan) => {
+          kept.push(plan.keep);
+          return planUpdateSnapshot({ ...plan, reflink: () => false, free: () => 1e12 });
+        },
         hopThroughWaypoint: async (dependencies) => {
           hops.push(dependencies.waypoint);
           prepared = dependencies.waypoint;
@@ -606,8 +613,11 @@ describe("update supervisor with a rollback plan", () => {
     expect(fixture.events).toContain("start:ravi");
     const result = readUpdateSupervisorResult(since, fixture.stateDir);
     expect(result).toMatchObject({ outcome: "converged" });
-    // The snapshot taken before the waypoint survives the one taken before the target.
-    expect(readdirSync(updateSnapshotsDir(fixture.stateDir))).toHaveLength(2);
+    // The snapshot taken before the waypoint survives the one taken before the target, whose space check does not
+    // count it as room.
+    const snapshots = readdirSync(updateSnapshotsDir(fixture.stateDir));
+    expect(snapshots).toHaveLength(2);
+    expect(kept).toEqual([null, snapshots.sort()[0]]);
     expect(result?.message).toContain("So is the one taken before the waypoint, of Ravi 3.1.0's state");
   });
 
@@ -667,8 +677,10 @@ describe("update supervisor with a rollback plan", () => {
         },
       }),
     ).toBe(false);
-    // Not left stopped: the release that wrote the state comes back on it, with nothing to restore.
+    // Not left stopped: the release that wrote the state comes back on it, with nothing to restore, and only once
+    // the processes it stopped (pids 10 and 20) have exited.
     expect(fixture.rolledBack).toEqual([null]);
+    expect(fixture.rolledBackPids).toEqual([[10, 20]]);
     expect(fixture.events).toEqual(["delete:ravi-channels", "delete:ravi"]);
     const result = readUpdateSupervisorResult(since, fixture.stateDir);
     expect(result).toMatchObject({ outcome: "rolled-back", previousRelease: "3.1.0", snapshotId: null });
@@ -740,7 +752,7 @@ describe("update supervisor with a rollback plan", () => {
     // The runner ran meanwhile, and the result says so.
     expect(result?.warnings).toEqual([
       "the channel runner was stopped; the waypoint Ravi 3.261113.2 ran it for its boot record, and while it ran " +
-        "it processed queued inbound and outbound messages",
+        "it could process queued inbound and outbound messages",
     ]);
   });
 
