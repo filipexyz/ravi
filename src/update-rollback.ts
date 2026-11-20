@@ -737,9 +737,8 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
     manifest
       ? unrestoredSnapshot(reason, manifest)
       : `${reason} The state is untouched: no snapshot was taken and nothing ran on it after Ravi ` +
-        `${plan.previousRelease}. Once every stopped process has exited` +
-        `${exitCheck()}, remove what PM2 ` +
-        `still lists, then install and start Ravi ${plan.previousRelease}: nothing may start beside a live one.`;
+        `${plan.previousRelease}. Remove what PM2 still lists, wait until every stopped process has exited` +
+        `${exitCheck()}, then install and start Ravi ${plan.previousRelease}: nothing may start beside a live one.`;
   const unrestoredSnapshot = (reason: string, manifest: UpdateSnapshotManifest) =>
     `${reason} Nothing was restored: the state is still what Ravi ${manifest.targetRelease} wrote. ` +
     `The snapshot of Ravi ${plan.previousRelease}'s state is intact in ${snapshotDir}. The commands stop both ` +
@@ -776,9 +775,8 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
           ? `The state is restored to the snapshot of ${manifest.createdAt}.`
           : manifest
             ? `The state may still be what Ravi ${manifest.targetRelease} wrote; the snapshot is in ${snapshotDir}.`
-            : `The state is untouched; once every stopped process has exited` +
-              `${exitCheck()}, remove ` +
-              `what PM2 still lists, then install and start Ravi ${plan.previousRelease}.`),
+            : `The state is untouched; remove what PM2 still lists, wait until every stopped process has exited` +
+              `${exitCheck()}, then install and start Ravi ${plan.previousRelease}.`),
       commands,
     );
   }
@@ -836,9 +834,13 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
         : `bringing Ravi ${plan.previousRelease} back on its untouched state`,
     );
     const pids = waited;
+    // Every pid PM2 lists before the first removal: a removal that fails must not leave one out of the guidance.
+    const entries = [CHANNELS_PM2_PROCESS_NAME, PM2_PROCESS_NAME].flatMap((name) =>
+      deps.getProcesses().filter((process) => process.name === name),
+    );
+    for (const entry of entries) if (entry.pid > 0) pids.add(entry.pid);
     for (const name of [CHANNELS_PM2_PROCESS_NAME, PM2_PROCESS_NAME]) {
-      for (const entry of deps.getProcesses().filter((process) => process.name === name)) {
-        if (entry.pid > 0) pids.add(entry.pid);
+      for (const entry of entries.filter((process) => process.name === name)) {
         const result = await deps.run("pm2", ["delete", String(entry.pm_id)], { env, stream: false });
         if (!result.success) {
           return failed(
