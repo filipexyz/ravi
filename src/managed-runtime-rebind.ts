@@ -35,7 +35,7 @@ import {
 } from "./managed-runtime.js";
 import { buildChannelsPm2Env, buildChannelsPm2StartArgs, buildDaemonPm2StartArgs } from "./daemon-stdin.js";
 import { readDaemonSchemaPhase } from "./db/daemon-schema-owner.js";
-import { acquireSchemaFileLock } from "./db/schema-lock.js";
+import { acquireSchemaFileLock, SchemaLockBusyError } from "./db/schema-lock.js";
 import { observeStableManagedRuntime } from "./runtime-stability.js";
 import { performSupervisedDaemonRestart, type ManagedDaemonProcess } from "./cli/daemon-restart-supervision.js";
 import { buildPm2Env, CHANNELS_PM2_PROCESS_NAME, getPm2Processes, PM2_PROCESS_NAME, type Pm2Process } from "./pm2.js";
@@ -1086,6 +1086,22 @@ export const UPDATE_IN_PROGRESS = "UPDATE_IN_PROGRESS";
  * One update supervisor per state directory, for its whole life: a second one would prune the first one's
  * snapshot and stop processes under it. The lock goes with the process, so a crash leaves nothing behind.
  */
+/**
+ * Whether another process's update supervisor holds `<state>/updates/update.lock` now. A probe: it records no
+ * refusal (the running supervisor's own command reads those), and any error but a busy lock is thrown.
+ */
+export function updateSupervisorRunning(stateDir: string = getRaviStateDir()): boolean {
+  let lock: { release(): void };
+  try {
+    lock = acquireSchemaFileLock(join(stateDir, "updates", "update.lock"), 0);
+  } catch (cause) {
+    if (cause instanceof SchemaLockBusyError) return true;
+    throw cause;
+  }
+  lock.release();
+  return false;
+}
+
 export function acquireUpdateSupervisorLock(stateDir: string = getRaviStateDir()): { release(): void } {
   try {
     return acquireSchemaFileLock(join(stateDir, "updates", "update.lock"), 0);
