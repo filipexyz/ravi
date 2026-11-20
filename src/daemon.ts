@@ -64,6 +64,7 @@ import { startLibraryRequestRunner, stopLibraryRequestRunner } from "./library/r
 import { startCloudTaskWatcher, stopCloudTaskWatcher } from "./cloud-agents/task-watcher.js";
 import { startCloudWorkerRunner, stopCloudWorkerRunner } from "./cloud-agents/worker-runner.js";
 import { startCloudApprovalClicks, stopCloudApprovalClicks } from "./cloud-agents/chat-routing.js";
+import { startSlackCommandConsumer, stopSlackCommandConsumer } from "./channels/slack/slash-command-handler.js";
 import { startCloudDeliveryRunner, stopCloudDeliveryRunner } from "./cloud-agents/delivery-runner.js";
 import { startCalendarAssistantRunner, stopCalendarAssistantRunner } from "./calendar/assistant-runner.js";
 import { createSessionAdapterBus } from "./adapters/index.js";
@@ -310,6 +311,7 @@ async function shutdown(signal: string, exitCode = 0) {
       { name: "cloud-worker", stop: stopCloudWorkerRunner },
       { name: "cloud-delivery", stop: stopCloudDeliveryRunner },
       { name: "cloud-approval", stop: stopCloudApprovalClicks },
+      { name: "slack-commands", stop: stopSlackCommandConsumer },
       { name: "calendar-assistant", stop: stopCalendarAssistantRunner },
       { name: "ephemeral", stop: stopEphemeralRunner },
       { name: "hook", stop: stopHookRunner },
@@ -627,6 +629,8 @@ export async function startDaemon() {
   await startCloudDeliveryRunner();
   await startCloudApprovalClicks();
   log.info("Cloud delivery runner started");
+  await startSlackCommandConsumer();
+  log.info("Slack command consumer started");
 
   sessionAdapterBus = createSessionAdapterBus();
   await sessionAdapterBus.start();

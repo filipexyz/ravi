@@ -85,6 +85,14 @@ import {
 } from "./instance-alias.js";
 import { storeSlackInteractionResponseUrl } from "./interactions.js";
 import {
+  buildSlackCommandEvent,
+  readSlackCommandPayload,
+  slackCommandAckPayload,
+  SLACK_COMMAND_ENVELOPE_TYPE,
+  SLACK_COMMAND_TOPIC,
+  verifySlackCommandOrigin,
+} from "./slash-commands.js";
+import {
   handleCredentialIntakeEnvelope,
   isCredentialIntakeEnvelope,
   type CredentialIntakeDependencies,
@@ -753,6 +761,8 @@ export class SlackSocketModeService {
   private readonly appHomePublishTimeoutMs: number;
   private readonly now: () => number;
   private readonly seenEnvelopeIds = new RecentIdCache();
+  /** The app id the first slash command of this connection named; later commands must agree. */
+  private commandAppId: string | undefined;
   private readonly userProfiles = new Map<string, SlackUserProfile | null>();
   private readonly channelNames = new Map<string, string>();
   private readonly lookupFailures = new Map<string, number>();
@@ -905,6 +915,9 @@ export class SlackSocketModeService {
       });
       return "processed";
     }
+    if (envelope.type === SLACK_COMMAND_ENVELOPE_TYPE) {
+      return this.processSlashCommandEnvelope(envelope, ack);
+    }
     const envelopeId = cleanSlackId(envelope.envelope_id);
     const messageEvent = envelopeEvent(envelope);
     if (envelopeId && messageEvent && isSlackMessageEventStructurallyEligible(messageEvent)) {
@@ -969,6 +982,90 @@ export class SlackSocketModeService {
     if (!normalized) return "ignored";
 
     await this.routeMessage(normalized);
+    return "processed";
+  }
+
+  /**
+   * A slash command (`/ravi`, spec channels/slack/commands). Slack gets its
+   * ack first, inside 3 s: a static answer (help, usage) rides in the ack and
+   * every other command gets an empty one. Then the origin is verified and the
+   * command is published for the daemon, which answers through `response_url`.
+   * It never enters the durable inbox and never becomes an agent prompt, so a
+   * restart cannot replay it; the daemon refuses one that went stale anyway.
+   */
+  private async processSlashCommandEnvelope(
+    envelope: SlackSocketEnvelope,
+    ack: (envelopeId: string, payload?: Record<string, unknown>) => Promise<void> | void,
+  ): Promise<"duplicate" | "ignored" | "processed"> {
+    const envelopeId = cleanSlackId(envelope.envelope_id);
+    const command = readSlackCommandPayload(envelope.payload);
+    const staticAnswer = command ? slackCommandAckPayload(command) : undefined;
+    const answerInAck = staticAnswer !== undefined && envelope.accepts_response_payload !== false;
+    if (envelopeId)
+      await ack(envelopeId, answerInAck ? (staticAnswer as unknown as Record<string, unknown>) : undefined);
+    if (!command) {
+      log.warn("Slack slash command ignored: the payload is not one Ravi can read", {
+        accountId: this.options.accountId,
+      });
+      return "ignored";
+    }
+    if (envelopeId) {
+      if (this.seenEnvelopeIds.has(envelopeId)) return "duplicate";
+      this.seenEnvelopeIds.add(envelopeId);
+    }
+
+    const identity = await this.resolveLocalBotIdentity();
+    const verdict = verifySlackCommandOrigin(command, {
+      localTeamId: identity?.teamId,
+      pinnedAppId: this.commandAppId,
+    });
+    if (!verdict.ok) {
+      log.warn("Slack slash command refused: its origin is not this instance's", {
+        accountId: this.options.accountId,
+        reason: verdict.reason,
+      });
+      return "ignored";
+    }
+    if (command.apiAppId && !this.commandAppId) this.commandAppId = command.apiAppId;
+
+    let responseUrlId: string | undefined;
+    if (command.responseUrl) {
+      try {
+        responseUrlId = storeSlackInteractionResponseUrl({
+          accountId: this.options.accountId,
+          envelopeId,
+          teamId: command.teamId,
+          channelId: command.channelId,
+          userId: command.userId,
+          responseUrl: command.responseUrl,
+        });
+      } catch (error) {
+        // The error text names no URL; the URL itself carries the secret that lets anyone post as the app.
+        log.warn("Slack slash command response URL was refused", {
+          accountId: this.options.accountId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    if (!responseUrlId && !answerInAck) {
+      // Nobody could be told what happened, so nothing runs.
+      log.warn("Slack slash command dropped: it has no usable response URL", { accountId: this.options.accountId });
+      return "ignored";
+    }
+
+    await this.publishInteraction(
+      SLACK_COMMAND_TOPIC,
+      buildSlackCommandEvent({
+        payload: command,
+        accountId: this.options.accountId,
+        routeAccountId: this.options.routeAccountId ?? this.options.accountId,
+        instanceId: this.options.instanceId ?? this.options.accountId,
+        envelopeId,
+        responseUrlId,
+        ackedWithHelp: answerInAck,
+        receivedAt: this.now(),
+      }) as unknown as Record<string, unknown>,
+    );
     return "processed";
   }
 

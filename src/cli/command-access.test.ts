@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
+import { addContactTag, createContact, updateContact } from "../contacts.js";
 import { runWithContext } from "./context.js";
 import {
   buildCliCommandOperation,
@@ -140,6 +141,69 @@ describe("CLI command access enforcement", () => {
     expect(result.allowed).toBe(false);
     expect(result.errorMessage).toContain("missing @CommandAccess");
     expect(result.attempted).toEqual([]);
+  });
+
+  describe("for a Slack command", () => {
+    const CLOSE_THREAD: CommandAccessOptions = {
+      kind: "mutate",
+      resource: "sessions",
+      action: "close-thread",
+      risk: "medium",
+    };
+
+    function seedContact(options: { owner: boolean }) {
+      const contact = createContact({ phone: "5511900000042", name: "Ana", status: "allowed" });
+      if (options.owner) addContactTag(contact.phone, "permission-owner");
+      return contact;
+    }
+
+    function ask(subject?: { type: "contact"; id: string }) {
+      return enforceCliCommandAccess({
+        group: "sessions",
+        command: "close-thread",
+        access: CLOSE_THREAD,
+        source: "slack-command",
+        subject,
+      });
+    }
+
+    it("has no authority without a resolved contact", () => {
+      const result = ask();
+
+      expect(result.allowed).toBe(false);
+      expect(result.errorMessage).toContain("requires a resolved contact");
+      expect(result.attempted).toEqual([]);
+    });
+
+    it("is the contact's own: an owner may, a contact holding nothing may not", () => {
+      const owner = seedContact({ owner: true });
+
+      expect(ask({ type: "contact", id: owner.id })).toMatchObject({ allowed: true });
+
+      const nobody = createContact({ phone: "5511900000043", name: "Beto", status: "allowed" });
+      const denied = ask({ type: "contact", id: nobody.id });
+      expect(denied.allowed).toBe(false);
+      expect(denied.errorMessage).toContain(`contact:${nobody.id}`);
+      expect(denied.denialDetails?.capability).toBe("mutate:sessions:close-thread");
+    });
+
+    it("never borrows the agent's ceiling or a live runtime context", () => {
+      const nobody = createContact({ phone: "5511900000044", name: "Caio", status: "allowed" });
+      const everything = context([{ permission: "admin", objectType: "system", objectId: "*", source: "test" }]);
+
+      const result = runWithContext({ agentId: "dev", context: everything }, () =>
+        ask({ type: "contact", id: nobody.id }),
+      );
+
+      expect(result.allowed).toBe(false);
+    });
+
+    it("refuses a blocked contact even when it carries the owner tag", () => {
+      const owner = seedContact({ owner: true });
+      updateContact(owner.phone, { status: "blocked" });
+
+      expect(ask({ type: "contact", id: owner.id }).allowed).toBe(false);
+    });
   });
 
   it("selects and redacts only declared command input", () => {

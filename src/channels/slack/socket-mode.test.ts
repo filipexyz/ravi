@@ -6683,3 +6683,242 @@ describe("Slack App Home", () => {
     expect(JSON.stringify(published[0]?.view.blocks)).toContain("Este app ainda não está ligado a um agente.");
   });
 });
+
+describe("Slack slash commands (/ravi)", () => {
+  const ACCOUNT = "ravi-slack";
+  const INSTANCE = "slack-instance-commands";
+  const RESPONSE_URL = "https://hooks.slack.com/commands/T1/B1/slash-secret";
+  let stateDir: string | null = null;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-slack-slash-commands-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  function commandService(
+    input: { authTest?: () => Promise<{ ok: boolean; bot_id?: string; user_id?: string; team_id?: string }> } = {},
+  ) {
+    const published: Array<{ topic: string; payload: Record<string, unknown> }> = [];
+    const prompts: unknown[] = [];
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: ACCOUNT,
+      routeAccountId: ACCOUNT,
+      instanceId: INSTANCE,
+      getRouterConfig: () => ({
+        agents: {},
+        routes: [],
+        defaultAgent: "main",
+        defaultDmScope: "main",
+        accountAgents: {},
+        instanceToAccount: {},
+        instances: {},
+      }),
+      publishPrompt: async (_sessionName, payload) => {
+        prompts.push(payload);
+      },
+      publishInteraction: async (topic, payload) => {
+        published.push({ topic, payload });
+      },
+      webClient: {
+        authTest: input.authTest ?? (async () => ({ ok: true, bot_id: "BLOCAL", user_id: "ULOCAL", team_id: "T1" })),
+      } as never,
+    });
+    return { service, published, prompts };
+  }
+
+  function commandEnvelope(id: string, payload: Record<string, unknown> = {}, extra: Record<string, unknown> = {}) {
+    return {
+      envelope_id: id,
+      type: "slash_commands",
+      accepts_response_payload: true,
+      payload: {
+        token: "legacy-verification-token",
+        team_id: "T1",
+        team_domain: "acme",
+        channel_id: "D0CHAT",
+        channel_name: "directmessage",
+        user_id: "U0PERSON",
+        user_name: "someone",
+        command: "/ravi",
+        text: "status",
+        api_app_id: "A0RAVI",
+        response_url: RESPONSE_URL,
+        trigger_id: "trigger-1",
+        ...payload,
+      },
+      ...extra,
+    };
+  }
+
+  function acks() {
+    const calls: Array<{ envelopeId: string; payload?: Record<string, unknown> }> = [];
+    return {
+      calls,
+      ack: async (envelopeId: string, payload?: Record<string, unknown>) => {
+        calls.push({ envelopeId, payload });
+      },
+    };
+  }
+
+  function storedResponseUrls(): number {
+    // The table is created on the first stored URL: a refused command never creates it.
+    const table = getDb()
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'slack_interaction_response_urls'")
+      .get();
+    if (!table) return 0;
+    return (getDb().prepare("SELECT COUNT(*) AS count FROM slack_interaction_response_urls").get() as { count: number })
+      .count;
+  }
+
+  it("acks a command with nothing and publishes it for the daemon without a token or a URL", async () => {
+    const { service, published, prompts } = commandService();
+    const { calls, ack } = acks();
+
+    const result = await service.handleEnvelope(commandEnvelope("env-cmd-status"), ack);
+
+    expect(result).toBe("processed");
+    expect(calls).toEqual([{ envelopeId: "env-cmd-status", payload: undefined }]);
+    expect(published).toHaveLength(1);
+    expect(published[0]?.topic).toBe("ravi.inbound.command");
+    expect(published[0]?.payload).toMatchObject({
+      provider: "slack",
+      source: "slack.socket_mode",
+      accountId: ACCOUNT,
+      routeAccountId: ACCOUNT,
+      instanceId: INSTANCE,
+      envelopeId: "env-cmd-status",
+      apiAppId: "A0RAVI",
+      teamId: "T1",
+      channelId: "D0CHAT",
+      userId: "U0PERSON",
+      command: "/ravi",
+      text: "status",
+      triggerId: "trigger-1",
+      responseUrlId: expect.any(String),
+      receivedAt: expect.any(Number),
+    });
+    expect(published[0]?.payload.ackedWithHelp).toBeUndefined();
+    const wire = JSON.stringify(published[0]?.payload);
+    expect(wire).not.toContain("hooks.slack.com");
+    expect(wire).not.toContain("legacy-verification-token");
+    expect(wire).not.toContain("slash-secret");
+    expect(wire).not.toContain("someone");
+    // The URL is kept only behind its id.
+    expect(storedResponseUrls()).toBe(1);
+    // Never an agent prompt, never the durable inbox.
+    expect(prompts).toHaveLength(0);
+    expect(getSlackInboundEnvelope(INSTANCE, "env-cmd-status")).toBeFalsy();
+  });
+
+  it("answers help inside the ack and tells the daemon it already did", async () => {
+    const { service, published } = commandService();
+    const { calls, ack } = acks();
+
+    await service.handleEnvelope(commandEnvelope("env-cmd-help", { text: "" }), ack);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.payload).toMatchObject({ response_type: "ephemeral" });
+    expect(String(calls[0]?.payload?.text)).toContain("/ravi status");
+    expect(String(calls[0]?.payload?.text)).toContain("/ravi stop");
+    expect(published[0]?.payload).toMatchObject({ ackedWithHelp: true, text: "" });
+  });
+
+  it("names a word it does not know and the command as it was typed", async () => {
+    const { service } = commandService();
+    const { calls, ack } = acks();
+
+    await service.handleEnvelope(commandEnvelope("env-cmd-unknown", { command: "/hana", text: "dance" }), ack);
+
+    expect(String(calls[0]?.payload?.text)).toContain("I don't know `dance`");
+    expect(String(calls[0]?.payload?.text)).toContain("/hana status");
+  });
+
+  it("leaves the ack empty and lets the daemon answer when Slack takes no payload in the ack", async () => {
+    const { service, published } = commandService();
+    const { calls, ack } = acks();
+
+    await service.handleEnvelope(
+      commandEnvelope("env-cmd-nopayload", { text: "help" }, { accepts_response_payload: false }),
+      ack,
+    );
+
+    expect(calls).toEqual([{ envelopeId: "env-cmd-nopayload", payload: undefined }]);
+    expect(published).toHaveLength(1);
+    expect(published[0]?.payload.ackedWithHelp).toBeUndefined();
+    expect(published[0]?.payload.responseUrlId).toEqual(expect.any(String));
+  });
+
+  it("drops a command from another workspace, even though the socket carries it", async () => {
+    const { service, published } = commandService();
+    const { calls, ack } = acks();
+
+    const result = await service.handleEnvelope(commandEnvelope("env-cmd-otherteam", { team_id: "T2" }), ack);
+
+    expect(result).toBe("ignored");
+    expect(calls).toHaveLength(1);
+    expect(published).toHaveLength(0);
+    expect(storedResponseUrls()).toBe(0);
+  });
+
+  it("drops a command it cannot tie to its own workspace", async () => {
+    const { service, published } = commandService({ authTest: async () => ({ ok: false }) });
+
+    const result = await service.handleEnvelope(commandEnvelope("env-cmd-noauth"), acks().ack);
+
+    expect(result).toBe("ignored");
+    expect(published).toHaveLength(0);
+    expect(storedResponseUrls()).toBe(0);
+  });
+
+  it("pins the app of the connection: a later command from another app is dropped", async () => {
+    const { service, published } = commandService();
+
+    expect(await service.handleEnvelope(commandEnvelope("env-cmd-app-1"), acks().ack)).toBe("processed");
+    expect(await service.handleEnvelope(commandEnvelope("env-cmd-app-2", { api_app_id: "A0OTHER" }), acks().ack)).toBe(
+      "ignored",
+    );
+    expect(published).toHaveLength(1);
+  });
+
+  it("does not publish the same envelope twice", async () => {
+    const { service, published } = commandService();
+
+    expect(await service.handleEnvelope(commandEnvelope("env-cmd-dup"), acks().ack)).toBe("processed");
+    expect(await service.handleEnvelope(commandEnvelope("env-cmd-dup"), acks().ack)).toBe("duplicate");
+    expect(published).toHaveLength(1);
+  });
+
+  it("refuses to run what nobody could be told about: no usable response URL", async () => {
+    const { service, published } = commandService();
+
+    const withoutUrl = await service.handleEnvelope(
+      commandEnvelope("env-cmd-nourl", { response_url: undefined }),
+      acks().ack,
+    );
+    const foreignUrl = await service.handleEnvelope(
+      commandEnvelope("env-cmd-badurl", { response_url: "https://evil.example/actions/x" }),
+      acks().ack,
+    );
+
+    expect(withoutUrl).toBe("ignored");
+    expect(foreignUrl).toBe("ignored");
+    expect(published).toHaveLength(0);
+  });
+
+  it("acks and ignores a payload it cannot read", async () => {
+    const { service, published } = commandService();
+    const { calls, ack } = acks();
+
+    const result = await service.handleEnvelope(commandEnvelope("env-cmd-bad", { command: "ravi" }), ack);
+
+    expect(result).toBe("ignored");
+    expect(calls).toHaveLength(1);
+    expect(published).toHaveLength(0);
+  });
+});

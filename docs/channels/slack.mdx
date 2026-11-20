@@ -29,17 +29,77 @@ The channel config `slack-main` points to the tokens (credential connection `sla
 <Steps>
 <Step title="Create the Slack app">
 
-At [api.slack.com/apps](https://api.slack.com/apps), choose **Create New App > From scratch**. Ravi does not ship an app manifest, so set these by hand:
+At [api.slack.com/apps](https://api.slack.com/apps), choose **Create New App**. Either pick **From a manifest** and paste the reference manifest below, or pick **From scratch** and set these by hand:
 
-1. **Socket Mode:** turn it on and create the app-level token with the `connections:write` scope. Copy it (`xapp-...`).
+1. **Socket Mode:** turn it on and create the app-level token with the `connections:write` scope. Copy it (`xapp-...`). Create it in **Basic Information > App-Level Tokens**, with or without the manifest.
 2. **Event Subscriptions:** turn it on and subscribe to the bot events `message.im`, `message.channels`, `message.groups`, `message.mpim`, `app_mention` and `app_home_opened` (plus `reaction_added` for reaction triggers).
 3. **Interactivity & Shortcuts:** turn it on. Approval buttons need it.
-4. **App Home:** turn on the **Messages Tab** and allow users to send messages from it, or you cannot DM the app. Turn on the **Home Tab** too: Ravi fills it (see [The Home tab](#the-home-tab)).
-5. **OAuth & Permissions:** add the bot scopes below. Leave token rotation off: Ravi does not refresh tokens.
-6. **Install to Workspace** and copy the **Bot User OAuth Token** (`xoxb-...`).
+4. **Slash Commands:** create `/ravi` (or the name this app should have). With Socket Mode no Request URL is needed. [Control Ravi from Slack](#control-ravi-from-slack) says what it does.
+5. **App Home:** turn on the **Messages Tab** and allow users to send messages from it, or you cannot DM the app. Turn on the **Home Tab** too: Ravi fills it (see [The Home tab](#the-home-tab)).
+6. **OAuth & Permissions:** add the bot scopes below. Leave token rotation off: Ravi does not refresh tokens.
+7. **Install to Workspace** and copy the **Bot User OAuth Token** (`xoxb-...`).
+
+<Accordion title="Reference manifest">
+
+```json
+{
+  "display_information": { "name": "Ravi" },
+  "features": {
+    "app_home": {
+      "home_tab_enabled": true,
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": false
+    },
+    "bot_user": { "display_name": "Ravi", "always_online": true },
+    "slash_commands": [
+      {
+        "command": "/ravi",
+        "description": "Control Ravi: who answers here, threads, stop a turn",
+        "usage_hint": "[help | status | threads | close <thread> | close idle [12h] | stop]",
+        "should_escape": false
+      }
+    ]
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "app_mentions:read",
+        "channels:history",
+        "channels:read",
+        "chat:write",
+        "commands",
+        "files:read",
+        "files:write",
+        "groups:history",
+        "groups:read",
+        "im:history",
+        "im:read",
+        "mpim:history",
+        "mpim:read",
+        "reactions:write",
+        "users:read"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "bot_events": ["app_home_opened", "app_mention", "message.channels", "message.groups", "message.im", "message.mpim"]
+    },
+    "interactivity": { "is_enabled": true },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false
+  }
+}
+```
+
+Change `name`, `display_name` and `command` for each app: a second app in the same workspace needs its own command name (see [Control Ravi from Slack](#control-ravi-from-slack)). The optional scopes below are not in the manifest; add the ones you need.
+
+</Accordion>
 
 | Bot scopes | Used for |
 |---|---|
+| `commands` | The `/ravi` slash command |
 | `chat:write` | Replies and approval messages |
 | `im:history`, `im:read`, `mpim:history`, `mpim:read` | DMs and group DMs |
 | `channels:history`, `channels:read`, `groups:history`, `groups:read` | Public and private channels |
@@ -236,6 +296,38 @@ When a turn asks for something the agent's ceiling does not cover and the reques
 
 At `full-access` few requests need approval. See [Permissions](/guides/permissions).
 
+## Control Ravi from Slack
+
+`/ravi` controls Ravi from the chat where you type it. It is not a message to an agent: it opens no turn, spends no model tokens, and acts with *your* authority, the contact your Slack user is linked to. Only you see the answers.
+
+| Command | What it does | You need |
+|---|---|---|
+| `/ravi help` | Lists the commands | Nothing |
+| `/ravi status` | Which agent and session answer in this chat, the model, whether a turn is running, and how many threads are open | Access to the session |
+| `/ravi threads` | The open threads of the session, newest first, with age and state | Access to the session |
+| `/ravi close <thread>` | Closes a thread, named as `threads` shows it | To modify the session, and the capability of `sessions close-thread` |
+| `/ravi close idle [12h]` | Closes the threads with no activity for more than N hours (12 by default), at most 25 per call. It skips any that has a turn running, an open question or a return pending | The same as `close` |
+| `/ravi stop` | Interrupts the turn running in this chat's session; the queue goes on | To modify the session, and the capability of `sessions runtime interrupt` |
+
+- The **owner** (`permission-owner`) can run all of them. Anyone else needs their Slack user linked to a contact, as for [approvals](#approvals), and the rights in the table. A Slack user with no contact is told so, and nothing runs.
+- A command acts on the session of the DM or channel it is typed in. Slack does not run an app's command inside a thread, so type it in the channel or the DM.
+- `close` says why a thread did not close. The usual reason is a trigger still pointed at it: the answer names the triggers and the `ravi triggers set <id> replySession <channel-session>` that moves them.
+- A command that reaches Ravi more than a minute after it was typed is not run. Run it again.
+- Every command, the refused ones included, is written to the audit trail (`ravi events replay --subject ravi.audit.slack_command`), without what you typed.
+
+### Name the command per app
+
+Slash command names are not namespaced: if two apps in one workspace register `/ravi`, Slack runs the one installed most recently. Give each app its own name (`/ravi` on one, `/hana` on another) when you register it. Ravi answers under the name that was typed, so nothing is configured on the Ravi side.
+
+### Turn it on in an existing app
+
+1. **OAuth & Permissions:** add the bot scope `commands`.
+2. **Slash Commands:** create the command.
+3. Reinstall the app when Slack asks. The new scope needs it once; commands you add later do not.
+4. `ravi channels restart`.
+
+Then type `/ravi` in a DM with the app.
+
 ## Smoke test
 
 ```bash
@@ -257,6 +349,7 @@ ravi channels status                               # health: ready ... connected
 - **Nothing in the log:** the app is not in the channel, an event subscription is missing, or the app was not reinstalled after a scope change.
 - **Answers without tools:** your Slack ID is not linked to your contact on `slack-main`. Check with `ravi contacts check <your contact>`.
 - **Approve does nothing:** Interactivity is off in the Slack app.
+- **`/ravi` fails in Slack or shows nothing:** the command is not registered on that app, the runner is not connected, or the command came from a workspace this instance does not serve. `ravi channels logs` names the refusal ([Control Ravi from Slack](#control-ravi-from-slack)).
 - **The Home tab stays empty or loading:** subscribe the `app_home_opened` event and turn on the Home Tab (step 1), reinstall the app, run `ravi channels restart`, then open the tab again.
 - **No approval card arrives and the request is refused:** nobody who can grant it has their Slack user linked to their contact on `slack-main`. Check with `ravi contacts check <your contact>` (see [Approvals](#approvals)).
 
