@@ -74,12 +74,13 @@ authorizes no database or package downgrade by hand: the update's own rollback
 - `UPDATE_ROLLED_BACK` with "no snapshot ... could be taken": the waypoint was
   not taken, and the release that wrote the state runs again on it, untouched.
   Fix what the warning names (a process that did not exit, a store still
-  owned, a copy error), then run the update again. If that rollback failed, a
-  stopped process never exited: nothing starts beside it; run the commands
-  once it is gone.
-- A runner that was stopped ran while the waypoint took its boot record: it
-  processed queued inbound and outbound messages, and the result's warnings say
-  so.
+  owned, a copy error), then run the update again. If that rollback failed,
+  the result says why: a stopped process never exited (nothing starts beside
+  it; run the commands once it is gone), or the release could not be
+  installed or started again (run the commands when the registry answers).
+- A runner that was stopped ran while the waypoint took its boot record, and
+  could process queued inbound and outbound messages meanwhile; the result's
+  warnings say so.
 - `failed` with "could not be installed again": 3.261113.2 runs on the state it
   prepared, which is a valid release of its own. Run the commands the result
   names, the install first (the package directory may hold no runnable bundle),
