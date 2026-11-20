@@ -149,6 +149,7 @@ describe("thread follow handoff delivery", () => {
     "delivers API-published CI to the parent after child closure and pruning %s",
     async (timing) => {
       const { publishGhPr, verifyPublicationFollow } = await import("../../hooks/gh-pr-publish.js");
+      const { handOffClosingThreadFollows } = await import("../follow-owner.js");
       const { registerInboundSlackThread, closeSlackThreadLifecycle, getSlackThreadLifecycle } = await import(
         "../../channels/slack/thread-lifecycle-store.js"
       );
@@ -228,10 +229,26 @@ describe("thread follow handoff delivery", () => {
         },
       );
       expect(result.ready).toBe(true);
-      const trigger = dbGetTrigger(result.follow.triggerId!)!;
+      let trigger = dbGetTrigger(result.follow.triggerId!)!;
+      if (timing === "after publication") {
+        // The open thread that published owns the follow, in that thread. Closing it hands the follow to the parent.
+        expect(trigger).toMatchObject({
+          replySession: "api-child",
+          replySource: { ...source, threadId: "1.2" },
+          enabled: true,
+        });
+        expect(() => closeSlackThreadLifecycle({ childSessionKey: child.sessionKey })).toThrow(
+          "Thread still receives active triggers",
+        );
+        expect(
+          handOffClosingThreadFollows({ childSessionKey: child.sessionKey, childSessionName: child.name! }),
+        ).toEqual([trigger.id]);
+        closeAndPrune();
+        trigger = dbGetTrigger(trigger.id)!;
+      }
+      // A thread that closed during the publication never owned the follow: it was registered on the parent.
       expect(trigger).toMatchObject({ replySession: "api-parent", replySource: source, enabled: true });
       expect(trigger.replySource?.threadId).toBeUndefined();
-      if (timing === "after publication") closeAndPrune();
       await startRunner();
       emit(trigger.topic, { payload: { repository: "o/r", number: 9, conclusion: "success" } });
       await waitFor(() => publishCalls.length === 1);
@@ -244,6 +261,61 @@ describe("thread follow handoff delivery", () => {
       expect(listSessions().some((session) => session.sessionKey === child.sessionKey)).toBe(false);
     },
   );
+
+  it("delivers a child-owned follow into the child's own thread, not the channel root", async () => {
+    const { registerInboundSlackThread } = await import("../../channels/slack/thread-lifecycle-store.js");
+    const parent = getOrCreateSession("parent-key", "trigger-test-agent", "/tmp/trigger-test-agent-real", {
+      name: "parent",
+    });
+    const child = getOrCreateSession("parent-key:thread:1.2", "trigger-test-agent", "/tmp/trigger-test-agent-real", {
+      name: "child",
+    });
+    // A programmatic child remembers the channel root as its last chat, and the thread's timestamp apart from it.
+    updateSessionSource(child.sessionKey, { channel: "slack", accountId: "slack-account", chatId: "C123" });
+    registerInboundSlackThread({
+      parentSessionKey: parent.sessionKey,
+      parentSessionName: parent.name!,
+      childSessionKey: child.sessionKey,
+      childSessionName: child.name!,
+      accountId: "slack-account",
+      instanceId: "slack-instance",
+      platformChatId: "C123",
+      threadCanonicalChatId: "thread-chat",
+      providerThreadId: "1.2",
+    });
+    const topic = "ravi.watch.github.ci";
+    const base = { topic, session: "main", agentId: "trigger-test-agent", replySession: "child", cooldownMs: 0 };
+    const follow = dbCreateTrigger({
+      ...base,
+      name: "gh-follow:o/r#7",
+      message: "CI completed",
+      replySource: { channel: "slack", accountId: "slack-account", chatId: "C123", threadId: "1.2" },
+    });
+    const plain = dbCreateTrigger({
+      ...base,
+      name: "custom-review",
+      message: "plain",
+      replySource: { channel: "slack", accountId: "slack-account", chatId: "C123" },
+    });
+    await startRunner();
+    emit(topic, { payload: { repository: "o/r", number: 7, conclusion: "success" } });
+    await waitFor(() => publishCalls.length === 2);
+
+    const sourceOf = (triggerId: string) =>
+      publishCalls.find((call) => (call.payload as { _triggerId?: string })._triggerId === triggerId)?.payload.source;
+    // The thread's chat, canonical id and timestamp: the address `thread-send` uses, which a reply can be matched to.
+    expect(sourceOf(follow.id)).toEqual({
+      channel: "slack",
+      accountId: "slack-account",
+      instanceId: "slack-instance",
+      chatId: "C123",
+      canonicalChatId: "thread-chat",
+      threadId: "1.2",
+    });
+    // A trigger that did not ask for a thread keeps the session's last chat.
+    expect(sourceOf(plain.id)).toEqual({ channel: "slack", accountId: "slack-account", chatId: "C123" });
+    expect(publishCalls.every((call) => call.sessionName === "child")).toBe(true);
+  });
 
   it("refuses close, then delivers a CI event to the parent after repoint and close", async () => {
     const { registerInboundSlackThread, closeSlackThreadLifecycle, getSlackThreadLifecycle } = await import(

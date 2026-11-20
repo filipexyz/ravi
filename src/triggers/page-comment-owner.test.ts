@@ -13,7 +13,7 @@ import { dbCreateAgent } from "../router/router-db.js";
 import { deleteSession, getOrCreateSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { resolveTriggerActivation } from "./activation.js";
-import { resolveDurableFollowOwner } from "./follow-owner.js";
+import { handOffClosingThreadFollows, resolveDurableFollowOwner } from "./follow-owner.js";
 import { dbCreateTrigger, dbGetTrigger, dbListTriggers } from "./triggers-db.js";
 
 let stateDir: string | null = null;
@@ -108,6 +108,61 @@ describe("durable owner of a follow armed from a Slack thread", () => {
       source: { channel: "slack", accountId: ACCOUNT, chatId: "C123" },
     });
     expect(resolved.source).not.toHaveProperty("threadId");
+  });
+
+  it("keeps a PR follow with the open child that published it, until the thread closes", () => {
+    seedParent();
+    const record = seedThread(THREAD_ONE, "child", "1.2");
+    const context = threadContext(THREAD_ONE, "child", "1.2");
+
+    // Only a follow that asks for it (the PR follow) stays with the open child, in that thread.
+    expect(resolveDurableFollowOwner(context, "PR follow", undefined, { openThreadOwns: true })).toMatchObject({
+      agentId: "agent-test",
+      accountId: ACCOUNT,
+      sessionName: "child",
+      sessionKey: THREAD_ONE,
+      source: { channel: "slack", accountId: ACCOUNT, chatId: "C123", threadId: "1.2" },
+    });
+    expect(resolveDurableFollowOwner(context, "page comment follow")).toMatchObject({ sessionName: "parent" });
+
+    closeSlackThreadLifecycle({ childSessionKey: record.childSessionKey! });
+    expect(resolveDurableFollowOwner(context, "PR follow", undefined, { openThreadOwns: true })).toMatchObject({
+      sessionName: "parent",
+      source: { channel: "slack", accountId: ACCOUNT, chatId: "C123" },
+    });
+  });
+
+  it("never arms a PR follow on an open child whose parent is gone, and hands over only gh-follow triggers", () => {
+    seedParent();
+    seedThread(THREAD_ONE, "child", "1.2");
+    const context = threadContext(THREAD_ONE, "child", "1.2");
+    deleteSession(PARENT_KEY);
+    expect(() => resolveDurableFollowOwner(context, "PR follow", undefined, { openThreadOwns: true })).toThrow(
+      "Cannot register PR follow: durable parent session is missing.",
+    );
+
+    seedParent();
+    const addressed = { replySession: "child", replySource: { channel: "slack", accountId: ACCOUNT, chatId: "C123" } };
+    const follow = dbCreateTrigger({
+      name: "gh-follow:o/r#9",
+      topic: "ravi.watch.github.>",
+      message: "f",
+      session: "main",
+      ...addressed,
+    });
+    const comment = dbCreateTrigger({
+      name: "page-comment:site_1:/blog/a",
+      topic: "ravi.watch.console.page.comment.created",
+      message: "comment",
+      agentId: "agent-test",
+      session: "main",
+      replySession: "child",
+    });
+    const handedOff = handOffClosingThreadFollows({ childSessionKey: THREAD_ONE, childSessionName: "child" });
+    expect(handedOff).toEqual([follow.id]);
+    expect(dbGetTrigger(follow.id)!.replySession).toBe("parent");
+    // A page comment follow is repaired by its own boot step, not by the close handoff.
+    expect(dbGetTrigger(comment.id)!.replySession).toBe("child");
   });
 
   it("leaves a session that is not a thread child with its own follow", () => {

@@ -80,6 +80,23 @@
 - [ ] `thread.list` MUST mark an open thread whose child session is gone with
       `childSessionMissing: true`, and `thread-send` to it MUST fail with
       `THREAD_SESSION_MISSING` (`src/channels/slack/thread-lifecycle.test.ts`).
+- [ ] A PR follow armed by an open thread MUST address the child and its thread,
+      and the trigger runner MUST deliver its turn with the thread's chat, canonical
+      chat id and timestamp (a trigger without a thread id in its reply source keeps
+      the session's last chat); closing that thread MUST hand every `gh-follow:*`
+      trigger it receives to the durable parent in the same transaction as the close
+      (and publish `ravi.triggers.refresh`); a close refused by a pending decision or
+      by another active trigger MUST leave the follows with the thread, with no
+      refresh published and no intent saved; a refresh event that fails MUST leave
+      the intent set so `gh-follow` maintenance publishes it again, once, until it
+      succeeds; an intent that another close saved while a publish was in flight MUST
+      survive that publish's clear (the clear compares the token it read), for the
+      close's own publish and for the sweep's; a closed thread MUST resolve to the parent
+      The follow's instruction MUST tell a thread that another session started to
+      report CI, merge or review news to that session with `ravi sessions report`
+      (`src/hooks/gh-watch.test.ts`, `src/pr/service.test.ts`,
+      `src/triggers/__tests__/runner-named-session.test.ts`,
+      `src/channels/slack/thread-lifecycle.test.ts`, `src/triggers/refresh-intent.test.ts`).
 - [ ] A session rename MUST refuse a name an open thread saves for another
       child session, even when that child is gone
       (`src/router/thread-identity.test.ts`).
