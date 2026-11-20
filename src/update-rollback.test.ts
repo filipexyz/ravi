@@ -583,6 +583,7 @@ describe("update supervisor with a rollback plan", () => {
     let readiness: "ready" | "adopt-on-start" = "adopt-on-start";
     const hops: string[] = [];
     const kept: (string | null | undefined)[] = [];
+    let firstSnapshot: string | undefined;
 
     expect(
       await fixture.rebind({
@@ -594,6 +595,8 @@ describe("update supervisor with a rollback plan", () => {
         },
         hopThroughWaypoint: async (dependencies) => {
           hops.push(dependencies.waypoint);
+          // Only the snapshot taken before the waypoint exists yet (ids in one second sort by their random suffix).
+          firstSnapshot = readdirSync(updateSnapshotsDir(fixture.stateDir))[0];
           prepared = dependencies.waypoint;
           fixture.bringUp(dependencies.waypoint);
           // The fence adoption belongs to the target's daemon; the update's own flow is what this test follows.
@@ -617,7 +620,9 @@ describe("update supervisor with a rollback plan", () => {
     // count it as room.
     const snapshots = readdirSync(updateSnapshotsDir(fixture.stateDir));
     expect(snapshots).toHaveLength(2);
-    expect(kept).toEqual([null, snapshots.sort()[0]]);
+    expect(firstSnapshot).toBeDefined();
+    expect(snapshots).toContain(firstSnapshot);
+    expect(kept).toEqual([null, firstSnapshot]);
     expect(result?.message).toContain("So is the one taken before the waypoint, of Ravi 3.1.0's state");
   });
 
