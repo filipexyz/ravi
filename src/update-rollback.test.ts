@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -302,16 +303,26 @@ function rollbackFixture(
 }
 
 describe("update rollback", () => {
-  it("stops nothing when a copy of the snapshot is missing or is not the size it was copied with", async () => {
-    for (const damage of ["missing", "truncated"] as const) {
+  it("stops nothing when a copy of the snapshot is missing, not the size it was copied with, or unreadable", async () => {
+    // Root reads any file: the unreadable copy is only one where permissions hold.
+    const damages =
+      process.getuid?.() === 0
+        ? (["missing", "truncated"] as const)
+        : (["missing", "truncated", "unreadable"] as const);
+    for (const damage of damages) {
       const { deps, calls, order } = rollbackFixture();
       const copy = join(updateSnapshotsDir(deps.stateDir), deps.manifest!.id, "files", "0-ravi.db");
       if (damage === "missing") rmSync(copy);
-      else writeFileSync(copy, Buffer.alloc(100));
+      else if (damage === "truncated") writeFileSync(copy, Buffer.alloc(100));
+      else chmodSync(copy, 0o000);
       const outcome = await rollBackUpdate(deps);
       expect(outcome).toMatchObject({ ok: false, step: "snapshot", commands: ["ravi daemon status"] });
       expect((outcome as { message: string }).message).toContain(
-        damage === "missing" ? "is missing 0-ravi.db" : "has 100 bytes in 0-ravi.db, not the 8192",
+        damage === "missing"
+          ? "is missing 0-ravi.db"
+          : damage === "truncated"
+            ? "has 100 bytes in 0-ravi.db, not the 8192"
+            : "has 0-ravi.db unreadable (EACCES)",
       );
       expect((outcome as { message: string }).message).toContain("stopped nothing");
       // Not one `pm2 delete`, nothing installed, nothing locked or moved.

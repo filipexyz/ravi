@@ -414,17 +414,25 @@ export function readUpdateSnapshot(stateDir: string, id: string): UpdateSnapshot
 }
 
 /**
- * Why the snapshot cannot be put back, or null when every copy its manifest lists is a file of the size it was
- * copied with. Read only. Checked before anything stops (the plan of `ravi update --rollback`, and the rollback before
- * its first `pm2 delete`) and again by the restore.
+ * Why the snapshot cannot be put back, or null when every copy its manifest lists is a file this process can read, of
+ * the size it was copied with. Read only. Checked before anything stops (the plan of `ravi update --rollback`, and the
+ * rollback before its first `pm2 delete`) and again by the restore.
  */
 export function updateSnapshotUnusable(stateDir: string, manifest: UpdateSnapshotManifest): string | null {
   const filesDirectory = join(updateSnapshotsDir(stateDir), manifest.id, "files");
   for (const file of manifest.files) {
-    const info = statSync(join(filesDirectory, file.name), { throwIfNoEntry: false });
+    const copy = join(filesDirectory, file.name);
+    const info = statSync(copy, { throwIfNoEntry: false });
     if (!info?.isFile()) return `is missing ${file.name}`;
     if (info.size !== file.bytes)
       return `has ${info.size} bytes in ${file.name}, not the ${file.bytes} it was copied with`;
+    // A store on another disk gets its copy staged by reading it, after the stop.
+    try {
+      closeSync(openSync(copy, "r"));
+    } catch (cause) {
+      // no-cause: The reason carries the error's code, and the caller refuses with it before anything stops.
+      return `has ${file.name} unreadable (${(cause as NodeJS.ErrnoException).code ?? (cause as Error).message})`;
+    }
   }
   return null;
 }
