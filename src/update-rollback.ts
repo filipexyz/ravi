@@ -232,7 +232,7 @@ export const UPDATE_ROLLBACK_UNAVAILABLE = "UPDATE_ROLLBACK_UNAVAILABLE";
 export class UpdateRollbackUnavailableError extends Error {
   readonly code = UPDATE_ROLLBACK_UNAVAILABLE;
   constructor(reason: string) {
-    super(`${UPDATE_ROLLBACK_UNAVAILABLE}: ${reason} This run stopped nothing.`);
+    super(`${UPDATE_ROLLBACK_UNAVAILABLE}: ${reason}${reason.endsWith("\n") ? "" : " "}This run stopped nothing.`);
     this.name = "UpdateRollbackUnavailableError";
   }
 }
@@ -332,18 +332,24 @@ function cutShort(stateDir: string, manifest: UpdateSnapshotManifest, method: Gl
     ? `${method} install -g ravi.bot@${manifest.previousRelease}`
     : `bun install -g ravi.bot@${manifest.previousRelease} (npm install -g for an npm install)`;
   const start = [install, "ravi daemon start", "ravi channels start", "ravi daemon status"];
-  if (existsSync(join(directory, "restore.json")))
-    return (
-      `Ravi is not running under PM2, and a restore of the snapshot of ${manifest.createdAt} ran: a rollback ` +
+  const restored = existsSync(join(directory, "restore.json"));
+  const commands = restored ? start : [...updateSnapshotManualRestoreCommands(stateDir, manifest), ...start];
+  // One command per line, and kept next to the snapshot: a message line past 2048 characters reaches the operator
+  // as "[redacted:oversize]", and a long message is cut.
+  const file = join(directory, "finish-by-hand.txt");
+  try {
+    writeFileSync(file, `${commands.join("\n")}\n`, { mode: 0o600 });
+  } catch {
+    // no-cause: The same commands follow in the message; the file is only their durable copy.
+  }
+  const head = restored
+    ? `Ravi is not running under PM2, and a restore of the snapshot of ${manifest.createdAt} ran: a rollback ` +
       `stopped after it. ${directory}/restore.json lists every move and whether it was done; once all are done, ` +
-      `bring Ravi ${manifest.previousRelease} back: ${start.join(" ; ")}`
-    );
-  return (
-    `Ravi is not running under PM2, and the snapshot of ${manifest.createdAt} (Ravi ${manifest.previousRelease}'s ` +
-    `state, before the update to Ravi ${manifest.targetRelease}) was not restored: a rollback may have stopped both ` +
-    "processes and been cut. To go back by hand, with nothing started meanwhile: " +
-    [...updateSnapshotManualRestoreCommands(stateDir, manifest), ...start].join(" ; ")
-  );
+      `bring Ravi ${manifest.previousRelease} back`
+    : `Ravi is not running under PM2, and the snapshot of ${manifest.createdAt} (Ravi ${manifest.previousRelease}'s ` +
+      `state, before the update to Ravi ${manifest.targetRelease}) was not restored: a rollback may have stopped ` +
+      "both processes and been cut. To go back by hand, with nothing started meanwhile";
+  return `${head}, run in order (the commands are also in ${file}):\n${commands.join("\n")}\n`;
 }
 
 export type OperatorRollbackSupervisorDependencies = {
@@ -358,7 +364,13 @@ export type OperatorRollbackSupervisorDependencies = {
   stabilityWindowMs?: number;
   installMethod?: GlobalInstallMethod | null;
   rollBack?: typeof rollBackUpdate;
+  recordResult?: typeof recordUpdateSupervisorResult;
 };
+
+/** A result that cannot be written (a full disk) does not undo the rollback that ran: say so, and go on. */
+function warnUnrecorded(cause: unknown): void {
+  console.error(`ravi update --rollback: could not record the supervisor result: ${describe(cause)}`);
+}
 
 /**
  * `ravi update --rollback --execute`, in the update supervisor: a detached process that holds the update lock and
@@ -402,21 +414,25 @@ export async function superviseOperatorRollback(deps: OperatorRollbackSupervisor
       candidateDir: null,
     };
   }
-  recordUpdateSupervisorResult(stateDir, {
-    outcome: outcome.ok ? "rolled-back" : "rollback-failed",
-    targetRelease: runningRelease,
-    previousRelease: plan.previousRelease,
-    snapshotId: manifest.id,
-    snapshotAt: manifest.createdAt,
-    restoredAt: outcome.restoredAt,
-    candidateDir: outcome.candidateDir,
-    message: outcome.ok
-      ? `Ravi ${plan.previousRelease} runs again on its state as of ${manifest.createdAt}. What Ravi ` +
-        `${runningRelease} wrote since then is kept in ${outcome.candidateDir}.`
-      : `ravi update --rollback stopped at ${outcome.step}: ${outcome.message}`,
-    commands: outcome.ok ? [] : outcome.commands,
-    warnings: [],
-  });
+  try {
+    (deps.recordResult ?? recordUpdateSupervisorResult)(stateDir, {
+      outcome: outcome.ok ? "rolled-back" : "rollback-failed",
+      targetRelease: runningRelease,
+      previousRelease: plan.previousRelease,
+      snapshotId: manifest.id,
+      snapshotAt: manifest.createdAt,
+      restoredAt: outcome.restoredAt,
+      candidateDir: outcome.candidateDir,
+      message: outcome.ok
+        ? `Ravi ${plan.previousRelease} runs again on its state as of ${manifest.createdAt}. What Ravi ` +
+          `${runningRelease} wrote since then is kept in ${outcome.candidateDir}.`
+        : `ravi update --rollback stopped at ${outcome.step}: ${outcome.message}`,
+      commands: outcome.ok ? [] : outcome.commands,
+      warnings: [],
+    });
+  } catch (cause) {
+    warnUnrecorded(cause);
+  }
   return outcome.ok;
 }
 

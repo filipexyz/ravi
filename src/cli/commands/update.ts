@@ -14,9 +14,15 @@ import {
   resolveManagedRuntimeTargetFromPackageRoot,
   type ManagedRuntimeTarget,
 } from "../../managed-runtime.js";
-import { managedRuntimeSnapshot, runManagedRuntimeRebindSupervisor } from "../../managed-runtime-rebind.js";
+import {
+  managedRuntimeSnapshot,
+  runManagedRuntimeRebindSupervisor,
+  UPDATE_IN_PROGRESS,
+  updateSupervisorRunning,
+} from "../../managed-runtime-rebind.js";
 import {
   globalInstallMethodOf,
+  updateSupervisorResultPath,
   planOperatorRollback,
   isRaviRelease,
   UPDATE_ROLLBACK_UNAVAILABLE,
@@ -635,6 +641,14 @@ export async function readNativeChannelRunnerUpdateWarning(previousProcesses: Pm
   }
 }
 
+/**
+ * The commands that finish by hand, one per line after where they are kept: one long line past 2048 characters
+ * reaches the operator as "[redacted:oversize]", and a long message is cut after the pointer, not before it.
+ */
+function nextSteps(commands: string[], resultPath: string): string {
+  return commands.length ? `\nNext, in order (also in ${resultPath}):\n${commands.join("\n")}` : "";
+}
+
 /** A recorded refusal keeps its code when it looks like one; anything else is a plain update failure. */
 export function supervisorRefusalCode(code: string): string {
   return /^[A-Z][A-Z0-9_]{2,63}$/.test(code) ? code : "UPDATE_FAILED";
@@ -665,8 +679,9 @@ async function reconcileManagedRuntime(
   if (result?.outcome === "rolled-back") fail(result.message, "UPDATE_ROLLED_BACK");
   if (result?.outcome === "rollback-failed") {
     fail(
-      `${result.message}${result.commands.length ? ` Next: ${result.commands.join(" ; ")}` : ""}` +
-        (supervisor.logPath ? ` Supervisor log: ${supervisor.logPath}.` : ""),
+      `${result.message}` +
+        (supervisor.logPath ? ` Supervisor log: ${supervisor.logPath}.` : "") +
+        nextSteps(result.commands, updateSupervisorResultPath(getRaviStateDir())),
       "UPDATE_ROLLBACK_FAILED",
     );
   }
@@ -1210,6 +1225,18 @@ async function runOperatorRollback(
   // would otherwise mean the operator's cwd here and the package directory once that CLI starts.
   const stateDir = resolve(getRaviStateDir(env));
   const rollbackEnv = { ...env, RAVI_STATE_DIR: stateDir };
+  // A running supervisor (an update, or a rollback whose command was cut) owns the processes, and its result says
+  // what happened: only without one does an empty PM2 next to an unused snapshot mean a cut rollback.
+  if (updateSupervisorRunning(stateDir)) {
+    const updates = join(stateDir, "updates");
+    throw new UpdateFailure(
+      `${UPDATE_IN_PROGRESS}: an update supervisor is running (it holds ${join(updates, "update.lock")}): an update ` +
+        `or a rollback is still under way. Wait for its outcome in ${join(updates, "supervisor-result.json")}; ` +
+        `${join(updates, "supervisor.log")} shows its steps. This run stopped nothing.`,
+      UPDATE_IN_PROGRESS,
+      1,
+    );
+  }
   const getProcesses = deps.rollbackRuntime?.getProcesses ?? readManagedProcesses;
   const ownRoot = findRaviPackageRoot(process.argv[1] ?? "");
   const installMethod = ownRoot ? globalInstallMethodOf(ownRoot) : null;
@@ -1266,7 +1293,7 @@ async function runOperatorRollback(
   if (!supervisor.converged || recorded?.outcome !== "rolled-back") {
     throw new UpdateFailure(
       recorded?.outcome === "rollback-failed"
-        ? `${recorded.message}${recorded.commands.length ? ` Next: ${recorded.commands.join(" ; ")}` : ""}`
+        ? `${recorded.message}${nextSteps(recorded.commands, updateSupervisorResultPath(stateDir))}`
         : "The rollback supervisor gave no result in time; it may still be running, and it goes on without this " +
             `command. Read ${join(stateDir, "updates", "supervisor-result.json")} and \`ravi daemon status\` ` +
             `before acting${supervisor.logPath ? `; its output is in ${supervisor.logPath}` : ""}.`,

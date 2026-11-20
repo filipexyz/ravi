@@ -35,7 +35,7 @@ import {
 } from "./managed-runtime.js";
 import { buildChannelsPm2Env, buildChannelsPm2StartArgs, buildDaemonPm2StartArgs } from "./daemon-stdin.js";
 import { readDaemonSchemaPhase } from "./db/daemon-schema-owner.js";
-import { acquireSchemaFileLock } from "./db/schema-lock.js";
+import { acquireSchemaFileLock, SchemaLockBusyError } from "./db/schema-lock.js";
 import { observeStableManagedRuntime } from "./runtime-stability.js";
 import { performSupervisedDaemonRestart, type ManagedDaemonProcess } from "./cli/daemon-restart-supervision.js";
 import { buildPm2Env, CHANNELS_PM2_PROCESS_NAME, getPm2Processes, PM2_PROCESS_NAME, type Pm2Process } from "./pm2.js";
@@ -159,7 +159,7 @@ type ManagedRuntimeRebindDependencies = {
     processes: Pm2Process[];
     stateDir: string;
   }) => UpdateRollbackPlan | null;
-  planSnapshot?: (input: { stateDir: string; stores: string[] }) => UpdateSnapshotPlan;
+  planSnapshot?: (input: { stateDir: string; stores: string[]; keep?: string | null }) => UpdateSnapshotPlan;
   takeSnapshot?: typeof takeUpdateSnapshot;
   acquireOwnership?: (stateDir: string, stores: string[], timeoutMs: number) => { release(): void };
   rollBack?: (dependencies: UpdateRollbackDependencies) => Promise<UpdateRollbackOutcome>;
@@ -491,7 +491,13 @@ export async function rebindManagedRuntimeProcesses(
     waypoint && rollbackPlan && compareRaviVersions(rollbackPlan.previousRelease, waypoint) < 0 ? waypoint : null;
   if (waypoint && !hop) refuseWaypoint(runningReleaseUnknown);
   const stores = rollbackPlan ? (dependencies.storePaths ?? updateStorePaths)(stateDir) : [];
-  const snapshotPlan = rollbackPlan ? (dependencies.planSnapshot ?? planUpdateSnapshot)({ stateDir, stores }) : null;
+  const snapshotPlan = rollbackPlan
+    ? (dependencies.planSnapshot ?? planUpdateSnapshot)({
+        stateDir,
+        stores,
+        keep: dependencies.keptSnapshot?.id ?? null,
+      })
+    : null;
   const gone = (pid: number): boolean =>
     dependencies.pidAlive ? !dependencies.pidAlive(pid) : processExitState(pid) === "exited";
 
@@ -771,12 +777,6 @@ export async function rebindManagedRuntimeProcesses(
       );
       return false;
     }
-    // The runner goes up for the waypoint's boot record even when it was stopped.
-    if (channels?.status !== "online")
-      warnings.push(
-        `the channel runner was stopped; the waypoint Ravi ${hop} ran it for its boot record, and while it ran it ` +
-          "processed queued inbound and outbound messages",
-      );
     let outcome: WaypointHopOutcome;
     try {
       outcome = await (dependencies.hopThroughWaypoint ?? hopThroughWaypoint)({
@@ -795,6 +795,16 @@ export async function rebindManagedRuntimeProcesses(
       });
     } catch (cause) {
       outcome = { ok: false, step: "unknown", message: (cause as Error).message };
+    }
+    // A runner that was stopped goes up for the waypoint's boot record, once the hop gets that far.
+    if (channels?.status !== "online") {
+      const step = outcome.ok ? null : outcome.step;
+      const ran = outcome.ok || step === "prepare" || step === "reinstall-target";
+      if (ran || step === "start" || step === "unknown")
+        warnings.push(
+          `the channel runner was stopped; the waypoint Ravi ${hop} ${ran ? "ran" : "may have run"} it for its boot ` +
+            "record, and while it ran it could process queued inbound and outbound messages",
+        );
     }
     if (!outcome.ok) {
       if (outcome.step === "reinstall-target") {
@@ -1112,6 +1122,22 @@ export const UPDATE_IN_PROGRESS = "UPDATE_IN_PROGRESS";
  * One update supervisor per state directory, for its whole life: a second one would prune the first one's
  * snapshot and stop processes under it. The lock goes with the process, so a crash leaves nothing behind.
  */
+/**
+ * Whether another process's update supervisor holds `<state>/updates/update.lock` now. A probe: it records no
+ * refusal (the running supervisor's own command reads those), and any error but a busy lock is thrown.
+ */
+export function updateSupervisorRunning(stateDir: string = getRaviStateDir()): boolean {
+  let lock: { release(): void };
+  try {
+    lock = acquireSchemaFileLock(join(stateDir, "updates", "update.lock"), 0);
+  } catch (cause) {
+    if (cause instanceof SchemaLockBusyError) return true;
+    throw cause;
+  }
+  lock.release();
+  return false;
+}
+
 export function acquireUpdateSupervisorLock(stateDir: string = getRaviStateDir()): { release(): void } {
   try {
     return acquireSchemaFileLock(join(stateDir, "updates", "update.lock"), 0);

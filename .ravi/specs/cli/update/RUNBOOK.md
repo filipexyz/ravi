@@ -74,12 +74,13 @@ authorizes no database or package downgrade by hand: the update's own rollback
 - `UPDATE_ROLLED_BACK` with "no snapshot ... could be taken": the waypoint was
   not taken, and the release that wrote the state runs again on it, untouched.
   Fix what the warning names (a process that did not exit, a store still
-  owned, a copy error), then run the update again. If that rollback failed, a
-  stopped process never exited: nothing starts beside it; run the commands
-  once it is gone.
-- A runner that was stopped ran while the waypoint took its boot record: it
-  processed queued inbound and outbound messages, and the result's warnings say
-  so.
+  owned, a copy error), then run the update again. If that rollback failed,
+  the result says why: a stopped process never exited (nothing starts beside
+  it; run the commands once it is gone), or the release could not be
+  installed or started again (run the commands when the registry answers).
+- A runner that was stopped ran while the waypoint took its boot record, and
+  could process queued inbound and outbound messages meanwhile; the result's
+  warnings say so.
 - `failed` with "could not be installed again": 3.261113.2 runs on the state it
   prepared, which is a valid release of its own. Run the commands the result
   names, the install first (the package directory may hold no runnable bundle),
@@ -109,11 +110,17 @@ authorizes no database or package downgrade by hand: the update's own rollback
 - With `--execute` the rollback runs in the update supervisor, which goes on
   if the terminal closes: then read `<state>/updates/supervisor-result.json`
   (and `<state>/updates/supervisor.log`) before acting.
+- `UPDATE_IN_PROGRESS` from `ravi update --rollback`: an update supervisor still
+  runs (an update, or a rollback whose command was cut). Do not run anything by
+  hand: wait for `<state>/updates/supervisor-result.json`, and follow
+  `<state>/updates/supervisor.log` meanwhile.
 - `UPDATE_ROLLBACK_UNAVAILABLE`: this run stopped nothing; the message says why
   (no snapshot, already restored, a source checkout, a daemon on another
-  release, or a caller inside the daemon's tree). When it says Ravi is not
-  running under PM2, an earlier rollback was cut after its stop: run the
-  commands it gives, in order, with nothing started meanwhile.
+  release, or a caller inside the daemon's tree). It says Ravi is not running
+  under PM2 only when no supervisor holds the update lock: then an earlier
+  rollback was cut after its stop. Run the commands it gives, one per line and
+  in order, with nothing started meanwhile; they are also kept in
+  `finish-by-hand.txt` in the snapshot's directory.
 
 ## Rollback
 

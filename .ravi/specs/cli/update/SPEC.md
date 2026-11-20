@@ -117,14 +117,16 @@ CLI that run installed.
     supervisor MUST bring the release that wrote the state back on it by
     itself, with nothing to restore (the state is untouched): install it in the
     same place and start it through its own CLI, as a rollback does, once every
-    stopped process has exited. Only a stopped process that never exits leaves
-    the host stopped; the result then names the commands;
+    stopped process has exited. A stopped process that never exits, or a
+    release that cannot be installed or started again, leaves the host
+    stopped; the result then names the commands;
   - install 3.261113.2 in the same global install and start the daemon, then
     the channel runner, through its own CLI (`daemon start`, `channels
     start`), without target routing or runtime context, and with installs run
     outside the package directory they replace; both, because the target's
     adoption needs a boot record of each, so a runner that was stopped runs
-    for that time, and the result MUST say so in its warnings. The daemon counts only at schema
+    for that time, and the result MUST say so in its warnings once the hop got
+    that far (and that it may have run, when the hop stopped while starting). The daemon counts only at schema
     phase `ready` (the same process, for the whole window) before the runner
     starts;
   - count the waypoint once the state shows its readiness markers (3.261113.2
@@ -134,6 +136,7 @@ CLI that run installed.
   - install the target again and update from the waypoint to the target, as
     any update (its own snapshot, and a rollback to the waypoint). That pass
     MUST keep the snapshot taken before the waypoint until the next update,
+    and its space check MUST NOT count that kept snapshot as room,
     and record whatever ends it, also a return before it could roll back. A runner
     that was stopped before the update MUST be removed again before that
     pass, so it stays stopped. A second waypoint on that pass MUST NOT be
@@ -272,11 +275,19 @@ CLI that run installed.
   when there is no update snapshot, when the latest one was already restored
   (or a restore of it was cut short), when the daemon does not run from a
   global install, when the daemon's verified release is not the target of
-  that update, or when the caller runs inside the daemon's process tree. When
-  neither process runs under PM2 next to an unused snapshot (a rollback cut
-  after its stop), the refusal MUST say so and give the commands that finish
-  it by hand: the snapshot's restore and the previous release's install and
-  start, or, once a restore ran, its `restore.json` and the install and start.
+  that update, or when the caller runs inside the daemon's process tree. Before
+  planning, it MUST refuse with `UPDATE_IN_PROGRESS` while another process's
+  supervisor holds the update lock (an update, or a rollback whose command was
+  cut), pointing at `supervisor-result.json` and `supervisor.log`; that probe
+  records no refusal. Only then, when neither process runs under PM2 next to an
+  unused snapshot (a rollback cut after its stop), the refusal MUST say so and
+  give the commands that finish it by hand: the snapshot's restore and the
+  previous release's install and start, or, once a restore ran, its
+  `restore.json` and the install and start. Commands in a refusal or a failure
+  MUST come one per line after where they are kept (`finish-by-hand.txt` next to
+  the snapshot, or `supervisor-result.json`): a message line past 2048
+  characters reaches the operator as `[redacted:oversize]`. A result the
+  supervisor cannot write MUST NOT turn a rollback that ran into a failure.
 - It takes no release selector, and `--execute` without `--rollback` is a
   usage error. Its supervisor MUST hold `<state>/updates/update.lock` while it
   runs (`UPDATE_IN_PROGRESS` when another update holds it). A rollback that stops

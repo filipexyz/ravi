@@ -62,6 +62,32 @@ function readRows(path: string): string[] {
 const MiB = 1024 * 1024;
 
 describe("update snapshot plan", () => {
+  it("does not count a kept snapshot as room: a disk that holds one copy refuses the second", () => {
+    const GiB = 1024 * MiB;
+    const stateDir = makeStateDir();
+    const store = join(stateDir, "ravi.db");
+    // Sparse files: the sizes the plan reads, without the disk.
+    writeFileSync(store, "");
+    truncateSync(store, 3 * GiB);
+    const kept = "20261120T000000Z-abcdef";
+    const keptFile = join(updateSnapshotsDir(stateDir), kept, "files", "0-ravi.db");
+    mkdirSync(dirname(keptFile), { recursive: true });
+    writeFileSync(keptFile, "");
+    truncateSync(keptFile, 3 * GiB);
+
+    // Without a kept snapshot the earlier one is pruned before the copy, so it is room: 0.5 + 3 GiB.
+    const pruned = planUpdateSnapshot({ stateDir, stores: [store], reflink: () => false, free: () => GiB / 2 });
+    expect(pruned.reclaimableBytes).toBe(3 * GiB);
+    // The second pass of a waypoint keeps it: 0.5 GiB free cannot hold another 3 GiB copy.
+    let refusal: unknown;
+    try {
+      planUpdateSnapshot({ stateDir, stores: [store], reflink: () => false, free: () => GiB / 2, keep: kept });
+    } catch (error) {
+      refusal = error;
+    }
+    expect((refusal as { code?: string }).code).toBe(UPDATE_SNAPSHOT_SPACE);
+  });
+
   it("needs only a margin for clones and refuses a full copy that does not fit, before anything stops", () => {
     const stateDir = makeStateDir();
     const stores = updateStorePaths(stateDir, {});
