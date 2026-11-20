@@ -231,7 +231,7 @@ export const UPDATE_ROLLBACK_UNAVAILABLE = "UPDATE_ROLLBACK_UNAVAILABLE";
 export const UPDATE_PREVIOUS_RELEASE_UNAVAILABLE = "UPDATE_PREVIOUS_RELEASE_UNAVAILABLE";
 
 /** Whether the npm registry answers for `ravi.bot@<release>`: a rollback installs it again. */
-export type ReleaseAvailability = { ok: true } | { ok: false; reason: string };
+export type ReleaseAvailability = { ok: true } | { ok: false; reason: string; cause?: unknown };
 
 /**
  * A probe before any stop: the release a rollback would install again must be in the registry now. Found out after
@@ -248,7 +248,7 @@ export async function releaseInRegistry(
       signal: AbortSignal.timeout(15_000),
     });
   } catch (cause) {
-    return { ok: false, reason: `the npm registry did not answer for ravi.bot@${release} (${describe(cause)})` };
+    return registryUnanswered(release, cause);
   }
   if (response.status === 404) return { ok: false, reason: `ravi.bot@${release} is not in the npm registry` };
   if (!response.ok)
@@ -256,10 +256,18 @@ export async function releaseInRegistry(
   return { ok: true };
 }
 
+/** A registry that does not answer is a reason to refuse too; the error stays with it as the cause. */
+function registryUnanswered(release: string, cause: unknown): ReleaseAvailability {
+  return { ok: false, reason: `the npm registry did not answer for ravi.bot@${release} (${describe(cause)})`, cause };
+}
+
 /** The update would have no way back: the release it rolls back to cannot be installed now. Nothing was stopped. */
 export class UpdatePreviousReleaseUnavailableError extends Error {
   readonly code = UPDATE_PREVIOUS_RELEASE_UNAVAILABLE;
-  constructor(input: { reason: string; previousRelease: string; targetVersion: string; declared: boolean }) {
+  constructor(
+    input: { reason: string; previousRelease: string; targetVersion: string; declared: boolean },
+    options?: ErrorOptions,
+  ) {
     super(
       `${UPDATE_PREVIOUS_RELEASE_UNAVAILABLE}: ${input.reason}, and this update goes back to Ravi ` +
         `${input.previousRelease} only by installing it again. Nothing was stopped: Ravi ${input.previousRelease} keeps ` +
@@ -267,6 +275,7 @@ export class UpdatePreviousReleaseUnavailableError extends Error {
         (input.declared
           ? "That release came from --running-release: check it and run the same `ravi update` again."
           : "Run the same `ravi update` again once the registry has it; `ravi daemon status` shows what runs meanwhile."),
+      options,
     );
     this.name = "UpdatePreviousReleaseUnavailableError";
   }
@@ -275,8 +284,11 @@ export class UpdatePreviousReleaseUnavailableError extends Error {
 /** `ravi update --rollback` cannot go back from here; nothing was stopped. */
 export class UpdateRollbackUnavailableError extends Error {
   readonly code = UPDATE_ROLLBACK_UNAVAILABLE;
-  constructor(reason: string) {
-    super(`${UPDATE_ROLLBACK_UNAVAILABLE}: ${reason}${reason.endsWith("\n") ? "" : " "}This run stopped nothing.`);
+  constructor(reason: string, options?: ErrorOptions) {
+    super(
+      `${UPDATE_ROLLBACK_UNAVAILABLE}: ${reason}${reason.endsWith("\n") ? "" : " "}This run stopped nothing.`,
+      options,
+    );
     this.name = "UpdateRollbackUnavailableError";
   }
 }
@@ -457,6 +469,7 @@ export async function superviseOperatorRollback(deps: OperatorRollbackSupervisor
   if (!available.ok)
     throw new UpdateRollbackUnavailableError(
       `${available.reason}, and the rollback installs Ravi ${plan.previousRelease} again, so it cannot run now.`,
+      { cause: available.cause },
     );
   let outcome: UpdateRollbackOutcome;
   try {

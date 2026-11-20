@@ -506,12 +506,15 @@ export async function rebindManagedRuntimeProcesses(
   if (rollbackPlan) {
     const available = await (dependencies.releaseAvailable ?? releaseInRegistry)(rollbackPlan.previousRelease);
     if (!available.ok)
-      throw new UpdatePreviousReleaseUnavailableError({
-        reason: available.reason,
-        previousRelease: rollbackPlan.previousRelease,
-        targetVersion: target.version,
-        declared: rollbackPlan.evidence === "declared",
-      });
+      throw new UpdatePreviousReleaseUnavailableError(
+        {
+          reason: available.reason,
+          previousRelease: rollbackPlan.previousRelease,
+          targetVersion: target.version,
+          declared: rollbackPlan.evidence === "declared",
+        },
+        { cause: available.cause },
+      );
   }
   const stores = rollbackPlan ? (dependencies.storePaths ?? updateStorePaths)(stateDir) : [];
   const snapshotPlan = rollbackPlan
