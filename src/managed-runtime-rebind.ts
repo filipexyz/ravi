@@ -9,7 +9,14 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync
 import { join } from "node:path";
 import { isInsideDaemonProcessTree } from "./cli/daemon-process-tree.js";
 import { MANAGED_RUNTIME_READY_TIMEOUT_MS } from "./db/state-boundary.js";
-import { assertFenceAdoptionWaypoint, readPreparedStateRelease, UPDATE_WAYPOINT_REQUIRED } from "./update-preflight.js";
+import {
+  compareRaviVersions,
+  readPreparedStateRelease,
+  requiredFenceAdoptionWaypoint,
+  UPDATE_WAYPOINT_REQUIRED,
+  UpdateWaypointRequiredError,
+} from "./update-preflight.js";
+import { hopThroughWaypoint, type WaypointHopDependencies, type WaypointHopOutcome } from "./update-waypoint.js";
 import { setTimeout as delay } from "node:timers/promises";
 import { buildRunnerPm2Env } from "./channels/pm2-env.js";
 import {
@@ -45,6 +52,7 @@ import {
 import {
   readUpdateSupervisorResult,
   recordUpdateSupervisorResult,
+  globalInstallMethodOf,
   resolveUpdateRollbackPlan,
   rollBackUpdate,
   type UpdateRollbackDependencies,
@@ -142,7 +150,7 @@ type ManagedRuntimeRebindDependencies = {
     processes: Pm2Process[];
     stateDir: string;
   }) => UpdateRollbackPlan | null;
-  planSnapshot?: (input: { stateDir: string; stores: string[] }) => UpdateSnapshotPlan;
+  planSnapshot?: (input: { stateDir: string; stores: string[]; keep?: string | null }) => UpdateSnapshotPlan;
   takeSnapshot?: typeof takeUpdateSnapshot;
   acquireOwnership?: (stateDir: string, stores: string[], timeoutMs: number) => { release(): void };
   rollBack?: (dependencies: UpdateRollbackDependencies) => Promise<UpdateRollbackOutcome>;
@@ -154,7 +162,18 @@ type ManagedRuntimeRebindDependencies = {
    * anyway, and the rollback is only proven by the window.
    */
   rollbackStabilityWindowMs?: number;
+  /** The waypoint hop (`update-waypoint.ts`; tests). */
+  hopThroughWaypoint?: (dependencies: WaypointHopDependencies) => Promise<WaypointHopOutcome>;
+  /** Set on the update that follows a waypoint: a second waypoint means the first did not prepare the state. */
+  afterWaypoint?: boolean;
   storePaths?: (stateDir: string) => string[];
+  /** Set on the update that follows a waypoint: what the first pass noted, recorded with this pass's result. */
+  carriedWarnings?: string[];
+  /**
+   * Set on the update that follows a waypoint: the snapshot taken before the waypoint, of the state of the release
+   * that wrote it. Kept when this pass takes its own, so the way back to that release survives until the next update.
+   */
+  keptSnapshot?: UpdateSnapshotManifest;
 };
 
 /** What the rebind ended with, for the result left to the CLI. */
@@ -360,17 +379,22 @@ export async function rebindManagedRuntimeProcesses(
   assertRuntimeMaintenanceInactive(stateDir);
   if (previousProcesses.length === 0) return true;
   const readiness = await (dependencies.assertPrepared ?? runtimeReplacementReadiness)();
-  // Before any stop: a pre-fence state the adoption cannot read refuses here,
-  // with the running release still serving.
-  assertFenceAdoptionWaypoint({
-    readiness,
-    preparedRelease:
-      readiness === "adopt-on-start"
-        ? (dependencies.preparedStateRelease ?? (() => readPreparedStateRelease(stateDir)))()
-        : null,
-    targetVersion: target.version,
-    sourceCheckout: existsSync(join(target.cwd, ".git")) ? target.cwd : null,
-  });
+  // Before any stop: a pre-fence state the adoption cannot read needs a waypoint. The update takes it by itself
+  // when it can roll back to the release that wrote the state (below); otherwise it refuses here, with the
+  // running release still serving.
+  const preparedRelease =
+    readiness === "adopt-on-start"
+      ? (dependencies.preparedStateRelease ?? (() => readPreparedStateRelease(stateDir)))()
+      : null;
+  const waypoint = requiredFenceAdoptionWaypoint({ readiness, preparedRelease });
+  const sourceCheckout = existsSync(join(target.cwd, ".git")) ? target.cwd : null;
+  const refuseWaypoint = (): never => {
+    throw new UpdateWaypointRequiredError(preparedRelease, target.version, sourceCheckout);
+  };
+  // Refused at once, before PM2 is read: a checkout is switched by its operator, only a global install can be rolled
+  // back, and a second waypoint means the first did not prepare the state.
+  if (waypoint && (sourceCheckout || dependencies.afterWaypoint || !globalInstallMethodOf(target.cwd)))
+    refuseWaypoint();
   const run = dependencies.run ?? runCommand;
   const getProcesses = dependencies.getProcesses ?? (() => getPm2Processes({ strict: true }));
   const bunPath = dependencies.bunPath ?? process.execPath;
@@ -396,8 +420,19 @@ export async function rebindManagedRuntimeProcesses(
     processes: initial,
     stateDir,
   });
+  // The waypoint is taken by the update only with a rollback to the release that wrote this state, and never as a
+  // downgrade of that release.
+  const hop =
+    waypoint && rollbackPlan && compareRaviVersions(rollbackPlan.previousRelease, waypoint) < 0 ? waypoint : null;
+  if (waypoint && !hop) refuseWaypoint();
   const stores = rollbackPlan ? (dependencies.storePaths ?? updateStorePaths)(stateDir) : [];
-  const snapshotPlan = rollbackPlan ? (dependencies.planSnapshot ?? planUpdateSnapshot)({ stateDir, stores }) : null;
+  const snapshotPlan = rollbackPlan
+    ? (dependencies.planSnapshot ?? planUpdateSnapshot)({
+        stateDir,
+        stores,
+        keep: dependencies.keptSnapshot?.id ?? null,
+      })
+    : null;
   const gone = (pid: number): boolean =>
     dependencies.pidAlive ? !dependencies.pidAlive(pid) : processExitState(pid) === "exited";
 
@@ -470,7 +505,10 @@ export async function rebindManagedRuntimeProcesses(
     if ((await remove(PM2_PROCESS_NAME)) !== 0) return false;
   }
 
-  const warnings: string[] = [];
+  const warnings: string[] = [...(dependencies.carriedWarnings ?? [])];
+  const stoppedPids = initial
+    .filter((process) => process.name === PM2_PROCESS_NAME || process.name === CHANNELS_PM2_PROCESS_NAME)
+    .map((process) => process.pid);
   // Nothing owns the state and the target has not started: the snapshot is the previous release's state.
   const snapshot =
     rollbackPlan && snapshotPlan
@@ -480,9 +518,7 @@ export async function rebindManagedRuntimeProcesses(
           plan: snapshotPlan,
           rollbackPlan,
           target,
-          pids: initial
-            .filter((process) => process.name === PM2_PROCESS_NAME || process.name === CHANNELS_PM2_PROCESS_NAME)
-            .map((process) => process.pid),
+          pids: stoppedPids,
           gone,
           warnings,
           dependencies,
@@ -588,13 +624,22 @@ export async function rebindManagedRuntimeProcesses(
       console.error(`ravi update: could not record the supervisor result: ${(cause as Error).message}`);
     }
   };
-  const rollBack = async (reason: string, manifest: UpdateSnapshotManifest): Promise<void> => {
+  /**
+   * Back to the release that wrote the state: from `manifest`, or, with none, on that state untouched (the update
+   * stopped both processes but took no snapshot). `headline` replaces "the target did not converge".
+   */
+  const rollBack = async (
+    reason: string,
+    manifest: UpdateSnapshotManifest | null,
+    headline = `Ravi ${target.version} did not converge (${reason})`,
+  ): Promise<void> => {
     let outcome: UpdateRollbackOutcome;
     try {
       outcome = await (dependencies.rollBack ?? rollBackUpdate)({
         stateDir,
         plan: rollbackPlan,
         manifest,
+        ...(manifest ? {} : { stoppedPids }),
         previousProcesses,
         bunPath,
         run,
@@ -608,14 +653,22 @@ export async function rebindManagedRuntimeProcesses(
       });
     } catch (cause) {
       // Never an unrecorded end: the result names where to look for what the rollback did.
-      const snapshotDir = join(updateSnapshotsDir(stateDir), manifest.id);
+      const snapshotDir = manifest ? join(updateSnapshotsDir(stateDir), manifest.id) : null;
       outcome = {
         ok: false,
         step: "unknown",
-        message:
-          `the rollback threw (${(cause as Error).message}). Whether the state was restored is in ` +
-          `${join(snapshotDir, "restore.json")}; the snapshot is in ${snapshotDir}.`,
-        commands: ["ravi daemon status", "pm2 jlist", `cat ${join(snapshotDir, "restore.json")}`],
+        message: snapshotDir
+          ? `the rollback threw (${(cause as Error).message}). Whether the state was restored is in ` +
+            `${join(snapshotDir, "restore.json")}; the snapshot is in ${snapshotDir}.`
+          : `bringing Ravi ${rollbackPlan.previousRelease} back threw (${(cause as Error).message}); the state is untouched.`,
+        commands: snapshotDir
+          ? ["ravi daemon status", "pm2 jlist", `cat ${join(snapshotDir, "restore.json")}`]
+          : [
+              `${rollbackPlan.method} install -g ravi.bot@${rollbackPlan.previousRelease}`,
+              "ravi daemon start",
+              ...(rollbackPlan.channelsOnline ? ["ravi channels start"] : []),
+              "ravi daemon status",
+            ],
         restoredAt: null,
         candidateDir: null,
       };
@@ -623,35 +676,172 @@ export async function rebindManagedRuntimeProcesses(
     if (outcome.ok) {
       record(
         "rolled-back",
-        `Ravi ${target.version} did not converge (${reason}). The update rolled back: Ravi ${rollbackPlan.previousRelease} ` +
-          `runs again on its state as of ${manifest.createdAt}. What Ravi ${target.version} wrote between ` +
-          `${manifest.createdAt} and ${outcome.restoredAt} is not in the live state; its files are kept in ` +
-          `${outcome.candidateDir}.`,
+        manifest
+          ? `${headline}. The update rolled back: Ravi ${rollbackPlan.previousRelease} ` +
+              `runs again on its state as of ${manifest.createdAt}. What Ravi ${target.version} wrote between ` +
+              `${manifest.createdAt} and ${outcome.restoredAt} is not in the live state; its files are kept in ` +
+              `${outcome.candidateDir}.`
+          : `${headline}. Ravi ${rollbackPlan.previousRelease} runs again on its untouched state; nothing else ` +
+              "changed. Run the update again once the snapshot can be taken.",
         { restoredAt: outcome.restoredAt, candidateDir: outcome.candidateDir },
       );
       return;
     }
-    record(
-      "rollback-failed",
-      `Ravi ${target.version} did not converge (${reason}), and ${describeRollbackFailure(outcome)}`,
-      {
-        restoredAt: outcome.restoredAt,
-        candidateDir: outcome.candidateDir,
-        commands: outcome.commands,
-      },
-    );
+    record("rollback-failed", `${headline}, and ${describeRollbackFailure(outcome)}`, {
+      restoredAt: outcome.restoredAt,
+      candidateDir: outcome.candidateDir,
+      commands: outcome.commands,
+    });
   };
-  const unprotected = (reason: string) =>
-    `Ravi ${target.version} did not converge (${reason}). No snapshot was taken (${warnings.join("; ") || "unknown reason"}), ` +
-    "so nothing was rolled back.";
+  // Both processes of the release that wrote the state are stopped. Without its snapshot nothing new starts on that
+  // state (neither a waypoint nor the target, on any pass): it is untouched, and that release comes back on it by
+  // itself (the installed package is the target's by now). A stopped process that never exits, or a release that
+  // cannot be installed or started again, leaves the host stopped; the result names the commands.
+  if (!snapshot) {
+    await rollBack(
+      "",
+      null,
+      (hop ? `The state needs the waypoint Ravi ${hop}, but no` : "No") +
+        ` snapshot of Ravi ${rollbackPlan.previousRelease}'s state could be taken ` +
+        `(${warnings.join("; ") || "unknown reason"}), so ${hop ? "neither the waypoint nor " : ""}Ravi ` +
+        `${target.version} was ${hop ? "" : "not "}started`,
+    );
+    return false;
+  }
+
+  if (hop) {
+    let outcome: WaypointHopOutcome;
+    try {
+      outcome = await (dependencies.hopThroughWaypoint ?? hopThroughWaypoint)({
+        stateDir,
+        waypoint: hop,
+        target,
+        method: rollbackPlan.method,
+        packageRoot: rollbackPlan.packageRoot,
+        bunPath,
+        run,
+        getProcesses,
+        now: dependencies.now,
+        wait: dependencies.wait,
+        schemaPhase: phase,
+        stabilityWindowMs: dependencies.rollbackStabilityWindowMs ?? resolveStabilityWindowMs({}),
+      });
+    } catch (cause) {
+      outcome = { ok: false, step: "unknown", message: (cause as Error).message };
+    }
+    // A runner that was stopped goes up for the waypoint's boot record, once the hop gets that far.
+    if (channels?.status !== "online") {
+      const step = outcome.ok ? null : outcome.step;
+      const ran = outcome.ok || step === "prepare" || step === "reinstall-target";
+      if (ran || step === "start" || step === "unknown")
+        warnings.push(
+          `the channel runner was stopped; the waypoint Ravi ${hop} ${ran ? "ran" : "may have run"} it for its boot ` +
+            "record, and while it ran it could process queued inbound and outbound messages",
+        );
+    }
+    if (!outcome.ok) {
+      if (outcome.step === "reinstall-target") {
+        // The waypoint runs from memory on the state it prepared; the install holds what the message says.
+        record(
+          "failed",
+          `Ravi ${hop} prepared the state and runs on it, but Ravi ${target.version} could not be installed ` +
+            `again (${outcome.message}). Install it with the first command, then run the update again.`,
+          {
+            commands: [
+              `${rollbackPlan.method} install -g ravi.bot@${target.version}`,
+              "ravi daemon status",
+              `ravi update --version ${target.version}`,
+            ],
+          },
+        );
+        return false;
+      }
+      await rollBack(`the waypoint Ravi ${hop} failed at ${outcome.step}: ${outcome.message}`, snapshot);
+      return false;
+    }
+    console.error(`ravi update: Ravi ${hop} prepared the state; updating it to Ravi ${target.version}`);
+    const afterWaypoint = (reason: string) =>
+      record(
+        "failed",
+        `Ravi ${hop} prepared the state and runs on it, but the update to Ravi ${target.version} stopped before ` +
+          `it began (${reason}). Nothing else changed; run the update again.`,
+        { commands: ["ravi daemon status", `ravi update --version ${target.version}`] },
+      );
+    // Two ends where "runs on it, nothing else changed" is not true: no daemon is up, or a process PM2 no longer
+    // lists is still alive.
+    const noDaemonAfterWaypoint = () =>
+      record(
+        "failed",
+        `Ravi ${hop} prepared the state, but PM2 shows no daemon online: nothing runs now, and the update to Ravi ` +
+          `${target.version} did not begin. The installed package is already Ravi ${target.version}, which adopts ` +
+          "the state the waypoint prepared: start the daemon, check it, and run the update again.",
+        { commands: ["ravi daemon start", "ravi daemon status", `ravi update --version ${target.version}`] },
+      );
+    const runnerLeftAfterWaypoint = (pids: number[]) =>
+      record(
+        "failed",
+        `Ravi ${hop} prepared the state and its daemon runs on it, but its channel runner (pid ${pids.join(", ")}) ` +
+          `did not exit after PM2 removed it, so the update to Ravi ${target.version} did not begin. PM2 no ` +
+          "longer lists that process and the next update would not see it: confirm it is gone before running the " +
+          "update again.",
+        {
+          commands: [`ps -p ${pids.join(",")}`, "ravi daemon status", `ravi update --version ${target.version}`],
+        },
+      );
+    const secondPassAt = Date.now();
+    try {
+      // The waypoint started the runner only for its boot record: one that was stopped before stays stopped. Removed
+      // is not gone: the next pass takes its snapshot only once that runner's process has exited too.
+      if (channels?.status !== "online") {
+        const runnerPids = getProcesses()
+          .filter((process) => process.name === CHANNELS_PM2_PROCESS_NAME && process.pid > 0)
+          .map((process) => process.pid);
+        if ((await remove(CHANNELS_PM2_PROCESS_NAME)) !== 0) {
+          afterWaypoint("PM2 could not remove the waypoint's channel runner");
+          return false;
+        }
+        const clock = dependencies.now ?? Date.now;
+        const pause = dependencies.wait ?? ((ms: number) => delay(ms));
+        const deadline = clock() + 30_000;
+        while (!runnerPids.every(gone) && clock() < deadline) {
+          const before = clock();
+          await pause(250);
+          if (clock() <= before) break;
+        }
+        if (!runnerPids.every(gone)) {
+          runnerLeftAfterWaypoint(runnerPids);
+          return false;
+        }
+      }
+      // The update to the target replaces the waypoint's daemon: with none online (its registration gone, PM2 back
+      // with an empty list), that pass would have nothing to stop and would return at once without the target.
+      const waypointProcesses = getProcesses();
+      if (!waypointProcesses.some((process) => process.name === PM2_PROCESS_NAME && process.status === "online")) {
+        noDaemonAfterWaypoint();
+        return false;
+      }
+      const converged = await rebindManagedRuntimeProcesses(managedRuntimeSnapshot(waypointProcesses), target, {
+        ...dependencies,
+        afterWaypoint: true,
+        carriedWarnings: warnings,
+        keptSnapshot: snapshot,
+      });
+      // Every end of that pass is recorded, also one that returned before it could roll back.
+      if (!converged && !readUpdateSupervisorResult(secondPassAt, stateDir))
+        afterWaypoint("PM2 changed before it could stop the waypoint's processes");
+      return converged;
+    } catch (cause) {
+      // A pass that recorded its own end (a rollback to the waypoint, say) keeps it.
+      if (!readUpdateSupervisorResult(secondPassAt, stateDir)) afterWaypoint((cause as Error).message);
+      return false;
+    }
+  }
 
   let converged: boolean;
   try {
     converged = await replace();
   } catch (error) {
-    const reason = `the rebind failed: ${(error as Error).message}`;
-    if (snapshot) await rollBack(reason, snapshot);
-    else record("failed", unprotected(reason));
+    await rollBack(`the rebind failed: ${(error as Error).message}`, snapshot);
     throw error;
   }
   if (converged) {
@@ -660,20 +850,22 @@ export async function rebindManagedRuntimeProcesses(
       `Ravi ${target.version} converged and stayed up for the stability window.` +
         (snapshot
           ? ` The snapshot of Ravi ${rollbackPlan.previousRelease}'s state is kept in ${join(updateSnapshotsDir(stateDir), snapshot.id)} until the next update.`
+          : "") +
+        (dependencies.keptSnapshot
+          ? ` So is the one taken before the waypoint, of Ravi ${dependencies.keptSnapshot.previousRelease}'s state, in ` +
+            `${join(updateSnapshotsDir(stateDir), dependencies.keptSnapshot.id)}.`
           : ""),
     );
     return true;
   }
-  const reason = "it did not converge, or did not stay up for the stability window";
-  if (snapshot) await rollBack(reason, snapshot);
-  else record("failed", unprotected(reason));
+  await rollBack("it did not converge, or did not stay up for the stability window", snapshot);
   return false;
 }
 
 /**
  * The predecessors are gone and no daemon owns the stores: copy them. A
- * snapshot that cannot be taken leaves the update without a rollback, as
- * before this existed, and says why.
+ * snapshot that cannot be taken says why, and the update starts nothing new on
+ * that state: the release that wrote it comes back on it, untouched.
  */
 async function snapshotStoppedState(input: {
   stateDir: string;
@@ -719,6 +911,7 @@ async function snapshotStoppedState(input: {
       method: input.plan.method,
       previousRelease: input.rollbackPlan.previousRelease,
       targetRelease: input.target.version,
+      keep: input.dependencies.keptSnapshot?.id ?? null,
     });
     console.error(
       `ravi update: snapshot ${snapshot.id} of Ravi ${input.rollbackPlan.previousRelease}'s state taken (${input.plan.method})`,

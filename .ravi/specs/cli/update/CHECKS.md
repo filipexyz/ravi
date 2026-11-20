@@ -146,6 +146,26 @@
     never gets ready, records `converged` and keeps the snapshot otherwise,
     records `rollback-failed` when the rollback itself throws, and refuses
     `UPDATE_SNAPSHOT_SPACE` before any PM2 mutation.
+- `bun test src/update-rollback.test.ts` MUST also prove the waypoint: the rule
+  (3.261113.2 only for a pre-fence state prepared by an older release or
+  none); the hop that installs it, starts both processes through its CLI with
+  no runtime context, waits for the prepared state and reinstalls the target,
+  stopping at the step that failed (an error inside a step included), waiting
+  for the waypoint's daemon to be ready before the runner, and installing
+  outside the package directory; the prepared state counted only with the
+  markers and a boot record of both processes from the waypoint; and in the
+  supervisor, the waypoint taken by itself then the update to the target, no
+  waypoint without a snapshot (the release that wrote the state brought back on
+  it, untouched; in the rollback, nothing restored and nothing started while a
+  stopped process lives), the snapshot taken before the waypoint kept through
+  the second pass, a warning when a stopped runner ran for the waypoint, a
+  second pass that returns before it could roll back recorded, a waypoint that throws
+  rolled back, a second pass that stops before it begins recorded, a runner
+  that was stopped staying stopped, a second waypoint not taken, a failed
+  waypoint rolled back to the release that
+  wrote the state, a target that cannot be installed again leaving the
+  waypoint running, and a refusal before any stop without a rollback or as a
+  downgrade.
 - `bun test src/update-preflight.test.ts` MUST also prove a second supervisor
   refused with `UPDATE_IN_PROGRESS`, before its rebind, while another process
   holds the update lock, and running once that process is gone.

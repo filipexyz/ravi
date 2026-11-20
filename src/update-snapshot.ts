@@ -207,6 +207,8 @@ export function planUpdateSnapshot(input: {
   free?: (directory: string) => number;
   /** Device of an existing path (test seam); the default is `stat().dev`. */
   device?: (path: string) => number;
+  /** A snapshot the next copy keeps (`takeUpdateSnapshot({ keep })`): it is not room for that copy. */
+  keep?: string | null;
 }): UpdateSnapshotPlan {
   const directory = updateSnapshotsDir(input.stateDir);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -228,7 +230,8 @@ export function planUpdateSnapshot(input: {
     elsewhere.set(file.device, entry);
   }
   const freeOnState = free(directory);
-  const reclaimableBytes = directoryBytes(directory);
+  // Earlier snapshots are pruned before the copy, except the one kept.
+  const reclaimableBytes = directoryBytes(directory) - (input.keep ? directoryBytes(join(directory, input.keep)) : 0);
   const plan: UpdateSnapshotPlan = {
     method,
     bytes,
@@ -364,11 +367,13 @@ export function takeUpdateSnapshot(input: {
   method: UpdateSnapshotMethod;
   previousRelease: string;
   targetRelease: string;
+  /** A snapshot that survives this one (the one taken before a waypoint); every other earlier one goes. */
+  keep?: string | null;
   now?: () => Date;
 }): UpdateSnapshotManifest {
   const root = updateSnapshotsDir(input.stateDir);
   mkdirSync(root, { recursive: true, mode: 0o700 });
-  pruneUpdateSnapshots(root);
+  pruneUpdateSnapshots(root, input.keep ?? null);
   pruneStoreSiblings(input.stores);
   const id = createUpdateSnapshotId(input.now?.() ?? new Date());
   const directory = join(root, id);

@@ -59,6 +59,50 @@ authorizes no database or package downgrade by hand: the update's own rollback
   could not read; the file says which). Nothing was stopped. Run `ravi update`
   again: the CLI it installed detaches first.
 
+## Waypoint
+
+- A host whose state a release older than 3.261113.2 prepared goes through
+  3.261113.2 by itself when the update can roll back (a global install whose
+  daemon wrote a boot receipt, 3.261104.2 on). It takes two installs and two
+  boots; `supervisor.log` shows each step. A CLI older than this change stops
+  waiting before that ends: read the outcome in
+  `<state>/updates/supervisor-result.json` before acting (only once its `at` is
+  later than the update's start: the file keeps the previous update's result
+  until this one records its own), and do not restart anything while the
+  update runs.
+- `UPDATE_ROLLED_BACK` naming the waypoint: 3.261113.2 did not install, start,
+  prepare the state or hold, and the release that wrote the state runs again on
+  its own state. Report the step from the message.
+- `UPDATE_ROLLED_BACK` with "no snapshot ... could be taken": neither the target
+  nor (when the state needed one) the waypoint was started, and the release that
+  wrote the state runs again on it, untouched. This holds for any update that
+  can roll back, the second pass after a waypoint included.
+  Fix what the warning names (a process that did not exit, a store still
+  owned, a copy error), then run the update again. If that rollback failed,
+  the result says why: a stopped process never exited (nothing starts beside
+  it; run the commands once it is gone), or the release could not be
+  installed or started again (run the commands when the registry answers).
+- A runner that was stopped ran while the waypoint took its boot record, and
+  could process queued inbound and outbound messages meanwhile; the result's
+  warnings say so.
+- `failed` with "PM2 shows no daemon online: nothing runs now": the waypoint
+  prepared the state but no daemon is up. Run `ravi daemon start` (the
+  installed package is the target, which adopts that state), check it with
+  `ravi daemon status`, then run the update again.
+- `failed` with "its channel runner (pid N) did not exit": PM2 no longer lists
+  that process. Confirm it is gone (`ps -p N` lists none) before running the
+  update again; the next update would not see it.
+- `failed` with "could not be installed again": 3.261113.2 runs on the state it
+  prepared, which is a valid release of its own. Run the commands the result
+  names, the install first (the package directory may hold no runnable bundle),
+  when the registry answers.
+- After the waypoint and the update to the target, two snapshots are kept until
+  the next update: the target's way back to 3.261113.2, and the state before
+  the waypoint, of the release that wrote it (for a restore by hand).
+- `UPDATE_WAYPOINT_REQUIRED`: the update could not take the waypoint by itself
+  (a source checkout, a daemon with no boot receipt, or a running release not
+  older than the waypoint). Nothing was stopped; run the commands it names.
+
 ## Rollback
 
 - `UPDATE_ROLLED_BACK`: the target did not converge, and the previous release

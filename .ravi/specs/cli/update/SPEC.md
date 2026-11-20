@@ -27,7 +27,9 @@ normative: true
 - Reconciliation MUST verify the successor's boot identity against the updated
   bundle. A new disk package version or matching PM2 path alone MUST NOT prove
   a live process adopted the update.
-- A managed process that was stopped MUST NOT be started by the update.
+- A managed process that was stopped MUST NOT be started by the update. One
+  exception: the waypoint (below) starts a stopped channel runner for its boot
+  record and removes it again before the update to the target, with a warning.
 - The result MUST expose warnings naming stale or unverifiable siblings and
   the explicit commands needed to reconcile them. Missing native intake MUST
   be reported when native channels are enabled.
@@ -91,11 +93,51 @@ and does not read `supervisor-refused.json`, so it prints its own generic
 failure; the refusal's text reaches the operator on the next run, through the
 CLI that run installed.
 
-- Before it stops anything, the supervisor MUST refuse with
-  `UPDATE_WAYPOINT_REQUIRED` a state written before the thread fence
-  (`adopt-on-start`) that a release older than 3.261113.2 last prepared, or
-  that has no readiness markers (`state_schema_versions`, `1:<release>`). The
-  refusal MUST name the exact commands: `ravi update --version 3.261113.2`,
+- A state written before the thread fence (`adopt-on-start`) that a release
+  older than 3.261113.2 last prepared, or that has no readiness markers
+  (`state_schema_versions`, `1:<release>`), needs the waypoint 3.261113.2.
+  When the update can roll back (a global install whose running release
+  proved itself with a boot receipt) and that release is older than the
+  waypoint, the supervisor MUST take the waypoint by itself:
+  - stop both processes and snapshot the state, as an update that can roll
+    back does. Without that snapshot the waypoint MUST NOT be taken, and the
+    supervisor MUST bring the release that wrote the state back on it by
+    itself, with nothing to restore (the state is untouched): install it in the
+    same place and start it through its own CLI, as a rollback does, once every
+    stopped process has exited. A stopped process that never exits, or a
+    release that cannot be installed or started again, leaves the host
+    stopped; the result then names the commands;
+  - install 3.261113.2 in the same global install and start the daemon, then
+    the channel runner, through its own CLI (`daemon start`, `channels
+    start`), without target routing or runtime context, and with installs run
+    outside the package directory they replace; both, because the target's
+    adoption needs a boot record of each, so a runner that was stopped runs
+    for that time, and the result MUST say so in its warnings once the hop got
+    that far (and that it may have run, when the hop stopped while starting). The daemon counts only at schema
+    phase `ready` (the same process, for the whole window) before the runner
+    starts;
+  - count the waypoint once the state shows its readiness markers (3.261113.2
+    or later) and the last boot record of `ravi` and `ravi-channels` was
+    written by 3.261113.2 with its bundle, and both held for the stability
+    window;
+  - install the target again and update from the waypoint to the target, as
+    any update (its own snapshot, and a rollback to the waypoint). That pass
+    MUST keep the snapshot taken before the waypoint until the next update,
+    and its space check MUST NOT count that kept snapshot as room,
+    and record whatever ends it, also a return before it could roll back. A runner
+    that was stopped before the update MUST be removed again before that
+    pass, so it stays stopped. A second waypoint on that pass MUST NOT be
+    taken, and a pass that stops before it begins MUST be recorded as
+    `failed`, with the waypoint running on the state it prepared.
+  A waypoint that fails to install, start, prepare the state or hold, or
+  throws, MUST roll back to the release that wrote the state (its snapshot and its exact
+  release), and the result says the waypoint failed. A target that cannot be
+  installed again leaves the waypoint running on the state it prepared, and the
+  result names the commands to install the target and retry, the install first:
+  the package directory may hold no runnable bundle.
+- Otherwise (a source checkout, no rollback, or a running release not older
+  than the waypoint), before it stops anything, the supervisor MUST refuse with
+  `UPDATE_WAYPOINT_REQUIRED`. The refusal MUST name the exact commands: `ravi update --version 3.261113.2`,
   `ravi daemon status`, then `ravi update --next`. A source checkout does not
   accept `--version`, so there the refusal MUST give the checkout steps
   instead, as commands that run as written: `git -C "<checkout>" fetch --tags`,
@@ -124,9 +166,9 @@ CLI that run installed.
   recorded since the supervisor started, and fail with that code and message
   instead of a generic convergence failure. Any other failure MUST name the
   supervisor log.
-- Still open: the waypoint is checked after the package is installed, and a
-  process that was stopped stays stopped (the CLI that verifies the result
-  predates a change to that rule). Automatic waypoints replace the first later.
+- Still open: the refusal comes after the package is installed, and a process
+  that was stopped stays stopped (the CLI that verifies the result predates a
+  change to that rule).
 
 ## Snapshot and rollback (supervisor)
 
@@ -155,8 +197,10 @@ CLI that run installed.
   (`daemon-schema-owner.lock` and each `<store>.schema.lock`) while it copies.
   The manifest is written last. Only the latest update's snapshot is kept, in
   `<state>/updates/snapshots/<id>/`.
-- A snapshot that cannot be taken after the stop MUST NOT stop the update. The
-  update then runs without a rollback, and its result says why.
+- A snapshot that cannot be taken after the stop MUST NOT start the target, on
+  any update that can roll back (the second pass after a waypoint included):
+  the release that wrote the state MUST come back on it by itself, with
+  nothing to restore, and the result is `rolled-back`, saying why.
 - When the target does not converge, does not stay up for the stability
   window, or the rebind fails after the snapshot, the supervisor MUST roll
   back:
