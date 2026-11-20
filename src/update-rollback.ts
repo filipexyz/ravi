@@ -246,6 +246,8 @@ export async function releaseInRegistry(
 ): Promise<ReleaseAvailability> {
   const registry = installerRegistry(method, options.env ?? process.env, options.home ?? homedir());
   const url = `${registry.url}/ravi.bot/${encodeURIComponent(release)}`;
+  // Every message and record names the registry this way; the address the request goes to is never shown.
+  const shown = displayedRegistry(registry.url);
   let response: Response;
   try {
     response = await (options.fetchRelease ?? fetch)(url, {
@@ -253,31 +255,83 @@ export async function releaseInRegistry(
       signal: AbortSignal.timeout(15_000),
     });
   } catch (cause) {
-    return registryUnanswered(release, registry.url, cause);
+    return registryUnanswered(release, shown, [url, registry.url], cause);
   }
-  if (response.status === 404)
-    return { ok: false, reason: `ravi.bot@${release} is not in the registry at ${registry.url}` };
+  if (response.status === 404) return { ok: false, reason: `ravi.bot@${release} is not in the registry at ${shown}` };
   if (!response.ok)
-    return { ok: false, reason: `the registry at ${registry.url} answered ${response.status} for ravi.bot@${release}` };
+    return { ok: false, reason: `the registry at ${shown} answered ${response.status} for ravi.bot@${release}` };
   return { ok: true };
 }
 
-/** A registry that does not answer is a reason to refuse too; the error stays with it as the cause. */
-function registryUnanswered(release: string, registry: string, cause: unknown): ReleaseAvailability {
+/**
+ * The registry as a message or a record names it: without user, password, query and fragment, any of which can carry
+ * a credential (`https://user:password@host/`). An address that is not a URL is not shown at all.
+ */
+export function displayedRegistry(url: string): string {
+  let shown: URL;
+  try {
+    shown = new URL(url);
+  } catch {
+    // no-cause: An address that is not a URL cannot be cleaned, so it is not shown; nothing else is lost.
+    return "the configured registry (not a URL)";
+  }
+  shown.username = "";
+  shown.password = "";
+  shown.search = "";
+  shown.hash = "";
+  return shown.toString().replace(/\/+$/, "");
+}
+
+/**
+ * A registry that does not answer is a reason to refuse too. Its error goes on only as its name, its code and its
+ * message with the request's addresses (and a password in them) taken out: the raw error of `fetch` can carry the
+ * address the request went to, credentials included.
+ */
+function registryUnanswered(release: string, shown: string, addresses: string[], cause: unknown): ReleaseAvailability {
+  const error = cause instanceof Error ? cause : null;
+  // The whole addresses first (they become the shown one), then the credentials in any form left (they become ***).
+  const credentials = addresses.flatMap((address) => {
+    try {
+      const { password, username } = new URL(address);
+      return [password, safeDecode(password), ...(username.length >= 3 ? [username, safeDecode(username)] : [])];
+    } catch {
+      // no-cause: An address that is not a URL has no credential to take apart; it is taken out as a whole.
+      return [];
+    }
+  });
+  const longestFirst = (values: string[]) =>
+    values.filter((value) => value.length > 0).sort((a, b) => b.length - a.length);
+  let message = error ? error.message : String(cause);
+  for (const address of longestFirst(addresses)) message = message.split(address).join(shown);
+  for (const credential of longestFirst(credentials)) message = message.split(credential).join("***");
+  const code = (error as { code?: unknown } | null)?.code;
+  const sanitized = new Error(`${typeof code === "string" ? `${code}: ` : ""}${message}`);
+  sanitized.name = error?.name ?? "Error";
+  if (typeof code === "string") (sanitized as Error & { code?: string }).code = code;
   return {
     ok: false,
-    reason: `the registry at ${registry} did not answer for ravi.bot@${release} (${describe(cause)})`,
-    cause,
+    reason: `the registry at ${shown} did not answer for ravi.bot@${release} (${sanitized.message})`,
+    cause: sanitized,
   };
+}
+
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    // no-cause: A value that does not decode is taken out as written.
+    return value;
+  }
 }
 
 const PUBLIC_REGISTRY = "https://registry.npmjs.org";
 
 /**
  * The registry the installer reads ravi.bot from, so the probe sees what the install sees (a mirror included): its
- * environment first (`BUN_CONFIG_REGISTRY` for bun, `npm_config_registry`), then its config (bun's `bunfig.toml`
- * `[install] registry`, then `~/.npmrc`, which both read), then the public registry. An `_authToken` that `~/.npmrc`
- * gives that host goes along, `${VAR}` expanded from the environment.
+ * environment first (`BUN_CONFIG_REGISTRY` for bun, `npm_config_registry`), then `~/.npmrc` (both read it, and bun
+ * prefers it to its own config; the last `registry=` line wins), then bun's `bunfig.toml` `[install] registry`, then
+ * the public registry. An `_authToken` that `~/.npmrc` gives that same host goes along, `${VAR}` expanded from the
+ * environment, and only to it: never printed, recorded or sent to another host.
  */
 export function installerRegistry(
   method: GlobalInstallMethod,
@@ -294,12 +348,14 @@ export function installerRegistry(
   };
   const expand = (value: string) => value.replace(/\$\{([A-Za-z0-9_]+)\}/g, (_, name: string) => env[name] ?? "");
   const npmrc = read(join(home, ".npmrc"));
+  // The last line for a key wins, as in npm's ini reading.
   const npmrcValue = (key: string): string | null => {
+    let value: string | null = null;
     for (const line of (npmrc ?? "").split("\n")) {
       const match = /^\s*([^=#;]+?)\s*=\s*(.*?)\s*$/.exec(line);
-      if (match && match[1] === key) return expand(match[2]!);
+      if (match && match[1] === key) value = expand(match[2]!);
     }
-    return null;
+    return value;
   };
   const bunfigRegistry = (): string | null => {
     const bunfig =
@@ -310,12 +366,13 @@ export function installerRegistry(
       /\bregistry\s*=\s*"([^"]+)"/.exec(install) ?? /\bregistry\s*=\s*\{[^}]*\burl\s*=\s*"([^"]+)"/.exec(install);
     return value ? expand(value[1]!) : null;
   };
+  // bun reads `~/.npmrc` over its own `bunfig.toml` for the registry.
   const configured =
     (method === "bun" ? env.BUN_CONFIG_REGISTRY : undefined) ??
     env.npm_config_registry ??
     env.NPM_CONFIG_REGISTRY ??
-    (method === "bun" ? bunfigRegistry() : null) ??
-    npmrcValue("registry");
+    npmrcValue("registry") ??
+    (method === "bun" ? bunfigRegistry() : null);
   const url = (configured?.trim() || PUBLIC_REGISTRY).replace(/\/+$/, "");
   let token: string | null = null;
   try {

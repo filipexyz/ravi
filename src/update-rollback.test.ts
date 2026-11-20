@@ -44,6 +44,7 @@ import {
   installerRegistry,
   releaseInRegistry,
   UpdatePreviousReleaseUnavailableError,
+  UpdateRollbackUnavailableError,
   UPDATE_ROLLBACK_UNAVAILABLE,
   type UpdateRollbackDependencies,
   type UpdateRollbackPlan,
@@ -2432,7 +2433,9 @@ describe("the registry probe before any stop", () => {
       const result = await releaseInRegistry("3.1.0", "bun", { env, home, fetchRelease: probe.fetchRelease });
       expect(result.ok).toBe(false);
       expect(result.ok ? "" : result.reason).toContain(reason);
-      if (status instanceof Error) expect(result.ok ? undefined : result.cause).toBe(status);
+      // The error goes on cleaned: its name and message, never the raw error of the request.
+      if (status instanceof Error)
+        expect(result.ok ? undefined : result.cause).toMatchObject({ name: status.name, message: status.message });
     }
   });
 
@@ -2464,6 +2467,111 @@ describe("the registry probe before any stop", () => {
       url: "https://private.example/npm",
       headers: { authorization: "Bearer t0ken" },
     });
+  });
+
+  it("follows the installers' order: bun reads .npmrc over bunfig, and the last registry= line wins", () => {
+    const home = tempDir("ravi-registry-home-");
+    const env = { XDG_CONFIG_HOME: join(home, "none") };
+    writeFileSync(join(home, ".bunfig.toml"), '[install]\nregistry = "https://bunfig.example/"\n');
+    expect(installerRegistry("bun", env, home).url).toBe("https://bunfig.example");
+    writeFileSync(join(home, ".npmrc"), "registry=https://first.example/\nregistry=https://last.example/\n");
+    expect(installerRegistry("bun", env, home).url).toBe("https://last.example");
+    expect(installerRegistry("npm", env, home).url).toBe("https://last.example");
+    // The environment still comes first.
+    expect(installerRegistry("bun", { ...env, BUN_CONFIG_REGISTRY: "https://bun.example" }, home).url).toBe(
+      "https://bun.example",
+    );
+  });
+
+  it("sends the .npmrc token only to its own host", async () => {
+    const home = tempDir("ravi-registry-home-");
+    writeFileSync(
+      join(home, ".npmrc"),
+      "registry=https://mirror.example/npm/\n//other.example/:_authToken=OTHER_HOST_TOKEN\n",
+    );
+    expect(installerRegistry("npm", {}, home)).toEqual({ url: "https://mirror.example/npm", headers: {} });
+    const probe = answering(200);
+    expect(await releaseInRegistry("3.1.0", "npm", { env: {}, home, fetchRelease: probe.fetchRelease })).toEqual({
+      ok: true,
+    });
+    expect(probe.urls).toEqual([{ url: "https://mirror.example/npm/ravi.bot/3.1.0", authorization: undefined }]);
+    writeFileSync(join(home, ".npmrc"), "registry=https://mirror.example/npm/\n//mirror.example/:_authToken=MINE\n");
+    expect(installerRegistry("npm", {}, home).headers).toEqual({ authorization: "Bearer MINE" });
+  });
+
+  it("never shows a credential of the registry address: messages, cause and the recorded refusal", async () => {
+    const home = tempDir("ravi-registry-home-");
+    const env = { npm_config_registry: "https://alice:S3CR3T%40pass@mirror.example/npm/?token=QSECRET#FRAGSECRET" };
+    const secrets = ["S3CR3T", "alice", "QSECRET", "FRAGSECRET", "S3CR3T@pass"];
+    const clean = (text: string) => {
+      for (const secret of secrets) expect(text).not.toContain(secret);
+    };
+    const refusals: Array<{ reason: string; cause?: unknown }> = [];
+    for (const status of [404, 503] as const) {
+      const result = await releaseInRegistry("3.1.0", "npm", {
+        env,
+        home,
+        fetchRelease: answering(status).fetchRelease,
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) refusals.push(result);
+    }
+    expect(refusals[0]!.reason).toBe("ravi.bot@3.1.0 is not in the registry at https://mirror.example/npm");
+    // The raw error of `fetch` can carry the address it was given, password included.
+    const raw = Object.assign(
+      new Error(
+        "Unable to connect: https://alice:S3CR3T%40pass@mirror.example/npm/?token=QSECRET#FRAGSECRET/ravi.bot/3.1.0 " +
+          "(alice:S3CR3T@pass)",
+      ),
+      { code: "ConnectionRefused", path: "https://alice:S3CR3T%40pass@mirror.example/npm/" },
+    );
+    const unanswered = await releaseInRegistry("3.1.0", "npm", {
+      env,
+      home,
+      fetchRelease: answering(raw).fetchRelease,
+    });
+    expect(unanswered.ok).toBe(false);
+    if (!unanswered.ok) refusals.push(unanswered);
+    expect((unanswered as { cause: Error & { code?: string } }).cause).toMatchObject({ code: "ConnectionRefused" });
+    for (const refusal of refusals) {
+      clean(refusal.reason);
+      clean(JSON.stringify(refusal.cause ?? null));
+      clean(String((refusal.cause as Error | undefined)?.message ?? ""));
+      for (const error of [
+        new UpdatePreviousReleaseUnavailableError(
+          { reason: refusal.reason, previousRelease: "3.1.0", targetVersion: "3.2.0", declared: false },
+          { cause: refusal.cause },
+        ),
+        new UpdateRollbackUnavailableError(refusal.reason, { cause: refusal.cause }),
+      ])
+        clean(`${error.message} ${String((error.cause as Error | undefined)?.message ?? "")}`);
+    }
+    // What the supervisor records for the command.
+    const stateDir = tempDir("ravi-registry-state-");
+    const install = globalInstall("3.2.0");
+    process.env.RAVI_STATE_DIR = stateDir;
+    const variable = "RAVI_INTERNAL_UPDATE_RUNTIME_REBIND";
+    process.env[variable] = buildManagedRuntimeRebindSupervisorInvocation(install.target, [], { PATH: "/usr/bin" }).env[
+      variable
+    ];
+    try {
+      await expect(
+        maybeRunManagedRuntimeRebindFromEnv(
+          () => false,
+          async () => {
+            throw new UpdatePreviousReleaseUnavailableError(
+              { reason: refusals[2]!.reason, previousRelease: "3.1.0", targetVersion: "3.2.0", declared: false },
+              { cause: refusals[2]!.cause },
+            );
+          },
+        ),
+      ).rejects.toThrow("UPDATE_PREVIOUS_RELEASE_UNAVAILABLE");
+    } finally {
+      delete process.env[variable];
+    }
+    const recorded = readFileSync(join(stateDir, "updates", "supervisor-refused.json"), "utf8");
+    expect(recorded).toContain("https://mirror.example/npm");
+    clean(recorded);
   });
 
   it("records a missing release as a refusal the command reports with its code", async () => {

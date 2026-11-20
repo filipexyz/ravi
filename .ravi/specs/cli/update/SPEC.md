@@ -303,10 +303,20 @@ CLI that run installed.
   characters reaches the operator as `[redacted:oversize]`. A result the
   supervisor cannot write MUST NOT turn a rollback that ran into a failure.
 - Before any stop, an update that can roll back and `ravi update --rollback`
-  MUST find the release they would install again in the npm registry (a
-  probe with a timeout), and refuse otherwise (`UPDATE_PREVIOUS_RELEASE_UNAVAILABLE`
-  for an update, `UPDATE_ROLLBACK_UNAVAILABLE` for the rollback): found out
-  after the stop, the host stays down.
+  MUST find the release they would install again in the registry the
+  installer reads (a probe with a timeout), and refuse otherwise
+  (`UPDATE_PREVIOUS_RELEASE_UNAVAILABLE` for an update,
+  `UPDATE_ROLLBACK_UNAVAILABLE` for the rollback): found out after the stop,
+  the host stays down. The registry is the installer's: its environment
+  (`BUN_CONFIG_REGISTRY` for bun, `npm_config_registry`), then `~/.npmrc` (the
+  last `registry=` line; bun reads it over its `bunfig.toml`), then bun's
+  `[install] registry`, then `https://registry.npmjs.org`.
+- The probe reads secrets and MUST keep them: the `_authToken` that `~/.npmrc`
+  gives the registry's own host goes to that host only, in the request
+  header, and is never printed, logged or recorded; a message, a recorded
+  refusal (`supervisor-refused.json`) or an error cause names the registry
+  without user, password, query and fragment, and the error of the request
+  goes on only as its name, code and a message with those taken out.
 - It takes no release selector, and `--execute` without `--rollback` is a
   usage error. Its supervisor MUST hold `<state>/updates/update.lock` while it
   runs (`UPDATE_IN_PROGRESS` when another update holds it). A rollback that stops
