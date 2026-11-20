@@ -518,6 +518,12 @@ describe("Slack Web API client", () => {
       "content-type": "application/json; charset=utf-8",
     });
     expect(jsonBody(calls[0]?.init.body)).toEqual({ user_id: "U123", view });
+    expect(calls[0]?.init.signal).toBeUndefined();
+
+    const controller = new AbortController();
+    await client.viewsPublish({ userId: "U123", view, signal: controller.signal });
+    expect(calls[1]?.init.signal).toBe(controller.signal);
+    expect(jsonBody(calls[1]?.init.body)).toEqual({ user_id: "U123", view });
   });
 
   it("surfaces views.publish not_enabled as a Slack API error", async () => {

@@ -273,6 +273,8 @@ export interface SlackViewsPublishInput {
   readonly view: Record<string, unknown>;
   /** Slack's view hash, to refuse publishing over a newer view. */
   readonly hash?: string;
+  /** Aborts the request; the Socket Mode runner bounds each publish with it. */
+  readonly signal?: AbortSignal;
 }
 
 export interface SlackViewsResponse extends SlackApiResponse {
@@ -558,6 +560,7 @@ export class SlackWebApiClient {
         view: input.view,
         hash: input.hash,
       }),
+      { signal: input.signal },
     );
   }
 
@@ -869,7 +872,7 @@ export class SlackWebApiClient {
     method: string,
     token: string,
     body: Record<string, unknown>,
-    options: { okErrors?: readonly string[] } = {},
+    options: { okErrors?: readonly string[]; signal?: AbortSignal } = {},
   ): Promise<T> {
     const res = await this.fetchImpl(`${this.apiBaseUrl}/${method}`, {
       method: "POST",
@@ -879,6 +882,7 @@ export class SlackWebApiClient {
         "content-type": "application/json; charset=utf-8",
       },
       body: JSON.stringify(body),
+      ...(options.signal ? { signal: options.signal } : {}),
     });
 
     const payload = (await res.json()) as T;

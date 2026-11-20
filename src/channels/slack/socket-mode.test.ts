@@ -21,7 +21,7 @@ import {
   upsertContactFromPlatformIdentity,
 } from "../../contacts.js";
 import { dbGetCloudChatApproval, dbRecordCloudChatApproval } from "../../cloud-agents/chat-db.js";
-import { dbSetLibraryAgentDescription } from "../../library/agents-db.js";
+import { dbSetLibraryAgentDescription, dbSetLibraryAgentListed } from "../../library/agents-db.js";
 import { InstancesPendingCommands } from "../../cli/commands/instances.js";
 import { nats } from "../../nats.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -6499,14 +6499,23 @@ describe("Slack App Home", () => {
     };
   }
 
-  type PublishedHome = { userId: string; view: { type: string; private_metadata: string; blocks: any[] } };
+  type PublishedHome = {
+    userId: string;
+    view: { type: string; private_metadata: string; blocks: any[] };
+    signal?: AbortSignal;
+  };
 
-  function homeService(config: RouterConfig, viewsPublish: (input: PublishedHome) => Promise<unknown>) {
+  function homeService(
+    config: RouterConfig,
+    viewsPublish: (input: PublishedHome) => Promise<unknown>,
+    options: { appHomePublishTimeoutMs?: number } = {},
+  ) {
     return new SlackSocketModeService({
       appToken: "xapp-test",
       botToken: "xoxb-test",
       accountId: "slack-main",
       instanceId: "slack-main",
+      ...options,
       getRouterConfig: () => config,
       publishPrompt: async () => {
         throw new Error("opening the Home tab must not start a turn");
@@ -6549,6 +6558,7 @@ describe("Slack App Home", () => {
 
   it("shows the agent that answers this user's DMs, with its directory description", async () => {
     dbSetLibraryAgentDescription("vendas", "Responde propostas e preços.");
+    dbSetLibraryAgentListed("vendas", true);
     const published: PublishedHome[] = [];
     const service = homeService(
       homeRouterConfig({
@@ -6570,6 +6580,48 @@ describe("Slack App Home", () => {
     expect(published).toHaveLength(1);
     expect(published[0]?.view.blocks[0]).toMatchObject({ text: { text: "Vendas" } });
     expect(JSON.stringify(published[0]?.view.blocks)).toContain("Responde propostas e preços.");
+  });
+
+  it("keeps the description of an agent the org directory does not list out of the Home", async () => {
+    dbSetLibraryAgentDescription("hana", "Texto interno que o diretório não mostra.");
+    const published: PublishedHome[] = [];
+    const service = homeService(
+      homeRouterConfig({ agents: { hana: { id: "hana", name: "Hana", cwd: "/tmp/hana" } }, instanceAgent: "hana" }),
+      async (input) => {
+        published.push(input);
+        return { ok: true };
+      },
+    );
+
+    await service.handleEnvelope(homeOpenedEnvelope({ envelopeId: "Ev-home-unlisted" }));
+
+    expect(published).toHaveLength(1);
+    const rendered = JSON.stringify(published[0]?.view.blocks);
+    expect(rendered).not.toContain("Texto interno que o diretório não mostra.");
+    expect(rendered).toContain("Este agente ainda não tem descrição");
+    expect(published[0]?.view.blocks[0]).toMatchObject({ text: { text: "Hana" } });
+  });
+
+  it("abandons a views.publish that never answers, so the envelope settles and the drain stays open", async () => {
+    let publishSignal: AbortSignal | undefined;
+    const service = homeService(
+      homeRouterConfig({ agents: { hana: { id: "hana", name: "Hana", cwd: "/tmp/hana" } }, instanceAgent: "hana" }),
+      (input) => {
+        publishSignal = input.signal;
+        return new Promise<never>(() => {});
+      },
+      { appHomePublishTimeoutMs: 25 },
+    );
+
+    // Raced against a timer, so a publish that is never abandoned fails here instead of hanging the file.
+    const settled = await Promise.race([
+      service.handleEnvelope(homeOpenedEnvelope({ envelopeId: "Ev-home-stuck" })),
+      new Promise<"stuck">((resolve) => setTimeout(() => resolve("stuck"), 1_000)),
+    ]);
+
+    expect(settled).toBe("processed");
+    expect(publishSignal?.aborted).toBe(true);
+    expect(service.drainStatus()).toMatchObject({ phase: "accepting", pending: 0, failures: [] });
   });
 
   it("does not publish again a Home the user already has, nor when the Messages tab opens", async () => {

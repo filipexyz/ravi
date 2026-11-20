@@ -218,7 +218,7 @@ The agent then puts an hourglass reaction on your message and removes it when do
 
 When someone opens the app's **Home** tab, Ravi publishes a default Home for that person: the agent's name, its description, how to talk to it (the Messages tab, or a mention in a channel the app is in) and a note that nothing else is set up there yet. The agent is the one that answers that person's DMs.
 
-- The description is the one the org directory shows. Set it with `ravi agents set main description "Answers questions about sales"` (300 characters at most). The Home never shows the agent's instructions or files: anyone in the workspace can open the tab.
+- The description is the one the org directory shows, so it appears only while the agent is listed there (`ravi agents listing main on --execute`); an unlisted agent's Home shows its name alone. Set it with `ravi agents set main description "Answers questions about sales"` (300 characters at most). The Home never shows the agent's instructions or files: anyone in the workspace can open the tab.
 - The Home is published again only when its content changes, the next time the person opens it.
 - It needs the `app_home_opened` event and the Home Tab turned on. With the event missing, the tab stays empty. With the tab off, the runner log says `Slack App Home not published: the Home Tab is off`.
 

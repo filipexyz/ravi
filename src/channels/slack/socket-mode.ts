@@ -133,6 +133,11 @@ const SLACK_SESSION_CREATED_TOPIC = "ravi.inbound.session.created";
 const DEFAULT_SLACK_AUTH_TEST_FAILURE_RETRY_MS = 5_000;
 const DEFAULT_SLACK_AUTH_TEST_TIMEOUT_MS = 5_000;
 const DEFAULT_SLACK_USER_LOOKUP_TIMEOUT_MS = 5_000;
+/**
+ * One App Home publish. With auth.test's 5 s before it, an envelope stuck on
+ * both still settles inside the 10 s work-drain deadline.
+ */
+const DEFAULT_SLACK_APP_HOME_PUBLISH_TIMEOUT_MS = 4_000;
 const DEFAULT_SLACK_HEARTBEAT_INTERVAL_MS = 10_000;
 const DEFAULT_SLACK_PONG_TIMEOUT_MS = 5_000;
 const DEFAULT_SLACK_HELLO_TIMEOUT_MS = 10_000;
@@ -247,6 +252,8 @@ export interface SlackSocketModeServiceOptions {
   readonly authTestTimeoutMs?: number;
   /** Maximum time an inbound turn waits for one users.info lookup before using the raw id. */
   readonly userLookupTimeoutMs?: number;
+  /** Maximum time one App Home `views.publish` may take before it is abandoned. */
+  readonly appHomePublishTimeoutMs?: number;
   /** Clock injection for bounded auth.test retry tests. */
   readonly now?: () => number;
   readonly transcribeAudio?: typeof transcribeAudio;
@@ -743,6 +750,7 @@ export class SlackSocketModeService {
   private readonly authTestFailureRetryMs: number;
   private readonly authTestTimeoutMs: number;
   private readonly userLookupTimeoutMs: number;
+  private readonly appHomePublishTimeoutMs: number;
   private readonly now: () => number;
   private readonly seenEnvelopeIds = new RecentIdCache();
   private readonly userProfiles = new Map<string, SlackUserProfile | null>();
@@ -806,6 +814,10 @@ export class SlackSocketModeService {
       Number.isFinite(options.userLookupTimeoutMs)
         ? (options.userLookupTimeoutMs ?? DEFAULT_SLACK_USER_LOOKUP_TIMEOUT_MS)
         : DEFAULT_SLACK_USER_LOOKUP_TIMEOUT_MS,
+    );
+    this.appHomePublishTimeoutMs = positiveDuration(
+      options.appHomePublishTimeoutMs,
+      DEFAULT_SLACK_APP_HOME_PUBLISH_TIMEOUT_MS,
     );
     this.now = options.now ?? Date.now;
   }
@@ -1448,10 +1460,13 @@ export class SlackSocketModeService {
    */
   private async publishDefaultAppHome(opened: SlackAppHomeOpened): Promise<void> {
     const agent = this.resolveAppHomeAgent(opened.userId);
+    // The description is what the org directory shows, and the directory shows
+    // only listed agents: an unlisted agent's Home shows its name alone.
+    const library = agent ? readLibraryAgentState(agent.id) : null;
     const identity = await this.resolveLocalBotIdentity();
     const view = buildSlackDefaultHomeView({
       ...(agent ? { agentId: agent.id, agentName: agent.name ?? agent.id } : {}),
-      description: agent ? (readLibraryAgentState(agent.id)?.description ?? null) : null,
+      description: library?.listed === true ? library.description : null,
       ...(identity ? { botUserId: identity.userId } : {}),
     });
     if (opened.currentPrivateMetadata === view.private_metadata) {
@@ -1459,7 +1474,11 @@ export class SlackSocketModeService {
       return;
     }
     try {
-      await this.webClient.viewsPublish({ userId: opened.userId, view });
+      await withAbortableTimeout(
+        (signal) => this.webClient.viewsPublish({ userId: opened.userId, view, signal }),
+        this.appHomePublishTimeoutMs,
+        "Slack views.publish timed out",
+      );
       log.info("Slack App Home published", {
         accountId: this.options.accountId,
         userId: opened.userId,

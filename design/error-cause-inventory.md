@@ -381,36 +381,36 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels-slack | src/channels/slack/markdown-delivery.ts | 228 | fixed | binding retained / no recognized error surface | src/channels/slack/markdown-delivery.ts:4a85aef485bafb017a517f3f |
 | channels-slack | src/channels/slack/markdown-delivery.ts | 229 | fixed | binding retained / no recognized error surface | src/channels/slack/markdown-delivery.ts:66640d2f4afb11a2c7d272fc |
 | channels-slack | src/channels/slack/media.ts | 181 | triaged-follow-up | catch-without-binding | src/channels/slack/media.ts:c080cae772801e60d5e1b98b |
-| channels-slack | src/channels/slack/socket-mode.ts | 362 | triaged-follow-up | catch-without-binding | src/channels/slack/socket-mode.ts:e700c67eb64c04a391bc3ef0 |
-| channels-slack | src/channels/slack/socket-mode.ts | 434 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:f9d1467f6e1de69cf31a8d52 |
-| channels-slack | src/channels/slack/socket-mode.ts | 515 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:6099dacad897d9487e5c0270 |
-| channels-slack | src/channels/slack/socket-mode.ts | 664 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:7ef09df6c56777f5f2bc6163 |
-| channels-slack | src/channels/slack/socket-mode.ts | 676 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:0d0875beb51d8ee37728b4d7 |
-| channels-slack | src/channels/slack/socket-mode.ts | 857 | triaged-follow-up | rejection-without-binding | src/channels/slack/socket-mode.ts:c2fdb542c65974c643e5b417 |
-| channels-slack | src/channels/slack/socket-mode.ts | 991 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:5e01f068c306ee73e8b77048 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1034 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:8e06965b6f7a08e847fe71dd |
-| channels-slack | src/channels/slack/socket-mode.ts | 1058 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:76304872a7b7f5af84a766fb |
-| channels-slack | src/channels/slack/socket-mode.ts | 1086 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:4d9f3fbb21e3fcb6365994bf |
-| channels-slack | src/channels/slack/socket-mode.ts | 1094 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:360946747d4fd544bc197402 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1125 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:c696a2f9983f8285c39ffe60 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1198 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:0a240ad0d74775d8567b1500 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1239 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:b50e34b43048777fab39930d |
-| channels-slack | src/channels/slack/socket-mode.ts | 1308 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:c4932057c509541d62020a35 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1468 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:f57f1050be1b3f54733a82f6 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1499 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:0169919a2bd55fd89db07467 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1541 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:7a31d102bae43811b1e22488 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1708 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:75b1ddfaffa11c9a57945410 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1764 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:cc425e50d06483314ccdd599 |
-| channels-slack | src/channels/slack/socket-mode.ts | 1867 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:373789c88c85a58979474725 |
-| channels-slack | src/channels/slack/socket-mode.ts | 2128 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:860e2b2e0726e3796bd40958 |
-| channels-slack | src/channels/slack/socket-mode.ts | 2167 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:e7cc946eb68d118ae004c1c7 |
-| channels-slack | src/channels/slack/socket-mode.ts | 2256 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:9ad24298b226ed9d4f0aa0ca |
-| channels-slack | src/channels/slack/socket-mode.ts | 2274 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:e02fe64267df2775c851ecc0 |
-| channels-slack | src/channels/slack/socket-mode.ts | 2550 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:023e0658ddc9f4d90e557bca |
-| channels-slack | src/channels/slack/socket-mode.ts | 2563 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:eee9b1dca53f26e40d046797 |
-| channels-slack | src/channels/slack/socket-mode.ts | 2607 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:c52256502098f1fcdf6ed28d |
-| channels-slack | src/channels/slack/socket-mode.ts | 2996 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:ece0f2429234cdb1c2567c17 |
-| channels-slack | src/channels/slack/socket-mode.ts | 3127 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:bca6f7f65214760682070030 |
+| channels-slack | src/channels/slack/socket-mode.ts | 369 | triaged-follow-up | catch-without-binding | src/channels/slack/socket-mode.ts:e700c67eb64c04a391bc3ef0 |
+| channels-slack | src/channels/slack/socket-mode.ts | 441 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:f9d1467f6e1de69cf31a8d52 |
+| channels-slack | src/channels/slack/socket-mode.ts | 522 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:6099dacad897d9487e5c0270 |
+| channels-slack | src/channels/slack/socket-mode.ts | 671 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:7ef09df6c56777f5f2bc6163 |
+| channels-slack | src/channels/slack/socket-mode.ts | 683 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:0d0875beb51d8ee37728b4d7 |
+| channels-slack | src/channels/slack/socket-mode.ts | 869 | triaged-follow-up | rejection-without-binding | src/channels/slack/socket-mode.ts:c2fdb542c65974c643e5b417 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1003 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:5e01f068c306ee73e8b77048 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1046 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:8e06965b6f7a08e847fe71dd |
+| channels-slack | src/channels/slack/socket-mode.ts | 1070 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:76304872a7b7f5af84a766fb |
+| channels-slack | src/channels/slack/socket-mode.ts | 1098 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:4d9f3fbb21e3fcb6365994bf |
+| channels-slack | src/channels/slack/socket-mode.ts | 1106 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:360946747d4fd544bc197402 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1137 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:c696a2f9983f8285c39ffe60 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1210 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:0a240ad0d74775d8567b1500 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1251 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:b50e34b43048777fab39930d |
+| channels-slack | src/channels/slack/socket-mode.ts | 1320 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:c4932057c509541d62020a35 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1487 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:f57f1050be1b3f54733a82f6 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1518 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:0169919a2bd55fd89db07467 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1560 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:7a31d102bae43811b1e22488 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1727 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:75b1ddfaffa11c9a57945410 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1783 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:cc425e50d06483314ccdd599 |
+| channels-slack | src/channels/slack/socket-mode.ts | 1886 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:373789c88c85a58979474725 |
+| channels-slack | src/channels/slack/socket-mode.ts | 2147 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:860e2b2e0726e3796bd40958 |
+| channels-slack | src/channels/slack/socket-mode.ts | 2186 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:e7cc946eb68d118ae004c1c7 |
+| channels-slack | src/channels/slack/socket-mode.ts | 2275 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:9ad24298b226ed9d4f0aa0ca |
+| channels-slack | src/channels/slack/socket-mode.ts | 2293 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:e02fe64267df2775c851ecc0 |
+| channels-slack | src/channels/slack/socket-mode.ts | 2569 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:023e0658ddc9f4d90e557bca |
+| channels-slack | src/channels/slack/socket-mode.ts | 2582 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:eee9b1dca53f26e40d046797 |
+| channels-slack | src/channels/slack/socket-mode.ts | 2626 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:c52256502098f1fcdf6ed28d |
+| channels-slack | src/channels/slack/socket-mode.ts | 3015 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:ece0f2429234cdb1c2567c17 |
+| channels-slack | src/channels/slack/socket-mode.ts | 3146 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:bca6f7f65214760682070030 |
 | channels-slack | src/channels/slack/text-send.ts | 178 | fixed | binding retained / no recognized error surface | src/channels/slack/text-send.ts:9283ed2c203036ae2c862e2d |
 | channels-slack | src/channels/slack/text-send.ts | 188 | fixed | binding retained / no recognized error surface | src/channels/slack/text-send.ts:02b5ab725ad58b0388b1c65e |
 | channels-slack | src/channels/slack/thread-attention-admission.ts | 158 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-attention-admission.ts:87ca3b3b96aa8165f25da5a3 |

@@ -96,11 +96,16 @@ quando a Home Tab esta desligada.
    - `Slack App Home publish failed`: ler `slackError`;
    - nada: o evento nao chega; voltar ao passo 1.
 
-A descricao mostrada e a do diretorio da org:
+A descricao mostrada e a do diretorio da org, e so aparece com o agent listado
+nele (agent nao listado mostra so o nome):
 
 ```bash
 ravi agents set <agent> description "O que este agente faz"
+ravi agents listing <agent> on --execute
 ```
+
+`Slack App Home publish failed` com `Slack views.publish timed out`: o Slack
+nao respondeu em 4 s; a proxima abertura tenta de novo.
 
 A Home e republicada na proxima abertura quando o conteudo muda.
 

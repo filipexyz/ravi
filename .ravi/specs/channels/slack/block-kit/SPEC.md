@@ -166,16 +166,21 @@ vazia. Por isso o runner Socket Mode responde a `app_home_opened`:
   DM) ou, sem rota, o agent da instancia; sem nenhum, a Home MUST dizer que o
   app nao esta ligado a um agente;
 - a descricao MUST vir so do diretorio da org (`ravi agents set <id>
-  description`, ate 300 caracteres) e MUST ser escapada; a Home MUST NOT
-  mostrar instrucoes, arquivos ou contexto do agent, porque qualquer pessoa do
-  workspace abre a aba;
+  description`, ate 300 caracteres) e MUST aparecer so quando o agent esta
+  listado nele (`ravi agents listing <id> on --execute`): o diretorio nao
+  mostra agent nao listado, e a Home desse agent mostra so o nome. A descricao
+  MUST ser escapada; a Home MUST NOT mostrar instrucoes, arquivos ou contexto
+  do agent, porque qualquer pessoa do workspace abre a aba;
 - todo texto MUST caber nos limites do Block Kit (header ate 150 caracteres,
   texto ate 3000, no maximo 100 blocks por view);
 - `private_metadata` MUST carregar uma impressao do conteudo; se a view que o
   usuario ja tem traz a mesma impressao, o runner MUST NOT publicar de novo;
 - falha de `views.publish` MUST ser registrada no log com o erro do Slack
   (`not_enabled` nomeia a Home Tab desligada) e MUST NOT derrubar o envelope
-  nem o runner: o proximo `app_home_opened` tenta de novo.
+  nem o runner: o proximo `app_home_opened` tenta de novo;
+- cada `views.publish` MUST ter prazo (4 s) e MUST ser abortado ao estourar:
+  somado ao `auth.test` (5 s), o envelope fecha dentro do prazo de 10 s do
+  drain, e um Slack que nao responde nunca trava o restart do runner.
 
 O app Slack precisa assinar o evento `app_home_opened` e ligar a Home Tab.
 `views.publish` nao exige escopo.
