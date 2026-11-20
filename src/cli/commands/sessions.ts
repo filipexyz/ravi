@@ -120,14 +120,25 @@ import {
 import { nativeChannelCredentialConfigured } from "../../channels/account-resolution.js";
 import { overlayMediaSendAvailability, resolveRuntimeMediaSendCapabilities } from "../media-send-access.js";
 import { buildChannelChatActionJob } from "../../channels/outbound-stream.js";
-import { publishChannelOutboundJobDurably } from "../../channels/outbound-publish-outbox.js";
+import {
+  getChannelOutboundPublishJob,
+  publishChannelOutboundJobDurably,
+} from "../../channels/outbound-publish-outbox.js";
 import { resolveRouteSeededSlackChat } from "../../channels/slack/route-seeded-chat.js";
 import {
   createSlackThreadLifecycle,
+  findRecentSlackThreadRequest,
   findSlackThreadLifecycleByChildSession,
   findSlackThreadLifecycleByChildRef,
+  getSlackThreadLifecycle,
   type SlackThreadOrigin,
 } from "../../channels/slack/thread-lifecycle-store.js";
+import {
+  SLACK_THREAD_REPLAY_WINDOW_MS,
+  slackThreadRequestIdForKey,
+  slackThreadRequestMatches,
+  type SlackThreadRequestIdentity,
+} from "../../channels/slack/thread-request-identity.js";
 import {
   closeSlackThread,
   closeSlackThreadRecord,
@@ -234,6 +245,7 @@ import type {
 
 const SEND_TIMEOUT_MS = 120000; // 2 minutes
 const SLACK_THREAD_THINKING_LEVELS = ["off", "normal", "verbose"] as const;
+const SLACK_THREAD_IDEMPOTENCY_KEY_MAX_LENGTH = 200;
 const MESSAGE_DELETE_TOPIC = "ravi.outbound.message.delete";
 const MESSAGE_DELETE_TIMEOUT_MS = 15000;
 const MESSAGE_EDIT_TOPIC = "ravi.outbound.message.edit";
@@ -483,6 +495,13 @@ export const sessionCreateThreadReturnSchema = z
     publishedNow: z.boolean(),
     publishPending: z.boolean(),
     nextAttemptAt: z.number().optional(),
+    // `true` when this call found the request it asks for instead of creating one: the same
+    // `--idempotency-key`, or the same asker repeating the same message within two minutes.
+    // A key always returns the request it created, whatever its thread is now (closed or failed
+    // too): `status` and `child.status` describe the acceptance, and `ravi sessions threads --all`
+    // the live state. Only the two-minute match skips a request that ended.
+    // Additive, so it stays optional: a daemon that predates it does not send it.
+    replayed: z.boolean().optional(),
     parentSession: z.object({
       sessionKey: z.string(),
       sessionName: z.string().nullable(),
@@ -577,7 +596,7 @@ export const sessionThreadsReturnSchema = z
     threads: z.array(slackThreadSummarySchema),
   })
   .strict();
-const sessionReportReturnSchema = z
+export const sessionReportReturnSchema = z
   .object({
     status: z.literal("published"),
     actionId: z.literal("thread.report"),
@@ -616,7 +635,7 @@ const threadRuntimeOverridesSchema = z
     thinking: z.string().nullable(),
   })
   .strict();
-const sessionThreadConfigureReturnSchema = z
+export const sessionThreadConfigureReturnSchema = z
   .object({
     status: z.literal("configured"),
     actionId: z.literal("thread.configure"),
@@ -633,7 +652,7 @@ const THREAD_CONFIGURE_COMMAND_ACCESS = {
   action: "thread-configure",
   risk: "medium",
 } as const;
-const sessionCloseThreadReturnSchema = z
+export const sessionCloseThreadReturnSchema = z
   .object({
     status: z.literal("closed"),
     actionId: z.literal("thread.close"),
@@ -7115,11 +7134,25 @@ export class SessionCommands {
     sessionOverride?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--idempotency-key <key>",
+      description:
+        "Stable key for this thread request: sending it again returns the request it created instead of creating another thread, whatever state that thread is in now. Without it, the same message and options from the same session within 2 minutes count as a repeat only while that request is still queued, root_delivered, starting or open; one that failed or was closed is not repeated",
+    })
+    idempotencyKey?: string,
   ) {
     const initialMessage = decodeLiteralLineBreaks(message).trim();
     if (!initialMessage) {
       fail("Initial thread message is required");
       return;
+    }
+    const explicitKey = idempotencyKey?.trim() || undefined;
+    if (explicitKey && explicitKey.length > SLACK_THREAD_IDEMPOTENCY_KEY_MAX_LENGTH) {
+      throw new CliExpectedError(
+        `--idempotency-key must be at most ${SLACK_THREAD_IDEMPOTENCY_KEY_MAX_LENGTH} characters`,
+        "USAGE_ERROR",
+        2,
+      );
     }
     const target = sessionOverride?.trim() || resolveCurrentSessionRef();
     if (!target) {
@@ -7137,7 +7170,6 @@ export class SessionCommands {
     }
 
     const creationTarget = resolveSlackThreadCreationTarget(session);
-    const requestId = `slack-thread:${randomUUID()}`;
     const normalizedModel = model?.trim() || undefined;
     const normalizedProvider = provider?.trim().toLowerCase() || undefined;
     if (normalizedProvider && !listRegisteredRuntimeProviderIds().includes(normalizedProvider as RuntimeProviderId)) {
@@ -7155,33 +7187,73 @@ export class SessionCommands {
     // agent default while `--model` was measured against a different runtime.
     const inheritedProvider = creationTarget.parentSession.runtimeProviderOverride?.trim() || undefined;
     const resolvedProvider = normalizedProvider ?? inheritedProvider;
-    // Mirror child materialization: only explicit overrides travel, while the
-    // model and unpinned provider come from the agent/defaults, not parent history.
-    const childRuntime = resolveEffectiveSessionRuntime({
-      session: {
-        agentId: creationTarget.parentSession.agentId,
-        runtimeProviderOverride: resolvedProvider as RuntimeProviderId | undefined,
-        modelOverride: normalizedModel,
-      },
-      agent:
-        getAgent(creationTarget.parentSession.agentId) ??
-        loadRouterConfig().agents[creationTarget.parentSession.agentId] ??
-        null,
-    });
-    if (childRuntime.model.value && childRuntime.model.source !== "runtime_default") {
-      const validation = validateRuntimeModelSelector(childRuntime.provider.value, childRuntime.model.value);
-      if (!validation.ok) {
-        throw slackThreadError("THREAD_MODEL_INVALID", validation.error ?? "Invalid thread model.");
-      }
-    }
     const requestedBy = resolveSlackThreadRequester();
-    const requestedRuntimeLabel = slackThreadRuntimeLabel({
-      ...(resolvedProvider ? { providerOverride: resolvedProvider } : {}),
+
+    // A call whose outcome the caller lost (a timeout, an interrupted turn, a retry after an error) repeats
+    // itself. The same request must then come back, not a second thread: with a key it is the request that key
+    // created, and without one it is the same asker's identical request from the last two minutes.
+    const identity: SlackThreadRequestIdentity = {
+      initialPrompt: initialMessage,
       ...(normalizedModel ? { modelOverride: normalizedModel } : {}),
+      ...(resolvedProvider ? { providerOverride: resolvedProvider } : {}),
       ...(normalizedEffort ? { effortOverride: normalizedEffort } : {}),
       ...(normalizedThinking ? { thinkingLevel: normalizedThinking } : {}),
-    });
-    createSlackThreadLifecycle({
+    };
+    const keyReused = () =>
+      slackThreadError(
+        "THREAD_IDEMPOTENCY_KEY_REUSED",
+        "This idempotency key already created a thread with a different message or runtime.",
+        "Repeat the original message and options to get the existing request back, or pass a new --idempotency-key.",
+      );
+    // A provider the caller did not pass is the parent's: it is not part of what a key names.
+    const matchesKey = (record: Parameters<typeof slackThreadRequestMatches>[0]) =>
+      slackThreadRequestMatches(record, identity, { providerFromParent: !normalizedProvider });
+    let requestId: string;
+    let replayed: boolean;
+    if (explicitKey) {
+      requestId = slackThreadRequestIdForKey(creationTarget.parentSession.sessionKey, explicitKey);
+      const stored = getSlackThreadLifecycle(requestId);
+      if (stored && !matchesKey(stored)) throw keyReused();
+      replayed = stored !== null;
+    } else {
+      const recent = findRecentSlackThreadRequest({
+        parentSessionKey: creationTarget.parentSession.sessionKey,
+        initiatorSessionKey: session.sessionKey,
+        identity,
+        since: Date.now() - SLACK_THREAD_REPLAY_WINDOW_MS,
+      });
+      requestId = recent?.requestId ?? `slack-thread:${randomUUID()}`;
+      replayed = recent !== null;
+    }
+
+    // A repeat is answered from what was accepted: its runtime was checked then, and the provider the parent lends
+    // may have changed since, so checking it again would refuse a retry that changed nothing the caller passed.
+    // Only a request this call creates has to fit the runtime it resolves now.
+    if (!replayed) {
+      // Mirror child materialization: only explicit overrides travel, while the
+      // model and unpinned provider come from the agent/defaults, not parent history.
+      const childRuntime = resolveEffectiveSessionRuntime({
+        session: {
+          agentId: creationTarget.parentSession.agentId,
+          runtimeProviderOverride: resolvedProvider as RuntimeProviderId | undefined,
+          modelOverride: normalizedModel,
+        },
+        agent:
+          getAgent(creationTarget.parentSession.agentId) ??
+          loadRouterConfig().agents[creationTarget.parentSession.agentId] ??
+          null,
+      });
+      if (childRuntime.model.value && childRuntime.model.source !== "runtime_default") {
+        const validation = validateRuntimeModelSelector(childRuntime.provider.value, childRuntime.model.value);
+        if (!validation.ok) {
+          throw slackThreadError("THREAD_MODEL_INVALID", validation.error ?? "Invalid thread model.");
+        }
+      }
+    }
+
+    // For a request that already exists this changes nothing and returns what was stored, so the job and the
+    // answer below describe what was accepted the first time, not what this repeat carried.
+    const lifecycle = createSlackThreadLifecycle({
       requestId,
       parentSessionKey: creationTarget.parentSession.sessionKey,
       parentSessionName: sessionActionRef(creationTarget.parentSession),
@@ -7200,36 +7272,57 @@ export class SessionCommands {
       effortOverride: normalizedEffort,
       thinkingLevel: normalizedThinking,
     });
+    // Two first calls with one key can both find no row: the insert keeps the first and answers with it. When that
+    // row is another message or runtime, this call asked for what the key already refused, so it gets the same
+    // refusal as a retry that arrives later, not the success of a thread that is not the one it asked for.
+    if (explicitKey && !replayed && !matchesKey(lifecycle)) throw keyReused();
+    const requestedRuntimeLabel = slackThreadRuntimeLabel({
+      ...(lifecycle.providerOverride ? { providerOverride: lifecycle.providerOverride } : {}),
+      ...(lifecycle.modelOverride ? { modelOverride: lifecycle.modelOverride } : {}),
+      ...(lifecycle.effortOverride ? { effortOverride: lifecycle.effortOverride } : {}),
+      ...(lifecycle.thinkingLevel ? { thinkingLevel: lifecycle.thinkingLevel } : {}),
+    });
     const job = buildChannelChatActionJob({
       sessionName: sessionActionRef(creationTarget.parentSession),
-      requestId,
+      requestId: lifecycle.requestId,
       target: {
         channel: "slack",
-        accountId: creationTarget.accountId,
-        instanceId: creationTarget.instanceId,
-        chatId: creationTarget.platformChatId,
-        canonicalChatId: creationTarget.rootCanonicalChatId,
+        accountId: lifecycle.accountId,
+        instanceId: lifecycle.instanceId,
+        chatId: lifecycle.platformChatId,
+        canonicalChatId: lifecycle.rootCanonicalChatId,
       },
       content: {
         type: "chat_action",
         actionId: "thread.create",
-        text: initialMessage,
-        ...(requestedBy ? { requestedBy } : {}),
+        text: lifecycle.initialPrompt ?? initialMessage,
+        ...(lifecycle.requestedBy ? { requestedBy: lifecycle.requestedBy } : {}),
         ...(requestedRuntimeLabel ? { runtime: requestedRuntimeLabel } : {}),
       },
     });
-    const published = await publishChannelOutboundJobDurably(job);
+    // The outbox keys the job by the request id, so publishing a request it already holds sends nothing new. What it
+    // holds is what it accepted, whatever the parent is called now: its fingerprint includes the parent's name, so a
+    // job rebuilt after a rename would conflict with the saved one. A repeat of a thread whose root card is already
+    // out (status past `queued`), or whose saved job was suppressed, has nothing left to publish.
+    const savedJob = replayed ? getChannelOutboundPublishJob(job.request.idempotencyKey) : null;
+    const published =
+      replayed && (lifecycle.status !== "queued" || savedJob?.status === "suppressed")
+        ? null
+        : await publishChannelOutboundJobDurably(savedJob && savedJob.status !== "suppressed" ? savedJob.job : job);
+    // `satisfies` ties this literal to the declared return schema: a key added here and not declared there is a
+    // compile error, not a 500 (or a field the gateway silently drops) after the thread already exists.
     const payload = {
       status: "queued",
       queued: true,
       actionId: "thread.create",
       executionMode: "durable",
-      requestId,
-      title: slackThreadTitle({ initialPrompt: initialMessage }) ?? null,
+      requestId: lifecycle.requestId,
+      title: slackThreadTitle({ initialPrompt: lifecycle.initialPrompt }) ?? null,
       idempotencyKey: job.request.idempotencyKey,
-      publishedNow: published.ok && published.publishedNow,
-      publishPending: !published.ok,
-      ...(published.ok ? {} : { nextAttemptAt: published.nextAttemptAt }),
+      publishedNow: published?.ok === true && published.publishedNow,
+      publishPending: published !== null && !published.ok,
+      ...(published && !published.ok ? { nextAttemptAt: published.nextAttemptAt } : {}),
+      replayed,
       parentSession: {
         sessionKey: creationTarget.parentSession.sessionKey,
         sessionName: creationTarget.parentSession.name ?? null,
@@ -7239,24 +7332,28 @@ export class SessionCommands {
         sessionName: session.name ?? null,
       },
       slack: {
-        accountId: creationTarget.accountId,
-        instanceId: creationTarget.instanceId,
-        channelId: creationTarget.platformChatId,
-        canonicalChatId: creationTarget.rootCanonicalChatId,
+        accountId: lifecycle.accountId,
+        instanceId: lifecycle.instanceId,
+        channelId: lifecycle.platformChatId,
+        canonicalChatId: lifecycle.rootCanonicalChatId ?? creationTarget.rootCanonicalChatId,
       },
-      origin: creationTarget.origin
-        ? { channel: creationTarget.origin.channel, canonicalChatId: creationTarget.origin.canonicalChatId ?? null }
+      origin: lifecycle.origin
+        ? { channel: lifecycle.origin.channel, canonicalChatId: lifecycle.origin.canonicalChatId ?? null }
         : null,
       child: {
         status: "pending_root_delivery",
-        modelOverride: normalizedModel ?? null,
-        providerOverride: resolvedProvider ?? null,
-        effortOverride: normalizedEffort ?? null,
-        thinkingLevel: normalizedThinking ?? null,
+        modelOverride: lifecycle.modelOverride ?? null,
+        providerOverride: lifecycle.providerOverride ?? null,
+        effortOverride: lifecycle.effortOverride ?? null,
+        thinkingLevel: lifecycle.thinkingLevel ?? null,
       },
-    };
+    } satisfies z.input<typeof sessionCreateThreadReturnSchema>;
     if (asJson) printJson(payload);
-    else console.log(`Queued Slack thread creation in ${creationTarget.platformChatId}`);
+    else if (replayed) {
+      console.log(
+        `Slack thread already requested in ${lifecycle.platformChatId} (${lifecycle.status}): ${lifecycle.requestId}`,
+      );
+    } else console.log(`Queued Slack thread creation in ${creationTarget.platformChatId}`);
     return payload;
   }
 

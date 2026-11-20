@@ -21,6 +21,7 @@ import {
   upsertContactFromPlatformIdentity,
 } from "../../contacts.js";
 import { dbGetCloudChatApproval, dbRecordCloudChatApproval } from "../../cloud-agents/chat-db.js";
+import { dbSetLibraryAgentDescription, dbSetLibraryAgentListed } from "../../library/agents-db.js";
 import { InstancesPendingCommands } from "../../cli/commands/instances.js";
 import { nats } from "../../nats.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -6429,6 +6430,257 @@ describe("Slack owner DM guard", () => {
     expect(postMessage).toHaveBeenCalledTimes(1);
     expect(postMessage.mock.calls[0]?.[0]).toMatchObject({ channel: "D0PEER" });
     expect(listAccountPendingContacts(accountId)).toEqual([]);
+  });
+});
+
+describe("Slack App Home", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-slack-app-home-");
+    configStore.refresh();
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  function homeRouterConfig(input: {
+    agents: Record<string, AgentConfig>;
+    instanceAgent?: string;
+    routes?: RouterConfig["routes"];
+  }): RouterConfig {
+    return {
+      agents: input.agents,
+      routes: input.routes ?? [],
+      defaultAgent: input.instanceAgent ?? "main",
+      defaultDmScope: "per-peer",
+      accountAgents: input.instanceAgent ? { "slack-main": input.instanceAgent } : {},
+      instanceToAccount: { "slack-main": "slack-main" },
+      instances: {
+        "slack-main": {
+          name: "slack-main",
+          instanceId: "slack-main",
+          channel: "slack",
+          ...(input.instanceAgent ? { agent: input.instanceAgent } : {}),
+          dmPolicy: "pairing",
+          groupPolicy: "allowlist",
+          contactIntakeMode: "pending",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+    };
+  }
+
+  function homeOpenedEnvelope(input: {
+    envelopeId: string;
+    tab?: string;
+    currentPrivateMetadata?: string;
+  }): SlackSocketEnvelope {
+    return {
+      envelope_id: input.envelopeId,
+      type: "events_api",
+      payload: {
+        type: "event_callback",
+        team_id: "T123",
+        event_id: input.envelopeId,
+        event_time: 1_713_000_000,
+        event: {
+          type: "app_home_opened",
+          user: "U123",
+          channel: "D123",
+          tab: input.tab ?? "home",
+          event_ts: "1713000000.000100",
+          ...(input.currentPrivateMetadata
+            ? { view: { id: "V123", type: "home", private_metadata: input.currentPrivateMetadata } }
+            : {}),
+        },
+      },
+    };
+  }
+
+  type PublishedHome = {
+    userId: string;
+    view: { type: string; private_metadata: string; blocks: any[] };
+    signal?: AbortSignal;
+  };
+
+  function homeService(
+    config: RouterConfig,
+    viewsPublish: (input: PublishedHome) => Promise<unknown>,
+    options: { appHomePublishTimeoutMs?: number } = {},
+  ) {
+    return new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "slack-main",
+      instanceId: "slack-main",
+      ...options,
+      getRouterConfig: () => config,
+      publishPrompt: async () => {
+        throw new Error("opening the Home tab must not start a turn");
+      },
+      webClient: {
+        viewsPublish,
+        authTest: async () => ({ ok: true, bot_id: "B0BOT", user_id: "U0BOT", team_id: "T123" }),
+      } as never,
+    });
+  }
+
+  it("publishes a valid default Home when the Home tab of an agent with nothing configured opens", async () => {
+    const published: PublishedHome[] = [];
+    const service = homeService(
+      homeRouterConfig({ agents: { hana: { id: "hana", name: "Hana", cwd: "/tmp/hana" } }, instanceAgent: "hana" }),
+      async (input) => {
+        published.push(input);
+        return { ok: true };
+      },
+    );
+    const ack = mock(async () => {});
+
+    await expect(service.handleEnvelope(homeOpenedEnvelope({ envelopeId: "Ev-home-1" }), ack)).resolves.toBe(
+      "processed",
+    );
+
+    expect(ack).toHaveBeenCalledWith("Ev-home-1");
+    expect(published).toHaveLength(1);
+    const [{ userId, view }] = published as [PublishedHome];
+    expect(userId).toBe("U123");
+    expect(view.type).toBe("home");
+    expect(view.blocks.length).toBeGreaterThan(0);
+    expect(view.blocks.length).toBeLessThanOrEqual(100);
+    expect(view.blocks[0]).toMatchObject({ type: "header", text: { type: "plain_text", text: "Hana" } });
+    const rendered = JSON.stringify(view.blocks);
+    expect(rendered).toContain("Este agente ainda não tem descrição");
+    expect(rendered).toContain("<@U0BOT>");
+    expect(rendered).toContain("Nada por aqui ainda");
+  });
+
+  it("shows the agent that answers this user's DMs, with its directory description", async () => {
+    dbSetLibraryAgentDescription("vendas", "Responde propostas e preços.");
+    dbSetLibraryAgentListed("vendas", true);
+    const published: PublishedHome[] = [];
+    const service = homeService(
+      homeRouterConfig({
+        agents: {
+          hana: { id: "hana", name: "Hana", cwd: "/tmp/hana" },
+          vendas: { id: "vendas", name: "Vendas", cwd: "/tmp/vendas" },
+        },
+        instanceAgent: "hana",
+        routes: [{ pattern: "U123", accountId: "slack-main", agent: "vendas" }],
+      }),
+      async (input) => {
+        published.push(input);
+        return { ok: true };
+      },
+    );
+
+    await service.handleEnvelope(homeOpenedEnvelope({ envelopeId: "Ev-home-route" }));
+
+    expect(published).toHaveLength(1);
+    expect(published[0]?.view.blocks[0]).toMatchObject({ text: { text: "Vendas" } });
+    expect(JSON.stringify(published[0]?.view.blocks)).toContain("Responde propostas e preços.");
+  });
+
+  it("keeps the description of an agent the org directory does not list out of the Home", async () => {
+    dbSetLibraryAgentDescription("hana", "Texto interno que o diretório não mostra.");
+    const published: PublishedHome[] = [];
+    const service = homeService(
+      homeRouterConfig({ agents: { hana: { id: "hana", name: "Hana", cwd: "/tmp/hana" } }, instanceAgent: "hana" }),
+      async (input) => {
+        published.push(input);
+        return { ok: true };
+      },
+    );
+
+    await service.handleEnvelope(homeOpenedEnvelope({ envelopeId: "Ev-home-unlisted" }));
+
+    expect(published).toHaveLength(1);
+    const rendered = JSON.stringify(published[0]?.view.blocks);
+    expect(rendered).not.toContain("Texto interno que o diretório não mostra.");
+    expect(rendered).toContain("Este agente ainda não tem descrição");
+    expect(published[0]?.view.blocks[0]).toMatchObject({ text: { text: "Hana" } });
+  });
+
+  it("abandons a views.publish that never answers, so the envelope settles and the drain stays open", async () => {
+    let publishSignal: AbortSignal | undefined;
+    const service = homeService(
+      homeRouterConfig({ agents: { hana: { id: "hana", name: "Hana", cwd: "/tmp/hana" } }, instanceAgent: "hana" }),
+      (input) => {
+        publishSignal = input.signal;
+        return new Promise<never>(() => {});
+      },
+      { appHomePublishTimeoutMs: 25 },
+    );
+
+    // Raced against a timer, so a publish that is never abandoned fails here instead of hanging the file.
+    const settled = await Promise.race([
+      service.handleEnvelope(homeOpenedEnvelope({ envelopeId: "Ev-home-stuck" })),
+      new Promise<"stuck">((resolve) => setTimeout(() => resolve("stuck"), 1_000)),
+    ]);
+
+    expect(settled).toBe("processed");
+    expect(publishSignal?.aborted).toBe(true);
+    expect(service.drainStatus()).toMatchObject({ phase: "accepting", pending: 0, failures: [] });
+  });
+
+  it("does not publish again a Home the user already has, nor when the Messages tab opens", async () => {
+    const published: PublishedHome[] = [];
+    const service = homeService(
+      homeRouterConfig({ agents: { hana: { id: "hana", name: "Hana", cwd: "/tmp/hana" } }, instanceAgent: "hana" }),
+      async (input) => {
+        published.push(input);
+        return { ok: true };
+      },
+    );
+
+    await service.handleEnvelope(homeOpenedEnvelope({ envelopeId: "Ev-home-first" }));
+    const current = published[0]?.view.private_metadata;
+    expect(current).toBeString();
+
+    await expect(
+      service.handleEnvelope(homeOpenedEnvelope({ envelopeId: "Ev-home-again", currentPrivateMetadata: current })),
+    ).resolves.toBe("processed");
+    await expect(
+      service.handleEnvelope(homeOpenedEnvelope({ envelopeId: "Ev-home-messages", tab: "messages" })),
+    ).resolves.toBe("ignored");
+    await service.handleEnvelope(
+      homeOpenedEnvelope({ envelopeId: "Ev-home-stale", currentPrivateMetadata: "ravi.home.default.v1:stale" }),
+    );
+
+    expect(published).toHaveLength(2);
+  });
+
+  it("keeps the runner going when Slack refuses the Home, and the next open publishes again", async () => {
+    let calls = 0;
+    const service = homeService(
+      homeRouterConfig({ agents: { hana: { id: "hana", name: "Hana", cwd: "/tmp/hana" } }, instanceAgent: "hana" }),
+      async () => {
+        calls += 1;
+        if (calls === 1) throw new SlackApiError("views.publish", "not_enabled");
+        return { ok: true };
+      },
+    );
+
+    await expect(service.handleEnvelope(homeOpenedEnvelope({ envelopeId: "Ev-home-off" }))).resolves.toBe("processed");
+    await expect(service.handleEnvelope(homeOpenedEnvelope({ envelopeId: "Ev-home-on" }))).resolves.toBe("processed");
+
+    expect(calls).toBe(2);
+    expect(service.drainStatus().pending).toBe(0);
+  });
+
+  it("publishes the unbound Home when the app has no agent", async () => {
+    const published: PublishedHome[] = [];
+    const service = homeService(homeRouterConfig({ agents: {} }), async (input) => {
+      published.push(input);
+      return { ok: true };
+    });
+
+    await service.handleEnvelope(homeOpenedEnvelope({ envelopeId: "Ev-home-unbound" }));
+
+    expect(published).toHaveLength(1);
+    expect(published[0]?.view.blocks[0]).toMatchObject({ text: { text: "Ravi" } });
+    expect(JSON.stringify(published[0]?.view.blocks)).toContain("Este app ainda não está ligado a um agente.");
   });
 });
 

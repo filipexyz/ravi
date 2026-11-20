@@ -8,6 +8,7 @@ import { dbListTriggers } from "../../triggers/triggers-db.js";
 import { randomUUID } from "node:crypto";
 import { executeWrite } from "../../db/write-retry.js";
 import { getDb } from "../../router/router-db.js";
+import type { SlackThreadRequestIdentity } from "./thread-request-identity.js";
 
 export type SlackThreadLifecycleSource = "action" | "inbound";
 export type SlackThreadLifecycleStatus = "queued" | "root_delivered" | "starting" | "open" | "closed" | "failed";
@@ -207,6 +208,49 @@ export function getSlackThreadLifecycle(requestId: string): SlackThreadLifecycle
   const row = getDb().prepare("SELECT * FROM slack_thread_lifecycle WHERE request_id = ?").get(requestId) as
     | SlackThreadLifecycleRow
     | undefined;
+  return row ? rowToSlackThreadLifecycle(row) : null;
+}
+
+/**
+ * The thread request this asker already made for this parent with this content at or after `since`, if it is still
+ * alive. A request that failed or whose thread was closed is not returned: the caller wants a new one.
+ */
+export function findRecentSlackThreadRequest(input: {
+  parentSessionKey: string;
+  initiatorSessionKey: string;
+  identity: SlackThreadRequestIdentity;
+  since: number;
+}): SlackThreadLifecycleRecord | null {
+  const identity = input.identity;
+  const row = getDb()
+    .prepare(
+      `
+      SELECT *
+      FROM slack_thread_lifecycle
+      WHERE parent_session_key = ?
+        AND source = 'action'
+        AND initiator_session_key = ?
+        AND initial_prompt = ?
+        AND model_override IS ?
+        AND provider_override IS ?
+        AND effort_override IS ?
+        AND thinking_level IS ?
+        AND created_at >= ?
+        AND status IN ('queued', 'root_delivered', 'starting', 'open')
+      ORDER BY created_at DESC
+      LIMIT 1
+    `,
+    )
+    .get(
+      input.parentSessionKey,
+      input.initiatorSessionKey,
+      identity.initialPrompt.trim(),
+      cleanOptional(identity.modelOverride),
+      cleanOptional(identity.providerOverride),
+      cleanOptional(identity.effortOverride),
+      cleanOptional(identity.thinkingLevel),
+      input.since,
+    ) as SlackThreadLifecycleRow | undefined;
   return row ? rowToSlackThreadLifecycle(row) : null;
 }
 

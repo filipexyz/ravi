@@ -68,11 +68,15 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/thread-parent-return.test.ts",
     // Parent-owned thread runtime options: lifecycle authorization, validation and atomic configuration.
     "src/channels/slack/thread-runtime.test.ts",
+    // `create-thread` repeats: the idempotency key's request id, and the recent identical request an asker repeats.
+    "src/channels/slack/thread-request-replay.test.ts",
     // Agent Markdown as Slack Block Kit: safe splits, documents as canvases or files, mrkdwn fallback.
     "src/channels/slack/markdown-layout.test.ts",
     "src/channels/slack/markdown-delivery.test.ts",
     // Thread root card and its brief: shell-typed `\n` decoded into line breaks.
     "src/channels/slack/thread-card.test.ts",
+    // Default App Home: app_home_opened parsing and a valid view within Block Kit limits.
+    "src/channels/slack/app-home.test.ts",
     "src/channels/slack/thread-text.test.ts",
     // Native channel readiness: broker connection, backend prerequisites, queued-but-undeliverable warnings.
     "src/channels/native-readiness.test.ts",

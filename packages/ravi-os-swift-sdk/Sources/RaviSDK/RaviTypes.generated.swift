@@ -28140,13 +28140,15 @@ public struct SessionsConversationsSendReturn: Codable, Sendable {
 
 public struct SessionsCreateThreadOptions: Codable, Sendable {
   public var effort: String?
+  public var idempotencyKey: String?
   public var model: String?
   public var provider: String?
   public var session: String?
   public var thinking: String?
 
-  public init(effort: String? = nil, model: String? = nil, provider: String? = nil, session: String? = nil, thinking: String? = nil) {
+  public init(effort: String? = nil, idempotencyKey: String? = nil, model: String? = nil, provider: String? = nil, session: String? = nil, thinking: String? = nil) {
     self.effort = effort
+    self.idempotencyKey = idempotencyKey
     self.model = model
     self.provider = provider
     self.session = session
@@ -28155,6 +28157,7 @@ public struct SessionsCreateThreadOptions: Codable, Sendable {
 
   enum CodingKeys: String, CodingKey {
     case effort = "effort"
+    case idempotencyKey = "idempotencyKey"
     case model = "model"
     case provider = "provider"
     case session = "session"
@@ -28164,6 +28167,9 @@ public struct SessionsCreateThreadOptions: Codable, Sendable {
   func encodeBody(into body: inout [String: RaviJSON]) throws {
     if let value = self.effort {
       body["effort"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.idempotencyKey {
+      body["idempotencyKey"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.model {
       body["model"] = try RaviJSON.fromEncodable(value)
@@ -28192,12 +28198,13 @@ public struct SessionsCreateThreadReturn: Codable, Sendable {
   public var publishPending: Bool
   public var publishedNow: Bool
   public var queued: Bool
+  public var replayed: Bool?
   public var requestId: String
   public var slack: RaviJSON
   public var status: String
   public var title: RaviJSON
 
-  public init(actionId: String, child: RaviJSON, executionMode: String, idempotencyKey: String, initiatorSession: RaviJSON, nextAttemptAt: Double? = nil, origin: RaviJSON, parentSession: RaviJSON, publishPending: Bool, publishedNow: Bool, queued: Bool, requestId: String, slack: RaviJSON, status: String, title: RaviJSON) {
+  public init(actionId: String, child: RaviJSON, executionMode: String, idempotencyKey: String, initiatorSession: RaviJSON, nextAttemptAt: Double? = nil, origin: RaviJSON, parentSession: RaviJSON, publishPending: Bool, publishedNow: Bool, queued: Bool, replayed: Bool? = nil, requestId: String, slack: RaviJSON, status: String, title: RaviJSON) {
     self.actionId = actionId
     self.child = child
     self.executionMode = executionMode
@@ -28209,6 +28216,7 @@ public struct SessionsCreateThreadReturn: Codable, Sendable {
     self.publishPending = publishPending
     self.publishedNow = publishedNow
     self.queued = queued
+    self.replayed = replayed
     self.requestId = requestId
     self.slack = slack
     self.status = status
@@ -28227,6 +28235,7 @@ public struct SessionsCreateThreadReturn: Codable, Sendable {
     case publishPending = "publishPending"
     case publishedNow = "publishedNow"
     case queued = "queued"
+    case replayed = "replayed"
     case requestId = "requestId"
     case slack = "slack"
     case status = "status"

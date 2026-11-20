@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "00c4b46b11c259fa"
+    "version": "890167b2863d3949"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -118585,6 +118585,10 @@
                     "description": "Reasoning effort for the child session: none|minimal|low|medium|high|xhigh|max|ultra",
                     "type": "string"
                   },
+                  "idempotencyKey": {
+                    "description": "Stable key for this thread request: sending it again returns the request it created instead of creating another thread, whatever state that thread is in now. Without it, the same message and options from the same session within 2 minutes count as a repeat only while that request is still queued, root_delivered, starting or open; one that failed or was closed is not repeated",
+                    "type": "string"
+                  },
                   "message": {
                     "description": "Initial Slack message and first instruction for the child session",
                     "type": "string"
@@ -118777,6 +118781,9 @@
                     },
                     "queued": {
                       "const": true,
+                      "type": "boolean"
+                    },
+                    "replayed": {
                       "type": "boolean"
                     },
                     "requestId": {

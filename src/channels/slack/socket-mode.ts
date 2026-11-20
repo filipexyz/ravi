@@ -35,8 +35,9 @@ import {
   dbUpsertChatParticipant,
   type ChannelConfig,
 } from "../../router/router-db.js";
-import type { ResolvedRoute, RouterConfig } from "../../router/types.js";
+import type { AgentConfig, ResolvedRoute, RouterConfig } from "../../router/types.js";
 import type { MessageActorMetadata, MessageContext, MessageTarget } from "../../runtime/message-types.js";
+import { readLibraryAgentState } from "../../library/agents-db.js";
 import { transcribeAudio } from "../../transcribe/openai.js";
 import { logger } from "../../utils/logger.js";
 import { MAX_AUDIO_BYTES, MAX_MEDIA_BYTES, saveToAgentAttachments } from "../../utils/media.js";
@@ -67,7 +68,8 @@ import {
   resolveSlackApiChannelId,
   resolveSlackApiTimestamp,
 } from "./chat-action-target.js";
-import { SlackWebApiClient } from "./client.js";
+import { buildSlackDefaultHomeView, slackAppHomeOpenedFromEnvelope, type SlackAppHomeOpened } from "./app-home.js";
+import { SlackApiError, SlackWebApiClient } from "./client.js";
 import { resolveSlackCredentialConfigFromEnv, type SlackCredentialResolver } from "./credentials.js";
 import { slackClientMessageId } from "./client-message-id.js";
 import { postSlackMarkdown, postSlackMrkdwn, updateSlackMarkdown } from "./markdown-delivery.js";
@@ -139,6 +141,11 @@ const SLACK_SESSION_CREATED_TOPIC = "ravi.inbound.session.created";
 const DEFAULT_SLACK_AUTH_TEST_FAILURE_RETRY_MS = 5_000;
 const DEFAULT_SLACK_AUTH_TEST_TIMEOUT_MS = 5_000;
 const DEFAULT_SLACK_USER_LOOKUP_TIMEOUT_MS = 5_000;
+/**
+ * One App Home publish. With auth.test's 5 s before it, an envelope stuck on
+ * both still settles inside the 10 s work-drain deadline.
+ */
+const DEFAULT_SLACK_APP_HOME_PUBLISH_TIMEOUT_MS = 4_000;
 const DEFAULT_SLACK_HEARTBEAT_INTERVAL_MS = 10_000;
 const DEFAULT_SLACK_PONG_TIMEOUT_MS = 5_000;
 const DEFAULT_SLACK_HELLO_TIMEOUT_MS = 10_000;
@@ -253,6 +260,8 @@ export interface SlackSocketModeServiceOptions {
   readonly authTestTimeoutMs?: number;
   /** Maximum time an inbound turn waits for one users.info lookup before using the raw id. */
   readonly userLookupTimeoutMs?: number;
+  /** Maximum time one App Home `views.publish` may take before it is abandoned. */
+  readonly appHomePublishTimeoutMs?: number;
   /** Clock injection for bounded auth.test retry tests. */
   readonly now?: () => number;
   readonly transcribeAudio?: typeof transcribeAudio;
@@ -749,6 +758,7 @@ export class SlackSocketModeService {
   private readonly authTestFailureRetryMs: number;
   private readonly authTestTimeoutMs: number;
   private readonly userLookupTimeoutMs: number;
+  private readonly appHomePublishTimeoutMs: number;
   private readonly now: () => number;
   private readonly seenEnvelopeIds = new RecentIdCache();
   /** The app id the first slash command of this connection named; later commands must agree. */
@@ -814,6 +824,10 @@ export class SlackSocketModeService {
       Number.isFinite(options.userLookupTimeoutMs)
         ? (options.userLookupTimeoutMs ?? DEFAULT_SLACK_USER_LOOKUP_TIMEOUT_MS)
         : DEFAULT_SLACK_USER_LOOKUP_TIMEOUT_MS,
+    );
+    this.appHomePublishTimeoutMs = positiveDuration(
+      options.appHomePublishTimeoutMs,
+      DEFAULT_SLACK_APP_HOME_PUBLISH_TIMEOUT_MS,
     );
     this.now = options.now ?? Date.now;
   }
@@ -931,6 +945,13 @@ export class SlackSocketModeService {
         return "duplicate";
       }
       this.seenEnvelopeIds.add(envelopeId);
+    }
+
+    const homeOpened = slackAppHomeOpenedFromEnvelope(envelope);
+    if (homeOpened) {
+      if (homeOpened.tab !== "home") return "ignored";
+      await this.publishDefaultAppHome(homeOpened);
+      return "processed";
     }
 
     const interaction = this.normalizeInteractionEnvelope(envelope);
@@ -1526,6 +1547,78 @@ export class SlackSocketModeService {
     if (this.localBotIdentity) return this.localBotIdentity.userId;
     this.warmLocalBotIdentity();
     return undefined;
+  }
+
+  /**
+   * Answers `app_home_opened` with the default Home (spec channels/slack/block-kit,
+   * "App Home padrão"). A view identical to the one the user already has is not
+   * published again. A failure is logged with Slack's error and never reaches
+   * the envelope: Slack sends a new event the next time the tab opens.
+   */
+  private async publishDefaultAppHome(opened: SlackAppHomeOpened): Promise<void> {
+    const agent = this.resolveAppHomeAgent(opened.userId);
+    // The description is what the org directory shows, and the directory shows
+    // only listed agents: an unlisted agent's Home shows its name alone.
+    const library = agent ? readLibraryAgentState(agent.id) : null;
+    const identity = await this.resolveLocalBotIdentity();
+    const view = buildSlackDefaultHomeView({
+      ...(agent ? { agentId: agent.id, agentName: agent.name ?? agent.id } : {}),
+      description: library?.listed === true ? library.description : null,
+      ...(identity ? { botUserId: identity.userId } : {}),
+    });
+    if (opened.currentPrivateMetadata === view.private_metadata) {
+      log.debug("Slack App Home already current", { accountId: this.options.accountId, userId: opened.userId });
+      return;
+    }
+    try {
+      await withAbortableTimeout(
+        (signal) => this.webClient.viewsPublish({ userId: opened.userId, view, signal }),
+        this.appHomePublishTimeoutMs,
+        "Slack views.publish timed out",
+      );
+      log.info("Slack App Home published", {
+        accountId: this.options.accountId,
+        userId: opened.userId,
+        agentId: agent?.id ?? null,
+      });
+    } catch (error) {
+      const slackError = error instanceof SlackApiError ? error.slackError : undefined;
+      log.warn(
+        slackError === "not_enabled"
+          ? "Slack App Home not published: the Home Tab is off in the app's App Home settings"
+          : "Slack App Home publish failed",
+        {
+          accountId: this.options.accountId,
+          userId: opened.userId,
+          agentId: agent?.id ?? null,
+          slackError: slackError ?? null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+    }
+  }
+
+  /** The agent that would answer this user's DM, or the app's own agent when no route says. */
+  private resolveAppHomeAgent(userId: string): AgentConfig | undefined {
+    const routeAccountId = this.options.routeAccountId ?? this.options.accountId;
+    try {
+      const routerConfig = this.getRouterConfig();
+      const agentId =
+        matchRoute(routerConfig, {
+          phone: userId,
+          channel: "slack",
+          accountId: routeAccountId,
+          isGroup: false,
+          peerKind: "dm",
+        })?.agentId ?? routerConfig.accountAgents?.[routeAccountId];
+      return agentId ? routerConfig.agents[agentId] : undefined;
+    } catch (error) {
+      log.warn("Slack App Home could not resolve its agent; publishing the unbound Home", {
+        accountId: this.options.accountId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return undefined;
+    }
   }
 
   private async resolveLocalBotIdentity(): Promise<SlackLocalBotIdentity | null> {

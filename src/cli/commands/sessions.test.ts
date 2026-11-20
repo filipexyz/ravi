@@ -2,6 +2,7 @@ import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import { spawnSync } from "bun";
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ZodTypeAny } from "zod";
+import { SLACK_THREAD_REPLAY_WINDOW_MS } from "../../channels/slack/thread-request-identity.js";
 import { CliExpectedError } from "../expected-error.js";
 
 afterAll(() => mock.restore());
@@ -64,7 +65,17 @@ let agentMessageByRef: Record<string, unknown> | null = null;
 const agentChatActionCounts = new Map<string, { ownMessageCount: number; ownTextMessageCount: number }>();
 let stickerCatalog: Array<Record<string, unknown>> = [];
 const publishedOutboundJobs: Array<Record<string, unknown>> = [];
+const savedOutboundJobs = new Map<
+  string,
+  { status: "pending" | "published" | "suppressed"; job: Record<string, unknown> }
+>();
 const createdSlackThreadLifecycles: Array<Record<string, unknown>> = [];
+/** The lifecycle table as the real store keeps it: the first insert for a request id wins, repeats change nothing. */
+const storedSlackThreadRequests = new Map<string, Record<string, unknown>>();
+/** How many of the next lifecycle lookups answer "no row" although one exists: the other process had not inserted yet. */
+let blindLifecycleLookups = 0;
+const recentSlackThreadRequestQueries: Array<Record<string, any>> = [];
+let recentSlackThreadRequest: Record<string, unknown> | null = null;
 let closeThreadError: unknown = null;
 let reportSlackThreadError: unknown = null;
 let sendSlackThreadError: unknown = null;
@@ -226,8 +237,12 @@ mock.module("../../omni/session-stream.js", () => ({
 }));
 
 mock.module("../../channels/outbound-publish-outbox.js", () => ({
+  // The outbox keeps the first job it accepts for a key and answers a repeat from it.
+  getChannelOutboundPublishJob: (idempotencyKey: string) => savedOutboundJobs.get(idempotencyKey) ?? null,
   publishChannelOutboundJobDurably: mock(async (job: Record<string, unknown>) => {
     publishedOutboundJobs.push(job);
+    const key = (job as any).request.idempotencyKey as string;
+    if (!savedOutboundJobs.has(key)) savedOutboundJobs.set(key, { status: "pending", job });
     return {
       ok: true,
       publishedNow: true,
@@ -242,12 +257,27 @@ mock.module("../../channels/outbound-publish-outbox.js", () => ({
 mock.module("../../channels/slack/thread-lifecycle-store.js", () => ({
   createSlackThreadLifecycle: (input: Record<string, unknown>) => {
     createdSlackThreadLifecycles.push(input);
-    return {
+    const stored = storedSlackThreadRequests.get(String(input.requestId));
+    if (stored) return stored;
+    const record = {
       ...input,
       status: "queued",
       closeSequence: 0,
       parentReturnRequested: false,
     };
+    storedSlackThreadRequests.set(String(input.requestId), record);
+    return record;
+  },
+  getSlackThreadLifecycle: (requestId: string) => {
+    if (blindLifecycleLookups > 0) {
+      blindLifecycleLookups -= 1;
+      return null;
+    }
+    return storedSlackThreadRequests.get(requestId) ?? null;
+  },
+  findRecentSlackThreadRequest: (input: Record<string, any>) => {
+    recentSlackThreadRequestQueries.push(input);
+    return recentSlackThreadRequest;
   },
   findSlackThreadLifecycleByChildSession: () => null,
   findSlackThreadLifecycleByChildRef: () => orphanThread,
@@ -625,8 +655,14 @@ mock.module("../../tags/service.js", () => ({
 
 import { getOptionsMetadata } from "../decorators.js";
 
-const { SessionCommands, sessionCreateThreadReturnSchema, sessionThreadSendReturnSchema, sessionThreadsReturnSchema } =
-  await import("./sessions.js");
+const {
+  SessionCommands,
+  sessionCloseThreadReturnSchema,
+  sessionCreateThreadReturnSchema,
+  sessionReportReturnSchema,
+  sessionThreadSendReturnSchema,
+  sessionThreadsReturnSchema,
+} = await import("./sessions.js");
 const {
   buildCurrentSessionActionsCommand,
   buildCurrentSessionDeleteMessageCommand,
@@ -709,7 +745,12 @@ beforeEach(() => {
   agentChatActionCounts.clear();
   stickerCatalog = [];
   publishedOutboundJobs.length = 0;
+  savedOutboundJobs.clear();
   createdSlackThreadLifecycles.length = 0;
+  storedSlackThreadRequests.clear();
+  blindLifecycleLookups = 0;
+  recentSlackThreadRequestQueries.length = 0;
+  recentSlackThreadRequest = null;
   closedSlackThreads.length = 0;
   closeThreadError = null;
   reportSlackThreadError = null;
@@ -2291,6 +2332,254 @@ describe("SessionCommands attach hints", () => {
     expect((createdSlackThreadLifecycles[0] as any).origin).toBeUndefined();
   });
 
+  describe("a repeated create-thread request", () => {
+    const create = (
+      message: string,
+      options: { key?: string; model?: string; provider?: string; effort?: string } = {},
+    ) =>
+      new SessionCommands().createThread(
+        message,
+        options.model,
+        options.provider,
+        options.effort,
+        undefined,
+        undefined,
+        true,
+        options.key,
+      ) as Promise<Record<string, any>>;
+
+    it("answers a repeat that carries the same --idempotency-key with the request it created, not a second thread", async () => {
+      seedWhatsAppTurnInSlackAttachedSession("dm");
+
+      const first = await create("Resumo da semana", { key: "weekly-summary" });
+      const again = await create("Resumo da semana", { key: "weekly-summary" });
+
+      expectReturnShape(sessionCreateThreadReturnSchema, first);
+      expectReturnShape(sessionCreateThreadReturnSchema, again);
+      expect(first).toMatchObject({
+        replayed: false,
+        requestId: expect.stringMatching(/^slack-thread:key-[0-9a-f]{32}$/),
+      });
+      expect(again).toEqual({ ...first, replayed: true });
+      expect(storedSlackThreadRequests.size).toBe(1);
+      // The same job both times: the outbox keys it by request id, so the second publish sends nothing new.
+      expect(publishedOutboundJobs.map((job) => (job as any).request.idempotencyKey)).toEqual([
+        first.idempotencyKey,
+        first.idempotencyKey,
+      ]);
+      expect((publishedOutboundJobs[1] as any).request.content).toEqual(
+        (publishedOutboundJobs[0] as any).request.content,
+      );
+    });
+
+    it("publishes nothing for a repeat once the thread's root card is out", async () => {
+      seedWhatsAppTurnInSlackAttachedSession("dm");
+      const first = await create("Resumo da semana", { key: "weekly-summary" });
+      storedSlackThreadRequests.get(first.requestId)!.status = "root_delivered";
+
+      const again = await create("Resumo da semana", { key: "weekly-summary" });
+
+      expectReturnShape(sessionCreateThreadReturnSchema, again);
+      expect(again).toMatchObject({
+        replayed: true,
+        requestId: first.requestId,
+        publishedNow: false,
+        publishPending: false,
+      });
+      expect(publishedOutboundJobs).toHaveLength(1);
+    });
+
+    it("refuses a key that already created a different thread, and changes nothing", async () => {
+      seedWhatsAppTurnInSlackAttachedSession("dm");
+      await create("Resumo da semana", { key: "weekly-summary", model: "gpt-5.6", provider: "codex" });
+
+      await expect(
+        create("Outro assunto", { key: "weekly-summary", model: "gpt-5.6", provider: "codex" }),
+      ).rejects.toMatchObject({ code: "THREAD_IDEMPOTENCY_KEY_REUSED" });
+      await expect(
+        create("Resumo da semana", { key: "weekly-summary", model: "gpt-5.6", provider: "codex", effort: "high" }),
+      ).rejects.toMatchObject({ code: "THREAD_IDEMPOTENCY_KEY_REUSED" });
+
+      expect(storedSlackThreadRequests.size).toBe(1);
+      expect(publishedOutboundJobs).toHaveLength(1);
+    });
+
+    it("refuses the loser of two first calls that share a key and differ in message, not a success for the winner's thread", async () => {
+      seedWhatsAppTurnInSlackAttachedSession("dm");
+      const winner = await create("Resumo da semana", { key: "weekly-summary" });
+      // The other process read no row before the winner inserted, so its own insert is the one that finds the row.
+      blindLifecycleLookups = 1;
+
+      await expect(create("Outro assunto", { key: "weekly-summary" })).rejects.toMatchObject({
+        code: "THREAD_IDEMPOTENCY_KEY_REUSED",
+      });
+
+      expect(storedSlackThreadRequests.size).toBe(1);
+      expect(storedSlackThreadRequests.get(winner.requestId)).toMatchObject({ initialPrompt: "Resumo da semana" });
+      // Nothing was published for the message that lost.
+      expect(publishedOutboundJobs).toHaveLength(1);
+    });
+
+    it("gives the loser of two simultaneous first calls the winner's request when both asked for the same thing", async () => {
+      seedWhatsAppTurnInSlackAttachedSession("dm");
+      const winner = await create("Resumo da semana", { key: "weekly-summary" });
+      blindLifecycleLookups = 1;
+
+      const loser = await create("Resumo da semana", { key: "weekly-summary" });
+
+      expectReturnShape(sessionCreateThreadReturnSchema, loser);
+      // It saw no row before it wrote, so it reports `replayed: false`; the request and its one outbound job are the winner's.
+      expect(loser).toMatchObject({
+        requestId: winner.requestId,
+        idempotencyKey: winner.idempotencyKey,
+        replayed: false,
+      });
+      expect(storedSlackThreadRequests.size).toBe(1);
+    });
+
+    it("matches a keyed retry after the provider the parent lent it changed, since the caller never passed one", async () => {
+      seedWhatsAppTurnInSlackAttachedSession("dm");
+      (resolvedSession as any).runtimeProviderOverride = "codex";
+      const first = await create("Resumo da semana", { key: "weekly-summary" });
+      expect(first.child.providerOverride).toBe("codex");
+
+      delete (resolvedSession as any).runtimeProviderOverride;
+      const again = await create("Resumo da semana", { key: "weekly-summary" });
+
+      expect(again).toMatchObject({ replayed: true, requestId: first.requestId, child: { providerOverride: "codex" } });
+      expect(storedSlackThreadRequests.size).toBe(1);
+    });
+
+    it("answers a keyed retry whose explicit model no longer fits the provider the parent now lends, without validating it again", async () => {
+      seedWhatsAppTurnInSlackAttachedSession("dm");
+      (resolvedSession as any).runtimeProviderOverride = "codex";
+      const first = await create("Resumo da semana", { key: "weekly-summary", model: "gpt-6-astra" });
+      expect(first.child).toMatchObject({ providerOverride: "codex", modelOverride: "gpt-6-astra" });
+
+      // gpt-6-astra belongs to codex, not to pi: a request this parent would create now is refused for it.
+      (resolvedSession as any).runtimeProviderOverride = "pi";
+      await expect(create("Outro assunto", { model: "gpt-6-astra" })).rejects.toMatchObject({
+        code: "THREAD_MODEL_INVALID",
+      });
+
+      const again = await create("Resumo da semana", { key: "weekly-summary", model: "gpt-6-astra" });
+
+      expect(again).toMatchObject({ replayed: true, requestId: first.requestId, child: { providerOverride: "codex" } });
+      expect(storedSlackThreadRequests.size).toBe(1);
+    });
+
+    it("refuses a key reused with another provider the caller passed", async () => {
+      seedWhatsAppTurnInSlackAttachedSession("dm");
+      await create("Resumo da semana", { key: "weekly-summary", provider: "codex" });
+
+      await expect(create("Resumo da semana", { key: "weekly-summary", provider: "claude" })).rejects.toMatchObject({
+        code: "THREAD_IDEMPOTENCY_KEY_REUSED",
+      });
+      expect(storedSlackThreadRequests.size).toBe(1);
+    });
+
+    it("publishes the job the outbox saved, so renaming the parent is not a conflict for a queued repeat", async () => {
+      seedWhatsAppTurnInSlackAttachedSession("dm");
+      await create("Resumo da semana", { key: "weekly-summary" });
+
+      (resolvedSession as any).name = "dev-renamed";
+      const again = await create("Resumo da semana", { key: "weekly-summary" });
+
+      expect(again.replayed).toBe(true);
+      expect(publishedOutboundJobs).toHaveLength(2);
+      // The saved job still names the parent as it was; a job rebuilt now would say "dev-renamed".
+      expect((publishedOutboundJobs[1] as any).request.origin.sessionName).toBe("dev-main");
+    });
+
+    it("returns the request a key created even after its thread ended, with nothing to publish", async () => {
+      seedWhatsAppTurnInSlackAttachedSession("dm");
+      const first = await create("Resumo da semana", { key: "weekly-summary" });
+      for (const status of ["closed", "failed"]) {
+        storedSlackThreadRequests.get(first.requestId)!.status = status;
+
+        const again = await create("Resumo da semana", { key: "weekly-summary" });
+
+        expectReturnShape(sessionCreateThreadReturnSchema, again);
+        expect(again).toMatchObject({
+          replayed: true,
+          requestId: first.requestId,
+          publishedNow: false,
+          publishPending: false,
+        });
+      }
+      expect(publishedOutboundJobs).toHaveLength(1);
+      expect(storedSlackThreadRequests.size).toBe(1);
+    });
+
+    it("rejects an --idempotency-key longer than 200 characters before it creates anything", async () => {
+      seedWhatsAppTurnInSlackAttachedSession("dm");
+
+      await expect(create("Resumo", { key: "k".repeat(201) })).rejects.toMatchObject({ code: "USAGE_ERROR" });
+
+      expect(storedSlackThreadRequests.size).toBe(0);
+      expect(publishedOutboundJobs).toHaveLength(0);
+    });
+
+    it("treats the same asker's identical request from the last two minutes as a repeat when no key is given", async () => {
+      seedWhatsAppTurnInSlackAttachedSession("dm");
+      const before = Date.now();
+      const first = await create("Resumo da semana", { model: "gpt-5.6", provider: "codex" });
+      const after = Date.now();
+
+      expect(first.replayed).toBe(false);
+      expect(recentSlackThreadRequestQueries).toHaveLength(1);
+      const query = recentSlackThreadRequestQueries[0]!;
+      expect(query).toMatchObject({
+        parentSessionKey: "agent:dev:main",
+        initiatorSessionKey: "agent:dev:main",
+        identity: { initialPrompt: "Resumo da semana", modelOverride: "gpt-5.6", providerOverride: "codex" },
+      });
+      expect(query.since).toBeGreaterThanOrEqual(before - SLACK_THREAD_REPLAY_WINDOW_MS);
+      expect(query.since).toBeLessThanOrEqual(after - SLACK_THREAD_REPLAY_WINDOW_MS);
+
+      recentSlackThreadRequest = storedSlackThreadRequests.get(first.requestId)!;
+      const again = await create("Resumo da semana", { model: "gpt-5.6", provider: "codex" });
+
+      expectReturnShape(sessionCreateThreadReturnSchema, again);
+      expect(again).toEqual({ ...first, replayed: true });
+      expect(storedSlackThreadRequests.size).toBe(1);
+    });
+
+    it("creates a new request when nothing identical is recent", async () => {
+      seedWhatsAppTurnInSlackAttachedSession("dm");
+
+      const first = await create("Resumo da semana");
+      const second = await create("Resumo da semana");
+
+      expect(second.replayed).toBe(false);
+      expect(second.requestId).not.toBe(first.requestId);
+      expect(storedSlackThreadRequests.size).toBe(2);
+    });
+
+    it("describes a replay with the request that was stored, not with the context of the repeat", async () => {
+      seedWhatsAppTurnInSlackAttachedSession("dm");
+      const first = await create("Resumo da semana", { key: "weekly-summary" });
+      expect(first.origin).toEqual({ channel: "whatsapp", canonicalChatId: "chat_wa" });
+
+      // The repeat arrives from Slack itself: a request made from here would carry no origin.
+      toolContext = {
+        sessionKey: "agent:dev:main",
+        sessionName: "dev-main",
+        source: {
+          channel: "slack",
+          accountId: "ravi-slack",
+          instanceId: "ravi-slack",
+          chatId: "D0C8BEV8QUR",
+          canonicalChatId: "chat_slack_dm",
+        },
+      };
+      const again = await create("Resumo da semana", { key: "weekly-summary" });
+
+      expect((createdSlackThreadLifecycles[1] as any).origin).toBeUndefined();
+      expect(again.origin).toEqual(first.origin);
+    });
+  });
+
   it("carries the parent's explicit provider override into the child thread", async () => {
     const sessionKey = "agent:dev:slack:ravi-slack:C123";
     resolvedSession = {
@@ -2560,6 +2849,7 @@ describe("SessionCommands attach hints", () => {
       any
     >;
 
+    expectReturnShape(sessionCloseThreadReturnSchema, result);
     expect(result).toMatchObject({
       status: "closed",
       actionId: "thread.close",
@@ -2594,6 +2884,7 @@ describe("SessionCommands attach hints", () => {
       true,
     )) as Record<string, any>;
 
+    expectReturnShape(sessionReportReturnSchema, result);
     expect(result).toEqual({
       status: "published",
       actionId: "thread.report",

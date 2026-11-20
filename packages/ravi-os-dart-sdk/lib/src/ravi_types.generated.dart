@@ -24066,9 +24066,10 @@ class SessionsConversationsSendReturn {
 SessionsConversationsSendReturn sessionsConversationsSendReturnFromJson(Object? json) => SessionsConversationsSendReturn.fromJsonValue(json);
 
 class SessionsCreateThreadOptions {
-  const SessionsCreateThreadOptions({this.effort, this.model, this.provider, this.session, this.thinking});
+  const SessionsCreateThreadOptions({this.effort, this.idempotencyKey, this.model, this.provider, this.session, this.thinking});
 
   final String? effort;
+  final String? idempotencyKey;
   final String? model;
   final String? provider;
   final String? session;
@@ -24077,6 +24078,9 @@ class SessionsCreateThreadOptions {
   void encodeBody(Map<String, RaviJson> into) {
     if (effort != null) {
       into["effort"] = RaviJson.from(effort);
+    }
+    if (idempotencyKey != null) {
+      into["idempotencyKey"] = RaviJson.from(idempotencyKey);
     }
     if (model != null) {
       into["model"] = RaviJson.from(model);
@@ -24094,7 +24098,7 @@ class SessionsCreateThreadOptions {
 }
 
 class SessionsCreateThreadReturn {
-  const SessionsCreateThreadReturn({required this.actionId, required this.child, required this.executionMode, required this.idempotencyKey, required this.initiatorSession, this.nextAttemptAt, required this.origin, required this.parentSession, required this.publishPending, required this.publishedNow, required this.queued, required this.requestId, required this.slack, required this.status, required this.title});
+  const SessionsCreateThreadReturn({required this.actionId, required this.child, required this.executionMode, required this.idempotencyKey, required this.initiatorSession, this.nextAttemptAt, required this.origin, required this.parentSession, required this.publishPending, required this.publishedNow, required this.queued, this.replayed, required this.requestId, required this.slack, required this.status, required this.title});
 
   final String actionId;
   final RaviJson child;
@@ -24107,6 +24111,7 @@ class SessionsCreateThreadReturn {
   final bool publishPending;
   final bool publishedNow;
   final bool queued;
+  final bool? replayed;
   final String requestId;
   final RaviJson slack;
   final String status;
@@ -24125,6 +24130,7 @@ class SessionsCreateThreadReturn {
       publishPending: raviJsonAsBool(json["publishPending"]),
       publishedNow: raviJsonAsBool(json["publishedNow"]),
       queued: raviJsonAsBool(json["queued"]),
+      replayed: json["replayed"] == null ? null : raviJsonAsBool(json["replayed"]),
       requestId: raviJsonAsString(json["requestId"]),
       slack: RaviJson.from(json["slack"]),
       status: raviJsonAsString(json["status"]),

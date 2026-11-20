@@ -14,3 +14,9 @@ O Ravi precisa de Block Kit nativo por tres motivos:
 
 Canvas e documento. Block Kit e interface interativa. Manter essa fronteira evita
 misturar publish documental com eventos de chat.
+
+A App Home e a primeira tela que alguem ve ao abrir o app de um agent. Sem uma
+view publicada, o Slack mostra a aba vazia, e o agent parece quebrado. A Home
+padrao garante uma tela valida para todo agent, sem configuracao, e e a base
+para a Home customizada por usuario.
+
