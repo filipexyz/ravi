@@ -105305,7 +105305,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "idempotencyKey": {
-        "description": "Stable key for this thread request: sending it again returns the request it created instead of creating another thread. Without it, the same message and options from the same session within 2 minutes count as a repeat",
+        "description": "Stable key for this thread request: sending it again returns the request it created instead of creating another thread, whatever state that thread is in now. Without it, the same message and options from the same session within 2 minutes count as a repeat only while that request is still queued, root_delivered, starting or open; one that failed or was closed is not repeated",
         "type": "string"
       },
       "message": {

@@ -50,7 +50,10 @@
       created; a repeat MUST publish the job the outbox saved, so renaming the
       parent between the two calls is not a conflict; the same key with another
       message or options MUST refuse with `THREAD_IDEMPOTENCY_KEY_REUSED` and
-      change nothing, but a retry whose provider came from the parent MUST still
+      change nothing, including the call whose own lookup found no row but whose
+      insert found another request's (two first calls racing on one key), while a
+      racing call that asked for the same thing MUST get the same request;
+      a retry whose provider came from the parent MUST still
       match after the parent's provider override changed; a key over 200
       characters MUST yield `USAGE_ERROR`
       (`src/channels/slack/thread-request-replay.test.ts`,

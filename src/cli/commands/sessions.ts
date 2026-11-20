@@ -7137,7 +7137,7 @@ export class SessionCommands {
     @Option({
       flags: "--idempotency-key <key>",
       description:
-        "Stable key for this thread request: sending it again returns the request it created instead of creating another thread. Without it, the same message and options from the same session within 2 minutes count as a repeat",
+        "Stable key for this thread request: sending it again returns the request it created instead of creating another thread, whatever state that thread is in now. Without it, the same message and options from the same session within 2 minutes count as a repeat only while that request is still queued, root_delivered, starting or open; one that failed or was closed is not repeated",
     })
     idempotencyKey?: string,
   ) {
@@ -7218,18 +7218,21 @@ export class SessionCommands {
       ...(normalizedEffort ? { effortOverride: normalizedEffort } : {}),
       ...(normalizedThinking ? { thinkingLevel: normalizedThinking } : {}),
     };
+    const keyReused = () =>
+      slackThreadError(
+        "THREAD_IDEMPOTENCY_KEY_REUSED",
+        "This idempotency key already created a thread with a different message or runtime.",
+        "Repeat the original message and options to get the existing request back, or pass a new --idempotency-key.",
+      );
+    // A provider the caller did not pass is the parent's: it is not part of what a key names.
+    const matchesKey = (record: Parameters<typeof slackThreadRequestMatches>[0]) =>
+      slackThreadRequestMatches(record, identity, { providerFromParent: !normalizedProvider });
     let requestId: string;
     let replayed: boolean;
     if (explicitKey) {
       requestId = slackThreadRequestIdForKey(creationTarget.parentSession.sessionKey, explicitKey);
       const stored = getSlackThreadLifecycle(requestId);
-      if (stored && !slackThreadRequestMatches(stored, identity, { providerFromParent: !normalizedProvider })) {
-        throw slackThreadError(
-          "THREAD_IDEMPOTENCY_KEY_REUSED",
-          "This idempotency key already created a thread with a different message or runtime.",
-          "Repeat the original message and options to get the existing request back, or pass a new --idempotency-key.",
-        );
-      }
+      if (stored && !matchesKey(stored)) throw keyReused();
       replayed = stored !== null;
     } else {
       const recent = findRecentSlackThreadRequest({
@@ -7263,6 +7266,10 @@ export class SessionCommands {
       effortOverride: normalizedEffort,
       thinkingLevel: normalizedThinking,
     });
+    // Two first calls with one key can both find no row: the insert keeps the first and answers with it. When that
+    // row is another message or runtime, this call asked for what the key already refused, so it gets the same
+    // refusal as a retry that arrives later, not the success of a thread that is not the one it asked for.
+    if (explicitKey && !replayed && !matchesKey(lifecycle)) throw keyReused();
     const requestedRuntimeLabel = slackThreadRuntimeLabel({
       ...(lifecycle.providerOverride ? { providerOverride: lifecycle.providerOverride } : {}),
       ...(lifecycle.modelOverride ? { modelOverride: lifecycle.modelOverride } : {}),

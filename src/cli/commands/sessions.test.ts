@@ -72,6 +72,8 @@ const savedOutboundJobs = new Map<
 const createdSlackThreadLifecycles: Array<Record<string, unknown>> = [];
 /** The lifecycle table as the real store keeps it: the first insert for a request id wins, repeats change nothing. */
 const storedSlackThreadRequests = new Map<string, Record<string, unknown>>();
+/** How many of the next lifecycle lookups answer "no row" although one exists: the other process had not inserted yet. */
+let blindLifecycleLookups = 0;
 const recentSlackThreadRequestQueries: Array<Record<string, any>> = [];
 let recentSlackThreadRequest: Record<string, unknown> | null = null;
 let closeThreadError: unknown = null;
@@ -266,7 +268,13 @@ mock.module("../../channels/slack/thread-lifecycle-store.js", () => ({
     storedSlackThreadRequests.set(String(input.requestId), record);
     return record;
   },
-  getSlackThreadLifecycle: (requestId: string) => storedSlackThreadRequests.get(requestId) ?? null,
+  getSlackThreadLifecycle: (requestId: string) => {
+    if (blindLifecycleLookups > 0) {
+      blindLifecycleLookups -= 1;
+      return null;
+    }
+    return storedSlackThreadRequests.get(requestId) ?? null;
+  },
   findRecentSlackThreadRequest: (input: Record<string, any>) => {
     recentSlackThreadRequestQueries.push(input);
     return recentSlackThreadRequest;
@@ -740,6 +748,7 @@ beforeEach(() => {
   savedOutboundJobs.clear();
   createdSlackThreadLifecycles.length = 0;
   storedSlackThreadRequests.clear();
+  blindLifecycleLookups = 0;
   recentSlackThreadRequestQueries.length = 0;
   recentSlackThreadRequest = null;
   closedSlackThreads.length = 0;
@@ -2393,6 +2402,39 @@ describe("SessionCommands attach hints", () => {
 
       expect(storedSlackThreadRequests.size).toBe(1);
       expect(publishedOutboundJobs).toHaveLength(1);
+    });
+
+    it("refuses the loser of two first calls that share a key and differ in message, not a success for the winner's thread", async () => {
+      seedWhatsAppTurnInSlackAttachedSession("dm");
+      const winner = await create("Resumo da semana", { key: "weekly-summary" });
+      // The other process read no row before the winner inserted, so its own insert is the one that finds the row.
+      blindLifecycleLookups = 1;
+
+      await expect(create("Outro assunto", { key: "weekly-summary" })).rejects.toMatchObject({
+        code: "THREAD_IDEMPOTENCY_KEY_REUSED",
+      });
+
+      expect(storedSlackThreadRequests.size).toBe(1);
+      expect(storedSlackThreadRequests.get(winner.requestId)).toMatchObject({ initialPrompt: "Resumo da semana" });
+      // Nothing was published for the message that lost.
+      expect(publishedOutboundJobs).toHaveLength(1);
+    });
+
+    it("gives the loser of two simultaneous first calls the winner's request when both asked for the same thing", async () => {
+      seedWhatsAppTurnInSlackAttachedSession("dm");
+      const winner = await create("Resumo da semana", { key: "weekly-summary" });
+      blindLifecycleLookups = 1;
+
+      const loser = await create("Resumo da semana", { key: "weekly-summary" });
+
+      expectReturnShape(sessionCreateThreadReturnSchema, loser);
+      // It saw no row before it wrote, so it reports `replayed: false`; the request and its one outbound job are the winner's.
+      expect(loser).toMatchObject({
+        requestId: winner.requestId,
+        idempotencyKey: winner.idempotencyKey,
+        replayed: false,
+      });
+      expect(storedSlackThreadRequests.size).toBe(1);
     });
 
     it("matches a keyed retry after the provider the parent lent it changed, since the caller never passed one", async () => {
