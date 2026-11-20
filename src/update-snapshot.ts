@@ -413,6 +413,22 @@ export function readUpdateSnapshot(stateDir: string, id: string): UpdateSnapshot
   return manifest;
 }
 
+/**
+ * Why the snapshot cannot be put back, or null when every copy its manifest lists is a file of the size it was
+ * copied with. Read only. Checked before anything stops (the plan of `ravi update --rollback`, and the rollback before
+ * its first `pm2 delete`) and again by the restore.
+ */
+export function updateSnapshotUnusable(stateDir: string, manifest: UpdateSnapshotManifest): string | null {
+  const filesDirectory = join(updateSnapshotsDir(stateDir), manifest.id, "files");
+  for (const file of manifest.files) {
+    const info = statSync(join(filesDirectory, file.name), { throwIfNoEntry: false });
+    if (!info?.isFile()) return `is missing ${file.name}`;
+    if (info.size !== file.bytes)
+      return `has ${info.size} bytes in ${file.name}, not the ${file.bytes} it was copied with`;
+  }
+  return null;
+}
+
 function entryExists(path: string): boolean {
   try {
     lstatSync(path);
@@ -511,10 +527,8 @@ export function restoreUpdateSnapshot(input: {
       `Update snapshot ${manifest.id} was already restored, or a restore was cut short: see ${journal}. Nothing was moved.`,
     );
   }
-  for (const file of manifest.files) {
-    if (!entryExists(join(filesDirectory, file.name)))
-      throw new Error(`Update snapshot ${manifest.id} is missing ${file.name}; nothing was restored`);
-  }
+  const unusable = updateSnapshotUnusable(input.stateDir, manifest);
+  if (unusable) throw new Error(`Update snapshot ${manifest.id} ${unusable}; nothing was restored`);
   const deviceOf = input.device ?? ((path: string) => statSync(path).dev);
   const snapshotDevice = deviceOf(directory);
   const candidateDir = join(directory, "candidate");

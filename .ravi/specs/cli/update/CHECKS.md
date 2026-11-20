@@ -176,9 +176,11 @@
   downgrade.
 - `bun test src/update-rollback.test.ts` MUST also prove `ravi update
   --rollback`: the plan back from the last update's target with its snapshot,
-  the refusals before any stop (no snapshot, already restored, a daemon on
-  another release), the commands to finish by hand when nothing runs next to
-  an unused snapshot, the preview by default and the rollback with
+  the refusals before any stop (no snapshot, already restored, a missing
+  snapshot copy with zero `pm2 delete`, also in the automatic rollback, a
+  daemon on another release, a command from another release's install, a
+  rollback request a pre-rollback supervisor refuses), the commands to finish
+  by hand when nothing runs next to an unused snapshot, the preview by default and the rollback with
   `--execute` through the supervisor (one absolute state directory, the
   previewed snapshot; a refusal or a failed rollback reported from what it
   recorded), the supervisor rolling back only the previewed snapshot and
