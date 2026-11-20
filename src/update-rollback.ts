@@ -760,7 +760,9 @@ export async function rollBackUpdate(deps: UpdateRollbackDependencies): Promise<
           ? `The state is restored to the snapshot of ${manifest.createdAt}.`
           : manifest
             ? `The state may still be what Ravi ${manifest.targetRelease} wrote; the snapshot is in ${snapshotDir}.`
-            : "The state is untouched."),
+            : `The state is untouched; once every stopped process has exited` +
+              `${deps.stoppedPids?.length ? ` (\`ps -p ${deps.stoppedPids.join(",")}\` lists none)` : ""}, remove ` +
+              `what PM2 still lists, then install and start Ravi ${plan.previousRelease}.`),
       commands,
     );
   }

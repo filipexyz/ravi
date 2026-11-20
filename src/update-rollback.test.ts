@@ -1115,6 +1115,63 @@ describe("update supervisor with a rollback plan", () => {
     ).toBe(true);
   });
 
+  it("does not start the target without the snapshot on the second pass either: the waypoint comes back", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false });
+    const since = Date.now() - 1_000;
+    let prepared: string | null = null;
+    let readiness: "ready" | "adopt-on-start" = "adopt-on-start";
+    let snapshots = 0;
+
+    expect(
+      await fixture.rebind({
+        assertPrepared: () => readiness,
+        preparedStateRelease: () => prepared,
+        hopThroughWaypoint: async (dependencies) => {
+          prepared = dependencies.waypoint;
+          fixture.bringUp(dependencies.waypoint);
+          readiness = "ready";
+          return { ok: true };
+        },
+        // The first pass's snapshot is taken; the second pass's fails after the waypoint's processes stopped.
+        takeSnapshot: (input) => {
+          if ((snapshots += 1) > 1) throw new Error("copy failed");
+          return takeUpdateSnapshot(input);
+        },
+      }),
+    ).toBe(false);
+    expect(fixture.events.filter((event) => event.startsWith("start:"))).toEqual([]);
+    // The rollback with nothing to restore waits for the waypoint's own processes.
+    expect(fixture.rolledBack).toEqual([null]);
+    expect(fixture.rolledBackPids).toEqual([[103, 104]]);
+    const result = readUpdateSupervisorResult(since, fixture.stateDir);
+    expect(result).toMatchObject({ outcome: "rolled-back" });
+    expect(result?.message).toContain("so Ravi 3.2.0 was not started");
+  });
+
+  it("does not report a second pass as done when PM2 shows no daemon of the waypoint", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false, channelsStopped: true });
+    const since = Date.now() - 1_000;
+    let prepared: string | null = null;
+    let readiness: "ready" | "adopt-on-start" = "adopt-on-start";
+
+    expect(
+      await fixture.rebind({
+        assertPrepared: () => readiness,
+        preparedStateRelease: () => prepared,
+        // The waypoint prepared the state, then its registration is gone: PM2 lists nothing.
+        hopThroughWaypoint: async (dependencies) => {
+          prepared = dependencies.waypoint;
+          readiness = "ready";
+          return { ok: true };
+        },
+      }),
+    ).toBe(false);
+    expect(fixture.events.filter((event) => event.startsWith("start:"))).toEqual([]);
+    const result = readUpdateSupervisorResult(since, fixture.stateDir);
+    expect(result).toMatchObject({ outcome: "failed" });
+    expect(result?.message).toContain("PM2 shows no daemon of the waypoint online");
+  });
+
   it("leaves the waypoint running and says so when the target cannot be installed again", async () => {
     const fixture = supervisorFixture({ targetNeverReady: false });
     const since = Date.now() - 1_000;
@@ -1390,7 +1447,8 @@ describe("update waypoint", () => {
       }
       return list;
     };
-    expect(await hopThroughWaypoint(deps)).toMatchObject({ ok: false, step: "prepare" });
+    // Caught before the runner starts beside it.
+    expect(await hopThroughWaypoint(deps)).toMatchObject({ ok: false, step: "start" });
   });
 
   it("checks both processes are up before a window of 0", async () => {

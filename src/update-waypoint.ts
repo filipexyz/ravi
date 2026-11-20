@@ -193,6 +193,9 @@ async function hopSteps(
     [PM2_PROCESS_NAME, "daemon"],
     [CHANNELS_PM2_PROCESS_NAME, "channels"],
   ] as const) {
+    // The runner starts only beside the daemon that was ready: PM2 may have put another one in its place since.
+    if (name === CHANNELS_PM2_PROCESS_NAME && !daemonReady(deps.getProcesses()))
+      return failed("start", `the daemon of Ravi ${waypoint} was not the ready one anymore before the runner started`);
     log(`starting ${name} with Ravi ${waypoint}`);
     const started = await deps.run(deps.bunPath, [waypointTarget.bundlePath, command, "start"], {
       cwd: waypointTarget.cwd,
