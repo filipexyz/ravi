@@ -55,6 +55,9 @@ import {
   globalInstallMethodOf,
   resolveUpdateRollbackPlan,
   rollBackUpdate,
+  superviseOperatorRollback,
+  UPDATE_ROLLBACK_UNAVAILABLE,
+  type OperatorRollbackSupervisorDependencies,
   type UpdateRollbackDependencies,
   type UpdateRollbackOutcome,
   type UpdateRollbackPlan,
@@ -123,6 +126,8 @@ type ManagedRuntimeRebindRequest = {
   schemaVersion: 1;
   target: ManagedRuntimeTarget;
   previousProcesses: ManagedRuntimeProcessSnapshot[];
+  /** `ravi update --rollback --execute`: the supervisor rolls back to the snapshot the preview named, no rebind. */
+  rollback?: { snapshotId: string };
 };
 
 type ManagedRuntimeRebindDependencies = {
@@ -346,7 +351,22 @@ export function decodeManagedRuntimeRebindRequest(encoded: string): ManagedRunti
     return { name: entry.name, status: entry.status, pid: entry.pid, createdAt: entry.createdAt };
   });
 
-  return { schemaVersion: 1, target, previousProcesses };
+  const rollback = input.rollback;
+  if (
+    rollback !== undefined &&
+    (!rollback ||
+      typeof rollback !== "object" ||
+      typeof rollback.snapshotId !== "string" ||
+      !/^\d{8}T\d{6}Z-[0-9a-f]{6}$/.test(rollback.snapshotId))
+  ) {
+    throw new Error("Invalid managed runtime rebind request");
+  }
+  return {
+    schemaVersion: 1,
+    target,
+    previousProcesses,
+    ...(rollback ? { rollback: { snapshotId: rollback.snapshotId } } : {}),
+  };
 }
 
 async function waitForManagedRuntimeTarget(
@@ -892,11 +912,13 @@ export function buildManagedRuntimeRebindSupervisorInvocation(
   target: ManagedRuntimeTarget,
   processes: Pm2Process[],
   baseEnv: NodeJS.ProcessEnv = process.env,
+  options: { rollback?: { snapshotId: string } } = {},
 ): { command: string; args: string[]; cwd: string; env: Record<string, string> } {
   const request: ManagedRuntimeRebindRequest = {
     schemaVersion: 1,
     target,
     previousProcesses: managedRuntimeSnapshot(processes),
+    ...(options.rollback ? { rollback: options.rollback } : {}),
   };
   const env = buildPm2Env({
     ...(baseEnv as Record<string, string>),
@@ -992,6 +1014,8 @@ export function readSupervisorRefusal(sinceMs: number, stateDir: string = getRav
 export async function maybeRunManagedRuntimeRebindFromEnv(
   insideDaemonTree: () => boolean = () => isInsideDaemonProcessTree({ strict: true }),
   rebind: typeof rebindManagedRuntimeProcesses = rebindManagedRuntimeProcesses,
+  /** The operator rollback's PM2 reads and rollback (tests). */
+  rollbackOverrides: Partial<OperatorRollbackSupervisorDependencies> = {},
 ): Promise<boolean> {
   const encoded = process.env[MANAGED_RUNTIME_REBIND_ENV];
   if (!encoded) return false;
@@ -1002,6 +1026,30 @@ export async function maybeRunManagedRuntimeRebindFromEnv(
   const lock = acquireUpdateSupervisorLock();
   try {
     const request = decodeManagedRuntimeRebindRequest(encoded);
+    if (request.rollback) {
+      let rolledBack: boolean;
+      try {
+        rolledBack = await superviseOperatorRollback({
+          stateDir: getRaviStateDir(),
+          snapshotId: request.rollback.snapshotId,
+          getProcesses: () => getPm2Processes({ strict: true }),
+          run: runManagedRuntimeCommand,
+          bunPath: process.execPath,
+          pidAlive: (pid) => processExitState(pid) !== "exited",
+          env: process.env,
+          stabilityWindowMs: configuredStabilityWindowMs(process.env),
+          installMethod: globalInstallMethodOf(request.target.cwd),
+          ...rollbackOverrides,
+        });
+      } catch (error) {
+        // Refused under the lock, before any stop: the reason reaches the CLI.
+        if ((error as { code?: unknown } | null)?.code === UPDATE_ROLLBACK_UNAVAILABLE)
+          throw recordSupervisorRefusal(UPDATE_ROLLBACK_UNAVAILABLE, (error as Error).message);
+        throw error;
+      }
+      if (!rolledBack) throw new Error("ravi update --rollback did not bring the previous release back");
+      return true;
+    }
     // The CLI started waiting when it spawned this process.
     const plan = supervisorStabilityPlan(declaredBudget, Date.now() - process.uptime() * 1000);
     let converged: boolean;
@@ -1071,10 +1119,12 @@ export async function runManagedRuntimeRebindSupervisor(
   target: ManagedRuntimeTarget,
   processes: Pm2Process[],
   stateDir: string = getRaviStateDir(),
+  /** `rollback`: run `ravi update --rollback --execute` in the supervisor; `env`: the supervisor's environment. */
+  options: { rollback?: { snapshotId: string }; env?: NodeJS.ProcessEnv } = {},
 ): Promise<ManagedRuntimeSupervisorOutcome> {
   const startedAt = Date.now();
   const log = openSupervisorLog(stateDir);
-  const converged = await superviseManagedRuntimeRebind(target, processes, log?.fd);
+  const converged = await superviseManagedRuntimeRebind(target, processes, log?.fd, options);
   return {
     converged,
     // A refusal is recorded before any stop, so only an unconverged run can carry one.
@@ -1088,8 +1138,11 @@ function superviseManagedRuntimeRebind(
   target: ManagedRuntimeTarget,
   processes: Pm2Process[],
   logFd: number | undefined,
+  options: { rollback?: { snapshotId: string }; env?: NodeJS.ProcessEnv },
 ): Promise<boolean> {
-  const invocation = buildManagedRuntimeRebindSupervisorInvocation(target, processes);
+  const invocation = buildManagedRuntimeRebindSupervisorInvocation(target, processes, options.env ?? process.env, {
+    rollback: options.rollback,
+  });
   return new Promise((resolve) => {
     let child: ReturnType<typeof spawn>;
     try {

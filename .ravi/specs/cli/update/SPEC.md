@@ -135,8 +135,9 @@ CLI that run installed.
   `UPDATE_WAYPOINT_REQUIRED`. The refusal MUST name the exact commands: `ravi update --version 3.261113.2`,
   `ravi daemon status`, then `ravi update --next`. A source checkout does not
   accept `--version`, so there the refusal MUST give the checkout steps
-  instead, as commands that run as written: `git -C "<checkout>" fetch --tags`,
-  `git -C "<checkout>" switch --detach v3.261113.2`, build, then
+  instead, as commands that run as written, the path in POSIX single quotes:
+  `git -C '<checkout>' fetch --tags`,
+  `git -C '<checkout>' switch --detach v3.261113.2`, build, then
   `ravi daemon restart -m "waypoint"` and `ravi channels restart`. It MUST say that the installed package (or the checkout) is
   already the target release, because a restart before the waypoint would
   start it on that state.
@@ -242,7 +243,13 @@ CLI that run installed.
   with its state as of that update's snapshot, through the update's own
   rollback: stop both processes, restore under the store locks, reinstall
   the exact previous release in the same global install, start it through
-  its own CLI, and hold it for the stability window.
+  its own CLI, and hold it for the stability window. With `--execute` all of
+  it MUST run in the update supervisor, the same detached process as an
+  update's rebind, which outlives the command: a closed terminal, a lost SSH
+  session or a Ctrl-C after the first stop MUST NOT cut it. The supervisor
+  MUST make the plan again under the update lock and refuse, before any stop,
+  when the latest snapshot is not the one the preview named; the outcome goes
+  to `<state>/updates/supervisor-result.json`, which the command reports.
 - It MUST be a preview unless `--execute` is given (the contract's dry-run,
   exit 3), naming the release it leaves, the release it goes back to, the
   snapshot's time and where what was written since then is kept.
@@ -250,10 +257,14 @@ CLI that run installed.
   when there is no update snapshot, when the latest one was already restored
   (or a restore of it was cut short), when the daemon does not run from a
   global install, when the daemon's verified release is not the target of
-  that update, or when the caller runs inside the daemon's process tree.
+  that update, or when the caller runs inside the daemon's process tree. When
+  neither process runs under PM2 next to an unused snapshot (a rollback cut
+  after its stop), the refusal MUST say so and give the commands that finish
+  it by hand: the snapshot's restore and the previous release's install and
+  start, or, once a restore ran, its `restore.json` and the install and start.
 - It takes no release selector, and `--execute` without `--rollback` is a
-  usage error. It MUST hold `<state>/updates/update.lock` while it runs
-  (`UPDATE_IN_PROGRESS` when another update holds it). A rollback that stops
+  usage error. Its supervisor MUST hold `<state>/updates/update.lock` while it
+  runs (`UPDATE_IN_PROGRESS` when another update holds it). A rollback that stops
   MUST end as `UPDATE_ROLLBACK_FAILED` with the step and the commands.
 
 ## Detached execution

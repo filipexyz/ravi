@@ -98,9 +98,14 @@ authorizes no database or package downgrade by hand: the update's own rollback
   where what was written since then is kept. Add `--execute` to do it, from a
   terminal. It works only from the release that update installed, and only
   once per snapshot.
-- `UPDATE_ROLLBACK_UNAVAILABLE`: nothing was stopped; the message says why
+- With `--execute` the rollback runs in the update supervisor, which goes on
+  if the terminal closes: then read `<state>/updates/supervisor-result.json`
+  (and `<state>/updates/supervisor.log`) before acting.
+- `UPDATE_ROLLBACK_UNAVAILABLE`: this run stopped nothing; the message says why
   (no snapshot, already restored, a source checkout, a daemon on another
-  release, or a caller inside the daemon's tree).
+  release, or a caller inside the daemon's tree). When it says Ravi is not
+  running under PM2, an earlier rollback was cut after its stop: run the
+  commands it gives, in order, with nothing started meanwhile.
 
 ## Rollback
 

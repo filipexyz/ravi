@@ -14,23 +14,13 @@ import {
   resolveManagedRuntimeTargetFromPackageRoot,
   type ManagedRuntimeTarget,
 } from "../../managed-runtime.js";
+import { managedRuntimeSnapshot, runManagedRuntimeRebindSupervisor } from "../../managed-runtime-rebind.js";
 import {
-  acquireUpdateSupervisorLock,
-  configuredStabilityWindowMs,
-  managedRuntimeSnapshot,
-  runManagedRuntimeCommand,
-  runManagedRuntimeRebindSupervisor,
-  UPDATE_IN_PROGRESS,
-} from "../../managed-runtime-rebind.js";
-import { processExitState } from "../../runtime-maintenance.js";
-import {
+  globalInstallMethodOf,
   planOperatorRollback,
-  rollBackUpdate,
   UPDATE_ROLLBACK_UNAVAILABLE,
   UpdateRollbackUnavailableError,
   type OperatorRollbackPlan,
-  type UpdateRollbackDependencies,
-  type UpdateRollbackOutcome,
 } from "../../update-rollback.js";
 import { updateSnapshotsDir } from "../../update-snapshot.js";
 import { CHANNELS_PM2_PROCESS_NAME, getPm2Processes, PM2_PROCESS_NAME, type Pm2Process } from "../../pm2.js";
@@ -150,7 +140,8 @@ export interface UpdateExecutionDeps {
   /** `ravi update --rollback` (tests): the PM2 reads and the rollback itself. */
   rollbackRuntime?: {
     getProcesses: () => Pm2Process[];
-    rollBack?: (dependencies: UpdateRollbackDependencies) => Promise<UpdateRollbackOutcome>;
+    /** The detached supervisor that runs the rollback (`runManagedRuntimeRebindSupervisor`). */
+    supervise?: typeof runManagedRuntimeRebindSupervisor;
   };
 }
 
@@ -1188,9 +1179,12 @@ async function runOperatorRollback(
   const stateDir = resolve(getRaviStateDir(env));
   const rollbackEnv = { ...env, RAVI_STATE_DIR: stateDir };
   const getProcesses = deps.rollbackRuntime?.getProcesses ?? readManagedProcesses;
+  const ownRoot = findRaviPackageRoot(process.argv[1] ?? "");
+  const installMethod = ownRoot ? globalInstallMethodOf(ownRoot) : null;
+  const processes = getProcesses();
   let rollback: OperatorRollbackPlan;
   try {
-    rollback = planOperatorRollback({ stateDir, processes: getProcesses() });
+    rollback = planOperatorRollback({ stateDir, processes, installMethod });
   } catch (cause) {
     if (cause instanceof UpdateRollbackUnavailableError)
       throw new UpdateFailure(cause.message, UPDATE_ROLLBACK_UNAVAILABLE, 1, { cause });
@@ -1218,34 +1212,32 @@ async function runOperatorRollback(
       { asJson: options.json },
     );
   }
-  let lock: { release(): void };
-  try {
-    lock = acquireUpdateSupervisorLock(stateDir);
-  } catch (cause) {
-    throw new UpdateFailure((cause as Error).message, UPDATE_IN_PROGRESS, 1, { cause });
-  }
-  let outcome: UpdateRollbackOutcome;
-  try {
-    outcome = await (deps.rollbackRuntime?.rollBack ?? rollBackUpdate)({
-      stateDir,
-      plan,
-      manifest,
-      previousProcesses: rollback.previousProcesses,
-      bunPath: deps.execPath ?? process.execPath,
-      run: runManagedRuntimeCommand,
-      getProcesses: () => getPm2Processes({ strict: true }),
-      pidAlive: (pid) => processExitState(pid) !== "exited",
-      env: rollbackEnv,
-      // The same window as the update's own rollback (RAVI_UPDATE_STABILITY_WINDOW_MS).
-      stabilityWindowMs: configuredStabilityWindowMs(env),
-    });
-  } finally {
-    lock.release();
-  }
-  if (!outcome.ok) {
+  // The stop, restore, reinstall and start run in the update supervisor: a detached process that holds the update
+  // lock and outlives this command, so a closed terminal or a Ctrl-C does not leave the host half rolled back.
+  const target = resolveManagedRuntimeTargetFromPackageRoot(plan.packageRoot);
+  if (!target)
     throw new UpdateFailure(
-      `ravi update --rollback stopped at ${outcome.step}: ${outcome.message}` +
-        (outcome.commands.length ? ` Next: ${outcome.commands.join(" ; ")}` : ""),
+      `The bundle of the running Ravi in ${plan.packageRoot} could not be resolved. This run stopped nothing.`,
+      UPDATE_ROLLBACK_UNAVAILABLE,
+      1,
+    );
+  const supervisor = await (deps.rollbackRuntime?.supervise ?? runManagedRuntimeRebindSupervisor)(
+    target,
+    processes,
+    stateDir,
+    { rollback: { snapshotId: manifest.id }, env: rollbackEnv },
+  );
+  if (supervisor.refusal) {
+    throw new UpdateFailure(supervisor.refusal.message, supervisorRefusalCode(supervisor.refusal.code), 1);
+  }
+  const recorded = supervisor.result;
+  if (!supervisor.converged || recorded?.outcome !== "rolled-back") {
+    throw new UpdateFailure(
+      recorded?.outcome === "rollback-failed"
+        ? `${recorded.message}${recorded.commands.length ? ` Next: ${recorded.commands.join(" ; ")}` : ""}`
+        : "The rollback supervisor gave no result in time; it may still be running, and it goes on without this " +
+            `command. Read ${join(stateDir, "updates", "supervisor-result.json")} and \`ravi daemon status\` ` +
+            `before acting${supervisor.logPath ? `; its output is in ${supervisor.logPath}` : ""}.`,
       "UPDATE_ROLLBACK_FAILED",
       1,
     );
@@ -1257,11 +1249,9 @@ async function runOperatorRollback(
     from: rollback.runningRelease,
     to: plan.previousRelease,
     snapshotAt: manifest.createdAt,
-    restoredAt: outcome.restoredAt,
-    candidateDir: outcome.candidateDir,
-    message:
-      `Ravi ${plan.previousRelease} runs again on its state as of ${manifest.createdAt}. What Ravi ` +
-      `${rollback.runningRelease} wrote since then is kept in ${outcome.candidateDir}.`,
+    restoredAt: recorded.restoredAt,
+    candidateDir: recorded.candidateDir,
+    message: recorded.message,
   };
   if (options.json) console.log(JSON.stringify(result));
   else console.log(result.message);
