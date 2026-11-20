@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { createRuntimeContext } from "../../runtime/context-registry.js";
+import { runWithContext } from "../../cli/context.js";
 import { buildRuntimeRequestContext } from "../../runtime/runtime-request-context.js";
 import { createContact } from "../../contacts.js";
 import { accessActorFromTurn } from "../../access/actor.js";
@@ -1034,9 +1035,19 @@ describe("Slack thread orchestration", () => {
     const refreshCard = (record: Parameters<typeof updateReopenedSlackThreadCard>[0]) =>
       updateReopenedSlackThreadCard(record, withCards);
 
+    // The thread closes itself from a turn of its own session; the parent from one of its own.
+    const turnOf = (sessionKey: string, sessionName: string) =>
+      createRuntimeContext({ kind: "turn-runtime", sessionKey, sessionName, capabilities: [] });
+    const threadTurn = turnOf(child.sessionKey, child.name!);
+    const parentTurn = turnOf("ravi-parent", "ravi-parent");
+    const closeIn = (context: { contextId: string; sessionKey?: string }, result: string) =>
+      runWithContext({ contextId: context.contextId, sessionKey: context.sessionKey }, () =>
+        closeSlackThread(child, result, withCards),
+      );
+
     // An open thread has nothing to reopen.
     expect(reopenThreadsForDeliveredInstructions([instruction("thread.message")], { refreshCard })).toEqual([]);
-    await closeSlackThread(child, "R1", withCards);
+    await closeIn(threadTurn, "R1");
     jobs.length = 0;
 
     // Only a parent's instruction for this child reopens it; a report, another child and an unknown thread do not.
@@ -1068,7 +1079,7 @@ describe("Slack thread orchestration", () => {
     );
 
     // A failing card update never stops the delivery that reopened the thread.
-    await closeSlackThread(child, "R2", withCards);
+    await closeIn(threadTurn, "R2");
     expect(
       reopenThreadsForDeliveredInstructions([instruction("thread.message")], {
         refreshCard: async () => {
@@ -1077,6 +1088,14 @@ describe("Slack thread orchestration", () => {
       }),
     ).toEqual([fixture.requestId]);
     expect(getSlackThreadLifecycle(fixture.requestId)?.status).toBe("open");
+
+    // A close the parent made stands, whatever is queued: delivering the instruction does not undo it.
+    await closeIn(parentTurn, "closed by the parent");
+    expect(getSlackThreadLifecycle(fixture.requestId)?.status).toBe("closed");
+    jobs.length = 0;
+    expect(reopenThreadsForDeliveredInstructions([instruction("thread.message")], { refreshCard })).toEqual([]);
+    expect(getSlackThreadLifecycle(fixture.requestId)?.status).toBe("closed");
+    expect(jobs).toHaveLength(0);
   });
 
   it("updates the thread's root card on report, close and reopen", async () => {

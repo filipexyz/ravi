@@ -7295,7 +7295,12 @@ describe("runtime session trace instrumentation", () => {
         await refreshEntered.promise;
         const terminalBeforeTransition = getSessionTurn("turn-await-credential-refresh");
         expect(terminalBeforeTransition?.status).toBe("failed");
-        expect(stash.get(SESSION_NAME)?.map((message) => message.pendingId)).toEqual([active.pendingId]);
+        // A credential retry stashes the turn together with what is queued behind it: the restart around the
+        // retry only reads the stash, so a successor left out of it would be lost.
+        expect(stash.get(SESSION_NAME)?.map((message) => message.pendingId)).toEqual([
+          active.pendingId,
+          successor.pendingId,
+        ]);
         let replacement: RuntimeHostStreamingSession | undefined;
         let replacementContextId: string | undefined;
         if (transition === "explicit abort") {

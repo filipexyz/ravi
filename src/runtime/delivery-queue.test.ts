@@ -1737,6 +1737,39 @@ describe("runtime delivery queue", () => {
     expect(stash.get("dev")?.[0]?.terminalReplayAllowed).toBe(true);
   });
 
+  it("stashes the successors queued behind a turn that will be re-run, in order, marking only the turn", () => {
+    const active = createQueuedRuntimeUserMessage(channelPrompt("current work", "turn-a"));
+    const instruction = createQueuedRuntimeUserMessage({
+      prompt: "[System] Execute: [from: parent] next step",
+      deliveryBarrier: "after_response",
+    });
+    const later = createQueuedRuntimeUserMessage(channelPrompt("later question", "turn-c"));
+    const session = makeStreamingSession({
+      pendingMessages: [active, instruction, later],
+      currentTurnPendingIds: [active.pendingId!],
+    });
+
+    // A credential retry restarts the session around the turn: the queue behind it must survive.
+    const retry = new Map<string, RuntimeUserMessage[]>();
+    expect(stashCurrentTurnRuntimeMessages("dev", session, retry)).toBe(3);
+    expect(retry.get("dev")?.map((message) => message.pendingId)).toEqual([
+      active.pendingId,
+      instruction.pendingId,
+      later.pendingId,
+    ]);
+    expect(retry.get("dev")?.map((message) => message.replay)).toEqual([undefined, undefined, undefined]);
+
+    // Recovery of a turn that never ended reconciles the turn itself and keeps the queue behind it untouched.
+    const reconcile = new Map<string, RuntimeUserMessage[]>();
+    expect(stashCurrentTurnRuntimeMessages("dev", session, reconcile, { reconcileCurrentTurn: true })).toBe(3);
+    expect(reconcile.get("dev")?.map((message) => message.replay)).toEqual([true, undefined, undefined]);
+    expect(reconcile.get("dev")?.map((message) => message.pendingId)).toEqual([
+      active.pendingId,
+      instruction.pendingId,
+      later.pendingId,
+    ]);
+  });
+
   it("stashes only the successor when an interrupted turn was intentionally superseded", () => {
     const active = createQueuedRuntimeUserMessage(channelPrompt("old work", "turn-a"));
     const steering = createQueuedRuntimeUserMessage(channelPrompt("new direction", "turn-b"));

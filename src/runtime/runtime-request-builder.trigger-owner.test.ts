@@ -16,9 +16,9 @@ import { attachChatToSession, getOrCreateSession, resetSession, resolveSession }
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { TriggerRunAuthority } from "../triggers/authority.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
-import { resolveRuntimeContext } from "./context-registry.js";
+import { createRuntimeContext, resolveRuntimeContext } from "./context-registry.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
-import type { RuntimeHostStreamingSession } from "./host-session.js";
+import type { RuntimeHostStreamingSession, RuntimeUserMessage } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { buildRuntimeStartRequest, resolveRuntimePromptSource } from "./runtime-request-builder.js";
 import type { RuntimeCapabilities, RuntimeSessionHandle } from "./types.js";
@@ -123,7 +123,13 @@ function fire(
 }
 
 /** Starts the first turn of a session the way the host does, and reads what it recorded. */
-async function startTurn(input: { sessionKey: string; sessionName: string; prompt: RuntimeLaunchPrompt }) {
+async function startTurn(input: {
+  sessionKey: string;
+  sessionName: string;
+  prompt: RuntimeLaunchPrompt;
+  /** Fields of the queued message itself, such as a replay of an unfinished turn. */
+  queued?: Partial<RuntimeUserMessage>;
+}) {
   // The trigger's own session exists because its runner created it.
   getOrCreateSession(input.sessionKey, AGENT_ID, stateDir!, { name: input.sessionName }, { triggerRunner: true });
   const session = resolveSession(input.sessionKey);
@@ -137,7 +143,7 @@ async function startTurn(input: { sessionKey: string; sessionName: string; promp
     abortController: new AbortController(),
     pushMessage: null,
     pendingWake: false,
-    pendingMessages: [createQueuedRuntimeUserMessage(input.prompt)],
+    pendingMessages: [{ ...createQueuedRuntimeUserMessage(input.prompt), ...input.queued }],
     currentSource: resolvedSource,
     currentModel: MODEL,
     toolRunning: false,
@@ -474,10 +480,19 @@ describe("a parent's queued thread instruction through the real turn start", () 
     };
   }
 
+  /** A context of a turn of that session: what a `close-thread` run in it records as the closing context. */
+  function turnContextOf(sessionKey: string, sessionName: string) {
+    return createRuntimeContext({ kind: "turn-runtime", agentId: AGENT_ID, sessionKey, sessionName, capabilities: [] });
+  }
+
   it("reopens a thread that closed itself in the turn the instruction waited behind", async () => {
     const record = seedThread();
-    // The thread closed with its own return while the parent's instruction sat in the queue.
-    closeSlackThreadLifecycle({ childSessionKey: CHILD_KEY, returnResult: "R1" });
+    // The thread closed with its own return, from a turn of its own session, while the instruction sat in the queue.
+    closeSlackThreadLifecycle({
+      childSessionKey: CHILD_KEY,
+      returnResult: "R1",
+      closeContextId: turnContextOf(CHILD_KEY, CHILD_NAME).contextId,
+    });
     expect(getSlackThreadLifecycle(record.requestId)?.status).toBe("closed");
 
     const turn = await startTurn({
@@ -489,6 +504,61 @@ describe("a parent's queued thread instruction through the real turn start", () 
     // Delivery is when the thread starts working on it again, so the next close reports its return.
     expect(getSlackThreadLifecycle(record.requestId)?.status).toBe("open");
     await turn.end();
+  });
+
+  it.each([
+    ["from a turn of the parent's own session", () => turnContextOf(PARENT_KEY, "slack-thread-parent").contextId],
+    ["from a terminal, with no context", () => undefined],
+    ["from a context that is gone", () => "ctx_that_does_not_exist"],
+  ])("never undoes a close made %s", async (_closer, closeContextId) => {
+    const record = seedThread();
+    closeSlackThreadLifecycle({ childSessionKey: CHILD_KEY, closeContextId: closeContextId() });
+
+    // The instruction still reaches the thread, but its delivery does not undo that decision.
+    const turn = await startTurn({
+      sessionKey: CHILD_KEY,
+      sessionName: CHILD_NAME,
+      prompt: instruction(record.requestId),
+    });
+    expect(getSlackThreadLifecycle(record.requestId)?.status).toBe("closed");
+    await turn.end();
+  });
+
+  it("does not take a replay or a capacity retry of a delivered instruction for a new delivery", async () => {
+    const record = seedThread();
+    closeSlackThreadLifecycle({
+      childSessionKey: CHILD_KEY,
+      closeContextId: turnContextOf(CHILD_KEY, CHILD_NAME).contextId,
+    });
+
+    // The turn that carried the instruction comes back (a replay after an unfinished turn): not a new delivery.
+    const replayed = await startTurn({
+      sessionKey: CHILD_KEY,
+      sessionName: CHILD_NAME,
+      prompt: instruction(record.requestId),
+      queued: { replay: true, clientMessageId: "client-1" },
+    });
+    expect(getSlackThreadLifecycle(record.requestId)?.status).toBe("closed");
+    await replayed.end();
+
+    // Nor is the retry of a message that waited for provider capacity.
+    const retried = await startTurn({
+      sessionKey: CHILD_KEY,
+      sessionName: CHILD_NAME,
+      prompt: instruction(record.requestId),
+      queued: { providerCapacityRetry: { attempts: 1 } as never },
+    });
+    expect(getSlackThreadLifecycle(record.requestId)?.status).toBe("closed");
+    await retried.end();
+
+    // The first delivery of the same instruction does reopen it.
+    const firstDelivery = await startTurn({
+      sessionKey: CHILD_KEY,
+      sessionName: CHILD_NAME,
+      prompt: instruction(record.requestId),
+    });
+    expect(getSlackThreadLifecycle(record.requestId)?.status).toBe("open");
+    await firstDelivery.end();
   });
 
   it("leaves an open thread, a closed thread's other prompts and another child's instruction alone", async () => {

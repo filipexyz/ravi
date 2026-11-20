@@ -323,25 +323,24 @@ export function stashCurrentTurnRuntimeMessages(
   }
 
   const safety = getRuntimeTurnReplaySafety(session, options.crashRecovery);
-  const messages = (
-    options.reconcileCurrentTurn
-      ? session.currentTurnSuperseded
+  const messages =
+    // A turn that is re-run (a credential retry, a recovery of a turn that never ended) is stashed with
+    // everything queued behind it. Only the turn's own messages used to be kept, so a successor that was
+    // already in the queue (a follow-up, a parent's instruction waiting behind the turn) was lost when
+    // the session restarted around the retry. `getReplayablePendingRuntimeMessages` is every pending
+    // message, or only the successors when the turn was superseded; a turn that cannot be re-run keeps
+    // only its successors.
+    (
+      options.reconcileCurrentTurn || safety.replayable
         ? getReplayablePendingRuntimeMessages(session)
-        : session.pendingMessages.filter((message) => message.pendingId && currentTurnPendingIds.has(message.pendingId))
-      : safety.replayable
-        ? session.currentTurnSuperseded
-          ? getReplayablePendingRuntimeMessages(session)
-          : session.pendingMessages.filter(
-              (message) => message.pendingId && currentTurnPendingIds.has(message.pendingId),
-            )
         : getPendingRuntimeTurnSuccessors(session)
-  ).map((message) =>
-    cloneRuntimeMessageForStash(
-      message,
-      options.reconcileCurrentTurn ? currentTurnPendingIds : undefined,
-      safety.replayable,
-    ),
-  );
+    ).map((message) =>
+      cloneRuntimeMessageForStash(
+        message,
+        options.reconcileCurrentTurn ? currentTurnPendingIds : undefined,
+        safety.replayable,
+      ),
+    );
 
   if (messages.length === 0) {
     return 0;
