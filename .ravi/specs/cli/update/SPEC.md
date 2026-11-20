@@ -279,7 +279,8 @@ CLI that run installed.
 - Before stopping anything it MUST refuse with `UPDATE_ROLLBACK_UNAVAILABLE`
   when there is no update snapshot, when the latest one was already restored
   (or a restore of it was cut short), when a copy its manifest lists is
-  missing or is not the size it was copied with, when the daemon does not run
+  missing, cannot be read or is not the size it was copied with, when the
+  daemon does not run
   from a global install, when the daemon's verified release is not the target
   of that update, when the command's own release is not the one installed
   where the daemon runs from (the rollback runs in that install's supervisor),
