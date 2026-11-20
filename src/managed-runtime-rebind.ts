@@ -518,8 +518,17 @@ export async function rebindManagedRuntimeProcesses(
         { cause: available.cause },
       );
     // The probe can wait 15 s. A daemon PM2 started again meanwhile runs the installed package, the target, and
-    // writes the state, which the snapshot would then keep as the previous release's: the same check again.
-    const changed = changedManagedProcesses(previousProcesses, getProcesses());
+    // writes the state, which the snapshot would then keep as the previous release's: the same check again. A PM2
+    // read that fails once is tried once more before the update gives up (nothing has stopped).
+    let afterProbe: Pm2Process[];
+    try {
+      afterProbe = getProcesses();
+    } catch {
+      // no-cause: A second failure throws its own error below; one transient failure is not a reason to stop.
+      await (dependencies.wait ?? ((ms: number) => delay(ms)))(1_000);
+      afterProbe = getProcesses();
+    }
+    const changed = changedManagedProcesses(previousProcesses, afterProbe);
     if (changed) throw new UpdateRuntimeChangedError(changed, target.version, rollbackPlan.previousRelease);
   }
   const stores = rollbackPlan ? (dependencies.storePaths ?? updateStorePaths)(stateDir) : [];
@@ -1210,11 +1219,9 @@ export function changedManagedProcesses(
   for (const previous of previousProcesses) {
     const matches = processes.filter((process) => process.name === previous.name);
     if (matches.length !== 1) return `${previous.name} is listed ${matches.length} times, not once`;
-    if (
-      matches[0]!.pid !== previous.pid ||
-      (previous.createdAt !== null && matches[0]!.createdAt !== previous.createdAt)
-    )
-      return `${previous.name} pid ${previous.pid} -> ${matches[0]!.pid}`;
+    if (matches[0]!.pid !== previous.pid) return `${previous.name} pid ${previous.pid} -> ${matches[0]!.pid}`;
+    if (previous.createdAt !== null && matches[0]!.createdAt !== previous.createdAt)
+      return `${previous.name} started again with the same pid ${previous.pid}`;
   }
   return null;
 }

@@ -18,11 +18,13 @@ import { join, relative } from "node:path";
 import {
   acquireUpdateSupervisorLock,
   buildManagedRuntimeRebindSupervisorInvocation,
+  changedManagedProcesses,
   decodeManagedRuntimeRebindRequest,
   type ManagedRuntimeSupervisorOutcome,
   maybeRunManagedRuntimeRebindFromEnv,
   readSupervisorRefusal,
   rebindManagedRuntimeProcesses,
+  UpdateRuntimeChangedError,
   UPDATE_IN_PROGRESS,
   updateSupervisorRunning,
 } from "./managed-runtime-rebind.js";
@@ -1224,6 +1226,45 @@ describe("update supervisor with a rollback plan", () => {
     const control = supervisorFixture({ targetNeverReady: false });
     expect(await control.rebind()).toBe(true);
     expect(control.events.slice(0, 2)).toEqual(["delete:ravi-channels", "delete:ravi"]);
+  });
+
+  it("tries a failed PM2 read after the probe once more before giving up", async () => {
+    for (const failures of [1, 2]) {
+      const fixture = supervisorFixture({ targetNeverReady: false });
+      const mutations: string[][] = [];
+      let probed = false;
+      let failed = 0;
+      const outcome = await fixture
+        .rebind({
+          releaseAvailable: async () => {
+            probed = true;
+            return { ok: true as const };
+          },
+          getProcesses: () => {
+            if (probed && failed < failures) {
+              failed += 1;
+              throw new Error("pm2 jlist: connect ECONNREFUSED");
+            }
+            return fixture.processes();
+          },
+          run: async (command, args) => {
+            mutations.push(args);
+            return fixture.run(command, args);
+          },
+        })
+        .then(
+          (converged) => ({ converged, error: null }),
+          (error: Error) => ({ converged: false, error }),
+        );
+      if (failures === 1) {
+        // One transient failure: the second read decides, and the update goes on.
+        expect(outcome).toEqual({ converged: true, error: null });
+        expect(mutations[0]?.[0]).toBe("delete");
+      } else {
+        expect(outcome.error?.message).toContain("ECONNREFUSED");
+        expect(mutations).toEqual([]);
+      }
+    }
   });
 
   it("does not repeat that --running-release is not used once the waypoint took it", async () => {
@@ -2649,6 +2690,125 @@ describe("the registry probe before any stop", () => {
     }
     expect(displayedRegistry("https://dave:PW@mirror.example/npm/?token=Q#F")).toBe("https://mirror.example/npm");
     expect(displayedRegistry("http://127.0.0.1:4873/")).toBe("http://127.0.0.1:4873");
+  });
+
+  it("sends the credential the installer would, to the registry's host only", async () => {
+    const home = tempDir("ravi-registry-home-");
+    const env = { XDG_CONFIG_HOME: join(home, "none"), BUN_TOKEN: "bun-T0KEN" };
+    const basic = (pair: string) => `Basic ${Buffer.from(pair).toString("base64")}`;
+    const asked = async (method: "bun" | "npm", environment: NodeJS.ProcessEnv) => {
+      const probe = answering(200);
+      expect(
+        await releaseInRegistry("3.1.0", method, { env: environment, home, fetchRelease: probe.fetchRelease }),
+      ).toEqual({ ok: true });
+      return probe.urls[0]!;
+    };
+    // bun's install registry with a token (`${VAR}` expanded), then with a user and password.
+    writeFileSync(
+      join(home, ".bunfig.toml"),
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: `${BUN_TOKEN}` is bunfig's own syntax, read as text.
+      '[install]\nregistry = { url = "https://bun.example/npm/", token = "${BUN_TOKEN}" }\n',
+    );
+    expect(await asked("bun", env)).toEqual({
+      url: "https://bun.example/npm/ravi.bot/3.1.0",
+      authorization: "Bearer bun-T0KEN",
+    });
+    writeFileSync(
+      join(home, ".bunfig.toml"),
+      '[install]\nregistry = { url = "https://bun.example/npm/", username = "ann", password = "pw" }\n',
+    );
+    expect((await asked("bun", env)).authorization).toBe(basic("ann:pw"));
+    rmSync(join(home, ".bunfig.toml"));
+    // A user and password in the address go as Basic, never in the address asked.
+    expect(await asked("npm", { npm_config_registry: "https://bob:p%40ss@mirror.example/npm/" })).toEqual({
+      url: "https://mirror.example/npm/ravi.bot/3.1.0",
+      authorization: basic("bob:p@ss"),
+    });
+    // ~/.npmrc for that host: `_auth`, then `username` and `_password`.
+    writeFileSync(
+      join(home, ".npmrc"),
+      `registry=https://mirror.example/npm/\n//mirror.example/:_auth=${Buffer.from("carl:pw2").toString("base64")}\n`,
+    );
+    expect((await asked("npm", {})).authorization).toBe(basic("carl:pw2"));
+    writeFileSync(
+      join(home, ".npmrc"),
+      "registry=https://mirror.example/npm/\n//mirror.example/npm/:username=dora\n" +
+        `//mirror.example/npm/:_password=${Buffer.from("pw3").toString("base64")}\n`,
+    );
+    expect((await asked("npm", {})).authorization).toBe(basic("dora:pw3"));
+    // Another host's credential never goes along.
+    writeFileSync(
+      join(home, ".npmrc"),
+      `registry=https://mirror.example/npm/\n//other.example/:_auth=${Buffer.from("eve:pw4").toString("base64")}\n`,
+    );
+    expect((await asked("npm", {})).authorization).toBeUndefined();
+    // bun's entry counts only when it is the registry used: here ~/.npmrc's registry wins, without that token.
+    writeFileSync(
+      join(home, ".bunfig.toml"),
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: `${BUN_TOKEN}` is bunfig's own syntax, read as text.
+      '[install]\nregistry = { url = "https://bun.example/npm/", token = "${BUN_TOKEN}" }\n',
+    );
+    expect(await asked("bun", env)).toEqual({
+      url: "https://mirror.example/npm/ravi.bot/3.1.0",
+      authorization: undefined,
+    });
+  });
+
+  it("says which credential went along when the registry answers 401 or 403, never the credential", async () => {
+    const home = tempDir("ravi-registry-home-");
+    writeFileSync(
+      join(home, ".npmrc"),
+      "registry=https://mirror.example/npm/\n//mirror.example/:_authToken=SECRET-T0KEN\n",
+    );
+    for (const status of [401, 403]) {
+      const result = await releaseInRegistry("3.1.0", "npm", {
+        env: {},
+        home,
+        fetchRelease: answering(status).fetchRelease,
+      });
+      const reason = result.ok ? "" : result.reason;
+      expect(reason).toContain(`answered ${status} for ravi.bot@3.1.0, asked with the _authToken of ~/.npmrc`);
+      expect(reason).not.toContain("SECRET-T0KEN");
+      // What the CLI prints goes through its redactor: nothing in the reason may come out redacted.
+      expect(redactDiagnosticText(reason)).toBe(reason);
+    }
+    const bare = await releaseInRegistry("3.1.0", "npm", {
+      env: { npm_config_registry: "https://plain.example/" },
+      home: tempDir("ravi-registry-home-"),
+      fetchRelease: answering(401).fetchRelease,
+    });
+    expect(bare.ok ? "" : bare.reason).toContain("asked with no credential");
+  });
+
+  it("records PM2 starting the daemon again during the probe as a refusal the command reports", async () => {
+    const stateDir = tempDir("ravi-registry-state-");
+    const install = globalInstall("3.2.0");
+    process.env.RAVI_STATE_DIR = stateDir;
+    const env = "RAVI_INTERNAL_UPDATE_RUNTIME_REBIND";
+    const invocation = buildManagedRuntimeRebindSupervisorInvocation(install.target, [], { PATH: "/usr/bin" });
+    const since = Date.now() - 1_000;
+    process.env[env] = invocation.env[env];
+    try {
+      await expect(
+        maybeRunManagedRuntimeRebindFromEnv(
+          () => false,
+          async () => {
+            throw new UpdateRuntimeChangedError("ravi pid 10 -> 99", "3.2.0", "3.1.0");
+          },
+        ),
+      ).rejects.toThrow("UPDATE_RUNTIME_CHANGED");
+    } finally {
+      delete process.env[env];
+    }
+    expect(readSupervisorRefusal(since, stateDir)).toMatchObject({ code: "UPDATE_RUNTIME_CHANGED" });
+    // What differs, named: another pid, the same pid started again, a name listed twice.
+    const previous = [{ name: "ravi" as const, status: "online", pid: 10, createdAt: 1 }];
+    const daemon = (pid: number, createdAt: number) =>
+      pm2Process("ravi", "/x/dist/bundle/index.js", "/x", { pid, createdAt });
+    expect(changedManagedProcesses(previous, [daemon(99, 2)])).toBe("ravi pid 10 -> 99");
+    expect(changedManagedProcesses(previous, [daemon(10, 2)])).toBe("ravi started again with the same pid 10");
+    expect(changedManagedProcesses(previous, [daemon(10, 1), daemon(11, 1)])).toBe("ravi is listed 2 times, not once");
+    expect(changedManagedProcesses(previous, [daemon(10, 1)])).toBeNull();
   });
 
   it("records a missing release as a refusal the command reports with its code", async () => {

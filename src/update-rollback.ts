@@ -244,7 +244,7 @@ export async function releaseInRegistry(
   method: GlobalInstallMethod = "bun",
   options: { env?: NodeJS.ProcessEnv; home?: string; fetchRelease?: typeof fetch } = {},
 ): Promise<ReleaseAvailability> {
-  const registry = installerRegistry(method, options.env ?? process.env, options.home ?? homedir());
+  const registry = readInstallerRegistry(method, options.env ?? process.env, options.home ?? homedir());
   // Only an http or https registry is asked; any other value is refused without being echoed.
   if (!httpRegistry(registry.url))
     return { ok: false, reason: `${NOT_AN_HTTP_REGISTRY} cannot be asked for ravi.bot@${release}` };
@@ -258,9 +258,18 @@ export async function releaseInRegistry(
       signal: AbortSignal.timeout(15_000),
     });
   } catch (cause) {
-    return registryUnanswered(release, shown, [url, registry.url], cause);
+    return registryUnanswered(release, shown, [url, registry.url, registry.address], registry.secrets, cause);
   }
   if (response.status === 404) return { ok: false, reason: `ravi.bot@${release} is not in the registry at ${shown}` };
+  if (response.status === 401 || response.status === 403)
+    return {
+      ok: false,
+      reason:
+        `the registry at ${shown} answered ${response.status} for ravi.bot@${release}, asked with ` +
+        `${registry.credential ? `the ${registry.credential}` : "no credential"}. The check sends what the installer ` +
+        "would: for that host, `_authToken`, `_auth` or `username` and `_password` in ~/.npmrc, the token or user " +
+        "and password of bun's install registry in bunfig.toml, or a `user:password@` in the address",
+    };
   if (!response.ok)
     return { ok: false, reason: `the registry at ${shown} answered ${response.status} for ravi.bot@${release}` };
   return { ok: true };
@@ -302,18 +311,27 @@ export function displayedRegistry(url: string): string {
  * message with the request's addresses (and a password in them) taken out: the raw error of `fetch` can carry the
  * address the request went to, credentials included.
  */
-function registryUnanswered(release: string, shown: string, addresses: string[], cause: unknown): ReleaseAvailability {
+function registryUnanswered(
+  release: string,
+  shown: string,
+  addresses: string[],
+  secrets: string[],
+  cause: unknown,
+): ReleaseAvailability {
   const error = cause instanceof Error ? cause : null;
   // The whole addresses first (they become the shown one), then the credentials in any form left (they become ***).
-  const credentials = addresses.flatMap((address) => {
-    try {
-      const { password, username } = new URL(address);
-      return [password, safeDecode(password), ...(username.length >= 3 ? [username, safeDecode(username)] : [])];
-    } catch {
-      // no-cause: An address that is not a URL has no credential to take apart; it is taken out as a whole.
-      return [];
-    }
-  });
+  const credentials = [
+    ...secrets,
+    ...addresses.flatMap((address) => {
+      try {
+        const { password, username } = new URL(address);
+        return [password, safeDecode(password), ...(username.length >= 3 ? [username, safeDecode(username)] : [])];
+      } catch {
+        // no-cause: An address that is not a URL has no credential to take apart; it is taken out as a whole.
+        return [];
+      }
+    }),
+  ];
   const longestFirst = (values: string[]) =>
     values.filter((value) => value.length > 0).sort((a, b) => b.length - a.length);
   let message = error ? error.message : String(cause);
@@ -345,14 +363,32 @@ const PUBLIC_REGISTRY = "https://registry.npmjs.org";
  * The registry the installer reads ravi.bot from, so the probe sees what the install sees (a mirror included): its
  * environment first (`BUN_CONFIG_REGISTRY` for bun, `npm_config_registry`), then `~/.npmrc` (both read it, and bun
  * prefers it to its own config; the last `registry=` line wins), then bun's `bunfig.toml` `[install] registry`, then
- * the public registry. An `_authToken` that `~/.npmrc` gives that same host goes along, `${VAR}` expanded from the
- * environment, and only to it: never printed, recorded or sent to another host.
+ * the public registry. With it, the credential the installer would send there, and to that host only: the token or
+ * the user and password of bun's registry entry, a `user:password@` in the address (taken off the address), or what
+ * `~/.npmrc` gives that host (`_authToken`, `_auth`, `username` and `_password`), `${VAR}` expanded from the
+ * environment. Never printed, logged or recorded.
  */
 export function installerRegistry(
   method: GlobalInstallMethod,
   env: NodeJS.ProcessEnv = process.env,
   home: string = homedir(),
 ): { url: string; headers: Record<string, string> } {
+  const { url, headers } = readInstallerRegistry(method, env, home);
+  return { url, headers };
+}
+
+type InstallerRegistry = {
+  url: string;
+  /** The address as configured, credentials included: taken out of any text that could quote it. */
+  address: string;
+  headers: Record<string, string>;
+  /** Which credential goes along, by its source (never its value), or null. */
+  credential: string | null;
+  /** Every credential value, to take out of any text that could quote them. */
+  secrets: string[];
+};
+
+function readInstallerRegistry(method: GlobalInstallMethod, env: NodeJS.ProcessEnv, home: string): InstallerRegistry {
   const read = (path: string): string | null => {
     try {
       return readFileSync(path, "utf8");
@@ -372,31 +408,101 @@ export function installerRegistry(
     }
     return value;
   };
-  const bunfigRegistry = (): string | null => {
+  type BunRegistry = { url: string; token: string | null; username: string | null; password: string | null };
+  const bunfigRegistry = (): BunRegistry | null => {
     const bunfig =
       read(join(env.XDG_CONFIG_HOME ?? join(home, ".config"), ".bunfig.toml")) ?? read(join(home, ".bunfig.toml"));
     const install = bunfig ? /\[install\]([\s\S]*?)(?:\n\[|$)/.exec(bunfig)?.[1] : undefined;
     if (!install) return null;
-    const value =
-      /\bregistry\s*=\s*"([^"]+)"/.exec(install) ?? /\bregistry\s*=\s*\{[^}]*\burl\s*=\s*"([^"]+)"/.exec(install);
-    return value ? expand(value[1]!) : null;
+    const plain = /\bregistry\s*=\s*"([^"]+)"/.exec(install);
+    if (plain) return { url: expand(plain[1]!), token: null, username: null, password: null };
+    // A quoted value may hold a brace (`"${TOKEN}"`): the entry ends at the first brace outside quotes.
+    const entry = /\bregistry\s*=\s*\{((?:"[^"]*"|[^}"])*)\}/.exec(install)?.[1];
+    const field = (name: string): string | null => {
+      const match = entry ? new RegExp(`\\b${name}\\s*=\\s*"([^"]*)"`).exec(entry) : null;
+      return match ? expand(match[1]!) : null;
+    };
+    const url = field("url");
+    return url ? { url, token: field("token"), username: field("username"), password: field("password") } : null;
   };
+  const bun = method === "bun" ? bunfigRegistry() : null;
   // bun reads `~/.npmrc` over its own `bunfig.toml` for the registry.
   const configured =
     (method === "bun" ? env.BUN_CONFIG_REGISTRY : undefined) ??
     env.npm_config_registry ??
     env.NPM_CONFIG_REGISTRY ??
     npmrcValue("registry") ??
-    (method === "bun" ? bunfigRegistry() : null);
-  const url = (configured?.trim() || PUBLIC_REGISTRY).replace(/\/+$/, "");
-  let token: string | null = null;
+    bun?.url ??
+    null;
+  const raw = (configured?.trim() || PUBLIC_REGISTRY).replace(/\/+$/, "");
+  const secrets: string[] = [];
+  const basic = (user: string, password: string) => {
+    secrets.push(user, password);
+    return `Basic ${Buffer.from(`${user}:${password}`, "utf8").toString("base64")}`;
+  };
+  let url = raw;
+  let parsed: URL | null = null;
   try {
-    const { host, pathname } = new URL(url);
-    token = npmrcValue(`//${host}${pathname.replace(/\/+$/, "")}/:_authToken`) ?? npmrcValue(`//${host}/:_authToken`);
+    parsed = new URL(raw);
   } catch {
-    // no-cause: A registry that is not a URL gets no token; the probe then reports what that address answered.
+    // no-cause: A registry that is not a URL gets no credential; the probe refuses to ask it.
   }
-  return { url, headers: token ? { authorization: `Bearer ${token}` } : {} };
+  // A `user:password@` goes as Basic, never in the address the request goes to (or that an error could quote).
+  let userinfo: { user: string; password: string } | null = null;
+  if (parsed && (parsed.protocol === "http:" || parsed.protocol === "https:") && (parsed.username || parsed.password)) {
+    userinfo = { user: safeDecode(parsed.username), password: safeDecode(parsed.password) };
+    secrets.push(parsed.username, parsed.password);
+    parsed.username = "";
+    parsed.password = "";
+    url = parsed.toString().replace(/\/+$/, "");
+  }
+  const scopes = parsed ? [`//${parsed.host}${parsed.pathname.replace(/\/+$/, "")}/`, `//${parsed.host}/`] : [];
+  const scoped = (key: string): string | null => {
+    for (const scope of scopes) {
+      const value = npmrcValue(`${scope}:${key}`);
+      if (value) return value;
+    }
+    return null;
+  };
+  let authorization: string | null = null;
+  let credential: string | null = null;
+  const bunEntry = bun && configured?.trim() === bun.url ? bun : null;
+  if (bunEntry?.token) {
+    authorization = `Bearer ${bunEntry.token}`;
+    secrets.push(bunEntry.token);
+    credential = "token of bun's install registry";
+  } else if (bunEntry?.username && bunEntry.password !== null) {
+    authorization = basic(bunEntry.username, bunEntry.password);
+    credential = "user and password of bun's install registry";
+  } else if (userinfo) {
+    authorization = basic(userinfo.user, userinfo.password);
+    credential = "user and password in the registry's address";
+  } else {
+    const token = scoped("_authToken");
+    const auth = scoped("_auth");
+    const username = scoped("username");
+    const password = scoped("_password");
+    if (token) {
+      authorization = `Bearer ${token}`;
+      secrets.push(token);
+      credential = "_authToken of ~/.npmrc";
+    } else if (auth) {
+      authorization = `Basic ${auth}`;
+      secrets.push(auth, Buffer.from(auth, "base64").toString("utf8"));
+      credential = "_auth of ~/.npmrc";
+    } else if (username && password) {
+      secrets.push(password);
+      authorization = basic(username, Buffer.from(password, "base64").toString("utf8"));
+      credential = "username and _password of ~/.npmrc";
+    }
+  }
+  return {
+    url,
+    address: raw,
+    headers: authorization ? { authorization } : {},
+    credential,
+    secrets: secrets.filter((value) => value.length >= 3),
+  };
 }
 
 /** The update would have no way back: the release it rolls back to cannot be installed now. Nothing was stopped. */

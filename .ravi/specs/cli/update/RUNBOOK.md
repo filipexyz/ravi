@@ -102,7 +102,11 @@ authorizes no database or package downgrade by hand: the update's own rollback
 - `UPDATE_PREVIOUS_RELEASE_UNAVAILABLE`: the release the update would roll back
   to is not in the registry the installer reads (or it did not answer), so the
   update stopped nothing. The message names that registry (without any
-  credential; a token from `~/.npmrc` went only to its own host). When the
+  credential; the credential went only to its own host). On a 401 or 403 it
+  names which credential went along: give the registry's host one the check
+  reads (`_authToken`, `_auth` or `username` with `_password` in `~/.npmrc`,
+  the token or user and password of bun's install registry, or
+  `user:password@` in the address). When the
   release came from `--running-release`, check that value; otherwise run the
   update again once the registry has it.
 - `UPDATE_RUNTIME_CHANGED`: PM2 started Ravi again while the update checked
