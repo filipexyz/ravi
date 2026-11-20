@@ -621,7 +621,7 @@ describe("update supervisor with a rollback plan", () => {
     const snapshots = readdirSync(updateSnapshotsDir(fixture.stateDir));
     expect(snapshots).toHaveLength(2);
     expect(firstSnapshot).toBeDefined();
-    expect(snapshots).toContain(firstSnapshot);
+    expect(snapshots).toContain(firstSnapshot!);
     expect(kept).toEqual([null, firstSnapshot]);
     expect(result?.message).toContain("So is the one taken before the waypoint, of Ravi 3.1.0's state");
   });
