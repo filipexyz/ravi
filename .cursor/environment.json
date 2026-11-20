@@ -1,0 +1,14 @@
+{
+  "name": "Ravi Bot",
+  "install": "bash .cursor/install.sh",
+  "terminals": [
+    {
+      "name": "nats-server",
+      "command": "export PATH=\"/usr/local/bin:$HOME/.local/bin:$HOME/.bun/bin:$PATH\"; mkdir -p \"$HOME/.ravi/jetstream\"; exec nats-server -js -sd \"$HOME/.ravi/jetstream\" -p \"${NATS_PORT:-4222}\""
+    },
+    {
+      "name": "ravi-daemon",
+      "command": "export PATH=\"/usr/local/bin:$HOME/.local/bin:$HOME/.bun/bin:$PATH\"; cd /workspace; until (exec 3<>\"/dev/tcp/127.0.0.1/${NATS_PORT:-4222}\") 2>/dev/null; do echo 'waiting for nats-server...'; sleep 0.5; done; exec ./bin/ravi daemon run"
+    }
+  ]
+}
