@@ -22,7 +22,7 @@ import {
   UPDATE_IN_PROGRESS,
 } from "./managed-runtime-rebind.js";
 import type { Pm2Process } from "./pm2.js";
-import { observeRuntimeBoot, writeRuntimeBootReceipt } from "./runtime-process-identity.js";
+import { observeRuntimeBoot, retireManagedRuntimeBoot, writeRuntimeBootReceipt } from "./runtime-process-identity.js";
 import {
   assertFenceAdoptionWaypoint,
   compareRaviVersions,
@@ -415,6 +415,8 @@ type WindowScenario = {
   deadlineAfterMs?: number;
   daemonRestartAfterMs?: number;
   runnerRestartAfterMs?: number;
+  /** The runner stays online with the same PID, and is refused by the state guard: it takes its boot receipt back. */
+  runnerRefusedAfterMs?: number;
   daemonLeavesReadyAfterMs?: number;
   channelsOnline?: boolean;
 };
@@ -461,14 +463,16 @@ async function rebindWithWindow(scenario: WindowScenario): Promise<{ ok: boolean
       },
       schemaPhase: (process) =>
         process.pid !== 11 ? null : after(scenario.daemonLeavesReadyAfterMs) ? "waiting" : "ready",
-      getProcesses: () =>
-        processes.map((process) => {
+      getProcesses: () => {
+        if (after(scenario.runnerRefusedAfterMs)) retireManagedRuntimeBoot("ravi-channels", 21, stateDir);
+        return processes.map((process) => {
           if (process.name === "ravi" && after(scenario.daemonRestartAfterMs))
             return { ...process, pid: 99, startedAt: (process.startedAt ?? 0) + 5_000 };
           if (process.name === "ravi-channels" && after(scenario.runnerRestartAfterMs))
             return { ...process, pid: 98, startedAt: (process.startedAt ?? 0) + 5_000 };
           return process;
-        }),
+        });
+      },
       run: async (_command: string, args: string[]) => {
         if (args[0] === "delete") {
           processes = processes.filter((process) => String(process.pm_id) !== args[1]);
@@ -529,6 +533,15 @@ describe("stability window wired into the rebind", () => {
     expect((await rebindWithWindow({ plan: { stabilityWindowMs: 5_000 }, runnerRestartAfterMs: 2_000 })).ok).toBe(
       false,
     );
+  });
+
+  it("fails when the runner is refused by the state guard and stays online with the same PID", async () => {
+    // PM2 lists it online with the PID that converged for as long as it pauses (30 s), the length of the window.
+    const refused = await rebindWithWindow({ plan: { stabilityWindowMs: 30_000 }, runnerRefusedAfterMs: 5_000 });
+    expect(refused.ok).toBe(false);
+    expect(refused.windowElapsedMs).toBeLessThan(10_000);
+    // Without the refusal the same window holds.
+    expect((await rebindWithWindow({ plan: { stabilityWindowMs: 30_000 } })).ok).toBe(true);
   });
 
   it("fails when the daemon leaves ready with the same PID", async () => {

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import packageMetadata from "../package.json" with { type: "json" };
@@ -118,6 +118,31 @@ export function recordManagedRuntimeBoot(name: RuntimeProcessName): boolean {
   } catch (cause) {
     logger.warn(
       "Could not persist managed runtime boot identity",
+      errorDiagnostic(cause, { operation: "runtime boot receipt" }),
+    );
+    return false;
+  }
+}
+
+/**
+ * Takes back the boot receipt of a process that was refused after it wrote one (the channels runner records its
+ * receipt before the state guard runs). Without it a refused runner that PM2 still lists as online counts as a
+ * verified runtime while it pauses, and the stability window of `ravi update` converges on it. Only a receipt
+ * this process wrote is removed: a successor's stays.
+ */
+export function retireManagedRuntimeBoot(
+  name: RuntimeProcessName,
+  pid = process.pid,
+  stateDir = getRaviStateDir(),
+): boolean {
+  const receipt = readLastRuntimeBootReceipt(name, stateDir);
+  if (!receipt || receipt.pid !== pid) return false;
+  try {
+    rmSync(join(stateDir, "runtime-processes", `${name}.json`), { force: true });
+    return true;
+  } catch (cause) {
+    logger.warn(
+      "Could not retire managed runtime boot identity",
       errorDiagnostic(cause, { operation: "runtime boot receipt" }),
     );
     return false;

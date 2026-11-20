@@ -236,6 +236,10 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/hooks/": [
     // Secret stripping moved from a Bash PreToolUse hook to the runtime spawn env.
     "src/runtime/agent-env-policy.test.ts",
+    // The PreCompact memory agent spawns Claude Code through the same env filter.
+    "src/hooks/pre-compact-spawn-env.test.ts",
+    // ...and its tools are limited to Read/Edit/Write by the SDK's `tools` option plus a guard that reads the SDK's hook input.
+    "src/hooks/pre-compact-tool-guard.test.ts",
     "src/hooks/gh-watch.test.ts",
     "src/hooks/gh-pr-publish.test.ts",
     "src/hooks/gh-follow-sweep.test.ts",

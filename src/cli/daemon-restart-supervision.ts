@@ -1,3 +1,4 @@
+import { MANAGED_RUNTIME_READY_TIMEOUT_MS } from "../db/state-boundary.js";
 import { assertRuntimeMaintenanceInactive } from "../runtime-maintenance.js";
 /**
  * Supervised daemon restart cutover.
@@ -102,7 +103,8 @@ type TimingDeps = Required<Pick<SupervisedDaemonRestartDeps, "wait" | "now" | "p
   detachTimeoutMs: number;
 };
 
-const DEFAULT_READY_TIMEOUT_MS = 15_000;
+/** Covers the state guard's PM2 bound plus boot: a successor waiting on a slow `pm2 jlist` is not a failed one. */
+export const DEFAULT_READY_TIMEOUT_MS = MANAGED_RUNTIME_READY_TIMEOUT_MS;
 const DEFAULT_DETACH_TIMEOUT_MS = 5_000;
 const DEFAULT_POLL_MS = 200;
 const DEFAULT_CONFIRMATIONS = 2;
