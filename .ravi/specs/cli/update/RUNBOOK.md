@@ -103,6 +103,32 @@ authorizes no database or package downgrade by hand: the update's own rollback
   (a source checkout, a daemon with no boot receipt, or a running release not
   older than the waypoint). Nothing was stopped; run the commands it names.
 
+## Going back by hand
+
+- `ravi update --rollback` shows the way back to the release before the last
+  update: the release it leaves, the one it restores, the snapshot's time and
+  where what was written since then is kept. Add `--execute` to do it, from a
+  terminal. It works only from the release that update installed, and only
+  once per snapshot.
+- With `--execute` the rollback runs in the update supervisor, which goes on
+  if the terminal closes: then read `<state>/updates/supervisor-result.json`
+  (and `<state>/updates/supervisor.log`) before acting.
+- `UPDATE_IN_PROGRESS` from `ravi update --rollback`: an update supervisor still
+  runs (an update, or a rollback whose command was cut). Do not run anything by
+  hand: wait for `<state>/updates/supervisor-result.json`, and follow
+  `<state>/updates/supervisor.log` meanwhile.
+- `UPDATE_ROLLBACK_UNAVAILABLE`: this run stopped nothing; the message says why
+  (no snapshot, already restored, a snapshot copy that is gone, unreadable or
+  not its size, a source checkout, a daemon on another release, a `ravi` from another
+  install than the daemon's, or a caller inside the daemon's tree). For the
+  last two, run `ravi update --rollback` from a terminal with the `ravi` of the
+  daemon's install. It says Ravi is not running
+  under PM2 only when no supervisor holds the update lock: then an earlier
+  rollback was cut after its stop. Run the commands it gives, one per line and
+  in order, with nothing started meanwhile. The preview prints them and writes
+  nothing; a run with `--execute` (which stops nothing in that case) also keeps
+  them in `finish-by-hand.txt` in the snapshot's directory.
+
 ## Rollback
 
 - `UPDATE_ROLLED_BACK`: the target did not converge, and the previous release

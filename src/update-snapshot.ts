@@ -413,6 +413,30 @@ export function readUpdateSnapshot(stateDir: string, id: string): UpdateSnapshot
   return manifest;
 }
 
+/**
+ * Why the snapshot cannot be put back, or null when every copy its manifest lists is a file this process can read, of
+ * the size it was copied with. Read only. Checked before anything stops (the plan of `ravi update --rollback`, and the
+ * rollback before its first `pm2 delete`) and again by the restore.
+ */
+export function updateSnapshotUnusable(stateDir: string, manifest: UpdateSnapshotManifest): string | null {
+  const filesDirectory = join(updateSnapshotsDir(stateDir), manifest.id, "files");
+  for (const file of manifest.files) {
+    const copy = join(filesDirectory, file.name);
+    const info = statSync(copy, { throwIfNoEntry: false });
+    if (!info?.isFile()) return `is missing ${file.name}`;
+    if (info.size !== file.bytes)
+      return `has ${info.size} bytes in ${file.name}, not the ${file.bytes} it was copied with`;
+    // A store on another disk gets its copy staged by reading it, after the stop.
+    try {
+      closeSync(openSync(copy, "r"));
+    } catch (cause) {
+      // no-cause: The reason carries the error's code, and the caller refuses with it before anything stops.
+      return `has ${file.name} unreadable (${(cause as NodeJS.ErrnoException).code ?? (cause as Error).message})`;
+    }
+  }
+  return null;
+}
+
 function entryExists(path: string): boolean {
   try {
     lstatSync(path);
@@ -438,7 +462,8 @@ function moveFile(source: string, destination: string): void {
 
 export type UpdateSnapshotMove = { from: string; to: string; done: boolean };
 
-function shellQuote(value: string): string {
+/** POSIX single quotes: exact for any path, `$`, backquotes and quotes included. */
+export function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
@@ -476,7 +501,8 @@ export function updateSnapshotManualRestoreCommands(stateDir: string, manifest: 
     for (const suffix of LIVE_SUFFIXES) {
       const live = shellQuote(`${store}${suffix}`);
       const to = shellQuote(join(aside, `${index}-${basename(store)}${suffix}`));
-      commands.push(`if [ -e ${live} ]; then mkdir -p ${shellQuote(aside)} && mv -n ${live} ${to}; fi`);
+      // `test`, not `[ … ]`: the CLI's diagnostic redactor replaces a bracketed expression with "[redacted:opaque]".
+      commands.push(`if test -e ${live}; then mkdir -p ${shellQuote(aside)} && mv -n ${live} ${to}; fi`);
     }
   });
   for (const file of manifest.files) {
@@ -509,10 +535,8 @@ export function restoreUpdateSnapshot(input: {
       `Update snapshot ${manifest.id} was already restored, or a restore was cut short: see ${journal}. Nothing was moved.`,
     );
   }
-  for (const file of manifest.files) {
-    if (!entryExists(join(filesDirectory, file.name)))
-      throw new Error(`Update snapshot ${manifest.id} is missing ${file.name}; nothing was restored`);
-  }
+  const unusable = updateSnapshotUnusable(input.stateDir, manifest);
+  if (unusable) throw new Error(`Update snapshot ${manifest.id} ${unusable}; nothing was restored`);
   const deviceOf = input.device ?? ((path: string) => statSync(path).dev);
   const snapshotDevice = deviceOf(directory);
   const candidateDir = join(directory, "candidate");

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -12,11 +13,23 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
-import { rebindManagedRuntimeProcesses } from "./managed-runtime-rebind.js";
+import { spawn } from "node:child_process";
+import { join, relative } from "node:path";
+import {
+  acquireUpdateSupervisorLock,
+  buildManagedRuntimeRebindSupervisorInvocation,
+  decodeManagedRuntimeRebindRequest,
+  type ManagedRuntimeSupervisorOutcome,
+  maybeRunManagedRuntimeRebindFromEnv,
+  rebindManagedRuntimeProcesses,
+  UPDATE_IN_PROGRESS,
+  updateSupervisorRunning,
+} from "./managed-runtime-rebind.js";
 import { resolveManagedRuntimeTargetFromPackageRoot } from "./managed-runtime.js";
 import type { Pm2Process } from "./pm2.js";
 import { observeRuntimeBoot, writeRuntimeBootReceipt } from "./runtime-process-identity.js";
+import { runUpdate } from "./cli/commands/update.js";
+import { redactDiagnosticText } from "./utils/error-diagnostic.js";
 import { requiredFenceAdoptionWaypoint, UPDATE_WAYPOINT_REQUIRED } from "./update-preflight.js";
 import { hopThroughWaypoint, type WaypointHopDependencies, waypointPreparedState } from "./update-waypoint.js";
 import {
@@ -24,7 +37,10 @@ import {
   previousReleaseCliEnv,
   readUpdateSupervisorResult,
   resolveUpdateRollbackPlan,
+  planOperatorRollback,
   rollBackUpdate,
+  superviseOperatorRollback,
+  UPDATE_ROLLBACK_UNAVAILABLE,
   type UpdateRollbackDependencies,
   type UpdateRollbackPlan,
 } from "./update-rollback.js";
@@ -33,6 +49,7 @@ import {
   takeUpdateSnapshot,
   UPDATE_SNAPSHOT_SPACE,
   UpdateSnapshotRestoreError,
+  updateSnapshotManualRestoreCommands,
   updateSnapshotsDir,
   type UpdateSnapshotManifest,
 } from "./update-snapshot.js";
@@ -218,6 +235,11 @@ function rollbackFixture(
     createdAt: "2026-11-19T20:00:00.000Z",
     targetRelease: "3.2.0",
   } as UpdateSnapshotManifest;
+  if (!input.untouched) {
+    const files = join(updateSnapshotsDir(stateDir), manifest.id, "files");
+    mkdirSync(files, { recursive: true });
+    writeFileSync(join(files, "0-ravi.db"), Buffer.alloc(8192));
+  }
   let saved = false;
   let readsAfterSave = 0;
   let restoredState = false;
@@ -281,6 +303,34 @@ function rollbackFixture(
 }
 
 describe("update rollback", () => {
+  it("stops nothing when a copy of the snapshot is missing, not the size it was copied with, or unreadable", async () => {
+    // Root reads any file: the unreadable copy is only one where permissions hold.
+    const damages =
+      process.getuid?.() === 0
+        ? (["missing", "truncated"] as const)
+        : (["missing", "truncated", "unreadable"] as const);
+    for (const damage of damages) {
+      const { deps, calls, order } = rollbackFixture();
+      const copy = join(updateSnapshotsDir(deps.stateDir), deps.manifest!.id, "files", "0-ravi.db");
+      if (damage === "missing") rmSync(copy);
+      else if (damage === "truncated") writeFileSync(copy, Buffer.alloc(100));
+      else chmodSync(copy, 0o000);
+      const outcome = await rollBackUpdate(deps);
+      expect(outcome).toMatchObject({ ok: false, step: "snapshot", commands: ["ravi daemon status"] });
+      expect((outcome as { message: string }).message).toContain(
+        damage === "missing"
+          ? "is missing 0-ravi.db"
+          : damage === "truncated"
+            ? "has 100 bytes in 0-ravi.db, not the 8192"
+            : "has 0-ravi.db unreadable (EACCES)",
+      );
+      expect((outcome as { message: string }).message).toContain("stopped nothing");
+      // Not one `pm2 delete`, nothing installed, nothing locked or moved.
+      expect(calls).toEqual([]);
+      expect(order).toEqual([]);
+    }
+  });
+
   it("stops the target, restores the state under the locks, reinstalls and starts the previous release", async () => {
     const { deps, calls, order, install } = rollbackFixture();
     const outcome = await rollBackUpdate(deps);
@@ -337,6 +387,10 @@ describe("update rollback", () => {
       expect(outcome).toMatchObject({ ok: false, step: "stop" });
       if (outcome.ok) throw new Error("unreachable");
       expect(outcome.message).toContain("`ps -p 300,301,310` lists none");
+      // Remove first, then wait for the exit, on both paths (the guidance and the unexpected error).
+      const removeAt = outcome.message.indexOf("emove what PM2 still lists");
+      expect(removeAt).toBeGreaterThanOrEqual(0);
+      expect(removeAt).toBeLessThan(outcome.message.indexOf("`ps -p"));
     }
     // Every pid PM2 lists is named before the first removal: the runner's removal throws, the daemon is still named.
     const both = rollbackFixture({ untouched: true, reRegistered: true, reRegisteredRunner: true, deleteThrows: true });
@@ -344,6 +398,7 @@ describe("update rollback", () => {
     if (cut.ok) throw new Error("unreachable");
     expect(cut.message).toContain("`ps -p 300,301,311,310` lists none");
     // Remove first, then wait for the exit: a process PM2 still lists only exits once removed.
+    expect(cut.message.indexOf("remove what PM2 still lists")).toBeGreaterThanOrEqual(0);
     expect(cut.message.indexOf("remove what PM2 still lists")).toBeLessThan(cut.message.indexOf("`ps -p"));
   });
 
@@ -376,7 +431,7 @@ describe("update rollback", () => {
     const back = outcome.commands.indexOf(`mv -n '${join(snapshotDir, "files", "0-ravi.db")}' '${live}'`);
     expect(outcome.commands.slice(0, 2)).toEqual(["pm2 delete ravi-channels", "pm2 delete ravi"]);
     expect(outcome.commands[aside]).toBe(
-      `if [ -e '${live}-wal' ]; then mkdir -p '${join(snapshotDir, "candidate")}' && mv -n '${live}-wal' '${join(snapshotDir, "candidate", "0-ravi.db-wal")}'; fi`,
+      `if test -e '${live}-wal'; then mkdir -p '${join(snapshotDir, "candidate")}' && mv -n '${live}-wal' '${join(snapshotDir, "candidate", "0-ravi.db-wal")}'; fi`,
     );
     expect(outcome.commands.some((command) => command.includes(`'${live}-shm'`))).toBe(true);
     expect(back).toBeGreaterThan(aside);
@@ -395,6 +450,16 @@ describe("update rollback", () => {
     expect(outcome).toMatchObject({ ok: false, step: "start", restoredAt: "2026-11-19T20:01:00.000Z" });
     expect(calls.some((call) => call.args.includes("channels"))).toBe(false);
     expect(calls.some((call) => call.args[0] === "save")).toBe(false);
+  });
+
+  it("draws the schema phase line at 3.261109.1, compared as versions", async () => {
+    // At the line the phase is required; just below it, and a later patch of an older day, it is not.
+    expect(await rollBackUpdate(rollbackFixture({ phase: null, previousRelease: "3.261109.1" }).deps)).toMatchObject({
+      ok: false,
+      step: "start",
+    });
+    for (const previousRelease of ["3.261107.7", "3.261104.10"])
+      expect(await rollBackUpdate(rollbackFixture({ phase: null, previousRelease }).deps)).toMatchObject({ ok: true });
   });
 
   it("proves a release older than the schema phase records by its receipt and the window", async () => {
@@ -933,6 +998,34 @@ describe("update supervisor with a rollback plan", () => {
     expect(result?.message).toContain("so Ravi 3.2.0 was not started");
   });
 
+  it("says only that no daemon is online when the waypoint's runner is still up", async () => {
+    const fixture = supervisorFixture({ targetNeverReady: false });
+    const since = Date.now() - 1_000;
+    let prepared: string | null = null;
+    let readiness: "ready" | "adopt-on-start" = "adopt-on-start";
+
+    expect(
+      await fixture.rebind({
+        assertPrepared: () => readiness,
+        preparedStateRelease: () => prepared,
+        // The runner was online before the update and stays up; the waypoint's daemon is gone.
+        hopThroughWaypoint: async (dependencies) => {
+          prepared = dependencies.waypoint;
+          fixture.bringUp(dependencies.waypoint, ["ravi-channels"]);
+          readiness = "ready";
+          return { ok: true };
+        },
+      }),
+    ).toBe(false);
+    expect(fixture.processes().some((process) => process.name === "ravi-channels" && process.status === "online")).toBe(
+      true,
+    );
+    const result = readUpdateSupervisorResult(since, fixture.stateDir);
+    expect(result?.message).toContain("PM2 shows no daemon online");
+    expect(result?.message).not.toContain("nothing runs");
+    expect(result?.commands[0]).toBe("ravi daemon start");
+  });
+
   it("does not report a second pass as done when PM2 shows no daemon of the waypoint", async () => {
     const fixture = supervisorFixture({ targetNeverReady: false, channelsStopped: true });
     const since = Date.now() - 1_000;
@@ -954,10 +1047,13 @@ describe("update supervisor with a rollback plan", () => {
     expect(fixture.events.filter((event) => event.startsWith("start:"))).toEqual([]);
     const result = readUpdateSupervisorResult(since, fixture.stateDir);
     expect(result).toMatchObject({ outcome: "failed" });
-    // Nothing runs: the message says so, and the first command starts the daemon.
-    expect(result?.message).toContain("PM2 shows no daemon online: nothing runs now");
+    // No daemon: the message says only that, and the first command starts the daemon.
+    expect(result?.message).toContain("PM2 shows no daemon online, so the update to Ravi 3.2.0 did not begin");
     expect(result?.message).not.toContain("runs on it");
+    expect(result?.message).not.toContain("nothing runs");
     expect(result?.commands[0]).toBe("ravi daemon start");
+    // The CLI prints these through its redactor: they come out whole.
+    for (const text of [result!.message, ...result!.commands]) expect(redactDiagnosticText(text)).toBe(text);
   });
 
   it("waits for the waypoint's runner to exit before the update to the target", async () => {
@@ -989,6 +1085,7 @@ describe("update supervisor with a rollback plan", () => {
     // A process PM2 no longer lists: the operator confirms it is gone before the next update.
     expect(result?.message).toContain("confirm it is gone");
     expect(result?.commands[0]).toBe(`ps -p ${runnerPid}`);
+    for (const text of [result!.message, ...result!.commands]) expect(redactDiagnosticText(text)).toBe(text);
   });
 
   it("waits for the waypoint's runner that exits a moment after its removal, then updates to the target", async () => {
@@ -1279,3 +1376,671 @@ describe("update waypoint", () => {
     expect(waypointPreparedState(stateDir, "3.261113.2", "3.261104.2").prepared).toBe(false);
   });
 });
+
+/** A host on 3.2.0 after an update from 3.1.0 that kept its snapshot. */
+function operatorRollbackFixture(input: { running?: string; restored?: boolean; noSnapshot?: boolean } = {}) {
+  const stateDir = tempDir("ravi-operator-rollback-");
+  const install = globalInstall("3.2.0");
+  const bundle = install.target.bundlePath;
+  const epoch = Math.ceil(statSync(bundle).mtimeMs) + 1;
+  const ravi = join(stateDir, "ravi.db");
+  const database = new Database(ravi, { create: true });
+  database.run("CREATE TABLE t (v TEXT)");
+  database.close();
+  const manifest = input.noSnapshot
+    ? null
+    : takeUpdateSnapshot({
+        stateDir,
+        stores: [ravi],
+        method: "copy",
+        previousRelease: "3.1.0",
+        targetRelease: "3.2.0",
+      });
+  if (manifest && input.restored)
+    writeFileSync(join(updateSnapshotsDir(stateDir), manifest.id, "restore.json"), '{"phase":"restored"}\n');
+  const processes = [
+    pm2Process("ravi", bundle, install.root, { pm_id: 1, pid: 10, startedAt: epoch }),
+    pm2Process("ravi-channels", bundle, install.root, { pm_id: 2, pid: 20, startedAt: epoch }),
+  ];
+  for (const process of processes) boot(stateDir, process, bundle, input.running ?? "3.2.0");
+  return { stateDir, install, processes, manifest };
+}
+
+describe("ravi update --rollback", () => {
+  it("plans the way back to the release before the last update, from its target", () => {
+    const { stateDir, install, processes, manifest } = operatorRollbackFixture();
+    const planned = planOperatorRollback({ stateDir, processes });
+
+    expect(planned.manifest.id).toBe(manifest!.id);
+    expect(planned.runningRelease).toBe("3.2.0");
+    expect(planned.plan).toEqual({
+      previousRelease: "3.1.0",
+      method: "bun",
+      packageRoot: install.root,
+      channelsOnline: true,
+    });
+    expect(planned.previousProcesses.map((process) => process.name)).toEqual(["ravi", "ravi-channels"]);
+  });
+
+  it("refuses before any stop when a copy of the snapshot is gone, in the preview and under the lock", async () => {
+    const { stateDir, processes, manifest } = operatorRollbackFixture();
+    rmSync(join(updateSnapshotsDir(stateDir), manifest!.id, "files", "0-ravi.db"));
+    expect(() => planOperatorRollback({ stateDir, processes })).toThrow(
+      `${UPDATE_ROLLBACK_UNAVAILABLE}: the snapshot of ${manifest!.createdAt} cannot be put back: it is missing 0-ravi.db`,
+    );
+    const runs: string[] = [];
+    const refused = await superviseOperatorRollback({
+      stateDir,
+      snapshotId: manifest!.id,
+      getProcesses: () => processes,
+      run: async (command, args) => {
+        runs.push([command, ...args].join(" "));
+        return { success: true, output: "" };
+      },
+      bunPath: "/usr/local/bin/bun",
+      pidAlive: () => false,
+    }).then(
+      () => null,
+      (error: Error & { code?: string }) => error,
+    );
+    expect(refused?.code).toBe(UPDATE_ROLLBACK_UNAVAILABLE);
+    expect(refused?.message).toContain("This run stopped nothing.");
+    expect(runs).toEqual([]);
+    // PM2 empty (a rollback cut after its stops): no command moves a file; the release that wrote the state starts.
+    const cut = (() => {
+      try {
+        planOperatorRollback({ stateDir, processes: [] });
+        return null;
+      } catch (error) {
+        return error as Error;
+      }
+    })();
+    expect(cut?.message).toContain("cannot be put back (it is missing 0-ravi.db)");
+    expect(cut?.message).toContain("\nravi daemon start\nravi channels start\nravi daemon status\n");
+    expect(cut?.message).not.toContain("mv -n");
+    expect(cut?.message).not.toContain("install -g");
+  });
+
+  it("refuses with nothing stopped when it cannot go back from here", () => {
+    const none = operatorRollbackFixture({ noSnapshot: true });
+    expect(() => planOperatorRollback({ stateDir: none.stateDir, processes: none.processes })).toThrow(
+      "there is no update snapshot",
+    );
+    const used = operatorRollbackFixture({ restored: true });
+    expect(() => planOperatorRollback({ stateDir: used.stateDir, processes: used.processes })).toThrow(
+      "was already restored",
+    );
+    const other = operatorRollbackFixture({ running: "3.3.0" });
+    expect(() => planOperatorRollback({ stateDir: other.stateDir, processes: other.processes })).toThrow(
+      "the daemon runs Ravi 3.3.0",
+    );
+    expect(() => planOperatorRollback({ stateDir: other.stateDir, processes: other.processes })).toThrow(
+      UPDATE_ROLLBACK_UNAVAILABLE,
+    );
+  });
+
+  it("refuses with the commands to finish by hand when nothing runs next to an unused snapshot", () => {
+    const { stateDir, manifest } = operatorRollbackFixture();
+    const keptFile = join(updateSnapshotsDir(stateDir), manifest!.id, "finish-by-hand.txt");
+    // The preview writes nothing.
+    let preview = "";
+    try {
+      planOperatorRollback({ stateDir, processes: [], installMethod: "bun" });
+    } catch (error) {
+      preview = (error as Error).message;
+    }
+    expect(preview).toContain("bun install -g ravi.bot@3.1.0\nravi daemon start");
+    expect(preview).not.toContain("finish-by-hand.txt");
+    expect(existsSync(keptFile)).toBe(false);
+    let message = "";
+    try {
+      planOperatorRollback({ stateDir, processes: [], installMethod: "bun", keepCommands: true });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain(UPDATE_ROLLBACK_UNAVAILABLE);
+    expect(message).toContain(`the snapshot of ${manifest!.createdAt}`);
+    expect(message).toContain("was not restored: a rollback may have stopped both processes and been cut");
+    expect(message).toContain(join(updateSnapshotsDir(stateDir), manifest!.id, "files"));
+    // One command per line (a line past 2048 characters would not reach the operator), also kept in a file.
+    expect(message).toContain("bun install -g ravi.bot@3.1.0\nravi daemon start\nravi channels start");
+    expect(message.split("\n").every((line) => line.length < 2048)).toBe(true);
+    const kept = readFileSync(keptFile, "utf8");
+    expect(kept).toContain("bun install -g ravi.bot@3.1.0\nravi daemon start\n");
+    expect(message).toContain("This run stopped nothing.");
+
+    writeFileSync(join(updateSnapshotsDir(stateDir), manifest!.id, "restore.json"), '{"phase":"moving"}\n');
+    expect(() => planOperatorRollback({ stateDir, processes: [] })).toThrow("restore.json lists every move");
+  });
+
+  it("rolls back in the supervisor only the snapshot the preview named, and records the outcome", async () => {
+    const { stateDir, processes, manifest } = operatorRollbackFixture();
+    const since = Date.now() - 1_000;
+    const calls: UpdateRollbackDependencies[] = [];
+    const supervise = (snapshotId: string, ok: boolean) =>
+      superviseOperatorRollback({
+        stateDir,
+        snapshotId,
+        getProcesses: () => processes,
+        run: async () => ({ success: true, output: "" }),
+        bunPath: "/usr/local/bin/bun",
+        pidAlive: () => false,
+        stabilityWindowMs: 7_000,
+        rollBack: async (dependencies) => {
+          calls.push(dependencies);
+          return ok
+            ? {
+                ok: true,
+                target: dependencies.manifest as never,
+                restoredAt: "2026-11-20T03:00:00.000Z",
+                candidateDir: join(stateDir, "candidate"),
+              }
+            : {
+                ok: false,
+                step: "reinstall",
+                message: "registry unreachable",
+                commands: ["bun install -g ravi.bot@3.1.0"],
+                restoredAt: "2026-11-20T03:00:00.000Z",
+                candidateDir: join(stateDir, "candidate"),
+              };
+        },
+      });
+
+    // Another snapshot than the one previewed: refused under the lock, before any stop.
+    await expect(supervise("20261120T000000Z-abcdef", true)).rejects.toThrow(UPDATE_ROLLBACK_UNAVAILABLE);
+    expect(calls).toHaveLength(0);
+
+    expect(await supervise(manifest!.id, true)).toBe(true);
+    expect(calls[0]).toMatchObject({ stateDir, stabilityWindowMs: 7_000, plan: { previousRelease: "3.1.0" } });
+    expect(readUpdateSupervisorResult(since, stateDir)).toMatchObject({
+      outcome: "rolled-back",
+      targetRelease: "3.2.0",
+      previousRelease: "3.1.0",
+      snapshotId: manifest!.id,
+      restoredAt: "2026-11-20T03:00:00.000Z",
+    });
+
+    // A result that cannot be written does not turn a rollback that ran into a failure.
+    expect(
+      await superviseOperatorRollback({
+        stateDir,
+        snapshotId: manifest!.id,
+        getProcesses: () => processes,
+        run: async () => ({ success: true, output: "" }),
+        bunPath: "/usr/local/bin/bun",
+        pidAlive: () => false,
+        rollBack: async (dependencies) => ({
+          ok: true,
+          target: dependencies.manifest as never,
+          restoredAt: "2026-11-20T03:00:00.000Z",
+          candidateDir: join(stateDir, "candidate"),
+        }),
+        recordResult: () => {
+          throw new Error("ENOSPC: no space left on device");
+        },
+      }),
+    ).toBe(true);
+
+    expect(await supervise(manifest!.id, false)).toBe(false);
+    expect(readUpdateSupervisorResult(since, stateDir)).toMatchObject({
+      outcome: "rollback-failed",
+      message: "ravi update --rollback stopped at reinstall: registry unreachable",
+      commands: ["bun install -g ravi.bot@3.1.0"],
+    });
+  });
+
+  it("answers UPDATE_IN_PROGRESS while a supervisor runs, not the commands for a cut rollback", async () => {
+    const { stateDir } = operatorRollbackFixture();
+    const env = { PATH: "/usr/bin", RAVI_STATE_DIR: stateDir };
+    // Both processes are out of PM2 while the supervisor restores and reinstalls.
+    const rollbackRuntime = {
+      getProcesses: () => [] as Pm2Process[],
+      supervise: async (): Promise<ManagedRuntimeSupervisorOutcome> => {
+        throw new Error("a second supervisor must not start");
+      },
+    };
+    const holder = join(stateDir, "holder.ts");
+    writeFileSync(
+      holder,
+      `import { acquireSchemaFileLock } from ${JSON.stringify(join(process.cwd(), "src/db/schema-lock.ts"))};\n` +
+        `acquireSchemaFileLock(${JSON.stringify(join(stateDir, "updates", "update.lock"))}, 0);\n` +
+        'console.log("held");\nsetInterval(() => {}, 1_000);\n',
+    );
+    const other = spawn(process.execPath, [holder], { stdio: ["ignore", "pipe", "inherit"] });
+    try {
+      await new Promise<void>((resolve) => other.stdout!.once("data", () => resolve()));
+      for (const execute of [false, true]) {
+        const refusal = await runUpdate(
+          { rollback: true, execute, json: true },
+          { env, insideDaemonTree: () => false, rollbackRuntime },
+        ).then(
+          () => null,
+          (error: Error & { code?: string }) => error,
+        );
+        expect(refusal?.code).toBe(UPDATE_IN_PROGRESS);
+        expect(refusal?.message).toContain(join(stateDir, "updates", "supervisor-result.json"));
+        expect(refusal?.message).toContain(join(stateDir, "updates", "supervisor.log"));
+        expect(refusal?.message).not.toContain("not running under PM2");
+      }
+    } finally {
+      other.kill("SIGKILL");
+      await new Promise((resolve) => other.once("exit", resolve));
+    }
+    // With no supervisor left, an empty PM2 next to the unused snapshot is a cut rollback.
+    const cut = await runUpdate(
+      { rollback: true, json: true },
+      { env, insideDaemonTree: () => false, rollbackRuntime },
+    ).then(
+      () => null,
+      (error: Error & { code?: string }) => error,
+    );
+    expect(cut?.code).toBe(UPDATE_ROLLBACK_UNAVAILABLE);
+    expect(cut?.message).toContain("not running under PM2");
+  });
+
+  it("prints commands that survive the CLI's redactor, and writes them only with --execute", async () => {
+    const { stateDir, manifest } = operatorRollbackFixture();
+    const env = { PATH: "/usr/bin", RAVI_STATE_DIR: stateDir };
+    const snapshotDir = join(updateSnapshotsDir(stateDir), manifest!.id);
+    const rollbackRuntime = {
+      getProcesses: () => [] as Pm2Process[],
+      supervise: async (): Promise<ManagedRuntimeSupervisorOutcome> => {
+        throw new Error("a cut-short rollback is refused before any supervisor");
+      },
+    };
+    const refusal = async (execute: boolean) =>
+      runUpdate({ rollback: true, execute, json: true }, { env, insideDaemonTree: () => false, rollbackRuntime }).then(
+        () => null,
+        (error: Error & { code?: string }) => error,
+      );
+    // The preview: what the operator reads went through the redactor, nothing left redacted, nothing written.
+    const before = readdirSync(snapshotDir).sort();
+    const preview = await refusal(false);
+    expect(preview?.code).toBe(UPDATE_ROLLBACK_UNAVAILABLE);
+    expect(preview?.message).toContain("if test -e '");
+    expect(preview?.message).not.toContain("[redacted");
+    expect(readdirSync(snapshotDir).sort()).toEqual(before);
+    // --execute keeps them in the file, and its message names it.
+    const executed = await refusal(true);
+    expect(executed?.message).not.toContain("[redacted");
+    expect(executed?.message).toContain("finish-by-hand.txt");
+    expect(existsSync(join(snapshotDir, "finish-by-hand.txt"))).toBe(true);
+  });
+
+  it("names the commands of a failed rollback in a form the redactor leaves whole", async () => {
+    const { stateDir, install, processes, manifest } = operatorRollbackFixture();
+    const env = { PATH: "/usr/bin", RAVI_STATE_DIR: stateDir };
+    const commands = [...updateSnapshotManualRestoreCommands(stateDir, manifest!), "bun install -g ravi.bot@3.1.0"];
+    for (const command of commands) expect(redactDiagnosticText(command)).toBe(command);
+    const failed = await runUpdate(
+      { rollback: true, execute: true, json: true },
+      {
+        env,
+        insideDaemonTree: () => false,
+        rollbackRuntime: {
+          getProcesses: () => processes,
+          ownPackageRoot: install.root,
+          supervise: async (): Promise<ManagedRuntimeSupervisorOutcome> => ({
+            converged: false,
+            refusal: null,
+            result: {
+              ...rolledBackOutcome(stateDir).result!,
+              outcome: "rollback-failed",
+              message: "stopped at restore",
+              commands,
+            },
+            logPath: null,
+          }),
+        },
+      },
+    ).then(
+      () => null,
+      (error: Error & { code?: string }) => error,
+    );
+    expect(failed?.code).toBe("UPDATE_ROLLBACK_FAILED");
+    expect(failed?.message).toContain("if test -e '");
+    expect(failed?.message).not.toContain("[redacted");
+  });
+
+  it("sends a rollback as schema 2, which a supervisor from before --rollback refuses instead of rebinding", () => {
+    const { install, processes, manifest } = operatorRollbackFixture();
+    const raw = (options: { rollback?: { snapshotId: string } }) =>
+      JSON.parse(
+        Buffer.from(
+          buildManagedRuntimeRebindSupervisorInvocation(install.target, processes, { PATH: "/usr/bin" }, options).env
+            .RAVI_INTERNAL_UPDATE_RUNTIME_REBIND!,
+          "base64url",
+        ).toString("utf8"),
+      ) as Record<string, unknown>;
+    const rollback = raw({ rollback: { snapshotId: manifest!.id } });
+    const update = raw({});
+    // A supervisor from before `ravi update --rollback` accepts `schemaVersion === 1` alone: it throws on anything
+    // else before any stop, where it would keep `target` and `previousProcesses` and drop `rollback` (a rebind).
+    expect(rollback.schemaVersion).toBe(2);
+    expect(update.schemaVersion).toBe(1);
+    expect(update.rollback).toBeUndefined();
+    // Here, a rollback is never read as a rebind, nor a rebind as a rollback.
+    const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+    expect(decodeManagedRuntimeRebindRequest(encode(rollback)).rollback).toEqual({ snapshotId: manifest!.id });
+    expect(decodeManagedRuntimeRebindRequest(encode(update)).rollback).toBeUndefined();
+    expect(() => decodeManagedRuntimeRebindRequest(encode({ ...rollback, schemaVersion: 1 }))).toThrow(
+      "Invalid managed runtime rebind request",
+    );
+    expect(() => decodeManagedRuntimeRebindRequest(encode({ ...update, schemaVersion: 2 }))).toThrow(
+      "Invalid managed runtime rebind request",
+    );
+  });
+
+  it("rolls back only with the ravi of the daemon's release: another one refuses in the preview, before any supervisor", async () => {
+    const { stateDir, install, processes } = operatorRollbackFixture();
+    const env = { PATH: "/usr/bin", RAVI_STATE_DIR: stateDir };
+    let supervised = 0;
+    const attempt = (ownPackageRoot: string | null, execute: boolean) =>
+      runUpdate(
+        { rollback: true, execute, json: true },
+        {
+          env,
+          insideDaemonTree: () => false,
+          rollbackRuntime: {
+            getProcesses: () => processes,
+            ownPackageRoot,
+            supervise: async (): Promise<ManagedRuntimeSupervisorOutcome> => {
+              supervised += 1;
+              return rolledBackOutcome(stateDir);
+            },
+          },
+        },
+      ).then(
+        () => ({ code: "ok", message: "" }),
+        (error: Error & { code?: string }) => ({ code: error.code, message: error.message }),
+      );
+    // A checkout or another install of another release: that release's supervisor would get the rollback.
+    const other = globalInstall("3.3.0");
+    for (const execute of [false, true]) {
+      const refused = await attempt(other.root, execute);
+      expect(refused.code).toBe(UPDATE_ROLLBACK_UNAVAILABLE);
+      expect(refused.message).toContain(`the daemon runs from ${install.root}, which holds Ravi 3.2.0`);
+      expect(refused.message).toContain(`this ravi is Ravi 3.3.0 from ${other.root}`);
+      expect(refused.message).toContain("This run stopped nothing.");
+      expect((await attempt(null, execute)).message).toContain("this ravi is not an installed Ravi");
+    }
+    expect(supervised).toBe(0);
+    // The same release from another install runs the same rollback; the daemon's own install is the usual case.
+    expect((await attempt(globalInstall("3.2.0").root, true)).code).toBe("ok");
+    expect((await attempt(install.root, true)).code).toBe("ok");
+    expect(supervised).toBe(2);
+  });
+
+  it("probes the update lock without creating anything where no update ever ran", () => {
+    const stateDir = tempDir("ravi-probe-state-");
+    expect(updateSupervisorRunning(stateDir)).toBe(false);
+    expect(readdirSync(stateDir)).toEqual([]);
+  });
+
+  it("holds the update lock for the rollback: refused while another supervisor holds it, free after", async () => {
+    const { stateDir, install, processes, manifest } = operatorRollbackFixture();
+    process.env.RAVI_STATE_DIR = stateDir;
+    const env = "RAVI_INTERNAL_UPDATE_RUNTIME_REBIND";
+    const invocation = buildManagedRuntimeRebindSupervisorInvocation(
+      install.target,
+      processes,
+      { PATH: "/usr/bin" },
+      {
+        rollback: { snapshotId: manifest!.id },
+      },
+    );
+    expect(decodeManagedRuntimeRebindRequest(invocation.env[env]!).rollback).toEqual({ snapshotId: manifest!.id });
+    const rolledBack: string[] = [];
+    const overrides = {
+      getProcesses: () => processes,
+      rollBack: async (dependencies: UpdateRollbackDependencies) => {
+        rolledBack.push(dependencies.manifest!.id);
+        return {
+          ok: true as const,
+          target: install.target,
+          restoredAt: "2026-11-20T03:00:00.000Z",
+          candidateDir: join(stateDir, "candidate"),
+        };
+      },
+    };
+    // Another supervisor, in another process, holds the lock (the lock is per process).
+    const holder = join(stateDir, "holder.ts");
+    writeFileSync(
+      holder,
+      `import { acquireSchemaFileLock } from ${JSON.stringify(join(process.cwd(), "src/db/schema-lock.ts"))};\n` +
+        `acquireSchemaFileLock(${JSON.stringify(join(stateDir, "updates", "update.lock"))}, 0);\n` +
+        'console.log("held");\nsetInterval(() => {}, 1_000);\n',
+    );
+    try {
+      const other = spawn(process.execPath, [holder], { stdio: ["ignore", "pipe", "inherit"] });
+      try {
+        await new Promise<void>((resolve) => other.stdout!.once("data", () => resolve()));
+        process.env[env] = invocation.env[env];
+        await expect(maybeRunManagedRuntimeRebindFromEnv(() => false, undefined, overrides)).rejects.toThrow(
+          UPDATE_IN_PROGRESS,
+        );
+        expect(rolledBack).toEqual([]);
+      } finally {
+        other.kill("SIGKILL");
+        await new Promise((resolve) => other.once("exit", resolve));
+      }
+      process.env[env] = invocation.env[env];
+      expect(await maybeRunManagedRuntimeRebindFromEnv(() => false, undefined, overrides)).toBe(true);
+      expect(rolledBack).toEqual([manifest!.id]);
+      // Released at the end: the next supervisor gets it.
+      acquireUpdateSupervisorLock(stateDir).release();
+    } finally {
+      delete process.env[env];
+    }
+  });
+
+  it("hands the supervisor one absolute state directory, the environment and the previewed snapshot", async () => {
+    const { stateDir, install, processes, manifest } = operatorRollbackFixture();
+    const seen: Array<{ stateDir: string; envStateDir?: string; window?: string; snapshotId?: string }> = [];
+    const supervise = async (
+      _target: unknown,
+      _processes: unknown,
+      supervisorStateDir?: string,
+      options?: { rollback?: { snapshotId: string }; env?: NodeJS.ProcessEnv },
+    ): Promise<ManagedRuntimeSupervisorOutcome> => {
+      seen.push({
+        stateDir: supervisorStateDir!,
+        envStateDir: options?.env?.RAVI_STATE_DIR,
+        window: options?.env?.RAVI_UPDATE_STABILITY_WINDOW_MS,
+        snapshotId: options?.rollback?.snapshotId,
+      });
+      return rolledBackOutcome(stateDir);
+    };
+    // The operator names the state directory relative to their cwd; the supervisor starts elsewhere.
+    const relativeStateDir = relative(process.cwd(), stateDir);
+    await runUpdate(
+      { rollback: true, execute: true, json: true },
+      {
+        env: { PATH: "/usr/bin", RAVI_STATE_DIR: relativeStateDir, RAVI_UPDATE_STABILITY_WINDOW_MS: "120000" },
+        insideDaemonTree: () => false,
+        rollbackRuntime: { getProcesses: () => processes, supervise, ownPackageRoot: install.root },
+      },
+    );
+    expect(seen).toEqual([{ stateDir, envStateDir: stateDir, window: "120000", snapshotId: manifest!.id }]);
+  });
+
+  it("previews by default, rolls back with --execute, and runs only from a terminal", async () => {
+    const { stateDir, install, processes } = operatorRollbackFixture();
+    const env = { PATH: "/usr/bin", RAVI_STATE_DIR: stateDir };
+    let outcome = rolledBackOutcome(stateDir);
+    let supervised = 0;
+    const rollbackRuntime = {
+      getProcesses: () => processes,
+      ownPackageRoot: install.root,
+      supervise: async (): Promise<ManagedRuntimeSupervisorOutcome> => {
+        supervised += 1;
+        return outcome;
+      },
+    };
+
+    await expect(
+      runUpdate({ rollback: true, json: true }, { env, insideDaemonTree: () => false, rollbackRuntime }),
+    ).rejects.toMatchObject({ code: "WRITE_REQUIRES_EXECUTE" });
+    expect(supervised).toBe(0);
+
+    expect(
+      await runUpdate(
+        { rollback: true, execute: true, json: true },
+        { env, insideDaemonTree: () => false, rollbackRuntime },
+      ),
+    ).toMatchObject({
+      success: true,
+      mode: "rollback",
+      from: "3.2.0",
+      to: "3.1.0",
+      restoredAt: "2026-11-20T03:00:00.000Z",
+    });
+    expect(supervised).toBe(1);
+
+    // What the supervisor recorded is the result: a refusal under the lock, or a failed rollback with its commands.
+    outcome = {
+      converged: false,
+      refusal: { code: UPDATE_IN_PROGRESS, message: "held" } as never,
+      result: null,
+      logPath: null,
+    };
+    await expect(
+      runUpdate({ rollback: true, execute: true, json: true }, { env, insideDaemonTree: () => false, rollbackRuntime }),
+    ).rejects.toMatchObject({ code: UPDATE_IN_PROGRESS });
+    outcome = {
+      converged: false,
+      refusal: null,
+      result: {
+        ...rolledBackOutcome(stateDir).result!,
+        outcome: "rollback-failed",
+        message: "stopped at start",
+        commands: ["ravi daemon start"],
+      },
+      logPath: null,
+    };
+    await expect(
+      runUpdate({ rollback: true, execute: true, json: true }, { env, insideDaemonTree: () => false, rollbackRuntime }),
+    ).rejects.toMatchObject({
+      code: "UPDATE_ROLLBACK_FAILED",
+      message: expect.stringContaining("\nravi daemon start"),
+    });
+
+    await expect(
+      runUpdate({ rollback: true, execute: true, json: true }, { env, insideDaemonTree: () => true, rollbackRuntime }),
+    ).rejects.toMatchObject({ code: UPDATE_ROLLBACK_UNAVAILABLE });
+    await expect(
+      runUpdate({ rollback: true, next: true, json: true }, { env, insideDaemonTree: () => false, rollbackRuntime }),
+    ).rejects.toMatchObject({ code: "USAGE_ERROR" });
+    await expect(
+      runUpdate({ execute: true, json: true }, { env, insideDaemonTree: () => false, rollbackRuntime }),
+    ).rejects.toMatchObject({ code: "USAGE_ERROR" });
+    expect(supervised).toBe(3);
+  });
+
+  it("goes on when the terminal closes after the first stop: the rollback runs in the detached supervisor", async () => {
+    const scene = tempDir("ravi-rollback-scene-");
+    const stateDir = join(scene, "state");
+    mkdirSync(stateDir);
+    const install = globalInstall("3.2.0");
+    const repo = process.cwd();
+    const deleted = join(scene, "deleted");
+    const go = join(scene, "go");
+    const started = join(scene, "started");
+    // Stands for the first `pm2 delete`, then waits until the terminal is gone.
+    const fakeRollBack = `async () => {
+      writeFileSync(${JSON.stringify(deleted)}, "");
+      while (!existsSync(${JSON.stringify(go)})) await Bun.sleep(50);
+      writeFileSync(${JSON.stringify(started)}, "");
+      return { ok: true, target: null, restoredAt: "2026-11-20T03:00:00.000Z", candidateDir: ${JSON.stringify(join(scene, "candidate"))} };
+    }`;
+    const processesFile = join(scene, "processes.json");
+    // The installed bundle: the supervisor this command starts, with PM2 and the rollback faked.
+    writeFileSync(
+      install.target.bundlePath,
+      `import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { maybeRunManagedRuntimeRebindFromEnv } from ${JSON.stringify(join(repo, "src/managed-runtime-rebind.ts"))};
+const processes = JSON.parse(readFileSync(${JSON.stringify(processesFile)}, "utf8"));
+await maybeRunManagedRuntimeRebindFromEnv(() => false, undefined, { getProcesses: () => processes, rollBack: ${fakeRollBack} });
+`,
+    );
+    const ravi = join(stateDir, "ravi.db");
+    new Database(ravi, { create: true }).close();
+    takeUpdateSnapshot({ stateDir, stores: [ravi], method: "copy", previousRelease: "3.1.0", targetRelease: "3.2.0" });
+    const epoch = Math.ceil(statSync(install.target.bundlePath).mtimeMs) + 1;
+    const processes = [
+      pm2Process("ravi", install.target.bundlePath, install.root, { pm_id: 1, pid: 10, startedAt: epoch }),
+      pm2Process("ravi-channels", install.target.bundlePath, install.root, { pm_id: 2, pid: 20, startedAt: epoch }),
+    ];
+    for (const process of processes) boot(stateDir, process, install.target.bundlePath, "3.2.0");
+    writeFileSync(processesFile, JSON.stringify(processes));
+    // The operator's command. A CLI that rolled back in its own process would run the same fake there.
+    const cliScript = join(scene, "cli.ts");
+    writeFileSync(
+      cliScript,
+      `import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { runUpdate } from ${JSON.stringify(join(repo, "src/cli/commands/update.ts"))};
+const processes = JSON.parse(readFileSync(${JSON.stringify(processesFile)}, "utf8"));
+await runUpdate(
+  { rollback: true, execute: true, json: true },
+  {
+    env: { PATH: process.env.PATH, HOME: process.env.HOME, RAVI_STATE_DIR: ${JSON.stringify(stateDir)}, RAVI_UPDATE_STABILITY_WINDOW_MS: "0" },
+    insideDaemonTree: () => false,
+    rollbackRuntime: { getProcesses: () => processes, rollBack: ${fakeRollBack}, ownPackageRoot: ${JSON.stringify(install.root)} },
+  },
+);
+`,
+    );
+    const since = Date.now() - 1_000;
+    const until = async (check: () => boolean, ms: number) => {
+      const deadline = Date.now() + ms;
+      while (!check()) {
+        if (Date.now() > deadline) return false;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      return true;
+    };
+    // Its own process group, as a terminal session's foreground job.
+    const cli = spawn(process.execPath, [cliScript], { detached: true, stdio: "ignore", cwd: scene });
+    try {
+      expect(await until(() => existsSync(deleted), 20_000)).toBe(true);
+      // The terminal closes: its process group gets SIGHUP.
+      process.kill(-cli.pid!, "SIGHUP");
+      expect(await until(() => cli.exitCode !== null || cli.signalCode !== null, 10_000)).toBe(true);
+      writeFileSync(go, "");
+      expect(await until(() => readUpdateSupervisorResult(since, stateDir)?.outcome === "rolled-back", 20_000)).toBe(
+        true,
+      );
+      expect(existsSync(started)).toBe(true);
+    } finally {
+      writeFileSync(go, "");
+      try {
+        process.kill(-cli.pid!, "SIGKILL");
+      } catch {
+        // no-cause: The command already ended.
+      }
+    }
+  }, 60_000);
+});
+
+function rolledBackOutcome(stateDir: string): ManagedRuntimeSupervisorOutcome {
+  return {
+    converged: true,
+    refusal: null,
+    result: {
+      protocol: "ravi.update-supervisor-result/v1",
+      pid: 1,
+      at: new Date().toISOString(),
+      outcome: "rolled-back",
+      targetRelease: "3.2.0",
+      previousRelease: "3.1.0",
+      snapshotId: null,
+      snapshotAt: null,
+      restoredAt: "2026-11-20T03:00:00.000Z",
+      candidateDir: join(stateDir, "candidate"),
+      message: "Ravi 3.1.0 runs again on its state.",
+      commands: [],
+      warnings: [],
+    },
+    logPath: null,
+  };
+}

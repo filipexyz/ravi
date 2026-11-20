@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { Database } from "bun:sqlite";
 import { spawn } from "bun";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -121,15 +121,16 @@ describe("waypoint for a source checkout", () => {
         readiness: "adopt-on-start",
         preparedRelease: null,
         targetVersion: "3.261119.9",
-        sourceCheckout: "/src/my ravi",
+        sourceCheckout: "/src/my $proj's ravi",
       });
     } catch (error) {
       refusal = error;
     }
     const message = (refusal as Error).message;
-    // Exact commands: the path quoted, the tag fetched first, and the restart flag the command requires.
-    expect(message).toContain('git -C "/src/my ravi" fetch --tags');
-    expect(message).toContain(`git -C "/src/my ravi" switch --detach v${FENCE_ADOPTION_MINIMUM_RELEASE}`);
+    // Exact commands: the path in POSIX single quotes (`$` and quotes included), the tag fetched first, and the
+    // restart flag the command requires.
+    expect(message).toContain("git -C '/src/my $proj'\\''s ravi' fetch --tags");
+    expect(message).toContain(`git -C '/src/my $proj'\\''s ravi' switch --detach v${FENCE_ADOPTION_MINIMUM_RELEASE}`);
     expect(message).toContain('ravi daemon restart -m "waypoint"');
     expect(message).toContain("ravi channels restart");
     expect(message).toContain("checkout is already Ravi 3.261119.9");
@@ -224,6 +225,10 @@ describe("stability window", () => {
     expect(supervisorStabilityPlan(String(MANAGED_RUNTIME_REBIND_TIMEOUT_MS), 1_000)).toEqual({
       stabilityDeadlineMs: 1_000 + MANAGED_RUNTIME_REBIND_TIMEOUT_MS - 10_000,
     });
+    // A declared budget is capped at five times the CLI's own wait.
+    expect(supervisorStabilityPlan("99999999", 1_000)).toEqual({
+      stabilityDeadlineMs: 1_000 + MANAGED_RUNTIME_REBIND_TIMEOUT_MS * 5 - 10_000,
+    });
     expect(SUPERVISOR_EXIT_MARGIN_MS).toBe(10_000);
     const invocation = buildManagedRuntimeRebindSupervisorInvocation(
       { bundlePath: "/opt/ravi/dist/bundle/index.js", cwd: "/opt/ravi", version: "3.261119.9" },
@@ -277,8 +282,14 @@ describe("supervisor refusal reaches the CLI", () => {
     // This CLI also declares how long it waits.
     process.env[REBIND_ENV] = invocation.env[REBIND_ENV];
     process.env[MANAGED_RUNTIME_SUPERVISOR_BUDGET_ENV] = invocation.env[MANAGED_RUNTIME_SUPERVISOR_BUDGET_ENV];
-    const spawnedAt = Date.now() - process.uptime() * 1000;
-    expect(await maybeRunManagedRuntimeRebindFromEnv(() => false, rebind)).toBe(true);
+    // The supervisor anchors the deadline when the CLI spawned it (its own start), not when it reads its budget.
+    const uptime = spyOn(process, "uptime").mockReturnValue(12);
+    const spawnedAt = Date.now() - 12_000;
+    try {
+      expect(await maybeRunManagedRuntimeRebindFromEnv(() => false, rebind)).toBe(true);
+    } finally {
+      uptime.mockRestore();
+    }
     expect(plans[0]).toEqual({ stabilityWindowMs: 0 });
     const expectedDeadline = spawnedAt + MANAGED_RUNTIME_REBIND_TIMEOUT_MS - SUPERVISOR_EXIT_MARGIN_MS;
     expect(plans[1]?.stabilityWindowMs).toBeUndefined();

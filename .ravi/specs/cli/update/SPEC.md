@@ -140,8 +140,9 @@ CLI that run installed.
   `UPDATE_WAYPOINT_REQUIRED`. The refusal MUST name the exact commands: `ravi update --version 3.261113.2`,
   `ravi daemon status`, then `ravi update --next`. A source checkout does not
   accept `--version`, so there the refusal MUST give the checkout steps
-  instead, as commands that run as written: `git -C "<checkout>" fetch --tags`,
-  `git -C "<checkout>" switch --detach v3.261113.2`, build, then
+  instead, as commands that run as written, the path in POSIX single quotes:
+  `git -C '<checkout>' fetch --tags`,
+  `git -C '<checkout>' switch --detach v3.261113.2`, build, then
   `ravi daemon restart -m "waypoint"` and `ravi channels restart`. It MUST say that the installed package (or the checkout) is
   already the target release, because a restart before the waypoint would
   start it on that state.
@@ -242,6 +243,54 @@ CLI that run installed.
   waits up to 15 min and fails with `UPDATE_ROLLED_BACK` or
   `UPDATE_ROLLBACK_FAILED` from that record. A CLI that stops waiting earlier
   reports a generic failure, and the record still holds the outcome.
+
+## Operator rollback (`ravi update --rollback`)
+
+- `ravi update --rollback` MUST go back to the release before the last update,
+  with its state as of that update's snapshot, through the update's own
+  rollback: stop both processes, restore under the store locks, reinstall
+  the exact previous release in the same global install, start it through
+  its own CLI, and hold it for the stability window. With `--execute` all of
+  it MUST run in the update supervisor, the same detached process as an
+  update's rebind, which outlives the command: a closed terminal, a lost SSH
+  session or a Ctrl-C after the first stop MUST NOT cut it. The supervisor
+  MUST make the plan again under the update lock and refuse, before any stop,
+  when the latest snapshot is not the one the preview named; the outcome goes
+  to `<state>/updates/supervisor-result.json`, which the command reports.
+- It MUST be a preview unless `--execute` is given (the contract's dry-run,
+  exit 3), naming the release it leaves, the release it goes back to, the
+  snapshot's time and where what was written since then is kept.
+- Before stopping anything it MUST refuse with `UPDATE_ROLLBACK_UNAVAILABLE`
+  when there is no update snapshot, when the latest one was already restored
+  (or a restore of it was cut short), when a copy its manifest lists is
+  missing, cannot be read or is not the size it was copied with, when the
+  daemon does not run
+  from a global install, when the daemon's verified release is not the target
+  of that update, when the command's own release is not the one installed
+  where the daemon runs from (the rollback runs in that install's supervisor),
+  or when the caller runs inside the daemon's process tree. The rollback
+  itself, automatic or not, MUST check the snapshot's copies again before its
+  first `pm2 delete` and stop nothing when one is gone. Its request to the
+  supervisor MUST be schema 2, which a supervisor from before
+  `ravi update --rollback` refuses instead of reading it as a rebind. Before
+  planning, it MUST refuse with `UPDATE_IN_PROGRESS` while another process's
+  supervisor holds the update lock (an update, or a rollback whose command was
+  cut), pointing at `supervisor-result.json` and `supervisor.log`; that probe
+  records no refusal and creates nothing where no update ever ran. Only then, when neither process runs under PM2 next to an
+  unused snapshot (a rollback cut after its stop), the refusal MUST say so and
+  give the commands that finish it by hand: the snapshot's restore and the
+  previous release's install and start, or, once a restore ran, its
+  `restore.json` and the install and start; a snapshot that cannot be put back
+  gives only the start of the release that wrote the state. Commands in a refusal or a failure
+  MUST come one per line after where they are kept (`finish-by-hand.txt` next to
+  the snapshot, written by a run with `--execute` and never by the preview, or
+  `supervisor-result.json`): a message line past 2048
+  characters reaches the operator as `[redacted:oversize]`. A result the
+  supervisor cannot write MUST NOT turn a rollback that ran into a failure.
+- It takes no release selector, and `--execute` without `--rollback` is a
+  usage error. Its supervisor MUST hold `<state>/updates/update.lock` while it
+  runs (`UPDATE_IN_PROGRESS` when another update holds it). A rollback that stops
+  MUST end as `UPDATE_ROLLBACK_FAILED` with the step and the commands.
 
 ## Detached execution
 
