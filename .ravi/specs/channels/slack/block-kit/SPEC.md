@@ -35,7 +35,8 @@ O Ravi deve expor:
 - atualizar mensagem Block Kit com `chat.update`;
 - publicar um showcase repetivel;
 - receber interacoes via Socket Mode e publicar evento canonico
-  `ravi.inbound.interaction`.
+  `ravi.inbound.interaction`;
+- publicar a App Home padrao de cada usuario com `views.publish`.
 
 ## Modelo De Payload
 
@@ -150,6 +151,40 @@ POC de tickets:
 5. criacao real de rota/sessao e capability separada e deve ser adicionada apos
    validacao da UX.
 
+## App Home Padrao
+
+O Slack mostra a aba Home vazia ate o app publicar uma view para aquele usuario
+com `views.publish`. Um app com a Home Tab ligada que nunca publica deixa a aba
+vazia. Por isso o runner Socket Mode responde a `app_home_opened`:
+
+- evento com `tab: "home"` MUST publicar uma view `type: "home"` valida para o
+  `user` do evento; `tab: "messages"` MUST ser ignorado;
+- a view padrao MUST funcionar para qualquer agent sem configuracao: nome do
+  agent, descricao, como falar com ele (aba Mensagens; mencao num canal em que o
+  app esteja) e um estado vazio que diz que nada foi configurado ali;
+- o agent da Home MUST ser o que responde a DM daquele usuario (`matchRoute` da
+  DM) ou, sem rota, o agent da instancia; sem nenhum, a Home MUST dizer que o
+  app nao esta ligado a um agente;
+- a descricao MUST vir so do diretorio da org (`ravi agents set <id>
+  description`, ate 300 caracteres) e MUST aparecer so quando o agent esta
+  listado nele (`ravi agents listing <id> on --execute`): o diretorio nao
+  mostra agent nao listado, e a Home desse agent mostra so o nome. A descricao
+  MUST ser escapada; a Home MUST NOT mostrar instrucoes, arquivos ou contexto
+  do agent, porque qualquer pessoa do workspace abre a aba;
+- todo texto MUST caber nos limites do Block Kit (header ate 150 caracteres,
+  texto ate 3000, no maximo 100 blocks por view);
+- `private_metadata` MUST carregar uma impressao do conteudo; se a view que o
+  usuario ja tem traz a mesma impressao, o runner MUST NOT publicar de novo;
+- falha de `views.publish` MUST ser registrada no log com o erro do Slack
+  (`not_enabled` nomeia a Home Tab desligada) e MUST NOT derrubar o envelope
+  nem o runner: o proximo `app_home_opened` tenta de novo;
+- cada `views.publish` MUST ter prazo (4 s) e MUST ser abortado ao estourar:
+  somado ao `auth.test` (5 s), o envelope fecha dentro do prazo de 10 s do
+  drain, e um Slack que nao responde nunca trava o restart do runner.
+
+O app Slack precisa assinar o evento `app_home_opened` e ligar a Home Tab.
+`views.publish` nao exige escopo.
+
 ## Permissoes
 
 As mutacoes seguem dry-run por padrao e exigem `--execute`.
@@ -166,8 +201,9 @@ Credenciais continuam no broker/connection Slack. Agents nao recebem tokens.
 
 ## Fora Do Escopo Inicial
 
-- modal lifecycle completo com `views.open`, `views.update` e `views.publish`;
-- App Home;
+- modal lifecycle completo com `views.open` e `views.update`;
+- App Home customizada por agent ou por usuario (a padrao esta em
+  "App Home Padrao");
 - menus externos dinâmicos;
 - renderer Markdown -> Block Kit;
 - DSL de templates Ravi para Block Kit.

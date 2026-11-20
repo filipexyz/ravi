@@ -24,3 +24,18 @@
   `replace_original` for ephemeral interactive messages.
 - Block Kit specs and skill docs MUST keep Canvas as a separate document
   surface.
+- Socket Mode MUST answer `app_home_opened` with `tab: "home"` by publishing a
+  valid `type: "home"` view through `views.publish` for the event's user, and
+  MUST ignore `tab: "messages"`.
+- The default Home MUST work for an agent with no configuration, MUST show only
+  the agent's name and, only when the agent is listed in the org directory,
+  its directory description (escaped), and MUST keep every text within Block
+  Kit limits and at most 100 blocks.
+- The runner MUST NOT publish again a Home whose `private_metadata` fingerprint
+  matches the view the user already has.
+- A `views.publish` failure MUST be logged with Slack's error and MUST NOT fail
+  the envelope or stop the runner.
+- Each `views.publish` MUST be bounded by a timeout that aborts the request,
+  so an unanswered publish settles its envelope and never blocks the drain.
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/channels/slack/app-home.test.ts src/channels/slack/client.test.ts`
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/channels/slack/socket-mode.test.ts -t "Slack App Home"`

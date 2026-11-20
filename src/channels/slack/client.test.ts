@@ -499,6 +499,44 @@ describe("Slack Web API client", () => {
     });
   });
 
+  it("publishes an App Home view for one user through views.publish", async () => {
+    const calls: Array<{ method: string; init: RequestInit }> = [];
+    const fetchImpl = mock(async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ method: String(url).split("/").pop() ?? "", init: init ?? {} });
+      return jsonResponse({ ok: true, view: { id: "V-home", type: "home" } });
+    }) as unknown as typeof fetch;
+    const client = new SlackWebApiClient({ appToken: "xapp-secret", botToken: "xoxb-secret", fetchImpl });
+    const view = { type: "home", blocks: [{ type: "divider" }] };
+
+    await expect(client.viewsPublish({ userId: "U123", view })).resolves.toMatchObject({
+      view: { id: "V-home", type: "home" },
+    });
+
+    expect(calls.map((call) => call.method)).toEqual(["views.publish"]);
+    expect(calls[0]?.init.headers).toMatchObject({
+      authorization: "Bearer xoxb-secret",
+      "content-type": "application/json; charset=utf-8",
+    });
+    expect(jsonBody(calls[0]?.init.body)).toEqual({ user_id: "U123", view });
+    expect(calls[0]?.init.signal).toBeUndefined();
+
+    const controller = new AbortController();
+    await client.viewsPublish({ userId: "U123", view, signal: controller.signal });
+    expect(calls[1]?.init.signal).toBe(controller.signal);
+    expect(jsonBody(calls[1]?.init.body)).toEqual({ user_id: "U123", view });
+  });
+
+  it("surfaces views.publish not_enabled as a Slack API error", async () => {
+    const fetchImpl = mock(async () => jsonResponse({ ok: false, error: "not_enabled" })) as unknown as typeof fetch;
+    const client = new SlackWebApiClient({ appToken: "xapp-secret", botToken: "xoxb-secret", fetchImpl });
+
+    await expect(client.viewsPublish({ userId: "U123", view: { type: "home", blocks: [] } })).rejects.toMatchObject({
+      name: "SlackApiError",
+      method: "views.publish",
+      slackError: "not_enabled",
+    });
+  });
+
   it("calls Slack Canvas methods with JSON payloads", async () => {
     const calls: Array<{ method: string; init: RequestInit }> = [];
     const fetchImpl = mock(async (url: string | URL | Request, init?: RequestInit) => {

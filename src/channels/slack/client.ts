@@ -267,6 +267,16 @@ export interface SlackViewsPushInput {
   readonly view: Record<string, unknown>;
 }
 
+/** App Home tab view for one user (`views.publish`). */
+export interface SlackViewsPublishInput {
+  readonly userId: string;
+  readonly view: Record<string, unknown>;
+  /** Slack's view hash, to refuse publishing over a newer view. */
+  readonly hash?: string;
+  /** Aborts the request; the Socket Mode runner bounds each publish with it. */
+  readonly signal?: AbortSignal;
+}
+
 export interface SlackViewsResponse extends SlackApiResponse {
   readonly view?: Record<string, unknown>;
 }
@@ -539,6 +549,19 @@ export class SlackWebApiClient {
       trigger_id: input.triggerId,
       view: input.view,
     });
+  }
+
+  async viewsPublish(input: SlackViewsPublishInput): Promise<SlackViewsResponse> {
+    return this.apiJsonRequest<SlackViewsResponse>(
+      "views.publish",
+      this.botToken,
+      compactBody({
+        user_id: input.userId,
+        view: input.view,
+        hash: input.hash,
+      }),
+      { signal: input.signal },
+    );
   }
 
   async authTest(options: { signal?: AbortSignal } = {}): Promise<SlackAuthTestResponse> {
@@ -849,7 +872,7 @@ export class SlackWebApiClient {
     method: string,
     token: string,
     body: Record<string, unknown>,
-    options: { okErrors?: readonly string[] } = {},
+    options: { okErrors?: readonly string[]; signal?: AbortSignal } = {},
   ): Promise<T> {
     const res = await this.fetchImpl(`${this.apiBaseUrl}/${method}`, {
       method: "POST",
@@ -859,6 +882,7 @@ export class SlackWebApiClient {
         "content-type": "application/json; charset=utf-8",
       },
       body: JSON.stringify(body),
+      ...(options.signal ? { signal: options.signal } : {}),
     });
 
     const payload = (await res.json()) as T;
