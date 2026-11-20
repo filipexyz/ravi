@@ -5,14 +5,21 @@
  * product creates on its own when a session publishes something. The session
  * that publishes from a thread is a child that closes; the subscription has to
  * outlive it. So a follow armed from a thread belongs to the thread's durable
- * parent, the same way a PR follow always has. Without that the child cannot
- * close: `sessions close-thread` refuses while an active trigger still addresses
- * it (`THREAD_TRIGGERS_PENDING`).
+ * parent. Without that the child cannot close: `sessions close-thread` refuses
+ * while an active trigger still addresses it (`THREAD_TRIGGERS_PENDING`).
+ *
+ * One exception, for the PR follow only (`openThreadOwns`): while its thread is
+ * open, the child that published is the one who must react to the CI result, so
+ * the follow addresses the child and its thread. Closing the thread hands the
+ * follow to the durable parent (`handOffClosingThreadFollows`), so the child can
+ * still close and the subscription still outlives it.
  */
 
 import type { Database } from "bun:sqlite";
 import { findSlackThreadLifecycleByChildRef } from "../channels/slack/thread-lifecycle-store.js";
 import { getSession, resolveSession } from "../router/sessions.js";
+import { isGhFollowTriggerName } from "./follow-trigger-names.js";
+import { dbListTriggers, dbUpdateTrigger } from "./triggers-db.js";
 import type { TriggerReplySource } from "./types.js";
 
 export interface FollowOwnerContext {
@@ -51,6 +58,12 @@ export type DurableFollowRefusal = "any-thread" | "slack-thread";
 
 export interface DurableFollowOwnerOptions {
   refuse?: DurableFollowRefusal;
+  /**
+   * The follow stays with the Slack thread child while its thread is open: the
+   * child and the thread itself receive it. A closed thread still hands it to
+   * the durable parent. Only a follow whose close hands it off may ask for this.
+   */
+  openThreadOwns?: boolean;
 }
 
 /**
@@ -115,6 +128,30 @@ export function resolveDurableFollowOwner<T extends FollowOwnerContext>(
   if (!parent || parent.sessionKey.includes(":thread:")) {
     throw new Error(`Cannot register ${subject}: durable parent session is missing.`);
   }
+  if (options.openThreadOwns && thread.status === "open" && thread.childSessionKey && thread.providerThreadId) {
+    const child = database
+      ? (database
+          .query("SELECT session_key AS sessionKey, name, agent_id AS agentId FROM sessions WHERE session_key=?")
+          .get(thread.childSessionKey) as { sessionKey: string; name: string | null; agentId: string } | null)
+      : getSession(thread.childSessionKey);
+    // The parent was checked above: the follow may only be armed where a later close can still hand it off.
+    // A child whose session row is gone cannot receive anything: the parent owns it.
+    if (child) {
+      return {
+        ...context,
+        agentId: child.agentId,
+        accountId: thread.accountId,
+        sessionName: child.name ?? child.sessionKey,
+        sessionKey: child.sessionKey,
+        source: {
+          channel: "slack",
+          accountId: thread.accountId,
+          chatId: thread.platformChatId,
+          threadId: thread.providerThreadId,
+        },
+      };
+    }
+  }
   return {
     ...context,
     agentId: parent.agentId,
@@ -124,4 +161,37 @@ export function resolveDurableFollowOwner<T extends FollowOwnerContext>(
     // Never keep the child's frozen replySource as fallback after handoff.
     source: { channel: "slack", accountId: thread.accountId, chatId: thread.platformChatId },
   };
+}
+
+/**
+ * A thread that is closing hands the PR follows addressed to its child to its
+ * durable parent first, so the close is not refused (`THREAD_TRIGGERS_PENDING`)
+ * and the subscription outlives the child. Returns the ids it moved; a follow
+ * already owned by the parent, and any other kind of trigger, are left alone.
+ */
+export function handOffClosingThreadFollows(
+  child: { childSessionKey: string; childSessionName?: string },
+  database?: Database,
+): string[] {
+  const moved: string[] = [];
+  for (const trigger of dbListTriggers()) {
+    if (!isGhFollowTriggerName(trigger.name) || !trigger.replySession) continue;
+    if (trigger.replySession !== child.childSessionKey && trigger.replySession !== child.childSessionName) continue;
+    const closing: FollowOwnerContext = {
+      sessionKey: child.childSessionKey,
+      sessionName: child.childSessionName,
+      source: trigger.replySource,
+    };
+    const owner = resolveDurableFollowOwner(closing, "PR follow", database);
+    const target = owner.sessionName ?? owner.sessionKey;
+    if (!target || target === trigger.replySession) continue;
+    dbUpdateTrigger(trigger.id, {
+      agentId: owner.agentId,
+      accountId: owner.accountId,
+      replySession: target,
+      replySource: owner.source,
+    });
+    moved.push(trigger.id);
+  }
+  return moved;
 }

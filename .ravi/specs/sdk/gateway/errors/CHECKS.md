@@ -31,3 +31,4 @@ done
 - 400/401/404/405/413 and concurrent requests: canonical envelopes and unique ids.
 - Repeated failure: one diagnostic per signature/window, count after window, reference to first diagnostic.
 - TypeScript SDK error projection: ids and validation fields survive; malformed metadata is dropped.
+- Mutation return contract: a `mutate` handler that returns an undeclared field (the real case: `create-thread` returning `origin`) answers 200 with the field removed, no `COMMAND_FAILED`/500, one `return_contract_violation` log and counter increment; a missing or mistyped declared field is omitted with the same signal. The same drift on a `read` command stays `RETURN_SHAPE_ERROR`/500.

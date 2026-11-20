@@ -399,6 +399,15 @@ export function canReleaseRuntimeDeliveryBarrier(
   }
 }
 
+/**
+ * The message belongs to a delivery that is being retried, so it keeps its cohort apart from later
+ * messages: an ambiguously stashed turn (`replay`), a known capacity retry, or a turn re-run after a
+ * failure that delivered nothing (`retainsInputCohort`, a credential retry).
+ */
+function retainsAttemptInput(message: RuntimeUserMessage): boolean {
+  return message.replay === true || message.providerCapacityRetry !== undefined || message.retainsInputCohort === true;
+}
+
 export function getDeliverableRuntimeMessages(
   sessionName: string,
   session: RuntimeHostStreamingSession,
@@ -445,8 +454,6 @@ export function getDeliverableRuntimeMessages(
   // folded into a different prompt and accidentally acknowledged with it.
   // Known capacity retries retain their input cohort for the same reason,
   // while still receiving a fresh physical delivery id below.
-  const retainsAttemptInput = (message: RuntimeUserMessage) =>
-    message.replay === true || message.providerCapacityRetry !== undefined;
   const firstIsReplay = envelopeBounded[0] !== undefined && retainsAttemptInput(envelopeBounded[0]);
   let replayBounded: RuntimeUserMessage[];
   if (!firstIsReplay) {
@@ -488,7 +495,7 @@ export function getDeliverableRuntimeMessages(
 function prioritizeHumanRuntimeMessages(messages: RuntimeUserMessage[]): RuntimeUserMessage[] {
   for (let index = 0; index < messages.length; index++) {
     const message = messages[index]!;
-    if (message.replay || message.providerCapacityRetry !== undefined || message.yieldedRequest) break;
+    if (retainsAttemptInput(message) || message.yieldedRequest) break;
     const provenance = classifyTurnProvenance({ prompt: message.launchPrompt });
     if (provenance.origin === "human") {
       // Leave the real pending queue intact: terminal accounting removes only
@@ -507,7 +514,7 @@ function progressReportEnvelope(message: RuntimeUserMessage): object | null {
   const prompt = message.launchPrompt;
   const lifecycle = prompt?._slackThreadLifecycle;
   const origin = resolveRuntimeTurnOrigin(prompt?._turnOrigin);
-  const retainsAttemptInput = message.replay === true || message.providerCapacityRetry !== undefined;
+  const retainsInput = retainsAttemptInput(message);
   if (
     !prompt ||
     lifecycle?.eventType !== "thread.report" ||
@@ -516,7 +523,7 @@ function progressReportEnvelope(message: RuntimeUserMessage): object | null {
     !lifecycle.parentSessionKey ||
     origin?.producer !== "channel" ||
     origin.action !== "session.return" ||
-    (retainsAttemptInput ? !message.clientMessageId : Boolean(message.clientMessageId)) ||
+    (retainsInput ? !message.clientMessageId : Boolean(message.clientMessageId)) ||
     message.yieldedRequest ||
     message.taskBarrierTaskId ||
     prompt._channelBackend ||
@@ -545,7 +552,7 @@ function progressReportEnvelope(message: RuntimeUserMessage): object | null {
     taskBarrierTaskId: message.taskBarrierTaskId,
     // Recovery and capacity retries retain exactly the already handed-off
     // cohort, never a new report arriving under the same authority afterward.
-    attemptDeliveryId: retainsAttemptInput ? message.clientMessageId : null,
+    attemptDeliveryId: retainsInput ? message.clientMessageId : null,
     capacityRetry: message.providerCapacityRetry ?? null,
   };
 }

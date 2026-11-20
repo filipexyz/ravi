@@ -170,17 +170,30 @@ ravi sessions thread-configure <thread> [--provider <provider|clear>] [--model <
   before publishing. The result carries `delivery: { barrier, barrierSource }`.
   A thread can close itself, with its own `--return`, in the turn the instruction
   waited behind. Delivery is when the thread starts working on the instruction, so
-  delivering a `thread.message` MUST reopen a thread whose record is `closed` (card
+  delivering a `thread.message` MUST reopen a thread whose record is `closed` by
+  the thread itself (the close context belongs to the child session; card
   `reopened`), at the start of the turn that receives it (`beforeTurnStart`), as
-  `thread-send` already does at publish when the thread is closed. Only a parent's
-  `thread.message` for that child reopens: a report, an attention notice, an
-  instruction for another child and an open record leave the lifecycle alone. A
-  failure to reopen or to update the card MUST NOT stop the turn. Without the
-  reopen, the close that ends the work is a no-op (`changed: false`) and its
-  result never reaches the parent. An instruction queued behind a turn cannot be
-  retracted, and a later `--immediate` runs before it: a correction names what it
-  corrects. Queued instructions live in memory until delivered; a graceful daemon
-  restart snapshots them and a hard crash loses them.
+  `thread-send` already does at publish when the thread is closed. A close by the
+  parent, or by any path that is not the thread's own turn (no close context, a
+  context that no longer exists, another session's), is the parent's decision and
+  MUST stand: the queued instruction cannot be retracted and still runs, but it
+  does not reopen the thread. A repeated close of a thread that is already closed
+  is a no-op (`changed: false`) and does not record who asked: a parent that runs
+  `close-thread` after the thread closed itself does not take the close, and a
+  queued instruction delivered afterwards still reopens the thread (the card shows
+  it). Recording the later closer is a known gap, not behavior to rely on. Only a
+  parent's `thread.message` for that child
+  reopens: a report, an attention notice, an instruction for another child, an
+  open record and a replay or a capacity retry of an instruction that was already
+  delivered (it is not a new delivery) leave the lifecycle alone. A failure to
+  reopen or to update the card MUST NOT stop the turn. Without the reopen, the
+  close that ends the work is a no-op (`changed: false`) and its result never
+  reaches the parent. An instruction queued behind a turn cannot be retracted, and
+  a later `--immediate` runs before it: a correction names what it corrects.
+  Queued instructions live in memory until delivered; a graceful daemon restart
+  snapshots them, a credential retry or the recovery of a turn that never ended
+  stashes them with the turn (`runtime/session-continuity`), and a hard crash
+  loses them.
 - `report`, `close-thread` and `thread-send` refuse with typed codes, never a
   bare command failure: `THREAD_NOT_THREAD_CHILD`, `THREAD_IDENTITY_MISMATCH`
   (the session has an open thread's name under another key), and for
@@ -330,4 +343,4 @@ The existing thread reconciler also drains decision effects. Exact origin bindin
 - Closing MUST refuse atomically with `THREAD_TRIGGERS_PENDING` when a trigger addresses the child by name or key in `replySession` and the shared activation verdict is `active` (including `enabled`). The refusal MUST list offending trigger ids and explain `ravi triggers set <id> replySession <parent-session>`.
 - Refusal MUST leave lifecycle status, close sequence, parent return and card untouched. The same guard applies after child pruning. Disabled, invalid-filter, blocked-topic and unbound-agent triggers MUST NOT block close.
 - Repointing is explicit for arbitrary triggers; close MUST NOT silently change their recipients. After handoff, close MAY proceed. The remote CLI MUST retain actionable ids without forwarding arbitrary remote text.
-- The product's own follows are never armed on a child. A follow created from inside a thread (`gh-follow:*` from `gh pr create`, `page-comment:*` from `pages ship`) MUST be armed on the thread's durable parent (`resolveDurableFollowOwner`: the parent's agent, the thread's account, the parent's chat without the thread id), and MUST fail closed, without arming, when the lifecycle or parent cannot be resolved. What a missing lifecycle refuses depends on the follow. The PR follow, and `ravi pr publish` which validates the publisher's lineage through the same resolver, refuse every session whose key carries `:thread:` and that no lifecycle explains, whatever its channel. The page comment follow refuses only a Slack thread child, a key whose thread id is a Slack timestamp: a session in a thread of another channel or in a task's own thread has no Slack lifecycle and no close to block, so it owns its follow and keeps arming on itself. A `page-comment:*` trigger that an older version left addressing a child is repaired at daemon boot (`pages/comment-follow`), not by close: close still refuses it like any other active trigger until then.
+- The product's own follows are armed on a child only for the PR follow, and only while its thread is open (`resolveDurableFollowOwner` with `openThreadOwns`): the thread that published a PR is the one that must react to its CI, so `gh-follow:*` from `ravi pr publish` or `gh pr create` addresses the child, with the thread id in its reply source, and the trigger runner delivers its turn into that thread (`sourceForReplySession`: the thread's chat, canonical chat id and timestamp, the address `thread-send` uses; a root-only source cannot be matched to the thread's attachment, so a reply built from it never reaches the thread). Closing the thread MUST hand every `gh-follow:*` trigger it receives to the durable parent (`handOffClosingThreadFollows`) **inside the same transaction as the close, after every refusal has been decided**: a close refused by a pending decision or by another active trigger MUST leave the follows with the thread, and a close that goes through moves them atomically (a PR follow no longer blocks the close; any other active trigger still does). The handoff saves the intent to refresh the trigger runner (`triggers.refresh_pending`) in that transaction, as a token of its own (a timestamp and a random id); the close publishes `ravi.triggers.refresh` and clears only the token it saved, and while an intent is set the `gh-follow` maintenance sweep publishes it again and clears only the token it read before publishing. A publisher MUST NOT clear whatever the setting holds (`dbDeleteSettingIfValue`, one statement that compares the token): a close that saved a newer intent while this publish was in flight keeps its own, so a lost refresh event cannot leave the runner delivering to the closed child. A PR follow already armed on a closed thread is repaired to the parent by `gh-follow` maintenance. Because that follow no longer wakes the channel session, its instruction MUST tell a thread that another session started to report, with `ravi sessions report`, what changes what that session must do (the CI conclusion on the head SHA, the PR merged or closed, a review that asks for changes); the thread is the one that learns of it, and the channel session that merges only hears of it from that report. Any other follow created from inside a thread (`page-comment:*` from `pages ship`) MUST be armed on the thread's durable parent (`resolveDurableFollowOwner`: the parent's agent, the thread's account, the parent's chat without the thread id). Every follow MUST fail closed, without arming, when the lifecycle or parent cannot be resolved, including a PR follow that would sit on an open child. What a missing lifecycle refuses depends on the follow. The PR follow, and `ravi pr publish` which validates the publisher's lineage through the same resolver, refuse every session whose key carries `:thread:` and that no lifecycle explains, whatever its channel. The page comment follow refuses only a Slack thread child, a key whose thread id is a Slack timestamp: a session in a thread of another channel or in a task's own thread has no Slack lifecycle and no close to block, so it owns its follow and keeps arming on itself. A `page-comment:*` trigger that an older version left addressing a child is repaired at daemon boot (`pages/comment-follow`), not by close: close still refuses it like any other active trigger until then.
