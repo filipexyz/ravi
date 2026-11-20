@@ -29,6 +29,12 @@ Before the runner opens any platform connection:
 4. Check delivery attempt logs and redacted provider errors.
 5. Verify whether the runner restarted while the job was in flight.
 6. Confirm the job was either requeued or marked terminal.
+7. A job stuck `pending` with a healthy adapter and a recent `created_at` can be
+   a runner left on the previous release: its reconcile loop logs
+   `STATE_SCHEMA_NOT_READY` on every pass. Compare `runtime.*.runningVersion`
+   in `ravi channels status --json`; the runner relaunches itself after 3
+   refusals (see "Package and environment drift"), and the job publishes once
+   the new process is up.
 
 ## Debugging Credential Failure
 
@@ -59,3 +65,25 @@ On shutdown the runner must:
 4. Recheck status; alignment must be based on the new process receipts.
 5. External package-manager writes cannot emit Ravi command warnings; the
    next status read detects those file changes. `ravi update` warns immediately.
+6. A runner refused by the state guard (daemon restarted onto a newer release,
+   runner not) restarts itself: after 3 consecutive `STATE_SCHEMA_NOT_READY`
+   refusals of the publish reconcile loop (within about 90 s of the daemon
+   moving to the new release) and only while the
+   installed bundle is a different release from the running one, it logs
+   `Channel runner is on an older release than the state its daemon prepared;
+   relaunching onto the installed release` and exits with status 75, and PM2
+   starts the installed bundle. The same refusals with matching releases mean
+   the daemon has not prepared state yet: start the installed daemon; the runner
+   does not restart. Still run `ravi channels restart` after installing a
+   release rather than waiting for the relaunch.
+7. The same drift is readable without the log. `ravi channels status` reports
+   health `degraded (release_drift)` and the restart command in its warnings, and
+   `ravi doctor --domain channels` fails `channels.runner_release`. A
+   `degraded (state_refused)` health is the runner saying its guard refuses it
+   while the releases match, for two passes in a row (about a minute): prepare
+   state with the daemon (`ravi daemon restart -m "prepare state"`), not by
+   restarting the runner. One refused pass is not reported: it is a daemon
+   restart on the same release passing through its prepare window, and it clears
+   by itself on the next pass.
+   `unverified` (doctor `skip`) means a process has no boot receipt yet, as in a
+   status read right after a restart: read it again before acting.
