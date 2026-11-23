@@ -262,6 +262,7 @@ export async function requestApproval(
           adminUserIds: grant.adminUserIds,
           allowed: grant.allowed,
           scopes: grant.scopes,
+          ...(grant.explicit ? { explicit: grant.explicit } : {}),
         })
       : buildSlackApprovalRequestMessage({
           requestId,
@@ -1057,11 +1058,11 @@ async function applyGrantForDecision(
   });
 
   if (!applied) return { detail: "grant failed", failed: true };
-  const target = scopeLabel ? ` in ${describeGrantScope(scopeLabel)}` : " (agent ceiling)";
+  const target = scopeLabel ? ` in ${describeGrantScope(scopeLabel, grant.explicit)}` : " (agent ceiling)";
   return {
     detail:
       click.intent === "full-access"
-        ? `Full access${target}`
+        ? `Full access${grant.explicit ? ` for ${grant.explicit.contactLabel}` : ""}${target}`
         : `Granted ${formatCanonicalCapability(grant.capability)}${target}`,
   };
 }
@@ -1075,12 +1076,13 @@ async function reRenderGrantCard(
 ): Promise<void> {
   const grant = readPermissionGrantMetadata(request);
   if (!grant || !responseUrlId) return;
-  const requesterUserId = grant.targets.contactId
-    ? findSlackUserIdForContact({
-        contactId: grant.targets.contactId,
-        instanceId: request.instanceId ?? request.accountId,
-      })
-    : null;
+  const requesterUserId =
+    grant.targets.contactId && !grant.explicit
+      ? findSlackUserIdForContact({
+          contactId: grant.targets.contactId,
+          instanceId: request.instanceId ?? request.accountId,
+        })
+      : null;
   const payload = buildSlackPermissionGrantMessage({
     requestId: request.id,
     ...(requesterUserId ? { requesterUserId } : {}),
@@ -1092,6 +1094,7 @@ async function reRenderGrantCard(
     allowed: grant.allowed,
     scopes: grant.scopes,
     selectedScope: scope,
+    ...(grant.explicit ? { explicit: grant.explicit } : {}),
   });
   log.info("Re-rendering the grant card scope", { requestId: request.id, actorId, scope });
   await approvalServiceDependencies.respondSlackInteraction({
@@ -1202,10 +1205,10 @@ export async function finalizeStoredSlackApprovalDelivery(input: {
       detail = "grant failed";
     } else {
       const scope = request.grantScope as PermissionGrantScopeValue | undefined;
-      const target = scope ? ` in ${describeGrantScope(scope)}` : " (agent ceiling)";
+      const target = scope ? ` in ${describeGrantScope(scope, grant.explicit)}` : " (agent ceiling)";
       detail =
         request.grantIntent === "full-access"
-          ? `Full access${target}`
+          ? `Full access${grant.explicit ? ` for ${grant.explicit.contactLabel}` : ""}${target}`
           : `Granted ${formatCanonicalCapability(grant.capability)}${target}`;
     }
   }

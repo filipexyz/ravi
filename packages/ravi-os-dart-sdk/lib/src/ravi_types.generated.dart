@@ -20767,6 +20767,56 @@ class PermissionsMaterializeReturn {
 
 PermissionsMaterializeReturn permissionsMaterializeReturnFromJson(Object? json) => PermissionsMaterializeReturn.fromJsonValue(json);
 
+class PermissionsRequestOptions {
+  const PermissionsRequestOptions({this.agent, this.chat, this.to});
+
+  final String? agent;
+  final String? chat;
+  final String? to;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (agent != null) {
+      into["agent"] = RaviJson.from(agent);
+    }
+    if (chat != null) {
+      into["chat"] = RaviJson.from(chat);
+    }
+    if (to != null) {
+      into["to"] = RaviJson.from(to);
+    }
+  }
+}
+
+class PermissionsRequestReturn {
+  const PermissionsRequestReturn({required this.agent, required this.chatId, required this.contactId, required this.grantedProfile, required this.hints, required this.profile, required this.status});
+
+  final RaviJson agent;
+  final String chatId;
+  final String contactId;
+  final String grantedProfile;
+  final List<String> hints;
+  final String profile;
+  final String status;
+
+  factory PermissionsRequestReturn.fromJson(Map<String, Object?> json) {
+    return PermissionsRequestReturn(
+      agent: RaviJson.from(json["agent"]),
+      chatId: raviJsonAsString(json["chatId"]),
+      contactId: raviJsonAsString(json["contactId"]),
+      grantedProfile: raviJsonAsString(json["grantedProfile"]),
+      hints: raviJsonAsList(json["hints"], raviJsonAsString),
+      profile: raviJsonAsString(json["profile"]),
+      status: raviJsonAsString(json["status"]),
+    );
+  }
+
+  static PermissionsRequestReturn fromJsonValue(Object? json) {
+    return PermissionsRequestReturn.fromJson(raviJsonObject(json, "PermissionsRequestReturn"));
+  }
+}
+
+PermissionsRequestReturn permissionsRequestReturnFromJson(Object? json) => PermissionsRequestReturn.fromJsonValue(json);
+
 class PermissionsResolveOptions {
   const PermissionsResolveOptions({this.apply, this.capabilities, this.chat, this.chatTag, this.force, this.profile});
 

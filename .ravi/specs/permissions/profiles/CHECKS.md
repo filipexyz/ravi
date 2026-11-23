@@ -21,6 +21,13 @@ capability: profiles
   --apply` MUST fail with `FULL_ACCESS_APPROVAL_REQUIRED` before any profile,
   contact grant or agent-ceiling write while verified approval consumption is
   unavailable. The dry-run MUST NOT suggest that blocked apply command.
+- `bun test src/approval/service.test.ts -t "explicit full-access"` covers
+  `permissions request full-access`: the card names the contact and chat and
+  offers one intent and one scope; only an admin's `full-access` click writes
+  the grant (target chat only, executor ceiling included) and `permissions deny
+  permission-admin` revokes it; a weaker click, a non-admin click or no click
+  grants nothing; a non-Slack turn or a missing admin fails closed without a
+  card; only full-access, one contact and one explicit chat are accepted.
 - More than 500 stored profiles, including older rows behind newer non-profile
   tags, MUST all appear in `acceptedValues`; the inline diagnostic stays bounded.
 

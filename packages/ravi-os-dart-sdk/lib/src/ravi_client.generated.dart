@@ -6867,6 +6867,18 @@ class PermissionsNamespace {
     );
   }
 
+  Future<PermissionsRequestReturn> request(String profile, [PermissionsRequestOptions options = const PermissionsRequestOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["profile"] = RaviJson.from(profile);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["permissions"],
+      command: "request",
+      body: requestBody,
+      decode: permissionsRequestReturnFromJson,
+    );
+  }
+
   Future<PermissionsResolveReturn> resolve(String denialId, [PermissionsResolveOptions options = const PermissionsResolveOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["denialId"] = RaviJson.from(denialId);

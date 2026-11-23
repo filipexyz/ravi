@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "890167b2863d3949"
+    "version": "a05369c29d14d1d4"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -106224,6 +106224,111 @@
         },
         "security": [],
         "summary": "Materialize provider-runtime capabilities for a subject",
+        "tags": [
+          "permissions"
+        ]
+      }
+    },
+    "/api/v1/permissions/request": {
+      "post": {
+        "operationId": "permissions.request",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "agent": {
+                    "description": "Executor agent whose runtime ceiling must include full access",
+                    "type": "string"
+                  },
+                  "chat": {
+                    "description": "The one chat where the contact gets full access (canonical chat id, platform chat id, or 'current')",
+                    "type": "string"
+                  },
+                  "profile": {
+                    "description": "Only full-access is supported; other profiles use `permissions allow`",
+                    "type": "string"
+                  },
+                  "to": {
+                    "description": "Exactly one contact: contact:<id>",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "profile"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "agent": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "chatId": {
+                      "type": "string"
+                    },
+                    "contactId": {
+                      "type": "string"
+                    },
+                    "grantedProfile": {
+                      "type": "string"
+                    },
+                    "hints": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "profile": {
+                      "const": "full-access",
+                      "type": "string"
+                    },
+                    "status": {
+                      "const": "approved",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "profile",
+                    "grantedProfile",
+                    "contactId",
+                    "chatId",
+                    "agent",
+                    "hints"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Ask the operator, in Slack, to approve full access for one contact in one chat; applies only when an admin approves",
         "tags": [
           "permissions"
         ]

@@ -38,7 +38,8 @@ import {
   SLACK_PERMISSION_GRANT_ACTION_SCOPE,
 } from "./slack-blocks.js";
 import { attachApprovalRequestMessageId, createApprovalRequest, getApprovalRequest } from "./store.js";
-import { sameGrantTuple } from "./grant-metadata.js";
+import { buildExplicitFullAccessGrantMetadata, sameGrantTuple } from "./grant-metadata.js";
+import { PermissionsCommands, requestFullAccessApproval } from "../cli/commands/permissions.js";
 import { dbGetContactChatGrant, dbListContactChatGrants } from "../permissions/contact-chat-grants.js";
 import { getContact } from "../contacts.js";
 import { readAgentRuntimePermissionsConfig } from "../permissions/agent-default-capabilities-provider.js";
@@ -1822,6 +1823,239 @@ describe("approval service", () => {
         ({ ...base, targets: { contactId: "c1", chatId: "chat1", chatTags: [], agentId } }) as never;
       expect(sameGrantTuple(forAgent("dev"), forAgent("dev"))).toBe(true);
       expect(sameGrantTuple(forAgent("dev"), forAgent("ops"))).toBe(false);
+    });
+  });
+
+  describe("explicit full-access request", () => {
+    const SLACK_TURN = { channel: "slack", accountId: "main", instanceId: "main", chatId: "D123" };
+    const TARGET_CHAT_PLATFORM_ID = "120363000000000001@g.us";
+
+    function seedTargets() {
+      const contact = seedApprovalContact({ phone: APPROVAL_TEST_STRANGER_PHONE, name: "Breno", tags: ["lead"] });
+      const targetChat = dbUpsertChat({
+        channel: "whatsapp",
+        instanceId: "main",
+        platformChatId: TARGET_CHAT_PLATFORM_ID,
+        chatType: "group",
+        title: "Rbbt <> X-One",
+      });
+      try {
+        dbCreateAgent({ id: "xone", cwd: "/tmp/xone" });
+      } catch {
+        // The agent already exists in this isolated state.
+      }
+      return { contact, targetChat };
+    }
+
+    function request(input: {
+      contactId: string;
+      chat: string;
+      timeoutMs?: number;
+      source?: typeof SLACK_TURN | null;
+    }) {
+      const context = {
+        agentId: "main",
+        sessionName: "main",
+        suppressCliOutput: true,
+        ...(input.source === null ? {} : { source: input.source ?? SLACK_TURN }),
+      };
+      return runWithContext(context, () =>
+        requestFullAccessApproval({
+          profile: "full-access",
+          to: `contact:${input.contactId}`,
+          chat: input.chat,
+          agentId: "xone",
+          timeoutMs: input.timeoutMs ?? APPROVAL_TEST_TIMEOUT_MS,
+        }),
+      );
+    }
+
+    it("names who gets access and where, and grants only that chat when an admin approves", async () => {
+      seedSlackOwner();
+      const { contact, targetChat } = seedTargets();
+      requestReplyResult = {
+        messageId: "eph_1",
+        deliveries: [{ userId: OWNER_SLACK_USER, kind: "ephemeral", chatId: "D123", messageId: "eph_1" }],
+      };
+      subscribeEvents = [
+        slackClick({
+          userId: OWNER_SLACK_USER,
+          channelId: "D123",
+          messageTs: "eph_1",
+          actionId: SLACK_PERMISSION_GRANT_ACTION_FULL_ACCESS,
+        }),
+      ];
+
+      const result = await request({
+        contactId: contact.id,
+        chat: targetChat.id,
+        timeoutMs: DEFAULT_APPROVAL_TIMEOUT_MS,
+      });
+
+      expect(result).toMatchObject({
+        status: "approved",
+        grantedProfile: "permission-admin",
+        contactId: contact.id,
+        chatId: targetChat.id,
+        agent: "xone",
+      });
+      // The card goes only to the admin, in the requester's Slack chat.
+      expect(deliveredRequests[0]?.data.privateTo).toEqual([OWNER_SLACK_USER]);
+      const card = JSON.stringify(deliveredRequests[0]?.data.blocks);
+      expect(card).toContain("Full access requested");
+      expect(card).toContain("Breno");
+      expect(card).toContain("Rbbt <> X-One");
+      expect(card).not.toContain("hit a permission failure");
+      // One scope, nothing to pick, and no weaker alternative to click.
+      expect(card).not.toContain("static_select");
+      expect(card).not.toContain(SLACK_PERMISSION_GRANT_ACTION_EXACT);
+      // The grant landed on the target chat and contact, nowhere else.
+      expect(
+        dbGetContactChatGrant({
+          contactId: contact.id,
+          profileSlug: "permission-admin",
+          scopeType: "chat",
+          scopeId: targetChat.id,
+        }),
+      ).not.toBeNull();
+      expect(dbListContactChatGrants({ contactId: contact.id })).toHaveLength(1);
+      expect(readAgentRuntimePermissionsConfig("xone")?.capabilities).toEqual([
+        { permission: "admin", objectType: "system", objectId: "*" },
+      ]);
+      // The revoke command the result prints really removes what was granted.
+      expect(result.hints[0]).toContain(
+        `ravi permissions deny permission-admin --to contact:${contact.id} --chat ${targetChat.id} --apply`,
+      );
+      const revoked = runWithContext({ suppressCliOutput: true }, () =>
+        new PermissionsCommands().deny(
+          "permission-admin",
+          `contact:${contact.id}`,
+          targetChat.id,
+          undefined,
+          false,
+          true,
+          true,
+        ),
+      );
+      expect(revoked.changedCount).toBe(1);
+      expect(dbListContactChatGrants({ contactId: contact.id })).toEqual([]);
+    });
+
+    it("grants nothing while nobody approves", async () => {
+      seedSlackOwner();
+      const { contact, targetChat } = seedTargets();
+      requestReplyResult = {
+        messageId: "eph_1",
+        deliveries: [{ userId: OWNER_SLACK_USER, kind: "ephemeral", chatId: "D123", messageId: "eph_1" }],
+      };
+      subscribeEvents = [];
+
+      const error = await request({ contactId: contact.id, chat: targetChat.id }).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({ code: "FULL_ACCESS_APPROVAL_NOT_GRANTED" });
+      expect(dbListContactChatGrants({ contactId: contact.id })).toEqual([]);
+      expect(readAgentRuntimePermissionsConfig("xone")).toBeNull();
+    });
+
+    it("cannot be answered with a weaker grant or by someone who is not an admin", async () => {
+      seedSlackOwner();
+      const { contact, targetChat } = seedTargets();
+      requestReplyResult = {
+        messageId: "eph_1",
+        deliveries: [{ userId: OWNER_SLACK_USER, kind: "ephemeral", chatId: "D123", messageId: "eph_1" }],
+      };
+      subscribeEvents = [
+        // The explicit request never offered the exact intent.
+        slackClick({
+          userId: OWNER_SLACK_USER,
+          channelId: "D123",
+          messageTs: "eph_1",
+          actionId: SLACK_PERMISSION_GRANT_ACTION_EXACT,
+        }),
+        slackClick({
+          userId: APPROVAL_TEST_SLACK_STRANGER_USER,
+          channelId: "D123",
+          messageTs: "eph_1",
+          actionId: SLACK_PERMISSION_GRANT_ACTION_FULL_ACCESS,
+        }),
+      ];
+
+      const error = await request({ contactId: contact.id, chat: targetChat.id }).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({ code: "FULL_ACCESS_APPROVAL_NOT_GRANTED" });
+      expect(dbListContactChatGrants({ contactId: contact.id })).toEqual([]);
+    });
+
+    it("fails closed outside a Slack turn without showing any card", async () => {
+      seedSlackOwner();
+      const { contact, targetChat } = seedTargets();
+
+      const noContext = await request({ contactId: contact.id, chat: targetChat.id, source: null }).catch(
+        (e: unknown) => e,
+      );
+      const whatsappTurn = await runWithContext(
+        {
+          agentId: "main",
+          suppressCliOutput: true,
+          source: { channel: "whatsapp", accountId: "main", chatId: TARGET_CHAT_PLATFORM_ID },
+        },
+        () =>
+          requestFullAccessApproval({
+            profile: "full-access",
+            to: `contact:${contact.id}`,
+            chat: targetChat.id,
+            timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+          }),
+      ).catch((e: unknown) => e);
+
+      expect(noContext).toMatchObject({ code: "FULL_ACCESS_APPROVAL_UNAVAILABLE", exitCode: 3 });
+      expect(whatsappTurn).toMatchObject({ code: "FULL_ACCESS_APPROVAL_UNAVAILABLE", exitCode: 3 });
+      expect(deliveredRequests).toEqual([]);
+      expect(dbListContactChatGrants({ contactId: contact.id })).toEqual([]);
+    });
+
+    it("fails closed when no Slack admin could approve", async () => {
+      const { contact, targetChat } = seedTargets();
+
+      const error = await request({ contactId: contact.id, chat: targetChat.id }).catch((e: unknown) => e);
+
+      expect(error).toMatchObject({ code: "FULL_ACCESS_APPROVER_UNAVAILABLE", exitCode: 3 });
+      expect(deliveredRequests).toEqual([]);
+    });
+
+    it("only supports full-access, one contact and one explicit chat", async () => {
+      const { contact, targetChat } = seedTargets();
+      const call = (input: Partial<Parameters<typeof requestFullAccessApproval>[0]>) =>
+        runWithContext({ agentId: "main", suppressCliOutput: true, source: SLACK_TURN }, () =>
+          requestFullAccessApproval({
+            profile: "full-access",
+            to: `contact:${contact.id}`,
+            chat: targetChat.id,
+            timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
+            ...input,
+          }),
+        ).catch((e: unknown) => e);
+
+      expect(await call({ profile: "bootstrap" })).toMatchObject({ code: "USAGE_ERROR" });
+      expect(await call({ to: `contact:${contact.id},contact:other` })).toMatchObject({ code: "USAGE_ERROR" });
+      expect(await call({ to: "agent:xone" })).toMatchObject({ code: "USAGE_ERROR" });
+      expect(await call({ chat: undefined })).toMatchObject({ code: "USAGE_ERROR" });
+      expect(await call({ agentId: "no-such-agent" })).toMatchObject({ code: "USAGE_ERROR" });
+      expect(deliveredRequests).toEqual([]);
+    });
+
+    it("builds metadata with one intent and one scope, and none without an admin", () => {
+      const base = { contactId: "c1", chatId: "chat1", contactLabel: "Breno", chatLabel: "X-One" };
+      const grant = buildExplicitFullAccessGrantMetadata({ ...base, adminUserIds: ["u1", "U1"], agentId: "xone" });
+      expect(grant).toMatchObject({
+        allowed: ["full-access"],
+        scopes: ["chat"],
+        adminUserIds: ["U1"],
+        targets: { contactId: "c1", chatId: "chat1", agentId: "xone" },
+        explicit: { contactLabel: "Breno", chatLabel: "X-One" },
+      });
+      expect(buildExplicitFullAccessGrantMetadata({ ...base, adminUserIds: [] })).toBeNull();
+      expect(sameGrantTuple(grant as never, { ...(grant as object), explicit: undefined } as never)).toBe(false);
     });
   });
 });

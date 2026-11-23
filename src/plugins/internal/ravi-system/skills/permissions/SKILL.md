@@ -48,10 +48,16 @@ existentes, como permission tags, grants de contato por chat e
 `full-access` sem uma tag previamente criada (também aceitam `permission-`
 antes do nome). O dry-run mostra as capabilities do runtime; `--apply` grava
 o profile e o grant para profiles elegíveis. `full-access --apply` é bloqueado
-com `FULL_ACCESS_APPROVAL_REQUIRED` (exit 3): `allow`/`resolve` ainda não
-consomem uma aprovação verificável do operador. Autorização do comando ou
-`--apply` sozinho não substituem essa aprovação. O preview e a revogação
-continuam disponíveis. `chat-only` e `explicit-only` sem capabilities são grants
+com `FULL_ACCESS_APPROVAL_REQUIRED` (exit 3): `allow`/`resolve` não consomem
+uma aprovação verificável do operador. Autorização do comando ou `--apply`
+sozinho não substituem essa aprovação. O preview e a revogação continuam
+disponíveis. Para conseguir full-access aprovado, em um turno de Slack:
+`ravi permissions request full-access --to contact:<id> --chat <chat-id>
+[--agent <executor>]`. Ele não grava nada: manda um cartão privado aos admins
+do Slack ("Full access requested", com o contato e o chat nomeados), espera um
+admin clicar e só então aplica o grant, naquele chat apenas. Fora de um turno
+de Slack, ou sem admin Slack, falha sem mostrar cartão. Revogar:
+`ravi permissions deny permission-admin --to contact:<id> --chat <chat-id> --apply`. `chat-only` e `explicit-only` sem capabilities são grants
 válidos de zero autoridade. Outros grants do contato continuam somando;
 conceder um profile vazio não revoga grants existentes.
 

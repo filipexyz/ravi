@@ -282,6 +282,22 @@ Semantics:
   not proof of approval. Rejection MUST precede profile, contact grant and
   executor-ceiling writes. Dry-run expansion and revocation remain available;
   preview MUST NOT advertise an apply command that will always be rejected.
+- `permissions request full-access --to contact:<id> --chat <chat> [--agent <id>]`
+  is the path that consumes operator approval. It MUST NOT write a grant
+  itself. It records an approval request whose card goes privately to the Slack
+  admins of the turn's instance (never to the grantee's chat), and the approval
+  service applies the grant when an admin clicks `full-access`. The request MUST
+  offer exactly one intent (`full-access`) and exactly one scope (the named
+  chat), and the card MUST name the contact and the chat ("Full access
+  requested"), never "this chat". It supports one contact and one chat, never
+  global or chat-tag. A turn that is not a Slack turn, or an instance with no
+  Slack admin, MUST fail closed (`FULL_ACCESS_APPROVAL_UNAVAILABLE`,
+  `FULL_ACCESS_APPROVER_UNAVAILABLE`, exit 3) without showing any card.
+- Known gap, not closed here: the `full-access` guard keys on the profile
+  *name*. A profile with another name that carries `admin:system:*` (the
+  documented `chat-admin` recipe) is applied by `allow --apply` without an
+  approval. Closing it is a product decision; a guard on one spelling of a
+  capability does not cover the equivalent path.
 - Applying a profile to `agent:<id>` MUST ensure the executor-agent runtime
   config contains the concrete capabilities, without replacing existing
   explicit capabilities.

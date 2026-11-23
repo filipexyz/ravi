@@ -23,7 +23,13 @@ import {
   type ContactGrantScope,
   type ContactProfileGrant,
 } from "../../permissions/contact-policy-permissions-provider.js";
-import { dbGetChat, dbGetThreadParentChat, dbListChatsByRef, type ChatRecord } from "../../router/router-db.js";
+import {
+  dbGetAgent,
+  dbGetChat,
+  dbGetThreadParentChat,
+  dbListChatsByRef,
+  type ChatRecord,
+} from "../../router/router-db.js";
 import { revokeLiveRuntimeContextsForContactGrant } from "../../runtime/context-registry.js";
 import { canonicalAssetIdsForTag, canonicalTagSlugsForAsset, tryNormalizeTagSlug } from "../../tags/index.js";
 import { CONTRACT_EXIT_POLICY, CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
@@ -53,6 +59,7 @@ import {
   derivePermissionProfileSlugForCapability,
   ensureAgentCeilingCapability,
   grantContactProfile,
+  FULL_ACCESS_PROFILE,
   labelFromProfile,
   normalizePermissionProfileSlug,
   upsertPermissionProfileDefinition,
@@ -234,6 +241,16 @@ const permissionConfirmationReturnSchema = z.object({
   profile: z.string().optional(),
   capabilities: z.array(z.string()),
   message: z.string(),
+});
+
+const permissionsRequestReturnSchema = z.object({
+  status: z.literal("approved"),
+  profile: z.literal("full-access"),
+  grantedProfile: z.string(),
+  contactId: z.string(),
+  chatId: z.string(),
+  agent: z.string().nullable(),
+  hints: z.array(z.string()),
 });
 
 const permissionsAllowReturnSchema = z.object({
@@ -477,6 +494,43 @@ export class PermissionsCommands {
     }
 
     printPermissionAllowPlan(payload);
+    return payload;
+  }
+
+  @Command({
+    name: "request",
+    description:
+      "Ask the operator, in Slack, to approve full access for one contact in one chat; applies only when an admin approves",
+  })
+  @CommandAccess({ kind: "mutate", resource: "permissions", action: "request", risk: "medium" })
+  @Returns(permissionsRequestReturnSchema)
+  async request(
+    @Arg("profile", { description: "Only full-access is supported; other profiles use `permissions allow`" })
+    profile: string,
+    @Option({ flags: "--to <contact>", description: "Exactly one contact: contact:<id>" }) to?: string,
+    @Option({
+      flags: "--chat <chat>",
+      description:
+        "The one chat where the contact gets full access (canonical chat id, platform chat id, or 'current')",
+    })
+    chat?: string,
+    @Option({
+      flags: "--agent <id>",
+      description: "Executor agent whose runtime ceiling must include full access",
+    })
+    agentId?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const payload = await requestFullAccessApproval({ profile, to, chat, agentId, asJson });
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(
+      `approved: full access for contact:${payload.contactId} in chat:${payload.chatId}` +
+        (payload.agent ? ` (agent ${payload.agent})` : ""),
+    );
+    for (const hint of payload.hints) console.log(hint);
     return payload;
   }
 
@@ -794,7 +848,9 @@ function buildPermissionAllowPlan(input: PermissionAllowInput): PermissionAllowP
       exitCode: CONTRACT_EXIT_POLICY,
       diagnostic: errorDiagnostic(FULL_ACCESS_APPROVAL_MESSAGE, { operation: op }),
       details: {
-        suggestedAction: "Preview without --apply. Use the operator approval flow for a full-access grant.",
+        suggestedAction:
+          "Preview without --apply. To get full access approved by the operator, run: " +
+          `ravi permissions request full-access --to contact:<id> --chat <chat-id> [--agent <executor>] (from a Slack turn).`,
       },
     });
   }
@@ -880,6 +936,181 @@ function buildPermissionAllowPlan(input: PermissionAllowInput): PermissionAllowP
     payload.nextCommand = buildAllowApplyCommand(input);
   }
   return payload;
+}
+
+export interface FullAccessRequestInput {
+  profile: string;
+  to?: string;
+  chat?: string;
+  agentId?: string;
+  asJson?: boolean;
+  /** Not a CLI option: tests shorten the approval window. */
+  timeoutMs?: number;
+}
+
+/**
+ * `permissions request full-access`: the CLI side of the operator approval that
+ * `permissions allow full-access --apply` cannot consume. It never writes a
+ * grant itself. It records an approval request whose card goes privately to the
+ * Slack admins of the turn's instance, waits for one of them to click, and the
+ * approval service applies the grant on that click. A turn that is not a Slack
+ * turn, or an instance with no admin, fails closed: there is nobody who can
+ * approve, and a reaction in a customer chat is not an operator.
+ */
+export async function requestFullAccessApproval(input: FullAccessRequestInput) {
+  const op = "permissions request";
+  const usage = (message: string, suggestedAction: string): never =>
+    contractFail(op, "USAGE_ERROR", message, {
+      asJson: input.asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: { suggestedAction },
+      diagnostic: errorDiagnostic(message, { operation: op }),
+    });
+  const policy = (code: string, message: string, suggestedAction: string): never =>
+    contractFail(op, code, message, {
+      asJson: input.asJson,
+      exitCode: CONTRACT_EXIT_POLICY,
+      details: { suggestedAction },
+      diagnostic: errorDiagnostic(message, { operation: op }),
+    });
+
+  if (normalizePermissionTagSlug(input.profile) !== "permission-full-access") {
+    usage(
+      "permissions request only supports the full-access profile.",
+      "Other profiles do not need an operator approval: use `ravi permissions allow <profile> ...`.",
+    );
+  }
+  const targets = parseSubjectRefs(input.to);
+  if (targets.length !== 1 || targets[0].type !== "contact") {
+    usage("--to must name exactly one contact: --to contact:<id>.", "Find the contact id with `ravi contacts find`.");
+  }
+  const [contact] = resolveContactTargets(op, targets, input.asJson);
+  const chatRef = input.chat?.trim();
+  if (!chatRef) {
+    usage(
+      "--chat <chat-id|current> is required: full access is never global and never covers more than one chat.",
+      "Ask which chat/group this is for, then pass --chat <chat-id>.",
+    );
+  }
+  const [scope] = resolveContactScopes(
+    op,
+    { chat: chatRef, force: false, asJson: input.asJson },
+    {
+      requireKnownChat: true,
+      suggest: (scopeFlags) => [
+        "ravi",
+        "permissions",
+        "request",
+        "full-access",
+        "--to",
+        `contact:${contact.id}`,
+        ...scopeFlags,
+      ],
+    },
+  );
+  if (!scope || scope.type !== "chat") {
+    usage("--chat must resolve to one known chat.", "Find the chat id with `ravi chats list --json`.");
+  }
+  const chatScope = scope as Extract<ResolvedContactScope, { type: "chat" }>;
+  const executorAgent = input.agentId?.trim() || undefined;
+  if (executorAgent && !dbGetAgent(executorAgent)) {
+    usage(`Agent not found: ${executorAgent}`, "List agents with `ravi agents list --json`.");
+  }
+
+  const ctx = getContext();
+  const source = ctx?.source;
+  if (!source || source.channel !== "slack") {
+    return policy(
+      "FULL_ACCESS_APPROVAL_UNAVAILABLE",
+      "Full access needs an operator approval in Slack, and this turn is not a Slack turn, so no approval card can be shown.",
+      "Run this from a Slack conversation with the operator.",
+    );
+  }
+  const { listSlackApprovalGrantorUserIds } = await import("../../approval/grantor.js");
+  const { buildExplicitFullAccessGrantMetadata, FULL_ACCESS_GRANT_CAPABILITY } = await import(
+    "../../approval/grant-metadata.js"
+  );
+  const { requestApproval } = await import("../../approval/service.js");
+  const instanceId = source.instanceId ?? source.accountId;
+  const adminUserIds = listSlackApprovalGrantorUserIds({
+    instanceId,
+    permission: FULL_ACCESS_GRANT_CAPABILITY.permission,
+    objectType: FULL_ACCESS_GRANT_CAPABILITY.objectType,
+    objectId: FULL_ACCESS_GRANT_CAPABILITY.objectId,
+  });
+  const grant = buildExplicitFullAccessGrantMetadata({
+    contactId: contact.id,
+    chatId: chatScope.chatId,
+    chatTags: chatScope.chatTags,
+    ...(executorAgent ? { agentId: executorAgent } : {}),
+    adminUserIds,
+    contactLabel: contact.name || contact.id,
+    chatLabel: chatScope.title || chatScope.label,
+  });
+  if (!grant) {
+    return policy(
+      "FULL_ACCESS_APPROVER_UNAVAILABLE",
+      "No Slack admin on this instance can approve full access, so nothing was requested.",
+      "Link an admin contact to a Slack identity first, then retry.",
+    );
+  }
+
+  const text = `Full access for ${grant.explicit?.contactLabel} in ${grant.explicit?.chatLabel}${
+    executorAgent ? ` (executor ${executorAgent})` : ""
+  }`;
+  const result = await requestApproval(
+    {
+      channel: source.channel,
+      accountId: source.accountId,
+      chatId: source.chatId,
+      ...(source.threadId ? { threadId: source.threadId } : {}),
+      ...(source.instanceId ? { instanceId: source.instanceId } : {}),
+    },
+    text,
+    {
+      type: "permission",
+      ...(ctx?.sessionName ? { sessionName: ctx.sessionName } : {}),
+      ...(ctx?.agentId ? { agentId: ctx.agentId } : {}),
+      permission: FULL_ACCESS_GRANT_CAPABILITY.permission,
+      objectType: FULL_ACCESS_GRANT_CAPABILITY.objectType,
+      objectId: FULL_ACCESS_GRANT_CAPABILITY.objectId,
+      grant,
+      ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
+    },
+  );
+  if (!result.approved) {
+    return policy(
+      "FULL_ACCESS_APPROVAL_NOT_GRANTED",
+      `Full access was not approved: ${result.reason ?? "no decision"}.`,
+      "Nothing was granted. Ask the operator again if it is still needed.",
+    );
+  }
+  // The click applied the grant before this returned. Read it back instead of
+  // trusting the approval alone.
+  const applied = dbGetContactChatGrant({
+    contactId: contact.id,
+    profileSlug: FULL_ACCESS_PROFILE,
+    scopeType: "chat",
+    scopeId: chatScope.chatId,
+  });
+  if (!applied) {
+    return policy(
+      "FULL_ACCESS_GRANT_NOT_FOUND",
+      "The approval was recorded but the grant is not in place.",
+      "Check `ravi permissions list --chat <chat-id> --to contact:<id>` before retrying.",
+    );
+  }
+  return {
+    status: "approved" as const,
+    profile: "full-access" as const,
+    grantedProfile: FULL_ACCESS_PROFILE,
+    contactId: contact.id,
+    chatId: chatScope.chatId,
+    agent: executorAgent ?? null,
+    hints: [
+      `Granted ${FULL_ACCESS_PROFILE} to contact:${contact.id} in chat:${chatScope.chatId} only. Revoke with: ravi permissions deny ${FULL_ACCESS_PROFILE} --to contact:${contact.id} --chat ${chatScope.chatId} --apply`,
+    ],
+  };
 }
 
 interface PermissionDenyInput extends ContactScopeInput {
