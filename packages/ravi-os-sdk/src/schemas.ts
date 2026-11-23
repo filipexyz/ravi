@@ -94763,6 +94763,83 @@ export const PermissionsMaterializeReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `permissions.request`. */
+export const PermissionsRequestInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Executor agent whose runtime ceiling must include full access",
+      "type": "string"
+    },
+    "chat": {
+      "description": "The one chat where the contact gets full access (canonical chat id, platform chat id, or 'current')",
+      "type": "string"
+    },
+    "profile": {
+      "description": "Only full-access is supported; other profiles use `permissions allow`",
+      "type": "string"
+    },
+    "to": {
+      "description": "Exactly one contact: contact:<id>",
+      "type": "string"
+    }
+  },
+  "required": [
+    "profile"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.request`. */
+export const PermissionsRequestReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "chatId": {
+      "type": "string"
+    },
+    "contactId": {
+      "type": "string"
+    },
+    "grantedProfile": {
+      "type": "string"
+    },
+    "hints": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "profile": {
+      "const": "full-access",
+      "type": "string"
+    },
+    "status": {
+      "const": "approved",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "profile",
+    "grantedProfile",
+    "contactId",
+    "chatId",
+    "agent",
+    "hints"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `permissions.resolve`. */
 export const PermissionsResolveInputSchema = {
   "additionalProperties": false,

@@ -17907,6 +17907,25 @@ export type PermissionsMaterializeReturn = {
   };
 };
 
+/** Input shape for `permissions.request`. */
+export type PermissionsRequestInput = {
+  agent?: string;
+  chat?: string;
+  profile: string;
+  to?: string;
+};
+
+/** Return shape for `permissions.request`. */
+export type PermissionsRequestReturn = {
+  agent: string | null;
+  chatId: string;
+  contactId: string;
+  grantedProfile: string;
+  hints: string[];
+  profile: "full-access";
+  status: "approved";
+};
+
 /** Input shape for `permissions.resolve`. */
 export type PermissionsResolveInput = {
   apply?: boolean;
