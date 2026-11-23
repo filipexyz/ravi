@@ -35,6 +35,7 @@ export const RAVI_APP_BUILTIN_OPERATION_HANDLERS = new Set([
   "apps.manifest.show",
   "apps.manifest.check",
   "apps.stub.list",
+  "apps.omie-orders.read",
 ]);
 
 const VALID_OPERATION_INTERFACES = new Set(["builtin", "cli"]);

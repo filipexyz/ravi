@@ -38,6 +38,7 @@ import {
   updateSessionRuntimeProviderOverride,
   updateSessionName,
   updateRuntimeProviderState,
+  bumpSessionRuntimeProviderConfigRevision,
 } from "../router/sessions.js";
 import {
   dbCreateAgent,
@@ -4679,6 +4680,66 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       await cleanupIsolatedRaviState(stateDir);
     }
   });
+
+  for (const explicitOverride of [false, true]) {
+    it(`${explicitOverride ? "still interrupts" : "keeps the turn"} at tool release when a ${explicitOverride ? "explicit session override" : "saved provider change"} is pending`, async () => {
+      // 23/11 (xone-setup): admission deferred the after_tool successor for a
+      // pending saved provider change, but tool release must not supersede
+      // the working turn either.
+      const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-tool-release-pending-");
+      try {
+        const sessionKey = "agent:main:test:tool-release-pending";
+        getOrCreateSession(sessionKey, "main", stateDir, { name: "tool-release-pending" });
+        updateRuntimeProviderState(sessionKey, "claude");
+        if (explicitOverride) updateSessionRuntimeProviderOverride(sessionKey, "claude");
+        bumpSessionRuntimeProviderConfigRevision(sessionKey);
+        const interrupt = mock(async () => {});
+        const activeMessage = createQueuedRuntimeUserMessage({
+          prompt: "active tool work",
+          deliveryBarrier: "after_tool",
+        });
+        const successor = createQueuedRuntimeUserMessage({
+          prompt: "deletion notice or new message",
+          deliveryBarrier: "after_tool",
+        });
+        const dispatcher = createDispatcher(2);
+        const activeSession = createActiveSession({
+          agentId: "main",
+          turnActive: true,
+          toolRunning: false,
+          pendingMessages: [activeMessage, successor],
+          currentTurnPendingIds: [activeMessage.pendingId!],
+          queryHandle: {
+            provider: "codex",
+            events: (async function* () {})(),
+            interrupt,
+          },
+        });
+        dispatcher.streamingSessions.set("tool-release-pending", activeSession);
+
+        await (
+          dispatcher as unknown as {
+            releaseQueuedPromptsAfterTool(sessionName: string): Promise<void>;
+          }
+        ).releaseQueuedPromptsAfterTool("tool-release-pending");
+
+        if (explicitOverride) {
+          expect(interrupt).toHaveBeenCalledTimes(1);
+          expect(activeSession.currentTurnSuperseded).toBe(true);
+        } else {
+          expect(interrupt).not.toHaveBeenCalled();
+          expect(activeSession.currentTurnSuperseded).not.toBe(true);
+          expect(activeSession.interrupted).not.toBe(true);
+          expect(activeSession.pendingMessages.map((message) => message.message.content)).toEqual([
+            "active tool work",
+            "deletion notice or new message",
+          ]);
+        }
+      } finally {
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    });
+  }
 
   it("emits dispatch.barrier_stuck when after_tool stays blocked without a wake", async () => {
     const previousTimeout = process.env.RAVI_RUNTIME_BARRIER_STUCK_MS;

@@ -10,3 +10,6 @@
 - [ ] Only explicitly admitted provider ingress materializes a canonical prompt turn.
 - [ ] One stable admission identity MUST produce at most one turn across retries.
 - [ ] Generic ChannelBackend code MUST NOT infer provider-private execution intent.
+- [ ] A deletion notice (`content.type = delete`) MUST NOT publish a prompt or
+  open an agent turn (`src/omni/consumer-context.test.ts`, "does not open a turn
+  for a deletion notice").

@@ -2,6 +2,7 @@ import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import {
   ContractError,
   CONTRACT_EXIT_ERROR,
+  CONTRACT_EXIT_USAGE,
   contractDryRun,
   contractFail,
   renderContractError,
@@ -113,6 +114,8 @@ export function enforceRaviAppRunResult(result: RaviAppRunResult, asJson: boolea
     ...(failure?.suggestedAction ? { suggestedAction: failure.suggestedAction } : {}),
   };
   contractFail("apps run", result.errorCode ?? "APP_OPERATION_FAILED", APP_OPERATION_FAILED_MESSAGE, {
+    // A trusted builtin that refused its own input keeps the usage exit; an app process never chooses Ravi's exit.
+    ...(result.usageError ? { exitCode: CONTRACT_EXIT_USAGE } : {}),
     ...{
       asJson,
       details: {

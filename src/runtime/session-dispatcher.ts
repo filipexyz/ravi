@@ -1154,6 +1154,10 @@ export class RuntimeSessionDispatcher {
       const barrier = getRuntimePromptDeliveryBarrier(prompt);
       // Saved configuration changes the next provider turn. Preserve the exact
       // successor atom behind its barrier while the current turn is generating.
+      // That includes after_tool (the default for channel messages): an
+      // ordinary inbound must not retire a working turn just because a saved
+      // provider change is pending. immediate_interrupt and an explicit session
+      // override still switch mid-turn.
       return (
         !live.done &&
         live.agentId === agent.id &&
@@ -1163,7 +1167,11 @@ export class RuntimeSessionDispatcher {
         requestedProvider !== live.queryHandle.provider &&
         live.turnActive &&
         live.currentCrashRecoveryTerminal?.status !== "complete" &&
-        (barrier === "after_response" || barrier === "after_task")
+        (barrier === "after_response" ||
+          barrier === "after_task" ||
+          // An explicit session override still switches at the next tool
+          // boundary; only agent-level or cleared configuration waits.
+          (barrier === "after_tool" && !sessionEntry?.runtimeProviderOverride?.trim()))
       );
     };
     if (
@@ -2904,6 +2912,9 @@ export class RuntimeSessionDispatcher {
     ) {
       return;
     }
+    // Admission deferred these successors because a saved provider change is
+    // pending; releasing them here would supersede the working turn anyway.
+    if (savedProviderChangePendingFor(sessionName, existing)) return;
 
     const successor = prepareRuntimeInterruptSuccessor(sessionName, existing);
     if (!successor) return;
@@ -3294,6 +3305,35 @@ export class RuntimeSessionDispatcher {
 
     return "accepted";
   }
+}
+
+/**
+ * True while the live turn runs on a provider that saved configuration (agent
+ * default or a cleared session override) has already replaced. Successors then
+ * wait for the turn to end instead of superseding it; an explicit session
+ * override keeps switching at the next tool boundary.
+ */
+export function savedProviderChangePendingFor(
+  sessionName: string,
+  live: RuntimeHostStreamingSession,
+  lookups: {
+    session?: (name: string) => SessionEntry | null | undefined;
+    agent?: (id: string) => Parameters<typeof resolveRequestedRuntimeProvider>[0]["agent"] | undefined;
+  } = {},
+): boolean {
+  if (live.done || !live.turnActive) return false;
+  const session = (lookups.session ?? ((name) => getSessionByName(name) ?? getSession(name)))(sessionName);
+  if (!session) return false;
+  if (session.runtimeProviderOverride?.trim()) return false;
+  if ((session.runtimeProviderConfigRevision ?? 0) === (live.runtimeProviderConfigRevision ?? 0)) return false;
+  const agent = (lookups.agent ?? ((id) => configStore.getConfig().agents[id]))(live.agentId);
+  if (!agent) return false;
+  const requested = resolveRequestedRuntimeProvider({
+    sessionProviderOverride: session.runtimeProviderOverride,
+    lastUsedProvider: session.runtimeProvider,
+    agent,
+  }).value;
+  return requested !== live.queryHandle.provider;
 }
 
 export function shouldQueuePromptOnLiveSession(
