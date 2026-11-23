@@ -4245,6 +4245,23 @@ describe("SessionCommands set-model", () => {
     expect(natsEmits[0]?.data.effectiveModel).toBe("model-default");
   });
 
+  it("refuses to clear a model when the fallback is a model the session provider cannot run", async () => {
+    // A pi-pinned session with no agent model falls back to the runtime default (`sonnet`), which pi
+    // cannot run: the next turn would die with "Model not found". The clear is refused and nothing changes.
+    resolvedSession = {
+      sessionKey: "agent:main:model-clear",
+      name: "model-clear",
+      agentId: "main",
+      runtimeProviderOverride: "pi",
+      modelOverride: "deepseek/deepseek-flash",
+    };
+    routerConfig = { agents: { main: {} } };
+
+    await expect(new SessionCommands().setModel("model-clear", "clear")).rejects.toThrow("Clearing leaves the session");
+    expect(resolvedSession.modelOverride).toBe("deepseek/deepseek-flash");
+    expect(natsEmits).toHaveLength(0);
+  });
+
   it("notes when the session model differs from the agent default", async () => {
     resolvedSession = {
       sessionKey: "agent:main:model-switch",
@@ -4414,6 +4431,43 @@ describe("SessionCommands set-provider", () => {
     expect(resolvedSession.runtimeProviderOverride).toBe("claude");
     captureLogs(() => new SessionCommands().setProvider("pair", "pi", true));
     expect(resolvedSession.runtimeProviderOverride).toBe("pi");
+  });
+
+  it("switches provider and model in one write with --model (no provider/model deadlock)", () => {
+    // claude + sonnet override -> pi: set-provider rejected the old model and set-model the old provider.
+    resolvedSession = {
+      sessionKey: "agent:main:pair",
+      name: "pair",
+      agentId: "main",
+      runtimeProviderOverride: "claude",
+      modelOverride: "sonnet",
+    };
+    expect(() => new SessionCommands().setProvider("pair", "pi", true)).toThrow("--model");
+    expect(resolvedSession.runtimeProviderOverride).toBe("claude");
+    expect(resolvedSession.modelOverride).toBe("sonnet");
+
+    captureLogs(() => new SessionCommands().setProvider("pair", "pi", true, false, "deepseek/deepseek-flash"));
+    expect(resolvedSession.runtimeProviderOverride).toBe("pi");
+    expect(resolvedSession.modelOverride).toBe("deepseek/deepseek-flash");
+  });
+
+  it("validates the --model pair before writing either value", () => {
+    resolvedSession = {
+      sessionKey: "agent:main:pair",
+      name: "pair",
+      agentId: "main",
+      runtimeProviderOverride: "claude",
+      modelOverride: "sonnet",
+    };
+    expect(() => new SessionCommands().setProvider("pair", "claude", true, false, "deepseek/deepseek-flash")).toThrow(
+      "does not belong",
+    );
+    expect(() => new SessionCommands().setProvider("pair", "clear", true, false, "sonnet")).toThrow(
+      "concrete provider",
+    );
+    expect(() => new SessionCommands().setProvider("pair", "pi", true, false, "  ")).toThrow("cannot be empty");
+    expect(resolvedSession.runtimeProviderOverride).toBe("claude");
+    expect(resolvedSession.modelOverride).toBe("sonnet");
   });
 
   it("notes when the session provider differs from the agent default", () => {

@@ -18,6 +18,7 @@ import {
 } from "../router/sessions.js";
 import { getDb } from "../router/router-db.js";
 import { executeWrite } from "../db/write-retry.js";
+import { validateRuntimeModelSelector } from "./model-validation.js";
 import { resolveRequestedRuntimeProvider } from "./runtime-selection.js";
 import type { RuntimeEffort } from "./effort.js";
 import type { RuntimeProviderId } from "./types.js";
@@ -66,6 +67,12 @@ export interface SyncAgentSessionsToAgentRuntimeInput {
   force?: boolean;
   clearProviderOverrides?: boolean;
   clearModelOverrides?: boolean;
+  /**
+   * Clear session model overrides that the agent's (new) provider cannot run. Only sessions without
+   * their own provider override are touched: they follow the agent provider, so a provider change
+   * would otherwise leave them on the new provider with the old provider's model.
+   */
+  clearIncompatibleModelOverrides?: boolean;
 }
 
 export function sessionRuntimeDisplayName(session: Pick<SessionEntry, "name">): string {
@@ -84,6 +91,23 @@ export function hasExplicitSessionProviderOverride(session: Pick<SessionEntry, "
 
 export function hasExplicitSessionModelOverride(session: Pick<SessionEntry, "modelOverride">): boolean {
   return Boolean(session.modelOverride?.trim());
+}
+
+/**
+ * Sessions that follow the agent's provider (no provider override of their own) but pin a model
+ * override the given provider cannot run. A provider switch leaves exactly these on the new provider
+ * with the old provider's model ("Model not found" on the next turn).
+ */
+export function findSessionsWithModelOverrideInvalidForProvider(
+  provider: string,
+  sessions: SessionEntry[],
+): SessionEntry[] {
+  return sessions.filter(
+    (session) =>
+      hasExplicitSessionModelOverride(session) &&
+      !hasExplicitSessionProviderOverride(session) &&
+      !validateRuntimeModelSelector(provider, session.modelOverride?.trim() ?? "").ok,
+  );
 }
 
 export function sessionHasStaleRuntimeProvider(
@@ -194,7 +218,11 @@ export function syncAgentSessionsToAgentRuntime(
       current = { ...current, runtimeProviderOverride: undefined };
       clearedProvider = true;
     }
-    if (clearModelOverrides && hasExplicitSessionModelOverride(current)) {
+    const clearThisModelOverride =
+      clearModelOverrides ||
+      (input.clearIncompatibleModelOverrides === true &&
+        findSessionsWithModelOverrideInvalidForProvider(agentProvider, [session]).length > 0);
+    if (clearThisModelOverride && hasExplicitSessionModelOverride(current)) {
       updateSessionModelOverride(current.sessionKey, null);
       current = { ...current, modelOverride: undefined };
       clearedModel = true;

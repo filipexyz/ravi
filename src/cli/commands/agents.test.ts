@@ -855,6 +855,69 @@ describe("AgentsCommands set session override reporting", () => {
     }
   });
 
+  it("refuses a provider switch that strands a session on a model the new provider cannot run", async () => {
+    if (currentAgent === null) throw new Error("Expected the agent fixture to be initialized");
+    // The session follows the agent provider (no provider override) but pins a Claude model override.
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude" };
+    sessionsByAgent = [
+      {
+        sessionKey: "agent:dev:follower",
+        name: "follower",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        runtimeProvider: "claude",
+        modelOverride: "sonnet",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const commands = new AgentsCommands();
+    await expect(commands.set("dev", "provider", "pi", true)).rejects.toThrow("follower");
+    await expect(commands.set("dev", "provider", "pi", true, false, "deepseek/deepseek-flash")).rejects.toThrow(
+      "follower",
+    );
+    expect(updateAgentCalls).toHaveLength(0);
+    expect(sessionsByAgent[0]?.modelOverride).toBe("sonnet");
+  });
+
+  it("--force clears the model overrides the new provider cannot run, and only those", async () => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude" };
+    sessionsByAgent = [
+      {
+        sessionKey: "agent:dev:follower",
+        name: "follower",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        runtimeProvider: "claude",
+        modelOverride: "sonnet",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        sessionKey: "agent:dev:compatible",
+        name: "compatible",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        runtimeProvider: "claude",
+        modelOverride: "deepseek/deepseek-flash",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      await commands.set("dev", "provider", "pi", true, true);
+    } finally {
+      console.log = originalLog;
+    }
+    expect(sessionsByAgent.find((session) => session.name === "follower")?.modelOverride).toBeUndefined();
+    expect(sessionsByAgent.find((session) => session.name === "compatible")?.modelOverride).toBe(
+      "deepseek/deepseek-flash",
+    );
+  });
+
   it("lists provider overrides with reasons and leaves them in place", async () => {
     if (currentAgent === null) throw new Error("Expected the agent fixture to be initialized");
     // Exercise provider reconciliation without a provider-specific agent model.

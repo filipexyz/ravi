@@ -60,6 +60,7 @@ import {
   type AgentSessionOverrideReport,
   type AgentSessionRematerializeReport,
   type AgentSessionRuntimeSyncResult,
+  findSessionsWithModelOverrideInvalidForProvider,
   syncAgentSessionsToAgentRuntime,
 } from "../../runtime/agent-session-runtime-sync.js";
 import { formatRuntimeEffortLevels, parseRuntimeEffort } from "../../runtime/effort.js";
@@ -213,6 +214,8 @@ function syncAgentSetSessions(input: {
       (input.key === "model" ||
         input.key === "modelPreset" ||
         (input.key === "provider" && input.pairedModel === true)),
+    // A forced provider switch also drops the session model overrides the new provider cannot run.
+    clearIncompatibleModelOverrides: force && input.key === "provider",
   });
 }
 
@@ -1439,6 +1442,18 @@ SOURCES
           providerValue,
           agent.model,
           `Change both in one write: ravi agents set ${id} provider ${providerValue} --model <model>, or clear the model first: ravi agents set ${id} model clear`,
+        );
+      }
+      // Sessions that follow the agent provider but pin a model the new provider cannot run would end up
+      // on the new provider with the old provider's model ("Model not found" on the next turn).
+      const strandedSessions = findSessionsWithModelOverrideInvalidForProvider(
+        providerValue,
+        getSessionsByAgent(agent.id),
+      );
+      if (strandedSessions.length > 0 && force !== true) {
+        const names = strandedSessions.map((session) => session.name?.trim() || session.sessionKey).join(", ");
+        fail(
+          `Provider '${providerValue}' cannot run the model override pinned by ${strandedSessions.length} session(s) of ${id}: ${names}. Re-run with --force to clear those model overrides, or change them first: ravi sessions set-model <session> <model|clear>.`,
         );
       }
       // A provider write must stay compatible with any selected preset.

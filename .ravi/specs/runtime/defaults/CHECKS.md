@@ -26,6 +26,14 @@ bun test src/cli/commands/sessions-attach-authorization.test.ts
 
 - Unauthorized session provider/model propagation MUST return `PERMISSION_DENIED` for both compatible and incompatible pairs, leaving agent defaults, the target session, and sibling sessions unchanged.
 - An unauthorized provider switch without `--propagate` MUST return `PERMISSION_DENIED` before compatibility validation and leave configuration unchanged.
+- `sessions set-provider <s> <p> --model <m>` MUST validate the pair together and write
+  the provider and model overrides in one command; without `--model`, an incompatible
+  current model MUST be refused with the `--model` and `set-model clear` paths named.
+- `sessions set-model <s> clear` MUST be refused when the fallback model (agent default or
+  runtime default) cannot run on the session's provider, and MUST NOT change anything then.
+- `agents set <id> provider <p>` MUST refuse, naming the sessions, when a session without its
+  own provider override pins a model override that `<p>` cannot run; with `--force` it MUST
+  clear exactly those overrides and leave compatible ones.
 - Stored `runtime.defaultModel` MUST win over `RAVI_MODEL`.
 - Resolution MUST use `RAVI_MODEL` only when no stored/session/agent/preset
   model exists.

@@ -21023,6 +21023,7 @@ export type SessionsSetModelReturn = {
 
 /** Input shape for `sessions.set-provider`. */
 export type SessionsSetProviderInput = {
+  model?: string;
   nameOrKey: string;
   propagate?: boolean;
   provider: string;
