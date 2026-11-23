@@ -45,7 +45,7 @@ for mode in ['read']:
   'permission':('execute' if mode == 'write' else 'use') + ':app:omie-orders',
   'description':'Protected host transport; real runtime identity and channel membership required.'}
 # Delegation requests, never grants. Live caller and executor must already hold each capability.
-required=['execute:group:apps','use:app:omie-orders',
+required=['mutate:apps:run','mutate:apps.run:*','execute:group:apps_run','execute:group:apps','use:app:omie-orders',
           'use:credential:omie:'+scope['connection'],
           ]+CHANNEL_CAPABILITIES[scope['channelType']](scope)
 operations=json.loads((Path(__file__).parents[2]/'src/apps/omie-orders/operations.json').read_text())

@@ -154,10 +154,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | apps | src/apps/omie-orders/provider.ts | 114 | no-cause | Response parser diagnostics may quote provider payload secrets; return only the fixed response code. | src/apps/omie-orders/provider.ts:013a4d181acae22f9b98a9eb |
 | apps | src/apps/omie-orders/provider.ts | 147 | no-cause | Untyped broker/provider exceptions may contain credentials; propagate safe AppError codes only. | src/apps/omie-orders/provider.ts:998bbd3d9fb148d9d7ff1e9f |
 | apps | src/apps/omie-orders/scope.ts | 65 | no-cause | Host configuration diagnostics may disclose private installation identifiers and paths. | src/apps/omie-orders/scope.ts:8aca198a9dec20deb3f790ca |
-| apps | src/apps/router.ts | 113 | fixed | binding retained / no recognized error surface | src/apps/router.ts:244d36bb890810ca9fc75d10 |
-| apps | src/apps/router.ts | 980 | triaged-follow-up | catch-without-binding | src/apps/router.ts:ccbdb880a3313f6d6887530a |
-| apps | src/apps/router.ts | 1053 | fixed | binding retained / no recognized error surface | src/apps/router.ts:be7924cab2b6818b47481d9d |
-| apps | src/apps/router.ts | 1066 | triaged-follow-up | catch-without-binding | src/apps/router.ts:e39c75939f3bada55ce4bba9 |
+| apps | src/apps/router.ts | 114 | fixed | binding retained / no recognized error surface | src/apps/router.ts:244d36bb890810ca9fc75d10 |
+| apps | src/apps/router.ts | 981 | triaged-follow-up | catch-without-binding | src/apps/router.ts:ccbdb880a3313f6d6887530a |
+| apps | src/apps/router.ts | 1060 | fixed | binding retained / no recognized error surface | src/apps/router.ts:be7924cab2b6818b47481d9d |
+| apps | src/apps/router.ts | 1073 | triaged-follow-up | catch-without-binding | src/apps/router.ts:e39c75939f3bada55ce4bba9 |
 | apps | src/apps/scaffold.ts | 566 | triaged-follow-up | catch-without-binding | src/apps/scaffold.ts:7539c3f22a40bad7711dec0c |
 | apps | src/apps/service.ts | 272 | fixed | binding retained / no recognized error surface | src/apps/service.ts:9af1f6f974fdf5c79d441a2b |
 | apps | src/apps/service.ts | 279 | fixed | binding retained / no recognized error surface | src/apps/service.ts:f786c25699f0041e2406547f |

@@ -168,7 +168,9 @@ offers it) and the real context registry.
 - `bun run test:omie-orders` runs the isolated integration suite and MUST appear
   in `test:shard-1`. `src/ci/quality-gate-shards.test.ts` checks shard wiring.
 - `bun test --preload ./src/test/isolated-runtime-preload.ts src/apps/router.test.ts`
-  verifies that authenticated local context wins over ambient context and that
+  verifies, for an Omie child and for a plain app child, that authenticated local
+  context wins over ambient context, that the Omie child takes the access form
+  the caller holds (run-only and group-only callers against a two-form ceiling), and that
   a query delegates exact capabilities without requesting writes.
 - `scope.test.ts` rejects absent/malformed private host configuration and verifies
   fresh loading. Configuration examples contain only synthetic identifiers.

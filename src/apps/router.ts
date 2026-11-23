@@ -23,6 +23,7 @@ import { runWithCliAudit } from "../cli/audit.js";
 import { getContext } from "../cli/context.js";
 import {
   AppPermissionProviderDeniedError,
+  canWithCapabilities,
   canWithCapabilityContext,
   evaluateAppPermissionProvider,
 } from "../permissions/provider-runtime.js";
@@ -1019,7 +1020,13 @@ function issueAppChildContext(
   if (!parent) return undefined;
   const appId = app.manifest?.id ?? app.id;
   const ceiling = composition.allow ?? app.manifest?.context?.allow ?? [];
-  const allow = appId === OMIE_APP_ID ? omieDelegation(operationId, operationPermission, args, ceiling) : ceiling;
+  const allow =
+    appId === OMIE_APP_ID
+      ? omieDelegation(operationId, operationPermission, args, ceiling, undefined, (capability) => {
+          const { permission, objectType, objectId } = parseRaviAppCapability(capability);
+          return canWithCapabilities(parent.capabilities, permission, objectType, objectId);
+        })
+      : ceiling;
   const capabilities = allow.map(parseRaviAppCapability);
   const input: IssueRuntimeContextInput = {
     parent,

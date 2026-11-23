@@ -2982,3 +2982,92 @@ it("a trusted builtin's own usage error keeps exit 2; a failed app process never
   expect(usage.error.exitCode).toBe(CONTRACT_EXIT_USAGE);
   expect(raiseContractFailure(base, true).error.exitCode).toBe(CONTRACT_EXIT_ERROR);
 });
+
+describe("Omie child access form follows the caller", () => {
+  const queryCaps = [
+    "use:app:omie-orders",
+    "read:omie:produtos.pedido.ListarPedidos",
+    "use:credential:omie:example-orders",
+    "execute:omie:produtos/pedido:ListarPedidos",
+    "use:credential:slack:example-slack-connection",
+    "execute:slack:conversations.members",
+  ];
+  const toCaps = (list: string[]) =>
+    list.map((cap) => {
+      const [permission, objectType, ...id] = cap.split(":");
+      return { permission, objectType, objectId: id.join(":") };
+    });
+  function omieRepo(): string {
+    registerOmieConversationAuthority(createSlackOmieConversationAuthority());
+    const root = makeRepo();
+    const bindingDir = join(process.env.RAVI_STATE_DIR!, "integrations");
+    mkdirSync(bindingDir, { recursive: true });
+    writeFileSync(
+      join(bindingDir, "omie-orders.json"),
+      JSON.stringify({
+        app: "omie-orders",
+        channelType: "slack",
+        account: "example-slack",
+        channel: "CEXAMPLE01",
+        canonicalChat: "chat_example",
+        executor: "example-executor",
+        connection: "example-orders",
+        channelConnection: "example-slack-connection",
+      }),
+    );
+    const app = manifest("omie-orders");
+    // The ceiling declares both forms of access to `apps run`, as the candidate preparer now writes it.
+    app.context = { allow: ["mutate:apps:run", "execute:group:apps", ...queryCaps] };
+    app.interfaces = { cli: { command: "bun probe.mjs", json: true } };
+    app.operations = { "omie-orders.list": { interface: "cli", command: "bun probe.mjs {args}", mutating: false } };
+    writeManifest(root, "omie-orders", app);
+    writeFileSync(join(root, "src/apps/omie-orders/probe.mjs"), "console.log(JSON.stringify({success:true}));");
+    return root;
+  }
+  for (const form of ["mutate:apps:run", "execute:group:apps"]) {
+    it(`a caller holding only ${form} gets a child with that form`, async () => {
+      const root = omieRepo();
+      const parent = createRuntimeContext({
+        agentId: "main",
+        capabilities: toCaps([form, ...queryCaps]),
+        metadata: { actorPrincipal: "contact:verified", actorResolution: "resolved" },
+      });
+      const result = await runWithContext({ agentId: "main", context: parent, transport: "gateway" }, () =>
+        runAppOperation({ appId: "omie-orders", operation: "list", cwd: root, json: true }),
+      );
+      expect(result.ok).toBe(true);
+      const delegated = dbGetContext(result.childContextId!)!.capabilities.map(
+        ({ permission, objectType, objectId }) => `${permission}:${objectType}:${objectId}`,
+      );
+      expect(delegated).toContain(form);
+      expect(delegated).toHaveLength(queryCaps.length + 1);
+    });
+  }
+});
+
+it("any app child is issued from the gateway-local caller, not from an ambient RAVI_CONTEXT_KEY", async () => {
+  const root = makeRepo();
+  const app = manifest("plainprobe");
+  app.context = { allow: ["execute:group:apps"] };
+  app.interfaces = { cli: { command: "bun probe.mjs", json: true } };
+  app.operations = { "plainprobe.run": { interface: "cli", command: "bun probe.mjs {args}", mutating: false } };
+  writeManifest(root, "plainprobe", app);
+  writeFileSync(join(root, "src/apps/plainprobe/probe.mjs"), "console.log(JSON.stringify({ok:true}));");
+  const caps = [
+    { permission: "execute", objectType: "group", objectId: "apps" },
+    { permission: "use", objectType: "app", objectId: "plainprobe" },
+  ];
+  const local = createRuntimeContext({ agentId: "main", capabilities: caps });
+  const ambient = createRuntimeContext({ agentId: "main", capabilities: caps });
+  const result = await runWithContext({ agentId: "main", context: local, transport: "gateway" }, () =>
+    runAppOperation({
+      appId: "plainprobe",
+      operation: "run",
+      cwd: root,
+      json: true,
+      env: { ...process.env, RAVI_CONTEXT_KEY: ambient.contextKey },
+    }),
+  );
+  expect(result.ok).toBe(true);
+  expect(dbGetContext(result.childContextId!)?.metadata?.parentContextId).toBe(local.contextId);
+});

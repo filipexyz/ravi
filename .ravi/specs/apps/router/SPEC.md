@@ -566,6 +566,14 @@ other, not a second permission system for whoever already holds the app.
 - A Omie app child MUST preserve authenticated actor/surface metadata while
   delegating only the requested query's exact capabilities, all inside the
   declared `context.allow` ceiling and the live caller's authority.
+- The Omie child's access to `apps run` MUST be the first form (run-specific
+  forms before the legacy group) that both the caller holds and the manifest
+  ceiling declares; a form the caller lacks would be refused when the child is
+  issued, since a child only narrows its parent.
+- Debt (follow-up): the generic router still branches on the Omie app id for
+  delegation, preserved actor metadata and its own error codes. A builtin
+  registry the router consults (delegation, metadata to carry, own errors) should
+  replace these branches before a second builtin repeats the pattern.
 - Gateway-local authenticated context MUST take precedence over ambient process
   environment when issuing an app child.
 - The host MUST verify the live human turn ancestry, persisted inbound and

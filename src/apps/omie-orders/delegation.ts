@@ -11,6 +11,8 @@ export function omieDelegation(
   args: string[],
   ceiling: string[],
   scope?: OmieScope,
+  /** Whether the caller (the parent of the child about to be issued) holds a capability. Without it, any form passes. */
+  callerHolds?: (capability: string) => boolean,
 ): string[] {
   const name = operationId.replace(/^omie-orders\./, "");
   if (
@@ -40,8 +42,10 @@ export function omieDelegation(
   if (!id) throw new AppError("OMIE_OPERATION_NOT_FOUND", "Operação não disponível no executor de pedidos.");
   const op = findOperation(id);
   const selected = [
-    // The caller's own form of access to `apps run`, the first one the manifest ceiling declares.
-    OMIE_APP_ACCESS.find((access) => ceiling.includes(access)) ?? OMIE_APP_ACCESS[OMIE_APP_ACCESS.length - 1],
+    // The caller's own form of access to `apps run`: the first form the caller holds and the manifest ceiling declares.
+    // A child can only narrow its parent, so a form the caller lacks would be refused when the child is issued.
+    OMIE_APP_ACCESS.find((access) => ceiling.includes(access) && (callerHolds?.(access) ?? true)) ??
+      OMIE_APP_ACCESS[OMIE_APP_ACCESS.length - 1],
     "use:app:omie-orders",
     op.permission,
     `use:credential:omie:${binding.connection}`,
