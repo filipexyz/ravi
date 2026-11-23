@@ -81,6 +81,7 @@ export class CronRunner {
   private runtimeEventStream: ReturnType<typeof nats.subscribe> | null = null;
   private runtimeEventAbort: AbortController | null = null;
   private runtimeEventLoop: Promise<void> | null = null;
+  private failureReportLoop: Promise<void> | null = null;
   private readonly runtimeEventStopFailures: Error[] = [];
 
   /**
@@ -103,19 +104,30 @@ export class CronRunner {
 
     // Subscribe to runtime terminal events so job state reflects turn outcomes
     this.runtimeEventLoop = this.subscribeToRuntimeEvents();
+    // Remote notification delivery must not hold daemon readiness hostage to a
+    // backlog or an offline channel. Stop still drains the in-flight report.
+    this.failureReportLoop = this.reconcileFailureReports().catch((cause) => {
+      this.runtimeEventStopFailures.push(new Error("Cron failure report reconciliation failed", { cause }));
+      log.error("Cron failure report reconciliation failed", { error: cause });
+    });
+
+    log.info("Cron runner started");
+  }
+
+  private async reconcileFailureReports(): Promise<void> {
     for (const run of pendingCronFailureReports()) {
+      if (!this.running) break;
       if (await notifyCronFailure(cronRunNotification(run), run.error ?? "Agent turn failed"))
         markCronRunReported(run.id);
     }
-
-    log.info("Cron runner started");
   }
 
   /**
    * Stop the cron runner.
    */
   async stop(): Promise<void> {
-    if (!this.running && !this.runtimeEventStream && !this.runtimeEventStopFailures.length) return;
+    if (!this.running && !this.runtimeEventStream && !this.failureReportLoop && !this.runtimeEventStopFailures.length)
+      return;
     this.running = false;
 
     log.info("Stopping cron runner");
@@ -134,6 +146,7 @@ export class CronRunner {
       }
     }
     await this.runtimeEventLoop;
+    await this.failureReportLoop;
     if (this.runtimeEventStopFailures.length) {
       throw new AggregateError(this.runtimeEventStopFailures, "Cron runner shutdown failed", {
         cause: this.runtimeEventStopFailures[0],
@@ -142,6 +155,7 @@ export class CronRunner {
     this.runtimeEventStream = null;
     this.runtimeEventAbort = null;
     this.runtimeEventLoop = null;
+    this.failureReportLoop = null;
 
     log.info("Cron runner stopped");
   }

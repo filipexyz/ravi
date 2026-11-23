@@ -69,6 +69,7 @@ const BOB_CHAT: OwnerDirectTarget = {
 let operatorChat: OwnerDirectTarget | null = null;
 const contactChats = new Map<string, OwnerDirectTarget>();
 let directDeliveryFails = false;
+let directDeliveryGate: Promise<void> | null = null;
 const directMessages: Array<{ target: OwnerDirectTarget; text: string }> = [];
 // Every chat a direct message was tried on, including the ones that failed.
 const directAttempts: OwnerDirectTarget[] = [];
@@ -97,6 +98,7 @@ mock.module("../cloud-agents/chat-target.js", () => ({
   deliverToChat: mock(async (target: OwnerDirectTarget, message: { text: string }, timeoutMs?: number) => {
     if (!directChatsArmed()) return actualDeliverToChat(target, message, timeoutMs);
     directAttempts.push(target);
+    if (directDeliveryGate) await directDeliveryGate;
     if (directDeliveryFails) throw new Error("gateway offline");
     directMessages.push({ target, text: message.text });
     return { messageId: "m1", deliveries: [] };
@@ -129,6 +131,7 @@ beforeEach(async () => {
   operatorChat = null;
   contactChats.clear();
   directDeliveryFails = false;
+  directDeliveryGate = null;
   directMessages.length = 0;
   directAttempts.length = 0;
 });
@@ -1202,6 +1205,68 @@ describe("CronRunner shell jobs and personal connectors", () => {
 });
 
 describe("durable cron run correlation", () => {
+  it.each([false, true])(
+    "starts while failure delivery is pending, then drains and retries (offline=%s)",
+    async (offline) => {
+      operatorChat = OPERATOR_CHAT;
+      directDeliveryFails = offline;
+      let release!: () => void;
+      directDeliveryGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const job = createAgentJob({ ownerPrincipal: "operator" });
+      const { settleCronRun, pendingCronFailureReports } = await import("./run-db.js");
+      for (let i = 0; i < 2; i++) {
+        await new CronRunner().triggerJob(job.id);
+        const dispatched = publishCalls.at(-1)!;
+        settleCronRun(String(dispatched.payload._cronRunId), dispatched.sessionName, {
+          lastStatus: "error",
+          lastError: "failed before report",
+        });
+      }
+      const runner = new CronRunner();
+      let started = false;
+      const starting = runner.start().then(() => {
+        started = true;
+      });
+      let stopping: Promise<void> | undefined;
+      try {
+        await waitUntil(() => directAttempts.length === 1);
+        await waitUntil(() => started, 500);
+        expect(pendingCronFailureReports()).toHaveLength(2);
+        await runner.start();
+        expect(directAttempts).toHaveLength(1);
+        let stopped = false;
+        stopping = runner.stop().then(() => {
+          stopped = true;
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(stopped).toBe(false);
+        release();
+        await stopping;
+        expect(directAttempts).toHaveLength(1);
+        expect(pendingCronFailureReports()).toHaveLength(offline ? 2 : 1);
+      } finally {
+        release();
+        await starting;
+        await (stopping ?? runner.stop());
+        directDeliveryGate = null;
+      }
+
+      directDeliveryFails = false;
+      const recovered = new CronRunner();
+      try {
+        await recovered.start();
+        await waitUntil(() => pendingCronFailureReports().length === 0);
+        expect(directMessages).toHaveLength(2);
+        expect(directAttempts).toHaveLength(offline ? 3 : 2);
+      } finally {
+        await recovered.stop();
+      }
+    },
+  );
+
   it("reconciles a persisted failure whose notification was interrupted", async () => {
     const job = createAgentJob();
     await new CronRunner().triggerJob(job.id);
