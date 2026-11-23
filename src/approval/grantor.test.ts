@@ -333,4 +333,36 @@ describe("approval grantor identity resolvers", () => {
       }),
     ).toMatchObject({ allowed: true, subjectId: owner.id });
   });
+  it("never resolves an unlinked lid: sender through its digits as a phone number", () => {
+    // The LID digits equal the admin's stored phone: only a linked `lid:` identity may stand for them.
+    seedApprovalContact({ phone: APPROVAL_TEST_SLACK_OWNER_PHONE, name: "Owner", tags: ["permission.admin"] });
+
+    expect(
+      actorCanGrantRequestedPermission({
+        channel: "whatsapp",
+        senderId: APPROVAL_TEST_SLACK_OWNER_PHONE,
+        senderAliases: [`lid:${APPROVAL_TEST_SLACK_OWNER_PHONE}`],
+        instanceId: "inst-1",
+      }),
+    ).toMatchObject({ allowed: false, reason: "unresolved_identity" });
+  });
+
+  it("resolves a lid: sender as its linked owner, never as the admin whose phone has the same digits", () => {
+    seedApprovalContact({ phone: APPROVAL_TEST_SLACK_OWNER_PHONE, name: "Admin", tags: ["permission.admin"] });
+    const other = seedApprovalContact({ phone: APPROVAL_TEST_SUPERADMIN_PHONE, name: "Other", tags: [] });
+    linkContactIdentity(other.id, {
+      channel: "whatsapp",
+      platformUserId: `lid:${APPROVAL_TEST_SLACK_OWNER_PHONE}`,
+      instanceId: "inst-1",
+    });
+
+    expect(
+      actorCanGrantRequestedPermission({
+        channel: "whatsapp",
+        senderId: APPROVAL_TEST_SLACK_OWNER_PHONE,
+        senderAliases: [`lid:${APPROVAL_TEST_SLACK_OWNER_PHONE}`],
+        instanceId: "inst-1",
+      }),
+    ).toMatchObject({ allowed: false, reason: "unauthorized_grantor", subjectId: other.id });
+  });
 });

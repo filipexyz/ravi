@@ -100,6 +100,7 @@ function resolveGrantorIdentity(
 ): Pick<PlatformIdentity, "ownerType" | "ownerId"> | null {
   const senderId = senderIds[0] ?? "";
   const seen = new Set<string>();
+  const owners = new Map<string, Pick<PlatformIdentity, "ownerType" | "ownerId">>();
   for (const platformUserId of senderIds) {
     for (const candidate of instanceCandidates) {
       const instanceId = candidate?.trim() ?? "";
@@ -114,9 +115,20 @@ function resolveGrantorIdentity(
               platformUserId,
             })
           : null;
-      if (identity?.ownerType && identity.ownerId) return identity;
+      if (identity?.ownerType && identity.ownerId) {
+        owners.set(`${identity.ownerType}:${identity.ownerId}`, identity);
+      }
     }
   }
+  // One verified sender, one owner. Forms of the same sender that resolve to different owners
+  // (a bare number and its namespaced `lid:` form) are ambiguous, and ambiguity never authorizes.
+  if (owners.size > 1) return null;
+  const [only] = owners.values();
+  if (only) return only;
+
+  // A namespaced sender (`lid:...`) is only its own identity: its digits are not a phone number,
+  // so they must never reach the phone-based contact fallback below.
+  if (senderIds.some((id) => id.startsWith("lid:"))) return null;
 
   // Prefer the canonical details lookup. `getContact` is a thin export and is
   // sometimes replaced by leaked bun test mocks that return a dummy object.
