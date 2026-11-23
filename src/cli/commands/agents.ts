@@ -198,6 +198,8 @@ function syncAgentSetSessions(input: {
   agent: AgentConfig;
   key: string;
   force?: boolean;
+  /** `provider ... --model`: the write replaced the model default too, so session model overrides are stale. */
+  pairedModel?: boolean;
 }): AgentSessionRuntimeSyncResult {
   const rematerialize = isAgentRuntimeSyncKey(input.key);
   const force = rematerialize && input.force === true;
@@ -206,7 +208,11 @@ function syncAgentSetSessions(input: {
     rematerialize,
     force: force && input.key === "modelPreset",
     clearProviderOverrides: force && (input.key === "provider" || input.key === "modelPreset"),
-    clearModelOverrides: force && (input.key === "model" || input.key === "modelPreset"),
+    clearModelOverrides:
+      force &&
+      (input.key === "model" ||
+        input.key === "modelPreset" ||
+        (input.key === "provider" && input.pairedModel === true)),
   });
 }
 
@@ -216,12 +222,14 @@ function buildAgentSetMutationPayload(input: {
   key: string;
   value: unknown;
   force?: boolean;
+  pairedModel?: boolean;
 }): AgentSetMutationPayload {
   const updatedAgent = getAgent(input.agentId) ?? input.before;
   const sync = syncAgentSetSessions({
     agent: updatedAgent,
     key: input.key,
     force: input.force,
+    pairedModel: input.pairedModel,
   });
   return {
     action: "set",
@@ -354,6 +362,18 @@ function buildAgentJson(agent: AgentConfig, defaultAgent: string): AgentJsonSumm
     modelError: effective.error,
     tags: listAgentTags(agent.id),
   };
+}
+
+/** Invalid `agents set --model` input is a usage error (exit 2), like the other invalid flag/arg cases. */
+function failSetModelUsage(message: string, asJson?: boolean): never {
+  return contractFail("agents set", "USAGE_ERROR", message, {
+    ...{
+      asJson,
+      exitCode: 2,
+      details: { suggestedAction: "Use --model only with key=provider: ravi agents set <id> provider <p> --model <m>" },
+    },
+    diagnostic: errorDiagnostic(message, { operation: "agents set" }),
+  });
 }
 
 function validateAgentModelValue(providerId: string | undefined, model: string, hint?: string): void {
@@ -1262,6 +1282,17 @@ SOURCES
       failAgentNotFound("agents set", id, asJson);
     }
 
+    // --model belongs to key=provider only; reject it before any branch below can return and ignore it.
+    if (pairedModel !== undefined && key !== "provider") {
+      failSetModelUsage(
+        `--model is only valid with key=provider. To change the model alone: ravi agents set ${id} model <model>`,
+        asJson,
+      );
+    }
+    if (pairedModel !== undefined && !pairedModel.trim()) {
+      failSetModelUsage("--model cannot be empty", asJson);
+    }
+
     if (key === "description") return setAgentLibraryDescription(agent.id, value, asJson);
 
     const validKeys = [
@@ -1385,12 +1416,8 @@ SOURCES
       }
     }
 
-    if (pairedModel !== undefined && key !== "provider") {
-      fail(`--model is only valid with key=provider. To change the model alone: ravi agents set ${id} model <model>`);
-    }
-    if (pairedModel !== undefined && !pairedModel.trim()) {
-      fail("--model cannot be empty");
-    }
+    // One provider identity for validation, preset check and storage (create trims it the same way).
+    const providerValue = key === "provider" ? value.trim() : value;
     const modelCleared = key === "model" && value.trim().toLowerCase() === "clear";
 
     // Provider ids are intentionally open; runtime registration decides whether an id can execute.
@@ -1406,20 +1433,20 @@ SOURCES
     if (key === "provider") {
       if (pairedModel !== undefined) {
         // The pair is validated together; the stored model is about to be replaced.
-        validateAgentModelValue(value, pairedModel.trim());
+        validateAgentModelValue(providerValue, pairedModel.trim());
       } else if (agent.model) {
         validateAgentModelValue(
-          value,
+          providerValue,
           agent.model,
-          `Change both in one write: ravi agents set ${id} provider ${value} --model <model>, or clear the model first: ravi agents set ${id} model clear`,
+          `Change both in one write: ravi agents set ${id} provider ${providerValue} --model <model>, or clear the model first: ravi agents set ${id} model clear`,
         );
       }
       // A provider write must stay compatible with any selected preset.
       if (agent.modelPresetId && pairedModel === undefined) {
         const preset = getRuntimeModelPreset(agent.modelPresetId);
-        if (preset && preset.provider !== value) {
+        if (preset && preset.provider !== providerValue) {
           fail(
-            `Cannot set provider '${value}': agent references preset '${preset.id}' (provider '${preset.provider}'). Clear the preset first: ravi agents set ${id} modelPreset clear`,
+            `Cannot set provider '${providerValue}': agent references preset '${preset.id}' (provider '${preset.provider}'). Clear the preset first: ravi agents set ${id} modelPreset clear`,
           );
         }
       }
@@ -1465,7 +1492,7 @@ SOURCES
     }
 
     // Parse settingSources as JSON array
-    let parsedValue: unknown = value;
+    let parsedValue: unknown = providerValue;
     if (key === "effort") {
       parsedValue =
         normalizedEffortValue === "clear" || normalizedEffortValue === "null" || normalizedEffortValue === ""
@@ -1514,8 +1541,8 @@ SOURCES
       } else if (key === "provider" && pairedModel !== undefined) {
         // Provider and model land in one row update; a direct model also drops any preset reference.
         updates = agent.modelPresetId
-          ? { provider: value, model: pairedModel.trim(), modelPresetId: null }
-          : { provider: value, model: pairedModel.trim() };
+          ? { provider: providerValue, model: pairedModel.trim(), modelPresetId: null }
+          : { provider: providerValue, model: pairedModel.trim() };
       } else {
         updates = { [key]: parsedValue };
       }
@@ -1529,6 +1556,7 @@ SOURCES
         key,
         value: modelCleared ? null : parsedValue,
         force,
+        pairedModel: key === "provider" && pairedModel !== undefined,
       });
       if (asJson) {
         printJson(payload);

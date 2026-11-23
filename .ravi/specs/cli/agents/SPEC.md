@@ -102,6 +102,7 @@ those three carry the brake.
 | install to an existing id | `AGENT_ALREADY_EXISTS` | 1 |
 | update with a file edited here and changed in the Library, no `--keep-local`/`--take-library` | `LIBRARY_AGENT_EDITED_LOCALLY` + diff | 2 |
 | `set <id> description` longer than 300 characters | `USAGE_ERROR` | 2 |
+| `set <id> <key> <value> --model` with a key other than `provider`, or an empty `--model` | `USAGE_ERROR` | 2 |
 | requests on/off inside an agent runtime | `LIBRARY_AGENT_CANNOT_OPEN_REQUESTS` | 3 |
 | ask from an agent turn that is not the operator's own | `LIBRARY_REQUEST_EXTERNAL_DENIED` | 3 |
 | ask target matching two machines by name | `LIBRARY_TARGET_AMBIGUOUS` | 2 |
