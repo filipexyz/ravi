@@ -313,7 +313,7 @@ At `full-access` few requests need approval. See [Permissions](/guides/permissio
 - A command acts on the session of the DM or channel it is typed in. Slack does not run an app's command inside a thread, so type it in the channel or the DM.
 - `close` says why a thread did not close. The usual reason is a trigger still pointed at it: the answer names the triggers and the `ravi triggers set <id> replySession <channel-session>` that moves them.
 - A command that reaches Ravi more than a minute after it was typed is not run. Run it again.
-- Every command that reaches the daemon, the refused ones included, is written to the audit trail (`ravi events replay --subject ravi.audit.slack_command`), without what you typed. A command the runner refuses before publishing (another workspace, an origin it could not verify) shows only in the runner's log.
+- Every command that reaches the daemon, the refused ones included, is written to the audit trail (`ravi events replay --subject ravi.audit.chat_command`), without what you typed. A command the runner refuses before publishing (another workspace, an origin it could not verify) shows only in the runner's log.
 
 ### Name the command per app
 

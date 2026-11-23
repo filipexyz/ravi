@@ -325,10 +325,12 @@ describe("a command is never replayed or kept", () => {
     expect(h.audits).toEqual([]);
   });
 
-  it("never opens an agent turn: nothing in the handler publishes a prompt", () => {
-    const source = readFileSync(join(import.meta.dir, "slash-command-handler.ts"), "utf8");
+  it("never opens an agent turn: nothing in the handler or the engine publishes a prompt", () => {
+    for (const file of ["slash-command-handler.ts", "../../chat-commands/engine.ts"]) {
+      const source = readFileSync(join(import.meta.dir, file), "utf8");
 
-    expect(source).not.toMatch(/publishSessionPrompt|publishChannelSessionPrompt|session-stream|PromptPublisher/);
+      expect(source).not.toMatch(/publishSessionPrompt|publishChannelSessionPrompt|session-stream|PromptPublisher/);
+    }
   });
 
   it("keeps the audit free of the text typed, the URL and the token", async () => {
@@ -340,15 +342,18 @@ describe("a command is never replayed or kept", () => {
     expect(wire).not.toContain("hooks.slack.com");
     expect(wire).not.toContain("secret");
     expect(wire).not.toContain("main-t-1");
+    // The audit row is the engine's, channel-neutral: the channel is a value the Slack adapter supplies.
     expect(h.audits[0]).toMatchObject({
-      type: "slack_command",
-      slackUserId: "U0PERSON",
+      type: "chat_command",
+      channel: "slack",
+      chatId: "D0CHAT",
+      actorId: "U0PERSON",
       contactId: CONTACT,
       sessionName: "main",
       subcommand: "close",
       decision: "allowed",
       code: "ok",
-      envelopeId: "env-1",
+      requestId: "env-1",
     });
   });
 
@@ -751,11 +756,12 @@ describe("the daemon consumer", () => {
     // The CLI and the runtime host spell this topic out; a drift would make `stop` ask nobody.
     const host = readFileSync(join(import.meta.dir, "../../runtime/host-subscriptions.ts"), "utf8");
     const cli = readFileSync(join(import.meta.dir, "../../cli/commands/sessions-runtime.ts"), "utf8");
-    const handler = readFileSync(join(import.meta.dir, "slash-command-handler.ts"), "utf8");
+    // The engine asks it, for every channel (src/chat-commands/engine.ts), not the Slack adapter.
+    const engine = readFileSync(join(import.meta.dir, "../../chat-commands/engine.ts"), "utf8");
 
     expect(host).toContain('"ravi.session.runtime.control"');
     expect(cli).toContain('"ravi.session.runtime.control"');
-    expect(handler).toContain('"ravi.session.runtime.control"');
+    expect(engine).toContain('"ravi.session.runtime.control"');
   });
 });
 

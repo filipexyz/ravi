@@ -11,6 +11,13 @@
  * Spec: channels/slack/commands.
  */
 
+import {
+  CHAT_COMMAND_DEFAULT_IDLE_HOURS,
+  CHAT_COMMAND_MAX_IDLE_HOURS,
+  type ChatCommandParse,
+  isChatCommandStatic,
+  parseChatCommandText,
+} from "../../chat-commands/parse.js";
 import { cleanSlackId } from "./routing.js";
 
 export const SLACK_COMMAND_TOPIC = "ravi.inbound.command";
@@ -19,8 +26,8 @@ export const SLACK_COMMAND_SOURCE = "slack.socket_mode";
 
 /** Longer text is cut: no subcommand needs more, and it is never an agent prompt. */
 export const SLACK_COMMAND_MAX_TEXT_LENGTH = 500;
-export const SLACK_COMMAND_DEFAULT_IDLE_HOURS = 12;
-export const SLACK_COMMAND_MAX_IDLE_HOURS = 24 * 30;
+export const SLACK_COMMAND_DEFAULT_IDLE_HOURS = CHAT_COMMAND_DEFAULT_IDLE_HOURS;
+export const SLACK_COMMAND_MAX_IDLE_HOURS = CHAT_COMMAND_MAX_IDLE_HOURS;
 
 const SLACK_ID_PATTERN = /^[A-Z][A-Z0-9]{1,31}$/;
 const SLACK_COMMAND_NAME_PATTERN = /^\/[a-z0-9][a-z0-9_-]{0,31}$/i;
@@ -63,59 +70,17 @@ export interface SlackCommandEvent {
   readonly receivedAt: number;
 }
 
-export type SlackCommandParse =
-  | { readonly kind: "status" }
-  | { readonly kind: "threads" }
-  | { readonly kind: "stop" }
-  | { readonly kind: "close"; readonly threadRef: string }
-  | { readonly kind: "close_idle"; readonly hours: number }
-  | { readonly kind: "help" }
-  | { readonly kind: "usage"; readonly command: "close" }
-  | { readonly kind: "unknown"; readonly word: string };
+/** What follows `/ravi`. The grammar is the engine's, shared by every channel (src/chat-commands/parse.ts). */
+export type SlackCommandParse = ChatCommandParse;
 
 /** Subcommands whose answer is static text: Slack takes it in the ack itself. */
 export function isSlackCommandAnsweredInAck(parse: SlackCommandParse): boolean {
-  return parse.kind === "help" || parse.kind === "usage" || parse.kind === "unknown";
-}
-
-function foldWord(value: string): string {
-  return value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+  return isChatCommandStatic(parse);
 }
 
 /** Parse what follows `/ravi`. Words are matched without accents or case; a thread ref keeps its case. */
 export function parseSlackCommandText(text: string): SlackCommandParse {
-  const tokens = text.trim().split(/\s+/).filter(Boolean);
-  const first = tokens[0];
-  if (!first) return { kind: "help" };
-  switch (foldWord(first)) {
-    case "help":
-    case "?":
-      return { kind: "help" };
-    case "status":
-      return { kind: "status" };
-    case "threads":
-      return { kind: "threads" };
-    case "stop":
-      return { kind: "stop" };
-    case "close": {
-      const target = tokens[1];
-      if (!target) return { kind: "usage", command: "close" };
-      if (foldWord(target) === "idle") return parseIdleClose(tokens[2]);
-      return { kind: "close", threadRef: target };
-    }
-    default:
-      return { kind: "unknown", word: first.slice(0, 40) };
-  }
-}
-
-function parseIdleClose(rawHours: string | undefined): SlackCommandParse {
-  if (rawHours === undefined) return { kind: "close_idle", hours: SLACK_COMMAND_DEFAULT_IDLE_HOURS };
-  const match = /^(\d{1,3})h?$/i.exec(rawHours);
-  const hours = match ? Number(match[1]) : Number.NaN;
-  if (!Number.isInteger(hours) || hours < 1 || hours > SLACK_COMMAND_MAX_IDLE_HOURS) {
-    return { kind: "usage", command: "close" };
-  }
-  return { kind: "close_idle", hours };
+  return parseChatCommandText(text);
 }
 
 export interface SlackCommandMessage {

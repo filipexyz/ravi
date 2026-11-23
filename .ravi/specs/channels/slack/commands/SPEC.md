@@ -16,6 +16,9 @@ tags:
 applies_to:
   - src/channels/slack/slash-commands.ts
   - src/channels/slack/slash-command-handler.ts
+  - src/channels/slack/slash-command-render.ts
+  - src/chat-commands/engine.ts
+  - src/chat-commands/parse.ts
   - src/channels/slack/socket-mode.ts
   - src/channels/slack/interactions.ts
   - src/cli/command-access.ts
@@ -101,7 +104,18 @@ on the session of the DM or channel they are typed in, never on a thread.
   `responseUrlId`, `ackedWithHelp` and `receivedAt`. It MUST NOT carry the token
   or the `response_url`.
 
-### Daemon
+### Daemon: the engine and this adapter
+
+The commands are the channel-free engine's (spec `permissions/chat-commands`,
+`src/chat-commands/`): the grammar, the freshness window, the authority, the
+operations and the audit are the same for every channel and MUST NOT be written
+again here. This adapter (`slash-command-handler.ts`) provides only what is
+Slack's: it reads the `ravi.inbound.command` event, says which contact the Slack
+user is, resolves the chat to a session, owns the Slack threads (lifecycle
+store, closing), and says each result in Slack's words and mrkdwn
+(`slash-command-render.ts`) through the stored `response_url`. The engine hands
+it facts (`ChatCommandResult`), never Slack text; the adapter hands the engine
+values, never code.
 
 - One consumer per daemon MUST read `ravi.inbound.command` in its own queue group
   (`ravi-slack-commands`), so one daemon answers each command.
@@ -147,24 +161,43 @@ on the session of the DM or channel they are typed in, never on a thread.
   that also checks the limit, before the request, so two callers cannot take the
   last one. It MUST be given back when Slack answers and refuses, and MUST stay
   spent when the request fails without an answer. A handle MUST be accepted only
-  on `hooks.slack.com` or one `<workspace>.slack.com` host, under `/actions/` or
-  `/commands/`, over https with no port and no credentials: Slack's Socket Mode
+  over https with no port and no credentials, and only in these two shapes:
+  `hooks.slack.com` under `/actions/` or `/commands/`, or one
+  `<workspace>.slack.com` label under `/commands/` alone. Slack's Socket Mode
   example for a slash command shows `https://<workspace>.slack.com/commands/...`
-  and its HTTP example `https://hooks.slack.com/commands/...`. A post MUST have a
-  deadline.
+  and its HTTP example `https://hooks.slack.com/commands/...`; nothing shows an
+  interaction handle on the workspace host, so it MUST NOT be accepted there. A
+  post MUST have a deadline.
 - An unexpected failure MUST be answered with a retry message and MUST NOT
   expose the error text.
 
 ### Audit
 
 - Every command that reaches the daemon, including the refused and the static,
-  MUST publish `ravi.audit.slack_command` with the contact, the Slack user, the chat, the
-  session, the subcommand, the decision (`allowed`, `denied`, `info`, `error`)
-  and a result code. It MUST NOT carry the text typed, a thread name, the
-  `response_url` or any token. A failed audit publish MUST NOT fail the command. What the runner refuses
+  MUST publish `ravi.audit.chat_command` (the engine's, one topic for every
+  channel) with `channel: "slack"`, the contact, the Slack user as `actorId`, the
+  chat as `chatId`, the envelope id as `requestId`, the session, the subcommand,
+  the decision (`allowed`, `denied`, `info`, `error`) and a result code. It MUST
+  NOT carry the text typed, a thread name, the `response_url` or any token. A
+  failed audit publish MUST NOT fail the command. What the runner refuses
   before it publishes (another workspace, an unverified origin, an unreadable
   payload, no response URL with no static answer) is visible only in the runner's
   log.
+
+## Known limits
+
+Recorded security debt, not defects of this feature alone, with no change planned
+here:
+
+- The daemon takes `ravi.inbound.command` as published by the runner. The local
+  NATS bus has no authentication, so a process on the machine that can publish
+  could forge a command with another person's Slack user id. The same limit holds
+  for `ravi.inbound.interaction`. It belongs to the bus authentication debt, not
+  to this feature.
+- The app is pinned by the first command a connection sees (`api_app_id`, trust
+  on first use). A Socket Mode connection only receives its own app's envelopes,
+  so this is an extra consistency check and `team_id` is the check that counts.
+  Comparing with the app id `auth.test` returns, when it does, would close it.
 
 ## Out of scope for this feature
 

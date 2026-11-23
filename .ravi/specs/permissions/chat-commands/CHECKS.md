@@ -1,0 +1,15 @@
+# Checks
+
+- A command older than 60 seconds, or stamped in the future, MUST NOT run, and a command that goes stale while the access metadata loads MUST NOT run.
+- A person nobody linked to a contact MUST get a refusal and MUST NOT run any operation; static commands need no contact.
+- A contact without access to the session MUST NOT read it; a contact with access but without `modify` MUST NOT close a thread, close idle threads (`close idle` included) or stop a turn, and no operation, thread listing or runtime request MUST happen before the refusal.
+- A contact that modifies the session but lacks the CLI's capability for the operation MUST be refused, and the check MUST run as `channel-command` with the contact as subject.
+- When the CLI's declared access cannot be read the command MUST be refused.
+- A chat whose route forces a session of another agent, a chat with no route and a route whose session does not exist MUST NOT run a command and MUST say why.
+- `close idle` MUST skip busy threads, threads with an open question, an undelivered answer or a pending return, and threads with recent activity; it MUST count only its own closes and MUST bound the tries.
+- `stop` MUST tell nothing running, session not active, a failure code, a timeout and an unreachable runtime apart.
+- A channel with no threads MUST be told `threads_unsupported` for `threads`, `close` and `close idle`, and `status` MUST omit the thread count.
+- Every command MUST be audited on `ravi.audit.chat_command` with the channel as a value and without the text typed; a failure anywhere MUST be answered and audited; an answer the channel cannot deliver MUST NOT stop the audit.
+- `src/chat-commands/` MUST NOT name any channel or import `channels/`; `src/cli/command-access.ts` and `src/permissions/provider-types.ts` MUST NOT name any channel.
+- `bun test src/chat-commands/ src/cli/command-access.test.ts` MUST pass.
+- `bun run typecheck` MUST pass.

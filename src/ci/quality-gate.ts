@@ -299,6 +299,12 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // moved to the parent at boot.
     "src/triggers/page-comment-owner.test.ts",
   ],
+  "src/chat-commands/": [
+    // Chat commands: the channel-free engine every channel's adapter feeds, and the authority it asks.
+    "src/chat-commands/engine.test.ts",
+    "src/cli/command-access.test.ts",
+    "src/channels/slack/slash-command-handler.test.ts",
+  ],
   "src/approval/": [
     // Grant requests: the channel-free core that the approval and channel code feed.
     "src/permissions/grant-requests/service.test.ts",

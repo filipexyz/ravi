@@ -48,13 +48,14 @@ it, type the command in a channel the app is in.
 ## See what was run
 
 Every command that reaches the daemon, refused or not, is published on
-`ravi.audit.slack_command`. The runner refuses some commands before it publishes
+`ravi.audit.chat_command` with `channel: "slack"` (the same topic any other
+channel uses). The runner refuses some commands before it publishes
 them (from another workspace, with an origin it could not verify, unreadable, or
 with no response URL and no static answer): those appear only in the runner's log
 (`ravi channels logs`).
 
 ```bash
-ravi events replay --subject ravi.audit.slack_command --since 1h
+ravi events replay --subject ravi.audit.chat_command --since 1h
 ```
 
 Each row has the contact, the Slack user, the chat, the session, the

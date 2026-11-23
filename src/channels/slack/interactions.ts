@@ -128,11 +128,12 @@ const SLACK_WORKSPACE_HOST = /^[a-z0-9][a-z0-9-]{0,62}\.slack\.com$/;
 
 /**
  * Slack posts interaction handles under `/actions/` (Block Kit, shortcuts) and
- * slash-command handles under `/commands/`. The host is `hooks.slack.com`, or
- * the workspace's own `<workspace>.slack.com`: Slack's Socket Mode example for a
- * slash command shows `https://<workspace>.slack.com/commands/...`, while its HTTP
- * example shows `https://hooks.slack.com/commands/...`. Any other host or path is
- * not a handle Slack issued, and is never posted to.
+ * slash-command handles under `/commands/`, both on `hooks.slack.com`. The
+ * workspace's own `<workspace>.slack.com` is allowed only for `/commands/`: it is
+ * where Slack's Socket Mode example for a slash command puts its handle
+ * (`https://<workspace>.slack.com/commands/...`, while its HTTP example shows
+ * `https://hooks.slack.com/commands/...`), and nothing else is shown there. Any
+ * other host or path is not a handle Slack issued, and is never posted to.
  */
 export function isAllowedSlackInteractionResponseUrl(value: string): boolean {
   let url: URL;
@@ -141,15 +142,11 @@ export function isAllowedSlackInteractionResponseUrl(value: string): boolean {
   } catch {
     return false;
   }
-  return (
-    url.protocol === "https:" &&
-    (url.hostname === "hooks.slack.com" || SLACK_WORKSPACE_HOST.test(url.hostname)) &&
-    !url.username &&
-    !url.password &&
-    !url.port &&
-    !url.hash &&
-    (url.pathname.startsWith("/actions/") || url.pathname.startsWith("/commands/"))
-  );
+  if (url.protocol !== "https:" || url.username || url.password || url.port || url.hash) return false;
+  if (url.hostname === "hooks.slack.com") {
+    return url.pathname.startsWith("/actions/") || url.pathname.startsWith("/commands/");
+  }
+  return SLACK_WORKSPACE_HOST.test(url.hostname) && url.pathname.startsWith("/commands/");
 }
 
 function ensureSlackInteractionResponseUrlTable(): void {
