@@ -253,7 +253,17 @@ export async function requestGrant(
  * the grantee can never decide their own access.
  */
 export function decideGrantRequest(
-  input: { readonly requestId: string; readonly decision: GrantDecision; readonly actor: VerifiedActor },
+  input: {
+    readonly requestId: string;
+    readonly decision: GrantDecision;
+    readonly actor: VerifiedActor;
+    /**
+     * The contact the answered prompt was delivered to, as the adapter recorded it. An answer
+     * counts only when the verified approver is that very contact: a prompt sent to one person
+     * is not answered by another, even another admin.
+     */
+    readonly deliveredTo?: string;
+  },
   dependencies: GrantRequestServiceDependencies = defaultDependencies,
 ): GrantDecisionResult {
   const now = dependencies.now();
@@ -285,8 +295,11 @@ export function decideGrantRequest(
   if (approverContactId === record.plan.contactId) {
     return { kind: "refused", reason: "grantee_cannot_decide", request: record };
   }
-  // Only people the request was offered to may answer it.
+  // Only people the request was offered to may answer it, and only through the prompt that was sent to them.
   if (!record.grantorContactIds.includes(approverContactId)) {
+    return { kind: "refused", reason: "not_grantor", request: record };
+  }
+  if (input.deliveredTo !== undefined && input.deliveredTo !== approverContactId) {
     return { kind: "refused", reason: "not_grantor", request: record };
   }
 

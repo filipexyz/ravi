@@ -9,11 +9,19 @@ import {
   APPROVAL_TEST_SUPERADMIN_PHONE,
   seedApprovalContact,
 } from "../../approval/test-support.js";
+import {
+  actorCanGrantRequestedPermission,
+  registerGrantorIdentityResolver,
+  unregisterGrantorIdentityResolver,
+} from "../../approval/grantor.js";
 import { dbCreateAgent, dbUpsertChat } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { setPermissionAuditPublisherForTest } from "../denials.js";
 import { dbGetContactChatGrant, dbListContactChatGrants } from "../contact-chat-grants.js";
-import { readAgentRuntimePermissionsConfig } from "../agent-default-capabilities-provider.js";
+import {
+  ensureAgentRuntimeCapability,
+  readAgentRuntimePermissionsConfig,
+} from "../agent-default-capabilities-provider.js";
 import { claimGrantRequest, findOpenGrantRequest, getGrantRequest, listGrantRequestDeliveries } from "./store.js";
 import {
   GRANT_REQUEST_TTL_MS,
@@ -286,6 +294,66 @@ describe("grant requests (core, no channel)", () => {
       expect(getGrantRequest(request.id)?.status).toBe("pending");
     });
 
+    it("never lets an agent decide, even one that holds admin: only a human contact approves", async () => {
+      const request = await openRequest();
+      // A channel whose verified sender resolves to an agent that holds admin.
+      // Its id collides with an offered admin's contact id, so only the subject-type check can stop it.
+      dbCreateAgent({ id: admin.id, cwd: "/tmp/colliding-agent" });
+      ensureAgentRuntimeCapability(admin.id, { permission: "admin", objectType: "system", objectId: "*" });
+      registerGrantorIdentityResolver("agent-chan", () => ({ ownerType: "agent", ownerId: admin.id }));
+      try {
+        const actor = { channel: "agent-chan", senderId: "bot-1" };
+        // Premise: the capability gate alone would let this agent through.
+        expect(
+          actorCanGrantRequestedPermission({ ...actor, permission: "admin", objectType: "system", objectId: "*" }),
+        ).toMatchObject({
+          allowed: true,
+          subjectType: "agent",
+        });
+
+        const result = decideGrantRequest({ requestId: request.id, decision: "approve", actor }, deps([]));
+
+        expect(result).toMatchObject({ kind: "refused", reason: "not_grantor" });
+        expect(getGrantRequest(request.id)?.status).toBe("pending");
+        expect(dbListContactChatGrants({ contactId: grantee.id })).toEqual([]);
+      } finally {
+        unregisterGrantorIdentityResolver("agent-chan");
+      }
+    });
+
+    it("only accepts an answer through the prompt that was delivered to that same person", async () => {
+      const request = await openRequest([
+        fakeAdapter("chan-a", [
+          { contactId: admin.id, address: {} },
+          { contactId: secondAdmin.id, address: {} },
+        ]),
+      ]);
+
+      // Second admin answers through the prompt that was sent to the first one.
+      const crossed = decideGrantRequest(
+        {
+          requestId: request.id,
+          decision: "approve",
+          deliveredTo: admin.id,
+          actor: sender(APPROVAL_TEST_SUPERADMIN_PHONE, "chan-a"),
+        },
+        deps([]),
+      );
+      expect(crossed).toMatchObject({ kind: "refused", reason: "not_grantor" });
+      expect(getGrantRequest(request.id)?.status).toBe("pending");
+
+      const own = decideGrantRequest(
+        {
+          requestId: request.id,
+          decision: "approve",
+          deliveredTo: secondAdmin.id,
+          actor: sender(APPROVAL_TEST_SUPERADMIN_PHONE, "chan-a"),
+        },
+        deps([]),
+      );
+      expect(own.kind).toBe("decided");
+    });
+
     it("only accepts answers from people the request was offered to", async () => {
       const request = await openRequest();
       // An admin who was not reachable when the request was made is not one of its approvers.
@@ -390,13 +458,35 @@ describe("grant requests (core, no channel)", () => {
       expect(files.length).toBeGreaterThan(3);
       for (const file of files) {
         const source = readFileSync(join(dir, file), "utf8");
-        const imports = source.split("\n").filter((line) => /^\s*(import|export)\b.*\bfrom\b/.test(line));
-        for (const line of imports) {
-          expect(line).not.toMatch(/channels\/|slack|whatsapp|telegram|discord/i);
-        }
+        expect(moduleSpecifiers(source).filter((specifier) => CHANNEL_SPECIFIER.test(specifier))).toEqual([]);
         // No channel name as a literal either: channels reach the core only through adapters.
         expect(source).not.toMatch(/["'`](slack|whatsapp|telegram|discord)["'`]/i);
       }
     });
+
+    it("finds module specifiers however the import is written", () => {
+      const multiline = 'import {\n  a,\n  b,\n} from "../../channels/slack/instance-alias.js";';
+      expect(moduleSpecifiers(multiline)).toEqual(["../../channels/slack/instance-alias.js"]);
+      expect(moduleSpecifiers('const m = await import("../channels/whatsapp/x.js");')).toEqual([
+        "../channels/whatsapp/x.js",
+      ]);
+      expect(moduleSpecifiers('export * from "./a.js"; import "./side.js";')).toEqual(["./a.js", "./side.js"]);
+    });
   });
 });
+
+const CHANNEL_SPECIFIER = /channels\/|slack|whatsapp|telegram|discord/i;
+
+/** Every module path a file pulls in: static `from`, bare side-effect imports, dynamic `import(`. */
+function moduleSpecifiers(source: string): string[] {
+  const found: string[] = [];
+  const patterns = [
+    /\bfrom\s*["'`]([^"'`]+)["'`]/g,
+    /\bimport\s*["'`]([^"'`]+)["'`]/g,
+    /\bimport\s*\(\s*["'`]([^"'`]+)["'`]/g,
+  ];
+  for (const pattern of patterns) {
+    for (const match of source.matchAll(pattern)) found.push(match[1] ?? "");
+  }
+  return found;
+}

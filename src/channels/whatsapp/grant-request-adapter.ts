@@ -182,6 +182,8 @@ export async function handleWhatsAppGrantRequestReply(
     {
       requestId: delivery.requestId,
       decision,
+      // A reply counts only from the contact the quoted message was sent to.
+      deliveredTo: delivery.contactId,
       actor: {
         channel: WHATSAPP_GRANT_REQUEST_CHANNEL,
         senderId,

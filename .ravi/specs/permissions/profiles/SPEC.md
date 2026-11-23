@@ -213,6 +213,25 @@ Rules:
 - A one-off runtime approval MUST be phrased as "current context only" and MUST
   NOT imply a recurring grant.
 
+### Known security debt: no proof of origin on `ravi.inbound.interaction` / `ravi.inbound.reply`
+
+Grant-request answers arrive on NATS events (`ravi.inbound.interaction` from
+Slack, `ravi.inbound.reply` from WhatsApp). The core trusts the verified sender
+those events carry, but the bus itself has no proof of origin: the local NATS is
+unauthenticated, so any local process able to publish could forge an event with
+an admin's sender id. What contains this today:
+
+- an answer counts only from a contact the request was offered to, through the
+  prompt recorded for that same contact (`deliveredTo`);
+- the grantee and agents can never decide;
+- the request is single-use, expires in 10 minutes, and the executor must
+  already hold admin.
+
+Not closed: a local publisher that knows an offered admin's sender id and a
+live request id can still answer in their place. Fix direction (no PR yet):
+authenticate NATS publishers, or have the channel runners sign the events they
+emit and verify the signature in the core.
+
 ## Operator Workflow UX
 
 The default operator path for recurring authorization is:

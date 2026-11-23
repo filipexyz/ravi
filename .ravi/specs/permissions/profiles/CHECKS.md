@@ -28,11 +28,14 @@ capability: profiles
   grantor or a failed delivery fails closed with nothing pending; an admin's
   answer applies the grant for the target chat only and writes no agent
   permission; asked on one channel and answered on another works; a non-admin, an
-  unknown sender, the grantee and an admin who was not offered the request are
-  ignored; the answer is the verified sender, never text; a request cannot be
+  unknown sender, the grantee, an agent that holds admin (even with an id equal to
+  an offered admin's contact id) and an admin who was not offered the request are
+  ignored; an answer counts only through the prompt delivered to that same person
+  (`deliveredTo`); the answer is the verified sender, never text; a request cannot be
   decided twice (the claim is single-use even when both read it as pending) or
   after it expired; the sweep expires it; and the core directory has no channel
-  import or channel-name literal.
+  import (static, multiline, side-effect or dynamic `import(`) or channel-name
+  literal.
 - `bun test src/channels/slack/grant-request-adapter.test.ts` covers the Slack
   adapter: it reaches only human Slack identities on enabled instances, sends a
   private card naming contact and chat with ids and offering one intent, turns an

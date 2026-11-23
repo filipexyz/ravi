@@ -370,10 +370,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels-slack | src/channels/slack/gateway-mode.ts | 96 | triaged-follow-up | catch-without-binding | src/channels/slack/gateway-mode.ts:94ab31de7f88390dc30e18c0 |
 | channels-slack | src/channels/slack/gateway-mode.ts | 116 | triaged-follow-up | catch-without-binding | src/channels/slack/gateway-mode.ts:fa170b140df66597c90bfeda |
 | channels-slack | src/channels/slack/gateway-mode.ts | 120 | triaged-follow-up | rejection-without-binding | src/channels/slack/gateway-mode.ts:af5ff13f2404ec68722a901f |
-| channels-slack | src/channels/slack/grant-request-adapter.ts | 76 | fixed | binding retained / no recognized error surface | src/channels/slack/grant-request-adapter.ts:186d0e5ee71b58f726605409 |
-| channels-slack | src/channels/slack/grant-request-adapter.ts | 182 | fixed | binding retained / no recognized error surface | src/channels/slack/grant-request-adapter.ts:5dde311b75f467b804016d1f |
-| channels-slack | src/channels/slack/grant-request-adapter.ts | 272 | fixed | binding retained / no recognized error surface | src/channels/slack/grant-request-adapter.ts:e739b095a5bf1aa078e85910 |
-| channels-slack | src/channels/slack/grant-request-adapter.ts | 278 | fixed | binding retained / no recognized error surface | src/channels/slack/grant-request-adapter.ts:97b39e5e4b83898c8680f201 |
+| channels-slack | src/channels/slack/grant-request-adapter.ts | 77 | fixed | binding retained / no recognized error surface | src/channels/slack/grant-request-adapter.ts:186d0e5ee71b58f726605409 |
+| channels-slack | src/channels/slack/grant-request-adapter.ts | 183 | fixed | binding retained / no recognized error surface | src/channels/slack/grant-request-adapter.ts:5dde311b75f467b804016d1f |
+| channels-slack | src/channels/slack/grant-request-adapter.ts | 300 | fixed | binding retained / no recognized error surface | src/channels/slack/grant-request-adapter.ts:e739b095a5bf1aa078e85910 |
+| channels-slack | src/channels/slack/grant-request-adapter.ts | 306 | fixed | binding retained / no recognized error surface | src/channels/slack/grant-request-adapter.ts:97b39e5e4b83898c8680f201 |
 | channels-slack | src/channels/slack/grantors.ts | 33 | fixed | binding retained / no recognized error surface | src/channels/slack/grantors.ts:aa1a44cb97e924861cb0a039 |
 | channels-slack | src/channels/slack/interactions.ts | 101 | triaged-follow-up | catch-without-binding | src/channels/slack/interactions.ts:59c242f5fb155229f527cccf |
 | channels-slack | src/channels/slack/markdown-delivery.ts | 72 | fixed | binding retained / no recognized error surface | src/channels/slack/markdown-delivery.ts:b64e41ad9e82c5dce6e2f224 |
@@ -448,9 +448,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels | src/channels/terminal-projection-recovery.ts | 169 | fixed | binding retained / no recognized error surface | src/channels/terminal-projection-recovery.ts:b16c531362ec7ba4323b45f4 |
 | channels | src/channels/terminal-projection-recovery.ts | 200 | fixed | binding retained / no recognized error surface | src/channels/terminal-projection-recovery.ts:545c0a622bfd6a2bb7c8fbcc |
 | channels | src/channels/terminal-projection-recovery.ts | 368 | fixed | binding retained / no recognized error surface | src/channels/terminal-projection-recovery.ts:cec37543b58b49807dd44f1f |
-| channels | src/channels/whatsapp/grant-request-adapter.ts | 206 | fixed | binding retained / no recognized error surface | src/channels/whatsapp/grant-request-adapter.ts:22374d21b795442a4511d75a |
-| channels | src/channels/whatsapp/grant-request-adapter.ts | 256 | fixed | binding retained / no recognized error surface | src/channels/whatsapp/grant-request-adapter.ts:a5945b067bfa16d973084ca8 |
-| channels | src/channels/whatsapp/grant-request-adapter.ts | 262 | fixed | binding retained / no recognized error surface | src/channels/whatsapp/grant-request-adapter.ts:fdae14d08ad8a2a1d04431e4 |
+| channels | src/channels/whatsapp/grant-request-adapter.ts | 208 | fixed | binding retained / no recognized error surface | src/channels/whatsapp/grant-request-adapter.ts:22374d21b795442a4511d75a |
+| channels | src/channels/whatsapp/grant-request-adapter.ts | 258 | fixed | binding retained / no recognized error surface | src/channels/whatsapp/grant-request-adapter.ts:a5945b067bfa16d973084ca8 |
+| channels | src/channels/whatsapp/grant-request-adapter.ts | 264 | fixed | binding retained / no recognized error surface | src/channels/whatsapp/grant-request-adapter.ts:fdae14d08ad8a2a1d04431e4 |
 | ci | src/ci/quality-gate.ts | 470 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:35e920db0e1dc5d202263c0b |
 | ci | src/ci/quality-gate.ts | 481 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:3ca26f959f0fbb07f2541ae7 |
 | ci | src/ci/quality-gate.ts | 491 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:51a5a6018c77cc4a8a8aac22 |
@@ -1684,8 +1684,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | permissions | src/permissions/external-authority-provider.ts | 324 | fixed | binding retained / no recognized error surface | src/permissions/external-authority-provider.ts:246ebf20a63fb8171d85dfd7 |
 | permissions | src/permissions/grant-requests/runner.ts | 15 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/runner.ts:0af4833007804829812bb722 |
 | permissions | src/permissions/grant-requests/service.ts | 224 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:97faa890175ca9178433118e |
-| permissions | src/permissions/grant-requests/service.ts | 320 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:f40c7396592b295b1f24760b |
-| permissions | src/permissions/grant-requests/service.ts | 350 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:463fd044a194df89861eef7a |
+| permissions | src/permissions/grant-requests/service.ts | 333 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:f40c7396592b295b1f24760b |
+| permissions | src/permissions/grant-requests/service.ts | 363 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:463fd044a194df89861eef7a |
 | permissions | src/permissions/grant-requests/store.ts | 290 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/store.ts:4d2c02c75762345efbd4df15 |
 | permissions | src/permissions/grant-requests/store.ts | 301 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/store.ts:0f6e90634e8a1fecf83e5e95 |
 | permissions | src/permissions/provider-config-paths.ts | 57 | fixed | binding retained / no recognized error surface | src/permissions/provider-config-paths.ts:478e4cc0b615ab3752dae1ed |
