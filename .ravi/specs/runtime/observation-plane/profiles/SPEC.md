@@ -193,10 +193,14 @@ Allowed context roots SHOULD include:
 - `profile`: observer profile id, version, label, source, and renderer hints;
 - `delivery`: delivery policy, run id, event count, timestamp, and idempotency key;
 - `event`: one compact observation event when rendering an event template;
-- `events`: rendered event list and compact event metadata when rendering a delivery template;
+- `events`: rendered event list and compact event metadata when rendering a delivery template, plus `events.digest`: one block per source turn with what the person said, how many messages the agent sent and its last one, tool calls as a count with errors, and how the turn ended. The digest carries no event ids, usage, cost or provider metadata;
 - `input`: explicit profile input values, if supported later.
 
 Templates MUST NOT receive unrelated chat/contact/session metadata by default.
+
+The built-in `compact` profile renders every delivery policy as `{{events.digest}}` under a one-line header and the data boundary. It is the profile for cheap observers: a typical turn renders in a few hundred characters instead of a header block plus one block per event.
+
+`message.user` previews MUST NOT carry the runtime lines the source prompt starts with (`[session surface] …`, `[knowledge] audience=…`): they instruct the source agent and only cost the observer tokens.
 
 ## Snapshot and Determinism
 
