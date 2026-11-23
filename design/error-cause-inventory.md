@@ -1978,16 +1978,16 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/observation-plane.ts | 512 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:e11628eb1279fac1afdd8f38 |
 | runtime-chat | src/runtime/observation-plane.ts | 521 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:36058302af01275a6693381c |
 | runtime-chat | src/runtime/observation-plane.ts | 626 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:3fe0cc39ce1af907e7e2487e |
-| runtime-chat | src/runtime/observation-plane.ts | 1193 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:690f4485fca97753b92a891f |
-| runtime-chat | src/runtime/observation-plane.ts | 1351 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:c2e1a15e69233693dd5197e7 |
-| runtime-chat | src/runtime/observation-plane.ts | 1532 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:2430258265090179f2f0b4f8 |
-| runtime-chat | src/runtime/observation-plane.ts | 1706 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:b5c1a91072ca61082c76140e |
-| runtime-chat | src/runtime/observation-plane.ts | 1750 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:540d0526f217895b3167d71a |
-| runtime-chat | src/runtime/observation-plane.ts | 1793 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:5510399926eaeeaf9db57d52 |
+| runtime-chat | src/runtime/observation-plane.ts | 1195 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:690f4485fca97753b92a891f |
+| runtime-chat | src/runtime/observation-plane.ts | 1353 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:c2e1a15e69233693dd5197e7 |
+| runtime-chat | src/runtime/observation-plane.ts | 1534 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:2430258265090179f2f0b4f8 |
+| runtime-chat | src/runtime/observation-plane.ts | 1708 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:b5c1a91072ca61082c76140e |
+| runtime-chat | src/runtime/observation-plane.ts | 1752 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:540d0526f217895b3167d71a |
+| runtime-chat | src/runtime/observation-plane.ts | 1795 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:5510399926eaeeaf9db57d52 |
 | runtime-chat | src/runtime/observation-profiles.ts | 403 | fixed | binding retained / no recognized error surface | src/runtime/observation-profiles.ts:a7b3c1ecbf0239f7ccee0b6c |
-| runtime-chat | src/runtime/observation-profiles.ts | 1260 | fixed | binding retained / no recognized error surface | src/runtime/observation-profiles.ts:2ecb316d9df440514ba0494c |
-| runtime-chat | src/runtime/observation-profiles.ts | 1272 | triaged-follow-up | surface-bypasses-constructor | src/runtime/observation-profiles.ts:05b3823fa50b92445eb38e95 |
-| runtime-chat | src/runtime/observation-profiles.ts | 1289 | fixed | binding retained / no recognized error surface | src/runtime/observation-profiles.ts:3d9655c74b97c60fe994a371 |
+| runtime-chat | src/runtime/observation-profiles.ts | 1262 | fixed | binding retained / no recognized error surface | src/runtime/observation-profiles.ts:2ecb316d9df440514ba0494c |
+| runtime-chat | src/runtime/observation-profiles.ts | 1274 | triaged-follow-up | surface-bypasses-constructor | src/runtime/observation-profiles.ts:05b3823fa50b92445eb38e95 |
+| runtime-chat | src/runtime/observation-profiles.ts | 1291 | fixed | binding retained / no recognized error surface | src/runtime/observation-profiles.ts:3d9655c74b97c60fe994a371 |
 | runtime-chat | src/runtime/pi-provider.ts | 494 | triaged-follow-up | catch-without-binding | src/runtime/pi-provider.ts:4ad88940138da1f4005af257 |
 | runtime-chat | src/runtime/pi-provider.ts | 564 | fixed | binding retained / no recognized error surface | src/runtime/pi-provider.ts:a0f47148d8d5fea88b5f82b0 |
 | runtime-chat | src/runtime/pi-provider.ts | 667 | fixed | binding retained / no recognized error surface | src/runtime/pi-provider.ts:25a4b5982d9791d587fb9944 |

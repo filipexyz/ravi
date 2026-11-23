@@ -983,6 +983,12 @@ describe("Observer bindings follow their rule", () => {
     expect(resumed.delivered).toHaveLength(1);
   });
 
+  it("saving a rule as disabled (rules set --disabled) stops its bindings too", () => {
+    const session = bindSource("set-disabled-source", "set-disabled-rule");
+    dbUpsertObserverRule({ id: "set-disabled-rule", observerAgentId: "observer", enabled: false });
+    expect(dbListObserverBindings({ sourceSessionKey: session.sessionKey, enabled: true })).toHaveLength(0);
+  });
+
   it("deleting a rule disables the bindings it created", () => {
     const session = bindSource("delete-source", "delete-rule");
     expect(dbDeleteObserverRule("delete-rule")).toBe(true);
@@ -1064,7 +1070,7 @@ describe("Compact observer profile", () => {
     expect(prompt.length).toBeLessThan(600);
   });
 
-  it("says when a turn ended without any agent message, with the failure reason", async () => {
+  it("gives the failure reason and does not claim the agent sent nothing from a partial view", async () => {
     const session = getOrCreateSession("silent-source", "worker", "/tmp/worker", { name: "silent-source" });
     dbUpsertObserverRule({
       id: "silent-rule",
@@ -1091,7 +1097,7 @@ describe("Compact observer profile", () => {
       ],
     });
     const prompt = String(publishedPrompts[0]?.payload.prompt);
-    expect(prompt).toContain("agent: no message");
+    expect(prompt).not.toContain("agent:");
     expect(prompt).toContain("end: failed: provider turn inactivity");
   });
 });

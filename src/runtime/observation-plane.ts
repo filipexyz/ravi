@@ -954,6 +954,8 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
       now,
     );
 
+  // A rule saved disabled (`rules set --disabled`) stops its bindings too, like `rules disable`.
+  if (!enabled) disableBindingsForRule(id);
   return dbGetObserverRule(id)!;
 }
 

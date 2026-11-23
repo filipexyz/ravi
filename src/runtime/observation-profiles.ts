@@ -877,9 +877,11 @@ function digestEnd(event: ObserverProfileRenderEvent): string {
 
 /**
  * One compact block per source turn: what the person said, how many messages the agent sent and
- * its last one, tool calls as a count, and how the turn ended. Ids, usage, cost and provider
- * metadata stay in the delivery metadata, out of the prompt. With detail on, the agent's last
- * message is the full text instead of the preview.
+ * its last one, tool calls as a count, and how the turn ended. The block is headed by the source
+ * turn id so an observer can correlate deliveries; event ids, usage, cost and provider metadata
+ * stay in the delivery metadata, out of the prompt. With detail on, the agent's last message is
+ * the full text instead of the preview. The block covers only the events in this delivery (a
+ * realtime or pulse delivery carries part of a turn).
  */
 export function buildObservationTurnDigest(events: readonly ObserverProfileRenderEvent[]): string {
   const turns = new Map<string, ObserverProfileRenderEvent[]>();
@@ -906,9 +908,9 @@ export function buildObservationTurnDigest(events: readonly ObserverProfileRende
       const detail = readEventDetail(last);
       const text = typeof detail.text === "string" && detail.text ? detail.text.trim() : oneLine(last.preview ?? "");
       lines.push(`agent: ${replies.length} message(s) · last: ${text || "-"}`);
-    } else if (terminal) {
-      lines.push("agent: no message");
     }
+    // No "agent sent nothing" line: a realtime or pulse-split delivery sees only part of the turn,
+    // so an empty reply list here does not prove the turn had no reply.
     const toolEvents = toolEnds.length > 0 ? toolEnds : toolStarts;
     if (toolEvents.length > 0) {
       const counts = new Map<string, number>();
