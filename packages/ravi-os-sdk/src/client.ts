@@ -357,6 +357,7 @@ export class RaviClient {
     /** Set agent property; rematerialize no-override sessions when provider/model changes */
     set: async (id: string, key: string, value: string, options?: {
       force?: boolean;
+      model?: string;
     }): Promise<AgentsSetReturn> => {
       return this.transport.call({
         groupSegments: ["agents"],

@@ -1204,13 +1204,17 @@ class AgentsSessionReturn {
 AgentsSessionReturn agentsSessionReturnFromJson(Object? json) => AgentsSessionReturn.fromJsonValue(json);
 
 class AgentsSetOptions {
-  const AgentsSetOptions({this.force});
+  const AgentsSetOptions({this.force, this.model});
 
   final bool? force;
+  final String? model;
 
   void encodeBody(Map<String, RaviJson> into) {
     if (force != null) {
       into["force"] = RaviJson.from(force);
+    }
+    if (model != null) {
+      into["model"] = RaviJson.from(model);
     }
   }
 }

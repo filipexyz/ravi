@@ -1375,18 +1375,24 @@ public struct AgentsSessionReturn: Codable, Sendable {
 
 public struct AgentsSetOptions: Codable, Sendable {
   public var force: Bool?
+  public var model: String?
 
-  public init(force: Bool? = nil) {
+  public init(force: Bool? = nil, model: String? = nil) {
     self.force = force
+    self.model = model
   }
 
   enum CodingKeys: String, CodingKey {
     case force = "force"
+    case model = "model"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
     if let value = self.force {
       body["force"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.model {
+      body["model"] = try RaviJSON.fromEncodable(value)
     }
   }
 }
