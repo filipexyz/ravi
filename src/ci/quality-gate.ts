@@ -67,6 +67,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/slash-commands.test.ts",
     "src/channels/slack/slash-command-handler.test.ts",
     "src/channels/slack/interactions.test.ts",
+    // Fechar and Parar on a thread card: the click, its authority and the card that carries the buttons.
+    "src/channels/slack/thread-controls.test.ts",
     // Slack thread lifecycle: create/close, parent returns, report and thread-send orchestration.
     "src/channels/slack/thread-lifecycle.test.ts",
     "src/channels/slack/thread-turn-health.test.ts",

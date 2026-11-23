@@ -7,10 +7,12 @@ import { getOrCreateSession } from "../router/index.js";
 import { dbCreateTagDefinition, dbUpsertTagBinding } from "../tags/index.js";
 import {
   createObservationEvent,
+  dbDeleteObserverRule,
   dbGetObserverRule,
   dbListObserverBindings,
   dbUpsertObserverRule,
   deliverObservationEvents,
+  ensureBindingsFollowRuleMigration,
   ensureObserverBindingsForSession,
   explainObserverRulesForSession,
   getObservationDebounceMs,
@@ -18,6 +20,8 @@ import {
   resolveObservationAllowedTools,
   reconcileObserverBindingsForSession,
   setObservationPromptPublisherForTests,
+  setObserverRuleEnabled,
+  stripObservationPreamble,
   validateObserverRules,
 } from "./observation-plane.js";
 import { classifyTurnProvenance, isObserverOriginated } from "./turn-provenance.js";
@@ -932,6 +936,169 @@ rendererHints:
     }
 
     expect(existsSync(join(import.meta.dir, "..", "tasks", "observer-apply.ts"))).toBe(false);
+  });
+});
+
+describe("Observer bindings follow their rule", () => {
+  function bindSource(name: string, ruleId: string) {
+    const session = getOrCreateSession(name, "worker", "/tmp/worker", { name });
+    dbUpsertObserverRule({
+      id: ruleId,
+      scope: "session",
+      sourceSession: name,
+      observerAgentId: "observer",
+      observerRole: ruleId,
+      eventTypes: ["turn.complete"],
+    });
+    ensureObserverBindingsForSession({ sessionName: name, session });
+    return session;
+  }
+
+  function turnComplete(turnId: string) {
+    return createObservationEvent({ runId: `run-${turnId}`, sequence: 1, type: "turn.complete", turnId });
+  }
+
+  it("disabling a rule stops its bindings at once, and the next launch brings them back after enable", async () => {
+    const session = bindSource("follow-source", "follow-rule");
+    expect(dbListObserverBindings({ sourceSessionKey: session.sessionKey, enabled: true })).toHaveLength(1);
+
+    expect(setObserverRuleEnabled("follow-rule", false).bindingsDisabled).toBe(1);
+    const silenced = await deliverObservationEvents({
+      sourceSessionName: "follow-source",
+      sourceSession: session,
+      agentId: "worker",
+      events: [turnComplete("turn-after-disable")],
+    });
+    expect(silenced.delivered).toHaveLength(0);
+    expect(publishedPrompts).toHaveLength(0);
+
+    expect(setObserverRuleEnabled("follow-rule", true).bindingsDisabled).toBe(0);
+    ensureObserverBindingsForSession({ sessionName: "follow-source", session });
+    const resumed = await deliverObservationEvents({
+      sourceSessionName: "follow-source",
+      sourceSession: session,
+      agentId: "worker",
+      events: [turnComplete("turn-after-enable")],
+    });
+    expect(resumed.delivered).toHaveLength(1);
+  });
+
+  it("saving a rule as disabled (rules set --disabled) stops its bindings too", () => {
+    const session = bindSource("set-disabled-source", "set-disabled-rule");
+    dbUpsertObserverRule({ id: "set-disabled-rule", observerAgentId: "observer", enabled: false });
+    expect(dbListObserverBindings({ sourceSessionKey: session.sessionKey, enabled: true })).toHaveLength(0);
+  });
+
+  it("deleting a rule disables the bindings it created", () => {
+    const session = bindSource("delete-source", "delete-rule");
+    expect(dbDeleteObserverRule("delete-rule")).toBe(true);
+    expect(dbListObserverBindings({ sourceSessionKey: session.sessionKey, enabled: true })).toHaveLength(0);
+  });
+
+  it("migrates bindings left enabled under a disabled or deleted rule, once, and leaves live rules alone", () => {
+    const stale = bindSource("stale-source", "stale-rule");
+    const orphan = bindSource("orphan-source", "orphan-rule");
+    const live = bindSource("live-source", "live-rule");
+    const db = getDb();
+    // The state the old disable/rm path left behind: rule off or gone, binding still on.
+    db.prepare("UPDATE observer_rules SET enabled = 0 WHERE id = ?").run("stale-rule");
+    db.prepare("DELETE FROM observer_rules WHERE id = ?").run("orphan-rule");
+    db.prepare("DELETE FROM router_meta WHERE key = ?").run("observation.bindings-follow-rule.v1");
+
+    expect(ensureBindingsFollowRuleMigration()).toEqual({ bindingsDisabled: 2 });
+    expect(dbListObserverBindings({ sourceSessionKey: stale.sessionKey, enabled: true })).toHaveLength(0);
+    expect(dbListObserverBindings({ sourceSessionKey: orphan.sessionKey, enabled: true })).toHaveLength(0);
+    expect(dbListObserverBindings({ sourceSessionKey: live.sessionKey, enabled: true })).toHaveLength(1);
+
+    db.prepare("UPDATE observer_bindings SET enabled = 1").run();
+    expect(ensureBindingsFollowRuleMigration()).toEqual({ bindingsDisabled: 0 });
+  });
+});
+
+describe("Compact observer profile", () => {
+  it("drops the runtime preamble lines and keeps what the person wrote", () => {
+    expect(
+      stripObservationPreamble(
+        "[session surface] This turn came from a Slack chat. A normal reply returns there.\n" +
+          "[knowledge] audience=none: ravi knowledge will refuse on this turn (exit 3).\n" +
+          "consegue configurar o omie?",
+      ),
+    ).toBe("consegue configurar o omie?");
+    expect(stripObservationPreamble("no preamble [session surface] here")).toBe("no preamble [session surface] here");
+  });
+
+  it("renders one short block per turn with no ids, usage or provider metadata", async () => {
+    const session = getOrCreateSession("compact-source", "worker", "/tmp/worker", { name: "compact-source" });
+    dbUpsertObserverRule({
+      id: "compact-rule",
+      scope: "session",
+      sourceSession: "compact-source",
+      observerAgentId: "observer",
+      observerRole: "compact",
+      observerProfileId: "compact",
+      eventTypes: ["message.user", "message.assistant", "tool.end", "turn.complete"],
+    });
+    ensureObserverBindingsForSession({ sessionName: "compact-source", session });
+    const event = (sequence: number, type: string, extra: Record<string, unknown> = {}) =>
+      createObservationEvent({ runId: "run-compact", sequence, type, turnId: "turn-7f3a", ...extra });
+
+    await deliverObservationEvents({
+      sourceSessionName: "compact-source",
+      sourceSession: session,
+      agentId: "worker",
+      runId: "run-compact",
+      events: [
+        event(1, "message.user", { preview: "consegue configurar o omie?" }),
+        event(2, "message.assistant", { preview: "Checking the config..." }),
+        event(3, "tool.end", { preview: "Bash", payload: { toolName: "Bash", isError: false } }),
+        event(4, "tool.end", { preview: "Bash", payload: { toolName: "Bash", isError: true } }),
+        event(5, "tool.end", { preview: "Read", payload: { toolName: "Read", isError: false } }),
+        event(6, "message.assistant", { preview: "Done. Configured the Omie keys." }),
+        event(7, "turn.complete", { payload: { costUsd: 0.31, providerSessionIdAfter: "prov-123", usage: {} } }),
+      ],
+    });
+
+    expect(publishedPrompts).toHaveLength(1);
+    const prompt = String(publishedPrompts[0]?.payload.prompt);
+    expect(prompt).toContain("user: consegue configurar o omie?");
+    expect(prompt).toContain("agent: 2 message(s) · last: Done. Configured the Omie keys.");
+    expect(prompt).toContain("tools: 3 (Bash×2, Read×1) · 1 error(s)");
+    expect(prompt).toContain("end: complete");
+    for (const noise of ["costUsd", "prov-123", "obs_evt_", "Event:", "Observer binding", "Checking the config"]) {
+      expect(prompt).not.toContain(noise);
+    }
+    expect(prompt.length).toBeLessThan(600);
+  });
+
+  it("gives the failure reason and does not claim the agent sent nothing from a partial view", async () => {
+    const session = getOrCreateSession("silent-source", "worker", "/tmp/worker", { name: "silent-source" });
+    dbUpsertObserverRule({
+      id: "silent-rule",
+      scope: "session",
+      sourceSession: "silent-source",
+      observerAgentId: "observer",
+      observerRole: "compact",
+      observerProfileId: "compact",
+    });
+    ensureObserverBindingsForSession({ sessionName: "silent-source", session });
+    await deliverObservationEvents({
+      sourceSessionName: "silent-source",
+      sourceSession: session,
+      agentId: "worker",
+      events: [
+        createObservationEvent({ runId: "r", sequence: 1, type: "message.user", turnId: "t1", preview: "oi" }),
+        createObservationEvent({
+          runId: "r",
+          sequence: 2,
+          type: "turn.failed",
+          turnId: "t1",
+          payload: { error: "provider turn inactivity" },
+        }),
+      ],
+    });
+    const prompt = String(publishedPrompts[0]?.payload.prompt);
+    expect(prompt).not.toContain("agent:");
+    expect(prompt).toContain("end: failed: provider turn inactivity");
   });
 });
 

@@ -1228,7 +1228,8 @@ describe("Slack Socket Mode routing", () => {
       },
     });
 
-    const card = buildSlackThreadCard("Investigate this branch", { status: "open", runtime });
+    // `thread.create` is a Ravi thread: its root card carries Fechar and Parar.
+    const card = buildSlackThreadCard("Investigate this branch", { status: "open", controls: true, runtime });
     expect(postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         channel: "C123",
@@ -1273,7 +1274,7 @@ describe("Slack Socket Mode routing", () => {
     expect(postMessage).toHaveBeenCalledWith({
       channel: "C123",
       text: "Investigate this branch",
-      blocks: buildSlackThreadCard("Investigate this branch", { status: "open" }).blocks,
+      blocks: buildSlackThreadCard("Investigate this branch", { status: "open", controls: true }).blocks,
       clientMsgId: slackClientMessageId(idempotencyKey),
     });
     // A one-line brief fits the card: nothing more is posted in the thread.
@@ -1300,7 +1301,7 @@ describe("Slack Socket Mode routing", () => {
       action: { type: "chat_action", actionId: "thread.create", text: brief, requestedBy: "Luís" },
     });
 
-    const card = buildSlackThreadCard(brief, { status: "open", requestedBy: "Luís" });
+    const card = buildSlackThreadCard(brief, { status: "open", controls: true, requestedBy: "Luís" });
     expect(JSON.stringify(card.blocks)).toContain("pedido por Luís");
     expect(card.fullBrief).toBeDefined();
     expect(postMessage).toHaveBeenNthCalledWith(1, {
@@ -1336,7 +1337,7 @@ describe("Slack Socket Mode routing", () => {
       }),
     ).resolves.toMatchObject({ platformMessageId: "1713000000.000400" });
 
-    const card = buildSlackThreadCard("Investigate this branch", { status: "open" });
+    const card = buildSlackThreadCard("Investigate this branch", { status: "open", controls: true });
     expect(posted.map((input) => input.blocks)).toEqual([card.blocks, card.fallbackBlocks]);
     expect(posted[0]!.clientMsgId).toBe(posted[1]!.clientMsgId);
   });
@@ -1429,7 +1430,10 @@ describe("Slack Socket Mode routing", () => {
     expect(postMessage).toHaveBeenCalledWith({
       channel: "C123",
       text: "Look at this diff",
-      blocks: buildSlackThreadCard("Look at **this** [diff](https://example.com/diff)", { status: "open" }).blocks,
+      blocks: buildSlackThreadCard("Look at **this** [diff](https://example.com/diff)", {
+        status: "open",
+        controls: true,
+      }).blocks,
       clientMsgId: slackClientMessageId("thread-md"),
     });
     expect(updateMessage).toHaveBeenCalledWith({
@@ -2454,6 +2458,8 @@ describe("Slack Socket Mode routing", () => {
           source: "slack.socket_mode",
           accountId: "ravi-rbbt-slack",
           instanceId: "slack-instance-1",
+          // The scope routes are matched in: the click on a thread card resolves its chat with it.
+          routeAccountId: "ravi-rbbt-slack",
           envelopeId: "env-block-actions-1",
           interactionType: "block_actions",
           teamId: "T1",

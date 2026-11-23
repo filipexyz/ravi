@@ -1182,6 +1182,8 @@ export async function updateSlackThreadCard(
       text: record.initialPrompt,
       threadCard: {
         status,
+        // The card of a Ravi thread keeps Fechar and Parar while the thread is not closed.
+        controls: true,
         ...(note?.trim() ? { note: note.trim() } : {}),
         updatedAt: Date.now(),
         ...(record.requestedBy ? { requestedBy: record.requestedBy } : {}),

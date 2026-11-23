@@ -1,6 +1,6 @@
 /**
  * The grammar of a chat command, whichever channel it was typed in:
- * `help | status | threads | close <thread> | close idle [12h] | stop`.
+ * `help | status | threads | close <thread> | close idle [12h] | stop [thread]`.
  *
  * Pure: no channel, no I/O. A channel adapter hands over the text that follows
  * its own command word and gets back what was asked.
@@ -17,7 +17,8 @@ export type ChatCommandAction = "status" | "threads" | "close" | "close_idle" | 
 export type ChatCommandParse =
   | { readonly kind: "status" }
   | { readonly kind: "threads" }
-  | { readonly kind: "stop" }
+  /** `stop` interrupts the turn of the chat's session; `stop <thread>` the turn of that thread's own session. */
+  | { readonly kind: "stop"; readonly threadRef?: string }
   | { readonly kind: "close"; readonly threadRef: string }
   | { readonly kind: "close_idle"; readonly hours: number }
   | { readonly kind: "help" }
@@ -53,8 +54,10 @@ export function parseChatCommandText(text: string): ChatCommandParse {
       return { kind: "status" };
     case "threads":
       return { kind: "threads" };
-    case "stop":
-      return { kind: "stop" };
+    case "stop": {
+      const target = tokens[1];
+      return target ? { kind: "stop", threadRef: target } : { kind: "stop" };
+    }
     case "close": {
       const target = tokens[1];
       if (!target) return { kind: "usage", command: "close" };

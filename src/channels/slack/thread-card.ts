@@ -23,8 +23,18 @@ import { decodeLiteralLineBreaks } from "./thread-text.js";
 
 export type SlackThreadCardStatus = "open" | "closed" | "reopened" | "waiting";
 
+/** Action ids of the buttons on a Ravi thread card; the click consumer (thread-controls.ts) answers them. */
+export const SLACK_THREAD_CLOSE_ACTION_ID = "ravi_thread_close";
+export const SLACK_THREAD_STOP_ACTION_ID = "ravi_thread_stop";
+
 export interface SlackThreadCardState {
   readonly status: SlackThreadCardStatus;
+  /**
+   * Put Fechar and Parar on the card. Only the card of a thread Ravi opened (`ravi sessions
+   * create-thread`) has them: the click resolves the thread by the card's own message, so any other
+   * card built here, like a cloud run's, must leave this off.
+   */
+  readonly controls?: boolean;
   /** Latest progress (open, reopened) or the close result (closed). */
   readonly note?: string;
   /** When the card last changed, in ms; shown as Slack-localized time. */
@@ -111,14 +121,56 @@ export function buildSlackThreadCard(rawBrief: string, state: SlackThreadCardSta
     { type: "context", block_id: "ravi_thread_status", elements: [{ type: "mrkdwn", text: statusLine }] },
   ];
 
+  // A closed thread has nothing left to close or stop.
+  const controls = state.controls === true && state.status !== "closed" ? [threadControlsBlock()] : [];
+
   return {
     text:
       state.status === "waiting"
         ? `${title} — Aguardando decisão: ${note ? escapedWithin(note, SUBTITLE_MAX_LENGTH) : ""}`.trimEnd()
         : title,
-    blocks: [card],
-    fallbackBlocks,
+    blocks: [card, ...controls],
+    fallbackBlocks: [...fallbackBlocks, ...controls],
     ...(truncated ? { fullBrief: `**Instruções completas**\n\n${brief.trim()}` } : {}),
+  };
+}
+
+/**
+ * Fechar and Parar under the card. Each click asks Slack's own confirmation first, so a stray tap
+ * changes nothing. The buttons carry no thread id: the click resolves the thread by the card's own
+ * message, the root Slack keeps as the thread's `thread_ts`.
+ */
+function threadControlsBlock(): SlackBlockKitBlock {
+  return {
+    type: "actions",
+    block_id: "ravi_thread_controls",
+    elements: [
+      {
+        type: "button",
+        action_id: SLACK_THREAD_CLOSE_ACTION_ID,
+        text: { type: "plain_text", text: "Fechar", emoji: true },
+        value: "thread",
+        confirm: {
+          title: { type: "plain_text", text: "Fechar esta thread?" },
+          text: { type: "mrkdwn", text: "A thread deixa de receber instruções e o resultado fica registrado." },
+          confirm: { type: "plain_text", text: "Fechar" },
+          deny: { type: "plain_text", text: "Cancelar" },
+        },
+      },
+      {
+        type: "button",
+        action_id: SLACK_THREAD_STOP_ACTION_ID,
+        text: { type: "plain_text", text: "Parar", emoji: true },
+        style: "danger",
+        value: "thread",
+        confirm: {
+          title: { type: "plain_text", text: "Parar o turno em andamento?" },
+          text: { type: "mrkdwn", text: "O turno que está rodando nesta thread é interrompido. A fila segue." },
+          confirm: { type: "plain_text", text: "Parar" },
+          deny: { type: "plain_text", text: "Cancelar" },
+        },
+      },
+    ],
   };
 }
 

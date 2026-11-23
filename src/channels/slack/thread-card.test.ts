@@ -1,6 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { validateSlackBlockKitMessage } from "./block-kit.js";
-import { buildSlackThreadCard, splitSlackThreadBrief } from "./thread-card.js";
+import {
+  buildSlackThreadCard,
+  SLACK_THREAD_CLOSE_ACTION_ID,
+  SLACK_THREAD_STOP_ACTION_ID,
+  splitSlackThreadBrief,
+} from "./thread-card.js";
 
 const LONG_BRIEF = [
   "Estudo do Ravi Knowledge para o Luis.",
@@ -191,5 +196,57 @@ describe("Slack thread card", () => {
     expect(texts.subtitle).toBe("*Progresso:* Repo criado\nfaltando o push");
     expect(card.fullBrief).toStartWith("**Instruções completas**\n\nPublicar Ravi Console Fleet no GitHub\n\nLuís");
     expect(JSON.stringify(card)).not.toContain("\\\\n");
+  });
+
+  describe("Fechar and Parar", () => {
+    const BRIEF = "Estudar o Knowledge.\nLer a skill e explicar o fluxo.";
+
+    function buttonsOf(blocks: readonly Record<string, unknown>[]) {
+      const actions = blocks.find((block) => block.type === "actions") as
+        | { block_id: string; elements: Array<Record<string, unknown>> }
+        | undefined;
+      return actions;
+    }
+
+    it("puts both buttons under the card of a Ravi thread, each behind Slack's own confirmation", () => {
+      const card = buildSlackThreadCard(BRIEF, { status: "open", controls: true });
+
+      validateSlackBlockKitMessage(card);
+      validateSlackBlockKitMessage({ text: card.text, blocks: card.fallbackBlocks });
+      expect(card.blocks.map((block) => block.type)).toEqual(["card", "actions"]);
+      expect(card.fallbackBlocks.at(-1)?.type).toBe("actions");
+      const actions = buttonsOf(card.blocks);
+      expect(actions?.block_id).toBe("ravi_thread_controls");
+      expect(actions?.elements.map((element) => element.action_id)).toEqual([
+        SLACK_THREAD_CLOSE_ACTION_ID,
+        SLACK_THREAD_STOP_ACTION_ID,
+      ]);
+      for (const element of actions?.elements ?? []) {
+        expect(element.type).toBe("button");
+        expect(element.confirm).toMatchObject({ confirm: { type: "plain_text" }, deny: { type: "plain_text" } });
+        // The click names the thread by the card's own message, so the button carries nothing else.
+        expect(element.value).toBe("thread");
+      }
+      expect(buttonsOf(card.fallbackBlocks)).toEqual(actions);
+    });
+
+    it("keeps them on every state that is not closed, and drops them from a closed one", () => {
+      for (const status of ["open", "reopened", "waiting"] as const) {
+        const card = buildSlackThreadCard(BRIEF, { status, controls: true, note: "x" });
+        expect(buttonsOf(card.blocks)).toBeDefined();
+        expect(buttonsOf(card.fallbackBlocks)).toBeDefined();
+      }
+      const closed = buildSlackThreadCard(BRIEF, { status: "closed", controls: true, note: "Resultado" });
+      expect(buttonsOf(closed.blocks)).toBeUndefined();
+      expect(buttonsOf(closed.fallbackBlocks)).toBeUndefined();
+    });
+
+    it("leaves every other card alone: a card built without `controls` has no buttons", () => {
+      const card = buildSlackThreadCard(BRIEF, { status: "open" });
+
+      expect(card.blocks).toHaveLength(1);
+      expect(buttonsOf(card.blocks)).toBeUndefined();
+      expect(buttonsOf(card.fallbackBlocks)).toBeUndefined();
+    });
   });
 });

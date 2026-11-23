@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { CliCommandAccessInput, CliCommandAccessResult } from "../cli/command-access.js";
+import { getOrCreateSession } from "../router/index.js";
 import type { ContextCapability } from "../router/router-db.js";
 import type { RouterConfig, SessionEntry } from "../router/types.js";
 import {
@@ -158,6 +159,8 @@ function harness(
 describe("the grammar", () => {
   it("is the same for every channel and answers static text without a session", () => {
     expect(parseChatCommandText("status")).toEqual({ kind: "status" });
+    expect(parseChatCommandText("stop")).toEqual({ kind: "stop" });
+    expect(parseChatCommandText("stop 1795189835.360089")).toEqual({ kind: "stop", threadRef: "1795189835.360089" });
     expect(parseChatCommandText("close idle")).toEqual({ kind: "close_idle", hours: CHAT_COMMAND_DEFAULT_IDLE_HOURS });
     expect(parseChatCommandText("close idle 6h")).toEqual({ kind: "close_idle", hours: 6 });
     expect(parseChatCommandText("close main-t-1")).toEqual({ kind: "close", threadRef: "main-t-1" });
@@ -241,6 +244,30 @@ describe("who may run a command", () => {
       code: "access_metadata_missing",
     });
     expect(h.calls.interrupt).toBe(0);
+  });
+
+  it("refuses a command that changes state when the declared access is not a mutating one", async () => {
+    // A channel (or a mistake) that declared a read command for it must not let a reader close or stop.
+    for (const text of ["close main-t-1", "close idle", "stop"]) {
+      const h = harness({
+        threads: [thread()],
+        deps: {
+          inheritedAccess: async (operation) => ({
+            group: "sessions",
+            command: operation,
+            access: { kind: "read", resource: "sessions", action: "list", risk: "low" },
+          }),
+        },
+      });
+
+      expect(await runChatCommand(h.channel(text), h.deps)).toEqual({
+        decision: "error",
+        code: "access_metadata_missing",
+      });
+      expect(h.calls.access).toEqual([]);
+      expect(h.calls.close).toEqual([]);
+      expect(h.calls.interrupt).toBe(0);
+    }
   });
 
   it("asks the channel for the access of the command that closes its threads, and refuses without it", async () => {
@@ -532,6 +559,93 @@ describe("operations", () => {
   });
 });
 
+describe("stop <thread>", () => {
+  function seedChild(key = "agent:main:main:thread:1.1", name = "main-t-1") {
+    return getOrCreateSession(key, "main", "/tmp/main", { name });
+  }
+
+  it("interrupts the turn of the thread's own session, not the chat's", async () => {
+    const child = seedChild();
+    const interrupted: string[] = [];
+    const h = harness({
+      deps: {
+        interrupt: async (target) => {
+          interrupted.push(target.sessionKey);
+          return { ok: true, operation: "turn.interrupt" };
+        },
+      },
+    });
+
+    const outcome = await runChatCommand(
+      h.channel("stop 1795189835.360089", { findThread: () => thread({ childSessionKey: child.sessionKey }) }),
+      h.deps,
+    );
+
+    expect(outcome).toEqual({ decision: "allowed", code: "ok" });
+    expect(interrupted).toEqual([child.sessionKey]);
+    expect(h.replies).toEqual([{ kind: "stopped", sessionName: "main-t-1" }]);
+  });
+
+  it("asks the rights and the capability a plain stop asks, before anything is looked up", async () => {
+    const reader = harness({ capabilities: READER });
+    let looked = 0;
+    const refused = await runChatCommand(
+      reader.channel("stop main-t-1", {
+        findThread: () => {
+          looked += 1;
+          return thread();
+        },
+      }),
+      reader.deps,
+    );
+    expect(refused).toEqual({ decision: "denied", code: "not_authorized_modify" });
+    expect(looked).toBe(0);
+    expect(reader.calls.interrupt).toBe(0);
+
+    const denied = harness({
+      commandAccess: () => ({
+        allowed: false,
+        errorMessage: "denied",
+        attempted: [],
+        denialDetails: { stage: "command_access", capability: "mutate:sessions.runtime:interrupt" },
+      }),
+    });
+    expect(await runChatCommand(denied.channel("stop main-t-1", { findThread: () => thread() }), denied.deps)).toEqual({
+      decision: "denied",
+      code: "not_authorized_command",
+    });
+    expect(denied.calls.interrupt).toBe(0);
+  });
+
+  it("says when the thread is not found, has no session left, or the channel has no threads at all", async () => {
+    const missing = harness();
+    expect(await runChatCommand(missing.channel("stop nope", { findThread: () => null }), missing.deps)).toEqual({
+      decision: "info",
+      code: "thread_not_found",
+    });
+    expect(missing.replies).toEqual([{ kind: "thread_not_found", ref: "nope", sessionName: "main" }]);
+
+    const gone = harness();
+    expect(
+      await runChatCommand(
+        gone.channel("stop main-t-9", {
+          findThread: () => thread({ childSessionKey: null, childSessionName: "main-t-9" }),
+        }),
+        gone.deps,
+      ),
+    ).toEqual({ decision: "info", code: "session_not_active" });
+    expect(gone.replies).toEqual([{ kind: "session_not_active", sessionName: "main-t-9" }]);
+    expect(gone.calls.interrupt).toBe(0);
+
+    const none = harness();
+    expect(await runChatCommand(none.channel("stop main-t-1"), none.deps)).toEqual({
+      decision: "info",
+      code: "threads_unsupported",
+    });
+    expect(none.calls.interrupt).toBe(0);
+  });
+});
+
 describe("a channel with no threads", () => {
   it("says so instead of pretending there are none", async () => {
     for (const text of ["threads", "close main-t-1", "close idle"]) {
@@ -580,6 +694,28 @@ describe("the audit", () => {
     ]);
     expect(JSON.stringify(refused.audits)).not.toContain("secret-thread");
     expect(done.audits).toMatchObject([{ subcommand: "status", decision: "allowed", code: "ok" }]);
+  });
+
+  it("records how the person reached the command, as a value the channel supplies", async () => {
+    const button = harness();
+    await runChatCommand(
+      button.channel("status", {
+        origin: {
+          channel: "testchat",
+          accountId: "acct",
+          instanceId: "inst",
+          chatId: "room-1",
+          actorId: "user-1",
+          surface: "button",
+        },
+      }),
+      button.deps,
+    );
+    const typed = harness();
+    await runChatCommand(typed.channel("status"), typed.deps);
+
+    expect(button.audits).toMatchObject([{ surface: "button" }]);
+    expect(typed.audits[0]).not.toHaveProperty("surface");
   });
 
   it("answers and audits a failure anywhere in the flow, not only while running", async () => {

@@ -122,8 +122,8 @@ export function slackCommandHelpMessage(
     `• \`${name} threads\`: open threads of this session, with age and state`,
     `• \`${name} close <thread>\`: close a thread (the name \`${name} threads\` shows)`,
     `• \`${name} close idle [12h]\`: close threads with no activity for more than N hours, no turn running and no open question`,
-    `• \`${name} stop\`: interrupt the turn running in this session (the queue goes on)`,
-    "Only you see the replies. Slack does not accept commands inside a thread: use the channel or the DM.",
+    `• \`${name} stop [thread]\`: interrupt the turn running in this session, or in that thread's own (the queue goes on)`,
+    "Only you see the replies. Slack does not accept commands inside a thread: use the channel or the DM, or the Fechar and Parar buttons on a thread's card.",
   );
   return slackCommandMessage(lines.join("\n"));
 }

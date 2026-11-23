@@ -430,6 +430,8 @@ export class SlackChatActionDelivery implements NativeChatActionDelivery {
     if (action.actionId === "thread.create") {
       const card = buildSlackThreadCard(action.text, {
         status: "open",
+        // `thread.create` is a Ravi thread: its root card carries Fechar and Parar.
+        controls: true,
         ...(action.requestedBy ? { requestedBy: action.requestedBy } : {}),
         ...(action.runtime ? { runtime: action.runtime } : {}),
       });
@@ -1760,6 +1762,9 @@ export class SlackSocketModeService {
       source: "slack.socket_mode",
       accountId: this.options.accountId,
       instanceId: this.options.instanceId ?? this.options.accountId,
+      // The scope routes are matched in, as the slash command event carries it: a click on a thread
+      // card resolves its chat to a session the same way.
+      routeAccountId: this.options.routeAccountId ?? this.options.accountId,
       envelopeId: cleanSlackId(envelope.envelope_id),
       interactionType,
       teamId,

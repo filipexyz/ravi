@@ -29,6 +29,7 @@ import {
   type ChatThreadActivity,
   type ChatThreadCloseResult,
   type ChatThreadIndex,
+  type ChatThreadSummary,
   type InheritedCommandAccess,
   runChatCommand,
 } from "../../chat-commands/engine.js";
@@ -81,11 +82,16 @@ export type SlackThreadIndex = ChatThreadIndex;
 export type SlackThreadActivity = ChatThreadActivity;
 export type SlackCommandCloseResult = ChatThreadCloseResult;
 
+/** Where a Slack command was given: the chat, the person, and the instance whose routes apply. */
+export type SlackCommandLocation = Pick<SlackCommandEvent, "channelId" | "userId" | "instanceId" | "routeAccountId">;
+
 export interface SlackCommandDeps extends ChatCommandDeps {
   respond?: (input: { responseUrlId: string; payload: Record<string, unknown> }) => Promise<unknown>;
   contactForSlackUser?: (userId: string, instanceId: string) => string | null;
-  resolveSession?: (event: SlackCommandEvent, config: RouterConfig) => SlackCommandSessionResolution;
+  resolveSession?: (where: SlackCommandLocation, config: RouterConfig) => SlackCommandSessionResolution;
   threads?: (session: SessionEntry) => SlackThreadIndex;
+  /** One thread of the session of a chat, by name, request id or Slack `thread_ts`. */
+  findThread?: (parentSessionKey: string, threadRef: string) => ChatThreadSummary | null;
   closeThread?: (parentSessionKey: string, threadRef: string) => Promise<SlackCommandCloseResult>;
 }
 
@@ -96,7 +102,7 @@ export interface SlackCommandDeps extends ChatCommandDeps {
  * unless the route forces its own.
  */
 export function resolveSlackCommandSession(
-  event: SlackCommandEvent,
+  event: SlackCommandLocation,
   config: RouterConfig,
 ): SlackCommandSessionResolution {
   const isDm = event.channelId.startsWith("D");
@@ -174,6 +180,11 @@ function defaultThreadIndex(session: SessionEntry): SlackThreadIndex {
   };
 }
 
+function defaultFindThread(parentSessionKey: string, threadRef: string): ChatThreadSummary | null {
+  const record = findSlackThreadForParent(parentSessionKey, threadRef);
+  return record ? summarizeSlackThread(record) : null;
+}
+
 async function defaultCloseThread(parentSessionKey: string, threadRef: string): Promise<SlackCommandCloseResult> {
   const record = findSlackThreadForParent(parentSessionKey, threadRef);
   if (!record) return { kind: "not_found" };
@@ -214,53 +225,69 @@ function errorText(error: unknown): string {
 // Handler
 
 /**
- * One `ravi.inbound.command` event, start to answer. Returns what happened, or
- * null for something that is not a Slack command at all.
+ * A Slack command and how it got here: a typed `/ravi` (the runner's event) or a click on a thread
+ * card (thread-controls.ts). Both become the same engine command, answered in Slack the same way.
  */
-export async function handleSlackCommand(
-  data: unknown,
-  deps: SlackCommandDeps = {},
-): Promise<SlackCommandOutcome | null> {
-  const event = parseSlackCommandEvent(data);
-  if (!event) return null;
+export interface SlackCommandSource extends SlackCommandLocation {
+  readonly accountId: string;
+  /** The text after the command word: typed, or built from the button that was clicked. */
+  readonly text: string;
+  readonly receivedAt: number;
+  readonly envelopeId?: string;
+  readonly responseUrlId?: string;
+  /** The command as typed, with its slash, for the answers that name it. */
+  readonly command: string;
+  /** How the person reached it, for the audit: `command` or `button`. */
+  readonly surface: "command" | "button";
+  /** The runner already answered static text inside the ack. */
+  readonly ackedWithHelp?: boolean;
+}
 
-  const channel: ChatCommandChannel = {
+/** What the engine needs from Slack for one command: who, where, the threads, and how to answer. */
+export function slackCommandChannel(source: SlackCommandSource, deps: SlackCommandDeps = {}): ChatCommandChannel {
+  return {
     origin: {
       channel: "slack",
-      accountId: event.accountId,
-      instanceId: event.instanceId,
-      chatId: event.channelId,
-      actorId: event.userId,
-      ...(event.envelopeId ? { requestId: event.envelopeId } : {}),
+      accountId: source.accountId,
+      instanceId: source.instanceId,
+      chatId: source.channelId,
+      actorId: source.userId,
+      surface: source.surface,
+      ...(source.envelopeId ? { requestId: source.envelopeId } : {}),
     },
-    text: event.text,
-    receivedAt: event.receivedAt,
-    contactId: () => (deps.contactForSlackUser ?? slackUserContactId)(event.userId, event.instanceId),
-    resolveSession: (config) => (deps.resolveSession ?? resolveSlackCommandSession)(event, config),
+    text: source.text,
+    receivedAt: source.receivedAt,
+    contactId: () => (deps.contactForSlackUser ?? slackUserContactId)(source.userId, source.instanceId),
+    resolveSession: (config) => (deps.resolveSession ?? resolveSlackCommandSession)(source, config),
     threads: (session) => (deps.threads ?? defaultThreadIndex)(session),
+    findThread: (session, threadRef) =>
+      (deps.findThread ?? defaultFindThread)(slackThreadParentSessionKey(session.sessionKey), threadRef),
     closeThread: (session, threadRef) =>
       (deps.closeThread ?? defaultCloseThread)(slackThreadParentSessionKey(session.sessionKey), threadRef),
     closeAccess: defaultCloseAccess,
     reply: async (result) => {
       // The runner answers static text inside the ack when Slack takes it there; only when Slack
       // would not does the daemon say it, so nobody gets it twice.
-      if (result.kind === "static" && event.ackedWithHelp) return;
-      if (!event.responseUrlId) {
-        log.warn("Slack command has no response handle; the answer is dropped", { envelopeId: event.envelopeId });
+      if (result.kind === "static" && source.ackedWithHelp) return;
+      if (!source.responseUrlId) {
+        log.warn("Slack command has no response handle; the answer is dropped", { envelopeId: source.envelopeId });
         return;
       }
       try {
         await (deps.respond ?? respondToSlackInteraction)({
-          responseUrlId: event.responseUrlId,
-          payload: renderSlackCommandResult(result, event.command) as unknown as Record<string, unknown>,
+          responseUrlId: source.responseUrlId,
+          payload: renderSlackCommandResult(result, source.command) as unknown as Record<string, unknown>,
         });
       } catch (error) {
         log.warn("Slack command answer was not delivered", { error: errorText(error) });
       }
     },
   };
+}
 
-  return runChatCommand(channel, {
+/** The part of `SlackCommandDeps` the engine itself takes. */
+export function slackChatCommandDeps(deps: SlackCommandDeps): ChatCommandDeps {
+  return {
     now: deps.now,
     routerConfig: deps.routerConfig,
     capabilitiesFor: deps.capabilitiesFor,
@@ -271,7 +298,20 @@ export async function handleSlackCommand(
     describeRuntime: deps.describeRuntime,
     interrupt: deps.interrupt,
     audit: deps.audit,
-  });
+  };
+}
+
+/**
+ * One `ravi.inbound.command` event, start to answer. Returns what happened, or
+ * null for something that is not a Slack command at all.
+ */
+export async function handleSlackCommand(
+  data: unknown,
+  deps: SlackCommandDeps = {},
+): Promise<SlackCommandOutcome | null> {
+  const event = parseSlackCommandEvent(data);
+  if (!event) return null;
+  return runChatCommand(slackCommandChannel({ ...event, surface: "command" }, deps), slackChatCommandDeps(deps));
 }
 
 // ---------------------------------------------------------------------------

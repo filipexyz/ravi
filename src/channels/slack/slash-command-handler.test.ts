@@ -33,6 +33,7 @@ import {
   SLACK_COMMAND_QUEUE_GROUP,
   type SlackCommandAudit,
   type SlackCommandDeps,
+  slackCommandChannel,
   type SlackThreadIndex,
   startSlackCommandConsumer,
   stopSlackCommandConsumer,
@@ -818,6 +819,52 @@ describe("with the real contacts, permissions and CLI access metadata", () => {
       kind: "mutate",
       resource: "sessions.runtime",
       action: "interrupt",
+    });
+  });
+
+  it("refuses a contact who may modify the session but lacks the capability the CLI asks for the operation", async () => {
+    seedPerson({ owner: false });
+    // Modify on the session is granted; the CLI's own capability for each operation is not. Who the person
+    // is, the command-level check and the access the CLI class declares are all the real ones, so asking a
+    // weaker capability (a read `sessions list`) for `close` would let this contact through.
+    const h = harness({
+      capabilities: CONTROLLER,
+      contactForSlackUser: undefined,
+      commandAccess: undefined,
+      inheritedAccess: undefined,
+    });
+
+    expect(await handleSlackCommand(eventFor("close main-t-1"), h.deps)).toEqual({
+      decision: "denied",
+      code: "not_authorized_command",
+    });
+    expect(text(h.replies[0])).toContain("missing `mutate:sessions:close-thread`");
+    expect(await handleSlackCommand(eventFor("stop"), h.deps)).toEqual({
+      decision: "denied",
+      code: "not_authorized_command",
+    });
+    expect(text(h.replies[1])).toContain("missing `mutate:sessions.runtime:interrupt`");
+    expect(h.calls.close).toEqual([]);
+    expect(h.calls.interrupt).toBe(0);
+  });
+
+  it("declares to the engine the mutating access the CLI declares for closing a thread", async () => {
+    const channel = slackCommandChannel({
+      accountId: ACCOUNT,
+      instanceId: INSTANCE,
+      routeAccountId: ACCOUNT,
+      channelId: "D0CHAT",
+      userId: "U0PERSON",
+      text: "close main-t-1",
+      receivedAt: NOW,
+      command: "/ravi",
+      surface: "command",
+    });
+
+    expect(await channel.closeAccess?.()).toMatchObject({
+      group: "sessions",
+      command: "close-thread",
+      access: { kind: "mutate", resource: "sessions", action: "close-thread" },
     });
   });
 

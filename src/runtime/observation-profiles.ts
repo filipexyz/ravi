@@ -847,6 +847,96 @@ function buildEventContext(event: ObserverProfileRenderEvent): Record<string, un
   };
 }
 
+const DIGEST_TEXT_MAX = 300;
+
+function oneLine(value: string, max = DIGEST_TEXT_MAX): string {
+  return truncate(value.replace(/\s+/g, " ").trim(), max);
+}
+
+function payloadString(payload: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = payload?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "";
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}m${String(seconds % 60).padStart(2, "0")}s`;
+}
+
+function digestEnd(event: ObserverProfileRenderEvent): string {
+  const payload = event.payload;
+  if (event.type === "turn.complete") return "complete";
+  const reason =
+    payloadString(payload, "error") ?? payloadString(payload, "reason") ?? payloadString(payload, "abortReason");
+  const label = event.type === "turn.failed" ? "failed" : "interrupted";
+  return reason ? `${label}: ${oneLine(reason, 160)}` : label;
+}
+
+/**
+ * One compact block per source turn: what the person said, how many messages the agent sent and
+ * its last one, tool calls as a count, and how the turn ended. The block is headed by the source
+ * turn id so an observer can correlate deliveries; event ids, usage, cost and provider metadata
+ * stay in the delivery metadata, out of the prompt. With detail on, the agent's last message is
+ * the full text instead of the preview. The block covers only the events in this delivery (a
+ * realtime or pulse delivery carries part of a turn).
+ */
+export function buildObservationTurnDigest(events: readonly ObserverProfileRenderEvent[]): string {
+  const turns = new Map<string, ObserverProfileRenderEvent[]>();
+  for (const event of events) {
+    const key = event.turnId ?? "-";
+    const list = turns.get(key);
+    if (list) list.push(event);
+    else turns.set(key, [event]);
+  }
+  const blocks: string[] = [];
+  for (const [turnId, turnEvents] of turns) {
+    const lines: string[] = [];
+    const users = turnEvents.filter((event) => event.type === "message.user");
+    const replies = turnEvents.filter((event) => event.type === "message.assistant");
+    const toolEnds = turnEvents.filter((event) => event.type === "tool.end");
+    const toolStarts = turnEvents.filter((event) => event.type === "tool.start");
+    const terminal = turnEvents.filter((event) => event.type.startsWith("turn.")).at(-1);
+    const first = turnEvents[0]?.timestamp ?? 0;
+    const duration = terminal ? formatDuration(terminal.timestamp - first) : "";
+    lines.push(`turn ${turnId}${duration ? ` · ${duration}` : ""}`);
+    for (const user of users) lines.push(`user: ${user.preview ? oneLine(user.preview) : "-"}`);
+    if (replies.length > 0) {
+      const last = replies.at(-1)!;
+      const detail = readEventDetail(last);
+      const text = typeof detail.text === "string" && detail.text ? detail.text.trim() : oneLine(last.preview ?? "");
+      lines.push(`agent: ${replies.length} message(s) · last: ${text || "-"}`);
+    }
+    // No "agent sent nothing" line: a realtime or pulse-split delivery sees only part of the turn,
+    // so an empty reply list here does not prove the turn had no reply.
+    const toolEvents = toolEnds.length > 0 ? toolEnds : toolStarts;
+    if (toolEvents.length > 0) {
+      const counts = new Map<string, number>();
+      for (const event of toolEvents) {
+        const name = payloadString(event.payload, "toolName") ?? event.preview ?? "tool";
+        counts.set(name, (counts.get(name) ?? 0) + 1);
+      }
+      const names = [...counts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, count]) => `${name}×${count}`)
+        .join(", ");
+      const errors = toolEnds.filter((event) => event.payload?.isError === true).length;
+      lines.push(`tools: ${toolEvents.length} (${names})${errors ? ` · ${errors} error(s)` : ""}`);
+    }
+    for (const event of turnEvents) {
+      if (event.type.startsWith("message.") || event.type.startsWith("tool.") || event.type.startsWith("turn.")) {
+        continue;
+      }
+      lines.push(`${event.type}: ${event.preview ? oneLine(event.preview, 160) : "-"}`);
+    }
+    if (terminal) lines.push(`end: ${digestEnd(terminal)}`);
+    blocks.push(lines.join("\n"));
+  }
+  return blocks.join("\n\n");
+}
+
 function buildBaseRenderContext(input: {
   profile: ResolvedObserverProfile;
   source: ObserverProfileRenderSource;
@@ -912,6 +1002,7 @@ function buildBaseRenderContext(input: {
     },
     events: {
       rendered: input.renderedEvents ?? "",
+      digest: neutralizeObservationBoundary(buildObservationTurnDigest(input.events)),
       count: input.events.length,
       ids: input.events.map((event) => event.id).join(", "),
       types: [...new Set(input.events.map((event) => event.type))].join(", "),

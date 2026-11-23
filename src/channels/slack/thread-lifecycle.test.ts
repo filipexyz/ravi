@@ -1395,10 +1395,12 @@ describe("Slack thread orchestration", () => {
     await sendSlackThreadMessage({ parentSession: parent, ref: child.name!, message: "Check again" }, withCards);
     await sendSlackThreadMessage({ parentSession: parent, ref: child.name!, message: "Status?" }, withCards);
 
-    // A repeated close and a send to an open thread leave the card as it is.
+    // A repeated close and a send to an open thread leave the card as it is. The card of a Ravi thread
+    // asks for its Fechar and Parar buttons on every render (the builder drops them once it is closed).
     expect(jobs.map((job) => (job.request.content as { threadCard?: unknown }).threadCard)).toEqual([
       {
         status: "open",
+        controls: true,
         note: "Found the failing commit",
         updatedAt: expect.any(Number),
         requestedBy: "Ana Souza",
@@ -1406,6 +1408,7 @@ describe("Slack thread orchestration", () => {
       },
       {
         status: "closed",
+        controls: true,
         note: "The branch is fixed",
         updatedAt: expect.any(Number),
         requestedBy: "Ana Souza",
@@ -1413,6 +1416,7 @@ describe("Slack thread orchestration", () => {
       },
       {
         status: "reopened",
+        controls: true,
         updatedAt: expect.any(Number),
         requestedBy: "Ana Souza",
         runtime: "codex · gpt-5.6 · high · verbose",
