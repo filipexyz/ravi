@@ -1342,6 +1342,38 @@ describe("durable cron run correlation", () => {
     expect(pendingCronFailureReports()).toHaveLength(unreadable);
   });
 
+  it("keeps draining when a delivered report cannot be marked, and leaves it pending", async () => {
+    operatorChat = OPERATOR_CHAT;
+    const { settleCronRun, pendingCronFailureReports } = await import("./run-db.js");
+    const { getDb } = await import("../router/router-db.js");
+    const runIds: string[] = [];
+    for (let i = 0; i < 2; i++) {
+      const job = createAgentJob({ ownerPrincipal: "operator" });
+      await new CronRunner().triggerJob(job.id);
+      const dispatched = publishCalls.at(-1)!;
+      const runId = String(dispatched.payload._cronRunId);
+      runIds.push(runId);
+      settleCronRun(runId, dispatched.sessionName, { lastStatus: "error", lastError: "failed before report" });
+    }
+    // The database refuses to mark the first report as reported, as a busy or read-only database would.
+    getDb().run(
+      `CREATE TRIGGER refuse_first_report BEFORE UPDATE OF reported ON cron_runs WHEN NEW.id = '${runIds[0]}' BEGIN SELECT RAISE(ABORT, 'database is busy'); END`,
+    );
+
+    const runner = new CronRunner();
+    await runner.start();
+    // Both reports are delivered; the second is still marked, the first stays pending.
+    await waitUntil(() => pendingCronFailureReports().length === 1);
+    expect(directMessages).toHaveLength(2);
+    expect(pendingCronFailureReports()[0]!.id).toBe(runIds[0]);
+    const failure = await runner.stop().then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors).toHaveLength(1);
+  });
+
   it("yields the event loop between reports that settle locally", async () => {
     const { settleCronRun, pendingCronFailureReports } = await import("./run-db.js");
     for (let i = 0; i < 6; i++) {
