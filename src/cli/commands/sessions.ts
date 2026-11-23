@@ -234,9 +234,10 @@ import {
   acknowledgeHandoffById,
   declareHandoff,
   listOpenHandoffs,
+  newHandoffId,
   sessionDisplayName,
 } from "../../handoffs/service.js";
-import { HANDOFF_KINDS, isHandoffKind } from "../../handoffs/store.js";
+import { HANDOFF_KINDS, type Handoff, isHandoffKind } from "../../handoffs/store.js";
 import { describeHandoff } from "../../handoffs/reconcile.js";
 import {
   buildThreadHandoffPrompt,
@@ -7570,9 +7571,6 @@ export class SessionCommands {
     } catch (error) {
       rethrowSlackThreadError(error);
     }
-    if (result.record.childSessionKey) {
-      await acknowledgeChildHandoffs(result.record.childSessionKey, "thread closed");
-    }
     const payload = {
       status: result.record.status,
       actionId: "thread.close",
@@ -7743,25 +7741,50 @@ export class SessionCommands {
     let result: Awaited<ReturnType<typeof reportSlackThreadProgress>>;
     let handoff: Awaited<ReturnType<typeof declareHandoff>> | null = null;
     let reportText = decodeLiteralLineBreaks(message);
+    // A wait needs a report: the appended wait line would otherwise make a blank message look nonempty.
+    if (awaitingKind !== undefined && !reportText.trim()) {
+      throw new CliExpectedError("Report message is required", "USAGE_ERROR", 2);
+    }
+    // The wait is written only after the report reached the parent: a report that fails to
+    // publish leaves the previous wait (if any) open and untouched.
+    let pendingHandoff: Parameters<typeof declareHandoff>[0] | null = null;
     if (awaitingKind !== undefined && isHandoffKind(awaitingKind)) {
       const parentSessionKey = findSlackThreadLifecycleByChildSession(session.sessionKey)?.parentSessionKey;
       if (!parentSessionKey) fail("This session has no parent session to wait for.");
-      handoff = await declareHandoff({
+      const now = Date.now();
+      pendingHandoff = {
+        id: newHandoffId(),
         childSessionKey: session.sessionKey,
         parentSessionKey: parentSessionKey!,
         kind: awaitingKind,
-        ref: ref ?? null,
-        note: reportText.split("\n")[0] ?? null,
+        ref: ref?.trim() || null,
+        note: reportText.split("\n")[0]?.trim() || null,
         callerContextId: getContext({ localOnly: true })?.contextId ?? null,
-      });
-      reportText = `${reportText}\nAguarda o pai: ${describeHandoff(handoff, sessionDisplayName(session.sessionKey), handoff.createdAt).replace(/^- /, "")}`;
+        now,
+      };
+      const preview: Handoff = {
+        id: pendingHandoff.id!,
+        childSessionKey: session.sessionKey,
+        parentSessionKey: parentSessionKey!,
+        kind: awaitingKind,
+        ref: pendingHandoff.ref ?? null,
+        note: null,
+        callerContextId: null,
+        status: "open",
+        createdAt: now,
+        parentNudgedAt: null,
+        ownerEscalatedAt: null,
+        acknowledgedAt: null,
+        ackReason: null,
+      };
+      reportText = `${reportText}\nAguarda o pai: ${describeHandoff(preview, sessionDisplayName(session.sessionKey), now).replace(/^- /, "")}`;
     }
     try {
       result = await reportSlackThreadProgress(session, reportText);
     } catch (error) {
-      if (handoff) await acknowledgeHandoffById(handoff.id, "report failed");
       rethrowSlackThreadError(error);
     }
+    if (pendingHandoff) handoff = await declareHandoff(pendingHandoff);
     const payload = {
       status: "published" as const,
       actionId: "thread.report" as const,

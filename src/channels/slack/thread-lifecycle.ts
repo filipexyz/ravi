@@ -42,7 +42,7 @@ import { applyProviderModelRule } from "../../runtime/model-catalog.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
 import { logger } from "../../utils/logger.js";
 import { describeHandoff, type HandoffDeliveryPorts } from "../../handoffs/reconcile.js";
-import { sessionDisplayName } from "../../handoffs/service.js";
+import { acknowledgeChildHandoffs, sessionDisplayName } from "../../handoffs/service.js";
 import {
   claimSlackThreadCreation,
   claimSlackThreadParentReturn,
@@ -687,6 +687,16 @@ export async function closeSlackThreadRecord(
         error: errorMessage(error),
       });
     }
+  }
+
+  // Every close path (CLI, Slack command, idle close) ends the thread's wait on its parent.
+  if (closed.record.childSessionKey) {
+    await acknowledgeChildHandoffs(closed.record.childSessionKey, "thread closed").catch((error) => {
+      log.warn("Handoff acknowledgement after a thread close failed", {
+        requestId: closed.record.requestId,
+        error: errorMessage(error),
+      });
+    });
   }
 
   if (closed.changed) {
@@ -1513,9 +1523,12 @@ function resolveChannelLifecyclePrincipal(
 export function createSlackThreadHandoffParentNotifier(
   dependencies: SlackThreadLifecycleDependencies = DEFAULT_DEPENDENCIES,
 ): NonNullable<HandoffDeliveryPorts["notifyParent"]> {
-  return async ({ handoff, open, now }) => {
+  return async ({ parentSessionKey, due, open, now }) => {
+    // One turn per parent: it lists every open handoff; the source is the oldest due thread.
+    const handoff = due[0];
+    if (!handoff) return false;
     const record = findSlackThreadLifecycleByChildSession(handoff.childSessionKey);
-    const parent = getSession(handoff.parentSessionKey);
+    const parent = getSession(parentSessionKey);
     if (!record?.providerThreadId || !parent) return false;
     const lines = open.map((h) => describeHandoff(h, sessionDisplayName(h.childSessionKey), now));
     const messageId = `handoff-reminder:${handoff.id}`;

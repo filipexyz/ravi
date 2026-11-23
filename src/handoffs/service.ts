@@ -8,8 +8,11 @@ import {
   acknowledgeHandoff,
   acknowledgeHandoffsForChild,
   listHandoffs,
+  newHandoffId,
   openHandoff,
 } from "./store.js";
+
+export { newHandoffId };
 
 const log = logger.child("handoffs");
 
@@ -20,6 +23,7 @@ export function sessionDisplayName(sessionKey: string): string {
 
 /** A child declares it waits for its parent. Supersedes the child's previous open handoff. */
 export async function declareHandoff(input: {
+  id?: string;
   childSessionKey: string;
   parentSessionKey: string;
   kind: HandoffKind;
@@ -73,13 +77,18 @@ export function ownerHandoffNoticeText(parentSessionKey: string, handoffs: reado
  * with no model in the path (the same route cron failures use). Channel-free:
  * the owner's direct chat is resolved from contacts and identities.
  */
+let warnedNoOwnerTarget = false;
+
 export function registerDefaultHandoffOwnerPort(): void {
   registerHandoffDeliveryPorts({
     notifyOwner: async ({ parentSessionKey, handoffs, now }) => {
       const { resolveOwnerDirectTarget } = await import("../knowledge/owner.js");
       const target = resolveOwnerDirectTarget();
       if (!target) {
-        log.warn("Handoff owner notice has no owner direct chat", { parentSessionKey });
+        if (!warnedNoOwnerTarget) {
+          warnedNoOwnerTarget = true;
+          log.warn("Handoff owner notice has no owner direct chat; the handoff stays owed", { parentSessionKey });
+        }
         return false;
       }
       const { deliverToChat } = await import("../cloud-agents/chat-target.js");

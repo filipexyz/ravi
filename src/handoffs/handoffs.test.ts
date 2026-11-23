@@ -127,8 +127,8 @@ describe("handoffs store and reconciler", () => {
     const parentCalls: string[] = [];
     const ownerCalls: string[][] = [];
     const ports: HandoffDeliveryPorts = {
-      notifyParent: async ({ handoff: h, open }) => {
-        parentCalls.push(`${h.childSessionKey}:${open.length}`);
+      notifyParent: async ({ parentSessionKey, due, open }) => {
+        parentCalls.push(`${parentSessionKey}:${due.length}:${open.length}`);
         return true;
       },
       notifyOwner: async ({ handoffs }) => {
@@ -142,10 +142,11 @@ describe("handoffs store and reconciler", () => {
       escalated: 0,
       failures: 0,
     });
-    expect(parentCalls).toEqual([`${CHILD_A}:2`, `${CHILD_B}:2`]);
+    // One reminder turn for the parent, naming both waits.
+    expect(parentCalls).toEqual([`${PARENT}:2:2`]);
     // Second tick: the reminder is never repeated.
     await reconcileHandoffs({ now: T0 + 30 * 60_000, ports });
-    expect(parentCalls).toHaveLength(2);
+    expect(parentCalls).toHaveLength(1);
     expect(await reconcileHandoffs({ now: T0 + HANDOFF_OWNER_ESCALATION_MS, ports })).toEqual({
       nudged: 0,
       escalated: 2,

@@ -39,7 +39,13 @@ export function planHandoffActions(open: readonly Handoff[], now: number): Hando
  * row open and never claims a delivery it could not make.
  */
 export interface HandoffDeliveryPorts {
-  notifyParent?: (input: { handoff: Handoff; open: readonly Handoff[]; now: number }) => Promise<boolean>;
+  /** One call per parent per tick: `due` are the handoffs owed a reminder now, `open` every open one of that parent. */
+  notifyParent?: (input: {
+    parentSessionKey: string;
+    due: readonly Handoff[];
+    open: readonly Handoff[];
+    now: number;
+  }) => Promise<boolean>;
   notifyOwner?: (input: { parentSessionKey: string; handoffs: readonly Handoff[]; now: number }) => Promise<boolean>;
 }
 
@@ -65,18 +71,26 @@ export async function reconcileHandoffs(
   let escalated = 0;
   let failures = 0;
 
+  const nudgeByParent = new Map<string, Handoff[]>();
   for (const handoff of plan.nudge) {
+    const group = nudgeByParent.get(handoff.parentSessionKey) ?? [];
+    group.push(handoff);
+    nudgeByParent.set(handoff.parentSessionKey, group);
+  }
+  for (const [parentSessionKey, due] of nudgeByParent) {
     if (!ports.notifyParent) break;
-    const siblings = open.filter((h) => h.parentSessionKey === handoff.parentSessionKey);
+    const siblings = open.filter((h) => h.parentSessionKey === parentSessionKey);
     try {
-      const delivered = await ports.notifyParent({ handoff, open: siblings, now });
-      if (delivered && claimParentNudge(handoff.id, now)) {
+      const delivered = await ports.notifyParent({ parentSessionKey, due, open: siblings, now });
+      if (!delivered) continue;
+      for (const handoff of due) {
+        if (!claimParentNudge(handoff.id, now)) continue;
         nudged++;
         await publishHandoffEvent("stale", { ...handoff, parentNudgedAt: now }, now);
       }
     } catch (error) {
       failures++;
-      log.warn("Handoff parent reminder failed", { handoffId: handoff.id, error: errorMessage(error) });
+      log.warn("Handoff parent reminder failed", { parentSessionKey, error: errorMessage(error) });
     }
   }
 

@@ -2955,6 +2955,16 @@ describe("SessionCommands attach hints", () => {
     expect(reportedSlackThreads.at(-1)?.message).toContain(result.handoff.id);
     expect(listOpenHandoffs(parentKey).map((h) => h.id)).toEqual([result.handoff.id]);
 
+    // A blank waiting report is refused before anything is written.
+    await expect(new SessionCommands().report("\\n", undefined, true, "merge")).rejects.toMatchObject({
+      code: "USAGE_ERROR",
+    });
+    // A replacement report that fails to publish leaves the current wait open and untouched.
+    reportSlackThreadError = new Error("broker down");
+    await expect(new SessionCommands().report("agora espera merge", undefined, true, "merge")).rejects.toThrow();
+    reportSlackThreadError = null;
+    expect(listOpenHandoffs(parentKey).map((h) => [h.id, h.kind])).toEqual([[result.handoff.id, "review"]]);
+
     // Unrelated parent activity does not close it; messaging this thread does.
     resolvedSession = { sessionKey: parentKey, name: "dev-slack", agentId: "dev", agentCwd: "/tmp/dev" };
     toolContext = { sessionKey: parentKey, sessionName: "dev-slack" };

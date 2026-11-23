@@ -77,7 +77,12 @@ const NOTE_MAX = 280;
  * Open a handoff. A child waits on one thing at a time: a new handoff from the
  * same child supersedes the open one (the newer report describes the current wait).
  */
+export function newHandoffId(): string {
+  return `hof_${randomUUID()}`;
+}
+
 export function openHandoff(input: {
+  id?: string;
   childSessionKey: string;
   parentSessionKey: string;
   kind: HandoffKind;
@@ -86,7 +91,7 @@ export function openHandoff(input: {
   callerContextId?: string | null;
   now: number;
 }): { handoff: Handoff; superseded: Handoff[] } {
-  const id = `hof_${randomUUID()}`;
+  const id = input.id ?? newHandoffId();
   const ref = input.ref?.trim() || null;
   const note = input.note?.trim() ? input.note.trim().slice(0, NOTE_MAX) : null;
   return executeWrite(

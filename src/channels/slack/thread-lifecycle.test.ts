@@ -899,7 +899,7 @@ describe("Slack thread orchestration", () => {
       now: now - 16 * 60_000,
     });
     const notify = createSlackThreadHandoffParentNotifier(dependencies);
-    expect(await notify({ handoff, open: [handoff], now })).toBe(true);
+    expect(await notify({ parentSessionKey: parent.sessionKey, due: [handoff], open: [handoff], now })).toBe(true);
     expect(prompts).toHaveLength(1);
     expect(prompts[0]!.sessionName).toBe("ravi-parent");
     expect(prompts[0]!.payload).toMatchObject({
@@ -913,8 +913,27 @@ describe("Slack thread orchestration", () => {
 
     // A child that is not a Slack thread is not this adapter's to remind.
     const stranger = { ...handoff, childSessionKey: "agent:main:not-a-thread" };
-    expect(await notify({ handoff: stranger, open: [stranger], now })).toBe(false);
+    expect(await notify({ parentSessionKey: parent.sessionKey, due: [stranger], open: [stranger], now })).toBe(false);
     expect(prompts).toHaveLength(1);
+  });
+
+  it("closing a waiting thread through the shared close path ends its handoff", async () => {
+    const { declareHandoff, listOpenHandoffs } = await import("../../handoffs/service.js");
+    const fixture = seedPendingCreation({ teamId: "T0123" });
+    const { dependencies } = capture();
+    await finalizeSlackThreadCreation(fixture.requestId, dependencies);
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+    const parent = getSession("ravi-parent")!;
+    const handoff = await declareHandoff({
+      childSessionKey: child.sessionKey,
+      parentSessionKey: parent.sessionKey,
+      kind: "review",
+    });
+    expect(listOpenHandoffs(parent.sessionKey).map((h) => h.id)).toContain(handoff.id);
+    // closeSlackThreadRecord is what both the CLI and the Slack close command call.
+    const record = findSlackThreadLifecycleByChildSession(child.sessionKey)!;
+    await closeSlackThreadRecord(record, undefined, dependencies);
+    expect(listOpenHandoffs(parent.sessionKey).map((h) => h.id)).not.toContain(handoff.id);
   });
 
   it("names the thread by title, session and link when it returns or reports to the parent", async () => {
