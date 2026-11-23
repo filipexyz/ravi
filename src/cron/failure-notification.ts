@@ -42,6 +42,29 @@ export function cronFailureOwesDirectMessage(ownerPrincipal: string | null | und
   return ownerPrincipal.startsWith("contact:") && ownerPrincipal.length > "contact:".length;
 }
 
+/**
+ * A run whose stored notice cannot be parsed never will, and its recipient lives only in that
+ * notice: no message is owed, and none can be guessed from the job as it is now. Keep the failure
+ * visible in the inbox, once; the caller then settles the run so it is not replayed.
+ */
+export function recordUnreadableCronFailure(run: { id: string; job_id: string; admitted_at: number }): void {
+  const { item } = upsertLocalInboxItem({
+    sourceDomain: "cron",
+    sourceType: "run_unreadable",
+    sourceId: run.job_id,
+    dedupeKey: `cron-unreadable:${run.job_id}:${run.id}`,
+    title: `Falha no agendamento ${run.job_id}: aviso ilegível`,
+    summary:
+      "Um agendamento falhou, mas o aviso guardado dessa execução não pôde ser lido, então nenhuma mensagem foi enviada. Revise a execução no histórico do agendamento.",
+    priority: "high",
+    occurredAt: run.admitted_at,
+    metadata: { jobId: run.job_id, runId: run.id, category: "unreadable" },
+    actorType: "system",
+  });
+  if (listLocalInboxEvents(item.id).some((event) => event.eventType === "cron.failure.unreadable")) return;
+  markLocalInboxItem(item.id, item.status, { eventType: "cron.failure.unreadable", actorType: "system" });
+}
+
 /** Deterministic delivery: reporting a broken model must never need that model. */
 export async function notifyCronFailure(
   job: CronFailureJob,
