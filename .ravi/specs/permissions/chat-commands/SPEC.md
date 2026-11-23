@@ -55,7 +55,8 @@ start to answer. In this order:
    than 60 seconds in the future, it MUST NOT run and the result is `stale`. The
    window MUST be checked again right before anything changes, because loading
    the access metadata can take a while.
-2. Static commands answer `static` and stop.
+2. Static commands answer `static` and stop, with no identity lookup: a lookup
+   that fails MUST NOT take help away.
 3. The adapter's `contactId()` MUST say who the person is. Without a contact
    nothing runs (`unknown_actor`).
 4. The adapter's `resolveSession` MUST give the session an agent answers in for
@@ -79,8 +80,11 @@ to the caller.
   (`close`, `close idle`, `stop`) MUST require `modify` on the session AND the
   capability the CLI asks for the operation it calls (`sessions close-thread`,
   `sessions runtime interrupt`), read from the access metadata the CLI declares
-  so it cannot drift. When that metadata cannot be read the command MUST be
-  refused. The map is `CHAT_COMMAND_SESSION_RIGHT` and a refusal MUST come before
+  so it cannot drift. The metadata for the command that closes a channel's
+  threads comes from the channel (`closeAccess`), because that command is the
+  channel's own (for Slack it imports Slack's thread code): the engine reads only
+  the runtime control class, the same for every channel. When that metadata
+  cannot be read the command MUST be refused. The map is `CHAT_COMMAND_SESSION_RIGHT` and a refusal MUST come before
   any operation.
 - The command-level check MUST run as `source: "channel-command"` with the
   contact as subject. No ambient runtime context, no agent ceiling, no local

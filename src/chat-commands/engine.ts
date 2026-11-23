@@ -242,6 +242,12 @@ export interface ChatCommandChannel {
   /** The threads of a session. Absent when the channel has none: the thread commands then say so. */
   threads?(session: SessionEntry): ChatThreadIndex;
   closeThread?(session: SessionEntry, threadRef: string): Promise<ChatThreadCloseResult>;
+  /**
+   * The access metadata the CLI declares for the command that closes this channel's threads, so
+   * what is asked of a person cannot drift from the CLI. Absent when the channel has no threads;
+   * a command that needs it and gets none is refused.
+   */
+  closeAccess?(): Promise<InheritedCommandAccess | undefined>;
   /** Say the result in this channel. Must not throw: a delivery failure is the adapter's to log. */
   reply(result: ChatCommandResult): Promise<void>;
 }
@@ -300,14 +306,13 @@ function sessionRef(session: SessionEntry): string {
 
 async function defaultInheritedAccess(
   operation: "close-thread" | "interrupt",
+  channel: ChatCommandChannel,
 ): Promise<InheritedCommandAccess | undefined> {
-  // Loaded when first needed: the CLI classes carry the access metadata the
-  // operation declares, so the command cannot drift from what the CLI asks for.
-  if (operation === "close-thread") {
-    const { SessionCommands } = await import("../cli/commands/sessions.js");
-    const access = getCommandAccessMetadata(SessionCommands).get("closeThread");
-    return access ? { group: "sessions", command: "close-thread", access } : undefined;
-  }
+  // The CLI classes carry the access metadata the operation declares, so the command cannot drift
+  // from what the CLI asks for. The command that closes a channel's threads is the channel's own
+  // (it imports that channel's thread code), so the channel says what it declares; the engine
+  // reads only the runtime control class, which is the same for every channel.
+  if (operation === "close-thread") return channel.closeAccess?.();
   const { SessionRuntimeCommands } = await import("../cli/commands/sessions-runtime.js");
   const access = getCommandAccessMetadata(SessionRuntimeCommands).get("interrupt");
   return access ? { group: "sessions.runtime", command: "interrupt", access } : undefined;
@@ -464,14 +469,14 @@ export async function runChatCommand(
   // Everything from here is covered by one handler: a failure while resolving the person, the
   // session or the authority is answered and audited like any other, not left to the consumer's log.
   const execute = async (): Promise<ChatCommandOutcome> => {
-    contactId = channel.contactId();
-
     if (!isChatCommandAction(parse)) {
-      // Static text: no person, session or authority involved. The adapter decides whether it
-      // still has to say it (its platform may already have answered).
+      // Static text: no person, session or authority involved, so no identity lookup either: a
+      // lookup that fails must not take help away. The adapter decides whether it still has to
+      // say it (its platform may already have answered).
       return finish({ kind: "static", parse }, { decision: "info", code: "help" });
     }
 
+    contactId = channel.contactId();
     if (!contactId) {
       return finish({ kind: "unknown_actor" }, { decision: "denied", code: "unknown_user" });
     }
@@ -506,7 +511,7 @@ export async function runChatCommand(
     const operation =
       parse.kind === "stop" ? "interrupt" : parse.kind === "status" || parse.kind === "threads" ? null : "close-thread";
     if (operation) {
-      const inherited = await (deps.inheritedAccess ?? defaultInheritedAccess)(operation);
+      const inherited = await (deps.inheritedAccess ?? ((name) => defaultInheritedAccess(name, channel)))(operation);
       if (!inherited) {
         // No declared metadata means no way to ask the CLI's question: refuse.
         return finish({ kind: "access_metadata_missing" }, { decision: "error", code: "access_metadata_missing" });

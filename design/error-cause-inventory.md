@@ -383,11 +383,11 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels-slack | src/channels/slack/markdown-delivery.ts | 228 | fixed | binding retained / no recognized error surface | src/channels/slack/markdown-delivery.ts:4a85aef485bafb017a517f3f |
 | channels-slack | src/channels/slack/markdown-delivery.ts | 229 | fixed | binding retained / no recognized error surface | src/channels/slack/markdown-delivery.ts:66640d2f4afb11a2c7d272fc |
 | channels-slack | src/channels/slack/media.ts | 181 | triaged-follow-up | catch-without-binding | src/channels/slack/media.ts:c080cae772801e60d5e1b98b |
-| channels-slack | src/channels/slack/slash-command-handler.ts | 183 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:03a4a67ddda0feadd2d227b3 |
-| channels-slack | src/channels/slack/slash-command-handler.ts | 244 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:ac555364ad5dd8ab6d0f9fcc |
-| channels-slack | src/channels/slack/slash-command-handler.ts | 289 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:82f265b96804272a4f43bcb9 |
-| channels-slack | src/channels/slack/slash-command-handler.ts | 295 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:76b7afcbe65a4a88fa9f0450 |
-| channels-slack | src/channels/slack/slash-command-handler.ts | 306 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:354f90970d6adfab459560d5 |
+| channels-slack | src/channels/slack/slash-command-handler.ts | 184 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:03a4a67ddda0feadd2d227b3 |
+| channels-slack | src/channels/slack/slash-command-handler.ts | 257 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:ac555364ad5dd8ab6d0f9fcc |
+| channels-slack | src/channels/slack/slash-command-handler.ts | 302 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:82f265b96804272a4f43bcb9 |
+| channels-slack | src/channels/slack/slash-command-handler.ts | 308 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:76b7afcbe65a4a88fa9f0450 |
+| channels-slack | src/channels/slack/slash-command-handler.ts | 319 | fixed | binding retained / no recognized error surface | src/channels/slack/slash-command-handler.ts:354f90970d6adfab459560d5 |
 | channels-slack | src/channels/slack/socket-mode.ts | 381 | triaged-follow-up | catch-without-binding | src/channels/slack/socket-mode.ts:e700c67eb64c04a391bc3ef0 |
 | channels-slack | src/channels/slack/socket-mode.ts | 453 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:f9d1467f6e1de69cf31a8d52 |
 | channels-slack | src/channels/slack/socket-mode.ts | 534 | fixed | binding retained / no recognized error surface | src/channels/slack/socket-mode.ts:6099dacad897d9487e5c0270 |
@@ -459,11 +459,11 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels | src/channels/whatsapp/grant-request-adapter.ts | 208 | fixed | binding retained / no recognized error surface | src/channels/whatsapp/grant-request-adapter.ts:22374d21b795442a4511d75a |
 | channels | src/channels/whatsapp/grant-request-adapter.ts | 258 | fixed | binding retained / no recognized error surface | src/channels/whatsapp/grant-request-adapter.ts:a5945b067bfa16d973084ca8 |
 | channels | src/channels/whatsapp/grant-request-adapter.ts | 264 | fixed | binding retained / no recognized error surface | src/channels/whatsapp/grant-request-adapter.ts:fdae14d08ad8a2a1d04431e4 |
-| chat-commands | src/chat-commands/engine.ts | 364 | fixed | binding retained / no recognized error surface | src/chat-commands/engine.ts:22daaaa0502d92a4f7f9fcf3 |
-| chat-commands | src/chat-commands/engine.ts | 441 | fixed | binding retained / no recognized error surface | src/chat-commands/engine.ts:7e55d21dedd2e376239147a1 |
-| chat-commands | src/chat-commands/engine.ts | 450 | fixed | binding retained / no recognized error surface | src/chat-commands/engine.ts:740dc1adaefbf671aec33b0c |
-| chat-commands | src/chat-commands/engine.ts | 541 | fixed | binding retained / no recognized error surface | src/chat-commands/engine.ts:c6c9f22ccda87150242c6264 |
-| chat-commands | src/chat-commands/engine.ts | 695 | fixed | binding retained / no recognized error surface | src/chat-commands/engine.ts:dea02ee956128b3a92f25868 |
+| chat-commands | src/chat-commands/engine.ts | 369 | fixed | binding retained / no recognized error surface | src/chat-commands/engine.ts:22daaaa0502d92a4f7f9fcf3 |
+| chat-commands | src/chat-commands/engine.ts | 446 | fixed | binding retained / no recognized error surface | src/chat-commands/engine.ts:7e55d21dedd2e376239147a1 |
+| chat-commands | src/chat-commands/engine.ts | 455 | fixed | binding retained / no recognized error surface | src/chat-commands/engine.ts:740dc1adaefbf671aec33b0c |
+| chat-commands | src/chat-commands/engine.ts | 546 | fixed | binding retained / no recognized error surface | src/chat-commands/engine.ts:c6c9f22ccda87150242c6264 |
+| chat-commands | src/chat-commands/engine.ts | 700 | fixed | binding retained / no recognized error surface | src/chat-commands/engine.ts:dea02ee956128b3a92f25868 |
 | ci | src/ci/quality-gate.ts | 480 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:35e920db0e1dc5d202263c0b |
 | ci | src/ci/quality-gate.ts | 491 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:3ca26f959f0fbb07f2541ae7 |
 | ci | src/ci/quality-gate.ts | 501 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:51a5a6018c77cc4a8a8aac22 |

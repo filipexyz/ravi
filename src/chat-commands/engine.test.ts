@@ -243,6 +243,50 @@ describe("who may run a command", () => {
     expect(h.calls.interrupt).toBe(0);
   });
 
+  it("asks the channel for the access of the command that closes its threads, and refuses without it", async () => {
+    // No injected access: the engine reads the runtime control class itself and asks the channel for the close.
+    const declared = harness({ threads: [thread()], deps: { inheritedAccess: undefined } });
+    const outcome = await runChatCommand(
+      declared.channel("close idle", {
+        closeAccess: async () => ({
+          group: "sessions",
+          command: "close-thread",
+          access: { kind: "mutate", resource: "sessions", action: "close-thread", risk: "medium" },
+        }),
+      }),
+      declared.deps,
+    );
+
+    expect(outcome).toEqual({ decision: "allowed", code: "ok" });
+    expect(declared.calls.access).toMatchObject([
+      { source: "channel-command", group: "sessions", command: "close-thread" },
+    ]);
+
+    const silent = harness({ threads: [thread()], deps: { inheritedAccess: undefined } });
+    expect(await runChatCommand(silent.channel("close idle"), silent.deps)).toEqual({
+      decision: "error",
+      code: "access_metadata_missing",
+    });
+    expect(silent.calls.close).toEqual([]);
+  });
+
+  it("answers help with no identity lookup at all, so a lookup that fails cannot take it away", async () => {
+    const h = harness();
+
+    const outcome = await runChatCommand(
+      h.channel("help", {
+        contactId: () => {
+          throw new Error("directory down");
+        },
+      }),
+      h.deps,
+    );
+
+    expect(outcome).toEqual({ decision: "info", code: "help" });
+    expect(h.replies).toEqual([{ kind: "static", parse: { kind: "help" } }]);
+    expect(h.audits).toMatchObject([{ contactId: null, subcommand: "help", decision: "info" }]);
+  });
+
   it("runs nothing for a person nobody linked to a contact", async () => {
     const h = harness();
 
@@ -588,5 +632,13 @@ describe("architecture", () => {
       expect(specifiersOf(source).filter((specifier) => /(^|\/)channels\//.test(specifier))).toEqual([]);
       expect(source).not.toMatch(/slack|whatsapp|telegram|discord|matrix/i);
     }
+  });
+
+  it("does not load a channel's own CLI command either: the transitive import is as much a tie as a direct one", () => {
+    // `sessions` holds `close-thread`, the command that closes Slack threads, and imports Slack's thread code:
+    // the channel declares that command's access (`closeAccess`), the engine never loads the class.
+    const specifiers = specifiersOf(readFileSync(join(import.meta.dir, "engine.ts"), "utf8"));
+
+    expect(specifiers).not.toContain("../cli/commands/sessions.js");
   });
 });

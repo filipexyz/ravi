@@ -32,6 +32,7 @@ import {
   type InheritedCommandAccess,
   runChatCommand,
 } from "../../chat-commands/engine.js";
+import { getCommandAccessMetadata } from "../../cli/decorators.js";
 import { slackUserContactId } from "../../cloud-agents/chat-people.js";
 import { nats as runtimeNats } from "../../nats.js";
 import {
@@ -185,6 +186,17 @@ async function defaultCloseThread(parentSessionKey: string, threadRef: string): 
   }
 }
 
+/**
+ * What the CLI declares for `sessions close-thread`, the command that closes a Slack thread. It
+ * imports Slack's thread code, so it is read here and not by the engine: the capability asked of a
+ * person cannot drift from what the CLI asks.
+ */
+async function defaultCloseAccess(): Promise<InheritedCommandAccess | undefined> {
+  const { SessionCommands } = await import("../../cli/commands/sessions.js");
+  const access = getCommandAccessMetadata(SessionCommands).get("closeThread");
+  return access ? { group: "sessions", command: "close-thread", access } : undefined;
+}
+
 function refusedClose(name: string, cause: unknown): SlackCommandCloseResult {
   return { kind: "refused", name, code: errorCode(cause), message: errorText(cause) };
 }
@@ -228,6 +240,7 @@ export async function handleSlackCommand(
     threads: (session) => (deps.threads ?? defaultThreadIndex)(session),
     closeThread: (session, threadRef) =>
       (deps.closeThread ?? defaultCloseThread)(slackThreadParentSessionKey(session.sessionKey), threadRef),
+    closeAccess: defaultCloseAccess,
     reply: async (result) => {
       // The runner answers static text inside the ack when Slack takes it there; only when Slack
       // would not does the daemon say it, so nobody gets it twice.
