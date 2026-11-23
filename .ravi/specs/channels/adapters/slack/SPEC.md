@@ -20,6 +20,7 @@ The Slack adapter MUST support:
 
 - Socket Mode connect via `apps.connections.open`;
 - envelope ack;
+- slash command envelopes (`slash_commands`), acked at once, verified against the instance's own workspace and published as `ravi.inbound.command`; they never enter the inbox or become a prompt (`channels/slack/commands`);
 - duplicate envelope detection;
 - inbound `message`;
 - DM/channel classification;

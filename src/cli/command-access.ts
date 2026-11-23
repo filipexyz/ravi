@@ -4,6 +4,7 @@ import type { CommandAccessOptions, ScopeType } from "./decorators.js";
 import {
   authorizePermission,
   findApprovalRequirement,
+  materializeSubjectCapabilities,
   type PermissionProviderDecision,
 } from "../permissions/provider-runtime.js";
 import { buildAuditContextProvenance } from "../permissions/audit-provenance.js";
@@ -23,7 +24,14 @@ import type {
   PermissionProviderRequest,
 } from "../permissions/provider-types.js";
 
-export type CliCommandAccessSource = "cli" | "tool" | "gateway";
+/**
+ * Where a command runs from. `channel-command` is a person typing a command in
+ * a chat channel, whichever channel: the channel adapter resolves the sender to
+ * a verified contact, and the authority is that contact, never an agent's
+ * runtime context and never the local operator. The core does not know which
+ * channel it was; adapters feed it.
+ */
+export type CliCommandAccessSource = "cli" | "tool" | "gateway" | "channel-command";
 
 export interface CliCommandAccessInput {
   canonicalName?: string;
@@ -32,6 +40,8 @@ export interface CliCommandAccessInput {
   access?: CommandAccessOptions;
   input?: Record<string, unknown>;
   source: CliCommandAccessSource;
+  /** The contact a `channel-command` acts for. Required for that source, ignored by the others. */
+  subject?: { type: "contact"; id: string };
 }
 
 /**
@@ -95,7 +105,9 @@ export function enforceCliCommandAuthorization(input: CliCommandAuthorizationInp
 }
 
 export function enforceCliCommandAccess(input: CliCommandAccessInput): CliCommandAccessResult {
-  const invocation = currentConsoleInvocation();
+  // A channel command's authority is its contact, even if the daemon loop that
+  // runs it happened to sit inside a Console invocation.
+  const invocation = input.source === "channel-command" ? undefined : currentConsoleInvocation();
   if (invocation) return authorizeConsoleCommand(invocation, input);
   if (!input.access) {
     return {
@@ -107,7 +119,7 @@ export function enforceCliCommandAccess(input: CliCommandAccessInput): CliComman
   }
   const inputWithAccess: CliCommandAccessInput & { access: CommandAccessOptions } = { ...input, access: input.access };
 
-  const authority = resolveCommandAccessAuthority(input.source, inputWithAccess.access);
+  const authority = resolveCommandAccessAuthority(input.source, inputWithAccess.access, input.subject);
   if (!authority.allowed) {
     if (authority.inactiveContext) recordInactiveContextDenial(inputWithAccess, authority.inactiveContext);
     return {
@@ -256,9 +268,36 @@ export function buildCliCommandOperation(input: CliCommandAccessInput): Permissi
 function resolveCommandAccessAuthority(
   source: CliCommandAccessSource,
   access: CommandAccessOptions,
+  subject?: CliCommandAccessInput["subject"],
 ):
-  | { allowed: true; label: string; request: Pick<PermissionProviderRequest, "context" | "subject" | "localOperator"> }
+  | {
+      allowed: true;
+      label: string;
+      request: Pick<PermissionProviderRequest, "context" | "subject" | "localOperator" | "capabilities">;
+    }
   | { allowed: false; errorMessage: string; inactiveContext?: NonNullable<ReturnType<typeof getContext>>["context"] } {
+  if (source === "channel-command") {
+    // The person and nothing else: no ambient context, no agent ceiling, no
+    // local operator. Without a resolved contact there is no authority.
+    const contactId = subject?.type === "contact" ? subject.id.trim() : "";
+    if (!contactId) {
+      return {
+        allowed: false,
+        errorMessage: "Permission denied: a channel command requires a resolved contact",
+      };
+    }
+    // A contact holds what its tags and grants materialize to, the same
+    // capabilities an approval click is checked against (approval/grantor.ts).
+    // `subject` rides along so a configured external authority sees who acts.
+    return {
+      allowed: true,
+      label: `contact:${contactId}`,
+      request: {
+        subject: { type: "contact", id: contactId },
+        capabilities: materializeSubjectCapabilities("contact", contactId),
+      },
+    };
+  }
   const ctx = getContext();
   const hasContextKey = Boolean(process.env[RAVI_CONTEXT_KEY_ENV]?.trim());
   const useRuntimeContext = source !== "cli" || hasContextKey;

@@ -61,6 +61,10 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/credential-intake.test.ts",
     // Broker-backed Slack credentials: action, authority and destructive mark reach the broker.
     "src/channels/slack/credentials.test.ts",
+    // Slack `/ravi`: parser and event shape, the daemon handler and its authority, response handle limits.
+    "src/channels/slack/slash-commands.test.ts",
+    "src/channels/slack/slash-command-handler.test.ts",
+    "src/channels/slack/interactions.test.ts",
     // Slack thread lifecycle: create/close, parent returns, report and thread-send orchestration.
     "src/channels/slack/thread-lifecycle.test.ts",
     "src/channels/slack/thread-turn-health.test.ts",

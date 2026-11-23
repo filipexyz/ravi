@@ -793,9 +793,10 @@ export function listPendingSlackThreadParentReturns(
 
 export function listSlackThreadLifecyclesByParent(
   parentSessionKey: string,
-  input: { includeClosed?: boolean; limit?: number } = {},
+  input: { includeClosed?: boolean; limit?: number; offset?: number } = {},
 ): SlackThreadLifecycleRecord[] {
   const limit = Math.max(1, Math.min(input.limit ?? 50, 500));
+  const offset = Math.max(0, Math.floor(input.offset ?? 0));
   const rows = getDb()
     .prepare(
       `
@@ -803,12 +804,30 @@ export function listSlackThreadLifecyclesByParent(
       FROM slack_thread_lifecycle
       WHERE parent_session_key = ?
         AND (? = 1 OR status != 'closed')
-      ORDER BY created_at DESC
-      LIMIT ?
+      ORDER BY created_at DESC, request_id DESC
+      LIMIT ? OFFSET ?
     `,
     )
-    .all(parentSessionKey, input.includeClosed ? 1 : 0, limit) as SlackThreadLifecycleRow[];
+    .all(parentSessionKey, input.includeClosed ? 1 : 0, limit, offset) as SlackThreadLifecycleRow[];
   return rows.map(rowToSlackThreadLifecycle);
+}
+
+/** How many threads a parent session has, with no page limit: a count never undercounts. */
+export function countSlackThreadLifecyclesByParent(
+  parentSessionKey: string,
+  input: { includeClosed?: boolean } = {},
+): number {
+  const row = getDb()
+    .prepare(
+      `
+      SELECT COUNT(*) AS count
+      FROM slack_thread_lifecycle
+      WHERE parent_session_key = ?
+        AND (? = 1 OR status != 'closed')
+    `,
+    )
+    .get(parentSessionKey, input.includeClosed ? 1 : 0) as { count: number };
+  return row.count;
 }
 
 /** Reopen a closed thread for new work; a pending parent completion is kept. */

@@ -113,6 +113,16 @@ local e publicar somente `responseUrlId`. Workflows podem usar esse handle para
 responder a interacao, substituir a mensagem original com `replace_original` ou
 apagar a mensagem original com `delete_original`, sem receber o segredo bruto.
 
+O handle so aceita `hooks.slack.com` ou um host `<workspace>.slack.com`, sob
+`/actions/` (interacoes) ou `/commands/` (slash commands, ver
+`channels/slack/commands`), por https, sem porta nem credencial; qualquer outro
+host ou caminho e recusado. O exemplo de slash command do Socket Mode, na
+documentacao do Slack, usa o host do workspace. Cada handle aceita no maximo cinco
+respostas (limite do Slack): a sexta e recusada antes de qualquer requisicao, e
+cada resposta tem prazo. O uso e reservado antes da requisicao, numa unica
+instrucao que tambem confere o limite, e so volta quando o Slack responde e
+recusa.
+
 ## Automacoes
 
 Automacoes devem filtrar por `provider`, `interactionType`, `actionId` e
