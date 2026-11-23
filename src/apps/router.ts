@@ -1,3 +1,6 @@
+import { AppError as OmieAppError } from "./omie-orders/domain.js";
+import { omieDelegation } from "./omie-orders/delegation.js";
+import { OMIE_APP_ID } from "./omie-orders/scope.js";
 import { spawn } from "node:child_process";
 import { dirname } from "node:path";
 import { discoverAppManifests, getAppManifest, RAVI_APP_BUILTIN_OPERATION_HANDLERS } from "./service.js";
@@ -146,6 +149,7 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
 function classifyAppRunError(error: unknown): string {
   if (error instanceof RaviAppError) return error.code;
   if (error instanceof RaviAppCompositionError) return error.code;
+  if (error instanceof OmieAppError && /^(OMIE_[A-Z0-9_]+|INVALID_INPUT)$/.test(error.code)) return error.code;
   if (error instanceof RaviAppPermissionDeniedError) return "PERMISSION_DENIED";
   if (error instanceof AppPermissionProviderDeniedError) {
     return ["deny", "needs_grant", "not_applicable"].includes(error.audit.decision)
@@ -431,7 +435,7 @@ async function dispatchResolvedOperation(
         durationMs: Date.now() - options.startedAt,
         ...(options.callerContext ? { callerContextId: options.callerContext.contextId } : {}),
         handler,
-        result: runBuiltinHandler(handler, app, options.args),
+        result: await runBuiltinHandler(handler, app, options.args),
       },
       permissionProvider,
     );
@@ -560,7 +564,14 @@ async function runCliOperation(
   const appId = app.manifest?.id ?? app.id;
   const invocation = resolveRaviAppCommand(resolved.operation.command ?? "", options.args, options.runtime);
   const appRoot = dirname(app.path);
-  const childContext = issueAppChildContext(app, resolved.id, options.callerContext, options.composition);
+  const childContext = issueAppChildContext(
+    app,
+    resolved.id,
+    options.callerContext,
+    options.composition,
+    resolved.operation.permission,
+    options.args,
+  );
   let run: Awaited<ReturnType<typeof spawnExecutable>>;
   try {
     run = await spawnExecutable(invocation.executable, invocation.argv, {
@@ -651,7 +662,11 @@ function undeclaredOperationHelpHint(
   return `Este app nao declara ajuda para ${operationId}. Rode ravi apps show ${app.id} --json para ver o manifesto.`;
 }
 
-function runBuiltinHandler(handler: string, app: RaviAppManifestRecord, args: string[] = []): unknown {
+async function runBuiltinHandler(handler: string, app: RaviAppManifestRecord, args: string[] = []): Promise<unknown> {
+  if (handler === "apps.omie-orders.read") {
+    const { runOmieOrdersHost } = await import("./omie-orders/native.js");
+    return runOmieOrdersHost(app.id, "read", args);
+  }
   if (handler === "apps.help") {
     const operationIds = visibleOperationIdsForHelp(app);
     const perOpHint = `ravi ${app.id.split("/").join(" ")} help <op> — help enxuto por operacao`;
@@ -987,7 +1002,9 @@ function isRecursiveCliCommand(appId: string, command: string, staticRootCommand
 }
 
 function resolveCallerContext(env?: NodeJS.ProcessEnv): ContextRecord | undefined {
-  return getRuntimeContextFromEnv(env ?? process.env) ?? getContext()?.context;
+  return (
+    getContext({ localOnly: true })?.context ?? getRuntimeContextFromEnv(env ?? process.env) ?? getContext()?.context
+  );
 }
 
 function issueAppChildContext(
@@ -995,10 +1012,13 @@ function issueAppChildContext(
   operationId: string,
   parent: ContextRecord | undefined,
   composition: CompositionPlan,
+  operationPermission?: string,
+  args: string[] = [],
 ): ContextRecord | undefined {
   if (!parent) return undefined;
   const appId = app.manifest?.id ?? app.id;
-  const allow = composition.allow ?? app.manifest?.context?.allow ?? [];
+  const ceiling = composition.allow ?? app.manifest?.context?.allow ?? [];
+  const allow = appId === OMIE_APP_ID ? omieDelegation(operationId, operationPermission, args, ceiling) : ceiling;
   const capabilities = allow.map(parseRaviAppCapability);
   const input: IssueRuntimeContextInput = {
     parent,
@@ -1013,6 +1033,13 @@ function issueAppChildContext(
       // Why this app runs for another one: the service it was called through, so the lineage explains itself.
       ...(composition.service && composition.callerAppId
         ? { composition: { service: composition.service, consumerAppId: composition.callerAppId } }
+        : {}),
+      ...(appId === OMIE_APP_ID
+        ? {
+            actorPrincipal: parent.metadata?.actorPrincipal,
+            actorResolution: parent.metadata?.actorResolution,
+            surfacePrincipal: parent.metadata?.surfacePrincipal,
+          }
         : {}),
     },
   };

@@ -95,3 +95,10 @@ it("Quality Gate fails unless every gated job succeeded", () => {
   expect(verdict!.run).toContain(`length == ${gated.length} and all(.[]; .result == "success")`);
   expect(verdict!.run).toContain("jq -e");
 });
+
+it("protected order suites are reached by a required CI shard with state isolation", () => {
+  expect(pkg.scripts["test:shard-1"]!.split(" && ")).toContain("bun run test:omie-orders");
+  expect(pkg.scripts["test:omie-orders"]).toBe(
+    "bun test --preload ./src/test/isolated-runtime-preload.ts src/apps/omie-orders/",
+  );
+});

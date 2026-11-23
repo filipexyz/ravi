@@ -188,3 +188,19 @@ anywhere but `canvases.edit`. Comments never count.
 Out of reach of this test (code review owns them): string or computed keys
 (`this["mutationOpsContext"](...)`) and mutation of the argument after it is
 built.
+
+## Native Omie guard regression
+
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/credentials/broker-authorization.test.ts`
+  proves the host guard runs after approval and before secret access; denial,
+  revoked caller and changed/disabled connection prevent backend resolution.
+- `bun run test:omie-orders` proves exact provider read classification, secrets
+  remain inside the host, echo values are redacted, and identity/membership/live
+  contact permissions are rechecked after awaited work before provider HTTP.
+- `identity.test.ts` keeps child capabilities and channel membership intact while
+  removing a real permission tag through the contacts API. Neither secret access
+  nor provider HTTP may occur after that revocation.
+- The private scope chooses only the broker connection name. Raw credentials and
+  appHash MUST NOT enter source, manifests, argv, fixture artifacts or reports.
+- Connection authentication and real provider results require separately
+  authorized operational evidence; the fake HTTP suite does not certify them.

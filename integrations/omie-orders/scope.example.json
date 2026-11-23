@@ -1,0 +1,10 @@
+{
+  "app": "omie-orders",
+  "channelType": "slack",
+  "account": "example-slack",
+  "channel": "CEXAMPLE01",
+  "canonicalChat": "chat_example",
+  "executor": "example-executor",
+  "connection": "example-orders",
+  "channelConnection": "example-slack-connection"
+}

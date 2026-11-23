@@ -557,3 +557,43 @@ other, not a second permission system for whoever already holds the app.
 - Trusting a semver parser with a range it cannot read: `Bun.semver.satisfies`
   answers "satisfied" for `latest`, `*`, or any text. The router accepts only
   ranges the manifest validation accepted.
+
+
+## Protected Omie order queries
+
+- The fixed builtin `apps.omie-orders.read` MUST execute only packaged order
+  query methods, never app-supplied modules, URLs or arbitrary code.
+- A Omie app child MUST preserve authenticated actor/surface metadata while
+  delegating only the requested query's exact capabilities, all inside the
+  declared `context.allow` ceiling and the live caller's authority.
+- Gateway-local authenticated context MUST take precedence over ambient process
+  environment when issuing an app child.
+- The host MUST verify the live human turn ancestry, persisted inbound and
+  canonical channel/thread identity. Outbound reply thread is not source proof.
+- Current channel membership (asked of the registered conversation adapter) and
+  permissions MUST be rechecked after awaits
+  before secret access and before provider HTTP. A relay is not a human caller.
+- The executor MUST NOT name or import a messaging channel. Each channel type
+  implements `ConversationAuthority` (`src/apps/omie-orders/conversation-authority.ts`):
+  prove the persisted human message in the configured conversation or one of its
+  threads, answer current membership, and list its per-call capabilities.
+  Composition (the daemon) registers adapters; the private configuration names
+  `channelType`. A type with no registered adapter MUST fail closed with
+  `OMIE_CHANNEL_UNAVAILABLE`, and the core contract MUST NOT change per channel.
+- Legacy, removal scheduled for 2027-01-31: a private configuration without
+  `channelType` that names `slackConnection` (the first installation) is upgraded
+  in memory to `channelType: "slack"`, `channelConnection`. Only that exact shape
+  is upgraded; the file is not rewritten. Remove `legacy-scope.ts` and the
+  preparer branch once installations write the current shape.
+- Read activation MUST NOT open a write ledger or enable commercial writes and
+  personal token lifecycle. Those remain explicitly unavailable.
+- A candidate manifest is not a release or a grant. Availability requires a
+  real participant's authenticated query to return to the originating channel.
+
+- Installation bindings MUST load from operator-owned private host configuration,
+  with no usable defaults, manifest overrides or request-provided account scope.
+- Contact-governed turns MUST re-resolve the official contact-chat overlay for all
+  required query capabilities on every protected call and after waits. Removing
+  the last grant MUST NOT convert an existing governed turn to agent-only access.
+- Installation identifiers and credential evidence MUST NOT enter published
+  source, tests, generated inventories or commit ancestry.

@@ -5,14 +5,17 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { CONTRACT_EXIT_ERROR, ContractError } from "../cli/agent-contract.js";
 import { runWithContext } from "../cli/context.js";
-import type { ContextCapability, ContextRecord } from "../router/router-db.js";
 import {
   createRuntimeContext,
   getContextLineage,
   issueRuntimeContext,
   resolveRuntimeContext,
 } from "../runtime/context-registry.js";
+
+import { dbGetContext, type ContextCapability, type ContextRecord } from "../router/router-db.js";
 import { cleanupIsolatedRaviState } from "../test/ravi-state.js";
+import { createSlackOmieConversationAuthority } from "../channels/slack/omie-conversation-authority.js";
+import { registerOmieConversationAuthority } from "./omie-orders/conversation-authority.js";
 import { enforceRaviAppRunResult, raviAppErrorToContractError } from "./error-contract.js";
 import { maskedSecretForms, projectAppCliFailure } from "./failure.js";
 import { maybeRunAppAliasRoute, resolveAppAliasInvocation, runAppOperation } from "./router.js";
@@ -2887,4 +2890,76 @@ describe("Ravi app composition", () => {
     expect(discoverAppManifests({ cwd: real }).filter((record) => record.id === "plain")).toHaveLength(1);
     expect(await callAsContext(real, turn, "plain", "run", [])).toMatchObject({ ok: true, result: { ok: true } });
   }, 30_000);
+});
+
+it("Omie read child keeps the authenticated gateway actor and delegates no writes (legacy private configuration)", async () => {
+  registerOmieConversationAuthority(createSlackOmieConversationAuthority());
+  const root = makeRepo();
+  const bindingDir = join(process.env.RAVI_STATE_DIR!, "integrations");
+  mkdirSync(bindingDir, { recursive: true });
+  writeFileSync(
+    join(bindingDir, "omie-orders.json"),
+    JSON.stringify({
+      app: "omie-orders",
+      account: "example-slack",
+      channel: "CEXAMPLE01",
+      canonicalChat: "chat_example",
+      executor: "example-executor",
+      connection: "example-orders",
+      slackConnection: "example-slack-connection",
+    }),
+  );
+  const allow = [
+    "execute:group:apps",
+    "use:app:omie-orders",
+    "read:omie:produtos.pedido.ListarPedidos",
+    "use:credential:omie:example-orders",
+    "execute:omie:produtos/pedido:ListarPedidos",
+    "use:credential:slack:example-slack-connection",
+    "execute:slack:conversations.members",
+  ];
+  const app = manifest("omie-orders");
+  app.context = { allow: [...allow, "execute:app:omie-orders"] };
+  app.interfaces = { cli: { command: "bun probe.mjs", json: true } };
+  app.operations = { "omie-orders.list": { interface: "cli", command: "bun probe.mjs {args}", mutating: false } };
+  writeManifest(root, "omie-orders", app);
+  writeFileSync(join(root, "src/apps/omie-orders/probe.mjs"), "console.log(JSON.stringify({success:true}));");
+  const capabilities = allow.map((cap) => {
+    const [permission, objectType, ...id] = cap.split(":");
+    return { permission, objectType, objectId: id.join(":") };
+  });
+  const parent = createRuntimeContext({
+    agentId: "main",
+    capabilities,
+    metadata: { actorPrincipal: "contact:verified", actorResolution: "resolved", surfacePrincipal: "chat:verified" },
+  });
+  const unrelated = createRuntimeContext({
+    agentId: "main",
+    capabilities,
+    metadata: { actorPrincipal: "contact:unrelated" },
+  });
+  const result = await runWithContext({ agentId: "main", context: parent, transport: "gateway" }, () =>
+    runAppOperation({
+      appId: "omie-orders",
+      operation: "list",
+      cwd: root,
+      json: true,
+      env: { ...process.env, RAVI_CONTEXT_KEY: unrelated.contextKey },
+    }),
+  );
+  expect(result.ok).toBe(true);
+  const child = dbGetContext(result.childContextId!);
+  expect(child?.metadata).toMatchObject({
+    parentContextId: parent.contextId,
+    actorPrincipal: "contact:verified",
+    surfacePrincipal: "chat:verified",
+  });
+  const delegated = child?.capabilities.map(({ permission, objectType, objectId }) => ({
+    permission,
+    objectType,
+    objectId,
+  }));
+  expect(delegated).toEqual(expect.arrayContaining(capabilities));
+  expect(delegated).toHaveLength(capabilities.length);
+  expect(delegated).not.toContainEqual({ permission: "execute", objectType: "app", objectId: "omie-orders" });
 });
