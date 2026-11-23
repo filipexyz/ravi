@@ -17,6 +17,8 @@ applies_to:
   - src/channels/slack/slash-commands.ts
   - src/channels/slack/slash-command-handler.ts
   - src/channels/slack/slash-command-render.ts
+  - src/channels/slack/thread-controls.ts
+  - src/channels/slack/thread-card.ts
   - src/chat-commands/engine.ts
   - src/chat-commands/parse.ts
   - src/channels/slack/socket-mode.ts
@@ -53,7 +55,7 @@ status`). A word Ravi does not know, an empty text and `help` all show the help.
 | `threads` | open threads of the session: name, title, time since the last activity, state (the newest 12, under an exact count) | access to the session |
 | `close <thread>` | closes one thread, named as `threads` shows it (also by request id or Slack `thread_ts`) | to modify the session and to hold the capability of `sessions close-thread` |
 | `close idle [Nh]` | closes the threads with no activity for more than N hours (default 12, 1 to 720), at most 25 per call | the same as `close` |
-| `stop` | interrupts the turn running in the session of this chat; the queue goes on | to modify the session and to hold the capability of `sessions runtime interrupt` |
+| `stop [thread]` | interrupts the turn running in the session of this chat or, with a thread (named as `close` names it), in that thread's own session; the queue goes on | to modify the session and to hold the capability of `sessions runtime interrupt` |
 
 `close idle` MUST consider every open thread of the session, with no page
 ceiling, and `status` MUST count them all. It MUST decide idleness from the
@@ -73,7 +75,12 @@ way out), an open question (`THREAD_DECISIONS_PENDING`), a pending return
 (`THREAD_PARENT_RETURN_PENDING`), or the code of any other refusal.
 
 Slack does not let an app's slash command run inside a thread. The commands act
-on the session of the DM or channel they are typed in, never on a thread.
+on the session of the DM or channel they are typed in, and name a thread by
+argument (`close <thread>`, `stop <thread>`). The control of one thread, where
+it is, is on its card: the root card of a thread Ravi opened carries **Fechar**
+and **Parar** (not once the thread is closed). Each asks Slack's own
+confirmation first and then runs the same command as `close <thread>` or `stop
+<thread>`, with the same authority, for the thread whose card was clicked.
 
 ## Invariants
 
@@ -171,12 +178,37 @@ values, never code.
 - An unexpected failure MUST be answered with a retry message and MUST NOT
   expose the error text.
 
+### Thread card buttons
+
+- The buttons MUST be on the root card of a thread Ravi opened (`ravi sessions
+  create-thread`, and every re-render of that card) and nowhere else: the card
+  builder takes `controls` as an opt-in, so a card of another kind (a cloud run's)
+  MUST NOT get them. A closed thread MUST NOT show them. Each button MUST ask
+  Slack's own confirmation before the click is sent, and MUST carry no thread id.
+- A click is a `block_actions` interaction with action id `ravi_thread_close` or
+  `ravi_thread_stop`, published by the runner on `ravi.inbound.interaction` with
+  `routeAccountId` (the scope routes are matched in, as for a slash command). A
+  consumer in its own queue group (`ravi-slack-thread-controls`) MUST turn it
+  into the engine command `close <ts>` or `stop <ts>`; no other interaction MUST
+  be touched, and an interaction with no arrival time or a `ts` that is not a
+  Slack timestamp MUST NOT run.
+- The person MUST be the Slack user id of the interaction payload, resolved to a
+  contact like a typed command's. The thread MUST be the clicked card's own
+  message, looked up among the threads of the session the clicked chat resolves
+  to: a card MUST NOT name a thread of another chat's session.
+- The same engine decides, so the freshness window, the authority (`modify` on the
+  session and the CLI's capability) and the audit are a typed command's; the
+  audit row MUST record `surface: "button"`. The answer MUST be ephemeral,
+  through the click's `response_url`. A click Slack delivers twice (same envelope
+  id) MUST be answered once.
+
 ### Audit
 
 - Every command that reaches the daemon, including the refused and the static,
   MUST publish `ravi.audit.chat_command` (the engine's, one topic for every
   channel) with `channel: "slack"`, the contact, the Slack user as `actorId`, the
-  chat as `chatId`, the envelope id as `requestId`, the session, the subcommand,
+  chat as `chatId`, the envelope id as `requestId`, `surface` (`command` or
+  `button`), the session, the subcommand,
   the decision (`allowed`, `denied`, `info`, `error`) and a result code. It MUST
   NOT carry the text typed, a thread name, the `response_url` or any token. A
   failed audit publish MUST NOT fail the command. What the runner refuses
@@ -201,6 +233,7 @@ here:
 
 ## Out of scope for this feature
 
-Message shortcuts and thread buttons, modals, the move to `agent_view`, a
-read-only mode for guests, per-person rate limits, and commands that change
-routes, agents, permissions, secrets, the daemon or the release.
+Message shortcuts and modals (control of a thread from the "..." menu of any of
+its messages, with a confirmation modal), `status <thread>`, the move to
+`agent_view`, a read-only mode for guests, per-person rate limits, and commands
+that change routes, agents, permissions, secrets, the daemon or the release.

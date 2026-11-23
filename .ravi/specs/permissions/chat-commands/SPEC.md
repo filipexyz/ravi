@@ -84,7 +84,9 @@ to the caller.
   threads comes from the channel (`closeAccess`), because that command is the
   channel's own (for Slack it imports Slack's thread code): the engine reads only
   the runtime control class, the same for every channel. When that metadata
-  cannot be read the command MUST be refused. The map is `CHAT_COMMAND_SESSION_RIGHT` and a refusal MUST come before
+  cannot be read the command MUST be refused, and so MUST a command that changes
+  state (`close`, `close idle`, `stop`) whose declared access is not a mutating
+  one: a channel that declared a read command for it would let a reader through. The map is `CHAT_COMMAND_SESSION_RIGHT` and a refusal MUST come before
   any operation.
 - The command-level check MUST run as `source: "channel-command"` with the
   contact as subject. No ambient runtime context, no agent ceiling, no local
@@ -111,10 +113,14 @@ to the caller.
   and no turn running and no prompt queued. It MUST skip a thread with an open
   question, an undelivered answer or a pending return, and MUST count only the
   closes it made.
-- `stop`: asks the runtime on `ravi.session.runtime.control` with
-  `turn.interrupt`, the request `ravi sessions runtime interrupt` makes. It MUST
-  say nothing is running when no turn is, and MUST NOT claim a stop it could not
-  confirm (a timeout and an unreachable runtime are said as such).
+- `stop [thread]`: asks the runtime on `ravi.session.runtime.control` with
+  `turn.interrupt`, the request `ravi sessions runtime interrupt` makes, for the
+  session of the chat or, given a thread, for that thread's own session (found by
+  the channel's `findThread`, in the threads of the chat's session). The rights
+  asked are the same either way and come before the thread is looked up. It MUST
+  say nothing is running when no turn is, MUST say a thread that is not found or
+  has no session left, and MUST NOT claim a stop it could not confirm (a timeout
+  and an unreachable runtime are said as such).
 - A channel with no threads MUST say so (`threads_unsupported`) for `threads`,
   `close` and `close idle`, not pretend there are none.
 
@@ -132,18 +138,31 @@ Every command, the refused and the static included, MUST publish
 `ravi.audit.chat_command` with `channel` (a value the adapter supplies), the
 account, the instance, the chat, the person as the platform knows them
 (`actorId`), the contact, the session, the subcommand, the decision (`allowed`,
-`denied`, `info`, `error`), a result code and the platform's request id when it
-has one. It MUST NOT carry the text typed, a thread name, a URL or any token. A
-failed audit publish MUST NOT fail the command, and a delivery failure of the
-answer MUST NOT stop the audit.
+`denied`, `info`, `error`), a result code, the platform's request id when it
+has one, and how the person reached the command (`surface`, a value the adapter
+supplies: a typed command, a button) when it says. It MUST NOT carry the text
+typed, a thread name, a URL or any token. A failed audit publish MUST NOT fail
+the command, and a delivery failure of the answer MUST NOT stop the audit.
 
 ## Architecture
 
 `src/chat-commands/` MUST NOT name any channel and MUST NOT import channel code;
-a test reads its files and fails on a channel name or a `channels/` import.
+a test reads its files and fails on a channel name or a `channels/` import, and
+on the import of the CLI command class that closes a channel's threads.
+
+## Known limits
+
+Recorded, with no change planned here:
+
+- The test above reads only the direct imports of `engine.ts` and `parse.ts`.
+  The core already reaches Slack code by transitive paths that this feature did
+  not add: `router/router-db.ts` imports `channels/slack/automatic-terminal-manifest.ts`,
+  `router/sessions.ts` imports `channels/context.ts`, and
+  `runtime/session-chat-identity.ts` imports `channels/capabilities.ts`. The
+  engine's own files are clean; the router naming a channel is a debt of the core.
 
 ## Out of scope
 
-Message shortcuts and thread buttons, modals, a second channel's adapter,
+Message shortcuts and modals, `status <thread>`, a second channel's adapter,
 per-person rate limits, and commands that change routes, agents, permissions,
 secrets, the daemon or the release.
