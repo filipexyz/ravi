@@ -55,8 +55,10 @@ disponíveis. Para conseguir full-access aprovado, de qualquer turno (Slack, Wha
 `ravi permissions request full-access --to contact:<id> --chat <chat-id>
 --agent <executor> --execute` (sem `--execute` só mostra o plano, exit 3). Ele
 não grava nada e volta na hora com um `requestId`: o pedido vai para todo contato
-com admin que algum canal consiga alcançar (hoje o adaptador de Slack manda um
-cartão privado, "Full access requested", com contato e chat nomeados e seus ids).
+com admin que algum canal consiga alcançar (o adaptador de Slack manda um
+cartão privado, "Full access requested", com contato e chat nomeados e seus ids; o de
+WhatsApp manda uma mensagem no DM do grantor e a resposta `aprovo` ou `nego`, citando
+a mensagem, decide; quem respondeu é o remetente verificado da plataforma, nunca o texto).
 Só aplica quando um desses aprova, naquele chat apenas; o pedido expira em 10
 minutos. Acompanhe com `ravi permissions request-status <requestId>` (`applied`
 só vale com o grant lido de volta). O executor de `--agent` precisa já ter admin

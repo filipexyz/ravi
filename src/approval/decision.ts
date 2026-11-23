@@ -1,3 +1,4 @@
+import "../channels/slack/grantors.js";
 import { actorCanGrantRequestedPermission } from "./grantor.js";
 import { grantAllowsIntent, readPermissionGrantMetadata, resolveClickScope } from "./grant-metadata.js";
 import {

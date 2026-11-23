@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { answerSlackApprovalClick } from "../../approval/slack-click-feedback.js";
-import { setApprovalGrantorRouterConfigForTest } from "../../approval/grantor.js";
+import { setApprovalGrantorRouterConfigForTest } from "./grantors.js";
 import {
   SLACK_PERMISSION_GRANT_ACTION_EXACT,
   SLACK_PERMISSION_GRANT_ACTION_FULL_ACCESS,
@@ -23,7 +23,7 @@ import {
   resetGrantApprovalAdaptersForTest,
   type GrantRequestServiceDependencies,
 } from "../../permissions/grant-requests/service.js";
-import { dbCreateAgent, dbUpsertChat, dbUpsertInstance } from "../../router/router-db.js";
+import { dbCreateAgent, dbUpsertChat, dbUpsertInstance, getDb } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import {
   GRANT_REQUEST_ID_PREFIX,
@@ -220,6 +220,18 @@ describe("slack grant request adapter", () => {
 
       expect(outcome).toEqual({ handled: true, result: "unknown_actor" });
       expect(responses[0]?.payload).toMatchObject({ response_type: "ephemeral", replace_original: false });
+      expect(getGrantRequest(request.id)?.status).toBe("pending");
+      expect(dbListContactChatGrants({ contactId: grantee.id })).toEqual([]);
+    });
+
+    it("ignores a click from an admin who was offered the request but was never sent this card", async () => {
+      const request = await open();
+      // The prompt that was recorded for this admin is gone: nothing ties the click to a delivery.
+      getDb().prepare("DELETE FROM permission_grant_request_deliveries WHERE request_id = ?").run(request.id);
+
+      const outcome = await handleSlackGrantRequestInteraction(click(request.id), slackDeps);
+
+      expect(outcome).toEqual({ handled: true, result: "not_grantor" });
       expect(getGrantRequest(request.id)?.status).toBe("pending");
       expect(dbListContactChatGrants({ contactId: grantee.id })).toEqual([]);
     });

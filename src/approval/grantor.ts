@@ -1,26 +1,34 @@
-import { resolveScopedSlackIdentity, resolveSlackInstanceAliases } from "../channels/slack/instance-alias.js";
-import { configStore } from "../config-store.js";
-import {
-  getContact,
-  getContactDetails,
-  isSlackHumanUserId,
-  listOwnedPlatformIdentities,
-  resolvePlatformIdentity,
-  type PlatformIdentity,
-} from "../contacts.js";
+import { getContact, getContactDetails, resolvePlatformIdentity, type PlatformIdentity } from "../contacts.js";
 import { canWithCapabilities } from "../permissions/capability-snapshot.js";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 
-type GrantorRouterConfig = Parameters<typeof resolveSlackInstanceAliases>[0];
+/**
+ * How one channel turns a verified platform sender into a contact. A channel
+ * whose identities are scoped in a way the generic lookup cannot read (Slack
+ * workspaces and their aliases) registers its own; every other channel uses the
+ * generic platform-identity lookup below.
+ */
+export type GrantorIdentityResolver = (input: {
+  readonly senderId: string;
+  /** Other forms of the same verified sender id (for example a namespaced LID). */
+  readonly senderAliases?: readonly string[];
+  readonly instanceId?: string | null;
+  readonly accountId?: string;
+}) => Pick<PlatformIdentity, "ownerType" | "ownerId"> | null;
 
-const defaultLoadGrantorRouterConfig = (): GrantorRouterConfig => configStore.getConfig();
-let loadGrantorRouterConfig = defaultLoadGrantorRouterConfig;
+const identityResolvers = new Map<string, GrantorIdentityResolver>();
 
-export function setApprovalGrantorRouterConfigForTest(loader?: () => GrantorRouterConfig): void {
-  loadGrantorRouterConfig = loader ?? defaultLoadGrantorRouterConfig;
+export function registerGrantorIdentityResolver(channel: string, resolver: GrantorIdentityResolver): void {
+  identityResolvers.set(channel.trim().toLowerCase(), resolver);
+}
+
+export function unregisterGrantorIdentityResolver(channel: string): void {
+  identityResolvers.delete(channel.trim().toLowerCase());
 }
 
 export interface ApprovalGrantorInput {
+  /** Other forms of the same verified sender id; the channel's own lookup decides what they mean. */
+  readonly senderAliases?: readonly string[];
   readonly channel: string;
   readonly accountId?: string;
   readonly instanceId?: string | null;
@@ -47,10 +55,19 @@ export function actorCanGrantRequestedPermission(input: ApprovalGrantorInput): A
     return { allowed: false, reason: "missing_actor" };
   }
 
-  const identity =
-    input.channel.trim().toLowerCase() === "slack"
-      ? resolveSlackGrantorIdentity(senderId, input.instanceId ?? input.accountId)
-      : resolveGrantorIdentity(input.channel, senderId, [input.instanceId, input.accountId, ""]);
+  const channelResolver = identityResolvers.get(input.channel.trim().toLowerCase());
+  const identity = channelResolver
+    ? channelResolver({
+        senderId,
+        ...(input.senderAliases?.length ? { senderAliases: input.senderAliases } : {}),
+        ...(input.instanceId !== undefined ? { instanceId: input.instanceId } : {}),
+        ...(input.accountId ? { accountId: input.accountId } : {}),
+      })
+    : resolveGrantorIdentity(
+        input.channel,
+        [senderId, ...(input.senderAliases ?? [])],
+        [input.instanceId, input.accountId, ""],
+      );
   if (
     !identity?.ownerType ||
     !identity.ownerId ||
@@ -76,134 +93,44 @@ export function actorCanGrantRequestedPermission(input: ApprovalGrantorInput): A
   };
 }
 
-/** Upper bound on private approval cards sent for one request. */
-export const MAX_SLACK_APPROVAL_GRANTORS = 20;
-
-export interface SlackApprovalGrantorsInput {
-  readonly instanceId: string;
-  readonly permission?: string | null;
-  readonly objectType?: string | null;
-  readonly objectId?: string | null;
-}
-
-/**
- * Slack people who could approve this request: every human Slack identity of
- * the instance (its configured aliases plus the legacy empty scope) that is
- * owned by a contact and passes the same gate a click goes through. The card is
- * sent only to them, so nobody else sees a button they cannot use.
- */
-export function listSlackApprovalGrantorUserIds(input: SlackApprovalGrantorsInput): string[] {
-  let config: GrantorRouterConfig = null;
-  try {
-    config = loadGrantorRouterConfig();
-  } catch {
-    // Without config the lookup stays on the received instance.
-  }
-  const aliases = resolveSlackInstanceAliases(config, input.instanceId);
-  const candidates = new Set<string>();
-  for (const identity of listOwnedPlatformIdentities({
-    channel: "slack",
-    instanceIds: [...aliases.scopedAliases, ""],
-  })) {
-    if (identity.ownerType !== "contact") continue;
-    if (!isSlackHumanUserId(identity.platformUserId)) continue;
-    candidates.add(identity.platformUserId.trim().toUpperCase());
-  }
-
-  const grantors: string[] = [];
-  for (const userId of [...candidates].sort()) {
-    const result = actorCanGrantRequestedPermission({
-      channel: "slack",
-      instanceId: input.instanceId,
-      senderId: userId,
-      permission: input.permission,
-      objectType: input.objectType,
-      objectId: input.objectId,
-    });
-    if (!result.allowed || result.subjectType !== "contact") continue;
-    grantors.push(userId);
-    if (grantors.length >= MAX_SLACK_APPROVAL_GRANTORS) break;
-  }
-  return grantors;
-}
-
-/**
- * The Slack user id of one contact in this instance, for card mentions. Display
- * names are never identity evidence; only a linked platform identity is.
- */
-export function findSlackUserIdForContact(input: {
-  readonly contactId: string;
-  readonly instanceId?: string | null;
-}): string | null {
-  const contactId = input.contactId.trim();
-  if (!contactId) return null;
-  let config: GrantorRouterConfig = null;
-  try {
-    config = loadGrantorRouterConfig();
-  } catch {
-    // Without config the lookup stays on the received instance.
-  }
-  const aliases = resolveSlackInstanceAliases(config, input.instanceId ?? null);
-  for (const identity of listOwnedPlatformIdentities({
-    channel: "slack",
-    instanceIds: [...aliases.scopedAliases, ""],
-  })) {
-    if (identity.ownerType !== "contact" || identity.ownerId !== contactId) continue;
-    if (!isSlackHumanUserId(identity.platformUserId)) continue;
-    return identity.platformUserId.trim().toUpperCase();
-  }
-  return null;
-}
-
-/**
- * A Slack clicker resolves exactly like a Slack message author
- * (`resolveSlackActorIdentity`): only the receiving instance's configured
- * aliases, then the empty legacy scope. No cross-instance or cross-channel
- * fallback, so a sender who is "unknown" to the turn cannot be an owner here.
- */
-function resolveSlackGrantorIdentity(
-  senderId: string,
-  instanceId: string | null | undefined,
-): Pick<PlatformIdentity, "ownerType" | "ownerId"> | null {
-  let config: GrantorRouterConfig = null;
-  try {
-    config = loadGrantorRouterConfig();
-  } catch {
-    // Without config the lookup stays on the received instance (and the empty
-    // legacy scope): narrower, never wider.
-  }
-  // Only the request's own instance: the stored account id can be stale and name
-  // another workspace, so it is never used as a fallback scope.
-  const aliases = resolveSlackInstanceAliases(config, instanceId);
-  const resolution = resolveScopedSlackIdentity(
-    aliases,
-    (scope) => resolvePlatformIdentity({ channel: "slack", instanceId: scope, platformUserId: senderId }),
-    (identity) => (identity.ownerType && identity.ownerId ? `${identity.ownerType}:${identity.ownerId}` : null),
-  );
-  return resolution.identity;
-}
-
 function resolveGrantorIdentity(
   channel: string,
-  senderId: string,
+  senderIds: readonly string[],
   instanceCandidates: Array<string | null | undefined>,
 ): Pick<PlatformIdentity, "ownerType" | "ownerId"> | null {
+  const senderId = senderIds[0] ?? "";
   const seen = new Set<string>();
-  for (const candidate of instanceCandidates) {
-    const instanceId = candidate?.trim() ?? "";
-    const key = `${channel}:${instanceId}:${senderId}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const identity =
-      typeof resolvePlatformIdentity === "function"
-        ? resolvePlatformIdentity({
-            channel,
-            instanceId,
-            platformUserId: senderId,
-          })
-        : null;
-    if (identity?.ownerType && identity.ownerId) return identity;
+  // A namespaced sender (`lid:...`) is only its own identity: its bare digits are not a phone
+  // number and must not be looked up as one, neither as an identity nor as a contact below.
+  const namespaced = senderIds.some((id) => id.startsWith("lid:"));
+  const lookupIds = namespaced ? senderIds.filter((id) => id.startsWith("lid:")) : senderIds;
+  const owners = new Map<string, Pick<PlatformIdentity, "ownerType" | "ownerId">>();
+  for (const platformUserId of lookupIds) {
+    for (const candidate of instanceCandidates) {
+      const instanceId = candidate?.trim() ?? "";
+      const key = `${channel}:${instanceId}:${platformUserId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const identity =
+        typeof resolvePlatformIdentity === "function"
+          ? resolvePlatformIdentity({
+              channel,
+              instanceId,
+              platformUserId,
+            })
+          : null;
+      if (identity?.ownerType && identity.ownerId) {
+        owners.set(`${identity.ownerType}:${identity.ownerId}`, identity);
+      }
+    }
   }
+  // One verified sender, one owner. Forms of the same sender that resolve to different owners
+  // (a bare number and its namespaced `lid:` form) are ambiguous, and ambiguity never authorizes.
+  if (owners.size > 1) return null;
+  const [only] = owners.values();
+  if (only) return only;
+
+  if (namespaced) return null;
 
   // Prefer the canonical details lookup. `getContact` is a thin export and is
   // sometimes replaced by leaked bun test mocks that return a dummy object.

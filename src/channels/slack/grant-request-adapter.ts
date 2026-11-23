@@ -33,6 +33,7 @@ import type {
   GrantRequestRecord,
   ReachableContact,
 } from "../../permissions/grant-requests/types.js";
+import { listGrantRequestDeliveries } from "../../permissions/grant-requests/store.js";
 import { dbListInstances } from "../../router/router-db.js";
 import { logger } from "../../utils/logger.js";
 import { requestReply as runtimeRequestReply } from "../../utils/request-reply.js";
@@ -199,10 +200,15 @@ export async function handleSlackGrantRequestInteraction(
   const senderId = typeof data.userId === "string" ? data.userId.trim() : "";
   const accountId = typeof data.accountId === "string" ? data.accountId.trim() : undefined;
   const instanceId = typeof data.instanceId === "string" ? data.instanceId.trim() : undefined;
+
+  // The click must come from the person the card was sent to, on the card that was sent.
+  const delivery = findDeliveredCard(requestId, senderId, data);
   const outcome = decideGrantRequest(
     {
       requestId,
       decision: click === "full-access" ? "approve" : "reject",
+      // No recorded card for this person: an empty binding matches nobody, so the core refuses.
+      deliveredTo: delivery?.contactId ?? "",
       actor: {
         channel: SLACK_GRANT_REQUEST_CHANNEL,
         senderId,
@@ -231,6 +237,28 @@ export async function handleSlackGrantRequestInteraction(
   });
   await reply({ replace_original: true, text: final.text, blocks: final.blocks });
   return { handled: true, result: approved ? "approved" : "rejected" };
+}
+
+/**
+ * The recorded Slack delivery that this click answers. A direct-message card also pins the
+ * message and the conversation it was posted in; an ephemeral card is private to the person.
+ */
+function findDeliveredCard(requestId: string, senderId: string, data: Record<string, unknown>) {
+  const wanted = senderId.toUpperCase();
+  const messageTs = typeof data.messageTs === "string" ? data.messageTs.trim() : "";
+  const channelId = typeof data.channelId === "string" ? data.channelId.trim() : "";
+  for (const delivery of listGrantRequestDeliveries(requestId)) {
+    if (delivery.channel !== SLACK_GRANT_REQUEST_CHANNEL) continue;
+    if (stringField(delivery.ref, "userId").toUpperCase() !== wanted) continue;
+    if (stringField(delivery.ref, "kind") === "dm") {
+      const cardMessage = stringField(delivery.ref, "messageId");
+      const cardChat = stringField(delivery.ref, "chatId");
+      if (messageTs && cardMessage && messageTs !== cardMessage) continue;
+      if (channelId && cardChat && channelId !== cardChat) continue;
+    }
+    return delivery;
+  }
+  return null;
 }
 
 function refusalNotice(reason: GrantDecisionRefusal): SlackApprovalClickNotice {

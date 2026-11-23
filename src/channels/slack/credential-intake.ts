@@ -1,4 +1,5 @@
 import { actorCanGrantRequestedPermission } from "../../approval/grantor.js";
+import "./grantors.js";
 import { authorizeIntakeSubject } from "../../credentials/intake-authorization.js";
 import {
   bindIntakeView,

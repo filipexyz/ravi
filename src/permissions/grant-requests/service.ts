@@ -253,23 +253,29 @@ export async function requestGrant(
  * the grantee can never decide their own access.
  */
 export function decideGrantRequest(
-  input: { readonly requestId: string; readonly decision: GrantDecision; readonly actor: VerifiedActor },
+  input: {
+    readonly requestId: string;
+    readonly decision: GrantDecision;
+    readonly actor: VerifiedActor;
+    /**
+     * The contact the answered prompt was delivered to, as the adapter recorded it. An answer
+     * counts only when the verified approver is that very contact: a prompt sent to one person
+     * is not answered by another, even another admin. Required: an adapter with no recorded
+     * delivery for the answer passes an empty string, which matches nobody.
+     */
+    readonly deliveredTo: string;
+  },
   dependencies: GrantRequestServiceDependencies = defaultDependencies,
 ): GrantDecisionResult {
   const now = dependencies.now();
   const record = getGrantRequest(input.requestId);
   if (!record) return { kind: "refused", reason: "not_found" };
-  if (record.status === "expired" || (record.status === "pending" && record.expiresAt <= now)) {
-    expireGrantRequests(now);
-    return { kind: "refused", reason: "expired", request: getGrantRequest(record.id) ?? record };
-  }
-  if (record.status !== "pending") return { kind: "refused", reason: "already_decided", request: record };
-
   const gate = actorCanGrantRequestedPermission({
     channel: input.actor.channel,
     ...(input.actor.accountId ? { accountId: input.actor.accountId } : {}),
     ...(input.actor.instanceId ? { instanceId: input.actor.instanceId } : {}),
     senderId: input.actor.senderId,
+    ...(input.actor.senderAliases?.length ? { senderAliases: input.actor.senderAliases } : {}),
     permission: FULL_ACCESS_CAPABILITY.permission,
     objectType: FULL_ACCESS_CAPABILITY.objectType,
     objectId: FULL_ACCESS_CAPABILITY.objectId,
@@ -284,10 +290,21 @@ export function decideGrantRequest(
   if (approverContactId === record.plan.contactId) {
     return { kind: "refused", reason: "grantee_cannot_decide", request: record };
   }
-  // Only people the request was offered to may answer it.
+  // Only people the request was offered to may answer it, and only through the prompt that was sent to them.
   if (!record.grantorContactIds.includes(approverContactId)) {
     return { kind: "refused", reason: "not_grantor", request: record };
   }
+  if (input.deliveredTo !== approverContactId) {
+    return { kind: "refused", reason: "not_grantor", request: record };
+  }
+
+  // Terminal states are only told to a verified, offered approver: a stranger who quotes an old
+  // prompt learns nothing and triggers nothing.
+  if (record.status === "expired" || (record.status === "pending" && record.expiresAt <= now)) {
+    expireGrantRequests(now);
+    return { kind: "refused", reason: "expired", request: getGrantRequest(record.id) ?? record };
+  }
+  if (record.status !== "pending") return { kind: "refused", reason: "already_decided", request: record };
 
   const claimed = claimGrantRequest({
     id: record.id,

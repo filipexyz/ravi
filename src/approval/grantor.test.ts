@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { linkContactIdentity } from "../contacts.js";
 import { dbCreateTagDefinition } from "../tags/tag-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { listSlackApprovalGrantorUserIds, setApprovalGrantorRouterConfigForTest } from "../channels/slack/grantors.js";
 import {
   actorCanGrantRequestedPermission,
-  listSlackApprovalGrantorUserIds,
-  setApprovalGrantorRouterConfigForTest,
+  registerGrantorIdentityResolver,
+  unregisterGrantorIdentityResolver,
 } from "./grantor.js";
 import {
   APPROVAL_TEST_FAMILY_PHONE,
@@ -257,5 +259,155 @@ describe("approval grantor", () => {
     ]);
     expect(listSlackApprovalGrantorUserIds({ instanceId: "other", ...request })).toEqual(["UOTHERWS1"]);
     expect(listSlackApprovalGrantorUserIds({ instanceId: "nobody", ...request })).toEqual([]);
+  });
+});
+
+describe("approval grantor identity resolvers", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-approval-grantor-resolvers-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("asks the resolver registered for the channel, and the generic lookup for every other one", () => {
+    const owner = seedApprovalContact({
+      phone: APPROVAL_TEST_SLACK_OWNER_PHONE,
+      name: "Owner",
+      tags: ["permission.admin"],
+    });
+    const asked: string[] = [];
+    registerGrantorIdentityResolver("test-channel", (input) => {
+      asked.push(input.senderId);
+      return input.senderId === "sender-1" ? { ownerType: "contact", ownerId: owner.id } : null;
+    });
+
+    expect(actorCanGrantRequestedPermission({ channel: "test-channel", senderId: "sender-1" })).toMatchObject({
+      allowed: true,
+      reason: "authorized_grantor",
+      subjectId: owner.id,
+    });
+    expect(actorCanGrantRequestedPermission({ channel: "test-channel", senderId: "sender-2" })).toMatchObject({
+      allowed: false,
+      reason: "unresolved_identity",
+    });
+    expect(asked).toEqual(["sender-1", "sender-2"]);
+    // A channel with no resolver of its own still resolves a contact by the generic lookup.
+    expect(
+      actorCanGrantRequestedPermission({ channel: "whatsapp", senderId: APPROVAL_TEST_SLACK_OWNER_PHONE }),
+    ).toMatchObject({ allowed: true, subjectId: owner.id });
+  });
+
+  it("hands the aliases of a verified sender to the channel resolver, and resolves them in the generic lookup", () => {
+    const owner = seedApprovalContact({
+      phone: APPROVAL_TEST_SLACK_OWNER_PHONE,
+      name: "Owner",
+      tags: ["permission.admin"],
+    });
+    linkContactIdentity(owner.id, { channel: "whatsapp", platformUserId: "lid:4242424242", instanceId: "inst-1" });
+    const seen: Array<{ senderId: string; senderAliases?: readonly string[]; instanceId?: string | null }> = [];
+    registerGrantorIdentityResolver("alias-channel", (input) => {
+      seen.push({ senderId: input.senderId, senderAliases: input.senderAliases, instanceId: input.instanceId });
+      return { ownerType: "contact", ownerId: owner.id };
+    });
+    try {
+      actorCanGrantRequestedPermission({
+        channel: "alias-channel",
+        senderId: "4242424242",
+        senderAliases: ["lid:4242424242"],
+        instanceId: "inst-1",
+      });
+      expect(seen).toEqual([{ senderId: "4242424242", senderAliases: ["lid:4242424242"], instanceId: "inst-1" }]);
+    } finally {
+      unregisterGrantorIdentityResolver("alias-channel");
+    }
+    // Without a resolver of its own the generic lookup tries the exact namespaced identity too.
+    expect(
+      actorCanGrantRequestedPermission({
+        channel: "whatsapp",
+        senderId: "4242424242",
+        senderAliases: ["lid:4242424242"],
+        instanceId: "inst-1",
+      }),
+    ).toMatchObject({ allowed: true, subjectId: owner.id });
+  });
+  it("never resolves an unlinked lid: sender through its digits as a phone number", () => {
+    // The LID digits equal the admin's stored phone: only a linked `lid:` identity may stand for them.
+    seedApprovalContact({ phone: APPROVAL_TEST_SLACK_OWNER_PHONE, name: "Owner", tags: ["permission.admin"] });
+
+    expect(
+      actorCanGrantRequestedPermission({
+        channel: "whatsapp",
+        senderId: APPROVAL_TEST_SLACK_OWNER_PHONE,
+        senderAliases: [`lid:${APPROVAL_TEST_SLACK_OWNER_PHONE}`],
+        instanceId: "inst-1",
+      }),
+    ).toMatchObject({ allowed: false, reason: "unresolved_identity" });
+  });
+
+  it("resolves a lid: sender as its linked owner, never as the admin whose phone has the same digits", () => {
+    seedApprovalContact({ phone: APPROVAL_TEST_SLACK_OWNER_PHONE, name: "Admin", tags: ["permission.admin"] });
+    const other = seedApprovalContact({ phone: APPROVAL_TEST_SUPERADMIN_PHONE, name: "Other", tags: [] });
+    linkContactIdentity(other.id, {
+      channel: "whatsapp",
+      platformUserId: `lid:${APPROVAL_TEST_SLACK_OWNER_PHONE}`,
+      instanceId: "inst-1",
+    });
+
+    expect(
+      actorCanGrantRequestedPermission({
+        channel: "whatsapp",
+        senderId: APPROVAL_TEST_SLACK_OWNER_PHONE,
+        senderAliases: [`lid:${APPROVAL_TEST_SLACK_OWNER_PHONE}`],
+        instanceId: "inst-1",
+      }),
+    ).toMatchObject({ allowed: false, reason: "unauthorized_grantor", subjectId: other.id });
+  });
+
+  it("refuses a sender whose identity resolves to different owners on different instance scopes", () => {
+    const admin = seedApprovalContact({
+      phone: APPROVAL_TEST_SLACK_OWNER_PHONE,
+      name: "Admin",
+      tags: ["permission.admin"],
+    });
+    const other = seedApprovalContact({ phone: APPROVAL_TEST_SUPERADMIN_PHONE, name: "Other", tags: [] });
+    linkContactIdentity(admin.id, { channel: "whatsapp", platformUserId: "lid:4242424242", instanceId: "" });
+    linkContactIdentity(other.id, { channel: "whatsapp", platformUserId: "lid:4242424242", instanceId: "inst-1" });
+
+    expect(
+      actorCanGrantRequestedPermission({
+        channel: "whatsapp",
+        senderId: "4242424242",
+        senderAliases: ["lid:4242424242"],
+        instanceId: "inst-1",
+      }),
+    ).toMatchObject({ allowed: false, reason: "unresolved_identity" });
+  });
+
+  it("never looks a lid: sender up through its bare digits, even when those digits are a linked identity", () => {
+    const admin = seedApprovalContact({
+      phone: APPROVAL_TEST_SLACK_OWNER_PHONE,
+      name: "Admin",
+      tags: ["permission.admin"],
+    });
+    const stranger = "4242424242";
+    for (const channel of ["whatsapp", "phone"]) {
+      linkContactIdentity(admin.id, { channel, platformUserId: stranger, instanceId: "inst-1" });
+    }
+
+    expect(
+      actorCanGrantRequestedPermission({
+        channel: "whatsapp",
+        senderId: stranger,
+        senderAliases: [`lid:${stranger}`],
+        instanceId: "inst-1",
+      }),
+    ).toMatchObject({ allowed: false, reason: "unresolved_identity" });
+    // The same digits as a plain phone sender still resolve.
+    expect(
+      actorCanGrantRequestedPermission({ channel: "whatsapp", senderId: APPROVAL_TEST_SLACK_OWNER_PHONE }),
+    ).toMatchObject({ allowed: true, subjectId: admin.id });
   });
 });

@@ -25,6 +25,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/channels/": [
     // Grant requests: the Slack adapter (reach approvers, private card, click handled by the core).
     "src/channels/slack/grant-request-adapter.test.ts",
+    "src/channels/whatsapp/grant-request-adapter.test.ts",
+    "src/channels/grant-request-cross-channel.test.ts",
     // Inactive delivery protocol/floor oracle and per-boot aggregate compatibility gate.
     "src/channels/delivery-contract.test.ts",
     "src/channels/delivery-boot.test.ts",

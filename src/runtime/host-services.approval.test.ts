@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { setApprovalGrantorRouterConfigForTest } from "../approval/grantor.js";
+import { setApprovalGrantorRouterConfigForTest } from "../channels/slack/grantors.js";
 import { setApprovalServiceDependenciesForTest, type ApprovalServiceDependencies } from "../approval/service.js";
 import { SLACK_APPROVAL_ACTION_APPROVE } from "../approval/slack-blocks.js";
 import {

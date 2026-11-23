@@ -1,6 +1,5 @@
 import "reflect-metadata";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { setApprovalGrantorRouterConfigForTest } from "../../approval/grantor.js";
 import {
   APPROVAL_TEST_SLACK_OWNER_PHONE,
   APPROVAL_TEST_STRANGER_PHONE,
@@ -43,7 +42,6 @@ describe("permissions request / request-status", () => {
 
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-permissions-request-");
-    setApprovalGrantorRouterConfigForTest(() => ({ instances: {}, instanceToAccount: {} }));
     setPermissionAuditPublisherForTest(async () => {});
     resetGrantApprovalAdaptersForTest();
     delivered = [];
@@ -67,7 +65,6 @@ describe("permissions request / request-status", () => {
   });
 
   afterEach(async () => {
-    setApprovalGrantorRouterConfigForTest();
     setPermissionAuditPublisherForTest();
     resetGrantApprovalAdaptersForTest();
     await cleanupIsolatedRaviState(stateDir);
@@ -164,6 +161,7 @@ describe("permissions request / request-status", () => {
     decideGrantRequest({
       requestId: asked.requestId,
       decision: "approve",
+      deliveredTo: admin.id,
       actor: { channel: "test-channel", senderId: APPROVAL_TEST_SLACK_OWNER_PHONE },
     });
 

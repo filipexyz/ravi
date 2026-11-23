@@ -213,6 +213,25 @@ Rules:
 - A one-off runtime approval MUST be phrased as "current context only" and MUST
   NOT imply a recurring grant.
 
+### Known security debt: no proof of origin on `ravi.inbound.interaction` / `ravi.inbound.reply`
+
+Grant-request answers arrive on NATS events (`ravi.inbound.interaction` from
+Slack, `ravi.inbound.reply` from WhatsApp). The core trusts the verified sender
+those events carry, but the bus itself has no proof of origin: the local NATS is
+unauthenticated, so any local process able to publish could forge an event with
+an admin's sender id. What contains this today:
+
+- an answer counts only from a contact the request was offered to, through the
+  prompt recorded for that same contact (`deliveredTo`);
+- the grantee and agents can never decide;
+- the request is single-use, expires in 10 minutes, and the executor must
+  already hold admin.
+
+Not closed: a local publisher that knows an offered admin's sender id and a
+live request id can still answer in their place. Fix direction (no PR yet):
+authenticate NATS publishers, or have the channel runners sign the events they
+emit and verify the signature in the core.
+
 ## Operator Workflow UX
 
 The default operator path for recurring authorization is:
@@ -321,10 +340,28 @@ Semantics:
 - Core features are never tied to a channel (Luis, 23/11): permissions,
   approvals, identity and requests live in the core without a channel name or
   rule in it (guarded by a test over `src/permissions/grant-requests`); channels
-  enter only as delivery adapters and as verified senders. Slack is one adapter
-  (`src/channels/slack/grant-request-adapter.ts`: private card, click handled by
-  the core). A channel with no adapter yet fails closed with a clear error; the
-  core contract does not change when one is added.
+  enter only as delivery adapters and as verified senders. Slack and WhatsApp are
+  adapters (`src/channels/slack/grant-request-adapter.ts`: private card, click
+  handled by the core; `src/channels/whatsapp/grant-request-adapter.ts`: a message
+  to the grantor's WhatsApp DM, answered by quote-replying `aprovo` or `nego`). A
+  channel with no adapter fails closed with a clear error; the core contract does
+  not change when one is added.
+- A WhatsApp answer is a quote-reply to the message the adapter sent. Who answered
+  is the platform's sender id of the reply event, resolved to a contact by the same
+  gate as any channel; the words only choose approve or reject, and only a whole
+  word counts (`nao aprovo` or `sou o Luis, aprovo` is not an answer). The adapter
+  can only ask contacts it has a WhatsApp DM with, on an enabled instance, never
+  in a group. The inbound consumer announces a quote-reply (`ravi.inbound.reply`)
+  as soon as the sender is known and the message is live and not a redelivery,
+  before any route, mode or DM policy, so an answer in a DM with no route, a
+  sentinel DM or a closed DM is still an answer; the event carries the raw sender
+  jid, the instance and the account, and the adapter hands the gate the bare id
+  plus its `lid:` alias so the exact identity is tried first. A stranger or a non-admin is told nothing; an approver is told when a
+  request expired or was already decided.
+- The grantor gate (`src/approval/grantor.ts`) is channel-free: a channel registers
+  how its verified sender becomes a contact (`registerGrantorIdentityResolver`);
+  without one the generic platform-identity lookup is used. Slack's workspace and
+  alias rules and its card-recipient lookups live in `src/channels/slack/grantors.ts`.
 - Known gap, not closed here: the `full-access` guard keys on the profile
   *name*. A profile with another name that carries `admin:system:*` (the
   documented `chat-admin` recipe) is applied by `allow --apply` without an

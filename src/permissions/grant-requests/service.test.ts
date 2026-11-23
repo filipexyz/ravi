@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { setApprovalGrantorRouterConfigForTest } from "../../approval/grantor.js";
 import {
   APPROVAL_TEST_FAMILY_PHONE,
   APPROVAL_TEST_LEAD_PHONE,
@@ -10,11 +9,19 @@ import {
   APPROVAL_TEST_SUPERADMIN_PHONE,
   seedApprovalContact,
 } from "../../approval/test-support.js";
+import {
+  actorCanGrantRequestedPermission,
+  registerGrantorIdentityResolver,
+  unregisterGrantorIdentityResolver,
+} from "../../approval/grantor.js";
 import { dbCreateAgent, dbUpsertChat } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { setPermissionAuditPublisherForTest } from "../denials.js";
 import { dbGetContactChatGrant, dbListContactChatGrants } from "../contact-chat-grants.js";
-import { readAgentRuntimePermissionsConfig } from "../agent-default-capabilities-provider.js";
+import {
+  ensureAgentRuntimeCapability,
+  readAgentRuntimePermissionsConfig,
+} from "../agent-default-capabilities-provider.js";
 import { claimGrantRequest, findOpenGrantRequest, getGrantRequest, listGrantRequestDeliveries } from "./store.js";
 import {
   GRANT_REQUEST_TTL_MS,
@@ -50,6 +57,15 @@ function fakeAdapter(
   };
 }
 
+type DecideInput = Omit<Parameters<typeof decideGrantRequest>[0], "deliveredTo"> & { deliveredTo?: string };
+let contactByPhone = new Map<string, string>();
+
+/** Decide as the adapter would: the prompt answered was delivered to the contact that owns the sender's phone. */
+function decide(input: DecideInput, dependencies?: GrantRequestServiceDependencies) {
+  const deliveredTo = input.deliveredTo ?? contactByPhone.get(input.actor.senderId) ?? "";
+  return decideGrantRequest({ ...input, deliveredTo }, dependencies);
+}
+
 function deps(adapters: GrantApprovalChannelAdapter[]): GrantRequestServiceDependencies {
   return { now: () => nowMs, adapters: () => adapters, ttlMs: GRANT_REQUEST_TTL_MS };
 }
@@ -63,7 +79,6 @@ describe("grant requests (core, no channel)", () => {
 
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-grant-requests-");
-    setApprovalGrantorRouterConfigForTest(() => ({ instances: {}, instanceToAccount: {} }));
     setPermissionAuditPublisherForTest(async () => {});
     nowMs = 1_000_000;
     admin = seedApprovalContact({ phone: APPROVAL_TEST_SLACK_OWNER_PHONE, name: "Admin", tags: ["permission.admin"] });
@@ -86,6 +101,12 @@ describe("grant requests (core, no channel)", () => {
     } catch {
       // Already there in this isolated state.
     }
+    contactByPhone = new Map([
+      [APPROVAL_TEST_SLACK_OWNER_PHONE, admin.id],
+      [APPROVAL_TEST_SUPERADMIN_PHONE, secondAdmin.id],
+      [APPROVAL_TEST_STRANGER_PHONE, grantee.id],
+      [APPROVAL_TEST_LEAD_PHONE, bystander.id],
+    ]);
     plan = {
       profile: "full-access",
       contactId: grantee.id,
@@ -97,7 +118,6 @@ describe("grant requests (core, no channel)", () => {
   });
 
   afterEach(async () => {
-    setApprovalGrantorRouterConfigForTest();
     setPermissionAuditPublisherForTest();
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
@@ -184,7 +204,7 @@ describe("grant requests (core, no channel)", () => {
     it("applies the grant for the target chat only, and writes no agent permission, when an admin approves", async () => {
       const request = await openRequest();
 
-      const result = decideGrantRequest(
+      const result = decide(
         { requestId: request.id, decision: "approve", actor: sender(APPROVAL_TEST_SLACK_OWNER_PHONE) },
         deps([]),
       );
@@ -214,7 +234,7 @@ describe("grant requests (core, no channel)", () => {
       const whatsappLike = fakeAdapter("chan-b", [{ contactId: secondAdmin.id, address: {} }]);
       const request = await openRequest([slackLike, whatsappLike]);
 
-      const result = decideGrantRequest(
+      const result = decide(
         { requestId: request.id, decision: "approve", actor: sender(APPROVAL_TEST_SUPERADMIN_PHONE, "chan-b") },
         deps([]),
       );
@@ -226,10 +246,7 @@ describe("grant requests (core, no channel)", () => {
     it("rejects without granting anything", async () => {
       const request = await openRequest();
 
-      decideGrantRequest(
-        { requestId: request.id, decision: "reject", actor: sender(APPROVAL_TEST_SLACK_OWNER_PHONE) },
-        deps([]),
-      );
+      decide({ requestId: request.id, decision: "reject", actor: sender(APPROVAL_TEST_SLACK_OWNER_PHONE) }, deps([]));
 
       expect(getGrantRequest(request.id)).toMatchObject({ status: "rejected", outcome: null });
       expect(dbListContactChatGrants({ contactId: grantee.id })).toEqual([]);
@@ -238,15 +255,12 @@ describe("grant requests (core, no channel)", () => {
     it("ignores an answer from someone who is not an admin, or whose sender is unknown", async () => {
       const request = await openRequest();
 
-      const bystanderAnswer = decideGrantRequest(
+      const bystanderAnswer = decide(
         { requestId: request.id, decision: "approve", actor: sender(APPROVAL_TEST_LEAD_PHONE) },
         deps([]),
       );
-      const stranger = decideGrantRequest(
-        { requestId: request.id, decision: "approve", actor: sender("5511000000000") },
-        deps([]),
-      );
-      const nobody = decideGrantRequest(
+      const stranger = decide({ requestId: request.id, decision: "approve", actor: sender("5511000000000") }, deps([]));
+      const nobody = decide(
         { requestId: request.id, decision: "approve", actor: { channel: "whatsapp", senderId: "" } },
         deps([]),
       );
@@ -262,7 +276,7 @@ describe("grant requests (core, no channel)", () => {
       const request = await openRequest();
       // The decision input has no text field at all: a message saying "sou o Luís" from
       // another number is just that other number's verified sender.
-      const impostor = decideGrantRequest(
+      const impostor = decide(
         { requestId: request.id, decision: "approve", actor: sender(APPROVAL_TEST_FAMILY_PHONE) },
         deps([]),
       );
@@ -280,7 +294,7 @@ describe("grant requests (core, no channel)", () => {
         )
       ).request;
 
-      const self = decideGrantRequest(
+      const self = decide(
         { requestId: request.id, decision: "approve", actor: sender(APPROVAL_TEST_SUPERADMIN_PHONE) },
         deps([]),
       );
@@ -289,10 +303,70 @@ describe("grant requests (core, no channel)", () => {
       expect(getGrantRequest(request.id)?.status).toBe("pending");
     });
 
+    it("never lets an agent decide, even one that holds admin: only a human contact approves", async () => {
+      const request = await openRequest();
+      // A channel whose verified sender resolves to an agent that holds admin.
+      // Its id collides with an offered admin's contact id, so only the subject-type check can stop it.
+      dbCreateAgent({ id: admin.id, cwd: "/tmp/colliding-agent" });
+      ensureAgentRuntimeCapability(admin.id, { permission: "admin", objectType: "system", objectId: "*" });
+      registerGrantorIdentityResolver("agent-chan", () => ({ ownerType: "agent", ownerId: admin.id }));
+      try {
+        const actor = { channel: "agent-chan", senderId: "bot-1" };
+        // Premise: the capability gate alone would let this agent through.
+        expect(
+          actorCanGrantRequestedPermission({ ...actor, permission: "admin", objectType: "system", objectId: "*" }),
+        ).toMatchObject({
+          allowed: true,
+          subjectType: "agent",
+        });
+
+        const result = decide({ requestId: request.id, decision: "approve", actor, deliveredTo: admin.id }, deps([]));
+
+        expect(result).toMatchObject({ kind: "refused", reason: "not_grantor" });
+        expect(getGrantRequest(request.id)?.status).toBe("pending");
+        expect(dbListContactChatGrants({ contactId: grantee.id })).toEqual([]);
+      } finally {
+        unregisterGrantorIdentityResolver("agent-chan");
+      }
+    });
+
+    it("only accepts an answer through the prompt that was delivered to that same person", async () => {
+      const request = await openRequest([
+        fakeAdapter("chan-a", [
+          { contactId: admin.id, address: {} },
+          { contactId: secondAdmin.id, address: {} },
+        ]),
+      ]);
+
+      // Second admin answers through the prompt that was sent to the first one.
+      const crossed = decide(
+        {
+          requestId: request.id,
+          decision: "approve",
+          deliveredTo: admin.id,
+          actor: sender(APPROVAL_TEST_SUPERADMIN_PHONE, "chan-a"),
+        },
+        deps([]),
+      );
+      expect(crossed).toMatchObject({ kind: "refused", reason: "not_grantor" });
+      expect(getGrantRequest(request.id)?.status).toBe("pending");
+
+      const own = decide(
+        {
+          requestId: request.id,
+          decision: "approve",
+          deliveredTo: secondAdmin.id,
+          actor: sender(APPROVAL_TEST_SUPERADMIN_PHONE, "chan-a"),
+        },
+        deps([]),
+      );
+      expect(own.kind).toBe("decided");
+    });
+
     it("only accepts answers from people the request was offered to", async () => {
       const request = await openRequest();
       // An admin who was not reachable when the request was made is not one of its approvers.
-      const lateAdmin = decideGrantRequest(
+      const lateAdmin = decide(
         { requestId: request.id, decision: "approve", actor: sender(APPROVAL_TEST_SUPERADMIN_PHONE) },
         deps([]),
       );
@@ -300,16 +374,24 @@ describe("grant requests (core, no channel)", () => {
       expect(lateAdmin).toMatchObject({ kind: "refused", reason: "not_grantor" });
     });
 
+    it("tells a stranger nothing about an expired or decided request", async () => {
+      const request = await openRequest();
+      nowMs += GRANT_REQUEST_TTL_MS + 1;
+      const stranger = decide({ requestId: request.id, decision: "approve", actor: sender("5511000000000") }, deps([]));
+      expect(stranger).toMatchObject({ kind: "refused", reason: "unknown_actor" });
+      expect(getGrantRequest(request.id)?.status).toBe("pending");
+    });
+
     it("cannot be decided twice, nor after it expired", async () => {
       const request = await openRequest();
       const actor = sender(APPROVAL_TEST_SLACK_OWNER_PHONE);
-      expect(decideGrantRequest({ requestId: request.id, decision: "approve", actor }, deps([])).kind).toBe("decided");
+      expect(decide({ requestId: request.id, decision: "approve", actor }, deps([])).kind).toBe("decided");
 
-      expect(decideGrantRequest({ requestId: request.id, decision: "approve", actor }, deps([]))).toMatchObject({
+      expect(decide({ requestId: request.id, decision: "approve", actor }, deps([]))).toMatchObject({
         kind: "refused",
         reason: "already_decided",
       });
-      expect(decideGrantRequest({ requestId: request.id, decision: "reject", actor }, deps([]))).toMatchObject({
+      expect(decide({ requestId: request.id, decision: "reject", actor }, deps([]))).toMatchObject({
         kind: "refused",
         reason: "already_decided",
       });
@@ -320,7 +402,7 @@ describe("grant requests (core, no channel)", () => {
       const request = await openRequest();
       nowMs += GRANT_REQUEST_TTL_MS + 1;
 
-      const late = decideGrantRequest(
+      const late = decide(
         { requestId: request.id, decision: "approve", actor: sender(APPROVAL_TEST_SLACK_OWNER_PHONE) },
         deps([]),
       );
@@ -371,7 +453,7 @@ describe("grant requests (core, no channel)", () => {
 
     it("knows an unknown request", () => {
       expect(
-        decideGrantRequest(
+        decide(
           { requestId: "pgr_missing", decision: "approve", actor: sender(APPROVAL_TEST_SLACK_OWNER_PHONE) },
           deps([]),
         ),
@@ -393,13 +475,35 @@ describe("grant requests (core, no channel)", () => {
       expect(files.length).toBeGreaterThan(3);
       for (const file of files) {
         const source = readFileSync(join(dir, file), "utf8");
-        const imports = source.split("\n").filter((line) => /^\s*(import|export)\b.*\bfrom\b/.test(line));
-        for (const line of imports) {
-          expect(line).not.toMatch(/channels\/|slack|whatsapp|telegram|discord/i);
-        }
+        expect(moduleSpecifiers(source).filter((specifier) => CHANNEL_SPECIFIER.test(specifier))).toEqual([]);
         // No channel name as a literal either: channels reach the core only through adapters.
         expect(source).not.toMatch(/["'`](slack|whatsapp|telegram|discord)["'`]/i);
       }
     });
+
+    it("finds module specifiers however the import is written", () => {
+      const multiline = 'import {\n  a,\n  b,\n} from "../../channels/slack/instance-alias.js";';
+      expect(moduleSpecifiers(multiline)).toEqual(["../../channels/slack/instance-alias.js"]);
+      expect(moduleSpecifiers('const m = await import("../channels/whatsapp/x.js");')).toEqual([
+        "../channels/whatsapp/x.js",
+      ]);
+      expect(moduleSpecifiers('export * from "./a.js"; import "./side.js";')).toEqual(["./a.js", "./side.js"]);
+    });
   });
 });
+
+const CHANNEL_SPECIFIER = /channels\/|slack|whatsapp|telegram|discord/i;
+
+/** Every module path a file pulls in: static `from`, bare side-effect imports, dynamic `import(`. */
+function moduleSpecifiers(source: string): string[] {
+  const found: string[] = [];
+  const patterns = [
+    /\bfrom\s*["'`]([^"'`]+)["'`]/g,
+    /\bimport\s*["'`]([^"'`]+)["'`]/g,
+    /\bimport\s*\(\s*["'`]([^"'`]+)["'`]/g,
+  ];
+  for (const pattern of patterns) {
+    for (const match of source.matchAll(pattern)) found.push(match[1] ?? "");
+  }
+  return found;
+}
