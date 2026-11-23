@@ -400,6 +400,8 @@ export interface RaviAppRunResult {
   failure?: RaviAppCliFailure;
   /** Set only for `APP_DEPENDENCY_UNAVAILABLE`: what was required and could not be satisfied. No process was started. */
   unavailableDependencies?: RaviAppUnavailableDependency[];
+  /** Set only when a trusted builtin refused the input itself (its own usage error), never from an app process. */
+  usageError?: true;
   dryRun?: true;
   plan?: {
     appId: string;

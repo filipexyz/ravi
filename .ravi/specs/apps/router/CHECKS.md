@@ -162,3 +162,30 @@ offers it) and the real context registry.
   no `composition` metadata.
 - A cycle of `requires` makes every app on it invalid (`requires cycle: a -> b ->
   a.`), and no app on it starts.
+
+## Protected Omie queries
+
+- `bun run test:omie-orders` runs the isolated integration suite and MUST appear
+  in `test:shard-1`. `src/ci/quality-gate-shards.test.ts` checks shard wiring.
+- `bun test --preload ./src/test/isolated-runtime-preload.ts src/apps/router.test.ts`
+  verifies that authenticated local context wins over ambient context and that
+  a query delegates exact capabilities without requesting writes.
+- `scope.test.ts` rejects absent/malformed private host configuration and verifies
+  fresh loading. Configuration examples contain only synthetic identifiers.
+- `identity.test.ts` validates persisted human ancestry, canonical threads,
+  account aliases, membership removal, root/permission/connection revocation,
+  and tag removal through the contacts API while the child and channel membership
+  remain unchanged. Governed turns MUST not become ungoverned after revocation.
+- `conversation-authority.test.ts` runs the executor through a second, fake channel
+  adapter (verification, membership and capabilities all come from it), proves a
+  type with no adapter fails closed in runtime and delegation, upgrades only the
+  exact legacy configuration, and fails if a non-test executor file names a
+  channel or imports a channel package (static, multi-line and dynamic imports).
+- `client.test.ts` verifies the public CLI receives the original child context,
+  exact handler arguments and safe errors; candidate generation grants nothing.
+- Before publication, inspect the complete diff AND its commit ancestry for
+  installation names/identifiers. Configuration and operational evidence stay
+  private; a sanitized final tree does not sanitize earlier commits.
+- Production acceptance remains a separate operator-authorized procedure:
+  install the reviewed runtime/client, validate manifest, then obtain a real
+  human query in both channel and thread. Synthetic tests do not prove this.

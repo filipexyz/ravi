@@ -27,6 +27,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/grant-request-adapter.test.ts",
     "src/channels/whatsapp/grant-request-adapter.test.ts",
     "src/channels/grant-request-cross-channel.test.ts",
+    // The Slack conversation authority of the Omie read executor (turn proof, membership, capabilities).
+    "src/channels/slack/omie-conversation-authority.test.ts",
     // Inactive delivery protocol/floor oracle and per-boot aggregate compatibility gate.
     "src/channels/delivery-contract.test.ts",
     "src/channels/delivery-boot.test.ts",
@@ -318,6 +320,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/apps/router.test.ts",
     "src/apps/youtube/client.test.ts",
     "src/apps/youtube/credential-authority.test.ts",
+    "src/apps/omie-orders/conversation-authority.test.ts",
   ],
   "src/apps/router.ts": ["src/apps/router.test.ts"],
   "src/apps/youtube/": ["src/apps/youtube/client.test.ts", "src/apps/youtube/credential-authority.test.ts"],
