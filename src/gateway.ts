@@ -71,6 +71,7 @@ import { resolveOmniConnection } from "./omni-config.js";
 import { resolveOmniGroupMetadata } from "./omni/group-metadata-cache.js";
 import { buildRaviTtsRequest, handleRaviTtsRequest, RAVI_TTS_TOPIC, shouldAutoTtsForAgent } from "./audio/tts.js";
 import { handleSlackThreadCreationDelivery, reconcileSlackThreadLifecycle } from "./channels/slack/thread-lifecycle.js";
+import { reconcileHandoffs } from "./handoffs/reconcile.js";
 import { sendSlackMedia } from "./channels/slack/media.js";
 import { deliverSlackAutomaticMedia } from "./channels/slack/automatic-media-output.js";
 import { finalizeStoredSlackApprovalDelivery } from "./approval/service.js";
@@ -1090,6 +1091,9 @@ export class Gateway {
     return this.workDrain.run("slack-thread-reconciliation", async () => {
       const result = await reconcileSlackThreadLifecycle();
       if (result.failures > 0) this.workDrain.recordFailure("slack-thread-reconciliation-record");
+      const handoffs = await reconcileHandoffs();
+      if (handoffs.failures > 0) this.workDrain.recordFailure("handoff-reconciliation-record");
+      if (handoffs.nudged > 0 || handoffs.escalated > 0) log.info("Reconciled handoffs", handoffs);
       if (result.creations > 0 || result.parentReturns > 0 || result.failures > 0) {
         log.info("Reconciled Slack thread lifecycle", result);
       }

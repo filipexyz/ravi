@@ -81,6 +81,7 @@ let reportSlackThreadError: unknown = null;
 let sendSlackThreadError: unknown = null;
 const closedSlackThreads: Array<{ session: Record<string, unknown>; returnResult?: string }> = [];
 const reportedSlackThreads: Array<{ session: Record<string, unknown>; message: string }> = [];
+let childThreadLifecycle: { parentSessionKey: string } | null = null;
 const sentSlackThreadMessages: Array<{
   parentSession: Record<string, unknown>;
   ref: string;
@@ -279,7 +280,7 @@ mock.module("../../channels/slack/thread-lifecycle-store.js", () => ({
     recentSlackThreadRequestQueries.push(input);
     return recentSlackThreadRequest;
   },
-  findSlackThreadLifecycleByChildSession: () => null,
+  findSlackThreadLifecycleByChildSession: () => childThreadLifecycle,
   findSlackThreadLifecycleByChildRef: () => orphanThread,
 }));
 
@@ -355,7 +356,13 @@ mock.module("../../channels/slack/thread-lifecycle.js", () => ({
     return {
       messageId: "slack-thread-send:slack-thread:req-1:m1",
       reopened: true,
-      record: { requestId: "slack-thread:req-1", childSessionName: "dev-slack-t-1713000000000100" },
+      record: {
+        requestId: "slack-thread:req-1",
+        childSessionName: "dev-slack-t-1713000000000100",
+        ...(input.ref === "handoff-child"
+          ? { childSessionKey: "agent:dev:slack:ravi-slack:C123:thread:1713000000.000100" }
+          : {}),
+      },
     };
   },
   splitSlackThreadPlatformChatId: (platformChatId: string) => {
@@ -758,6 +765,7 @@ beforeEach(() => {
   reportSlackThreadError = null;
   sendSlackThreadError = null;
   reportedSlackThreads.length = 0;
+  childThreadLifecycle = null;
   sentSlackThreadMessages.length = 0;
   configuredSlackThreadCalls.length = 0;
   configureSlackThreadError = null;
@@ -2908,6 +2916,52 @@ describe("SessionCommands attach hints", () => {
       code: "THREAD_NOT_THREAD_CHILD",
     });
     expect(reportedSlackThreads).toHaveLength(1);
+  });
+
+  it("report --awaiting opens a handoff the parent closes by messaging the thread", async () => {
+    const { listOpenHandoffs } = await import("../../handoffs/service.js");
+    const childKey = "agent:dev:slack:ravi-slack:C123:thread:1713000000.000100";
+    const parentKey = "agent:dev:slack:ravi-slack:C123";
+    resolvedSession = {
+      sessionKey: childKey,
+      name: "dev-slack-t-1713000000000100",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+    toolContext = { sessionKey: childKey, sessionName: "dev-slack-t-1713000000000100" };
+    childThreadLifecycle = { parentSessionKey: parentKey };
+    for (const open of listOpenHandoffs()) {
+      const { acknowledgeHandoffById } = await import("../../handoffs/service.js");
+      await acknowledgeHandoffById(open.id, "test reset");
+    }
+
+    await expect(new SessionCommands().report("pronta", undefined, true, "lunch")).rejects.toMatchObject({
+      code: "USAGE_ERROR",
+    });
+    await expect(new SessionCommands().report("pronta", undefined, true, undefined, "abc")).rejects.toMatchObject({
+      code: "USAGE_ERROR",
+    });
+
+    const result = (await new SessionCommands().report(
+      "PR #999 pronta para revisão",
+      undefined,
+      true,
+      "review",
+      "abc1234",
+    )) as Record<string, any>;
+    expectReturnShape(sessionReportReturnSchema, result);
+    expect(result.handoff).toMatchObject({ kind: "review", ref: "abc1234" });
+    expect(reportedSlackThreads.at(-1)?.message).toContain("Aguarda o pai:");
+    expect(reportedSlackThreads.at(-1)?.message).toContain(result.handoff.id);
+    expect(listOpenHandoffs(parentKey).map((h) => h.id)).toEqual([result.handoff.id]);
+
+    // Unrelated parent activity does not close it; messaging this thread does.
+    resolvedSession = { sessionKey: parentKey, name: "dev-slack", agentId: "dev", agentCwd: "/tmp/dev" };
+    toolContext = { sessionKey: parentKey, sessionName: "dev-slack" };
+    await new SessionCommands().threadSend("other-thread", "segue", undefined, true);
+    expect(listOpenHandoffs(parentKey)).toHaveLength(1);
+    await new SessionCommands().threadSend("handoff-child", "revisão despachada", undefined, true);
+    expect(listOpenHandoffs(parentKey)).toHaveLength(0);
   });
 
   it("refuses report and close-thread with THREAD_IDENTITY_MISMATCH from a session that took an open thread's name", async () => {

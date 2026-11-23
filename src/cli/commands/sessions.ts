@@ -230,6 +230,15 @@ import { canonicalAssetIdsForTag } from "../../tags/helpers.js";
 import { searchTagBindingsForSelector } from "../../tags/service.js";
 import type { TagBinding } from "../../tags/types.js";
 import {
+  acknowledgeChildHandoffs,
+  acknowledgeHandoffById,
+  declareHandoff,
+  listOpenHandoffs,
+  sessionDisplayName,
+} from "../../handoffs/service.js";
+import { HANDOFF_KINDS, isHandoffKind } from "../../handoffs/store.js";
+import { describeHandoff } from "../../handoffs/reconcile.js";
+import {
   buildThreadHandoffPrompt,
   markThreadHandoffDelivered,
   markThreadHandoffFailed,
@@ -608,6 +617,41 @@ export const sessionReportReturnSchema = z
       sessionKey: z.string(),
       sessionName: z.string(),
     }),
+    handoff: z
+      .object({
+        id: z.string(),
+        kind: z.enum(HANDOFF_KINDS),
+        ref: z.string().nullable(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export const sessionHandoffsReturnSchema = z
+  .object({
+    handoffs: z.array(
+      z
+        .object({
+          id: z.string(),
+          thread: z.object({ sessionKey: z.string(), sessionName: z.string() }),
+          parentSession: z.object({ sessionKey: z.string(), sessionName: z.string() }),
+          kind: z.enum(HANDOFF_KINDS),
+          ref: z.string().nullable(),
+          note: z.string().nullable(),
+          since: z.number(),
+          ageMin: z.number(),
+          parentNudgedAt: z.number().nullable(),
+          ownerEscalatedAt: z.number().nullable(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+export const sessionHandoffAckReturnSchema = z
+  .object({
+    id: z.string(),
+    changed: z.boolean(),
+    status: z.enum(["open", "acknowledged", "superseded"]),
   })
   .strict();
 export const sessionThreadSendReturnSchema = z
@@ -7526,6 +7570,9 @@ export class SessionCommands {
     } catch (error) {
       rethrowSlackThreadError(error);
     }
+    if (result.record.childSessionKey) {
+      await acknowledgeChildHandoffs(result.record.childSessionKey, "thread closed");
+    }
     const payload = {
       status: result.record.status,
       actionId: "thread.close",
@@ -7653,9 +7700,30 @@ export class SessionCommands {
     sessionOverride?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--awaiting <kind>",
+      description: `Declare that this thread now waits for the parent: ${HANDOFF_KINDS.join(", ")}. The parent is reminded after 15 min and the owner told once after 45 min until the parent acts on this thread`,
+    })
+    awaiting?: string,
+    @Option({
+      flags: "--ref <ref>",
+      description: "What the parent should act on (commit SHA, PR number). Only with --awaiting",
+    })
+    ref?: string,
   ) {
     if (!message.trim()) {
       throw new CliExpectedError("Report message is required", "USAGE_ERROR", 2);
+    }
+    const awaitingKind = awaiting?.trim().toLowerCase();
+    if (awaitingKind !== undefined && !isHandoffKind(awaitingKind)) {
+      throw new CliExpectedError(
+        `Unknown --awaiting kind: ${awaiting}. Use one of: ${HANDOFF_KINDS.join(", ")}`,
+        "USAGE_ERROR",
+        2,
+      );
+    }
+    if (ref?.trim() && awaitingKind === undefined) {
+      throw new CliExpectedError("--ref only applies with --awaiting", "USAGE_ERROR", 2);
     }
     const target = sessionOverride?.trim() || resolveCurrentSessionRef();
     if (!target) {
@@ -7673,9 +7741,25 @@ export class SessionCommands {
     }
     assertSlackThreadChildSession("thread.report", session);
     let result: Awaited<ReturnType<typeof reportSlackThreadProgress>>;
+    let handoff: Awaited<ReturnType<typeof declareHandoff>> | null = null;
+    let reportText = decodeLiteralLineBreaks(message);
+    if (awaitingKind !== undefined && isHandoffKind(awaitingKind)) {
+      const parentSessionKey = findSlackThreadLifecycleByChildSession(session.sessionKey)?.parentSessionKey;
+      if (!parentSessionKey) fail("This session has no parent session to wait for.");
+      handoff = await declareHandoff({
+        childSessionKey: session.sessionKey,
+        parentSessionKey: parentSessionKey!,
+        kind: awaitingKind,
+        ref: ref ?? null,
+        note: reportText.split("\n")[0] ?? null,
+        callerContextId: getContext({ localOnly: true })?.contextId ?? null,
+      });
+      reportText = `${reportText}\nAguarda o pai: ${describeHandoff(handoff, sessionDisplayName(session.sessionKey), handoff.createdAt).replace(/^- /, "")}`;
+    }
     try {
-      result = await reportSlackThreadProgress(session, decodeLiteralLineBreaks(message));
+      result = await reportSlackThreadProgress(session, reportText);
     } catch (error) {
+      if (handoff) await acknowledgeHandoffById(handoff.id, "report failed");
       rethrowSlackThreadError(error);
     }
     const payload = {
@@ -7687,9 +7771,108 @@ export class SessionCommands {
         sessionKey: result.record.parentSessionKey,
         sessionName: result.record.parentSessionName,
       },
+      ...(handoff ? { handoff: { id: handoff.id, kind: handoff.kind, ref: handoff.ref } } : {}),
     };
     if (asJson) printJson(payload);
     else console.log(`Reported to ${result.record.parentSessionName}`);
+    return payload;
+  }
+
+  @Command({
+    name: "handoffs",
+    description: "List what threads are waiting for their parent session to do (open handoffs)",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "sessions",
+    action: "handoffs",
+    risk: "low",
+  })
+  async handoffs(
+    @Option({
+      flags: "--session <nameOrKey>",
+      description: "Only handoffs waiting on this parent session (defaults to all)",
+    })
+    sessionOverride?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    let parentSessionKey: string | undefined;
+    if (sessionOverride?.trim()) {
+      const parent = this.resolveTarget(sessionOverride.trim());
+      if (!parent) return;
+      parentSessionKey = parent.sessionKey;
+    }
+    const scopeCtx = getScopeContext();
+    const now = Date.now();
+    const handoffs = listOpenHandoffs(parentSessionKey).filter((handoff) => {
+      if (!isScopeEnforced(scopeCtx)) return true;
+      const parent = getSession(handoff.parentSessionKey);
+      return parent ? canAccessSession(scopeCtx, sessionActionRef(parent)) : false;
+    });
+    const payload = {
+      handoffs: handoffs.map((handoff) => ({
+        id: handoff.id,
+        thread: { sessionKey: handoff.childSessionKey, sessionName: sessionDisplayName(handoff.childSessionKey) },
+        parentSession: {
+          sessionKey: handoff.parentSessionKey,
+          sessionName: sessionDisplayName(handoff.parentSessionKey),
+        },
+        kind: handoff.kind,
+        ref: handoff.ref,
+        note: handoff.note,
+        since: handoff.createdAt,
+        ageMin: Math.max(0, Math.floor((now - handoff.createdAt) / 60_000)),
+        parentNudgedAt: handoff.parentNudgedAt,
+        ownerEscalatedAt: handoff.ownerEscalatedAt,
+      })),
+    };
+    if (asJson) printJson(payload);
+    else if (handoffs.length === 0) console.log("No open handoffs");
+    else
+      for (const handoff of handoffs)
+        console.log(describeHandoff(handoff, sessionDisplayName(handoff.childSessionKey), now));
+    return payload;
+  }
+
+  @Command({
+    name: "handoff-ack",
+    description: "Mark a thread's open handoff as handled by the parent (for actions that do not message the thread)",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "handoff-ack",
+    risk: "low",
+  })
+  async handoffAck(
+    @Arg("handoff", { description: "Handoff id (see ravi sessions handoffs)" })
+    handoffId: string,
+    @Option({ flags: "--reason <text>", description: "What the parent did (for example: review dispatched)" })
+    reason?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    const id = handoffId.trim();
+    if (!id) throw new CliExpectedError("Handoff id is required", "USAGE_ERROR", 2);
+    const { getHandoff } = await import("../../handoffs/store.js");
+    const existing = getHandoff(id);
+    const scopeCtx = getScopeContext();
+    const parent = existing ? getSession(existing.parentSessionKey) : null;
+    if (
+      !existing ||
+      (isScopeEnforced(scopeCtx) && (!parent || !canModifySession(scopeCtx, sessionActionRef(parent))))
+    ) {
+      throw new CliExpectedError(`Handoff not found: ${id}`, "NOT_FOUND", 1);
+    }
+    const acked = await acknowledgeHandoffById(id, reason?.trim() || "acknowledged by parent");
+    const payload = {
+      id,
+      changed: acked !== null,
+      status: acked ? acked.status : existing.status,
+    };
+    if (asJson) printJson(payload);
+    else console.log(acked ? `Acknowledged ${id}` : `Already closed: ${id}`);
     return payload;
   }
 
@@ -7768,6 +7951,9 @@ export class SessionCommands {
       });
     } catch (error) {
       rethrowSlackThreadError(error);
+    }
+    if (result.record.childSessionKey) {
+      await acknowledgeChildHandoffs(result.record.childSessionKey, "parent sent instructions");
     }
     const payload = {
       status: "published" as const,
@@ -8292,6 +8478,8 @@ declareCommandReturns(SessionCommands, {
   read: sessionReadReturnSchema,
   recap: sessionRecapReturnSchema,
   report: sessionReportReturnSchema,
+  handoffs: sessionHandoffsReturnSchema,
+  handoffAck: sessionHandoffAckReturnSchema,
   rename: commandEnvelopeReturnSchema,
   reset: commandEnvelopeReturnSchema,
   send: sessionSendReturnSchema,
