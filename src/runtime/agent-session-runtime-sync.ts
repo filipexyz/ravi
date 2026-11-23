@@ -242,7 +242,7 @@ export function syncAgentSessionsToAgentRuntime(
     const clearThisModelOverride =
       clearModelOverrides ||
       (input.clearIncompatibleModelOverrides === true &&
-        findSessionsWithModelOverrideInvalidForProvider(agentProvider, [session]).length > 0);
+        findSessionsWithModelOverrideInvalidForProvider(agentProvider, [current]).length > 0);
     if (clearThisModelOverride && hasExplicitSessionModelOverride(current)) {
       updateSessionModelOverride(current.sessionKey, null);
       current = { ...current, modelOverride: undefined };

@@ -1295,6 +1295,12 @@ SOURCES
     if (pairedModel !== undefined && !pairedModel.trim()) {
       failSetModelUsage("--model cannot be empty", asJson);
     }
+    if (pairedModel !== undefined && pairedModel.trim().toLowerCase() === "clear") {
+      failSetModelUsage(
+        `--model cannot be 'clear': it names the model to set with the provider. To clear the model: ravi agents set ${id} model clear`,
+        asJson,
+      );
+    }
 
     if (key === "description") return setAgentLibraryDescription(agent.id, value, asJson);
 

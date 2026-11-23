@@ -53,6 +53,7 @@ import {
   type SessionAdapterRecord,
 } from "../../adapters/index.js";
 import {
+  applySessionRuntimeConfigAtomically,
   deleteSession,
   resetSession,
   getOrCreateSession,
@@ -3985,6 +3986,14 @@ export class SessionCommands {
       return;
     }
     const providerOverride = normalized === "clear" ? null : normalized;
+    if (modelPair && modelPair.toLowerCase() === "clear") {
+      failSessionUsage(
+        "sessions set-provider",
+        "--model cannot be 'clear': it names the model to set together with the provider.",
+        `To drop the model override: ravi sessions set-model ${nameOrKey} clear`,
+        asJson,
+      );
+    }
     if (modelPair && !providerOverride) {
       failSessionUsage(
         "sessions set-provider",
@@ -4070,8 +4079,12 @@ export class SessionCommands {
         return;
       }
     }
-    updateSessionRuntimeProviderOverride(s.sessionKey, providerOverride);
-    if (modelPair) updateSessionModelOverride(s.sessionKey, modelPair);
+    // Provider and model land together or not at all: a failed second write must not leave the new
+    // provider next to the old model.
+    applySessionRuntimeConfigAtomically(() => {
+      updateSessionRuntimeProviderOverride(s.sessionKey, providerOverride);
+      if (modelPair) updateSessionModelOverride(s.sessionKey, modelPair);
+    });
     if (providerOverride && s.providerSessionId && s.runtimeProvider && s.runtimeProvider !== providerOverride) {
       clearProviderSession(s.sessionKey);
     }
@@ -4152,19 +4165,28 @@ export class SessionCommands {
       const after = readPersistedSessionMutation(
         s,
         "set-provider",
-        (session) => (session.runtimeProviderOverride ?? null) === providerOverride,
+        (session) =>
+          (session.runtimeProviderOverride ?? null) === providerOverride &&
+          (!modelPair || (session.modelOverride ?? null) === modelPair),
       );
       const effective = resolveEffectiveSessionSelection(after, after.modelOverride ?? null);
-      const payload = buildSessionMutationJson("set-provider", s, after, beforeProviderOverride !== providerOverride, {
-        runtimeProviderOverride: providerOverride,
-        ...(modelPair ? { modelOverride: modelPair } : {}),
-        effectiveProvider: effective.effectiveProvider,
-        providerSource: effective.providerSource,
-        appliesOn: "next-turn-runtime-restart",
-        ...agentDiff,
-        propagated,
-        rematerializedSessions,
-      });
+      const modelChanged = Boolean(modelPair) && (s.modelOverride ?? null) !== modelPair;
+      const payload = buildSessionMutationJson(
+        "set-provider",
+        s,
+        after,
+        beforeProviderOverride !== providerOverride || modelChanged,
+        {
+          runtimeProviderOverride: providerOverride,
+          ...(modelPair ? { modelOverride: modelPair } : {}),
+          effectiveProvider: effective.effectiveProvider,
+          providerSource: effective.providerSource,
+          appliesOn: "next-turn-runtime-restart",
+          ...agentDiff,
+          propagated,
+          rematerializedSessions,
+        },
+      );
       return returnStructuredResult(payload, asJson);
     }
   }

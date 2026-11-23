@@ -378,6 +378,7 @@ describe("AgentsCommands set model validation", () => {
       "only valid with key=provider",
     );
     await expect(commands.set("dev", "provider", "pi", true, false, "  ")).rejects.toThrow("cannot be empty");
+    await expect(commands.set("dev", "provider", "pi", true, false, "clear")).rejects.toThrow("cannot be 'clear'");
     expect(updateAgentCalls).toHaveLength(0);
   });
 
@@ -1000,12 +1001,17 @@ describe("AgentsCommands set session override reporting", () => {
     try {
       const payload = await commands.set("dev", "provider", "pi", true, true);
 
+      // Once the provider pin is gone the session follows pi, which cannot run `gpt-5.6`: that model
+      // override is cleared with it instead of stranding the session on pi + gpt-5.6.
       expect(payload.forcedClearedOverrides).toEqual([
-        { sessionName: "pinned", reasons: ["provider_override"], provider: "codex" },
+        {
+          sessionName: "pinned",
+          reasons: ["provider_override", "model_override"],
+          provider: "codex",
+          model: "gpt-5.6",
+        },
       ]);
-      expect(payload.sessionOverrides).toEqual([
-        { sessionName: "pinned", reasons: ["model_override"], model: "gpt-5.6" },
-      ]);
+      expect(payload.sessionOverrides).toEqual([]);
       expect(payload.rematerializedSessions).toEqual([
         {
           sessionName: "pinned",
@@ -1017,7 +1023,7 @@ describe("AgentsCommands set session override reporting", () => {
         },
       ]);
       expect(sessionsByAgent[0]?.runtimeProviderOverride).toBeUndefined();
-      expect(sessionsByAgent[0]?.modelOverride).toBe("gpt-5.6");
+      expect(sessionsByAgent[0]?.modelOverride).toBeUndefined();
       expect(sessionsByAgent[0]?.runtimeProvider).toBe("pi");
     } finally {
       console.log = originalLog;

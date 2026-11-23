@@ -221,6 +221,48 @@ describe("syncAgentSessionsToAgentRuntime", () => {
     ]);
   });
 
+  it("judges the model override after the provider pin is cleared, not before", () => {
+    // pinned to pi with a pi model; a forced switch to claude removes the pin, and the session then follows
+    // claude: the pi model must go with it, while a claude-compatible model must stay.
+    const agent = createAgent({ id: "ravi-console", cwd: "/tmp/ravi-console", provider: "pi" });
+    getOrCreateSession("agent:ravi-console:pi-pinned", "ravi-console", agent.cwd, {
+      name: "pi-pinned",
+      runtimeProvider: "pi",
+      runtimeProviderOverride: "pi",
+      modelOverride: "deepseek/deepseek-flash",
+    });
+    getOrCreateSession("agent:ravi-console:pi-pinned-ok", "ravi-console", agent.cwd, {
+      name: "pi-pinned-ok",
+      runtimeProvider: "pi",
+      runtimeProviderOverride: "pi",
+      modelOverride: "sonnet",
+    });
+    updateAgent("ravi-console", { provider: "claude" });
+
+    syncAgentSessionsToAgentRuntime({
+      agent: { ...agent, provider: "claude" },
+      rematerialize: true,
+      clearProviderOverrides: true,
+      clearIncompatibleModelOverrides: true,
+    });
+
+    expect(getSession("agent:ravi-console:pi-pinned")?.runtimeProviderOverride).toBeUndefined();
+    expect(getSession("agent:ravi-console:pi-pinned")?.modelOverride).toBeUndefined();
+    expect(getSession("agent:ravi-console:pi-pinned-ok")?.modelOverride).toBe("sonnet");
+    // Without clearing the pin, the pinned session keeps its own provider and its model.
+    getOrCreateSession("agent:ravi-console:kept", "ravi-console", agent.cwd, {
+      name: "kept",
+      runtimeProviderOverride: "pi",
+      modelOverride: "deepseek/deepseek-flash",
+    });
+    syncAgentSessionsToAgentRuntime({
+      agent: { ...agent, provider: "claude" },
+      rematerialize: true,
+      clearIncompatibleModelOverrides: true,
+    });
+    expect(getSession("agent:ravi-console:kept")?.modelOverride).toBe("deepseek/deepseek-flash");
+  });
+
   it("clears only the incompatible model overrides when asked, and keeps the rest", () => {
     const agent = createAgent({ id: "ravi-console", cwd: "/tmp/ravi-console", provider: "claude" });
     getOrCreateSession("agent:ravi-console:stranded", "ravi-console", agent.cwd, {

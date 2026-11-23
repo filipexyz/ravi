@@ -394,6 +394,8 @@ mock.module("../../router/sessions.js", () => ({
   ...actualRouterSessionsModule,
   listSessions: () => listedSessions,
   getSessionsByAgent: (agentId: string) => listedSessions.filter((session) => session.agentId === agentId),
+  // The real helper opens a database transaction; the fake session store has none, so run the write directly.
+  applySessionRuntimeConfigAtomically: <T>(write: () => T): T => write(),
   deleteSession: (sessionKey: string) => {
     deletedSessionKeys.push(sessionKey);
     listedSessions = listedSessions.filter((session) => session.sessionKey !== sessionKey);
@@ -4663,6 +4665,45 @@ describe("SessionCommands set-provider", () => {
     expect(routerConfig.agents["ravi-console"]?.provider).toBe("pi");
     expect(routerConfig.agents["ravi-console"]?.model).toBe("deepseek/deepseek-flash");
     expect(natsEmits.some((emit) => emit.topic === "ravi.config.changed")).toBe(true);
+  });
+
+  it("reports a changed model in `changed` even when the provider is already set", () => {
+    toolContext = { suppressCliOutput: true, transport: "gateway" };
+    resolvedSession = {
+      sessionKey: "agent:main:pair",
+      name: "pair",
+      agentId: "main",
+      runtimeProviderOverride: "claude",
+      modelOverride: "sonnet",
+    };
+    let payload: Record<string, any> | undefined;
+    try {
+      captureLogs(() => {
+        payload = new SessionCommands().setProvider("pair", "claude", false, false, "opus") as Record<string, any>;
+      });
+    } finally {
+      toolContext = undefined;
+    }
+    expect(resolvedSession.modelOverride).toBe("opus");
+    expect(payload?.changed).toBe(true);
+    expect(payload?.modelOverride).toBe("opus");
+  });
+
+  it("rejects --model clear as a usage error", () => {
+    resolvedSession = {
+      sessionKey: "agent:main:pair",
+      name: "pair",
+      agentId: "main",
+      runtimeProviderOverride: "claude",
+    };
+    let error: unknown;
+    try {
+      captureLogs(() => new SessionCommands().setProvider("pair", "pi", true, false, "clear"));
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toMatchObject({ code: "USAGE_ERROR", exitCode: 2 });
+    expect(resolvedSession.runtimeProviderOverride).toBe("claude");
   });
 
   it("reports an invalid --model as a usage error with exit code 2", () => {

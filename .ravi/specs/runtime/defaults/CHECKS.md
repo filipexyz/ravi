@@ -44,8 +44,12 @@ bun test src/cli/commands/sessions-attach-authorization.test.ts
 - `agents set <id> provider <p>` MUST refuse, naming the sessions, when a session without its
   own provider override pins a model override that `<p>` cannot run, or when a session with its
   own provider and no model override would inherit the new agent model; with `--force` it MUST
-  clear exactly the incompatible overrides and leave compatible ones. `agents set <id> model <m>`
-  MUST refuse the second case.
+  clear exactly the incompatible overrides and leave compatible ones, judging each model override
+  after its provider pin was cleared (a session pinned to pi with a pi model, switched with
+  `--force` to claude, loses that model). `agents set <id> model <m>` MUST refuse the second case.
+- `sessions set-provider <s> <p> --model <m>` MUST write the provider and model overrides in one
+  transaction, MUST report `changed: true` when only the model changed, and `--model clear` MUST be
+  `USAGE_ERROR` (exit 2), as MUST `agents set ... provider <p> --model clear`.
 - Stored `runtime.defaultModel` MUST win over `RAVI_MODEL`.
 - Resolution MUST use `RAVI_MODEL` only when no stored/session/agent/preset
   model exists.
