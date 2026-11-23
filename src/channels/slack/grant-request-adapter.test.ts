@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { answerSlackApprovalClick } from "../../approval/slack-click-feedback.js";
-import { setApprovalGrantorRouterConfigForTest } from "../../approval/grantor.js";
+import { setApprovalGrantorRouterConfigForTest } from "./grantors.js";
 import {
   SLACK_PERMISSION_GRANT_ACTION_EXACT,
   SLACK_PERMISSION_GRANT_ACTION_FULL_ACCESS,

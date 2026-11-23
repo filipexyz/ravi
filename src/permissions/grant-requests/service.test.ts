@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { setApprovalGrantorRouterConfigForTest } from "../../approval/grantor.js";
 import {
   APPROVAL_TEST_FAMILY_PHONE,
   APPROVAL_TEST_LEAD_PHONE,
@@ -63,7 +62,6 @@ describe("grant requests (core, no channel)", () => {
 
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-grant-requests-");
-    setApprovalGrantorRouterConfigForTest(() => ({ instances: {}, instanceToAccount: {} }));
     setPermissionAuditPublisherForTest(async () => {});
     nowMs = 1_000_000;
     admin = seedApprovalContact({ phone: APPROVAL_TEST_SLACK_OWNER_PHONE, name: "Admin", tags: ["permission.admin"] });
@@ -97,7 +95,6 @@ describe("grant requests (core, no channel)", () => {
   });
 
   afterEach(async () => {
-    setApprovalGrantorRouterConfigForTest();
     setPermissionAuditPublisherForTest();
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;

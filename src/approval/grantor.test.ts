@@ -1,11 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { dbCreateTagDefinition } from "../tags/tag-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import {
-  actorCanGrantRequestedPermission,
-  listSlackApprovalGrantorUserIds,
-  setApprovalGrantorRouterConfigForTest,
-} from "./grantor.js";
+import { listSlackApprovalGrantorUserIds, setApprovalGrantorRouterConfigForTest } from "../channels/slack/grantors.js";
+import { actorCanGrantRequestedPermission, registerGrantorIdentityResolver } from "./grantor.js";
 import {
   APPROVAL_TEST_FAMILY_PHONE,
   APPROVAL_TEST_LEAD_PHONE,
@@ -257,5 +254,44 @@ describe("approval grantor", () => {
     ]);
     expect(listSlackApprovalGrantorUserIds({ instanceId: "other", ...request })).toEqual(["UOTHERWS1"]);
     expect(listSlackApprovalGrantorUserIds({ instanceId: "nobody", ...request })).toEqual([]);
+  });
+});
+
+describe("approval grantor identity resolvers", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-approval-grantor-resolvers-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("asks the resolver registered for the channel, and the generic lookup for every other one", () => {
+    const owner = seedApprovalContact({
+      phone: APPROVAL_TEST_SLACK_OWNER_PHONE,
+      name: "Owner",
+      tags: ["permission.admin"],
+    });
+    const asked: string[] = [];
+    registerGrantorIdentityResolver("test-channel", (input) => {
+      asked.push(input.senderId);
+      return input.senderId === "sender-1" ? { ownerType: "contact", ownerId: owner.id } : null;
+    });
+
+    expect(actorCanGrantRequestedPermission({ channel: "test-channel", senderId: "sender-1" })).toMatchObject({
+      allowed: true,
+      reason: "authorized_grantor",
+      subjectId: owner.id,
+    });
+    expect(actorCanGrantRequestedPermission({ channel: "test-channel", senderId: "sender-2" })).toMatchObject({
+      allowed: false,
+      reason: "unresolved_identity",
+    });
+    expect(asked).toEqual(["sender-1", "sender-2"]);
+    // A channel with no resolver of its own still resolves a contact by the generic lookup.
+    expect(
+      actorCanGrantRequestedPermission({ channel: "whatsapp", senderId: APPROVAL_TEST_SLACK_OWNER_PHONE }),
+    ).toMatchObject({ allowed: true, subjectId: owner.id });
   });
 });

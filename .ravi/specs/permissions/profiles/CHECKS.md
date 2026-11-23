@@ -40,6 +40,20 @@ capability: profiles
   without granting, handles Ignore, later clicks and expiry, leaves legacy and
   foreign ids alone, and the legacy click feedback runner never answers a grant
   request.
+- `bun test src/channels/whatsapp/grant-request-adapter.test.ts` covers the WhatsApp
+  adapter: it reaches only contacts with a DM on an enabled WhatsApp instance (not
+  groups, not a disabled instance, not someone who never wrote), at their most
+  recent DM; the message names contact and chat with ids and the expiry; an
+  approver's `aprovo`/`nego` applies or rejects through the core and is confirmed;
+  only a whole word counts; a non-admin or unknown sender is ignored and told
+  nothing, whatever the words claim; expired and already-decided answers are
+  reported to the approver; a reply to any other message is left alone.
+- `bun test src/channels/grant-request-cross-channel.test.ts` covers both real
+  adapters together: asked from a Slack turn and answered by an admin reachable only
+  on WhatsApp, asked from a WhatsApp turn and answered by an admin reachable only on
+  Slack, and a non-admin or a late answer refused on both.
+- `bun test src/approval/grantor.test.ts` covers the channel-free gate: it asks the
+  resolver registered for the channel and uses the generic lookup for the rest.
 - `bun test src/cli/commands/permissions-request.test.ts` covers the command: it
   returns `pending` at once from a Slack, WhatsApp or terminal turn, only plans
   without `--execute`, fails closed with the three codes, accepts only full-access

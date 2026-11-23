@@ -31,27 +31,6 @@
       "count": 1
     },
     {
-      "id": "src/approval/grantor.ts:4531760e0c3838364a258e83",
-      "file": "src/approval/grantor.ts",
-      "boundary": "permissions",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
-      "id": "src/approval/grantor.ts:5de0b9d35a8669588a27c9bc",
-      "file": "src/approval/grantor.ts",
-      "boundary": "permissions",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
-      "id": "src/approval/grantor.ts:b6c47d5279cb74466f584953",
-      "file": "src/approval/grantor.ts",
-      "boundary": "permissions",
-      "rule": "catch-without-binding",
-      "count": 1
-    },
-    {
       "id": "src/approval/service.ts:1e5b2ada9e3eb6121bb823ad",
       "file": "src/approval/service.ts",
       "boundary": "permissions",
@@ -5765,11 +5744,11 @@
     }
   ],
   "totals": {
-    "violations": 863,
+    "violations": 860,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
-      "src/approval": 6,
+      "src/approval": 3,
       "src/apps": 7,
       "src/apps/youtube": 3,
       "src/artifacts": 4,

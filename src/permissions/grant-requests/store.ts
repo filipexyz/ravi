@@ -237,6 +237,35 @@ export function listGrantRequestDeliveries(requestId: string): GrantRequestDeliv
   }));
 }
 
+/**
+ * The delivery whose adapter-private reference holds `value` under `key`. An
+ * adapter uses it to find which request an inbound message answers (for example
+ * the id of the message it sent); the core never reads the reference itself.
+ */
+export function findGrantRequestDeliveryByRef(
+  channel: string,
+  key: string,
+  value: string,
+): GrantRequestDelivery | null {
+  ensureTables();
+  const row = getDb()
+    .prepare(
+      `SELECT * FROM permission_grant_request_deliveries
+        WHERE channel = ? AND json_extract(ref_json, '$.' || ?) = ?
+        ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+    )
+    .get(channel, key, value) as GrantRequestDeliveryRow | undefined;
+  return row
+    ? {
+        requestId: row.request_id,
+        contactId: row.contact_id,
+        channel: row.channel,
+        ref: parseObject(row.ref_json),
+        createdAt: row.created_at,
+      }
+    : null;
+}
+
 function rowToRecord(row: GrantRequestRow): GrantRequestRecord {
   return {
     id: row.id,

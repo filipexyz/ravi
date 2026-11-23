@@ -29,7 +29,7 @@ import {
   APPROVAL_REFUSAL_REASON,
   isFixedApprovalRefusalReason,
 } from "./service.js";
-import { setApprovalGrantorRouterConfigForTest } from "./grantor.js";
+import { setApprovalGrantorRouterConfigForTest } from "../channels/slack/grantors.js";
 import {
   SLACK_APPROVAL_ACTION_APPROVE,
   SLACK_APPROVAL_ACTION_REJECT,

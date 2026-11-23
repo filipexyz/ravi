@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { actorCanGrantRequestedPermission } from "../../approval/grantor.js";
+import "../../channels/slack/grantors.js";
 import { configStore } from "../../config-store.js";
 import { SlackWebApiClient } from "../../channels/slack/client.js";
 import { isSlackGatewayChannel, resolveSlackCredentialConfigFromEnv } from "../../channels/slack/credentials.js";
