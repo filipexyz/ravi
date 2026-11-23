@@ -2912,6 +2912,9 @@ export class RuntimeSessionDispatcher {
     ) {
       return;
     }
+    // Admission deferred these successors because a saved provider change is
+    // pending; releasing them here would supersede the working turn anyway.
+    if (savedProviderChangePendingFor(sessionName, existing)) return;
 
     const successor = prepareRuntimeInterruptSuccessor(sessionName, existing);
     if (!successor) return;
@@ -3302,6 +3305,35 @@ export class RuntimeSessionDispatcher {
 
     return "accepted";
   }
+}
+
+/**
+ * True while the live turn runs on a provider that saved configuration (agent
+ * default or a cleared session override) has already replaced. Successors then
+ * wait for the turn to end instead of superseding it; an explicit session
+ * override keeps switching at the next tool boundary.
+ */
+export function savedProviderChangePendingFor(
+  sessionName: string,
+  live: RuntimeHostStreamingSession,
+  lookups: {
+    session?: (name: string) => SessionEntry | null | undefined;
+    agent?: (id: string) => Parameters<typeof resolveRequestedRuntimeProvider>[0]["agent"] | undefined;
+  } = {},
+): boolean {
+  if (live.done || !live.turnActive) return false;
+  const session = (lookups.session ?? ((name) => getSessionByName(name) ?? getSession(name)))(sessionName);
+  if (!session) return false;
+  if (session.runtimeProviderOverride?.trim()) return false;
+  if ((session.runtimeProviderConfigRevision ?? 0) === (live.runtimeProviderConfigRevision ?? 0)) return false;
+  const agent = (lookups.agent ?? ((id) => configStore.getConfig().agents[id]))(live.agentId);
+  if (!agent) return false;
+  const requested = resolveRequestedRuntimeProvider({
+    sessionProviderOverride: session.runtimeProviderOverride,
+    lastUsedProvider: session.runtimeProvider,
+    agent,
+  }).value;
+  return requested !== live.queryHandle.provider;
 }
 
 export function shouldQueuePromptOnLiveSession(
