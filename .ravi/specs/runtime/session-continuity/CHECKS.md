@@ -6,6 +6,14 @@
 - The same regression MUST dispatch the actual next prompt through
   `RuntimeSessionDispatcher`, covering clear, explicit override, compatible
   reuse, unchanged launch overrides and a configuration change across an await.
+- With a saved provider change pending and the turn generating, a successor
+  with barrier `after_tool` (the channel default) MUST NOT produce
+  `dispatch.restart_requested`; it is delivered once after the active turn
+  (`thread-provider-config.test.ts`, "provider configuration at every terminal
+  generator boundary", `after_tool` cases).
+- Tool release MUST NOT supersede the working turn while a saved provider
+  change is pending; an explicit session override still does
+  (`session-dispatcher.test.ts`, "at tool release when a ... is pending").
 - Queue a successor before clear while the old turn is active: complete that
   turn, preserve the successor, and select the new provider without replaying
   the completed prompt or starting the successor on the old handle.
