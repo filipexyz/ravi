@@ -4224,15 +4224,15 @@ export class SessionCommands {
       );
       return;
     }
-    if (nextRuntime.model.value && (nextRuntime.model.source !== "runtime_default" || modelOverride === null)) {
-      // Clearing falls back to the agent model or the runtime default; that fallback must run on the
-      // session's provider too, or the next turn dies with "Model not found" (a pinned pi session whose
-      // fallback is the runtime default `sonnet`).
+    if (nextRuntime.model.value && nextRuntime.model.source !== "runtime_default") {
+      // The runtime default is exempt, as everywhere else in this file: it is `sonnet` by default and the
+      // launcher remaps it to the provider's own default model (applyProviderModelRule), so a clear that
+      // falls back to it runs fine. An agent model, on the other hand, must run on the session's provider.
       assertModelValidForProvider(
         nextRuntime.provider.value,
         nextRuntime.model.value,
         modelOverride === null
-          ? `Clearing leaves the session on ${nextRuntime.model.source === "runtime_default" ? "the runtime default" : "the agent default"} model '${nextRuntime.model.value}'. Pick a model the provider runs: ravi sessions set-model ${nameOrKey} <model>`
+          ? `Clearing leaves the session on the agent model '${nextRuntime.model.value}'. Pick a model the provider runs: ravi sessions set-model ${nameOrKey} <model>`
           : listRegisteredRuntimeProviderIds().some((candidate) => validateRuntimeModelSelector(candidate, model).ok)
             ? `To change runtime and model together: ravi sessions set-provider ${nameOrKey} <provider> --model ${model}`
             : undefined,

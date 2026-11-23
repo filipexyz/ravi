@@ -880,6 +880,30 @@ describe("AgentsCommands set session override reporting", () => {
     expect(sessionsByAgent[0]?.modelOverride).toBe("sonnet");
   });
 
+  it("refuses a switch that leaves a provider-pinned session inheriting a model its provider cannot run", async () => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "pi", model: "deepseek/deepseek-flash" };
+    sessionsByAgent = [
+      {
+        sessionKey: "agent:dev:claude-pinned",
+        name: "claude-pinned",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        runtimeProvider: "claude",
+        runtimeProviderOverride: "claude",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const commands = new AgentsCommands();
+    // The agent model becomes a pi selector the claude-pinned session would inherit.
+    await expect(commands.set("dev", "model", "kimi/other-model", true)).rejects.toThrow("claude-pinned");
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude", model: "sonnet" };
+    await expect(commands.set("dev", "provider", "pi", true, false, "deepseek/deepseek-flash")).rejects.toThrow(
+      "claude-pinned",
+    );
+    expect(updateAgentCalls).toHaveLength(0);
+  });
+
   it("--force clears the model overrides the new provider cannot run, and only those", async () => {
     currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude" };
     sessionsByAgent = [

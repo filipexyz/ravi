@@ -4245,9 +4245,9 @@ describe("SessionCommands set-model", () => {
     expect(natsEmits[0]?.data.effectiveModel).toBe("model-default");
   });
 
-  it("refuses to clear a model when the fallback is a model the session provider cannot run", async () => {
-    // A pi-pinned session with no agent model falls back to the runtime default (`sonnet`), which pi
-    // cannot run: the next turn would die with "Model not found". The clear is refused and nothing changes.
+  it("clears a model whose fallback is the runtime default, which the launcher remaps to the provider's own default", async () => {
+    // A pi-pinned session with no agent model falls back to the runtime default (`sonnet`); the launcher
+    // remaps it (applyProviderModelRule: pi -> default), so the next turn runs. The clear must go through.
     resolvedSession = {
       sessionKey: "agent:main:model-clear",
       name: "model-clear",
@@ -4256,6 +4256,23 @@ describe("SessionCommands set-model", () => {
       modelOverride: "deepseek/deepseek-flash",
     };
     routerConfig = { agents: { main: {} } };
+
+    await captureLogsAsync(async () => {
+      await new SessionCommands().setModel("model-clear", "clear");
+    });
+
+    expect(resolvedSession.modelOverride).toBeUndefined();
+  });
+
+  it("refuses to clear a model when the fallback is an agent model the session provider cannot run", async () => {
+    resolvedSession = {
+      sessionKey: "agent:main:model-clear",
+      name: "model-clear",
+      agentId: "main",
+      runtimeProviderOverride: "pi",
+      modelOverride: "deepseek/deepseek-flash",
+    };
+    routerConfig = { agents: { main: { model: "sonnet" } } };
 
     await expect(new SessionCommands().setModel("model-clear", "clear")).rejects.toThrow("Clearing leaves the session");
     expect(resolvedSession.modelOverride).toBe("deepseek/deepseek-flash");

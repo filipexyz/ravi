@@ -38,11 +38,14 @@ bun test src/cli/commands/sessions-attach-authorization.test.ts
   propagated agent write MUST emit `ravi.config.changed`.
 - `sessions set-model <s> clear` MUST also be refused when the agent preset is unusable (disabled
   or missing), because the override is the only thing masking it.
-- `sessions set-model <s> clear` MUST be refused when the fallback model (agent default or
-  runtime default) cannot run on the session's provider, and MUST NOT change anything then.
+- `sessions set-model <s> clear` MUST be refused when the fallback agent model cannot run on the
+  session's provider, and MUST NOT change anything then; a fallback to the runtime default MUST be
+  accepted (the launcher remaps it to the provider's default model).
 - `agents set <id> provider <p>` MUST refuse, naming the sessions, when a session without its
-  own provider override pins a model override that `<p>` cannot run; with `--force` it MUST
-  clear exactly those overrides and leave compatible ones.
+  own provider override pins a model override that `<p>` cannot run, or when a session with its
+  own provider and no model override would inherit the new agent model; with `--force` it MUST
+  clear exactly the incompatible overrides and leave compatible ones. `agents set <id> model <m>`
+  MUST refuse the second case.
 - Stored `runtime.defaultModel` MUST win over `RAVI_MODEL`.
 - Resolution MUST use `RAVI_MODEL` only when no stored/session/agent/preset
   model exists.
