@@ -3577,7 +3577,7 @@
       "file": "src/omni/consumer.ts",
       "boundary": "omni",
       "rule": "rejection-without-binding",
-      "count": 3
+      "count": 2
     },
     {
       "id": "src/omni/consumer.ts:70dda4cd4a752f2c5660b799",
@@ -5744,7 +5744,7 @@
     }
   ],
   "totals": {
-    "violations": 860,
+    "violations": 859,
     "byDirectory": {
       "src/access": 2,
       "src/adapters": 2,
@@ -5801,7 +5801,7 @@
       "src/mailbox": 2,
       "src/meetings": 4,
       "src/meetings/google-meet": 2,
-      "src/omni": 14,
+      "src/omni": 13,
       "src/pages": 14,
       "src/permissions": 20,
       "src/plugins": 1,

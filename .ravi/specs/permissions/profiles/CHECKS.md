@@ -31,7 +31,7 @@ capability: profiles
   unknown sender, the grantee, an agent that holds admin (even with an id equal to
   an offered admin's contact id) and an admin who was not offered the request are
   ignored; an answer counts only through the prompt delivered to that same person
-  (`deliveredTo`); the answer is the verified sender, never text; a request cannot be
+  (`deliveredTo`, required, on both channels); an expired or decided request is told only to a verified, offered approver; the early `ravi.inbound.reply` goes only for a quote-reply of a recorded grant prompt from a sender that is neither the bot's echo nor an agent; the answer is the verified sender, never text; a request cannot be
   decided twice (the claim is single-use even when both read it as pending) or
   after it expired; the sweep expires it; and the core directory has no channel
   import (static, multiline, side-effect or dynamic `import(`) or channel-name

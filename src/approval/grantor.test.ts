@@ -365,4 +365,24 @@ describe("approval grantor identity resolvers", () => {
       }),
     ).toMatchObject({ allowed: false, reason: "unauthorized_grantor", subjectId: other.id });
   });
+
+  it("refuses a sender whose identity resolves to different owners on different instance scopes", () => {
+    const admin = seedApprovalContact({
+      phone: APPROVAL_TEST_SLACK_OWNER_PHONE,
+      name: "Admin",
+      tags: ["permission.admin"],
+    });
+    const other = seedApprovalContact({ phone: APPROVAL_TEST_SUPERADMIN_PHONE, name: "Other", tags: [] });
+    linkContactIdentity(admin.id, { channel: "whatsapp", platformUserId: "lid:4242424242", instanceId: "" });
+    linkContactIdentity(other.id, { channel: "whatsapp", platformUserId: "lid:4242424242", instanceId: "inst-1" });
+
+    expect(
+      actorCanGrantRequestedPermission({
+        channel: "whatsapp",
+        senderId: "4242424242",
+        senderAliases: ["lid:4242424242"],
+        instanceId: "inst-1",
+      }),
+    ).toMatchObject({ allowed: false, reason: "unresolved_identity" });
+  });
 });

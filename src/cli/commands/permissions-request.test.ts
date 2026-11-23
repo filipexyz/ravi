@@ -161,6 +161,7 @@ describe("permissions request / request-status", () => {
     decideGrantRequest({
       requestId: asked.requestId,
       decision: "approve",
+      deliveredTo: admin.id,
       actor: { channel: "test-channel", senderId: APPROVAL_TEST_SLACK_OWNER_PHONE },
     });
 

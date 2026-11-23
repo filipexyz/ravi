@@ -45,6 +45,8 @@ import {
   previewCommittedSessionKey,
 } from "../router/index.js";
 import { configStore } from "../config-store.js";
+import { WHATSAPP_GRANT_REQUEST_CHANNEL } from "../channels/whatsapp/grant-request-adapter.js";
+import { findGrantRequestDeliveryByRef } from "../permissions/grant-requests/store.js";
 import {
   getContact,
   getContactName,
@@ -697,6 +699,10 @@ export class OmniConsumer {
   /**
    * Handle message.received event from omni.
    */
+  private logQuoteReplyEmitFailure(error: unknown): void {
+    log.warn("Could not announce a quote-reply", { error: error instanceof Error ? error.message : String(error) });
+  }
+
   private async handleMessageEvent(subject: string, event: OmniEvent): Promise<void> {
     if (event.type !== "message.received") return;
 
@@ -1155,23 +1161,32 @@ export class OmniConsumer {
       }
     }
 
-    // A quote-reply to a bot message (approval, poll or grant request answers) is announced as
-    // soon as the sender is known and the message is live and not a redelivery, before any
-    // route, mode or DM policy: a reply in a DM with no route, a sentinel DM or a closed DM
-    // is still an answer to the message it quotes. The instance and the raw sender jid travel
-    // with it so a listener can resolve the sender the way this consumer just did (a LID
-    // sender resolves under its own namespace).
-    if (payload.replyToId && payload.content.text) {
+    // A quote-reply to a grant request prompt is announced as soon as the sender is known, before
+    // any route, mode or DM policy: a reply in a DM with no route, a sentinel DM or a closed DM is
+    // still the answer to the prompt it quotes. Only a reply that quotes a delivery the grant
+    // request flow recorded, and only from a live sender that is neither this bot's own echo nor an
+    // agent. Every other quote-reply keeps the later path, after route and policy. The instance and
+    // the raw sender jid travel with it so a listener resolves the sender the way this consumer did.
+    const quoteReplyText = payload.replyToId && payload.content.text ? payload.content.text : null;
+    let announcedQuoteReply = false;
+    if (
+      quoteReplyText &&
+      payload.replyToId &&
+      !providerSelfEcho &&
+      effectiveActorType !== "agent" &&
+      findGrantRequestDeliveryByRef(WHATSAPP_GRANT_REQUEST_CHANNEL, "messageId", payload.replyToId)
+    ) {
+      announcedQuoteReply = true;
       nats
         .emit("ravi.inbound.reply", {
           targetMessageId: payload.replyToId,
-          text: payload.content.text,
+          text: quoteReplyText,
           senderId: senderPhone,
           senderJid: payload.from,
           instanceId,
           accountId: effectiveAccountId,
         })
-        .catch(() => {});
+        .catch((error: unknown) => this.logQuoteReplyEmitFailure(error));
     }
 
     // A person asked to link their Console account writes here in private:
@@ -1992,6 +2007,20 @@ export class OmniConsumer {
             plan: editRebasePlan,
           })
         : envelope;
+
+    // Emit inbound reply event when message is a quote-reply (for approval/poll resolution)
+    if (!announcedQuoteReply && payload.replyToId && payload.content.text) {
+      nats
+        .emit("ravi.inbound.reply", {
+          targetMessageId: payload.replyToId,
+          text: payload.content.text,
+          senderId: senderPhone,
+          senderJid: payload.from,
+          instanceId,
+          accountId: effectiveAccountId,
+        })
+        .catch((error: unknown) => this.logQuoteReplyEmitFailure(error));
+    }
 
     if (!skipTurn) {
       await this.activateTarget(sessionName, source, instanceId, chatJid);

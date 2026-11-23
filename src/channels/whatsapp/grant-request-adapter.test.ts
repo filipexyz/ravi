@@ -3,6 +3,7 @@ import {
   APPROVAL_TEST_FAMILY_PHONE,
   APPROVAL_TEST_SLACK_OWNER_PHONE,
   APPROVAL_TEST_STRANGER_PHONE,
+  APPROVAL_TEST_SUPERADMIN_PHONE,
   seedApprovalContact,
 } from "../../approval/test-support.js";
 import { dbGetContactChatGrant, dbListContactChatGrants } from "../../permissions/contact-chat-grants.js";
@@ -14,7 +15,7 @@ import {
   type GrantRequestServiceDependencies,
 } from "../../permissions/grant-requests/service.js";
 import { registerGrantorIdentityResolver, unregisterGrantorIdentityResolver } from "../../approval/grantor.js";
-import { getGrantRequest } from "../../permissions/grant-requests/store.js";
+import { getGrantRequest, listGrantRequestDeliveries } from "../../permissions/grant-requests/store.js";
 import { dbCreateAgent, dbUpsertChat, dbUpsertChatParticipant, dbUpsertInstance } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import {
@@ -329,6 +330,40 @@ describe("whatsapp grant request adapter", () => {
         ),
       ).toEqual({ handled: false });
       expect(await handleWhatsAppGrantRequestReply({ text: "aprovo" }, deps)).toEqual({ handled: false });
+    });
+
+    it("only accepts an answer that quotes the prompt sent to that same admin", async () => {
+      const second = seedApprovalContact({
+        phone: APPROVAL_TEST_SUPERADMIN_PHONE,
+        name: "Second admin",
+        tags: ["permission.admin"],
+      });
+      dm(second.id, APPROVAL_TEST_SUPERADMIN_PHONE);
+      const request = await open();
+      const prompts = listGrantRequestDeliveries(request.id);
+      const adminsPrompt = prompts.find((d) => d.contactId === admin.id);
+      expect(prompts).toHaveLength(2);
+
+      const crossed = await handleWhatsAppGrantRequestReply(
+        reply(String(adminsPrompt?.ref.messageId), "aprovo", APPROVAL_TEST_SUPERADMIN_PHONE),
+        deps,
+      );
+
+      expect(crossed).toMatchObject({ handled: true, result: "not_grantor" });
+      expect(getGrantRequest(request.id)?.status).toBe("pending");
+      expect(dbListContactChatGrants({ contactId: grantee.id })).toEqual([]);
+    });
+
+    it("writes nothing to the approver when a stranger quotes a prompt of a request already decided", async () => {
+      const request = await open();
+      await handleWhatsAppGrantRequestReply(reply("wamid-1", "nego", APPROVAL_TEST_SLACK_OWNER_PHONE), deps);
+      expect(getGrantRequest(request.id)?.status).toBe("rejected");
+      const before = sent.length;
+
+      const outcome = await handleWhatsAppGrantRequestReply(reply("wamid-1", "aprovo", "5511000000000"), deps);
+
+      expect(outcome).toMatchObject({ handled: true, result: "unknown_actor" });
+      expect(sent).toHaveLength(before);
     });
   });
 });
