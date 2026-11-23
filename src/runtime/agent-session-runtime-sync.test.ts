@@ -4,6 +4,8 @@ import { getOrCreateSession, getSession, updateProviderSession } from "../router
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   describeSessionAgentDefaultDiff,
+  findSessionsStrandedByAgentDefaults,
+  findSessionsWithModelOverrideInvalidForProvider,
   rematerializeSessionToAgentRuntime,
   sessionHasStaleRuntimeProvider,
   syncAgentSessionsToAgentRuntime,
@@ -149,6 +151,143 @@ describe("syncAgentSessionsToAgentRuntime", () => {
         previousRuntimeProvider: "codex",
         runtimeProvider: "pi",
       }),
+    ]);
+  });
+
+  it("finds only provider-following sessions whose model override the new provider cannot run", () => {
+    const agent = createAgent({ id: "ravi-console", cwd: "/tmp/ravi-console", provider: "claude" });
+    getOrCreateSession("agent:ravi-console:stranded", "ravi-console", agent.cwd, {
+      name: "stranded",
+      runtimeProvider: "claude",
+      modelOverride: "sonnet",
+    });
+    getOrCreateSession("agent:ravi-console:compatible", "ravi-console", agent.cwd, {
+      name: "compatible",
+      runtimeProvider: "claude",
+      modelOverride: "deepseek/deepseek-flash",
+    });
+    getOrCreateSession("agent:ravi-console:own-provider", "ravi-console", agent.cwd, {
+      name: "own-provider",
+      runtimeProvider: "claude",
+      runtimeProviderOverride: "claude",
+      modelOverride: "sonnet",
+    });
+    getOrCreateSession("agent:ravi-console:no-override", "ravi-console", agent.cwd, { name: "no-override" });
+
+    const sessions = ["stranded", "compatible", "own-provider", "no-override"].map((name) => {
+      const session = getSession(`agent:ravi-console:${name}`);
+      if (!session) throw new Error(`Expected session ${name}`);
+      return session;
+    });
+
+    expect(findSessionsWithModelOverrideInvalidForProvider("pi", sessions).map((session) => session.name)).toEqual([
+      "stranded",
+    ]);
+    expect(findSessionsWithModelOverrideInvalidForProvider("claude", sessions)).toEqual([
+      expect.objectContaining({ name: "compatible" }),
+    ]);
+  });
+
+  it("finds sessions stranded by new agent defaults: stale model overrides and inherited models", () => {
+    const agent = createAgent({ id: "ravi-console", cwd: "/tmp/ravi-console", provider: "claude" });
+    getOrCreateSession("agent:ravi-console:model-pinned", "ravi-console", agent.cwd, {
+      name: "model-pinned",
+      modelOverride: "sonnet",
+    });
+    getOrCreateSession("agent:ravi-console:provider-pinned", "ravi-console", agent.cwd, {
+      name: "provider-pinned",
+      runtimeProviderOverride: "claude",
+    });
+    getOrCreateSession("agent:ravi-console:follower", "ravi-console", agent.cwd, { name: "follower" });
+    getOrCreateSession("agent:ravi-console:both-pinned", "ravi-console", agent.cwd, {
+      name: "both-pinned",
+      runtimeProviderOverride: "claude",
+      modelOverride: "sonnet",
+    });
+    const sessions = ["model-pinned", "provider-pinned", "follower", "both-pinned"].map((name) => {
+      const session = getSession(`agent:ravi-console:${name}`);
+      if (!session) throw new Error(`Expected session ${name}`);
+      return session;
+    });
+
+    expect(
+      findSessionsStrandedByAgentDefaults({ provider: "pi", model: "deepseek/deepseek-flash", sessions }).map(
+        (session) => session.name,
+      ),
+    ).toEqual(["model-pinned", "provider-pinned"]);
+    // Without a new agent model nothing is inherited: only the stale model override strands.
+    expect(findSessionsStrandedByAgentDefaults({ provider: "pi", sessions }).map((session) => session.name)).toEqual([
+      "model-pinned",
+    ]);
+  });
+
+  it("judges the model override after the provider pin is cleared, not before", () => {
+    // pinned to pi with a pi model; a forced switch to claude removes the pin, and the session then follows
+    // claude: the pi model must go with it, while a claude-compatible model must stay.
+    const agent = createAgent({ id: "ravi-console", cwd: "/tmp/ravi-console", provider: "pi" });
+    getOrCreateSession("agent:ravi-console:pi-pinned", "ravi-console", agent.cwd, {
+      name: "pi-pinned",
+      runtimeProvider: "pi",
+      runtimeProviderOverride: "pi",
+      modelOverride: "deepseek/deepseek-flash",
+    });
+    getOrCreateSession("agent:ravi-console:pi-pinned-ok", "ravi-console", agent.cwd, {
+      name: "pi-pinned-ok",
+      runtimeProvider: "pi",
+      runtimeProviderOverride: "pi",
+      modelOverride: "sonnet",
+    });
+    updateAgent("ravi-console", { provider: "claude" });
+
+    syncAgentSessionsToAgentRuntime({
+      agent: { ...agent, provider: "claude" },
+      rematerialize: true,
+      clearProviderOverrides: true,
+      clearIncompatibleModelOverrides: true,
+    });
+
+    expect(getSession("agent:ravi-console:pi-pinned")?.runtimeProviderOverride).toBeUndefined();
+    expect(getSession("agent:ravi-console:pi-pinned")?.modelOverride).toBeUndefined();
+    expect(getSession("agent:ravi-console:pi-pinned-ok")?.modelOverride).toBe("sonnet");
+    // Without clearing the pin, the pinned session keeps its own provider and its model.
+    getOrCreateSession("agent:ravi-console:kept", "ravi-console", agent.cwd, {
+      name: "kept",
+      runtimeProviderOverride: "pi",
+      modelOverride: "deepseek/deepseek-flash",
+    });
+    syncAgentSessionsToAgentRuntime({
+      agent: { ...agent, provider: "claude" },
+      rematerialize: true,
+      clearIncompatibleModelOverrides: true,
+    });
+    expect(getSession("agent:ravi-console:kept")?.modelOverride).toBe("deepseek/deepseek-flash");
+  });
+
+  it("clears only the incompatible model overrides when asked, and keeps the rest", () => {
+    const agent = createAgent({ id: "ravi-console", cwd: "/tmp/ravi-console", provider: "claude" });
+    getOrCreateSession("agent:ravi-console:stranded", "ravi-console", agent.cwd, {
+      name: "stranded",
+      runtimeProvider: "claude",
+      modelOverride: "sonnet",
+    });
+    getOrCreateSession("agent:ravi-console:compatible", "ravi-console", agent.cwd, {
+      name: "compatible",
+      runtimeProvider: "claude",
+      modelOverride: "deepseek/deepseek-flash",
+    });
+    updateAgent("ravi-console", { provider: "pi", model: "deepseek/deepseek-flash" });
+    const updated = { ...agent, provider: "pi", model: "deepseek/deepseek-flash" };
+
+    const result = syncAgentSessionsToAgentRuntime({
+      agent: updated,
+      rematerialize: true,
+      clearIncompatibleModelOverrides: true,
+    });
+
+    expect(getSession("agent:ravi-console:stranded")?.modelOverride).toBeUndefined();
+    expect(getSession("agent:ravi-console:compatible")?.modelOverride).toBe("deepseek/deepseek-flash");
+    expect(result.forcedClearedOverrides).toEqual([
+      { sessionName: "stranded", reasons: ["model_override"], model: "sonnet" },
     ]);
   });
 

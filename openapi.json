@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "112d3770225e8cc1"
+    "version": "450009a8f1526f1e"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -124194,6 +124194,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "model": {
+                    "description": "Set the session model override in the same write, so the provider/model pair is validated together",
+                    "type": "string"
+                  },
                   "nameOrKey": {
                     "description": "Session name or key",
                     "type": "string"

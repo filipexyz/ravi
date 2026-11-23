@@ -29825,17 +29825,23 @@ public struct SessionsSetModelReturn: Codable, Sendable {
 }
 
 public struct SessionsSetProviderOptions: Codable, Sendable {
+  public var model: String?
   public var propagate: Bool?
 
-  public init(propagate: Bool? = nil) {
+  public init(model: String? = nil, propagate: Bool? = nil) {
+    self.model = model
     self.propagate = propagate
   }
 
   enum CodingKeys: String, CodingKey {
+    case model = "model"
     case propagate = "propagate"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.model {
+      body["model"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.propagate {
       body["propagate"] = try RaviJSON.fromEncodable(value)
     }

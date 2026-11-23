@@ -25446,11 +25446,15 @@ class SessionsSetModelReturn {
 SessionsSetModelReturn sessionsSetModelReturnFromJson(Object? json) => SessionsSetModelReturn.fromJsonValue(json);
 
 class SessionsSetProviderOptions {
-  const SessionsSetProviderOptions({this.propagate});
+  const SessionsSetProviderOptions({this.model, this.propagate});
 
+  final String? model;
   final bool? propagate;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (model != null) {
+      into["model"] = RaviJson.from(model);
+    }
     if (propagate != null) {
       into["propagate"] = RaviJson.from(propagate);
     }

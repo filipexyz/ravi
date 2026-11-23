@@ -8079,6 +8079,7 @@ export class RaviClient {
     },
     /** Set session runtime provider override */
     setProvider: async (nameOrKey: string, provider: string, options?: {
+      model?: string;
       propagate?: boolean;
     }): Promise<SessionsSetProviderReturn> => {
       return this.transport.call({

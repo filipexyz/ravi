@@ -378,6 +378,7 @@ describe("AgentsCommands set model validation", () => {
       "only valid with key=provider",
     );
     await expect(commands.set("dev", "provider", "pi", true, false, "  ")).rejects.toThrow("cannot be empty");
+    await expect(commands.set("dev", "provider", "pi", true, false, "clear")).rejects.toThrow("cannot be 'clear'");
     expect(updateAgentCalls).toHaveLength(0);
   });
 
@@ -855,6 +856,93 @@ describe("AgentsCommands set session override reporting", () => {
     }
   });
 
+  it("refuses a provider switch that strands a session on a model the new provider cannot run", async () => {
+    if (currentAgent === null) throw new Error("Expected the agent fixture to be initialized");
+    // The session follows the agent provider (no provider override) but pins a Claude model override.
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude" };
+    sessionsByAgent = [
+      {
+        sessionKey: "agent:dev:follower",
+        name: "follower",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        runtimeProvider: "claude",
+        modelOverride: "sonnet",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const commands = new AgentsCommands();
+    await expect(commands.set("dev", "provider", "pi", true)).rejects.toThrow("follower");
+    await expect(commands.set("dev", "provider", "pi", true, false, "deepseek/deepseek-flash")).rejects.toThrow(
+      "follower",
+    );
+    expect(updateAgentCalls).toHaveLength(0);
+    expect(sessionsByAgent[0]?.modelOverride).toBe("sonnet");
+  });
+
+  it("refuses a switch that leaves a provider-pinned session inheriting a model its provider cannot run", async () => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "pi", model: "deepseek/deepseek-flash" };
+    sessionsByAgent = [
+      {
+        sessionKey: "agent:dev:claude-pinned",
+        name: "claude-pinned",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        runtimeProvider: "claude",
+        runtimeProviderOverride: "claude",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const commands = new AgentsCommands();
+    // The agent model becomes a pi selector the claude-pinned session would inherit.
+    await expect(commands.set("dev", "model", "kimi/other-model", true)).rejects.toThrow("claude-pinned");
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude", model: "sonnet" };
+    await expect(commands.set("dev", "provider", "pi", true, false, "deepseek/deepseek-flash")).rejects.toThrow(
+      "claude-pinned",
+    );
+    expect(updateAgentCalls).toHaveLength(0);
+  });
+
+  it("--force clears the model overrides the new provider cannot run, and only those", async () => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude" };
+    sessionsByAgent = [
+      {
+        sessionKey: "agent:dev:follower",
+        name: "follower",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        runtimeProvider: "claude",
+        modelOverride: "sonnet",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        sessionKey: "agent:dev:compatible",
+        name: "compatible",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        runtimeProvider: "claude",
+        modelOverride: "deepseek/deepseek-flash",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      await commands.set("dev", "provider", "pi", true, true);
+    } finally {
+      console.log = originalLog;
+    }
+    expect(sessionsByAgent.find((session) => session.name === "follower")?.modelOverride).toBeUndefined();
+    expect(sessionsByAgent.find((session) => session.name === "compatible")?.modelOverride).toBe(
+      "deepseek/deepseek-flash",
+    );
+  });
+
   it("lists provider overrides with reasons and leaves them in place", async () => {
     if (currentAgent === null) throw new Error("Expected the agent fixture to be initialized");
     // Exercise provider reconciliation without a provider-specific agent model.
@@ -913,12 +1001,17 @@ describe("AgentsCommands set session override reporting", () => {
     try {
       const payload = await commands.set("dev", "provider", "pi", true, true);
 
+      // Once the provider pin is gone the session follows pi, which cannot run `gpt-5.6`: that model
+      // override is cleared with it instead of stranding the session on pi + gpt-5.6.
       expect(payload.forcedClearedOverrides).toEqual([
-        { sessionName: "pinned", reasons: ["provider_override"], provider: "codex" },
+        {
+          sessionName: "pinned",
+          reasons: ["provider_override", "model_override"],
+          provider: "codex",
+          model: "gpt-5.6",
+        },
       ]);
-      expect(payload.sessionOverrides).toEqual([
-        { sessionName: "pinned", reasons: ["model_override"], model: "gpt-5.6" },
-      ]);
+      expect(payload.sessionOverrides).toEqual([]);
       expect(payload.rematerializedSessions).toEqual([
         {
           sessionName: "pinned",
@@ -930,7 +1023,7 @@ describe("AgentsCommands set session override reporting", () => {
         },
       ]);
       expect(sessionsByAgent[0]?.runtimeProviderOverride).toBeUndefined();
-      expect(sessionsByAgent[0]?.modelOverride).toBe("gpt-5.6");
+      expect(sessionsByAgent[0]?.modelOverride).toBeUndefined();
       expect(sessionsByAgent[0]?.runtimeProvider).toBe("pi");
     } finally {
       console.log = originalLog;
