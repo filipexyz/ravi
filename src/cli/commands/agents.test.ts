@@ -348,6 +348,55 @@ describe("AgentsCommands set model validation", () => {
     expect(updateAgentCalls).toHaveLength(0);
   });
 
+  it("switches provider and model in one write when --model is given (no provider/model deadlock)", async () => {
+    // Reproduces the 23/11 incident: claude/sonnet -> pi/deepseek had no valid single-key path.
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude", model: "sonnet" };
+    const commands = new AgentsCommands();
+    await expect(commands.set("dev", "provider", "pi", true)).rejects.toThrow("--model");
+    await expect(commands.set("dev", "model", "deepseek/deepseek-flash", true)).rejects.toThrow(
+      "provider <provider> --model",
+    );
+    expect(updateAgentCalls).toHaveLength(0);
+
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      await commands.set("dev", "provider", "pi", true, false, "deepseek/deepseek-flash");
+    } finally {
+      console.log = originalLog;
+    }
+    expect(updateAgentCalls).toEqual([{ id: "dev", partial: { provider: "pi", model: "deepseek/deepseek-flash" } }]);
+  });
+
+  it("validates the --model pair together and rejects an incompatible pair before writing", async () => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude", model: "sonnet" };
+    const commands = new AgentsCommands();
+    await expect(commands.set("dev", "provider", "claude", true, false, "deepseek/deepseek-flash")).rejects.toThrow(
+      "does not belong",
+    );
+    await expect(commands.set("dev", "model", "sonnet", true, false, "sonnet")).rejects.toThrow(
+      "only valid with key=provider",
+    );
+    await expect(commands.set("dev", "provider", "pi", true, false, "  ")).rejects.toThrow("cannot be empty");
+    expect(updateAgentCalls).toHaveLength(0);
+  });
+
+  it("clears the model with 'model clear' without validating it, then the provider can change alone", async () => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude", model: "sonnet" };
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      await commands.set("dev", "model", "clear", true);
+      expect(updateAgentCalls).toEqual([{ id: "dev", partial: { model: null } }]);
+      currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude" };
+      await commands.set("dev", "provider", "pi", true);
+    } finally {
+      console.log = originalLog;
+    }
+    expect(updateAgentCalls[1]).toEqual({ id: "dev", partial: { provider: "pi" } });
+  });
+
   it("rejects Pi provider ids used as model selectors", async () => {
     const commands = new AgentsCommands();
 

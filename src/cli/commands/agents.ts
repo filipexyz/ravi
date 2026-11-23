@@ -356,11 +356,11 @@ function buildAgentJson(agent: AgentConfig, defaultAgent: string): AgentJsonSumm
   };
 }
 
-function validateAgentModelValue(providerId: string | undefined, model: string): void {
+function validateAgentModelValue(providerId: string | undefined, model: string, hint?: string): void {
   const provider = providerId ?? resolveRequestedRuntimeProvider({ agent: {} }).value;
   const result = validateRuntimeModelSelector(provider, model);
   if (!result.ok) {
-    fail(result.error ?? `Invalid model: ${model}`);
+    fail(`${result.error ?? `Invalid model: ${model}`}${hint ? ` ${hint}` : ""}`);
   }
 }
 
@@ -1209,9 +1209,17 @@ RULES
   description is what the Library directory shows for this agent (at most 300
   characters; "clear" removes it). It is reported with the next pin sync.
 
+  Switching runtime: provider and model are validated against each other, so
+  changing only one can be rejected by the other's current value. Change both
+  in one write with --model, or clear the model first:
+    ravi agents set <id> provider <provider> --model <model>
+    ravi agents set <id> model clear        (then set provider, then model)
+
 EXAMPLES
   ravi agents set ravi-console description "Answers questions about the Console" --json
   ravi agents set ravi-console provider pi --json
+  ravi agents set ravi-console provider pi --model deepseek/deepseek-flash --json
+  ravi agents set ravi-console model clear
   ravi agents set ravi-console model deepseek/deepseek-flash
   ravi agents set ravi-console provider pi --force --json
 
@@ -1243,6 +1251,11 @@ SOURCES
       description: "Clear session provider/model overrides so those sessions adopt the agent config",
     })
     force?: boolean,
+    @Option({
+      flags: "--model <model>",
+      description: "With key=provider: set the model in the same write, so the pair is validated together",
+    })
+    pairedModel?: string,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -1372,16 +1385,37 @@ SOURCES
       }
     }
 
+    if (pairedModel !== undefined && key !== "provider") {
+      fail(`--model is only valid with key=provider. To change the model alone: ravi agents set ${id} model <model>`);
+    }
+    if (pairedModel !== undefined && !pairedModel.trim()) {
+      fail("--model cannot be empty");
+    }
+    const modelCleared = key === "model" && value.trim().toLowerCase() === "clear";
+
     // Provider ids are intentionally open; runtime registration decides whether an id can execute.
-    if (key === "model") {
-      validateAgentModelValue(agent.provider, value);
+    // `model clear` removes the stored model without validating it, which is the way out of a
+    // provider/model pair that no single write can fix.
+    if (key === "model" && !modelCleared) {
+      validateAgentModelValue(
+        agent.provider,
+        value,
+        `To switch runtime in one write: ravi agents set ${id} provider <provider> --model ${value}`,
+      );
     }
     if (key === "provider") {
-      if (agent.model) {
-        validateAgentModelValue(value, agent.model);
+      if (pairedModel !== undefined) {
+        // The pair is validated together; the stored model is about to be replaced.
+        validateAgentModelValue(value, pairedModel.trim());
+      } else if (agent.model) {
+        validateAgentModelValue(
+          value,
+          agent.model,
+          `Change both in one write: ravi agents set ${id} provider ${value} --model <model>, or clear the model first: ravi agents set ${id} model clear`,
+        );
       }
       // A provider write must stay compatible with any selected preset.
-      if (agent.modelPresetId) {
+      if (agent.modelPresetId && pairedModel === undefined) {
         const preset = getRuntimeModelPreset(agent.modelPresetId);
         if (preset && preset.provider !== value) {
           fail(
@@ -1470,12 +1504,21 @@ SOURCES
     try {
       // A direct model write clears any existing preset reference atomically so
       // the two never coexist (mutual exclusion).
-      const updates: AgentUpdateInput =
-        key === "model"
-          ? agent.modelPresetId
-            ? { model: parsedValue as string, modelPresetId: null }
-            : { model: parsedValue as string }
-          : { [key]: parsedValue };
+      let updates: AgentUpdateInput;
+      if (modelCleared) {
+        updates = { model: null };
+      } else if (key === "model") {
+        updates = agent.modelPresetId
+          ? { model: parsedValue as string, modelPresetId: null }
+          : { model: parsedValue as string };
+      } else if (key === "provider" && pairedModel !== undefined) {
+        // Provider and model land in one row update; a direct model also drops any preset reference.
+        updates = agent.modelPresetId
+          ? { provider: value, model: pairedModel.trim(), modelPresetId: null }
+          : { provider: value, model: pairedModel.trim() };
+      } else {
+        updates = { [key]: parsedValue };
+      }
       updateAgent(id, updates);
       if (key === "cwd" || key === "provider") {
         ensureAgentDirs(loadRouterConfig());
@@ -1484,17 +1527,21 @@ SOURCES
         before: agent,
         agentId: id,
         key,
-        value: parsedValue,
+        value: modelCleared ? null : parsedValue,
         force,
       });
       if (asJson) {
         printJson(payload);
       } else {
-        console.log(
-          `\u2713 ${key} ${payload.changed ? "set" : "unchanged"}: ${id} -> ${
-            typeof parsedValue === "string" ? parsedValue : JSON.stringify(parsedValue)
-          }`,
-        );
+        if (modelCleared) {
+          console.log(`\u2713 model ${payload.changed ? "cleared" : "already clear"}: ${id}`);
+        } else {
+          console.log(
+            `\u2713 ${key} ${payload.changed ? "set" : "unchanged"}: ${id} -> ${
+              typeof parsedValue === "string" ? parsedValue : JSON.stringify(parsedValue)
+            }${key === "provider" && pairedModel !== undefined ? ` (model -> ${pairedModel.trim()})` : ""}`,
+          );
+        }
         printAgentSessionRuntimeSync(payload);
       }
       emitConfigChanged();
