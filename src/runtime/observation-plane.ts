@@ -385,6 +385,12 @@ export function ensureObservationSchema(): void {
 // the source agent how to answer; an observer reading what the person said only pays for them.
 const OBSERVATION_PREAMBLE_LINE = /^\[(?:session surface|knowledge)\] [^\n]*(?:\n|$)/;
 
+/** The `message.user` preview observers get: the prompt without its runtime lines, truncated. */
+export function observedUserPreview(text: string, maxLength = 500): string {
+  const value = stripObservationPreamble(text);
+  return value.length > maxLength ? `${value.slice(0, maxLength - 15)}... [truncated]` : value;
+}
+
 /** The source prompt without its leading runtime lines, as observers should read it. */
 export function stripObservationPreamble(text: string): string {
   let out = text;
@@ -887,8 +893,10 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
 
   const now = Date.now();
   const enabled = input.enabled ?? existing?.enabled ?? true;
-  getDb()
-    .prepare(
+  const db = getDb();
+  // The rule row and the cascade commit together, like `rules disable` and `rules rm`.
+  db.transaction(() => {
+    db.prepare(
       `
         INSERT INTO observer_rules (
           id, enabled, scope, priority, observer_role, observer_agent_id,
@@ -924,8 +932,7 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
           metadata_json = excluded.metadata_json,
           updated_at = excluded.updated_at
       `,
-    )
-    .run(
+    ).run(
       id,
       enabled ? 1 : 0,
       scope,
@@ -954,8 +961,9 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
       now,
     );
 
-  // A rule saved disabled (`rules set --disabled`) stops its bindings too, like `rules disable`.
-  if (!enabled) disableBindingsForRule(id);
+    // A rule saved disabled (`rules set --disabled`) stops its bindings too, like `rules disable`.
+    if (!enabled) disableBindingsForRule(id);
+  })();
   return dbGetObserverRule(id)!;
 }
 

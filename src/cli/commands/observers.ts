@@ -748,7 +748,14 @@ export class ObserverRuleCommands {
     const rule = dbSetObserverRuleEnabled(id, true);
     const payload = { success: true, rule: serializeRule(rule) };
     if (asJson) printJson(payload);
-    else console.log(`Enabled observer rule: ${id}`);
+    else {
+      console.log(`Enabled observer rule: ${id}`);
+      // Enabling does not touch bindings: each one returns when its source session next launches.
+      console.log(
+        "Bindings come back when each source session next launches; to resume a running session now: " +
+          "ravi observers refresh <session> --reconcile attach-missing",
+      );
+    }
     return payload;
   }
 
