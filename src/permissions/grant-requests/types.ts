@@ -88,6 +88,8 @@ export interface GrantApprovalChannelAdapter {
 export interface VerifiedActor {
   readonly channel: string;
   readonly senderId: string;
+  /** Other forms of the same verified sender id (for example a namespaced LID). */
+  readonly senderAliases?: readonly string[];
   readonly accountId?: string;
   readonly instanceId?: string;
 }

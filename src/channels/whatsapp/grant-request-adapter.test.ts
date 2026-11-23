@@ -13,6 +13,7 @@ import {
   resetGrantApprovalAdaptersForTest,
   type GrantRequestServiceDependencies,
 } from "../../permissions/grant-requests/service.js";
+import { registerGrantorIdentityResolver, unregisterGrantorIdentityResolver } from "../../approval/grantor.js";
 import { getGrantRequest } from "../../permissions/grant-requests/store.js";
 import { dbCreateAgent, dbUpsertChat, dbUpsertChatParticipant, dbUpsertInstance } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -238,6 +239,57 @@ describe("whatsapp grant request adapter", () => {
       expect(dbListContactChatGrants({ contactId: grantee.id })).toEqual([]);
       // A stranger is told nothing.
       expect(sent).toHaveLength(before);
+    });
+
+    it("hands the gate the sender, its LID namespace and the receiving instance", async () => {
+      const request = await open();
+      const seen: Array<Record<string, unknown>> = [];
+      registerGrantorIdentityResolver("whatsapp", (input) => {
+        seen.push({ ...input });
+        return null;
+      });
+      try {
+        await handleWhatsAppGrantRequestReply(
+          {
+            targetMessageId: "wamid-1",
+            text: "aprovo",
+            senderId: "279117123571781",
+            senderJid: "279117123571781@lid",
+            instanceId: "inst-uuid",
+            accountId: "main",
+          },
+          deps,
+        );
+      } finally {
+        unregisterGrantorIdentityResolver("whatsapp");
+      }
+
+      expect(seen).toEqual([
+        {
+          senderId: "279117123571781",
+          senderAliases: ["lid:279117123571781"],
+          instanceId: "inst-uuid",
+          accountId: "main",
+        },
+      ]);
+      expect(getGrantRequest(request.id)?.status).toBe("pending");
+    });
+
+    it("does not treat a phone-looking jid as a LID", async () => {
+      const request = await open();
+
+      const outcome = await handleWhatsAppGrantRequestReply(
+        {
+          targetMessageId: "wamid-1",
+          text: "aprovo",
+          senderId: APPROVAL_TEST_FAMILY_PHONE,
+          senderJid: `${APPROVAL_TEST_FAMILY_PHONE}@s.whatsapp.net`,
+        },
+        deps,
+      );
+
+      expect(outcome).toMatchObject({ handled: true, result: "unknown_actor" });
+      expect(getGrantRequest(request.id)?.status).toBe("pending");
     });
 
     it("tells an approver a request expired, and grants nothing", async () => {

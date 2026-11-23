@@ -1155,6 +1155,25 @@ export class OmniConsumer {
       }
     }
 
+    // A quote-reply to a bot message (approval, poll or grant request answers) is announced as
+    // soon as the sender is known and the message is live and not a redelivery, before any
+    // route, mode or DM policy: a reply in a DM with no route, a sentinel DM or a closed DM
+    // is still an answer to the message it quotes. The instance and the raw sender jid travel
+    // with it so a listener can resolve the sender the way this consumer just did (a LID
+    // sender resolves under its own namespace).
+    if (payload.replyToId && payload.content.text) {
+      nats
+        .emit("ravi.inbound.reply", {
+          targetMessageId: payload.replyToId,
+          text: payload.content.text,
+          senderId: senderPhone,
+          senderJid: payload.from,
+          instanceId,
+          accountId: effectiveAccountId,
+        })
+        .catch(() => {});
+    }
+
     // A person asked to link their Console account writes here in private:
     // the daemon answers with the approval link, with no agent turn and
     // before any route or DM policy, so it works even where unknown DMs are
@@ -1973,17 +1992,6 @@ export class OmniConsumer {
             plan: editRebasePlan,
           })
         : envelope;
-
-    // Emit inbound reply event when message is a quote-reply (for approval/poll resolution)
-    if (payload.replyToId && payload.content.text) {
-      nats
-        .emit("ravi.inbound.reply", {
-          targetMessageId: payload.replyToId,
-          text: payload.content.text,
-          senderId: senderPhone,
-        })
-        .catch(() => {});
-    }
 
     if (!skipTurn) {
       await this.activateTarget(sessionName, source, instanceId, chatJid);

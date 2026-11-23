@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { linkContactIdentity } from "../contacts.js";
 import { dbCreateTagDefinition } from "../tags/tag-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { listSlackApprovalGrantorUserIds, setApprovalGrantorRouterConfigForTest } from "../channels/slack/grantors.js";
-import { actorCanGrantRequestedPermission, registerGrantorIdentityResolver } from "./grantor.js";
+import {
+  actorCanGrantRequestedPermission,
+  registerGrantorIdentityResolver,
+  unregisterGrantorIdentityResolver,
+} from "./grantor.js";
 import {
   APPROVAL_TEST_FAMILY_PHONE,
   APPROVAL_TEST_LEAD_PHONE,
@@ -292,6 +297,40 @@ describe("approval grantor identity resolvers", () => {
     // A channel with no resolver of its own still resolves a contact by the generic lookup.
     expect(
       actorCanGrantRequestedPermission({ channel: "whatsapp", senderId: APPROVAL_TEST_SLACK_OWNER_PHONE }),
+    ).toMatchObject({ allowed: true, subjectId: owner.id });
+  });
+
+  it("hands the aliases of a verified sender to the channel resolver, and resolves them in the generic lookup", () => {
+    const owner = seedApprovalContact({
+      phone: APPROVAL_TEST_SLACK_OWNER_PHONE,
+      name: "Owner",
+      tags: ["permission.admin"],
+    });
+    linkContactIdentity(owner.id, { channel: "whatsapp", platformUserId: "lid:4242424242", instanceId: "inst-1" });
+    const seen: Array<{ senderId: string; senderAliases?: readonly string[]; instanceId?: string | null }> = [];
+    registerGrantorIdentityResolver("alias-channel", (input) => {
+      seen.push({ senderId: input.senderId, senderAliases: input.senderAliases, instanceId: input.instanceId });
+      return { ownerType: "contact", ownerId: owner.id };
+    });
+    try {
+      actorCanGrantRequestedPermission({
+        channel: "alias-channel",
+        senderId: "4242424242",
+        senderAliases: ["lid:4242424242"],
+        instanceId: "inst-1",
+      });
+      expect(seen).toEqual([{ senderId: "4242424242", senderAliases: ["lid:4242424242"], instanceId: "inst-1" }]);
+    } finally {
+      unregisterGrantorIdentityResolver("alias-channel");
+    }
+    // Without a resolver of its own the generic lookup tries the exact namespaced identity too.
+    expect(
+      actorCanGrantRequestedPermission({
+        channel: "whatsapp",
+        senderId: "4242424242",
+        senderAliases: ["lid:4242424242"],
+        instanceId: "inst-1",
+      }),
     ).toMatchObject({ allowed: true, subjectId: owner.id });
   });
 });

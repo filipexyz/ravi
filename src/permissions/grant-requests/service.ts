@@ -270,6 +270,7 @@ export function decideGrantRequest(
     ...(input.actor.accountId ? { accountId: input.actor.accountId } : {}),
     ...(input.actor.instanceId ? { instanceId: input.actor.instanceId } : {}),
     senderId: input.actor.senderId,
+    ...(input.actor.senderAliases?.length ? { senderAliases: input.actor.senderAliases } : {}),
     permission: FULL_ACCESS_CAPABILITY.permission,
     objectType: FULL_ACCESS_CAPABILITY.objectType,
     objectId: FULL_ACCESS_CAPABILITY.objectId,

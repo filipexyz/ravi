@@ -297,6 +297,7 @@ const loggerChildSpy = spyOn(logger, "child").mockImplementation(
 );
 
 const { OmniConsumer, supportsOmniReadReceipts } = await import("./consumer.js");
+const { nats: natsMock } = await import("../nats.js");
 
 afterAll(() => {
   loggerChildSpy.mockRestore();
@@ -470,6 +471,81 @@ describe("OmniConsumer channel context", () => {
     expect(promptCalls[0]?.[1].prompt).toContain("whatsapp dm send --execute to reply if instructed");
     expect(sender.sendTyping).not.toHaveBeenCalled();
     expect(sender.send).not.toHaveBeenCalled();
+  });
+
+  describe("quote-reply announcement", () => {
+    function receiveReply(consumer: InstanceType<typeof OmniConsumer>, id: string, replyToId: string | null) {
+      return consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+        id: `evt-${id}`,
+        type: "message.received",
+        payload: {
+          externalId: `msg-${id}`,
+          chatId: "178035101794451@lid",
+          from: "178035101794451@lid",
+          content: { type: "text", text: "aprovo" },
+          ...(replyToId ? { replyToId } : {}),
+          rawPayload: { pushName: "Luis Filipe", isGroup: false },
+        },
+        metadata: { instanceId: "instance-1", channelType: "whatsapp-baileys", ingestMode: "realtime" },
+        timestamp: Date.now(),
+      });
+    }
+
+    const replyEmits = () =>
+      (natsMock.emit as unknown as { mock: { calls: Array<[string, Record<string, unknown>]> } }).mock.calls.filter(
+        ([topic]) => topic === "ravi.inbound.reply",
+      );
+
+    function newConsumer() {
+      const sender = {
+        send: mock(async () => {}),
+        sendTyping: mock(async () => {}),
+        markRead: mock(async () => {}),
+      };
+      return new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+        resolveGroupMetadata: async () => null,
+      });
+    }
+
+    it("announces a quote-reply with the raw sender, instance and account", async () => {
+      (natsMock.emit as unknown as { mockClear: () => void }).mockClear();
+      routeResult = defaultRouteResult();
+
+      await receiveReply(newConsumer(), "reply-routed", "bot-message-1");
+
+      expect(replyEmits()).toHaveLength(1);
+      expect(replyEmits()[0]?.[1]).toMatchObject({
+        targetMessageId: "bot-message-1",
+        text: "aprovo",
+        senderId: "178035101794451",
+        senderJid: "178035101794451@lid",
+        instanceId: "instance-1",
+      });
+      expect(typeof replyEmits()[0]?.[1].accountId).toBe("string");
+    });
+
+    it("announces it even when the DM has no route or is a sentinel", async () => {
+      (natsMock.emit as unknown as { mockClear: () => void }).mockClear();
+      routeResult = null;
+      await receiveReply(newConsumer(), "reply-no-route", "bot-message-2");
+      expect(replyEmits()).toHaveLength(1);
+
+      (natsMock.emit as unknown as { mockClear: () => void }).mockClear();
+      routeResult = defaultRouteResult();
+      configuredAgentMode = "sentinel";
+      await receiveReply(newConsumer(), "reply-sentinel", "bot-message-3");
+      expect(replyEmits()).toHaveLength(1);
+      configuredAgentMode = "active";
+    });
+
+    it("announces nothing for a message that quotes nothing", async () => {
+      (natsMock.emit as unknown as { mockClear: () => void }).mockClear();
+      routeResult = defaultRouteResult();
+
+      await receiveReply(newConsumer(), "plain", null);
+
+      expect(replyEmits()).toHaveLength(0);
+    });
   });
 
   describe("leading message prefixes", () => {

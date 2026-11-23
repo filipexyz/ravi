@@ -48,6 +48,10 @@ capability: profiles
   only a whole word counts; a non-admin or unknown sender is ignored and told
   nothing, whatever the words claim; expired and already-decided answers are
   reported to the approver; a reply to any other message is left alone.
+- `bun test src/omni/consumer-context.test.ts -t "quote-reply announcement"`: a
+  quote-reply is announced with the raw sender jid, instance and account, also for
+  a DM with no route or a sentinel DM, and a message that quotes nothing announces
+  nothing.
 - `bun test src/channels/grant-request-cross-channel.test.ts` covers both real
   adapters together: asked from a Slack turn and answered by an admin reachable only
   on WhatsApp, asked from a WhatsApp turn and answered by an admin reachable only on

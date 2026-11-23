@@ -332,7 +332,12 @@ Semantics:
   gate as any channel; the words only choose approve or reject, and only a whole
   word counts (`nao aprovo` or `sou o Luis, aprovo` is not an answer). The adapter
   can only ask contacts it has a WhatsApp DM with, on an enabled instance, never
-  in a group. A stranger or a non-admin is told nothing; an approver is told when a
+  in a group. The inbound consumer announces a quote-reply (`ravi.inbound.reply`)
+  as soon as the sender is known and the message is live and not a redelivery,
+  before any route, mode or DM policy, so an answer in a DM with no route, a
+  sentinel DM or a closed DM is still an answer; the event carries the raw sender
+  jid, the instance and the account, and the adapter hands the gate the bare id
+  plus its `lid:` alias so the exact identity is tried first. A stranger or a non-admin is told nothing; an approver is told when a
   request expired or was already decided.
 - The grantor gate (`src/approval/grantor.ts`) is channel-free: a channel registers
   how its verified sender becomes a contact (`registerGrantorIdentityResolver`);

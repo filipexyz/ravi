@@ -10,6 +10,8 @@ import { materializeSubjectCapabilities } from "../permissions/provider-runtime.
  */
 export type GrantorIdentityResolver = (input: {
   readonly senderId: string;
+  /** Other forms of the same verified sender id (for example a namespaced LID). */
+  readonly senderAliases?: readonly string[];
   readonly instanceId?: string | null;
   readonly accountId?: string;
 }) => Pick<PlatformIdentity, "ownerType" | "ownerId"> | null;
@@ -20,7 +22,13 @@ export function registerGrantorIdentityResolver(channel: string, resolver: Grant
   identityResolvers.set(channel.trim().toLowerCase(), resolver);
 }
 
+export function unregisterGrantorIdentityResolver(channel: string): void {
+  identityResolvers.delete(channel.trim().toLowerCase());
+}
+
 export interface ApprovalGrantorInput {
+  /** Other forms of the same verified sender id; the channel's own lookup decides what they mean. */
+  readonly senderAliases?: readonly string[];
   readonly channel: string;
   readonly accountId?: string;
   readonly instanceId?: string | null;
@@ -51,10 +59,15 @@ export function actorCanGrantRequestedPermission(input: ApprovalGrantorInput): A
   const identity = channelResolver
     ? channelResolver({
         senderId,
+        ...(input.senderAliases?.length ? { senderAliases: input.senderAliases } : {}),
         ...(input.instanceId !== undefined ? { instanceId: input.instanceId } : {}),
         ...(input.accountId ? { accountId: input.accountId } : {}),
       })
-    : resolveGrantorIdentity(input.channel, senderId, [input.instanceId, input.accountId, ""]);
+    : resolveGrantorIdentity(
+        input.channel,
+        [senderId, ...(input.senderAliases ?? [])],
+        [input.instanceId, input.accountId, ""],
+      );
   if (
     !identity?.ownerType ||
     !identity.ownerId ||
@@ -82,24 +95,27 @@ export function actorCanGrantRequestedPermission(input: ApprovalGrantorInput): A
 
 function resolveGrantorIdentity(
   channel: string,
-  senderId: string,
+  senderIds: readonly string[],
   instanceCandidates: Array<string | null | undefined>,
 ): Pick<PlatformIdentity, "ownerType" | "ownerId"> | null {
+  const senderId = senderIds[0] ?? "";
   const seen = new Set<string>();
-  for (const candidate of instanceCandidates) {
-    const instanceId = candidate?.trim() ?? "";
-    const key = `${channel}:${instanceId}:${senderId}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const identity =
-      typeof resolvePlatformIdentity === "function"
-        ? resolvePlatformIdentity({
-            channel,
-            instanceId,
-            platformUserId: senderId,
-          })
-        : null;
-    if (identity?.ownerType && identity.ownerId) return identity;
+  for (const platformUserId of senderIds) {
+    for (const candidate of instanceCandidates) {
+      const instanceId = candidate?.trim() ?? "";
+      const key = `${channel}:${instanceId}:${platformUserId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const identity =
+        typeof resolvePlatformIdentity === "function"
+          ? resolvePlatformIdentity({
+              channel,
+              instanceId,
+              platformUserId,
+            })
+          : null;
+      if (identity?.ownerType && identity.ownerId) return identity;
+    }
   }
 
   // Prefer the canonical details lookup. `getContact` is a thin export and is

@@ -125,6 +125,15 @@ function buildRequestText(request: GrantRequestRecord): string {
 // Inbound: a quote-reply to a grant request message
 // ---------------------------------------------------------------------------
 
+/**
+ * A WhatsApp sender can be a LID instead of a phone. The inbound consumer stores that
+ * identity under `lid:<digits>`, so the bare digits alone would not find the contact.
+ */
+function lidAliases(jid: string): string[] {
+  const match = /^(\d+)@lid$/i.exec(jid);
+  return match ? [`lid:${match[1]}`] : [];
+}
+
 const APPROVE_WORDS = new Set(["aprovo", "aprovado", "aprovar", "approve", "approved"]);
 const REJECT_WORDS = new Set(["nego", "negado", "negar", "rejeito", "reject", "rejected", "deny"]);
 
@@ -166,11 +175,20 @@ export async function handleWhatsAppGrantRequestReply(
   if (!decision) return { handled: true, result: "not_an_answer" };
 
   const senderId = stringField(data, "senderId");
+  const instanceId = stringField(data, "instanceId");
+  const eventAccountId = stringField(data, "accountId");
+  const senderAliases = lidAliases(stringField(data, "senderJid"));
   const outcome = decideGrantRequest(
     {
       requestId: delivery.requestId,
       decision,
-      actor: { channel: WHATSAPP_GRANT_REQUEST_CHANNEL, senderId },
+      actor: {
+        channel: WHATSAPP_GRANT_REQUEST_CHANNEL,
+        senderId,
+        ...(senderAliases.length ? { senderAliases } : {}),
+        ...(instanceId ? { instanceId } : {}),
+        ...(eventAccountId ? { accountId: eventAccountId } : {}),
+      },
     },
     ...(dependencies.service ? [dependencies.service] : []),
   );
