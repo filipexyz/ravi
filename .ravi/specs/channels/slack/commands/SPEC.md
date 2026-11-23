@@ -128,9 +128,12 @@ on the session of the DM or channel they are typed in, never on a thread.
   (`sessions close-thread`, `sessions runtime interrupt`), read from the access
   metadata the CLI declares for that operation so it cannot drift. When that
   metadata cannot be read the command MUST be refused.
-- The command-level check MUST run as `source: "slack-command"` with the contact
+- The command-level check MUST run as `source: "channel-command"` with the contact
   as subject: no ambient runtime context, no agent ceiling and no local
   operator authority may stand in for it. Without a contact it MUST be denied.
+  The source names no channel: the command authority and the permission provider
+  contract (`command-access.ts`, `provider-types.ts`) MUST NOT mention any
+  channel, and a Slack-specific rule lives in this adapter, never in the core.
 - `stop` MUST ask the runtime on `ravi.session.runtime.control` with
   `turn.interrupt`, the request `ravi sessions runtime interrupt` makes. It MUST
   say "nothing running" when there is no active turn, and MUST NOT claim a stop

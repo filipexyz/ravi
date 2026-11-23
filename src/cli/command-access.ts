@@ -25,11 +25,13 @@ import type {
 } from "../permissions/provider-types.js";
 
 /**
- * Where a command runs from. `slack-command` is a person typing `/ravi` in
- * Slack: the authority is that person's verified contact, never an agent's
- * runtime context and never the local operator.
+ * Where a command runs from. `channel-command` is a person typing a command in
+ * a chat channel, whichever channel: the channel adapter resolves the sender to
+ * a verified contact, and the authority is that contact, never an agent's
+ * runtime context and never the local operator. The core does not know which
+ * channel it was; adapters feed it.
  */
-export type CliCommandAccessSource = "cli" | "tool" | "gateway" | "slack-command";
+export type CliCommandAccessSource = "cli" | "tool" | "gateway" | "channel-command";
 
 export interface CliCommandAccessInput {
   canonicalName?: string;
@@ -38,7 +40,7 @@ export interface CliCommandAccessInput {
   access?: CommandAccessOptions;
   input?: Record<string, unknown>;
   source: CliCommandAccessSource;
-  /** The contact a `slack-command` acts for. Required for that source, ignored by the others. */
+  /** The contact a `channel-command` acts for. Required for that source, ignored by the others. */
   subject?: { type: "contact"; id: string };
 }
 
@@ -103,9 +105,9 @@ export function enforceCliCommandAuthorization(input: CliCommandAuthorizationInp
 }
 
 export function enforceCliCommandAccess(input: CliCommandAccessInput): CliCommandAccessResult {
-  // A Slack command's authority is its contact, even if the daemon loop that
+  // A channel command's authority is its contact, even if the daemon loop that
   // runs it happened to sit inside a Console invocation.
-  const invocation = input.source === "slack-command" ? undefined : currentConsoleInvocation();
+  const invocation = input.source === "channel-command" ? undefined : currentConsoleInvocation();
   if (invocation) return authorizeConsoleCommand(invocation, input);
   if (!input.access) {
     return {
@@ -274,14 +276,14 @@ function resolveCommandAccessAuthority(
       request: Pick<PermissionProviderRequest, "context" | "subject" | "localOperator" | "capabilities">;
     }
   | { allowed: false; errorMessage: string; inactiveContext?: NonNullable<ReturnType<typeof getContext>>["context"] } {
-  if (source === "slack-command") {
+  if (source === "channel-command") {
     // The person and nothing else: no ambient context, no agent ceiling, no
     // local operator. Without a resolved contact there is no authority.
     const contactId = subject?.type === "contact" ? subject.id.trim() : "";
     if (!contactId) {
       return {
         allowed: false,
-        errorMessage: "Permission denied: a Slack command requires a resolved contact",
+        errorMessage: "Permission denied: a channel command requires a resolved contact",
       };
     }
     // A contact holds what its tags and grants materialize to, the same

@@ -581,7 +581,7 @@ export async function handleSlackCommand(
         return record({ decision: "error", code: "access_metadata_missing" });
       }
       const verdict = (deps.commandAccess ?? enforceCliCommandAccess)({
-        source: "slack-command",
+        source: "channel-command",
         subject: { type: "contact", id: contactId },
         group: inherited.group,
         command: inherited.command,

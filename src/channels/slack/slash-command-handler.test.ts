@@ -261,7 +261,7 @@ describe("who may run a command", () => {
     // As the contact, never as the agent or the local operator.
     expect(h.calls.access).toMatchObject([
       {
-        source: "slack-command",
+        source: "channel-command",
         subject: { type: "contact", id: CONTACT },
         group: "sessions",
         command: "close-thread",

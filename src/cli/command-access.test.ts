@@ -143,7 +143,7 @@ describe("CLI command access enforcement", () => {
     expect(result.attempted).toEqual([]);
   });
 
-  describe("for a Slack command", () => {
+  describe("for a channel command", () => {
     const CLOSE_THREAD: CommandAccessOptions = {
       kind: "mutate",
       resource: "sessions",
@@ -162,7 +162,7 @@ describe("CLI command access enforcement", () => {
         group: "sessions",
         command: "close-thread",
         access: CLOSE_THREAD,
-        source: "slack-command",
+        source: "channel-command",
         subject,
       });
     }
@@ -203,6 +203,14 @@ describe("CLI command access enforcement", () => {
       updateContact(owner.phone, { status: "blocked" });
 
       expect(ask({ type: "contact", id: owner.id }).allowed).toBe(false);
+    });
+
+    it("keeps every channel name out of the command authority and its provider contract", () => {
+      // Channels reach the core only through adapters: the source is `channel-command`, whichever channel sent it.
+      for (const relativePath of ["src/cli/command-access.ts", "src/permissions/provider-types.ts"]) {
+        const contents = readFileSync(join(process.cwd(), relativePath), "utf8");
+        expect(contents).not.toMatch(/slack|whatsapp|telegram|discord|matrix/i);
+      }
     });
   });
 

@@ -11,8 +11,9 @@
 - The sixth post to one response handle MUST be refused before any request is made, two callers that arrive together MUST NOT both take the last use, a post Slack refuses MUST give its use back and a request that fails without an answer MUST NOT.
 - A Slack user with no contact MUST get a private refusal and MUST NOT run any operation.
 - A contact without access to the chat's session MUST NOT read it; a contact with access but without `modify` MUST NOT close a thread or stop a turn.
-- A contact that modifies the session but lacks the CLI's capability for the operation MUST be refused, and the check MUST run as `slack-command` with the contact as subject.
-- A `slack-command` check without a contact MUST be denied, and neither an agent's runtime context nor the local operator MUST be able to stand in for the contact.
+- A contact that modifies the session but lacks the CLI's capability for the operation MUST be refused, and the check MUST run as `channel-command` with the contact as subject.
+- A `channel-command` check without a contact MUST be denied, and neither an agent's runtime context nor the local operator MUST be able to stand in for the contact.
+- The command authority (`src/cli/command-access.ts`) and the permission provider contract (`src/permissions/provider-types.ts`) MUST NOT name any channel; a test reads both files and fails on a channel name.
 - The owner contact MUST be able to run every command.
 - A configured external authority MUST be able to refuse a command's read of a session the contact's local grants allow.
 - `close` MUST show the active triggers that hold a thread open and the way out, and MUST explain the other refusals.
