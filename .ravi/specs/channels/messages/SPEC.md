@@ -64,7 +64,7 @@ Unsupported content MUST preserve enough metadata for audit and future parser im
 
 ## Edit/Delete Rules
 
-Message edits and deletes MUST be represented as state transitions or events tied to the canonical message id and platform identity. They MUST NOT be treated as unrelated messages.
+Message edits and deletes MUST be represented as state transitions or events tied to the canonical message id and platform identity. They MUST NOT be treated as unrelated messages. A delete MUST NOT open an agent turn (the Omni consumer drops `content.type = delete` before admission); recording it as a state transition on the canonical message is still open.
 
 ## Status Anchor Rules
 

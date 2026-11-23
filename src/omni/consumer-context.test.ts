@@ -1210,6 +1210,42 @@ describe("OmniConsumer channel context", () => {
     expect(chatMessageCalls[0]).toMatchObject({ actorType: "contact", contactId: "contact_luis" });
   });
 
+  it("does not open a turn for a deletion notice", async () => {
+    // 23/11: "[Delete] Message deleted by sender" reached the xone-setup agent
+    // as a prompt and retired the turn that was still working.
+    platformIdentityByUser.set("5511947879044", {
+      id: "pi_luis_human",
+      ownerType: "contact",
+      ownerId: "contact_luis",
+      channel: "whatsapp",
+      platformUserId: "5511947879044",
+      confidence: 1,
+    });
+    contactByRef.set("contact_luis", { id: "contact_luis", status: "allowed", name: "Luis" });
+    const consumer = new OmniConsumer(
+      { send: mock(async () => {}), sendTyping: mock(async () => {}), markRead: mock(async () => {}) } as never,
+      "http://omni.local",
+      "test-key",
+      { resolveGroupMetadata: async () => null },
+    );
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-delete",
+      type: "message.received",
+      payload: {
+        externalId: "msg-deleted-delete-1",
+        chatId: "120363424772797713@g.us",
+        from: "5511947879044@s.whatsapp.net",
+        content: { type: "delete", text: "Message deleted by sender" },
+        rawPayload: { pushName: "Luis", resolvedSenderPhone: "5511947879044", isGroup: true },
+      },
+      metadata: { instanceId: "instance-1", channelType: "whatsapp-baileys", ingestMode: "realtime" },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(0);
+  });
+
   it("does not open a second turn when the same inbound is redelivered", async () => {
     platformIdentityByUser.set("5511947879044", {
       id: "pi_luis_human",

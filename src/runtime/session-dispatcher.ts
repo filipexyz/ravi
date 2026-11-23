@@ -1154,6 +1154,10 @@ export class RuntimeSessionDispatcher {
       const barrier = getRuntimePromptDeliveryBarrier(prompt);
       // Saved configuration changes the next provider turn. Preserve the exact
       // successor atom behind its barrier while the current turn is generating.
+      // That includes after_tool (the default for channel messages): an
+      // ordinary inbound must not retire a working turn just because a saved
+      // provider change is pending. immediate_interrupt and an explicit session
+      // override still switch mid-turn.
       return (
         !live.done &&
         live.agentId === agent.id &&
@@ -1163,7 +1167,11 @@ export class RuntimeSessionDispatcher {
         requestedProvider !== live.queryHandle.provider &&
         live.turnActive &&
         live.currentCrashRecoveryTerminal?.status !== "complete" &&
-        (barrier === "after_response" || barrier === "after_task")
+        (barrier === "after_response" ||
+          barrier === "after_task" ||
+          // An explicit session override still switches at the next tool
+          // boundary; only agent-level or cleared configuration waits.
+          (barrier === "after_tool" && !sessionEntry?.runtimeProviderOverride?.trim()))
       );
     };
     if (

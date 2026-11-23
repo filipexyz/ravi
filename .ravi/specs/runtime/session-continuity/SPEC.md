@@ -117,8 +117,12 @@ This baseline is not enough for message edits or arbitrary prompt-history forks.
 - Pending successor prompts accepted before a provider change MUST be retained
   and dispatched through the current provider selection after the active turn,
   rather than consumed by an incompatible old handle.
-- A saved provider transition MUST honor `after_response` and `after_task`
-  while the current turn is still generating. An accepted canonical completion
+- A saved provider transition MUST honor `after_tool`, `after_response` and
+  `after_task` while the current turn is still generating: an ordinary inbound
+  (channel messages default to `after_tool`) MUST NOT retire a working turn
+  because a saved provider change is pending. Only `immediate_interrupt` or an
+  explicit session provider override switches mid-turn. (23/11: a late
+  deletion notice retired an 11-minute `xone-setup` turn this way.) An accepted canonical completion
   ends generation even if asynchronous accounting is still pending; it MUST
   retain its completed classification and accounting during a later handoff.
 - Successor handoff MUST recheck saved provider selection after `turn.complete`,

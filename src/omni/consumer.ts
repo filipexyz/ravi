@@ -718,6 +718,15 @@ export class OmniConsumer {
     // Skip reaction messages — these are handled by the REACTION stream consumer
     if (payload.content.type === "reaction") return;
 
+    // A deletion ("Message deleted by sender") is a notice about an earlier
+    // message, not a new conversation turn. Publishing it as a prompt woke the
+    // agent for nothing and, with a saved provider change pending, retired the
+    // turn that was still working (xone-setup, 23/11).
+    if (payload.content.type === "delete") {
+      log.debug("Skipping deletion notice: not a conversation turn", { subject });
+      return;
+    }
+
     // WhatsApp Status and broadcast-list feeds are not conversations. Treating
     // their shared chat id as a DM makes different authors repeatedly
     // canonicalize the same chat into their own contact history. Besides mixing

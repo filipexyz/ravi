@@ -558,7 +558,7 @@ describe("provider changes with durable turns and real prompt generators", () =>
 
 describe("provider configuration at every terminal generator boundary", () => {
   for (const terminal of ["complete", "failed", "interrupted"] as const) {
-    for (const deliveryBarrier of ["after_response", "after_task"] as const) {
+    for (const deliveryBarrier of ["after_tool", "after_response", "after_task"] as const) {
       for (const configuration of ["incompatible-clear", "compatible-clear", "unchanged"] as const) {
         it(`preserves ${terminal} and delivers B once (${deliveryBarrier}, ${configuration})`, async () => {
           const incompatible = configuration === "incompatible-clear";
@@ -1272,7 +1272,7 @@ async function withPausedTerminalLease(
 
 interface GeneratedTurnOptions {
   terminal?: "complete" | "failed" | "interrupted" | "recoverable" | "capacity";
-  deliveryBarrier?: "after_response" | "after_task";
+  deliveryBarrier?: "after_tool" | "after_response" | "after_task";
   activeTaskBarrier?: boolean;
   emitAssistant?: boolean;
   agentDefaultProvider?: "claude" | "codex";
