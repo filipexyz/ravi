@@ -1018,6 +1018,42 @@ describe("remote gateway exit taxonomy", () => {
     expect(wrongOperation).toMatchObject({ code: "SERVER_UNAVAILABLE", exitCode: 1 });
   });
 
+  it("tells a remote caller how to get full access approved instead of the generic block advice", () => {
+    for (const op of ["permissions allow", "permissions resolve"]) {
+      const error = remoteGatewayErrorToContractError(
+        op,
+        result({
+          status: 409,
+          body: JSON.stringify({
+            success: false,
+            op,
+            exitCode: 3,
+            outcome: "blocked",
+            error: { code: "FULL_ACCESS_APPROVAL_REQUIRED", message: "private server text", retryable: false },
+          }),
+        }),
+      );
+      const envelope = JSON.stringify(error?.envelope());
+      expect(envelope).toContain("permissions request full-access");
+      expect(envelope).not.toContain("private server text");
+    }
+    // The fixed copy is keyed by operation and code; another blocked command keeps the generic advice.
+    const other = remoteGatewayErrorToContractError(
+      "secrets reveal",
+      result({
+        status: 409,
+        body: JSON.stringify({
+          success: false,
+          op: "secrets reveal",
+          exitCode: 3,
+          outcome: "blocked",
+          error: { code: "FULL_ACCESS_APPROVAL_REQUIRED", message: "x", retryable: false },
+        }),
+      }),
+    );
+    expect(JSON.stringify(other?.envelope())).not.toContain("permissions request full-access");
+  });
+
   it.each([
     [1, "failed", "WRITE_REQUIRES_EXECUTE"],
     [1, "failed", "USAGE_ERROR"],

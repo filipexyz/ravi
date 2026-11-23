@@ -6867,7 +6867,7 @@ class PermissionsNamespace {
     );
   }
 
-  Future<PermissionsRequestReturn> request(String profile, [PermissionsRequestOptions options = const PermissionsRequestOptions()]) async {
+  Future<PermissionsRequestReturn> request(String profile, PermissionsRequestOptions options) async {
     final requestBody = <String, RaviJson>{};
     requestBody["profile"] = RaviJson.from(profile);
     options.encodeBody(requestBody);

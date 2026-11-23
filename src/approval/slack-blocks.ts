@@ -4,7 +4,7 @@ import {
   type SlackBlockKitMessagePayload,
 } from "../channels/slack/block-kit.js";
 import type { PermissionGrantIntent, PermissionGrantScopeValue } from "../permissions/apply-grant.js";
-import type { PermissionGrantExplicitTarget } from "./grant-metadata.js";
+import { safeCardId, type PermissionGrantExplicitTarget } from "./grant-metadata.js";
 import type { ApprovalDecisionValue, ApprovalRequestType } from "./store.js";
 
 export const SLACK_APPROVAL_ACTION_APPROVE = "ravi.approval.v1.approve";
@@ -133,20 +133,24 @@ export function buildSlackPermissionGrantMessage(input: SlackPermissionGrantMess
   const who = requester ?? "someone";
   const mentionPrefix = mentions.length > 0 ? `${mentions.slice(0, 5).join(" ")} — ` : "";
   if (explicit) {
-    const asker = input.agentId ? `agent \`${input.agentId}\`` : "an agent";
+    const asker = input.agentId ? `agent \`${safeCardId(input.agentId)}\`` : "an agent";
     bodyLines.push(
-      `${mentionPrefix}${asker} asks for *full access* for *${explicit.contactLabel}* in *${explicit.chatLabel}* only.`,
+      `${mentionPrefix}${asker} asks for *full access* for *${explicit.contactLabel}* (\`contact:${explicit.contactId}\`) in *${explicit.chatLabel}* (\`chat:${explicit.chatId}\`) only.`,
     );
+    if (explicit.executorAgentId) {
+      bodyLines.push(`Executor: \`${explicit.executorAgentId}\` (its own permissions are not changed).`);
+    }
   } else {
     bodyLines.push(`${mentionPrefix}${who} hit a permission failure in this chat.`);
   }
   bodyLines.push(`*Needed:* \`${input.capabilityText}\``);
   const reason = sanitizeReason(input.reason);
-  if (reason) bodyLines.push(`_${reason}_`);
+  // An explicit request states its target above, from stored ids and cleaned labels.
+  if (reason && !explicit) bodyLines.push(`_${reason}_`);
   bodyLines.push("");
   bodyLines.push(
     explicit
-      ? "Approving grants the admin profile to that contact in that chat, nothing else. Nothing changes until an admin approves."
+      ? "Approving grants the admin profile to that contact in that chat, nothing else: no agent's permissions change. Nothing changes until an admin approves."
       : input.allowed.includes("full-access")
         ? adminActivityHint(mentions.length)
         : "Full access is not offered here: it needs a Slack-linked admin contact.",

@@ -17908,16 +17908,29 @@ export type PermissionsMaterializeReturn = {
 };
 
 /** Input shape for `permissions.request`. */
-export type PermissionsRequestInput = {
-  agent?: string;
+export type PermissionsRequestInput = ({
+  agent: string;
   chat?: string;
+  execute?: boolean;
   profile: string;
   to?: string;
-};
+}) | ({
+  agent?: string;
+  chat: string;
+  execute?: boolean;
+  profile: string;
+  to?: string;
+}) | ({
+  agent?: string;
+  chat?: string;
+  execute?: boolean;
+  profile: string;
+  to: string;
+});
 
 /** Return shape for `permissions.request`. */
 export type PermissionsRequestReturn = {
-  agent: string | null;
+  agent: string;
   chatId: string;
   contactId: string;
   grantedProfile: string;

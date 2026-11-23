@@ -928,7 +928,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | relay | src/cli/remote-gateway.ts | 469 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:c41d6e44f3fc6e90b2094dde |
 | relay | src/cli/remote-gateway.ts | 954 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:266a824d891cb5d497d3ac3e |
 | relay | src/cli/remote-gateway.ts | 1021 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:b25c88a5d690b9855455a3a6 |
-| relay | src/cli/remote-gateway.ts | 1548 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:c189970f4ec710d509af0466 |
+| relay | src/cli/remote-gateway.ts | 1550 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:c189970f4ec710d509af0466 |
 | cli | src/cli/runtime-target.ts | 34 | triaged-follow-up | catch-without-binding | src/cli/runtime-target.ts:a330f4808d976b8052774005 |
 | cli | src/cli/runtime-target.ts | 86 | triaged-follow-up | catch-without-binding | src/cli/runtime-target.ts:863230d57a244c76b7fe3ddb |
 | cli | src/cli/skill-gates.ts | 264 | no-cause | Incomplete shell text is expected during best-effort skill discovery; retain only its visible command prefix, never an authorization verdict. | src/cli/skill-gates.ts:b60b7d61e8d7d344de5faa41 |

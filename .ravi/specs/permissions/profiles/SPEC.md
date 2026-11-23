@@ -282,17 +282,30 @@ Semantics:
   not proof of approval. Rejection MUST precede profile, contact grant and
   executor-ceiling writes. Dry-run expansion and revocation remain available;
   preview MUST NOT advertise an apply command that will always be rejected.
-- `permissions request full-access --to contact:<id> --chat <chat> [--agent <id>]`
-  is the path that consumes operator approval. It MUST NOT write a grant
-  itself. It records an approval request whose card goes privately to the Slack
-  admins of the turn's instance (never to the grantee's chat), and the approval
-  service applies the grant when an admin clicks `full-access`. The request MUST
-  offer exactly one intent (`full-access`) and exactly one scope (the named
-  chat), and the card MUST name the contact and the chat ("Full access
-  requested"), never "this chat". It supports one contact and one chat, never
-  global or chat-tag. A turn that is not a Slack turn, or an instance with no
-  Slack admin, MUST fail closed (`FULL_ACCESS_APPROVAL_UNAVAILABLE`,
-  `FULL_ACCESS_APPROVER_UNAVAILABLE`, exit 3) without showing any card.
+- `permissions request full-access --to contact:<id> --chat <chat> --agent <id> --execute`
+  is the path that consumes operator approval. Without `--execute` it only
+  plans (exit 3, nothing shown to anyone). It MUST NOT write a grant itself. It
+  records an approval request whose card goes privately to the Slack admins of
+  the turn's instance (never to the grantee's chat), and the approval service
+  applies the grant when an admin clicks `full-access`. The request MUST offer
+  exactly one intent (`full-access`) and exactly one scope (the named chat). It
+  supports one contact and one chat, never global or chat-tag. The command
+  waits for the click, so it declares a remote timeout longer than the approval
+  window; the gateway client's 30 s default would hang up first.
+- The executor named by `--agent` MUST already hold admin on its own
+  (`agents permissions <id> full-access`); otherwise the request fails with
+  `FULL_ACCESS_EXECUTOR_CEILING` before any card. Approving MUST NOT write an
+  agent ceiling: an agent-wide admin would reach every chat the agent serves and
+  outlive the contact grant.
+- The card MUST say "Full access requested" and name the contact and the chat
+  with their stable ids (`contact:<id>`, `chat:<id>`), never "this chat". Names
+  and titles are user-controlled: they MUST be reduced to plain text (no
+  `<`, `>`, `&`, `*`, `_`, backticks) and capped before they reach Slack markup.
+- A turn that is not a Slack turn, or an instance with no Slack admin, MUST fail
+  closed (`FULL_ACCESS_APPROVAL_UNAVAILABLE`, `FULL_ACCESS_APPROVER_UNAVAILABLE`,
+  exit 3) without showing any card. A remote `allow`/`resolve` blocked with
+  `FULL_ACCESS_APPROVAL_REQUIRED` MUST tell the caller about `permissions request`
+  through fixed copy keyed by operation and code, never by forwarding server text.
 - Known gap, not closed here: the `full-access` guard keys on the profile
   *name*. A profile with another name that carries `admin:system:*` (the
   documented `chat-admin` recipe) is applied by `allow --apply` without an

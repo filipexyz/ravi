@@ -95779,14 +95779,110 @@ class RaviSchemas {
   static const permissionsRequestInputSchema = r'''
 {
   "additionalProperties": false,
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "description": "Executor agent that serves that chat. It must already hold admin on its own (full-access agent profile); this command never widens an agent",
+          "type": "string"
+        },
+        "chat": {
+          "description": "The one chat where the contact gets full access (canonical chat id, platform chat id, or 'current')",
+          "type": "string"
+        },
+        "execute": {
+          "description": "Send the approval card and wait for an admin. Without it, prints the plan and exits 3",
+          "type": "boolean"
+        },
+        "profile": {
+          "description": "Only full-access is supported; other profiles use `permissions allow`",
+          "type": "string"
+        },
+        "to": {
+          "description": "Exactly one contact: contact:<id>",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent",
+        "profile"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "description": "Executor agent that serves that chat. It must already hold admin on its own (full-access agent profile); this command never widens an agent",
+          "type": "string"
+        },
+        "chat": {
+          "description": "The one chat where the contact gets full access (canonical chat id, platform chat id, or 'current')",
+          "type": "string"
+        },
+        "execute": {
+          "description": "Send the approval card and wait for an admin. Without it, prints the plan and exits 3",
+          "type": "boolean"
+        },
+        "profile": {
+          "description": "Only full-access is supported; other profiles use `permissions allow`",
+          "type": "string"
+        },
+        "to": {
+          "description": "Exactly one contact: contact:<id>",
+          "type": "string"
+        }
+      },
+      "required": [
+        "chat",
+        "profile"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "description": "Executor agent that serves that chat. It must already hold admin on its own (full-access agent profile); this command never widens an agent",
+          "type": "string"
+        },
+        "chat": {
+          "description": "The one chat where the contact gets full access (canonical chat id, platform chat id, or 'current')",
+          "type": "string"
+        },
+        "execute": {
+          "description": "Send the approval card and wait for an admin. Without it, prints the plan and exits 3",
+          "type": "boolean"
+        },
+        "profile": {
+          "description": "Only full-access is supported; other profiles use `permissions allow`",
+          "type": "string"
+        },
+        "to": {
+          "description": "Exactly one contact: contact:<id>",
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile",
+        "to"
+      ],
+      "type": "object"
+    }
+  ],
   "properties": {
     "agent": {
-      "description": "Executor agent whose runtime ceiling must include full access",
+      "description": "Executor agent that serves that chat. It must already hold admin on its own (full-access agent profile); this command never widens an agent",
       "type": "string"
     },
     "chat": {
       "description": "The one chat where the contact gets full access (canonical chat id, platform chat id, or 'current')",
       "type": "string"
+    },
+    "execute": {
+      "description": "Send the approval card and wait for an admin. Without it, prints the plan and exits 3",
+      "type": "boolean"
     },
     "profile": {
       "description": "Only full-access is supported; other profiles use `permissions allow`",
@@ -95809,14 +95905,7 @@ class RaviSchemas {
   "additionalProperties": false,
   "properties": {
     "agent": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "type": "string"
     },
     "chatId": {
       "type": "string"

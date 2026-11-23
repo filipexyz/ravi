@@ -6479,10 +6479,21 @@ export class RaviClient {
       });
     },
     /** Ask the operator, in Slack, to approve full access for one contact in one chat; applies only when an admin approves */
-    request: async (profile: string, options?: {
+    request: async (profile: string, options: {
+      agent: string;
+      chat?: string;
+      execute?: boolean;
+      to?: string;
+    } | {
+      agent?: string;
+      chat: string;
+      execute?: boolean;
+      to?: string;
+    } | {
       agent?: string;
       chat?: string;
-      to?: string;
+      execute?: boolean;
+      to: string;
     }): Promise<PermissionsRequestReturn> => {
       return this.transport.call({
         groupSegments: ["permissions"],

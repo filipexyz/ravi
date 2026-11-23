@@ -39,6 +39,7 @@ import {
 } from "./slack-blocks.js";
 import { attachApprovalRequestMessageId, createApprovalRequest, getApprovalRequest } from "./store.js";
 import { buildExplicitFullAccessGrantMetadata, sameGrantTuple } from "./grant-metadata.js";
+import { getCommandAccessMetadata, getCommandsMetadata, getOptionsMetadata } from "../cli/decorators.js";
 import { PermissionsCommands, requestFullAccessApproval } from "../cli/commands/permissions.js";
 import { dbGetContactChatGrant, dbListContactChatGrants } from "../permissions/contact-chat-grants.js";
 import { getContact } from "../contacts.js";
@@ -1830,6 +1831,15 @@ describe("approval service", () => {
     const SLACK_TURN = { channel: "slack", accountId: "main", instanceId: "main", chatId: "D123" };
     const TARGET_CHAT_PLATFORM_ID = "120363000000000001@g.us";
 
+    function seedAgent(id: string, profile?: "full-access" | "chat-only") {
+      try {
+        dbCreateAgent({ id, cwd: `/tmp/${id}` });
+      } catch {
+        // The agent already exists in this isolated state.
+      }
+      if (profile) dbUpdateAgent(id, { defaults: { runtimePermissions: { profile } } });
+    }
+
     function seedTargets() {
       const contact = seedApprovalContact({ phone: APPROVAL_TEST_STRANGER_PHONE, name: "Breno", tags: ["lead"] });
       const targetChat = dbUpsertChat({
@@ -1839,17 +1849,16 @@ describe("approval service", () => {
         chatType: "group",
         title: "Rbbt <> X-One",
       });
-      try {
-        dbCreateAgent({ id: "xone", cwd: "/tmp/xone" });
-      } catch {
-        // The agent already exists in this isolated state.
-      }
+      // The executor already holds admin on its own: the flow never grants that.
+      seedAgent("xone", "full-access");
       return { contact, targetChat };
     }
 
     function request(input: {
       contactId: string;
       chat: string;
+      agentId?: string;
+      execute?: boolean;
       timeoutMs?: number;
       source?: typeof SLACK_TURN | null;
     }) {
@@ -1864,7 +1873,8 @@ describe("approval service", () => {
           profile: "full-access",
           to: `contact:${input.contactId}`,
           chat: input.chat,
-          agentId: "xone",
+          agentId: input.agentId ?? "xone",
+          execute: input.execute ?? true,
           timeoutMs: input.timeoutMs ?? APPROVAL_TEST_TIMEOUT_MS,
         }),
       );
@@ -1904,7 +1914,11 @@ describe("approval service", () => {
       const card = JSON.stringify(deliveredRequests[0]?.data.blocks);
       expect(card).toContain("Full access requested");
       expect(card).toContain("Breno");
-      expect(card).toContain("Rbbt <> X-One");
+      expect(card).toContain("Rbbt X-One");
+      // Stable ids sit next to the names, and no agent permission is promised.
+      expect(card).toContain(`contact:${contact.id}`);
+      expect(card).toContain(`chat:${targetChat.id}`);
+      expect(card).toContain("its own permissions are not changed");
       expect(card).not.toContain("hit a permission failure");
       // One scope, nothing to pick, and no weaker alternative to click.
       expect(card).not.toContain("static_select");
@@ -1919,9 +1933,8 @@ describe("approval service", () => {
         }),
       ).not.toBeNull();
       expect(dbListContactChatGrants({ contactId: contact.id })).toHaveLength(1);
-      expect(readAgentRuntimePermissionsConfig("xone")?.capabilities).toEqual([
-        { permission: "admin", objectType: "system", objectId: "*" },
-      ]);
+      // The executor's own permissions are untouched: no admin written onto the agent.
+      expect(readAgentRuntimePermissionsConfig("xone")?.capabilities ?? []).toEqual([]);
       // The revoke command the result prints really removes what was granted.
       expect(result.hints[0]).toContain(
         `ravi permissions deny permission-admin --to contact:${contact.id} --chat ${targetChat.id} --apply`,
@@ -1954,7 +1967,7 @@ describe("approval service", () => {
 
       expect(error).toMatchObject({ code: "FULL_ACCESS_APPROVAL_NOT_GRANTED" });
       expect(dbListContactChatGrants({ contactId: contact.id })).toEqual([]);
-      expect(readAgentRuntimePermissionsConfig("xone")).toBeNull();
+      expect(readAgentRuntimePermissionsConfig("xone")?.capabilities ?? []).toEqual([]);
     });
 
     it("cannot be answered with a weaker grant or by someone who is not an admin", async () => {
@@ -2004,6 +2017,8 @@ describe("approval service", () => {
             profile: "full-access",
             to: `contact:${contact.id}`,
             chat: targetChat.id,
+            agentId: "xone",
+            execute: true,
             timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
           }),
       ).catch((e: unknown) => e);
@@ -2031,6 +2046,8 @@ describe("approval service", () => {
             profile: "full-access",
             to: `contact:${contact.id}`,
             chat: targetChat.id,
+            agentId: "xone",
+            execute: true,
             timeoutMs: APPROVAL_TEST_TIMEOUT_MS,
             ...input,
           }),
@@ -2041,19 +2058,102 @@ describe("approval service", () => {
       expect(await call({ to: "agent:xone" })).toMatchObject({ code: "USAGE_ERROR" });
       expect(await call({ chat: undefined })).toMatchObject({ code: "USAGE_ERROR" });
       expect(await call({ agentId: "no-such-agent" })).toMatchObject({ code: "USAGE_ERROR" });
+      expect(await call({ agentId: undefined })).toMatchObject({ code: "USAGE_ERROR" });
       expect(deliveredRequests).toEqual([]);
+    });
+
+    it("refuses an executor that does not hold admin on its own, without showing a card", async () => {
+      seedSlackOwner();
+      const { contact, targetChat } = seedTargets();
+      seedAgent("chatonly", "chat-only");
+      seedAgent("plain");
+
+      for (const agentId of ["chatonly", "plain"]) {
+        const error = await request({ contactId: contact.id, chat: targetChat.id, agentId }).catch((e: unknown) => e);
+        expect(error).toMatchObject({ code: "FULL_ACCESS_EXECUTOR_CEILING", exitCode: 3 });
+      }
+      expect(deliveredRequests).toEqual([]);
+      expect(readAgentRuntimePermissionsConfig("chatonly")?.capabilities ?? []).toEqual([]);
+    });
+
+    it("only plans without --execute: nothing is shown to anyone", async () => {
+      seedSlackOwner();
+      const { contact, targetChat } = seedTargets();
+
+      const error = await request({ contactId: contact.id, chat: targetChat.id, execute: false }).catch(
+        (e: unknown) => e,
+      );
+
+      expect(error).toMatchObject({ code: "WRITE_REQUIRES_EXECUTE", exitCode: 3 });
+      expect(deliveredRequests).toEqual([]);
+      expect(dbListContactChatGrants({ contactId: contact.id })).toEqual([]);
+    });
+
+    it("shows cleaned names and the stable ids, never markup from a contact name or chat title", async () => {
+      seedSlackOwner();
+      const evil = seedApprovalContact({
+        phone: "5511987009699",
+        name: "<!channel> *Luís* <https://evil.example|Owner>",
+        tags: ["lead"],
+      });
+      const chat = dbUpsertChat({
+        channel: "whatsapp",
+        instanceId: "main",
+        platformChatId: "120363000000000002@g.us",
+        chatType: "group",
+        title: "Finance <@U0BAA2B1LTS> `ops` _admin_",
+      });
+      seedAgent("xone", "full-access");
+      requestReplyResult = {
+        messageId: "eph_1",
+        deliveries: [{ userId: OWNER_SLACK_USER, kind: "ephemeral", chatId: "D123", messageId: "eph_1" }],
+      };
+      subscribeEvents = [];
+
+      await request({ contactId: evil.id, chat: chat.id }).catch((e: unknown) => e);
+
+      const card = JSON.stringify(deliveredRequests[0]?.data.blocks);
+      expect(card).not.toContain("<!channel>");
+      expect(card).not.toContain("<https");
+      expect(card).not.toContain("evil.example|");
+      expect(card).not.toContain("<@U0BAA2B1LTS>\\u0060");
+      expect(card).toContain(`contact:${evil.id}`);
+      expect(card).toContain(`chat:${chat.id}`);
+    });
+
+    it("outlives the gateway's default wait and declares its confirmation brake", () => {
+      const meta = getCommandsMetadata(PermissionsCommands).find((command) => command.name === "request");
+      const access = getCommandAccessMetadata(PermissionsCommands).get("request");
+      // The gateway client hangs up at 30 s by default; the admin may take the whole approval window.
+      expect(meta?.remoteTimeoutMs).toBeGreaterThan(DEFAULT_APPROVAL_TIMEOUT_MS);
+      expect(access).toMatchObject({ kind: "mutate", requiresConfirmation: true });
+      const options = getOptionsMetadata(PermissionsCommands.prototype, "request");
+      const execute = options.find((option) => option.flags.includes("--execute"));
+      expect(execute?.index).toBe(Math.max(...options.map((option) => option.index)));
     });
 
     it("builds metadata with one intent and one scope, and none without an admin", () => {
       const base = { contactId: "c1", chatId: "chat1", contactLabel: "Breno", chatLabel: "X-One" };
-      const grant = buildExplicitFullAccessGrantMetadata({ ...base, adminUserIds: ["u1", "U1"], agentId: "xone" });
+      const grant = buildExplicitFullAccessGrantMetadata({
+        ...base,
+        adminUserIds: ["u1", "U1"],
+        executorAgentId: "xone",
+      });
       expect(grant).toMatchObject({
         allowed: ["full-access"],
         scopes: ["chat"],
         adminUserIds: ["U1"],
-        targets: { contactId: "c1", chatId: "chat1", agentId: "xone" },
-        explicit: { contactLabel: "Breno", chatLabel: "X-One" },
+        targets: { contactId: "c1", chatId: "chat1" },
+        explicit: {
+          contactLabel: "Breno",
+          chatLabel: "X-One",
+          contactId: "c1",
+          chatId: "chat1",
+          executorAgentId: "xone",
+        },
       });
+      // No agent in the targets: approving can never write an agent ceiling.
+      expect(grant?.targets.agentId).toBeUndefined();
       expect(buildExplicitFullAccessGrantMetadata({ ...base, adminUserIds: [] })).toBeNull();
       expect(sameGrantTuple(grant as never, { ...(grant as object), explicit: undefined } as never)).toBe(false);
     });

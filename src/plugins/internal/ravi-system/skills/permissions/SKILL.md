@@ -53,10 +53,13 @@ uma aprovação verificável do operador. Autorização do comando ou `--apply`
 sozinho não substituem essa aprovação. O preview e a revogação continuam
 disponíveis. Para conseguir full-access aprovado, em um turno de Slack:
 `ravi permissions request full-access --to contact:<id> --chat <chat-id>
-[--agent <executor>]`. Ele não grava nada: manda um cartão privado aos admins
-do Slack ("Full access requested", com o contato e o chat nomeados), espera um
-admin clicar e só então aplica o grant, naquele chat apenas. Fora de um turno
-de Slack, ou sem admin Slack, falha sem mostrar cartão. Revogar:
+--agent <executor> --execute` (sem `--execute` só mostra o plano, exit 3). Ele
+não grava nada: manda um cartão privado aos admins do Slack ("Full access
+requested", com contato e chat nomeados e seus ids), espera um admin clicar e só
+então aplica o grant, naquele chat apenas. O executor de `--agent` precisa já ter
+admin por conta própria (`agents permissions <id> full-access`, ação de
+operador): o comando nunca alarga o teto de um agent. Fora de um turno de Slack,
+ou sem admin Slack, falha sem mostrar cartão. Revogar:
 `ravi permissions deny permission-admin --to contact:<id> --chat <chat-id> --apply`. `chat-only` e `explicit-only` sem capabilities são grants
 válidos de zero autoridade. Outros grants do contato continuam somando;
 conceder um profile vazio não revoga grants existentes.

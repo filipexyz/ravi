@@ -24451,17 +24451,20 @@ public struct PermissionsMaterializeReturn: Codable, Sendable {
 public struct PermissionsRequestOptions: Codable, Sendable {
   public var agent: String?
   public var chat: String?
+  public var execute: Bool?
   public var to: String?
 
-  public init(agent: String? = nil, chat: String? = nil, to: String? = nil) {
+  public init(agent: String? = nil, chat: String? = nil, execute: Bool? = nil, to: String? = nil) {
     self.agent = agent
     self.chat = chat
+    self.execute = execute
     self.to = to
   }
 
   enum CodingKeys: String, CodingKey {
     case agent = "agent"
     case chat = "chat"
+    case execute = "execute"
     case to = "to"
   }
 
@@ -24472,6 +24475,9 @@ public struct PermissionsRequestOptions: Codable, Sendable {
     if let value = self.chat {
       body["chat"] = try RaviJSON.fromEncodable(value)
     }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.to {
       body["to"] = try RaviJSON.fromEncodable(value)
     }
@@ -24479,7 +24485,7 @@ public struct PermissionsRequestOptions: Codable, Sendable {
 }
 
 public struct PermissionsRequestReturn: Codable, Sendable {
-  public var agent: RaviJSON
+  public var agent: String
   public var chatId: String
   public var contactId: String
   public var grantedProfile: String
@@ -24487,7 +24493,7 @@ public struct PermissionsRequestReturn: Codable, Sendable {
   public var profile: String
   public var status: String
 
-  public init(agent: RaviJSON, chatId: String, contactId: String, grantedProfile: String, hints: [String], profile: String, status: String) {
+  public init(agent: String, chatId: String, contactId: String, grantedProfile: String, hints: [String], profile: String, status: String) {
     self.agent = agent
     self.chatId = chatId
     self.contactId = contactId

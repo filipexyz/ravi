@@ -41,6 +41,11 @@ export interface PermissionGrantTargets {
 export interface PermissionGrantExplicitTarget {
   readonly contactLabel: string;
   readonly chatLabel: string;
+  /** Stable ids shown on the card; a name is never enough to know who gets access. */
+  readonly contactId: string;
+  readonly chatId: string;
+  /** Display only. The flow never changes an agent's own permissions. */
+  readonly executorAgentId?: string;
 }
 
 export interface PermissionGrantMetadata {
@@ -146,8 +151,16 @@ export function readPermissionGrantMetadata(
     allowed: [...(grant.allowed ?? [])],
     scopes: [...(grant.scopes ?? [])],
     ...(grant.reason ? { reason: grant.reason } : {}),
-    ...(grant.explicit?.contactLabel && grant.explicit.chatLabel
-      ? { explicit: { contactLabel: grant.explicit.contactLabel, chatLabel: grant.explicit.chatLabel } }
+    ...(grant.explicit?.contactLabel && grant.explicit.chatLabel && grant.explicit.contactId && grant.explicit.chatId
+      ? {
+          explicit: {
+            contactLabel: grant.explicit.contactLabel,
+            chatLabel: grant.explicit.chatLabel,
+            contactId: grant.explicit.contactId,
+            chatId: grant.explicit.chatId,
+            ...(grant.explicit.executorAgentId ? { executorAgentId: grant.explicit.executorAgentId } : {}),
+          },
+        }
       : {}),
   };
 }
@@ -159,16 +172,39 @@ export const FULL_ACCESS_GRANT_CAPABILITY: PermissionGrantCapability = {
 };
 
 /**
- * Grant metadata for an explicit full-access request: one contact, one chat, one
- * executor agent. Exactly one intent (`full-access`) and exactly one scope
- * (`chat`) are offered, so the click can neither widen the scope nor downgrade
- * to another grant. Returns null when nobody could approve the card.
+ * Names on a card come from contacts and chat titles anyone can set, and Slack
+ * renders them as markup (`<!channel>`, links, bold). Keep letters, digits and
+ * a few plain separators, cap the length, and always show the stable ids next
+ * to them so a lookalike name cannot stand in for the target.
+ */
+export function safeCardLabel(value: string | null | undefined, fallback: string): string {
+  const cleaned = (value ?? "")
+    .replace(/[^\p{L}\p{N} .,:@#()+'/-]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60)
+    .trim();
+  return cleaned || fallback;
+}
+
+/** Ids rendered in code spans: nothing outside a conservative id alphabet. */
+export function safeCardId(value: string): string {
+  return value.replace(/[^A-Za-z0-9_.:@-]/g, "").slice(0, 80);
+}
+
+/**
+ * Grant metadata for an explicit full-access request: one contact, one chat.
+ * Exactly one intent (`full-access`) and exactly one scope (`chat`) are offered,
+ * so the click can neither widen the scope nor downgrade to another grant. It
+ * names no agent in `targets`: approving writes the contact grant for that chat
+ * and nothing else, never an agent's ceiling. Returns null when nobody could
+ * approve the card.
  */
 export function buildExplicitFullAccessGrantMetadata(input: {
   readonly contactId: string;
   readonly chatId: string;
   readonly chatTags?: readonly string[];
-  readonly agentId?: string;
+  readonly executorAgentId?: string;
   readonly adminUserIds: readonly string[];
   readonly contactLabel: string;
   readonly chatLabel: string;
@@ -178,21 +214,23 @@ export function buildExplicitFullAccessGrantMetadata(input: {
   const contactId = clean(input.contactId);
   const chatId = clean(input.chatId);
   if (!contactId || !chatId) return null;
-  const agentId = clean(input.agentId);
+  const executorAgentId = clean(input.executorAgentId);
   return {
     capability: { ...FULL_ACCESS_GRANT_CAPABILITY },
     targets: {
       contactId,
       chatId,
       chatTags: [...(input.chatTags ?? [])],
-      ...(agentId ? { agentId } : {}),
     },
     adminUserIds,
     allowed: ["full-access"],
     scopes: [GRANT_SCOPE_CHAT],
     explicit: {
-      contactLabel: clean(input.contactLabel) ?? contactId,
-      chatLabel: clean(input.chatLabel) ?? chatId,
+      contactLabel: safeCardLabel(input.contactLabel, "contact"),
+      chatLabel: safeCardLabel(input.chatLabel, "chat"),
+      contactId: safeCardId(contactId),
+      chatId: safeCardId(chatId),
+      ...(executorAgentId ? { executorAgentId: safeCardId(executorAgentId) } : {}),
     },
   };
 }

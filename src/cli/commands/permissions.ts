@@ -32,7 +32,7 @@ import {
 } from "../../router/router-db.js";
 import { revokeLiveRuntimeContextsForContactGrant } from "../../runtime/context-registry.js";
 import { canonicalAssetIdsForTag, canonicalTagSlugsForAsset, tryNormalizeTagSlug } from "../../tags/index.js";
-import { CONTRACT_EXIT_POLICY, CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
+import { CONTRACT_EXIT_POLICY, CONTRACT_EXIT_USAGE, contractDryRun, contractFail } from "../agent-contract.js";
 import { getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { strictCliOffsetPaginationSchema } from "../return-schemas.js";
@@ -72,7 +72,9 @@ import {
   getConfiguredCapabilityMaterializers,
   getConfiguredPermissionProviders,
 } from "../../permissions/provider-registry.js";
+import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
 import { authorizePermission, materializeSubjectCapabilities } from "../../permissions/provider-runtime.js";
+import { DEFAULT_APPROVAL_TIMEOUT_MS } from "../../approval/timeouts.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -249,7 +251,7 @@ const permissionsRequestReturnSchema = z.object({
   grantedProfile: z.string(),
   contactId: z.string(),
   chatId: z.string(),
-  agent: z.string().nullable(),
+  agent: z.string(),
   hints: z.array(z.string()),
 });
 
@@ -501,8 +503,17 @@ export class PermissionsCommands {
     name: "request",
     description:
       "Ask the operator, in Slack, to approve full access for one contact in one chat; applies only when an admin approves",
+    // The command waits for the admin's click; the gateway client would hang up at 30 s.
+    remoteTimeoutMs: DEFAULT_APPROVAL_TIMEOUT_MS + 30_000,
+    requiredAnyOfOptions: ["to", "chat", "agent"],
   })
-  @CommandAccess({ kind: "mutate", resource: "permissions", action: "request", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "permissions",
+    action: "request",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
   @Returns(permissionsRequestReturnSchema)
   async request(
     @Arg("profile", { description: "Only full-access is supported; other profiles use `permissions allow`" })
@@ -516,19 +527,24 @@ export class PermissionsCommands {
     chat?: string,
     @Option({
       flags: "--agent <id>",
-      description: "Executor agent whose runtime ceiling must include full access",
+      description:
+        "Executor agent that serves that chat. It must already hold admin on its own (full-access agent profile); this command never widens an agent",
     })
     agentId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Send the approval card and wait for an admin. Without it, prints the plan and exits 3",
+    })
+    execute?: boolean,
   ) {
-    const payload = await requestFullAccessApproval({ profile, to, chat, agentId, asJson });
+    const payload = await requestFullAccessApproval({ profile, to, chat, agentId, asJson, execute: execute === true });
     if (asJson) {
       printJson(payload);
       return payload;
     }
     console.log(
-      `approved: full access for contact:${payload.contactId} in chat:${payload.chatId}` +
-        (payload.agent ? ` (agent ${payload.agent})` : ""),
+      `approved: full access for contact:${payload.contactId} in chat:${payload.chatId} (executor ${payload.agent})`,
     );
     for (const hint of payload.hints) console.log(hint);
     return payload;
@@ -850,7 +866,7 @@ function buildPermissionAllowPlan(input: PermissionAllowInput): PermissionAllowP
       details: {
         suggestedAction:
           "Preview without --apply. To get full access approved by the operator, run: " +
-          `ravi permissions request full-access --to contact:<id> --chat <chat-id> [--agent <executor>] (from a Slack turn).`,
+          `ravi permissions request full-access --to contact:<id> --chat <chat-id> --agent <executor> --execute (from a Slack turn).`,
       },
     });
   }
@@ -944,6 +960,8 @@ export interface FullAccessRequestInput {
   chat?: string;
   agentId?: string;
   asJson?: boolean;
+  /** Without it the request is only planned: nothing is shown to anyone. */
+  execute?: boolean;
   /** Not a CLI option: tests shorten the approval window. */
   timeoutMs?: number;
 }
@@ -1012,9 +1030,25 @@ export async function requestFullAccessApproval(input: FullAccessRequestInput) {
     usage("--chat must resolve to one known chat.", "Find the chat id with `ravi chats list --json`.");
   }
   const chatScope = scope as Extract<ResolvedContactScope, { type: "chat" }>;
-  const executorAgent = input.agentId?.trim() || undefined;
-  if (executorAgent && !dbGetAgent(executorAgent)) {
+  const executorAgent = input.agentId?.trim();
+  if (!executorAgent) {
+    return usage(
+      "--agent <id> is required: the executor that serves that chat.",
+      "Name the agent whose chat this is; it must already hold admin on its own.",
+    );
+  }
+  if (!dbGetAgent(executorAgent)) {
     usage(`Agent not found: ${executorAgent}`, "List agents with `ravi agents list --json`.");
+  }
+  // The grant is the contact's overlay in one chat; it only takes effect up to the
+  // executor's own ceiling. This flow never writes that ceiling: an agent-wide admin
+  // would reach every chat the agent serves and outlive the contact grant.
+  if (!canWithCapabilities(materializeSubjectCapabilities("agent", executorAgent), "admin", "system", "*")) {
+    policy(
+      "FULL_ACCESS_EXECUTOR_CEILING",
+      `Agent ${executorAgent} does not hold admin on its own (for example it is chat-only), so full access granted to a contact in a chat would not take effect. This command never widens an agent.`,
+      `An operator must raise the agent first: ravi agents permissions ${executorAgent} full-access`,
+    );
   }
 
   const ctx = getContext();
@@ -1042,7 +1076,7 @@ export async function requestFullAccessApproval(input: FullAccessRequestInput) {
     contactId: contact.id,
     chatId: chatScope.chatId,
     chatTags: chatScope.chatTags,
-    ...(executorAgent ? { agentId: executorAgent } : {}),
+    executorAgentId: executorAgent,
     adminUserIds,
     contactLabel: contact.name || contact.id,
     chatLabel: chatScope.title || chatScope.label,
@@ -1055,9 +1089,23 @@ export async function requestFullAccessApproval(input: FullAccessRequestInput) {
     );
   }
 
-  const text = `Full access for ${grant.explicit?.contactLabel} in ${grant.explicit?.chatLabel}${
-    executorAgent ? ` (executor ${executorAgent})` : ""
-  }`;
+  if (input.execute !== true) {
+    contractDryRun(
+      op,
+      {
+        profile: "full-access",
+        contact: { id: contact.id, label: grant.explicit?.contactLabel },
+        chat: { id: chatScope.chatId, label: grant.explicit?.chatLabel },
+        executor: executorAgent,
+        approvers: adminUserIds.length,
+        effect:
+          "A private approval card goes to the Slack admins of this instance; the grant is written only if one approves.",
+      },
+      { asJson: input.asJson },
+    );
+  }
+
+  const text = `Full access for ${grant.explicit?.contactLabel} in ${grant.explicit?.chatLabel} (executor ${grant.explicit?.executorAgentId})`;
   const result = await requestApproval(
     {
       channel: source.channel,
@@ -1106,9 +1154,9 @@ export async function requestFullAccessApproval(input: FullAccessRequestInput) {
     grantedProfile: FULL_ACCESS_PROFILE,
     contactId: contact.id,
     chatId: chatScope.chatId,
-    agent: executorAgent ?? null,
+    agent: executorAgent,
     hints: [
-      `Granted ${FULL_ACCESS_PROFILE} to contact:${contact.id} in chat:${chatScope.chatId} only. Revoke with: ravi permissions deny ${FULL_ACCESS_PROFILE} --to contact:${contact.id} --chat ${chatScope.chatId} --apply`,
+      `Granted ${FULL_ACCESS_PROFILE} to contact:${contact.id} in chat:${chatScope.chatId} only; no agent permission changed. Revoke with: ravi permissions deny ${FULL_ACCESS_PROFILE} --to contact:${contact.id} --chat ${chatScope.chatId} --apply`,
     ],
   };
 }
