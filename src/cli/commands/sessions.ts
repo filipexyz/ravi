@@ -4101,7 +4101,11 @@ export class SessionCommands {
           : { provider: providerOverride },
       );
       // Keep ConfigStore from serving the old agent defaults until its periodic refresh.
-      nats.emit("ravi.config.changed", {}).catch(() => {});
+      nats.emit("ravi.config.changed", {}).catch((error: unknown) => {
+        logger.child("cli:sessions").warn("Could not notify the gateway that agent defaults changed", {
+          diagnostic: errorDiagnostic(error, { operation: "sessions_set_provider_config_changed" }),
+        });
+      });
       const siblingSync = syncAgentSessionsToAgentRuntime({
         agent: propagatedAgent,
         rematerialize: true,
