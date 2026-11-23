@@ -1267,6 +1267,71 @@ describe("durable cron run correlation", () => {
     },
   );
 
+  it("stops within its grace while a failure delivery is still stalled, leaving the report for the next start", async () => {
+    operatorChat = OPERATOR_CHAT;
+    let release!: () => void;
+    directDeliveryGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const job = createAgentJob({ ownerPrincipal: "operator" });
+    const { settleCronRun, pendingCronFailureReports } = await import("./run-db.js");
+    await new CronRunner().triggerJob(job.id);
+    const dispatched = publishCalls.at(-1)!;
+    settleCronRun(String(dispatched.payload._cronRunId), dispatched.sessionName, {
+      lastStatus: "error",
+      lastError: "failed before report",
+    });
+    const runner = new CronRunner({ failureReportStopGraceMs: 50 });
+    try {
+      await runner.start();
+      await waitUntil(() => directAttempts.length === 1);
+      const stoppedAt = Date.now();
+      // The delivery is still held: stop must return on its own grace, not on the delivery.
+      await runner.stop();
+      expect(Date.now() - stoppedAt).toBeLessThan(1_000);
+      expect(pendingCronFailureReports()).toHaveLength(1);
+      expect(directMessages).toHaveLength(0);
+
+      // The next start finds the unconfirmed report still pending and tries it again.
+      const recovered = new CronRunner({ failureReportStopGraceMs: 50 });
+      try {
+        await recovered.start();
+        await waitUntil(() => directAttempts.length === 2);
+      } finally {
+        await recovered.stop();
+      }
+    } finally {
+      release();
+      directDeliveryGate = null;
+    }
+    // Let the abandoned sends settle so they cannot leak into the next test.
+    await waitUntil(() => pendingCronFailureReports().length === 0);
+  });
+
+  it("yields the event loop between reports that settle locally", async () => {
+    const { settleCronRun, pendingCronFailureReports } = await import("./run-db.js");
+    for (let i = 0; i < 6; i++) {
+      const job = createAgentJob();
+      await new CronRunner().triggerJob(job.id);
+      const dispatched = publishCalls.at(-1)!;
+      settleCronRun(String(dispatched.payload._cronRunId), dispatched.sessionName, {
+        lastStatus: "error",
+        lastError: "failed before report",
+      });
+    }
+    expect(pendingCronFailureReports()).toHaveLength(6);
+    const runner = new CronRunner();
+    try {
+      await runner.start();
+      // One turn of the event loop: a backlog that drained through microtasks alone would already be empty.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(pendingCronFailureReports().length).toBeGreaterThan(0);
+      await waitUntil(() => pendingCronFailureReports().length === 0);
+    } finally {
+      await runner.stop();
+    }
+  });
+
   it("reconciles a persisted failure whose notification was interrupted", async () => {
     const job = createAgentJob();
     await new CronRunner().triggerJob(job.id);

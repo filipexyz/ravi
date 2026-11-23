@@ -61,6 +61,12 @@ import {
 
 const log = logger.child("cron:runner");
 const MAX_NOTIFY_OUTPUT_CHARS = 4000;
+/**
+ * How long `stop()` waits for the failure report in flight. A delivery may hold
+ * for 30 s (`deliverToChat`) while the daemon forces exit 15 s into shutdown, so
+ * a report that has not settled by then stays pending for the next start.
+ */
+const FAILURE_REPORT_STOP_GRACE_MS = 5_000;
 
 function captureRunAuthority(job: CronJob): CronRunAuthority {
   return {
@@ -82,7 +88,13 @@ export class CronRunner {
   private runtimeEventAbort: AbortController | null = null;
   private runtimeEventLoop: Promise<void> | null = null;
   private failureReportLoop: Promise<void> | null = null;
+  private failureReportGeneration = 0;
+  private readonly failureReportStopGraceMs: number;
   private readonly runtimeEventStopFailures: Error[] = [];
+
+  constructor(options: { failureReportStopGraceMs?: number } = {}) {
+    this.failureReportStopGraceMs = options.failureReportStopGraceMs ?? FAILURE_REPORT_STOP_GRACE_MS;
+  }
 
   /**
    * Start the cron runner.
@@ -105,8 +117,10 @@ export class CronRunner {
     // Subscribe to runtime terminal events so job state reflects turn outcomes
     this.runtimeEventLoop = this.subscribeToRuntimeEvents();
     // Remote notification delivery must not hold daemon readiness hostage to a
-    // backlog or an offline channel. Stop still drains the in-flight report.
-    this.failureReportLoop = this.reconcileFailureReports().catch((cause) => {
+    // backlog or an offline channel. Stop waits only briefly for the report in
+    // flight; whatever is unsettled stays pending for the next start.
+    const generation = ++this.failureReportGeneration;
+    this.failureReportLoop = this.reconcileFailureReports(generation).catch((cause) => {
       this.runtimeEventStopFailures.push(new Error("Cron failure report reconciliation failed", { cause }));
       log.error("Cron failure report reconciliation failed", { error: cause });
     });
@@ -114,12 +128,30 @@ export class CronRunner {
     log.info("Cron runner started");
   }
 
-  private async reconcileFailureReports(): Promise<void> {
+  private async reconcileFailureReports(generation: number): Promise<void> {
     for (const run of pendingCronFailureReports()) {
-      if (!this.running) break;
+      // A later start owns the backlog once this generation has been superseded.
+      if (!this.running || generation !== this.failureReportGeneration) break;
       if (await notifyCronFailure(cronRunNotification(run), run.error ?? "Agent turn failed"))
         markCronRunReported(run.id);
+      // Reports that settle locally never wait on I/O; give timers and sockets a turn between them.
+      await new Promise<void>((resolve) => setImmediate(resolve));
     }
+  }
+
+  /** Wait for the report in flight, but not past the daemon's shutdown budget. */
+  private async settleFailureReportLoop(): Promise<void> {
+    const loop = this.failureReportLoop;
+    if (!loop) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settled = await Promise.race([
+      loop.then(() => true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), this.failureReportStopGraceMs);
+      }),
+    ]);
+    clearTimeout(timer);
+    if (!settled) log.warn("Cron failure report still in flight at shutdown; it stays pending for the next start");
   }
 
   /**
@@ -146,7 +178,7 @@ export class CronRunner {
       }
     }
     await this.runtimeEventLoop;
-    await this.failureReportLoop;
+    await this.settleFailureReportLoop();
     if (this.runtimeEventStopFailures.length) {
       throw new AggregateError(this.runtimeEventStopFailures, "Cron runner shutdown failed", {
         cause: this.runtimeEventStopFailures[0],

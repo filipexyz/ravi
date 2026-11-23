@@ -1082,18 +1082,18 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cron | src/cron/automation-notice.ts | 144 | fixed | binding retained / no recognized error surface | src/cron/automation-notice.ts:d154d5d261162fbd60b1fd73 |
 | cron | src/cron/automation-notice.ts | 154 | fixed | binding retained / no recognized error surface | src/cron/automation-notice.ts:a95b6dd11f31a709f9f4d9c0 |
 | cron | src/cron/failure-notification.ts | 92 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:872eccb90cc73e208afc46cb |
-| cron | src/cron/runner.ts | 109 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:a67e22487d87b0d4e3fabe92 |
-| cron | src/cron/runner.ts | 144 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:fc2cdecb2aeccf630df7a4a8 |
-| cron | src/cron/runner.ts | 194 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:c797d567e8c78c6703f0019a |
-| cron | src/cron/runner.ts | 266 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:f46da2fce5ae9ed844b1e742 |
-| cron | src/cron/runner.ts | 455 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:5330acdaef56e91c95ddf82c |
-| cron | src/cron/runner.ts | 476 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:c47c8a50008567bd304f8d72 |
-| cron | src/cron/runner.ts | 506 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:84c8fe96035d9d18e92887dc |
-| cron | src/cron/runner.ts | 556 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:14decf9d11378a3b03305156 |
-| cron | src/cron/runner.ts | 777 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:a2be358361197f4a1e5cef9a |
-| cron | src/cron/runner.ts | 802 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:744bbd117084af26649ef29c |
-| cron | src/cron/runner.ts | 826 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:5a991c30aac091d8da223934 |
-| cron | src/cron/runner.ts | 832 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:eaecf8e2bd7d2885c9130909 |
+| cron | src/cron/runner.ts | 123 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:a67e22487d87b0d4e3fabe92 |
+| cron | src/cron/runner.ts | 176 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:fc2cdecb2aeccf630df7a4a8 |
+| cron | src/cron/runner.ts | 226 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:c797d567e8c78c6703f0019a |
+| cron | src/cron/runner.ts | 298 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:f46da2fce5ae9ed844b1e742 |
+| cron | src/cron/runner.ts | 487 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:5330acdaef56e91c95ddf82c |
+| cron | src/cron/runner.ts | 508 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:c47c8a50008567bd304f8d72 |
+| cron | src/cron/runner.ts | 538 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:84c8fe96035d9d18e92887dc |
+| cron | src/cron/runner.ts | 588 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:14decf9d11378a3b03305156 |
+| cron | src/cron/runner.ts | 809 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:a2be358361197f4a1e5cef9a |
+| cron | src/cron/runner.ts | 834 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:744bbd117084af26649ef29c |
+| cron | src/cron/runner.ts | 858 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:5a991c30aac091d8da223934 |
+| cron | src/cron/runner.ts | 864 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:eaecf8e2bd7d2885c9130909 |
 | cron | src/cron/schedule.ts | 42 | triaged-follow-up | catch-without-binding | src/cron/schedule.ts:2b46c8ca013c56a26edd2e09 |
 | cron | src/cron/schedule.ts | 63 | triaged-follow-up | catch-without-binding | src/cron/schedule.ts:613ff03ae8445d303ad9e180 |
 | cron | src/cron/shell-context.ts | 98 | fixed | binding retained / no recognized error surface | src/cron/shell-context.ts:e7576672a6981834ff9e1aa0 |
