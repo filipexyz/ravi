@@ -142,6 +142,7 @@ import {
 import {
   createObservationEvent,
   deliverObservationEvents,
+  stripObservationPreamble,
   getObservationDebounceMs,
   getObservationPulseMs,
   logObservationDeliveryFailure,
@@ -1460,7 +1461,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     observedUserTurnId = turnId;
     pushObservationEvent("message.user", {
       turnId,
-      preview: truncateObservationPreview(text),
+      preview: truncateObservationPreview(stripObservationPreamble(text)),
       payload: {
         chars: text.length,
         pendingIds: streaming.currentTurnPendingIds ?? [],

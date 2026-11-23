@@ -16,3 +16,6 @@ Run these checks when changing observer profile resolution, rendering, catalog l
 - Verify `realtime`, `debounce`, and `end_of_turn` delivery envelopes can differ for the same event list.
 - Preview system profile `tasks` for `message.assistant` and `turn.complete`. The prompt MUST be Markdown, mention the source task id, and describe report/block/done/fail decision rules without raw JSON dumps.
 - Verify observer profile rendering never mutates source session messages, source system prompt, source permissions, or rule state.
+- Deliver one turn (person message, two agent messages, three tool ends with one error, turn.complete with cost and provider session id) through the `compact` profile. The prompt MUST show the person's text, "2 message(s)" with only the last agent message, the tool count with the error, the end state, and MUST NOT contain event ids, cost or provider session id.
+- Deliver a failed turn with no agent message in the delivery through `compact`. The prompt MUST give the failure reason and MUST NOT claim the agent sent nothing (the delivery may be a partial view of the turn).
+- Observe a turn whose prompt starts with `[session surface] …` and `[knowledge] audience=…`. The `message.user` preview MUST start with what the person wrote.

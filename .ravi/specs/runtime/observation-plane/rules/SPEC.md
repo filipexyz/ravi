@@ -250,6 +250,7 @@ Observation delivery MUST be durably idempotent per binding and event id. A retr
 - Rules MUST persist observer runtime provider/model with the binding so execution remains auditable and deterministic.
 - Rules MUST persist observer profile resolution with the binding so prompt rendering remains auditable and deterministic.
 - Disabled rules MUST NOT create new observer bindings.
+- Disabling a rule (`rules disable`, or saving it with `rules set --disabled`) MUST disable every binding it created, and deleting a rule MUST do the same: a binding never delivers for a rule that is off or gone. Enabling a rule MUST NOT re-enable bindings eagerly; each binding comes back when its source session next launches and the rule matches it again. A one-time migration (`observation.bindings-follow-rule.v1`) disables bindings that earlier versions left enabled under a disabled or deleted rule.
 - Rule validation MUST catch duplicate ids, invalid tag selectors, unknown observer agents/profiles, invalid observer profile ids, impossible modes, and unsafe permission grants.
 
 ## Validation
