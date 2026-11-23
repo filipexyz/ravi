@@ -1267,7 +1267,7 @@ describe("durable cron run correlation", () => {
     },
   );
 
-  it("stops within its grace while a failure delivery is still stalled, leaving the report for the next start", async () => {
+  it("stops after about a second while a failure delivery is still stalled, leaving the report for the next start", async () => {
     operatorChat = OPERATOR_CHAT;
     let release!: () => void;
     directDeliveryGate = new Promise<void>((resolve) => {
@@ -1281,14 +1281,17 @@ describe("durable cron run correlation", () => {
       lastStatus: "error",
       lastError: "failed before report",
     });
-    const runner = new CronRunner({ failureReportStopGraceMs: 50 });
+    const runner = new CronRunner();
     try {
       await runner.start();
       await waitUntil(() => directAttempts.length === 1);
       const stoppedAt = Date.now();
-      // The delivery is still held: stop must return on its own grace, not on the delivery.
+      // The delivery is still held: stop returns on the default grace (about a second, because the
+      // daemon stops its components in series inside one 15 s guard), not on the delivery.
       await runner.stop();
-      expect(Date.now() - stoppedAt).toBeLessThan(1_000);
+      const waited = Date.now() - stoppedAt;
+      expect(waited).toBeGreaterThanOrEqual(900);
+      expect(waited).toBeLessThan(4_000);
       expect(pendingCronFailureReports()).toHaveLength(1);
       expect(directMessages).toHaveLength(0);
 
@@ -1306,6 +1309,37 @@ describe("durable cron run correlation", () => {
     }
     // Let the abandoned sends settle so they cannot leak into the next test.
     await waitUntil(() => pendingCronFailureReports().length === 0);
+  });
+
+  it("keeps draining past reports it cannot read, and raises the failure when the runner stops", async () => {
+    const { settleCronRun, pendingCronFailureReports } = await import("./run-db.js");
+    const { getDb } = await import("../router/router-db.js");
+    // More unreadable reports than one pass records, then one readable report behind them.
+    const unreadable = 12;
+    for (let i = 0; i <= unreadable; i++) {
+      const job = createAgentJob();
+      await new CronRunner().triggerJob(job.id);
+      const dispatched = publishCalls.at(-1)!;
+      const runId = String(dispatched.payload._cronRunId);
+      settleCronRun(runId, dispatched.sessionName, { lastStatus: "error", lastError: "failed before report" });
+      if (i < unreadable)
+        getDb().query("UPDATE cron_runs SET notification_json = ? WHERE id = ?").run("{not json", runId);
+    }
+    expect(pendingCronFailureReports()).toHaveLength(unreadable + 1);
+
+    const runner = new CronRunner();
+    await runner.start();
+    // The readable report, last in line, is still delivered; the unreadable ones stay pending.
+    await waitUntil(() => pendingCronFailureReports().length === unreadable);
+    const failure = await runner.stop().then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(AggregateError);
+    const raised = (failure as AggregateError).errors as Error[];
+    expect(raised).toHaveLength(10);
+    expect(raised[0]!.cause).toBeInstanceOf(SyntaxError);
+    expect(pendingCronFailureReports()).toHaveLength(unreadable);
   });
 
   it("yields the event loop between reports that settle locally", async () => {
