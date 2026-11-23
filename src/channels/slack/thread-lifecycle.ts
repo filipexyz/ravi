@@ -41,6 +41,8 @@ import type { DeliveryBarrier, DeliveryBarrierSource } from "../../delivery-barr
 import { applyProviderModelRule } from "../../runtime/model-catalog.js";
 import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
 import { logger } from "../../utils/logger.js";
+import { describeHandoff, type HandoffDeliveryPorts } from "../../handoffs/reconcile.js";
+import { acknowledgeChildHandoffs, sessionDisplayName } from "../../handoffs/service.js";
 import {
   claimSlackThreadCreation,
   claimSlackThreadParentReturn,
@@ -532,7 +534,7 @@ function buildThreadReturnNudgePrompt(parentSessionName: string): string {
   return [
     `[System] Execute: [from: ravi runtime] Your last turn in this thread ended without returning anything to ${parentSessionName}, the session that owns this thread.`,
     'If the work is done, run `ravi sessions close-thread --return "<result>"`.',
-    'If it continues, is blocked or waits on a decision from that session, run `ravi sessions report "<state in one or two lines>"`.',
+    'If it continues or is blocked, run `ravi sessions report "<state in one or two lines>"`; if it waits on that session (a review, a decision, a merge, a dispatch or an instruction), end that report with `--awaiting <kind>` and `--ref <sha or id>` when there is one.',
     "If you are waiting for a reply from a person in this thread, do nothing.",
     "In every case, end this turn with @@SILENT@@ so nothing new is posted in the thread.",
   ].join("\n");
@@ -685,6 +687,16 @@ export async function closeSlackThreadRecord(
         error: errorMessage(error),
       });
     }
+  }
+
+  // Every close path (CLI, Slack command, idle close) ends the thread's wait on its parent.
+  if (closed.record.childSessionKey) {
+    await acknowledgeChildHandoffs(closed.record.childSessionKey, "thread closed").catch((error) => {
+      log.warn("Handoff acknowledgement after a thread close failed", {
+        requestId: closed.record.requestId,
+        error: errorMessage(error),
+      });
+    });
   }
 
   if (closed.changed) {
@@ -1503,4 +1515,55 @@ function resolveChannelLifecyclePrincipal(
 ): RuntimeTurnOriginPrincipal {
   const agentId = (sessionKey ? getSession(sessionKey)?.agentId : undefined) ?? fallbackAgentId;
   return agentId ? { type: "agent", id: agentId } : { type: "automation", id: `channels:${action}` };
+}
+
+/**
+ * Slack adapter for the channel-free handoff reconciler: the parent session is
+ * reminded through the same internal turn a thread report uses, listing every
+ * open handoff of that parent (never just the one that crossed 15 min).
+ */
+export function createSlackThreadHandoffParentNotifier(
+  dependencies: SlackThreadLifecycleDependencies = DEFAULT_DEPENDENCIES,
+): NonNullable<HandoffDeliveryPorts["notifyParent"]> {
+  return async ({ parentSessionKey, due, open, now }) => {
+    // One turn per parent: it lists every open handoff; the source is the oldest due thread.
+    const handoff = due[0];
+    if (!handoff) return false;
+    const record = findSlackThreadLifecycleByChildSession(handoff.childSessionKey);
+    const parent = getSession(parentSessionKey);
+    if (!record?.providerThreadId || !parent) return false;
+    const lines = open.map((h) => describeHandoff(h, sessionDisplayName(h.childSessionKey), now));
+    const messageId = `handoff-reminder:${handoff.id}`;
+    await publishChannelSessionPrompt(
+      {
+        sessionName: parent.name ?? parent.sessionKey,
+        action: "session.return",
+        principal: resolveChannelLifecyclePrincipal("session.return", handoff.childSessionKey),
+        callerContextId: handoff.callerContextId ?? undefined,
+        payload: {
+          prompt: buildSlackThreadParentNotice(
+            record,
+            "espera por você há mais de 15 min.",
+            "Handoffs abertos (feche agindo na thread, ou com ravi sessions handoff-ack <id>)",
+            `\n${lines.join("\n")}`,
+          ),
+          source: buildSlackThreadParentSource(record, record.providerThreadId),
+          deliveryBarrier: "after_response",
+          deliveryBarrierSource: "default",
+          _slackThreadLifecycle: {
+            eventId: messageId,
+            eventType: "thread.handoff_reminder",
+            requestId: record.requestId,
+            parentSessionKey: record.parentSessionKey,
+            childSessionKey: handoff.childSessionKey,
+            childSessionName: record.childSessionName,
+            providerThreadId: record.providerThreadId,
+          },
+        },
+        options: { messageId },
+      },
+      dependencies.publishPrompt,
+    );
+    return true;
+  };
 }

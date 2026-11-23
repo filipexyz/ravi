@@ -881,6 +881,61 @@ describe("Slack thread orchestration", () => {
     },
   );
 
+  it("reminds the parent of every open handoff through the thread's parent notice", async () => {
+    const { createSlackThreadHandoffParentNotifier } = await import("./thread-lifecycle.js");
+    const { declareHandoff } = await import("../../handoffs/service.js");
+    const fixture = seedPendingCreation({ teamId: "T0123" });
+    const { prompts, dependencies } = capture();
+    await finalizeSlackThreadCreation(fixture.requestId, dependencies);
+    prompts.length = 0;
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+    const parent = getSession("ravi-parent")!;
+    const now = Date.now();
+    const handoff = await declareHandoff({
+      childSessionKey: child.sessionKey,
+      parentSessionKey: parent.sessionKey,
+      kind: "review",
+      ref: "abc1234",
+      now: now - 16 * 60_000,
+    });
+    const notify = createSlackThreadHandoffParentNotifier(dependencies);
+    expect(await notify({ parentSessionKey: parent.sessionKey, due: [handoff], open: [handoff], now })).toBe(true);
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]!.sessionName).toBe("ravi-parent");
+    expect(prompts[0]!.payload).toMatchObject({
+      deliveryBarrier: "after_response",
+      _slackThreadLifecycle: { eventType: "thread.handoff_reminder", eventId: `handoff-reminder:${handoff.id}` },
+      _turnOrigin: { producer: "channel", action: "session.return" },
+    });
+    expect(prompts[0]!.payload.prompt).toContain("espera por você há mais de 15 min.");
+    expect(prompts[0]!.payload.prompt).toContain(`espera revisão (abc1234) há 16 min`);
+    expect(prompts[0]!.payload.prompt).toContain(handoff.id);
+
+    // A child that is not a Slack thread is not this adapter's to remind.
+    const stranger = { ...handoff, childSessionKey: "agent:main:not-a-thread" };
+    expect(await notify({ parentSessionKey: parent.sessionKey, due: [stranger], open: [stranger], now })).toBe(false);
+    expect(prompts).toHaveLength(1);
+  });
+
+  it("closing a waiting thread through the shared close path ends its handoff", async () => {
+    const { declareHandoff, listOpenHandoffs } = await import("../../handoffs/service.js");
+    const fixture = seedPendingCreation({ teamId: "T0123" });
+    const { dependencies } = capture();
+    await finalizeSlackThreadCreation(fixture.requestId, dependencies);
+    const child = getSession(`ravi-parent:thread:${fixture.threadTs}`)!;
+    const parent = getSession("ravi-parent")!;
+    const handoff = await declareHandoff({
+      childSessionKey: child.sessionKey,
+      parentSessionKey: parent.sessionKey,
+      kind: "review",
+    });
+    expect(listOpenHandoffs(parent.sessionKey).map((h) => h.id)).toContain(handoff.id);
+    // closeSlackThreadRecord is what both the CLI and the Slack close command call.
+    const record = findSlackThreadLifecycleByChildSession(child.sessionKey)!;
+    await closeSlackThreadRecord(record, undefined, dependencies);
+    expect(listOpenHandoffs(parent.sessionKey).map((h) => h.id)).not.toContain(handoff.id);
+  });
+
   it("names the thread by title, session and link when it returns or reports to the parent", async () => {
     const fixture = seedPendingCreation({ teamId: "T0123" });
     const { prompts, dependencies } = capture();

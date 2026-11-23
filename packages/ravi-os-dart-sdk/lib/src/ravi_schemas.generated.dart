@@ -106976,6 +106976,191 @@ class RaviSchemas {
 }
 ''';
 
+  static const sessionsHandoffAckInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "handoff": {
+      "description": "Handoff id (see ravi sessions handoffs)",
+      "type": "string"
+    },
+    "reason": {
+      "description": "What the parent did (for example: review dispatched)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "handoff"
+  ],
+  "type": "object"
+}
+''';
+
+  static const sessionsHandoffAckReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "changed": {
+      "type": "boolean"
+    },
+    "id": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "open",
+        "acknowledged",
+        "superseded"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "changed",
+    "status"
+  ],
+  "type": "object"
+}
+''';
+
+  static const sessionsHandoffsInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "session": {
+      "description": "Only handoffs waiting on this parent session (defaults to all)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const sessionsHandoffsReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "handoffs": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "ageMin": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "review",
+              "decision",
+              "merge",
+              "dispatch",
+              "instruction"
+            ],
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ownerEscalatedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parentNudgedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parentSession": {
+            "additionalProperties": false,
+            "properties": {
+              "sessionKey": {
+                "type": "string"
+              },
+              "sessionName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "sessionKey",
+              "sessionName"
+            ],
+            "type": "object"
+          },
+          "ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "since": {
+            "type": "number"
+          },
+          "thread": {
+            "additionalProperties": false,
+            "properties": {
+              "sessionKey": {
+                "type": "string"
+              },
+              "sessionName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "sessionKey",
+              "sessionName"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "thread",
+          "parentSession",
+          "kind",
+          "ref",
+          "note",
+          "since",
+          "ageMin",
+          "parentNudgedAt",
+          "ownerEscalatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "handoffs"
+  ],
+  "type": "object"
+}
+''';
+
   static const sessionsInfoInputSchema = r'''
 {
   "additionalProperties": false,
@@ -107768,8 +107953,16 @@ class RaviSchemas {
 {
   "additionalProperties": false,
   "properties": {
+    "awaiting": {
+      "description": "Declare that this thread now waits for the parent: review, decision, merge, dispatch, instruction. The parent is reminded after 15 min and the owner told once after 45 min until the parent acts on this thread",
+      "type": "string"
+    },
     "message": {
       "description": "Progress, blocker or decision the parent session needs now",
+      "type": "string"
+    },
+    "ref": {
+      "description": "What the parent should act on (commit SHA, PR number). Only with --awaiting",
       "type": "string"
     },
     "session": {
@@ -107791,6 +107984,40 @@ class RaviSchemas {
     "actionId": {
       "const": "thread.report",
       "type": "string"
+    },
+    "handoff": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "review",
+            "decision",
+            "merge",
+            "dispatch",
+            "instruction"
+          ],
+          "type": "string"
+        },
+        "ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "ref"
+      ],
+      "type": "object"
     },
     "messageId": {
       "type": "string"

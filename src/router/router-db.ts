@@ -2040,6 +2040,28 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
     -- One row per thread: the last return it sent its parent, and the single follow-up
     -- (nudge, then Inform) owed for the last turn that ended without one. Written only by
     -- this release (thread-parent-return.ts); no legacy writer, so it is outside the fence.
+    -- Handoffs: a child session (a thread) declares it waits for its parent session to act
+    -- (review, decision, merge, dispatch, instruction). Channel-free: keyed by session keys.
+    -- Written only by this release (src/handoffs); no legacy writer, so it is outside the fence.
+    CREATE TABLE IF NOT EXISTS session_handoffs (
+      id TEXT PRIMARY KEY,
+      child_session_key TEXT NOT NULL,
+      parent_session_key TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK(kind IN ('review','decision','merge','dispatch','instruction')),
+      ref TEXT,
+      note TEXT,
+      caller_context_id TEXT,
+      status TEXT NOT NULL CHECK(status IN ('open','acknowledged','superseded')),
+      created_at INTEGER NOT NULL,
+      parent_nudged_at INTEGER,
+      owner_escalated_at INTEGER,
+      acknowledged_at INTEGER,
+      ack_reason TEXT,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_session_handoffs_open ON session_handoffs(status, parent_session_key);
+    CREATE INDEX IF NOT EXISTS idx_session_handoffs_child ON session_handoffs(child_session_key, status);
+
     CREATE TABLE IF NOT EXISTS slack_thread_return_watch (
       request_id TEXT PRIMARY KEY REFERENCES slack_thread_lifecycle(request_id) ON DELETE CASCADE,
       last_return_at INTEGER,
