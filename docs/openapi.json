@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "00a64ed012c699e2"
+    "version": "097834c1dca3f3f0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -8901,6 +8901,10 @@
                   },
                   "key": {
                     "description": "Property key",
+                    "type": "string"
+                  },
+                  "model": {
+                    "description": "With key=provider: set the model in the same write, so the pair is validated together",
                     "type": "string"
                   },
                   "value": {

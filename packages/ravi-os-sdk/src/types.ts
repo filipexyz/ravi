@@ -1410,6 +1410,7 @@ export type AgentsSetInput = {
   force?: boolean;
   id: string;
   key: string;
+  model?: string;
   value: string;
 };
 

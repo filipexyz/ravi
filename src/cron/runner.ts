@@ -49,7 +49,7 @@ import {
 } from "./turn-outcome.js";
 import type { CronJob } from "./types.js";
 import { notifyAutomationOff } from "./automation-notice.js";
-import { notifyCronFailure } from "./failure-notification.js";
+import { notifyCronFailure, recordUnreadableCronFailure, type CronFailureJob } from "./failure-notification.js";
 import {
   admitCronRun,
   getCronRun,
@@ -57,6 +57,7 @@ import {
   cronRunNotification,
   pendingCronFailureReports,
   markCronRunReported,
+  type CronRunRow,
 } from "./run-db.js";
 
 const log = logger.child("cron:runner");
@@ -137,11 +138,10 @@ export class CronRunner {
       // A later start owns the backlog once this generation has been superseded.
       if (!this.running || generation !== this.failureReportGeneration) break;
       try {
-        if (await notifyCronFailure(cronRunNotification(run), run.error ?? "Agent turn failed"))
-          markCronRunReported(run.id);
+        await this.reconcileFailureReport(run);
       } catch (cause) {
-        // A report that cannot be read or marked must not strand the ones behind it.
-        // It stays pending and `stop()` raises the failure.
+        // An unexpected failure (a refused write, say) must not strand the reports behind it.
+        // The report stays pending and `stop()` raises the failure.
         log.error("Cron failure report reconciliation failed", { runId: run.id, error: cause });
         if (recorded++ < MAX_RECORDED_REPORT_FAILURES)
           this.runtimeEventStopFailures.push(
@@ -151,6 +151,26 @@ export class CronRunner {
       // Reports that settle locally never wait on I/O; give timers and sockets a turn between them.
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
+  }
+
+  private async reconcileFailureReport(run: CronRunRow): Promise<void> {
+    let notification: CronFailureJob;
+    try {
+      notification = cronRunNotification(run);
+    } catch (cause) {
+      if (!(cause instanceof SyntaxError)) throw cause;
+      // Bad data, not a fault to raise at every shutdown: a stored notice that does not parse never
+      // will, so retrying only repeats the failure. Record it once and settle it.
+      log.warn("Cron failure notice is unreadable; recorded in the inbox and settled", {
+        runId: run.id,
+        jobId: run.job_id,
+        error: cause,
+      });
+      recordUnreadableCronFailure(run);
+      markCronRunReported(run.id);
+      return;
+    }
+    if (await notifyCronFailure(notification, run.error ?? "Agent turn failed")) markCronRunReported(run.id);
   }
 
   /** Wait for the report in flight, but only a moment: the daemon stops its components in series. */
