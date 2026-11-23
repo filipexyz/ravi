@@ -385,4 +385,29 @@ describe("approval grantor identity resolvers", () => {
       }),
     ).toMatchObject({ allowed: false, reason: "unresolved_identity" });
   });
+
+  it("never looks a lid: sender up through its bare digits, even when those digits are a linked identity", () => {
+    const admin = seedApprovalContact({
+      phone: APPROVAL_TEST_SLACK_OWNER_PHONE,
+      name: "Admin",
+      tags: ["permission.admin"],
+    });
+    const stranger = "4242424242";
+    for (const channel of ["whatsapp", "phone"]) {
+      linkContactIdentity(admin.id, { channel, platformUserId: stranger, instanceId: "inst-1" });
+    }
+
+    expect(
+      actorCanGrantRequestedPermission({
+        channel: "whatsapp",
+        senderId: stranger,
+        senderAliases: [`lid:${stranger}`],
+        instanceId: "inst-1",
+      }),
+    ).toMatchObject({ allowed: false, reason: "unresolved_identity" });
+    // The same digits as a plain phone sender still resolve.
+    expect(
+      actorCanGrantRequestedPermission({ channel: "whatsapp", senderId: APPROVAL_TEST_SLACK_OWNER_PHONE }),
+    ).toMatchObject({ allowed: true, subjectId: admin.id });
+  });
 });

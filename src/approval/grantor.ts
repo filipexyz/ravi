@@ -100,8 +100,12 @@ function resolveGrantorIdentity(
 ): Pick<PlatformIdentity, "ownerType" | "ownerId"> | null {
   const senderId = senderIds[0] ?? "";
   const seen = new Set<string>();
+  // A namespaced sender (`lid:...`) is only its own identity: its bare digits are not a phone
+  // number and must not be looked up as one, neither as an identity nor as a contact below.
+  const namespaced = senderIds.some((id) => id.startsWith("lid:"));
+  const lookupIds = namespaced ? senderIds.filter((id) => id.startsWith("lid:")) : senderIds;
   const owners = new Map<string, Pick<PlatformIdentity, "ownerType" | "ownerId">>();
-  for (const platformUserId of senderIds) {
+  for (const platformUserId of lookupIds) {
     for (const candidate of instanceCandidates) {
       const instanceId = candidate?.trim() ?? "";
       const key = `${channel}:${instanceId}:${platformUserId}`;
@@ -126,9 +130,7 @@ function resolveGrantorIdentity(
   const [only] = owners.values();
   if (only) return only;
 
-  // A namespaced sender (`lid:...`) is only its own identity: its digits are not a phone number,
-  // so they must never reach the phone-based contact fallback below.
-  if (senderIds.some((id) => id.startsWith("lid:"))) return null;
+  if (namespaced) return null;
 
   // Prefer the canonical details lookup. `getContact` is a thin export and is
   // sometimes replaced by leaked bun test mocks that return a dummy object.
