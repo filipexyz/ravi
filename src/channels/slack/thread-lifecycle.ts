@@ -534,7 +534,7 @@ function buildThreadReturnNudgePrompt(parentSessionName: string): string {
   return [
     `[System] Execute: [from: ravi runtime] Your last turn in this thread ended without returning anything to ${parentSessionName}, the session that owns this thread.`,
     'If the work is done, run `ravi sessions close-thread --return "<result>"`.',
-    'If it continues, is blocked or waits on a decision from that session, run `ravi sessions report "<state in one or two lines>"`.',
+    'If it continues or is blocked, run `ravi sessions report "<state in one or two lines>"`; if it waits on that session (a review, a decision, a merge, a dispatch or an instruction), end that report with `--awaiting <kind>` and `--ref <sha or id>` when there is one.',
     "If you are waiting for a reply from a person in this thread, do nothing.",
     "In every case, end this turn with @@SILENT@@ so nothing new is posted in the thread.",
   ].join("\n");

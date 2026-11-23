@@ -33,6 +33,7 @@ A handoff is the stored fact "this child session (a thread) waits for its parent
 ## Rules
 
 - A child declares a handoff with `ravi sessions report --awaiting <review|decision|merge|dispatch|instruction> [--ref <sha|pr>] "<message>"`. The report text carries the handoff id.
+- The thread brief the runtime builds (`src/prompt-builder.ts`, Slack thread placement) and the thread-return nudge MUST tell the thread to end a waiting report with `--awaiting`; a wait the thread never declares is invisible to the reconciler.
 - A child waits on one thing at a time: a new handoff from the same child MUST supersede its open one.
 - A handoff MUST close only on an explicit reference to that child or that handoff: the parent sends the thread instructions (`thread-send`), closes it (`close-thread`), or runs `ravi sessions handoff-ack <id>`. Unrelated activity of the parent MUST NOT close it.
 - The reconciler (gateway tick, every 30 s) MUST remind the parent once when a handoff has waited 15 min, listing every open handoff of that parent, and MUST tell the owner once, in one aggregated message per parent, for handoffs that waited 45 min.
