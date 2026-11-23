@@ -28890,6 +28890,72 @@ public struct SessionsGoalReturn: Codable, Sendable {
   }
 }
 
+public struct SessionsHandoffAckOptions: Codable, Sendable {
+  public var reason: String?
+
+  public init(reason: String? = nil) {
+    self.reason = reason
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case reason = "reason"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.reason {
+      body["reason"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SessionsHandoffAckReturn: Codable, Sendable {
+  public var changed: Bool
+  public var id: String
+  public var status: String
+
+  public init(changed: Bool, id: String, status: String) {
+    self.changed = changed
+    self.id = id
+    self.status = status
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case changed = "changed"
+    case id = "id"
+    case status = "status"
+  }
+}
+
+public struct SessionsHandoffsOptions: Codable, Sendable {
+  public var session: String?
+
+  public init(session: String? = nil) {
+    self.session = session
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case session = "session"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.session {
+      body["session"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SessionsHandoffsReturn: Codable, Sendable {
+  public var handoffs: [RaviJSON]
+
+  public init(handoffs: [RaviJSON]) {
+    self.handoffs = handoffs
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case handoffs = "handoffs"
+  }
+}
+
 public typealias SessionsInfoReturn = [String: RaviJSON]
 
 public struct SessionsInformOptions: Codable, Sendable {
@@ -29155,17 +29221,29 @@ public struct SessionsRecapReturn: Codable, Sendable {
 public typealias SessionsRenameReturn = [String: RaviJSON]
 
 public struct SessionsReportOptions: Codable, Sendable {
+  public var awaiting: String?
+  public var ref: String?
   public var session: String?
 
-  public init(session: String? = nil) {
+  public init(awaiting: String? = nil, ref: String? = nil, session: String? = nil) {
+    self.awaiting = awaiting
+    self.ref = ref
     self.session = session
   }
 
   enum CodingKeys: String, CodingKey {
+    case awaiting = "awaiting"
+    case ref = "ref"
     case session = "session"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.awaiting {
+      body["awaiting"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.ref {
+      body["ref"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.session {
       body["session"] = try RaviJSON.fromEncodable(value)
     }
@@ -29174,13 +29252,15 @@ public struct SessionsReportOptions: Codable, Sendable {
 
 public struct SessionsReportReturn: Codable, Sendable {
   public var actionId: String
+  public var handoff: RaviJSON?
   public var messageId: String
   public var parentSession: RaviJSON
   public var requestId: String
   public var status: String
 
-  public init(actionId: String, messageId: String, parentSession: RaviJSON, requestId: String, status: String) {
+  public init(actionId: String, handoff: RaviJSON? = nil, messageId: String, parentSession: RaviJSON, requestId: String, status: String) {
     self.actionId = actionId
+    self.handoff = handoff
     self.messageId = messageId
     self.parentSession = parentSession
     self.requestId = requestId
@@ -29189,6 +29269,7 @@ public struct SessionsReportReturn: Codable, Sendable {
 
   enum CodingKeys: String, CodingKey {
     case actionId = "actionId"
+    case handoff = "handoff"
     case messageId = "messageId"
     case parentSession = "parentSession"
     case requestId = "requestId"

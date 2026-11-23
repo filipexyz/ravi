@@ -8214,6 +8214,29 @@ class SessionsNamespace {
     );
   }
 
+  Future<SessionsHandoffAckReturn> handoffAck(String handoff, [SessionsHandoffAckOptions options = const SessionsHandoffAckOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["handoff"] = RaviJson.from(handoff);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["sessions"],
+      command: "handoff-ack",
+      body: requestBody,
+      decode: sessionsHandoffAckReturnFromJson,
+    );
+  }
+
+  Future<SessionsHandoffsReturn> handoffs([SessionsHandoffsOptions options = const SessionsHandoffsOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["sessions"],
+      command: "handoffs",
+      body: requestBody,
+      decode: sessionsHandoffsReturnFromJson,
+    );
+  }
+
   Future<SessionsInfoReturn> info(String nameOrKey) async {
     final requestBody = <String, RaviJson>{};
     requestBody["nameOrKey"] = RaviJson.from(nameOrKey);

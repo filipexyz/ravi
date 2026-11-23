@@ -20502,6 +20502,46 @@ export type SessionsGoalReturn = {
   };
 };
 
+/** Input shape for `sessions.handoff-ack`. */
+export type SessionsHandoffAckInput = {
+  handoff: string;
+  reason?: string;
+};
+
+/** Return shape for `sessions.handoff-ack`. */
+export type SessionsHandoffAckReturn = {
+  changed: boolean;
+  id: string;
+  status: "open" | "acknowledged" | "superseded";
+};
+
+/** Input shape for `sessions.handoffs`. */
+export type SessionsHandoffsInput = {
+  session?: string;
+};
+
+/** Return shape for `sessions.handoffs`. */
+export type SessionsHandoffsReturn = {
+  handoffs: Array<{
+    ageMin: number;
+    id: string;
+    kind: "review" | "decision" | "merge" | "dispatch" | "instruction";
+    note: string | null;
+    ownerEscalatedAt: number | null;
+    parentNudgedAt: number | null;
+    parentSession: {
+      sessionKey: string;
+      sessionName: string;
+    };
+    ref: string | null;
+    since: number;
+    thread: {
+      sessionKey: string;
+      sessionName: string;
+    };
+  }>;
+};
+
 /** Input shape for `sessions.info`. */
 export type SessionsInfoInput = {
   nameOrKey: string;
@@ -20689,13 +20729,20 @@ export type SessionsRenameReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.report`. */
 export type SessionsReportInput = {
+  awaiting?: string;
   message: string;
+  ref?: string;
   session?: string;
 };
 
 /** Return shape for `sessions.report`. */
 export type SessionsReportReturn = {
   actionId: "thread.report";
+  handoff?: {
+    id: string;
+    kind: "review" | "decision" | "merge" | "dispatch" | "instruction";
+    ref: string | null;
+  };
   messageId: string;
   parentSession: {
     sessionKey: string;

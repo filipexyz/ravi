@@ -5848,6 +5848,19 @@ public struct SessionsNamespace: Sendable {
     return try await transport.call(groupSegments: ["sessions"], command: "goal", body: requestBody, as: SessionsGoalReturn.self)
   }
 
+  public func handoffAck(_ handoff: String, _ options: SessionsHandoffAckOptions = .init()) async throws -> SessionsHandoffAckReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["handoff"] = try RaviJSON.fromEncodable(handoff)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions"], command: "handoff-ack", body: requestBody, as: SessionsHandoffAckReturn.self)
+  }
+
+  public func handoffs(_ options: SessionsHandoffsOptions = .init()) async throws -> SessionsHandoffsReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions"], command: "handoffs", body: requestBody, as: SessionsHandoffsReturn.self)
+  }
+
   public func info(_ nameOrKey: String) async throws -> SessionsInfoReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
