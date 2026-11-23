@@ -23,10 +23,16 @@ import {
   type ContactGrantScope,
   type ContactProfileGrant,
 } from "../../permissions/contact-policy-permissions-provider.js";
-import { dbGetChat, dbGetThreadParentChat, dbListChatsByRef, type ChatRecord } from "../../router/router-db.js";
+import {
+  dbGetAgent,
+  dbGetChat,
+  dbGetThreadParentChat,
+  dbListChatsByRef,
+  type ChatRecord,
+} from "../../router/router-db.js";
 import { revokeLiveRuntimeContextsForContactGrant } from "../../runtime/context-registry.js";
 import { canonicalAssetIdsForTag, canonicalTagSlugsForAsset, tryNormalizeTagSlug } from "../../tags/index.js";
-import { CONTRACT_EXIT_POLICY, CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
+import { CONTRACT_EXIT_POLICY, CONTRACT_EXIT_USAGE, contractDryRun, contractFail } from "../agent-contract.js";
 import { getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { strictCliOffsetPaginationSchema } from "../return-schemas.js";
@@ -53,6 +59,7 @@ import {
   derivePermissionProfileSlugForCapability,
   ensureAgentCeilingCapability,
   grantContactProfile,
+  FULL_ACCESS_PROFILE,
   labelFromProfile,
   normalizePermissionProfileSlug,
   upsertPermissionProfileDefinition,
@@ -65,6 +72,15 @@ import {
   getConfiguredCapabilityMaterializers,
   getConfiguredPermissionProviders,
 } from "../../permissions/provider-registry.js";
+import {
+  GrantRequestError,
+  getGrantRequestStatus,
+  previewGrantRequest,
+  requestGrant,
+} from "../../permissions/grant-requests/service.js";
+import { safeLabel } from "../../permissions/grant-requests/labels.js";
+import type { GrantRequestPlan } from "../../permissions/grant-requests/types.js";
+import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
 import { authorizePermission, materializeSubjectCapabilities } from "../../permissions/provider-runtime.js";
 
 function printJson(payload: unknown): void {
@@ -234,6 +250,33 @@ const permissionConfirmationReturnSchema = z.object({
   profile: z.string().optional(),
   capabilities: z.array(z.string()),
   message: z.string(),
+});
+
+const permissionsRequestReturnSchema = z.object({
+  status: z.literal("pending"),
+  requestId: z.string(),
+  reused: z.boolean(),
+  expiresAt: z.number(),
+  contactId: z.string(),
+  chatId: z.string(),
+  agent: z.string(),
+  deliveries: z.array(z.object({ contactId: z.string(), channel: z.string() })),
+  hints: z.array(z.string()),
+});
+
+const permissionsRequestStatusReturnSchema = z.object({
+  requestId: z.string(),
+  status: z.enum(["pending", "approved", "rejected", "expired", "failed"]),
+  profile: z.literal("full-access"),
+  contactId: z.string(),
+  chatId: z.string(),
+  agent: z.string(),
+  expiresAt: z.number(),
+  decidedByContactId: z.string().nullable(),
+  decidedVia: z.string().nullable(),
+  /** True only when the grant is read back in place. */
+  applied: z.boolean(),
+  deliveries: z.array(z.object({ contactId: z.string(), channel: z.string() })),
 });
 
 const permissionsAllowReturnSchema = z.object({
@@ -477,6 +520,111 @@ export class PermissionsCommands {
     }
 
     printPermissionAllowPlan(payload);
+    return payload;
+  }
+
+  @Command({
+    name: "request",
+    description:
+      "Ask the admins, on any channel that can reach them, to approve full access for one contact in one chat; applies only when one approves",
+    requiredAnyOfOptions: ["to", "chat", "agent"],
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "permissions",
+    action: "request",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
+  @Returns(permissionsRequestReturnSchema)
+  async request(
+    @Arg("profile", { description: "Only full-access is supported; other profiles use `permissions allow`" })
+    profile: string,
+    @Option({ flags: "--to <contact>", description: "Exactly one contact: contact:<id>" }) to?: string,
+    @Option({
+      flags: "--chat <chat>",
+      description:
+        "The one chat where the contact gets full access (canonical chat id, platform chat id, or 'current')",
+    })
+    chat?: string,
+    @Option({
+      flags: "--agent <id>",
+      description:
+        "Executor agent that serves that chat. It must already hold admin on its own (full-access agent profile); this command never widens an agent",
+    })
+    agentId?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Send the request to the approvers. Without it, prints the plan and exits 3",
+    })
+    execute?: boolean,
+  ) {
+    const payload = await requestFullAccessApproval({ profile, to, chat, agentId, asJson, execute: execute === true });
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(
+      `${payload.reused ? "already pending" : "requested"}: full access for contact:${payload.contactId} in chat:${payload.chatId} (executor ${payload.agent}), request ${payload.requestId}`,
+    );
+    for (const hint of payload.hints) console.log(hint);
+    return payload;
+  }
+
+  @Command({
+    name: "request-status",
+    description: "Show the state of a full-access request made with `permissions request`",
+  })
+  @CommandAccess({ kind: "read", resource: "permissions", action: "request-status", risk: "low" })
+  @Returns(permissionsRequestStatusReturnSchema)
+  requestStatus(
+    @Arg("requestId", { description: "Request id printed by `permissions request`" }) requestId: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const found = getGrantRequestStatus(requestId);
+    if (!found) {
+      return contractFail("permissions request-status", "REQUEST_NOT_FOUND", `Grant request not found: ${requestId}`, {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: { suggestedAction: "Use the request id that `ravi permissions request` printed." },
+        diagnostic: errorDiagnostic(`Grant request not found: ${requestId}`, {
+          operation: "permissions request-status",
+        }),
+      });
+    }
+    const { request, deliveries } = found;
+    const payload = {
+      requestId: request.id,
+      status: request.status,
+      profile: request.plan.profile,
+      contactId: request.plan.contactId,
+      chatId: request.plan.chatId,
+      agent: request.plan.executorAgentId,
+      expiresAt: request.expiresAt,
+      decidedByContactId: request.decidedByContactId,
+      decidedVia: request.decidedVia,
+      // The grant is read back instead of trusting the status alone.
+      applied:
+        request.status === "approved" &&
+        request.outcome === "applied" &&
+        dbGetContactChatGrant({
+          contactId: request.plan.contactId,
+          profileSlug: FULL_ACCESS_PROFILE,
+          scopeType: "chat",
+          scopeId: request.plan.chatId,
+        }) !== null,
+      deliveries: deliveries.map((delivery) => ({ contactId: delivery.contactId, channel: delivery.channel })),
+    };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(`${payload.status}: full access for contact:${payload.contactId} in chat:${payload.chatId}`);
+    if (payload.decidedByContactId)
+      console.log(`decided by contact:${payload.decidedByContactId} via ${payload.decidedVia}`);
+    if (payload.status === "approved")
+      console.log(payload.applied ? "grant is in place" : "approved, grant not in place");
     return payload;
   }
 
@@ -794,7 +942,9 @@ function buildPermissionAllowPlan(input: PermissionAllowInput): PermissionAllowP
       exitCode: CONTRACT_EXIT_POLICY,
       diagnostic: errorDiagnostic(FULL_ACCESS_APPROVAL_MESSAGE, { operation: op }),
       details: {
-        suggestedAction: "Preview without --apply. Use the operator approval flow for a full-access grant.",
+        suggestedAction:
+          "Preview without --apply. To get full access approved by the operator, run: " +
+          `ravi permissions request full-access --to contact:<id> --chat <chat-id> --agent <executor> --execute (from any turn).`,
       },
     });
   }
@@ -880,6 +1030,183 @@ function buildPermissionAllowPlan(input: PermissionAllowInput): PermissionAllowP
     payload.nextCommand = buildAllowApplyCommand(input);
   }
   return payload;
+}
+
+export interface FullAccessRequestInput {
+  profile: string;
+  to?: string;
+  chat?: string;
+  agentId?: string;
+  asJson?: boolean;
+  /** Without it the request is only planned: nothing is shown to anyone. */
+  execute?: boolean;
+}
+
+/**
+ * `permissions request full-access`: the CLI side of the operator approval that
+ * `permissions allow full-access --apply` cannot consume. It never writes a
+ * grant itself, and it does not care which channel the turn came from. It
+ * records a grant request in the core and offers it to every contact that holds
+ * admin on whichever channel can reach them; it returns right away, and the
+ * grant is applied only when one of them approves. Nobody reachable: fail closed.
+ */
+export async function requestFullAccessApproval(input: FullAccessRequestInput) {
+  const op = "permissions request";
+  const usage = (message: string, suggestedAction: string): never =>
+    contractFail(op, "USAGE_ERROR", message, {
+      asJson: input.asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: { suggestedAction },
+      diagnostic: errorDiagnostic(message, { operation: op }),
+    });
+  const policy = (code: string, message: string, suggestedAction: string): never =>
+    contractFail(op, code, message, {
+      asJson: input.asJson,
+      exitCode: CONTRACT_EXIT_POLICY,
+      details: { suggestedAction },
+      diagnostic: errorDiagnostic(message, { operation: op }),
+    });
+
+  if (normalizePermissionTagSlug(input.profile) !== "permission-full-access") {
+    usage(
+      "permissions request only supports the full-access profile.",
+      "Other profiles do not need an operator approval: use `ravi permissions allow <profile> ...`.",
+    );
+  }
+  const targets = parseSubjectRefs(input.to);
+  if (targets.length !== 1 || targets[0].type !== "contact") {
+    usage("--to must name exactly one contact: --to contact:<id>.", "Find the contact id with `ravi contacts find`.");
+  }
+  const [contact] = resolveContactTargets(op, targets, input.asJson);
+  const chatRef = input.chat?.trim();
+  if (!chatRef) {
+    usage(
+      "--chat <chat-id|current> is required: full access is never global and never covers more than one chat.",
+      "Ask which chat/group this is for, then pass --chat <chat-id>.",
+    );
+  }
+  const [scope] = resolveContactScopes(
+    op,
+    { chat: chatRef, force: false, asJson: input.asJson },
+    {
+      requireKnownChat: true,
+      suggest: (scopeFlags) => [
+        "ravi",
+        "permissions",
+        "request",
+        "full-access",
+        "--to",
+        `contact:${contact.id}`,
+        ...scopeFlags,
+      ],
+    },
+  );
+  if (!scope || scope.type !== "chat") {
+    usage("--chat must resolve to one known chat.", "Find the chat id with `ravi chats list --json`.");
+  }
+  const chatScope = scope as Extract<ResolvedContactScope, { type: "chat" }>;
+  const executorAgent = input.agentId?.trim();
+  if (!executorAgent) {
+    return usage(
+      "--agent <id> is required: the executor that serves that chat.",
+      "Name the agent whose chat this is; it must already hold admin on its own.",
+    );
+  }
+  if (!dbGetAgent(executorAgent)) {
+    usage(`Agent not found: ${executorAgent}`, "List agents with `ravi agents list --json`.");
+  }
+  // The grant is the contact's overlay in one chat; it only takes effect up to the
+  // executor's own ceiling. This flow never writes that ceiling: an agent-wide admin
+  // would reach every chat the agent serves and outlive the contact grant.
+  if (!canWithCapabilities(materializeSubjectCapabilities("agent", executorAgent), "admin", "system", "*")) {
+    policy(
+      "FULL_ACCESS_EXECUTOR_CEILING",
+      `Agent ${executorAgent} does not hold admin on its own (for example it is chat-only), so full access granted to a contact in a chat would not take effect. This command never widens an agent.`,
+      `An operator must raise the agent first: ravi agents permissions ${executorAgent} full-access`,
+    );
+  }
+
+  const plan: GrantRequestPlan = {
+    profile: "full-access",
+    contactId: contact.id,
+    chatId: chatScope.chatId,
+    executorAgentId: executorAgent,
+    contactLabel: safeLabel(contact.name, "contact"),
+    chatLabel: safeLabel(chatScope.title || chatScope.label, "chat"),
+  };
+  const mapGrantRequestError = (error: unknown): never => {
+    if (!(error instanceof GrantRequestError)) throw error;
+    const code =
+      error.code === "no_adapter"
+        ? "FULL_ACCESS_APPROVAL_UNAVAILABLE"
+        : error.code === "no_eligible_grantor"
+          ? "FULL_ACCESS_APPROVER_UNAVAILABLE"
+          : "FULL_ACCESS_APPROVER_UNREACHABLE";
+    return policy(
+      code,
+      error.message,
+      "Nothing was requested. An installation needs at least one contact with admin that a connected channel can reach.",
+    );
+  };
+
+  if (input.execute !== true) {
+    let preview: ReturnType<typeof previewGrantRequest>;
+    try {
+      preview = previewGrantRequest(plan);
+    } catch (error) {
+      return mapGrantRequestError(error);
+    }
+    contractDryRun(
+      op,
+      {
+        profile: "full-access",
+        contact: { id: contact.id, label: plan.contactLabel },
+        chat: { id: chatScope.chatId, label: plan.chatLabel },
+        executor: executorAgent,
+        approvers: preview.grantors.length,
+        channels: [...new Set(preview.grantors.map((grantor) => grantor.channel))],
+        effect:
+          "Every eligible approver is asked on the channel where they can be reached; the grant is written only if one approves.",
+      },
+      { asJson: input.asJson },
+    );
+  }
+
+  const ctx = getContext();
+  const actorPrincipal = ctx?.context?.metadata?.actorPrincipal;
+  const requesterContactId =
+    typeof actorPrincipal === "string" && actorPrincipal.startsWith("contact:")
+      ? actorPrincipal.slice("contact:".length)
+      : undefined;
+  let result: Awaited<ReturnType<typeof requestGrant>>;
+  try {
+    result = await requestGrant({
+      plan,
+      requester: {
+        ...(ctx?.agentId ? { agentId: ctx.agentId } : {}),
+        ...(ctx?.sessionName ? { sessionName: ctx.sessionName } : {}),
+        ...(requesterContactId ? { contactId: requesterContactId } : {}),
+        // Provenance only: the turn's channel decides nothing.
+        ...(ctx?.source?.channel ? { channel: ctx.source.channel } : {}),
+      },
+    });
+  } catch (error) {
+    return mapGrantRequestError(error);
+  }
+  return {
+    status: "pending" as const,
+    requestId: result.request.id,
+    reused: result.reused,
+    expiresAt: result.request.expiresAt,
+    contactId: contact.id,
+    chatId: chatScope.chatId,
+    agent: executorAgent,
+    deliveries: result.deliveries.map((delivery) => ({ contactId: delivery.contactId, channel: delivery.channel })),
+    hints: [
+      `Asked ${new Set(result.deliveries.map((delivery) => delivery.contactId)).size} approver(s). Nothing is granted until one approves. Check with: ravi permissions request-status ${result.request.id}`,
+      `After approval, revoke with: ravi permissions deny ${FULL_ACCESS_PROFILE} --to contact:${contact.id} --chat ${chatScope.chatId} --apply`,
+    ],
+  };
 }
 
 interface PermissionDenyInput extends ContactScopeInput {

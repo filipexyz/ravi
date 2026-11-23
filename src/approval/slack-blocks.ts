@@ -4,6 +4,7 @@ import {
   type SlackBlockKitMessagePayload,
 } from "../channels/slack/block-kit.js";
 import type { PermissionGrantIntent, PermissionGrantScopeValue } from "../permissions/apply-grant.js";
+import { safeId } from "../permissions/grant-requests/labels.js";
 import type { ApprovalDecisionValue, ApprovalRequestType } from "./store.js";
 
 export const SLACK_APPROVAL_ACTION_APPROVE = "ravi.approval.v1.approve";
@@ -94,6 +95,18 @@ export function slackApprovalDecisionFromActionId(actionId: string | undefined):
   return null;
 }
 
+/**
+ * Who gets access and where, for a request someone asked for on purpose. Labels
+ * are already plain text; ids are always shown next to them.
+ */
+export interface SlackExplicitGrantTarget {
+  readonly contactLabel: string;
+  readonly chatLabel: string;
+  readonly contactId: string;
+  readonly chatId: string;
+  readonly executorAgentId?: string;
+}
+
 export interface SlackPermissionGrantMessageInput {
   readonly requestId: string;
   /** Slack user id of the person who hit the denial, mentioned in the body. */
@@ -108,6 +121,8 @@ export interface SlackPermissionGrantMessageInput {
   readonly scopes: readonly PermissionGrantScopeValue[];
   /** Scope currently picked on this person's card. */
   readonly selectedScope?: string;
+  /** Set for an explicit request: names who gets access and where, instead of "this chat". */
+  readonly explicit?: SlackExplicitGrantTarget;
 }
 
 const GRANT_SCOPE_LABELS: Record<string, string> = {
@@ -121,25 +136,36 @@ const GRANT_SCOPE_LABELS: Record<string, string> = {
  * so a card never shows a button the click gate would refuse.
  */
 export function buildSlackPermissionGrantMessage(input: SlackPermissionGrantMessageInput): SlackBlockKitMessagePayload {
-  const title = "Permission needed";
+  const explicit = input.explicit;
+  const title = explicit ? "Full access requested" : "Permission needed";
   const selectedScope = resolveSelectedScope(input);
   const bodyLines: string[] = [];
   const mentions = input.adminUserIds.map((id) => slackMention(id)).filter((id): id is string => Boolean(id));
   const requester = slackMention(input.requesterUserId);
   const who = requester ?? "someone";
-  bodyLines.push(
-    mentions.length > 0
-      ? `${mentions.slice(0, 5).join(" ")} — ${who} hit a permission failure in this chat.`
-      : `${who} hit a permission failure in this chat.`,
-  );
+  const mentionPrefix = mentions.length > 0 ? `${mentions.slice(0, 5).join(" ")} — ` : "";
+  if (explicit) {
+    const asker = input.agentId ? `agent \`${safeId(input.agentId)}\`` : "an agent";
+    bodyLines.push(
+      `${mentionPrefix}${asker} asks for *full access* for *${explicit.contactLabel}* (\`contact:${explicit.contactId}\`) in *${explicit.chatLabel}* (\`chat:${explicit.chatId}\`) only.`,
+    );
+    if (explicit.executorAgentId) {
+      bodyLines.push(`Executor: \`${explicit.executorAgentId}\` (its own permissions are not changed).`);
+    }
+  } else {
+    bodyLines.push(`${mentionPrefix}${who} hit a permission failure in this chat.`);
+  }
   bodyLines.push(`*Needed:* \`${input.capabilityText}\``);
   const reason = sanitizeReason(input.reason);
-  if (reason) bodyLines.push(`_${reason}_`);
+  // An explicit request states its target above, from stored ids and cleaned labels.
+  if (reason && !explicit) bodyLines.push(`_${reason}_`);
   bodyLines.push("");
   bodyLines.push(
-    input.allowed.includes("full-access")
-      ? adminActivityHint(mentions.length)
-      : "Full access is not offered here: it needs a Slack-linked admin contact.",
+    explicit
+      ? "Approving grants the admin profile to that contact in that chat, nothing else: no agent's permissions change. Nothing changes until an admin approves."
+      : input.allowed.includes("full-access")
+        ? adminActivityHint(mentions.length)
+        : "Full access is not offered here: it needs a Slack-linked admin contact.",
   );
 
   const blocks: SlackBlockKitBlock[] = [
@@ -175,8 +201,9 @@ export function buildSlackPermissionGrantMessage(input: SlackPermissionGrantMess
     elements: [
       {
         type: "mrkdwn",
-        text:
-          input.scopes.length > 0
+        text: explicit
+          ? `Scope: *${explicit.chatLabel}* only`
+          : input.scopes.length > 0
             ? `Scope: *${describeScopeLabel(selectedScope)}* (default: this chat)`
             : "Scope: agent ceiling only — this turn has no resolved contact.",
       },
@@ -202,7 +229,8 @@ export function buildSlackPermissionGrantMessage(input: SlackPermissionGrantMess
       value: buildSlackGrantActionValue(input.requestId, scopesHaveSelection(input) ? selectedScope : undefined),
     });
   }
-  if (input.scopes.length > 0) {
+  // An explicit request has exactly one scope: nothing to pick.
+  if (input.scopes.length > 0 && !explicit) {
     const options = input.scopes.map((scope) => ({
       text: { type: "plain_text", text: describeScopeLabel(scope) },
       value: buildSlackGrantActionValue(input.requestId, scope),

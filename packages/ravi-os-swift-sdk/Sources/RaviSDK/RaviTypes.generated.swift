@@ -24454,6 +24454,120 @@ public struct PermissionsMaterializeReturn: Codable, Sendable {
   }
 }
 
+public struct PermissionsRequestOptions: Codable, Sendable {
+  public var agent: String?
+  public var chat: String?
+  public var execute: Bool?
+  public var to: String?
+
+  public init(agent: String? = nil, chat: String? = nil, execute: Bool? = nil, to: String? = nil) {
+    self.agent = agent
+    self.chat = chat
+    self.execute = execute
+    self.to = to
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case chat = "chat"
+    case execute = "execute"
+    case to = "to"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.agent {
+      body["agent"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.chat {
+      body["chat"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.to {
+      body["to"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct PermissionsRequestReturn: Codable, Sendable {
+  public var agent: String
+  public var chatId: String
+  public var contactId: String
+  public var deliveries: [RaviJSON]
+  public var expiresAt: Double
+  public var hints: [String]
+  public var requestId: String
+  public var reused: Bool
+  public var status: String
+
+  public init(agent: String, chatId: String, contactId: String, deliveries: [RaviJSON], expiresAt: Double, hints: [String], requestId: String, reused: Bool, status: String) {
+    self.agent = agent
+    self.chatId = chatId
+    self.contactId = contactId
+    self.deliveries = deliveries
+    self.expiresAt = expiresAt
+    self.hints = hints
+    self.requestId = requestId
+    self.reused = reused
+    self.status = status
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case chatId = "chatId"
+    case contactId = "contactId"
+    case deliveries = "deliveries"
+    case expiresAt = "expiresAt"
+    case hints = "hints"
+    case requestId = "requestId"
+    case reused = "reused"
+    case status = "status"
+  }
+}
+
+public struct PermissionsRequestStatusReturn: Codable, Sendable {
+  public var agent: String
+  public var applied: Bool
+  public var chatId: String
+  public var contactId: String
+  public var decidedByContactId: RaviJSON
+  public var decidedVia: RaviJSON
+  public var deliveries: [RaviJSON]
+  public var expiresAt: Double
+  public var profile: String
+  public var requestId: String
+  public var status: String
+
+  public init(agent: String, applied: Bool, chatId: String, contactId: String, decidedByContactId: RaviJSON, decidedVia: RaviJSON, deliveries: [RaviJSON], expiresAt: Double, profile: String, requestId: String, status: String) {
+    self.agent = agent
+    self.applied = applied
+    self.chatId = chatId
+    self.contactId = contactId
+    self.decidedByContactId = decidedByContactId
+    self.decidedVia = decidedVia
+    self.deliveries = deliveries
+    self.expiresAt = expiresAt
+    self.profile = profile
+    self.requestId = requestId
+    self.status = status
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agent = "agent"
+    case applied = "applied"
+    case chatId = "chatId"
+    case contactId = "contactId"
+    case decidedByContactId = "decidedByContactId"
+    case decidedVia = "decidedVia"
+    case deliveries = "deliveries"
+    case expiresAt = "expiresAt"
+    case profile = "profile"
+    case requestId = "requestId"
+    case status = "status"
+  }
+}
+
 public struct PermissionsResolveOptions: Codable, Sendable {
   public var apply: Bool?
   public var capabilities: String?
