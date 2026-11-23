@@ -21,16 +21,31 @@ capability: profiles
   --apply` MUST fail with `FULL_ACCESS_APPROVAL_REQUIRED` before any profile,
   contact grant or agent-ceiling write while verified approval consumption is
   unavailable. The dry-run MUST NOT suggest that blocked apply command.
-- `bun test src/approval/service.test.ts -t "explicit full-access"` covers
-  `permissions request full-access`: the card names the contact and chat with
-  their ids and offers one intent and one scope; contact names and chat titles
-  with Slack markup never reach the card; only an admin's `full-access` click
-  writes the grant (target chat only) and it leaves the executor's own
-  permissions untouched; `permissions deny permission-admin` revokes it; a weaker
-  click, a non-admin click or no click grants nothing; a non-Slack turn, a missing
-  admin or an executor without its own admin (chat-only, bootstrap) fails closed
-  without a card; without `--execute` nothing is shown; the command declares a
-  remote timeout above the approval window and `--execute` as its brake.
+- `bun test src/permissions/grant-requests/` covers the core with fake adapters
+  on two channels: a request is offered to every admin on every reachable channel
+  and to nobody else (not the grantee, not an ordinary contact); it works from any
+  turn channel and reuses an identical open request; no adapter, no eligible
+  grantor or a failed delivery fails closed with nothing pending; an admin's
+  answer applies the grant for the target chat only and writes no agent
+  permission; asked on one channel and answered on another works; a non-admin, an
+  unknown sender, the grantee and an admin who was not offered the request are
+  ignored; the answer is the verified sender, never text; a request cannot be
+  decided twice (the claim is single-use even when both read it as pending) or
+  after it expired; the sweep expires it; and the core directory has no channel
+  import or channel-name literal.
+- `bun test src/channels/slack/grant-request-adapter.test.ts` covers the Slack
+  adapter: it reaches only human Slack identities on enabled instances, sends a
+  private card naming contact and chat with ids and offering one intent, turns an
+  admin click into a core approval (card replaced), answers a non-admin click
+  without granting, handles Ignore, later clicks and expiry, leaves legacy and
+  foreign ids alone, and the legacy click feedback runner never answers a grant
+  request.
+- `bun test src/cli/commands/permissions-request.test.ts` covers the command: it
+  returns `pending` at once from a Slack, WhatsApp or terminal turn, only plans
+  without `--execute`, fails closed with the three codes, accepts only full-access
+  / one contact / one chat / an executor that already holds admin, reads the
+  request back with `request-status` (`applied` only when the grant is in place)
+  and the printed revoke command removes it.
 - `bun test src/cli/remote-gateway.test.ts -t "full access approved"`: a remote
   `permissions allow|resolve` blocked with `FULL_ACCESS_APPROVAL_REQUIRED` names
   `permissions request full-access` and does not forward server text.

@@ -283,29 +283,48 @@ Semantics:
   executor-ceiling writes. Dry-run expansion and revocation remain available;
   preview MUST NOT advertise an apply command that will always be rejected.
 - `permissions request full-access --to contact:<id> --chat <chat> --agent <id> --execute`
-  is the path that consumes operator approval. Without `--execute` it only
-  plans (exit 3, nothing shown to anyone). It MUST NOT write a grant itself. It
-  records an approval request whose card goes privately to the Slack admins of
-  the turn's instance (never to the grantee's chat), and the approval service
-  applies the grant when an admin clicks `full-access`. The request MUST offer
-  exactly one intent (`full-access`) and exactly one scope (the named chat). It
-  supports one contact and one chat, never global or chat-tag. The command
-  waits for the click, so it declares a remote timeout longer than the approval
-  window; the gateway client's 30 s default would hang up first.
+  is the path that consumes operator approval, and it belongs to the core: it
+  works from any turn (Slack, WhatsApp, terminal) and knows no channel. Without
+  `--execute` it only plans (exit 3, nobody is asked). It MUST NOT write a grant
+  itself. It records a grant request (`permission_grant_requests`) holding the
+  exact plan (profile, contact, chat, executor), the requester as provenance,
+  the grantors it was offered to and a short expiry (10 minutes), then returns
+  right away with the request id; `permissions request-status <id>` reads it back
+  and reports `applied` only when the grant is found in place. An identical open
+  request is reused, not asked again. It supports one contact and one chat, never
+  global or chat-tag.
+- Grantors are contacts that hold `admin:system:*`. Each channel contributes only
+  an adapter (`GrantApprovalChannelAdapter`): which of those contacts it can reach
+  and how to ask one of them. The request goes to every eligible grantor on every
+  channel that reaches them. With no adapter, no eligible grantor or no delivery
+  it MUST fail closed (`FULL_ACCESS_APPROVAL_UNAVAILABLE`,
+  `FULL_ACCESS_APPROVER_UNAVAILABLE`, `FULL_ACCESS_APPROVER_UNREACHABLE`, exit 3)
+  and leave nothing pending. The grantee is never a candidate.
+- The decision has one path in the core, whatever the channel: an adapter hands
+  over a *verified actor* (the platform's own sender id, never message text) and
+  the core runs the same `actorCanGrantRequestedPermission` gate. The answer is
+  accepted only from a contact the request was offered to, who still holds admin,
+  and who is not the grantee. A request that is applied, rejected, failed or
+  expired MUST NOT be decided again, and the claim is a single atomic write.
+  Agents are never grantors, so an agent cannot approve its own request; the human
+  whose message drove the turn may approve as an admin, as in a one-admin install.
 - The executor named by `--agent` MUST already hold admin on its own
   (`agents permissions <id> full-access`); otherwise the request fails with
-  `FULL_ACCESS_EXECUTOR_CEILING` before any card. Approving MUST NOT write an
-  agent ceiling: an agent-wide admin would reach every chat the agent serves and
+  `FULL_ACCESS_EXECUTOR_CEILING` before anyone is asked. Approving MUST NOT write
+  an agent ceiling: an agent-wide admin would reach every chat the agent serves and
   outlive the contact grant.
-- The card MUST say "Full access requested" and name the contact and the chat
-  with their stable ids (`contact:<id>`, `chat:<id>`), never "this chat". Names
-  and titles are user-controlled: they MUST be reduced to plain text (no
-  `<`, `>`, `&`, `*`, `_`, backticks) and capped before they reach Slack markup.
-- A turn that is not a Slack turn, or an instance with no Slack admin, MUST fail
-  closed (`FULL_ACCESS_APPROVAL_UNAVAILABLE`, `FULL_ACCESS_APPROVER_UNAVAILABLE`,
-  exit 3) without showing any card. A remote `allow`/`resolve` blocked with
-  `FULL_ACCESS_APPROVAL_REQUIRED` MUST tell the caller about `permissions request`
-  through fixed copy keyed by operation and code, never by forwarding server text.
+- Prompts built from stored names MUST reduce contact names and chat titles to
+  plain text (no markup characters), cap them, and show the stable ids
+  (`contact:<id>`, `chat:<id>`). A remote `allow`/`resolve` blocked with
+  `FULL_ACCESS_APPROVAL_REQUIRED` MUST name `permissions request` through fixed
+  copy keyed by operation and code, never by forwarding server text.
+- Core features are never tied to a channel (Luis, 23/11): permissions,
+  approvals, identity and requests live in the core without a channel name or
+  rule in it (guarded by a test over `src/permissions/grant-requests`); channels
+  enter only as delivery adapters and as verified senders. Slack is one adapter
+  (`src/channels/slack/grant-request-adapter.ts`: private card, click handled by
+  the core). A channel with no adapter yet fails closed with a clear error; the
+  core contract does not change when one is added.
 - Known gap, not closed here: the `full-access` guard keys on the profile
   *name*. A profile with another name that carries `admin:system:*` (the
   documented `chat-admin` recipe) is applied by `allow --apply` without an

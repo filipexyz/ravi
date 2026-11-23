@@ -4,7 +4,7 @@ import {
   type SlackBlockKitMessagePayload,
 } from "../channels/slack/block-kit.js";
 import type { PermissionGrantIntent, PermissionGrantScopeValue } from "../permissions/apply-grant.js";
-import { safeCardId, type PermissionGrantExplicitTarget } from "./grant-metadata.js";
+import { safeId } from "../permissions/grant-requests/labels.js";
 import type { ApprovalDecisionValue, ApprovalRequestType } from "./store.js";
 
 export const SLACK_APPROVAL_ACTION_APPROVE = "ravi.approval.v1.approve";
@@ -95,6 +95,18 @@ export function slackApprovalDecisionFromActionId(actionId: string | undefined):
   return null;
 }
 
+/**
+ * Who gets access and where, for a request someone asked for on purpose. Labels
+ * are already plain text; ids are always shown next to them.
+ */
+export interface SlackExplicitGrantTarget {
+  readonly contactLabel: string;
+  readonly chatLabel: string;
+  readonly contactId: string;
+  readonly chatId: string;
+  readonly executorAgentId?: string;
+}
+
 export interface SlackPermissionGrantMessageInput {
   readonly requestId: string;
   /** Slack user id of the person who hit the denial, mentioned in the body. */
@@ -110,7 +122,7 @@ export interface SlackPermissionGrantMessageInput {
   /** Scope currently picked on this person's card. */
   readonly selectedScope?: string;
   /** Set for an explicit request: names who gets access and where, instead of "this chat". */
-  readonly explicit?: PermissionGrantExplicitTarget;
+  readonly explicit?: SlackExplicitGrantTarget;
 }
 
 const GRANT_SCOPE_LABELS: Record<string, string> = {
@@ -133,7 +145,7 @@ export function buildSlackPermissionGrantMessage(input: SlackPermissionGrantMess
   const who = requester ?? "someone";
   const mentionPrefix = mentions.length > 0 ? `${mentions.slice(0, 5).join(" ")} — ` : "";
   if (explicit) {
-    const asker = input.agentId ? `agent \`${safeCardId(input.agentId)}\`` : "an agent";
+    const asker = input.agentId ? `agent \`${safeId(input.agentId)}\`` : "an agent";
     bodyLines.push(
       `${mentionPrefix}${asker} asks for *full access* for *${explicit.contactLabel}* (\`contact:${explicit.contactId}\`) in *${explicit.chatLabel}* (\`chat:${explicit.chatId}\`) only.`,
     );

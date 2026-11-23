@@ -95796,7 +95796,7 @@ public enum RaviSchemas {
             "type": "string"
           },
           "execute": {
-            "description": "Send the approval card and wait for an admin. Without it, prints the plan and exits 3",
+            "description": "Send the request to the approvers. Without it, prints the plan and exits 3",
             "type": "boolean"
           },
           "profile": {
@@ -95826,7 +95826,7 @@ public enum RaviSchemas {
             "type": "string"
           },
           "execute": {
-            "description": "Send the approval card and wait for an admin. Without it, prints the plan and exits 3",
+            "description": "Send the request to the approvers. Without it, prints the plan and exits 3",
             "type": "boolean"
           },
           "profile": {
@@ -95856,7 +95856,7 @@ public enum RaviSchemas {
             "type": "string"
           },
           "execute": {
-            "description": "Send the approval card and wait for an admin. Without it, prints the plan and exits 3",
+            "description": "Send the request to the approvers. Without it, prints the plan and exits 3",
             "type": "boolean"
           },
           "profile": {
@@ -95885,7 +95885,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Send the approval card and wait for an admin. Without it, prints the plan and exits 3",
+        "description": "Send the request to the approvers. Without it, prints the plan and exits 3",
         "type": "boolean"
       },
       "profile": {
@@ -95917,8 +95917,27 @@ public enum RaviSchemas {
       "contactId": {
         "type": "string"
       },
-      "grantedProfile": {
-        "type": "string"
+      "deliveries": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "channel": {
+              "type": "string"
+            },
+            "contactId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "contactId",
+            "channel"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "expiresAt": {
+        "type": "number"
       },
       "hints": {
         "items": {
@@ -95926,23 +95945,136 @@ public enum RaviSchemas {
         },
         "type": "array"
       },
-      "profile": {
-        "const": "full-access",
+      "requestId": {
         "type": "string"
       },
+      "reused": {
+        "type": "boolean"
+      },
       "status": {
-        "const": "approved",
+        "const": "pending",
         "type": "string"
       }
     },
     "required": [
       "status",
-      "profile",
-      "grantedProfile",
+      "requestId",
+      "reused",
+      "expiresAt",
       "contactId",
       "chatId",
       "agent",
+      "deliveries",
       "hints"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PermissionsRequestStatusInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "requestId": {
+        "description": "Request id printed by `permissions request`",
+        "type": "string"
+      }
+    },
+    "required": [
+      "requestId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PermissionsRequestStatusReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "type": "string"
+      },
+      "applied": {
+        "type": "boolean"
+      },
+      "chatId": {
+        "type": "string"
+      },
+      "contactId": {
+        "type": "string"
+      },
+      "decidedByContactId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "decidedVia": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "deliveries": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "channel": {
+              "type": "string"
+            },
+            "contactId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "contactId",
+            "channel"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "expiresAt": {
+        "type": "number"
+      },
+      "profile": {
+        "const": "full-access",
+        "type": "string"
+      },
+      "requestId": {
+        "type": "string"
+      },
+      "status": {
+        "enum": [
+          "pending",
+          "approved",
+          "rejected",
+          "expired",
+          "failed"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "requestId",
+      "status",
+      "profile",
+      "contactId",
+      "chatId",
+      "agent",
+      "expiresAt",
+      "decidedByContactId",
+      "decidedVia",
+      "applied",
+      "deliveries"
     ],
     "type": "object"
   }

@@ -32,22 +32,6 @@ export interface PermissionGrantTargets {
   readonly agentId?: string;
 }
 
-/**
- * Labels for a grant someone asked for on purpose (`ravi permissions request`),
- * as opposed to one offered after a denial. The card is delivered in the
- * requester's chat but the grant lands on another contact in another chat, so
- * the card must name both instead of saying "this chat".
- */
-export interface PermissionGrantExplicitTarget {
-  readonly contactLabel: string;
-  readonly chatLabel: string;
-  /** Stable ids shown on the card; a name is never enough to know who gets access. */
-  readonly contactId: string;
-  readonly chatId: string;
-  /** Display only. The flow never changes an agent's own permissions. */
-  readonly executorAgentId?: string;
-}
-
 export interface PermissionGrantMetadata {
   readonly denialId?: number;
   readonly capability: PermissionGrantCapability;
@@ -57,8 +41,6 @@ export interface PermissionGrantMetadata {
   readonly scopes: readonly PermissionGrantScopeValue[];
   /** Short denial reason kept for card re-renders. */
   readonly reason?: string;
-  /** Present only for an explicit request; see {@link PermissionGrantExplicitTarget}. */
-  readonly explicit?: PermissionGrantExplicitTarget;
 }
 
 export const GRANT_SCOPE_CHAT: PermissionGrantScopeValue = "chat";
@@ -151,87 +133,6 @@ export function readPermissionGrantMetadata(
     allowed: [...(grant.allowed ?? [])],
     scopes: [...(grant.scopes ?? [])],
     ...(grant.reason ? { reason: grant.reason } : {}),
-    ...(grant.explicit?.contactLabel && grant.explicit.chatLabel && grant.explicit.contactId && grant.explicit.chatId
-      ? {
-          explicit: {
-            contactLabel: grant.explicit.contactLabel,
-            chatLabel: grant.explicit.chatLabel,
-            contactId: grant.explicit.contactId,
-            chatId: grant.explicit.chatId,
-            ...(grant.explicit.executorAgentId ? { executorAgentId: grant.explicit.executorAgentId } : {}),
-          },
-        }
-      : {}),
-  };
-}
-
-export const FULL_ACCESS_GRANT_CAPABILITY: PermissionGrantCapability = {
-  permission: "admin",
-  objectType: "system",
-  objectId: "*",
-};
-
-/**
- * Names on a card come from contacts and chat titles anyone can set, and Slack
- * renders them as markup (`<!channel>`, links, bold). Keep letters, digits and
- * a few plain separators, cap the length, and always show the stable ids next
- * to them so a lookalike name cannot stand in for the target.
- */
-export function safeCardLabel(value: string | null | undefined, fallback: string): string {
-  const cleaned = (value ?? "")
-    .replace(/[^\p{L}\p{N} .,:@#()+'/-]/gu, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 60)
-    .trim();
-  return cleaned || fallback;
-}
-
-/** Ids rendered in code spans: nothing outside a conservative id alphabet. */
-export function safeCardId(value: string): string {
-  return value.replace(/[^A-Za-z0-9_.:@-]/g, "").slice(0, 80);
-}
-
-/**
- * Grant metadata for an explicit full-access request: one contact, one chat.
- * Exactly one intent (`full-access`) and exactly one scope (`chat`) are offered,
- * so the click can neither widen the scope nor downgrade to another grant. It
- * names no agent in `targets`: approving writes the contact grant for that chat
- * and nothing else, never an agent's ceiling. Returns null when nobody could
- * approve the card.
- */
-export function buildExplicitFullAccessGrantMetadata(input: {
-  readonly contactId: string;
-  readonly chatId: string;
-  readonly chatTags?: readonly string[];
-  readonly executorAgentId?: string;
-  readonly adminUserIds: readonly string[];
-  readonly contactLabel: string;
-  readonly chatLabel: string;
-}): PermissionGrantMetadata | null {
-  const adminUserIds = [...new Set(input.adminUserIds.map((id) => id.trim().toUpperCase()).filter(Boolean))];
-  if (adminUserIds.length === 0) return null;
-  const contactId = clean(input.contactId);
-  const chatId = clean(input.chatId);
-  if (!contactId || !chatId) return null;
-  const executorAgentId = clean(input.executorAgentId);
-  return {
-    capability: { ...FULL_ACCESS_GRANT_CAPABILITY },
-    targets: {
-      contactId,
-      chatId,
-      chatTags: [...(input.chatTags ?? [])],
-    },
-    adminUserIds,
-    allowed: ["full-access"],
-    scopes: [GRANT_SCOPE_CHAT],
-    explicit: {
-      contactLabel: safeCardLabel(input.contactLabel, "contact"),
-      chatLabel: safeCardLabel(input.chatLabel, "chat"),
-      contactId: safeCardId(contactId),
-      chatId: safeCardId(chatId),
-      ...(executorAgentId ? { executorAgentId: safeCardId(executorAgentId) } : {}),
-    },
   };
 }
 
@@ -269,17 +170,14 @@ export function sameGrantTuple(a: PermissionGrantMetadata, b: PermissionGrantMet
     // The grant also widens the executor agent's ceiling: two agents serving
     // the same contact each need their own card.
     (a.targets.agentId ?? null) === (b.targets.agentId ?? null) &&
-    // An explicit request and a denial card never share one card: their wording
-    // and the intents they offer differ.
-    Boolean(a.explicit) === Boolean(b.explicit) &&
     a.capability.permission === b.capability.permission &&
     a.capability.objectType === b.capability.objectType &&
     a.capability.objectId === b.capability.objectId
   );
 }
 
-export function describeGrantScope(scope: PermissionGrantScopeValue, explicit?: PermissionGrantExplicitTarget): string {
-  if (scope === GRANT_SCOPE_CHAT) return explicit ? explicit.chatLabel : "this chat";
+export function describeGrantScope(scope: PermissionGrantScopeValue): string {
+  if (scope === GRANT_SCOPE_CHAT) return "this chat";
   if (scope === GRANT_SCOPE_CONTACT) return "this contact (all chats)";
   return `every chat tagged ${scope.slice("chat-tag:".length)}`;
 }

@@ -1146,7 +1146,7 @@ function remoteSuggestedAction(op: string, outcome: CompleteContractErrorBody["o
   if (outcome === "blocked" && code === "WRITE_REQUIRES_EXECUTE")
     return `Re-run '${op}' adding --execute to perform the write`;
   if (outcome === "blocked" && code === "FULL_ACCESS_APPROVAL_REQUIRED" && /^permissions (allow|resolve)$/.test(op))
-    return "Full access needs the operator's approval in Slack: from a Slack turn run 'ravi permissions request full-access --to contact:<id> --chat <chat-id> --agent <executor> --execute'";
+    return "Full access needs an approver's decision: run 'ravi permissions request full-access --to contact:<id> --chat <chat-id> --agent <executor> --execute'";
   if (outcome === "blocked") return "Review the remote policy block before retrying the command";
   return `Check '${op} --help' and report code ${code ?? "COMMAND_FAILED"} with requestId to the operator before retrying`;
 }

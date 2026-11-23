@@ -94783,7 +94783,7 @@ export const PermissionsRequestInputSchema = {
           "type": "string"
         },
         "execute": {
-          "description": "Send the approval card and wait for an admin. Without it, prints the plan and exits 3",
+          "description": "Send the request to the approvers. Without it, prints the plan and exits 3",
           "type": "boolean"
         },
         "profile": {
@@ -94813,7 +94813,7 @@ export const PermissionsRequestInputSchema = {
           "type": "string"
         },
         "execute": {
-          "description": "Send the approval card and wait for an admin. Without it, prints the plan and exits 3",
+          "description": "Send the request to the approvers. Without it, prints the plan and exits 3",
           "type": "boolean"
         },
         "profile": {
@@ -94843,7 +94843,7 @@ export const PermissionsRequestInputSchema = {
           "type": "string"
         },
         "execute": {
-          "description": "Send the approval card and wait for an admin. Without it, prints the plan and exits 3",
+          "description": "Send the request to the approvers. Without it, prints the plan and exits 3",
           "type": "boolean"
         },
         "profile": {
@@ -94872,7 +94872,7 @@ export const PermissionsRequestInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Send the approval card and wait for an admin. Without it, prints the plan and exits 3",
+      "description": "Send the request to the approvers. Without it, prints the plan and exits 3",
       "type": "boolean"
     },
     "profile": {
@@ -94903,8 +94903,27 @@ export const PermissionsRequestReturnSchema = {
     "contactId": {
       "type": "string"
     },
-    "grantedProfile": {
-      "type": "string"
+    "deliveries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "contactId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "contactId",
+          "channel"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "expiresAt": {
+      "type": "number"
     },
     "hints": {
       "items": {
@@ -94912,23 +94931,134 @@ export const PermissionsRequestReturnSchema = {
       },
       "type": "array"
     },
-    "profile": {
-      "const": "full-access",
+    "requestId": {
       "type": "string"
     },
+    "reused": {
+      "type": "boolean"
+    },
     "status": {
-      "const": "approved",
+      "const": "pending",
       "type": "string"
     }
   },
   "required": [
     "status",
-    "profile",
-    "grantedProfile",
+    "requestId",
+    "reused",
+    "expiresAt",
     "contactId",
     "chatId",
     "agent",
+    "deliveries",
     "hints"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `permissions.request-status`. */
+export const PermissionsRequestStatusInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "requestId": {
+      "description": "Request id printed by `permissions request`",
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.request-status`. */
+export const PermissionsRequestStatusReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "type": "string"
+    },
+    "applied": {
+      "type": "boolean"
+    },
+    "chatId": {
+      "type": "string"
+    },
+    "contactId": {
+      "type": "string"
+    },
+    "decidedByContactId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "decidedVia": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "deliveries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "contactId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "contactId",
+          "channel"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "expiresAt": {
+      "type": "number"
+    },
+    "profile": {
+      "const": "full-access",
+      "type": "string"
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "approved",
+        "rejected",
+        "expired",
+        "failed"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestId",
+    "status",
+    "profile",
+    "contactId",
+    "chatId",
+    "agent",
+    "expiresAt",
+    "decidedByContactId",
+    "decidedVia",
+    "applied",
+    "deliveries"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

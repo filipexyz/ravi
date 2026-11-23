@@ -20796,14 +20796,16 @@ class PermissionsRequestOptions {
 }
 
 class PermissionsRequestReturn {
-  const PermissionsRequestReturn({required this.agent, required this.chatId, required this.contactId, required this.grantedProfile, required this.hints, required this.profile, required this.status});
+  const PermissionsRequestReturn({required this.agent, required this.chatId, required this.contactId, required this.deliveries, required this.expiresAt, required this.hints, required this.requestId, required this.reused, required this.status});
 
   final String agent;
   final String chatId;
   final String contactId;
-  final String grantedProfile;
+  final List<RaviJson> deliveries;
+  final double expiresAt;
   final List<String> hints;
-  final String profile;
+  final String requestId;
+  final bool reused;
   final String status;
 
   factory PermissionsRequestReturn.fromJson(Map<String, Object?> json) {
@@ -20811,9 +20813,11 @@ class PermissionsRequestReturn {
       agent: raviJsonAsString(json["agent"]),
       chatId: raviJsonAsString(json["chatId"]),
       contactId: raviJsonAsString(json["contactId"]),
-      grantedProfile: raviJsonAsString(json["grantedProfile"]),
+      deliveries: raviJsonAsList(json["deliveries"], RaviJson.from),
+      expiresAt: raviJsonAsDouble(json["expiresAt"]),
       hints: raviJsonAsList(json["hints"], raviJsonAsString),
-      profile: raviJsonAsString(json["profile"]),
+      requestId: raviJsonAsString(json["requestId"]),
+      reused: raviJsonAsBool(json["reused"]),
       status: raviJsonAsString(json["status"]),
     );
   }
@@ -20824,6 +20828,44 @@ class PermissionsRequestReturn {
 }
 
 PermissionsRequestReturn permissionsRequestReturnFromJson(Object? json) => PermissionsRequestReturn.fromJsonValue(json);
+
+class PermissionsRequestStatusReturn {
+  const PermissionsRequestStatusReturn({required this.agent, required this.applied, required this.chatId, required this.contactId, required this.decidedByContactId, required this.decidedVia, required this.deliveries, required this.expiresAt, required this.profile, required this.requestId, required this.status});
+
+  final String agent;
+  final bool applied;
+  final String chatId;
+  final String contactId;
+  final RaviJson decidedByContactId;
+  final RaviJson decidedVia;
+  final List<RaviJson> deliveries;
+  final double expiresAt;
+  final String profile;
+  final String requestId;
+  final String status;
+
+  factory PermissionsRequestStatusReturn.fromJson(Map<String, Object?> json) {
+    return PermissionsRequestStatusReturn(
+      agent: raviJsonAsString(json["agent"]),
+      applied: raviJsonAsBool(json["applied"]),
+      chatId: raviJsonAsString(json["chatId"]),
+      contactId: raviJsonAsString(json["contactId"]),
+      decidedByContactId: RaviJson.from(json["decidedByContactId"]),
+      decidedVia: RaviJson.from(json["decidedVia"]),
+      deliveries: raviJsonAsList(json["deliveries"], RaviJson.from),
+      expiresAt: raviJsonAsDouble(json["expiresAt"]),
+      profile: raviJsonAsString(json["profile"]),
+      requestId: raviJsonAsString(json["requestId"]),
+      status: raviJsonAsString(json["status"]),
+    );
+  }
+
+  static PermissionsRequestStatusReturn fromJsonValue(Object? json) {
+    return PermissionsRequestStatusReturn.fromJson(raviJsonObject(json, "PermissionsRequestStatusReturn"));
+  }
+}
+
+PermissionsRequestStatusReturn permissionsRequestStatusReturnFromJson(Object? json) => PermissionsRequestStatusReturn.fromJsonValue(json);
 
 class PermissionsResolveOptions {
   const PermissionsResolveOptions({this.apply, this.capabilities, this.chat, this.chatTag, this.force, this.profile});

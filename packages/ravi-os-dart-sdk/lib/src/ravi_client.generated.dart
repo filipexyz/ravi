@@ -6879,6 +6879,17 @@ class PermissionsNamespace {
     );
   }
 
+  Future<PermissionsRequestStatusReturn> requestStatus(String requestId) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["requestId"] = RaviJson.from(requestId);
+    return _transport.callJson(
+      groupSegments: const ["permissions"],
+      command: "request-status",
+      body: requestBody,
+      decode: permissionsRequestStatusReturnFromJson,
+    );
+  }
+
   Future<PermissionsResolveReturn> resolve(String denialId, [PermissionsResolveOptions options = const PermissionsResolveOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["denialId"] = RaviJson.from(denialId);
