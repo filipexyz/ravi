@@ -348,6 +348,159 @@ describe("AgentsCommands set model validation", () => {
     expect(updateAgentCalls).toHaveLength(0);
   });
 
+  it("switches provider and model in one write when --model is given (no provider/model deadlock)", async () => {
+    // Reproduces the 23/11 incident: claude/sonnet -> pi/deepseek had no valid single-key path.
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude", model: "sonnet" };
+    const commands = new AgentsCommands();
+    await expect(commands.set("dev", "provider", "pi", true)).rejects.toThrow("--model");
+    await expect(commands.set("dev", "model", "deepseek/deepseek-flash", true)).rejects.toThrow(
+      "provider <provider> --model",
+    );
+    expect(updateAgentCalls).toHaveLength(0);
+
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      await commands.set("dev", "provider", "pi", true, false, "deepseek/deepseek-flash");
+    } finally {
+      console.log = originalLog;
+    }
+    expect(updateAgentCalls).toEqual([{ id: "dev", partial: { provider: "pi", model: "deepseek/deepseek-flash" } }]);
+  });
+
+  it("validates the --model pair together and rejects an incompatible pair before writing", async () => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude", model: "sonnet" };
+    const commands = new AgentsCommands();
+    await expect(commands.set("dev", "provider", "claude", true, false, "deepseek/deepseek-flash")).rejects.toThrow(
+      "does not belong",
+    );
+    await expect(commands.set("dev", "model", "sonnet", true, false, "sonnet")).rejects.toThrow(
+      "only valid with key=provider",
+    );
+    await expect(commands.set("dev", "provider", "pi", true, false, "  ")).rejects.toThrow("cannot be empty");
+    expect(updateAgentCalls).toHaveLength(0);
+  });
+
+  it("rejects --model on every key except provider before any write or early return", async () => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude", model: "sonnet" };
+    const commands = new AgentsCommands();
+    for (const [key, value] of [
+      ["description", "A short description"],
+      ["modelPreset", "clear"],
+      ["modelPreset", "some-preset"],
+      ["groupDebounceMs", "500"],
+      ["model", "sonnet"],
+      ["effort", "high"],
+    ] as const) {
+      await expect(commands.set("dev", key, value, true, false, "sonnet")).rejects.toThrow(
+        "only valid with key=provider",
+      );
+    }
+    expect(updateAgentCalls).toHaveLength(0);
+  });
+
+  it("reports an invalid --model as a usage error with exit code 2", async () => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude", model: "sonnet" };
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    const originalError = console.error;
+    console.log = () => {};
+    console.error = () => {};
+    try {
+      for (const attempt of [
+        () => commands.set("dev", "provider", "pi", true, false, "  "),
+        () => commands.set("dev", "description", "x", true, false, "sonnet"),
+      ]) {
+        const error = await attempt().then(
+          () => null,
+          (caught: unknown) => caught,
+        );
+        expect(error).toBeInstanceOf(ContractError);
+        expect((error as InstanceType<typeof ContractError>).code).toBe("USAGE_ERROR");
+        expect((error as InstanceType<typeof ContractError>).exitCode).toBe(2);
+      }
+    } finally {
+      console.log = originalLog;
+      console.error = originalError;
+    }
+    expect(updateAgentCalls).toHaveLength(0);
+  });
+
+  it("trims the provider once so validation and storage agree", async () => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude", model: "sonnet" };
+    const commands = new AgentsCommands();
+    await expect(commands.set("dev", "provider", " pi ", true, false, "kimi-coding")).rejects.toThrow(
+      "Invalid Pi model selector: 'kimi-coding' is a provider id",
+    );
+    expect(updateAgentCalls).toHaveLength(0);
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      await commands.set("dev", "provider", " pi ", true, false, "deepseek/deepseek-flash");
+    } finally {
+      console.log = originalLog;
+    }
+    expect(updateAgentCalls).toEqual([{ id: "dev", partial: { provider: "pi", model: "deepseek/deepseek-flash" } }]);
+  });
+
+  it("replaces a referenced preset when the pair is written together", async () => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude", modelPresetId: "sonnet-preset" };
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      await commands.set("dev", "provider", "pi", true, false, "deepseek/deepseek-flash");
+    } finally {
+      console.log = originalLog;
+    }
+    expect(updateAgentCalls).toEqual([
+      { id: "dev", partial: { provider: "pi", model: "deepseek/deepseek-flash", modelPresetId: null } },
+    ]);
+  });
+
+  it("--force with --model also clears session model overrides, which the paired write made stale", async () => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude", model: "sonnet" };
+    sessionsByAgent = [
+      {
+        sessionKey: "agent:dev:pinned",
+        name: "pinned",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        runtimeProvider: "claude",
+        runtimeProviderOverride: "claude",
+        modelOverride: "opus",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      await commands.set("dev", "provider", "pi", true, true, "deepseek/deepseek-flash");
+    } finally {
+      console.log = originalLog;
+    }
+    expect(sessionsByAgent[0]?.runtimeProviderOverride).toBeUndefined();
+    expect(sessionsByAgent[0]?.modelOverride).toBeUndefined();
+  });
+
+  it("clears the model with 'model clear' without validating it, then the provider can change alone", async () => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude", model: "sonnet" };
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      await commands.set("dev", "model", "clear", true);
+      expect(updateAgentCalls).toEqual([{ id: "dev", partial: { model: null } }]);
+      currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "claude" };
+      await commands.set("dev", "provider", "pi", true);
+    } finally {
+      console.log = originalLog;
+    }
+    expect(updateAgentCalls[1]).toEqual({ id: "dev", partial: { provider: "pi" } });
+  });
+
   it("rejects Pi provider ids used as model selectors", async () => {
     const commands = new AgentsCommands();
 

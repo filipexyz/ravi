@@ -7901,6 +7901,10 @@ export const AgentsSetInputSchema = {
       "description": "Property key",
       "type": "string"
     },
+    "model": {
+      "description": "With key=provider: set the model in the same write, so the pair is validated together",
+      "type": "string"
+    },
     "value": {
       "description": "Property value",
       "type": "string"
