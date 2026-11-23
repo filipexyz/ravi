@@ -1335,12 +1335,15 @@ describe("durable cron run correlation", () => {
     const { pendingCronFailureReports } = await import("./run-db.js");
     const { getDb } = await import("../router/router-db.js");
     const { listLocalInboxEvents, listLocalInboxItems } = await import("../inbox/local-db.js");
+    // The operator's chat is armed and the runs are operator-owned, so a message sent for an unreadable
+    // report (a fallback to the operator, say) would be recorded below.
+    operatorChat = OPERATOR_CHAT;
     const unreadable = 12;
     for (let i = 0; i < unreadable; i++) {
-      const runId = await failedRun();
+      const runId = await failedRun({ ownerPrincipal: "operator" });
       getDb().query("UPDATE cron_runs SET notification_json = ? WHERE id = ?").run("{not json", runId);
     }
-    await failedRun(); // one readable report behind them
+    await failedRun({ ownerPrincipal: "operator" }); // one readable report behind them
     expect(pendingCronFailureReports()).toHaveLength(unreadable + 1);
 
     const runner = new CronRunner();
@@ -1356,8 +1359,9 @@ describe("durable cron run correlation", () => {
     expect(records).toHaveLength(unreadable);
     for (const item of records)
       expect(listLocalInboxEvents(item.id).map((event) => event.eventType)).toContain("cron.failure.unreadable");
-    // No recipient can be known from a notice that does not parse, so nothing is sent.
-    expect(directMessages).toHaveLength(0);
+    // No recipient can be known from a notice that does not parse: the only message is the readable report's.
+    expect(directMessages).toHaveLength(1);
+    expect(directAttempts).toHaveLength(1);
 
     // A later start finds nothing to replay.
     const later = new CronRunner();

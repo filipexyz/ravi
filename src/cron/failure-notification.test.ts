@@ -112,6 +112,8 @@ describe("cron failure notification", () => {
       assignedToAgentId: null,
       assignedToContactId: null,
     });
+    // The guidance names a command that exists and takes the job id (`cron show` opens the job, not the run).
+    expect(item.summary).toContain('"ravi cron show job-1"');
     expect(listLocalInboxEvents(item.id).filter((event) => event.eventType === "cron.failure.unreadable")).toHaveLength(
       1,
     );

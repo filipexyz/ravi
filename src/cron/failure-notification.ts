@@ -54,8 +54,7 @@ export function recordUnreadableCronFailure(run: { id: string; job_id: string; a
     sourceId: run.job_id,
     dedupeKey: `cron-unreadable:${run.job_id}:${run.id}`,
     title: `Falha no agendamento ${run.job_id}: aviso ilegível`,
-    summary:
-      "Um agendamento falhou, mas o aviso guardado dessa execução não pôde ser lido, então nenhuma mensagem foi enviada. Revise a execução no histórico do agendamento.",
+    summary: `Um agendamento falhou, mas o aviso guardado dessa execução não pôde ser lido, então nenhuma mensagem foi enviada. Confira o estado do agendamento com "ravi cron show ${run.job_id}"; esta execução não tem mais um aviso legível.`,
     priority: "high",
     occurredAt: run.admitted_at,
     metadata: { jobId: run.job_id, runId: run.id, category: "unreadable" },
