@@ -145,6 +145,32 @@ describe("sessions set-provider", () => {
   });
 });
 
+describe("sessions set-provider --model", () => {
+  const NO_SESSION_MUTATION: ToolContext = {
+    ...BOOTSTRAP,
+    context: { ...BOOTSTRAP.context!, capabilities: [] },
+  };
+
+  it("also needs the authority of sessions set-model, so the provider permission cannot rewrite the model", () => {
+    dbCreateAgent({ id: "crm", cwd: "/tmp/crm", provider: "claude" });
+    const own = getOrCreateSession("agent:crm:main", "crm", "/tmp/crm");
+    const before = getSession(own.sessionKey);
+
+    // Same provider as the agent: no provider authority is needed, so only the model write is at stake.
+    expect(() =>
+      runWithContext(NO_SESSION_MUTATION, () =>
+        new SessionCommands().setProvider(own.sessionKey, "claude", true, false, "sonnet"),
+      ),
+    ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED", message: expect.stringContaining("--model") }));
+    expect(getSession(own.sessionKey)).toEqual(before);
+    expect(getSession(own.sessionKey)?.modelOverride).toBeUndefined();
+
+    // A caller that may run sessions commands keeps working.
+    runWithContext(BOOTSTRAP, () => new SessionCommands().setProvider(own.sessionKey, "claude", true, false, "sonnet"));
+    expect(getSession(own.sessionKey)?.modelOverride).toBe("sonnet");
+  });
+});
+
 describe("sessions set-provider with no agent provider", () => {
   it("treats the runtime.defaultProvider setting as the agent's own provider", () => {
     dbCreateAgent({ id: "crm", cwd: "/tmp/crm" });

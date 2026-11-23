@@ -6,7 +6,7 @@
 export const SDK_VERSION = "0.2.1";
 
 /** SHA-256 fingerprint of the registry projection at codegen time. */
-export const REGISTRY_HASH = "sha256:4a890291808c1773d41671553d273bfd2b7565d1ebacd4d53737e4e6ad89470a";
+export const REGISTRY_HASH = "sha256:50f4b3a0d6d61cd803d5d1012e951b4ca25ecc2c1b980c32858c7d090640953e";
 
 /** Git SHA of the source tree at codegen time. `"unknown"` outside git. */
-export const GIT_SHA = "d7d304eb7f31";
+export const GIT_SHA = "01f2cf81308d";
