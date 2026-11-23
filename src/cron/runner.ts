@@ -62,11 +62,14 @@ import {
 const log = logger.child("cron:runner");
 const MAX_NOTIFY_OUTPUT_CHARS = 4000;
 /**
- * How long `stop()` waits for the failure report in flight. A delivery may hold
- * for 30 s (`deliverToChat`) while the daemon forces exit 15 s into shutdown, so
- * a report that has not settled by then stays pending for the next start.
+ * How long `stop()` waits for the failure report in flight. The daemon stops its
+ * components one after another inside a single 15 s guard, and a delivery may
+ * hold for 30 s (`deliverToChat`), so cron keeps its share to about a second; a
+ * report that has not settled by then stays pending for the next start.
  */
-const FAILURE_REPORT_STOP_GRACE_MS = 5_000;
+const FAILURE_REPORT_STOP_GRACE_MS = 1_000;
+/** Failures one reconciliation pass keeps for `stop()` to raise; every failure is logged. */
+const MAX_RECORDED_REPORT_FAILURES = 10;
 
 function captureRunAuthority(job: CronJob): CronRunAuthority {
   return {
@@ -129,17 +132,28 @@ export class CronRunner {
   }
 
   private async reconcileFailureReports(generation: number): Promise<void> {
+    let recorded = 0;
     for (const run of pendingCronFailureReports()) {
       // A later start owns the backlog once this generation has been superseded.
       if (!this.running || generation !== this.failureReportGeneration) break;
-      if (await notifyCronFailure(cronRunNotification(run), run.error ?? "Agent turn failed"))
-        markCronRunReported(run.id);
+      try {
+        if (await notifyCronFailure(cronRunNotification(run), run.error ?? "Agent turn failed"))
+          markCronRunReported(run.id);
+      } catch (cause) {
+        // A report that cannot be read or marked must not strand the ones behind it.
+        // It stays pending and `stop()` raises the failure.
+        log.error("Cron failure report reconciliation failed", { runId: run.id, error: cause });
+        if (recorded++ < MAX_RECORDED_REPORT_FAILURES)
+          this.runtimeEventStopFailures.push(
+            new Error(`Cron failure report ${run.id} reconciliation failed`, { cause }),
+          );
+      }
       // Reports that settle locally never wait on I/O; give timers and sockets a turn between them.
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
   }
 
-  /** Wait for the report in flight, but not past the daemon's shutdown budget. */
+  /** Wait for the report in flight, but only a moment: the daemon stops its components in series. */
   private async settleFailureReportLoop(): Promise<void> {
     const loop = this.failureReportLoop;
     if (!loop) return;
