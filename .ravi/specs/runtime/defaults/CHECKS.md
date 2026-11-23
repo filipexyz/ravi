@@ -29,6 +29,15 @@ bun test src/cli/commands/sessions-attach-authorization.test.ts
 - `sessions set-provider <s> <p> --model <m>` MUST validate the pair together and write
   the provider and model overrides in one command; without `--model`, an incompatible
   current model MUST be refused with the `--model` and `set-model clear` paths named.
+- `sessions set-provider <s> <p> --model <m>` MUST require the authority of `sessions set-model`
+  as well as the provider authority, and a blank `--model` or `--model` with `clear` MUST be
+  `USAGE_ERROR` (exit 2).
+- `sessions set-provider <s> <p> --propagate` MUST refuse, naming the sessions and before any write,
+  when a sibling session could not run the new agent defaults (a stale model override without its
+  own provider, or its own provider plus an inherited model the provider cannot run), and a
+  propagated agent write MUST emit `ravi.config.changed`.
+- `sessions set-model <s> clear` MUST also be refused when the agent preset is unusable (disabled
+  or missing), because the override is the only thing masking it.
 - `sessions set-model <s> clear` MUST be refused when the fallback model (agent default or
   runtime default) cannot run on the session's provider, and MUST NOT change anything then.
 - `agents set <id> provider <p>` MUST refuse, naming the sessions, when a session without its

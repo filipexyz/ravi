@@ -110,6 +110,27 @@ export function findSessionsWithModelOverrideInvalidForProvider(
   );
 }
 
+/**
+ * Sessions of an agent that could not start a turn once the agent defaults move to `provider`/`model`:
+ * - no provider override of their own, but a model override the new provider cannot run; or
+ * - a provider override of their own and no model override, so they inherit the new agent model on a
+ *   provider that may not run it.
+ */
+export function findSessionsStrandedByAgentDefaults(input: {
+  provider: string;
+  model?: string;
+  sessions: SessionEntry[];
+}): SessionEntry[] {
+  const inheritedModel = input.model?.trim();
+  return input.sessions.filter((session) => {
+    const ownProvider = session.runtimeProviderOverride?.trim();
+    if (hasExplicitSessionModelOverride(session)) {
+      return !ownProvider && !validateRuntimeModelSelector(input.provider, session.modelOverride?.trim() ?? "").ok;
+    }
+    return Boolean(ownProvider && inheritedModel && !validateRuntimeModelSelector(ownProvider, inheritedModel).ok);
+  });
+}
+
 export function sessionHasStaleRuntimeProvider(
   session: Pick<SessionEntry, "runtimeProvider" | "runtimeProviderOverride">,
   agentProvider: string,

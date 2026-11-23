@@ -4,6 +4,7 @@ import { getOrCreateSession, getSession, updateProviderSession } from "../router
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   describeSessionAgentDefaultDiff,
+  findSessionsStrandedByAgentDefaults,
   findSessionsWithModelOverrideInvalidForProvider,
   rematerializeSessionToAgentRuntime,
   sessionHasStaleRuntimeProvider,
@@ -184,6 +185,39 @@ describe("syncAgentSessionsToAgentRuntime", () => {
     ]);
     expect(findSessionsWithModelOverrideInvalidForProvider("claude", sessions)).toEqual([
       expect.objectContaining({ name: "compatible" }),
+    ]);
+  });
+
+  it("finds sessions stranded by new agent defaults: stale model overrides and inherited models", () => {
+    const agent = createAgent({ id: "ravi-console", cwd: "/tmp/ravi-console", provider: "claude" });
+    getOrCreateSession("agent:ravi-console:model-pinned", "ravi-console", agent.cwd, {
+      name: "model-pinned",
+      modelOverride: "sonnet",
+    });
+    getOrCreateSession("agent:ravi-console:provider-pinned", "ravi-console", agent.cwd, {
+      name: "provider-pinned",
+      runtimeProviderOverride: "claude",
+    });
+    getOrCreateSession("agent:ravi-console:follower", "ravi-console", agent.cwd, { name: "follower" });
+    getOrCreateSession("agent:ravi-console:both-pinned", "ravi-console", agent.cwd, {
+      name: "both-pinned",
+      runtimeProviderOverride: "claude",
+      modelOverride: "sonnet",
+    });
+    const sessions = ["model-pinned", "provider-pinned", "follower", "both-pinned"].map((name) => {
+      const session = getSession(`agent:ravi-console:${name}`);
+      if (!session) throw new Error(`Expected session ${name}`);
+      return session;
+    });
+
+    expect(
+      findSessionsStrandedByAgentDefaults({ provider: "pi", model: "deepseek/deepseek-flash", sessions }).map(
+        (session) => session.name,
+      ),
+    ).toEqual(["model-pinned", "provider-pinned"]);
+    // Without a new agent model nothing is inherited: only the stale model override strands.
+    expect(findSessionsStrandedByAgentDefaults({ provider: "pi", sessions }).map((session) => session.name)).toEqual([
+      "model-pinned",
     ]);
   });
 
