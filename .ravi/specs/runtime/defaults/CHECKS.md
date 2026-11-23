@@ -26,6 +26,30 @@ bun test src/cli/commands/sessions-attach-authorization.test.ts
 
 - Unauthorized session provider/model propagation MUST return `PERMISSION_DENIED` for both compatible and incompatible pairs, leaving agent defaults, the target session, and sibling sessions unchanged.
 - An unauthorized provider switch without `--propagate` MUST return `PERMISSION_DENIED` before compatibility validation and leave configuration unchanged.
+- `sessions set-provider <s> <p> --model <m>` MUST validate the pair together and write
+  the provider and model overrides in one command; without `--model`, an incompatible
+  current model MUST be refused with the `--model` and `set-model clear` paths named.
+- `sessions set-provider <s> <p> --model <m>` MUST require the authority of `sessions set-model`
+  as well as the provider authority, and a blank `--model` or `--model` with `clear` MUST be
+  `USAGE_ERROR` (exit 2).
+- `sessions set-provider <s> <p> --propagate` MUST refuse, naming the sessions and before any write,
+  when a sibling session could not run the new agent defaults (a stale model override without its
+  own provider, or its own provider plus an inherited model the provider cannot run), and a
+  propagated agent write MUST emit `ravi.config.changed`.
+- `sessions set-model <s> clear` MUST also be refused when the agent preset is unusable (disabled
+  or missing), because the override is the only thing masking it.
+- `sessions set-model <s> clear` MUST be refused when the fallback agent model cannot run on the
+  session's provider, and MUST NOT change anything then; a fallback to the runtime default MUST be
+  accepted (the launcher remaps it to the provider's default model).
+- `agents set <id> provider <p>` MUST refuse, naming the sessions, when a session without its
+  own provider override pins a model override that `<p>` cannot run, or when a session with its
+  own provider and no model override would inherit the new agent model; with `--force` it MUST
+  clear exactly the incompatible overrides and leave compatible ones, judging each model override
+  after its provider pin was cleared (a session pinned to pi with a pi model, switched with
+  `--force` to claude, loses that model). `agents set <id> model <m>` MUST refuse the second case.
+- `sessions set-provider <s> <p> --model <m>` MUST write the provider and model overrides in one
+  transaction, MUST report `changed: true` when only the model changed, and `--model clear` MUST be
+  `USAGE_ERROR` (exit 2), as MUST `agents set ... provider <p> --model clear`.
 - Stored `runtime.defaultModel` MUST win over `RAVI_MODEL`.
 - Resolution MUST use `RAVI_MODEL` only when no stored/session/agent/preset
   model exists.

@@ -108113,6 +108113,10 @@ export const SessionsSetModelReturnSchema = {
 export const SessionsSetProviderInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "model": {
+      "description": "Set the session model override in the same write, so the provider/model pair is validated together",
+      "type": "string"
+    },
     "nameOrKey": {
       "description": "Session name or key",
       "type": "string"

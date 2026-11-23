@@ -60,6 +60,7 @@ import {
   type AgentSessionOverrideReport,
   type AgentSessionRematerializeReport,
   type AgentSessionRuntimeSyncResult,
+  findSessionsStrandedByAgentDefaults,
   syncAgentSessionsToAgentRuntime,
 } from "../../runtime/agent-session-runtime-sync.js";
 import { formatRuntimeEffortLevels, parseRuntimeEffort } from "../../runtime/effort.js";
@@ -213,6 +214,8 @@ function syncAgentSetSessions(input: {
       (input.key === "model" ||
         input.key === "modelPreset" ||
         (input.key === "provider" && input.pairedModel === true)),
+    // A forced provider switch also drops the session model overrides the new provider cannot run.
+    clearIncompatibleModelOverrides: force && input.key === "provider",
   });
 }
 
@@ -1292,6 +1295,12 @@ SOURCES
     if (pairedModel !== undefined && !pairedModel.trim()) {
       failSetModelUsage("--model cannot be empty", asJson);
     }
+    if (pairedModel !== undefined && pairedModel.trim().toLowerCase() === "clear") {
+      failSetModelUsage(
+        `--model cannot be 'clear': it names the model to set with the provider. To clear the model: ravi agents set ${id} model clear`,
+        asJson,
+      );
+    }
 
     if (key === "description") return setAgentLibraryDescription(agent.id, value, asJson);
 
@@ -1424,6 +1433,19 @@ SOURCES
     // `model clear` removes the stored model without validating it, which is the way out of a
     // provider/model pair that no single write can fix.
     if (key === "model" && !modelCleared) {
+      // Sessions with their own provider and no model override inherit the agent model: refuse when the
+      // new model is not one of theirs (--force does not touch provider overrides on a model write).
+      const inheritingSessions = findSessionsStrandedByAgentDefaults({
+        provider: agent.provider ?? resolveRequestedRuntimeProvider({ agent: {} }).value,
+        model: value,
+        sessions: getSessionsByAgent(agent.id).filter((session) => !session.modelOverride?.trim()),
+      });
+      if (inheritingSessions.length > 0) {
+        const names = inheritingSessions.map((session) => session.name?.trim() || session.sessionKey).join(", ");
+        fail(
+          `Model '${value}' would leave ${inheritingSessions.length} session(s) of ${id} on a provider that cannot run it: ${names}. Change their provider first: ravi sessions set-provider <session> <provider|clear>.`,
+        );
+      }
       validateAgentModelValue(
         agent.provider,
         value,
@@ -1439,6 +1461,19 @@ SOURCES
           providerValue,
           agent.model,
           `Change both in one write: ravi agents set ${id} provider ${providerValue} --model <model>, or clear the model first: ravi agents set ${id} model clear`,
+        );
+      }
+      // Sessions that follow the agent provider but pin a model the new provider cannot run would end up
+      // on the new provider with the old provider's model ("Model not found" on the next turn).
+      const strandedSessions = findSessionsStrandedByAgentDefaults({
+        provider: providerValue,
+        ...(pairedModel !== undefined ? { model: pairedModel.trim() } : {}),
+        sessions: getSessionsByAgent(agent.id),
+      });
+      if (strandedSessions.length > 0 && force !== true) {
+        const names = strandedSessions.map((session) => session.name?.trim() || session.sessionKey).join(", ");
+        fail(
+          `This change would leave ${strandedSessions.length} session(s) of ${id} on a provider/model pair they cannot run: ${names}. Re-run with --force to clear their incompatible overrides, or change them first: ravi sessions set-model <session> <model|clear>.`,
         );
       }
       // A provider write must stay compatible with any selected preset.
