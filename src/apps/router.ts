@@ -137,6 +137,7 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
       errorCode,
       ...(callerContext ? { callerContextId: callerContext.contextId } : {}),
       ...(error instanceof AppPermissionProviderDeniedError ? { permissionProvider: error.audit } : {}),
+      ...(error instanceof OmieAppError && error.exitCode === 2 ? { usageError: true as const } : {}),
       ...(error instanceof RaviAppCompositionError && error.unavailable.length > 0
         ? { unavailableDependencies: error.unavailable }
         : {}),

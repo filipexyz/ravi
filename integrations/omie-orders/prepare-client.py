@@ -12,10 +12,11 @@ source = a.source.resolve()
 if a.scope_file.resolve().is_relative_to(source): raise SystemExit('Private scope must stay outside the app source')
 scope=json.loads(a.scope_file.read_text())
 # LEGACY (remove 2027-01-31, same as src/apps/omie-orders/legacy-scope.ts): the first scope shape had no channelType.
-if 'channelType' not in scope and 'slackConnection' in scope:
+LEGACY_KEYS = {'app','account','channel','canonicalChat','executor','connection','slackConnection'}
+if set(scope) == LEGACY_KEYS:
  scope = {**{k: v for k, v in scope.items() if k != 'slackConnection'}, 'channelType': 'slack', 'channelConnection': scope['slackConnection']}
-if scope.get('app') != 'omie-orders' or any(not isinstance(scope.get(k),str) or not scope[k] for k in ['channelType','account','channel','canonicalChat','executor','connection','channelConnection']):
- raise SystemExit('Valid private host scope required')
+if set(scope) != {'app','channelType','account','channel','canonicalChat','executor','connection','channelConnection'} or scope.get('app') != 'omie-orders' or any(not isinstance(scope.get(k),str) or not scope[k] for k in ['channelType','account','channel','canonicalChat','executor','connection','channelConnection']):
+  raise SystemExit('Valid private host scope required')
 # What each channel adapter asks per call (its membership read). Mirrors the adapter's `capabilities(scope)`.
 CHANNEL_CAPABILITIES = {
  'slack': lambda s: ['use:credential:slack:'+s['channelConnection'], 'execute:slack:conversations.members'],

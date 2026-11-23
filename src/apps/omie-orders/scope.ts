@@ -5,6 +5,13 @@ import { AppError } from "./domain.js";
 import { upgradeLegacyOmieScope } from "./legacy-scope.js";
 
 export const OMIE_APP_ID = "omie-orders";
+/** Access to `apps run`, in the forms the gateway admits: run-specific first, then the legacy Apps group. */
+export const OMIE_APP_ACCESS = [
+  "mutate:apps:run",
+  "mutate:apps.run:*",
+  "execute:group:apps_run",
+  "execute:group:apps",
+] as const;
 export interface OmieScope {
   readonly app: typeof OMIE_APP_ID;
   /** Which registered conversation adapter proves the turn and the membership. */

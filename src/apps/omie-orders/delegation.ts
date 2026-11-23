@@ -1,4 +1,4 @@
-import { loadOmieScope, type OmieScope } from "./scope.js";
+import { loadOmieScope, OMIE_APP_ACCESS, type OmieScope } from "./scope.js";
 import { findOperation, catalogue } from "./catalogue.js";
 import { AppError } from "./domain.js";
 import { resolveOmieConversationAuthority } from "./conversation-authority.js";
@@ -40,7 +40,8 @@ export function omieDelegation(
   if (!id) throw new AppError("OMIE_OPERATION_NOT_FOUND", "Operação não disponível no executor de pedidos.");
   const op = findOperation(id);
   const selected = [
-    "execute:group:apps",
+    // The caller's own form of access to `apps run`, the first one the manifest ceiling declares.
+    OMIE_APP_ACCESS.find((access) => ceiling.includes(access)) ?? OMIE_APP_ACCESS[OMIE_APP_ACCESS.length - 1],
     "use:app:omie-orders",
     op.permission,
     `use:credential:omie:${binding.connection}`,

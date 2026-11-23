@@ -149,15 +149,15 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | apps | src/apps/omie-orders/auth-provider.ts | 73 | no-cause | Unknown session/storage diagnostics can expose tokens and protected paths; retain only safe AppError codes. | src/apps/omie-orders/auth-provider.ts:9e9ac24c10fdf27afbdc14f5 |
 | apps | src/apps/omie-orders/connection.ts | 18 | no-cause | JSON parser diagnostics may quote the serialized credential; never forward the parser message. | src/apps/omie-orders/connection.ts:b3dc8d08491facd382a543a8 |
 | apps | src/apps/omie-orders/ledger.ts | 60 | no-cause | Provider/storage exception text may contain secrets; persist only the safe error code and unknown outcome. | src/apps/omie-orders/ledger.ts:686bf130a4bd688088763ab7 |
-| apps | src/apps/omie-orders/native.ts | 209 | no-cause | Invalid input JSON can contain rejected credentials; expose only the fixed validation code. | src/apps/omie-orders/native.ts:d670663772318e5c9d4dacb5 |
+| apps | src/apps/omie-orders/native.ts | 204 | no-cause | Invalid input JSON can contain rejected credentials; expose only the fixed validation code. | src/apps/omie-orders/native.ts:d670663772318e5c9d4dacb5 |
 | apps | src/apps/omie-orders/provider.ts | 100 | no-cause | Transport diagnostics may echo authenticated request bodies; preserve only typed safe host denials. | src/apps/omie-orders/provider.ts:9cddb6246e0a4cbd113d426c |
 | apps | src/apps/omie-orders/provider.ts | 114 | no-cause | Response parser diagnostics may quote provider payload secrets; return only the fixed response code. | src/apps/omie-orders/provider.ts:013a4d181acae22f9b98a9eb |
 | apps | src/apps/omie-orders/provider.ts | 147 | no-cause | Untyped broker/provider exceptions may contain credentials; propagate safe AppError codes only. | src/apps/omie-orders/provider.ts:998bbd3d9fb148d9d7ff1e9f |
-| apps | src/apps/omie-orders/scope.ts | 58 | no-cause | Host configuration diagnostics may disclose private installation identifiers and paths. | src/apps/omie-orders/scope.ts:8aca198a9dec20deb3f790ca |
-| apps | src/apps/router.ts | 113 | fixed | binding retained / no recognized error surface | src/apps/router.ts:1d246da10a087fed552dfb99 |
-| apps | src/apps/router.ts | 979 | triaged-follow-up | catch-without-binding | src/apps/router.ts:ccbdb880a3313f6d6887530a |
-| apps | src/apps/router.ts | 1052 | fixed | binding retained / no recognized error surface | src/apps/router.ts:be7924cab2b6818b47481d9d |
-| apps | src/apps/router.ts | 1065 | triaged-follow-up | catch-without-binding | src/apps/router.ts:e39c75939f3bada55ce4bba9 |
+| apps | src/apps/omie-orders/scope.ts | 65 | no-cause | Host configuration diagnostics may disclose private installation identifiers and paths. | src/apps/omie-orders/scope.ts:8aca198a9dec20deb3f790ca |
+| apps | src/apps/router.ts | 113 | fixed | binding retained / no recognized error surface | src/apps/router.ts:244d36bb890810ca9fc75d10 |
+| apps | src/apps/router.ts | 980 | triaged-follow-up | catch-without-binding | src/apps/router.ts:ccbdb880a3313f6d6887530a |
+| apps | src/apps/router.ts | 1053 | fixed | binding retained / no recognized error surface | src/apps/router.ts:be7924cab2b6818b47481d9d |
+| apps | src/apps/router.ts | 1066 | triaged-follow-up | catch-without-binding | src/apps/router.ts:e39c75939f3bada55ce4bba9 |
 | apps | src/apps/scaffold.ts | 566 | triaged-follow-up | catch-without-binding | src/apps/scaffold.ts:7539c3f22a40bad7711dec0c |
 | apps | src/apps/service.ts | 272 | fixed | binding retained / no recognized error surface | src/apps/service.ts:9af1f6f974fdf5c79d441a2b |
 | apps | src/apps/service.ts | 279 | fixed | binding retained / no recognized error surface | src/apps/service.ts:f786c25699f0041e2406547f |
@@ -1133,15 +1133,15 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cron | src/cron/shell-context.ts | 132 | no-cause | logged with its stack and not rethrown; one context that | src/cron/shell-context.ts:1f2acf2ccf76650c26bdb4b4 |
 | cron | src/cron/shell-executor.ts | 162 | triaged-follow-up | catch-without-binding | src/cron/shell-executor.ts:ff2a0e370bcdc34b2a46f47b |
 | daemon-stdin.ts | src/daemon-stdin.ts | 85 | fixed | binding retained / no recognized error surface | src/daemon-stdin.ts:104aad77ace9bdf6c29d6ffe |
-| daemon.ts | src/daemon.ts | 188 | triaged-follow-up | catch-without-binding | src/daemon.ts:6a6d5215ab5b491af6675ecb |
-| daemon.ts | src/daemon.ts | 216 | fixed | binding retained / no recognized error surface | src/daemon.ts:576a91f345e15339b36e31f9 |
-| daemon.ts | src/daemon.ts | 411 | fixed | binding retained / no recognized error surface | src/daemon.ts:6a6063a6dd8032b5bb3de6a4 |
-| daemon.ts | src/daemon.ts | 427 | fixed | binding retained / no recognized error surface | src/daemon.ts:e6a28dbcba1c09bfe325c842 |
-| daemon.ts | src/daemon.ts | 444 | fixed | binding retained / no recognized error surface | src/daemon.ts:e3932e4de79b0015c2fe1731 |
-| daemon.ts | src/daemon.ts | 524 | fixed | binding retained / no recognized error surface | src/daemon.ts:b98bdbdba8a5abbffc229407 |
-| daemon.ts | src/daemon.ts | 604 | fixed | binding retained / no recognized error surface | src/daemon.ts:f446de9260ad91ce35f5cecf |
-| daemon.ts | src/daemon.ts | 673 | fixed | binding retained / no recognized error surface | src/daemon.ts:79e726c5a32cef1f0391aeeb |
-| daemon.ts | src/daemon.ts | 696 | fixed | binding retained / no recognized error surface | src/daemon.ts:e2bfe439088180f31ae2be58 |
+| daemon.ts | src/daemon.ts | 189 | triaged-follow-up | catch-without-binding | src/daemon.ts:6a6d5215ab5b491af6675ecb |
+| daemon.ts | src/daemon.ts | 217 | fixed | binding retained / no recognized error surface | src/daemon.ts:576a91f345e15339b36e31f9 |
+| daemon.ts | src/daemon.ts | 412 | fixed | binding retained / no recognized error surface | src/daemon.ts:6a6063a6dd8032b5bb3de6a4 |
+| daemon.ts | src/daemon.ts | 428 | fixed | binding retained / no recognized error surface | src/daemon.ts:e6a28dbcba1c09bfe325c842 |
+| daemon.ts | src/daemon.ts | 445 | fixed | binding retained / no recognized error surface | src/daemon.ts:e3932e4de79b0015c2fe1731 |
+| daemon.ts | src/daemon.ts | 525 | fixed | binding retained / no recognized error surface | src/daemon.ts:b98bdbdba8a5abbffc229407 |
+| daemon.ts | src/daemon.ts | 605 | fixed | binding retained / no recognized error surface | src/daemon.ts:f446de9260ad91ce35f5cecf |
+| daemon.ts | src/daemon.ts | 676 | fixed | binding retained / no recognized error surface | src/daemon.ts:79e726c5a32cef1f0391aeeb |
+| daemon.ts | src/daemon.ts | 699 | fixed | binding retained / no recognized error surface | src/daemon.ts:e2bfe439088180f31ae2be58 |
 | db.ts | src/db.ts | 39 | fixed | binding retained / no recognized error surface | src/db.ts:7f23ae314cd2b9a1d018a35f |
 | db.ts | src/db.ts | 42 | no-cause | Cleanup must not replace the setup error rethrown below; the handle was never cached. | src/db.ts:c6978c968e80ffb42dda9b1d |
 | db.ts | src/db.ts | 75 | fixed | binding retained / no recognized error surface | src/db.ts:13575d5157ef86794a5ca555 |

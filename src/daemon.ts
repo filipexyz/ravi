@@ -57,6 +57,7 @@ import { startSlackApprovalClickFeedback, stopSlackApprovalClickFeedback } from 
 import { startSlackGrantRequestRunner, stopSlackGrantRequestRunner } from "./channels/slack/grant-request-adapter.js";
 import { createSlackOmieConversationAuthority } from "./channels/slack/omie-conversation-authority.js";
 import { registerOmieConversationAuthority } from "./apps/omie-orders/conversation-authority.js";
+import { registerOmieProviderReads } from "./apps/omie-orders/provider-reads.js";
 import {
   startWhatsAppGrantRequestRunner,
   stopWhatsAppGrantRequestRunner,
@@ -629,6 +630,8 @@ export async function startDaemon() {
 
   // Composition knows channels; the Omie executor does not. It asks the adapter of its configured channel type.
   registerOmieConversationAuthority(createSlackOmieConversationAuthority());
+  // The broker must know the executor's reads before any query has loaded the executor (spec credentials/broker).
+  registerOmieProviderReads();
 
   await startSyncRunner();
   log.info("Sync runner started");

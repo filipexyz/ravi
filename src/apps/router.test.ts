@@ -3,7 +3,7 @@ import { spawn } from "bun";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { CONTRACT_EXIT_ERROR, ContractError } from "../cli/agent-contract.js";
+import { CONTRACT_EXIT_ERROR, CONTRACT_EXIT_USAGE, ContractError } from "../cli/agent-contract.js";
 import { runWithContext } from "../cli/context.js";
 import {
   createRuntimeContext,
@@ -2962,4 +2962,23 @@ it("Omie read child keeps the authenticated gateway actor and delegates no write
   expect(delegated).toEqual(expect.arrayContaining(capabilities));
   expect(delegated).toHaveLength(capabilities.length);
   expect(delegated).not.toContainEqual({ permission: "execute", objectType: "app", objectId: "omie-orders" });
+});
+
+it("a trusted builtin's own usage error keeps exit 2; a failed app process never chooses Ravi's exit", () => {
+  const base = {
+    ok: false,
+    appId: "omie-orders",
+    operation: "list",
+    operationId: null,
+    interface: null,
+    mutating: false,
+    status: "failed",
+    durationMs: 1,
+    error: "Ravi app operation failed.",
+    errorCode: "OMIE_PAGINATION_INVALID",
+  } as unknown as RaviAppRunResult;
+  const usage = raiseContractFailure({ ...base, usageError: true }, true);
+  expect(usage.error.code).toBe("OMIE_PAGINATION_INVALID");
+  expect(usage.error.exitCode).toBe(CONTRACT_EXIT_USAGE);
+  expect(raiseContractFailure(base, true).error.exitCode).toBe(CONTRACT_EXIT_ERROR);
 });

@@ -1,9 +1,10 @@
-import { loadOmieScope, type OmieScope } from "./scope.js";
+import { loadOmieScope, OMIE_APP_ACCESS, type OmieScope } from "./scope.js";
 import { resolveContactChatOverlay } from "../../permissions/contact-policy-permissions-provider.js";
 import { getContext } from "../../cli/context.js";
 import { getContactById } from "../../contacts.js";
 import { getCredentialConnection } from "../../credentials/store.js";
-import { registerProviderReadOnlyActions, resolveCredentialSecret } from "../../credentials/broker.js";
+import { resolveCredentialSecret } from "../../credentials/broker.js";
+import { registerOmieProviderReads } from "./provider-reads.js";
 import { dbGetContext } from "../../router/router-db.js";
 import { resolveRuntimeContext } from "../../runtime/context-registry.js";
 import { canWithCapabilities, canWithCapabilityContext } from "../../permissions/provider-runtime.js";
@@ -11,7 +12,7 @@ import { type VerifiedIdentity } from "./access.js";
 import { createOmieHostAction, type ProtectedRuntime } from "./adapter.js";
 import { AppError } from "./domain.js";
 import { parseProtectedOmieConnection } from "./connection.js";
-import { catalogue, findOperation, publicResult } from "./catalogue.js";
+import { findOperation, publicResult } from "./catalogue.js";
 import { prepare, type ApiInput } from "./provider.js";
 import { verifiedCaller, type IdentityStore } from "./identity.js";
 import {
@@ -20,12 +21,7 @@ import {
   type ConversationAuthority,
 } from "./conversation-authority.js";
 
-// The broker asks a human for any provider action it does not know as a read. The packaged catalogue is the only
-// source of this executor's reads, so they are declared from it, for this provider only.
-registerProviderReadOnlyActions(
-  "omie",
-  catalogue.filter((op) => op.classification === "read").map((op) => op.id),
-);
+registerOmieProviderReads();
 
 /** The adapter for the configured channel, checked against the configured conversation id. Missing fails closed. */
 function conversationAuthority(scope: OmieScope): ConversationAuthority {
@@ -101,7 +97,6 @@ export function nativeRuntime(operationId: string, dependencies: NativeDependenc
     const identity = verifiedCaller(identities);
     const overlay = contactOverlay({ contactId: identity.actor.id, chatId: SCOPE.canonicalChat });
     const requirements: Array<[string, string, string]> = [
-      ["execute", "group", "apps"],
       ["use", "app", SCOPE.app],
       [permission, objectType, objectId.join(":")],
       ["use", "credential", `omie:${SCOPE.connection}`],
@@ -109,11 +104,11 @@ export function nativeRuntime(operationId: string, dependencies: NativeDependenc
       ...authority.capabilities(SCOPE).map(parseOmieCapability),
     ];
     contactGoverned ||= Boolean(identity.contactGoverned || overlay.active);
-    return requirements.every(
-      ([permission, type, id]) =>
-        can(permission, type, id) &&
-        (!contactGoverned || (overlay.eligible && canWithCapabilities(overlay.capabilities, permission, type, id))),
-    );
+    const holds = ([permission, type, id]: readonly [string, string, string]) =>
+      can(permission, type, id) &&
+      (!contactGoverned || (overlay.eligible && canWithCapabilities(overlay.capabilities, permission, type, id)));
+    // Access to `apps run`: the run-specific form or the legacy Apps group, exactly as the gateway admits it.
+    return OMIE_APP_ACCESS.some((access) => holds(parseOmieCapability(access))) && requirements.every(holds);
   };
   const deadline = Date.now() + 20_000;
   const boundedFetch = (async (url: string | URL | Request, options?: RequestInit) => {

@@ -251,3 +251,61 @@ test("the executor's own source never names a channel or imports a channel packa
   }
   expect(offenders).toEqual([]);
 });
+
+test("access to apps run follows the caller's form: the run-specific capability is delegated and accepted", async () => {
+  registerOmieConversationAuthority(fakeAuthority({ channelOk: true, identityOk: true, member: true, calls: [] }));
+  const runOnly = [
+    "mutate:apps:run",
+    "use:app:omie-orders",
+    "read:omie:produtos.pedido.ListarPedidos",
+    "use:credential:omie:example-orders",
+    "execute:omie:produtos/pedido:ListarPedidos",
+    "use:credential:examplechat:example-room-connection",
+    "execute:examplechat:members",
+  ];
+  expect(omieDelegation("omie-orders.list", undefined, [], runOnly, OTHER)).toEqual(runOnly);
+  // Without any form of access to apps run, the delegation is missing an entry and fails closed.
+  expect(() => omieDelegation("omie-orders.list", undefined, [], runOnly.slice(1), OTHER)).toThrow("Manifesto");
+  const state = { channelOk: true, identityOk: true, member: true, calls: [] as string[] };
+  const { store } = turn(OTHER, fakeAuthority(state));
+  const runtime = (held: string) =>
+    nativeRuntime("produtos/pedido:ListarPedidos", {
+      scope: OTHER,
+      identities: store,
+      contactOverlay: () => ({ active: false }) as any,
+      allowed: (permission, type, id) => {
+        const cap = `${permission}:${type}:${id}`;
+        return cap === held || !/^(mutate:apps|execute:group)/.test(cap);
+      },
+    });
+  const identity = verifiedCaller(store);
+  expect(await runtime("mutate:apps:run").canInvokeApp(identity, false)).toBe(true);
+  expect(await runtime("execute:group:apps").canInvokeApp(identity, false)).toBe(true);
+  expect(await runtime("none").canInvokeApp(identity, false)).toBe(false);
+});
+
+test("the executor's reads are declared to the broker without loading the executor", async () => {
+  const { explainCredentialPolicy, registerProviderReadOnlyActions } = await import("../../credentials/broker.js");
+  const { registerOmieProviderReads } = await import("./provider-reads.js");
+  registerProviderReadOnlyActions("omie", []);
+  const policy = (action: string) =>
+    explainCredentialPolicy({ provider: "omie", connection: "x", action }).approval.required;
+  expect(policy("geral/clientes:ListarClientes")).toBe(true);
+  registerOmieProviderReads();
+  for (const action of [
+    "produtos/pedido:ListarPedidos",
+    "produtos/pedido:ConsultarPedido",
+    "produtos/pedido:StatusPedido",
+    "produtos/etapafat:ListarEtapasFaturamento",
+    "geral/clientes:ListarClientes",
+    "geral/clientes:ConsultarCliente",
+    "geral/produtos:ListarProdutos",
+    "geral/produtos:ConsultarProduto",
+  ])
+    expect(policy(action)).toBe(false);
+  expect(policy("produtos/pedido:ExcluirPedido")).toBe(true);
+  expect(
+    explainCredentialPolicy({ provider: "other", connection: "x", action: "geral/clientes:ListarClientes" }).approval
+      .required,
+  ).toBe(true);
+});
