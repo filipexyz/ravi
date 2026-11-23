@@ -163,6 +163,26 @@ function createAgentJob(overrides: Partial<Parameters<typeof dbCreateCronJob>[0]
   });
 }
 
+/** A run that failed and has not been reported yet; returns its id. */
+async function failedRun(overrides: Partial<Parameters<typeof dbCreateCronJob>[0]> = {}): Promise<string> {
+  const { settleCronRun } = await import("./run-db.js");
+  const job = createAgentJob(overrides);
+  await new CronRunner().triggerJob(job.id);
+  const dispatched = publishCalls.at(-1)!;
+  const runId = String(dispatched.payload._cronRunId);
+  settleCronRun(runId, dispatched.sessionName, { lastStatus: "error", lastError: "failed before report" });
+  return runId;
+}
+
+/** The database refuses to mark reports as reported (one run, or all), as a busy or read-only one would. */
+async function refuseMarks(runId?: string): Promise<void> {
+  const { getDb } = await import("../router/router-db.js");
+  const only = runId ? `WHEN NEW.id = '${runId}' ` : "";
+  getDb().run(
+    `CREATE TRIGGER refuse_marks BEFORE UPDATE OF reported ON cron_runs ${only}BEGIN SELECT RAISE(ABORT, 'database is busy'); END`,
+  );
+}
+
 function cronProvenance(jobId: string, index?: number) {
   const payload =
     index === undefined
@@ -1311,26 +1331,57 @@ describe("durable cron run correlation", () => {
     await waitUntil(() => pendingCronFailureReports().length === 0);
   });
 
-  it("keeps draining past reports it cannot read, and raises the failure when the runner stops", async () => {
-    const { settleCronRun, pendingCronFailureReports } = await import("./run-db.js");
+  it("settles reports whose stored notice cannot be read instead of keeping them pending", async () => {
+    const { pendingCronFailureReports } = await import("./run-db.js");
     const { getDb } = await import("../router/router-db.js");
-    // More unreadable reports than one pass records, then one readable report behind them.
+    const { listLocalInboxEvents, listLocalInboxItems } = await import("../inbox/local-db.js");
+    // The operator's chat is armed and the runs are operator-owned, so a message sent for an unreadable
+    // report (a fallback to the operator, say) would be recorded below.
+    operatorChat = OPERATOR_CHAT;
     const unreadable = 12;
-    for (let i = 0; i <= unreadable; i++) {
-      const job = createAgentJob();
-      await new CronRunner().triggerJob(job.id);
-      const dispatched = publishCalls.at(-1)!;
-      const runId = String(dispatched.payload._cronRunId);
-      settleCronRun(runId, dispatched.sessionName, { lastStatus: "error", lastError: "failed before report" });
-      if (i < unreadable)
-        getDb().query("UPDATE cron_runs SET notification_json = ? WHERE id = ?").run("{not json", runId);
+    for (let i = 0; i < unreadable; i++) {
+      const runId = await failedRun({ ownerPrincipal: "operator" });
+      getDb().query("UPDATE cron_runs SET notification_json = ? WHERE id = ?").run("{not json", runId);
     }
+    await failedRun({ ownerPrincipal: "operator" }); // one readable report behind them
     expect(pendingCronFailureReports()).toHaveLength(unreadable + 1);
 
     const runner = new CronRunner();
     await runner.start();
-    // The readable report, last in line, is still delivered; the unreadable ones stay pending.
-    await waitUntil(() => pendingCronFailureReports().length === unreadable);
+    // None of them stays: the readable report is delivered, the unreadable ones are settled.
+    await waitUntil(() => pendingCronFailureReports().length === 0);
+    // Bad data is not a fault to raise at shutdown.
+    await runner.stop();
+
+    const records = listLocalInboxItems({ sourceDomain: "cron" }).filter(
+      (item) => item.sourceType === "run_unreadable",
+    );
+    expect(records).toHaveLength(unreadable);
+    for (const item of records)
+      expect(listLocalInboxEvents(item.id).map((event) => event.eventType)).toContain("cron.failure.unreadable");
+    // No recipient can be known from a notice that does not parse: the only message is the readable report's.
+    expect(directMessages).toHaveLength(1);
+    expect(directAttempts).toHaveLength(1);
+
+    // A later start finds nothing to replay.
+    const later = new CronRunner();
+    await later.start();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await later.stop();
+    expect(pendingCronFailureReports()).toHaveLength(0);
+  });
+
+  it("keeps at most ten failures for stop to raise when the database refuses every mark", async () => {
+    const { pendingCronFailureReports } = await import("./run-db.js");
+    const { listLocalInboxItems } = await import("../inbox/local-db.js");
+    const refused = 12;
+    for (let i = 0; i < refused; i++) await failedRun();
+    await refuseMarks();
+
+    const runner = new CronRunner();
+    await runner.start();
+    // Each report is attempted (the unowned path records it in the inbox) and none can be marked.
+    await waitUntil(() => listLocalInboxItems({ sourceDomain: "cron" }).length === refused);
     const failure = await runner.stop().then(
       () => null,
       (error: unknown) => error,
@@ -1338,8 +1389,20 @@ describe("durable cron run correlation", () => {
     expect(failure).toBeInstanceOf(AggregateError);
     const raised = (failure as AggregateError).errors as Error[];
     expect(raised).toHaveLength(10);
-    expect(raised[0]!.cause).toBeInstanceOf(SyntaxError);
-    expect(pendingCronFailureReports()).toHaveLength(unreadable);
+    expect(raised[0]!.cause).not.toBeInstanceOf(SyntaxError);
+    expect(pendingCronFailureReports()).toHaveLength(refused);
+  });
+
+  it("keeps a stop that raised for a refused mark failed on later stops, as the shutdown latch requires", async () => {
+    operatorChat = OPERATOR_CHAT;
+    await refuseMarks(await failedRun({ ownerPrincipal: "operator" }));
+
+    const runner = new CronRunner();
+    await runner.start();
+    await waitUntil(() => directMessages.length === 1);
+    await expect(runner.stop()).rejects.toThrow("Cron runner shutdown failed");
+    // Retrying cannot certify success after a failed stop (quality/state-boundary): the failure stays latched.
+    await expect(runner.stop()).rejects.toThrow("Cron runner shutdown failed");
   });
 
   it("keeps draining when a delivered report cannot be marked, and leaves it pending", async () => {
