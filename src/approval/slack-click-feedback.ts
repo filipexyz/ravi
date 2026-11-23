@@ -38,6 +38,8 @@ export async function answerSlackApprovalClick(
   if (!isSlackApprovalActionId(actionId) && !isSlackPermissionGrantActionId(actionId)) return null;
   const responseUrlId = typeof data.responseUrlId === "string" ? data.responseUrlId.trim() : "";
   if (!responseUrlId) return null;
+  // Grant requests (permissions request) are answered by their own runner, never by this one.
+  if (clickRequestId(data).startsWith("pgr_")) return null;
 
   const notice = clickNotice(data, dependencies.now());
   if (!notice) return null;

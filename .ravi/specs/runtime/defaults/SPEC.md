@@ -49,6 +49,21 @@ Session (`ravi sessions set-model` / `set-provider` / `set-effort`), agent
 (`ravi agents set`), preset, and task/profile overrides remain the higher
 precedence knobs. This capability does not add a fifth override namespace.
 
+Provider and model are validated against each other, so changing the runtime of
+a session or an agent is one write. `ravi sessions set-provider <s> <p> --model <m>`
+and `ravi agents set <id> provider <p> --model <m>` validate the pair together,
+and a propagated or agent write replaces the agent model and drops a preset
+reference in the same update. A model clear (`ravi agents set <id> model clear`,
+`ravi sessions set-model <s> clear`) is accepted only when the agent model it
+falls back to is one its provider can run, and MUST then be refused with the
+command that fixes it. The runtime default is exempt: it is `sonnet` by default
+and the launcher remaps it to the provider's own default model
+(`applyProviderModelRule`), so a clear that falls back to it runs. An agent
+provider or model write MUST refuse to strand a session: one that follows the
+agent provider but pins a model override the new provider cannot run (`--force`
+clears those overrides), or one with its own provider and no model override that
+would inherit an agent model its provider cannot run.
+
 `settings set` stays unbraked. `settings delete` remains dry-run unless
 `--execute`.
 

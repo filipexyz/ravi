@@ -23,6 +23,10 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/channels/runner.ts": ["src/channels/runner.test.ts", "src/db/schema-owner.test.ts"],
   "src/channels/slack/socket-mode.ts": ["src/channels/slack/socket-mode.test.ts"],
   "src/channels/": [
+    // Grant requests: the Slack adapter (reach approvers, private card, click handled by the core).
+    "src/channels/slack/grant-request-adapter.test.ts",
+    "src/channels/whatsapp/grant-request-adapter.test.ts",
+    "src/channels/grant-request-cross-channel.test.ts",
     // Inactive delivery protocol/floor oracle and per-boot aggregate compatibility gate.
     "src/channels/delivery-contract.test.ts",
     "src/channels/delivery-boot.test.ts",
@@ -296,6 +300,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/triggers/page-comment-owner.test.ts",
   ],
   "src/approval/": [
+    // Grant requests: the channel-free core that the approval and channel code feed.
+    "src/permissions/grant-requests/service.test.ts",
     "src/approval/service.test.ts",
     "src/approval/grantor.test.ts",
     "src/approval/decision.test.ts",

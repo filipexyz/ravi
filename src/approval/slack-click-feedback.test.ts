@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { setApprovalGrantorRouterConfigForTest } from "./grantor.js";
+import { setApprovalGrantorRouterConfigForTest } from "../channels/slack/grantors.js";
 import { answerSlackApprovalClick } from "./slack-click-feedback.js";
 import { SLACK_APPROVAL_ACTION_APPROVE } from "./slack-blocks.js";
 import {

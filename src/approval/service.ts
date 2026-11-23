@@ -24,7 +24,7 @@ import { respondToSlackInteraction } from "../channels/slack/interactions.js";
 import { requestReply as runtimeRequestReply } from "../utils/request-reply.js";
 import { logger } from "../utils/logger.js";
 import { evaluateApprovalInboundEvent, type ApprovalInboundEvaluation } from "./decision.js";
-import { findSlackUserIdForContact, listSlackApprovalGrantorUserIds } from "./grantor.js";
+import { findSlackUserIdForContact, listSlackApprovalGrantorUserIds } from "../channels/slack/grantors.js";
 import {
   buildPermissionGrantMetadata,
   describeGrantScope,

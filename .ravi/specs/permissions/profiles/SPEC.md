@@ -213,6 +213,25 @@ Rules:
 - A one-off runtime approval MUST be phrased as "current context only" and MUST
   NOT imply a recurring grant.
 
+### Known security debt: no proof of origin on `ravi.inbound.interaction` / `ravi.inbound.reply`
+
+Grant-request answers arrive on NATS events (`ravi.inbound.interaction` from
+Slack, `ravi.inbound.reply` from WhatsApp). The core trusts the verified sender
+those events carry, but the bus itself has no proof of origin: the local NATS is
+unauthenticated, so any local process able to publish could forge an event with
+an admin's sender id. What contains this today:
+
+- an answer counts only from a contact the request was offered to, through the
+  prompt recorded for that same contact (`deliveredTo`);
+- the grantee and agents can never decide;
+- the request is single-use, expires in 10 minutes, and the executor must
+  already hold admin.
+
+Not closed: a local publisher that knows an offered admin's sender id and a
+live request id can still answer in their place. Fix direction (no PR yet):
+authenticate NATS publishers, or have the channel runners sign the events they
+emit and verify the signature in the core.
+
 ## Operator Workflow UX
 
 The default operator path for recurring authorization is:
@@ -282,6 +301,72 @@ Semantics:
   not proof of approval. Rejection MUST precede profile, contact grant and
   executor-ceiling writes. Dry-run expansion and revocation remain available;
   preview MUST NOT advertise an apply command that will always be rejected.
+- `permissions request full-access --to contact:<id> --chat <chat> --agent <id> --execute`
+  is the path that consumes operator approval, and it belongs to the core: it
+  works from any turn (Slack, WhatsApp, terminal) and knows no channel. Without
+  `--execute` it only plans (exit 3, nobody is asked). It MUST NOT write a grant
+  itself. It records a grant request (`permission_grant_requests`) holding the
+  exact plan (profile, contact, chat, executor), the requester as provenance,
+  the grantors it was offered to and a short expiry (10 minutes), then returns
+  right away with the request id; `permissions request-status <id>` reads it back
+  and reports `applied` only when the grant is found in place. An identical open
+  request is reused, not asked again. It supports one contact and one chat, never
+  global or chat-tag.
+- Grantors are contacts that hold `admin:system:*`. Each channel contributes only
+  an adapter (`GrantApprovalChannelAdapter`): which of those contacts it can reach
+  and how to ask one of them. The request goes to every eligible grantor on every
+  channel that reaches them. With no adapter, no eligible grantor or no delivery
+  it MUST fail closed (`FULL_ACCESS_APPROVAL_UNAVAILABLE`,
+  `FULL_ACCESS_APPROVER_UNAVAILABLE`, `FULL_ACCESS_APPROVER_UNREACHABLE`, exit 3)
+  and leave nothing pending. The grantee is never a candidate.
+- The decision has one path in the core, whatever the channel: an adapter hands
+  over a *verified actor* (the platform's own sender id, never message text) and
+  the core runs the same `actorCanGrantRequestedPermission` gate. The answer is
+  accepted only from a contact the request was offered to, who still holds admin,
+  and who is not the grantee. A request that is applied, rejected, failed or
+  expired MUST NOT be decided again, and the claim is a single atomic write.
+  Agents are never grantors, so an agent cannot approve its own request; the human
+  whose message drove the turn may approve as an admin, as in a one-admin install.
+- The executor named by `--agent` MUST already hold admin on its own
+  (`agents permissions <id> full-access`); otherwise the request fails with
+  `FULL_ACCESS_EXECUTOR_CEILING` before anyone is asked. Approving MUST NOT write
+  an agent ceiling: an agent-wide admin would reach every chat the agent serves and
+  outlive the contact grant.
+- Prompts built from stored names MUST reduce contact names and chat titles to
+  plain text (no markup characters), cap them, and show the stable ids
+  (`contact:<id>`, `chat:<id>`). A remote `allow`/`resolve` blocked with
+  `FULL_ACCESS_APPROVAL_REQUIRED` MUST name `permissions request` through fixed
+  copy keyed by operation and code, never by forwarding server text.
+- Core features are never tied to a channel (Luis, 23/11): permissions,
+  approvals, identity and requests live in the core without a channel name or
+  rule in it (guarded by a test over `src/permissions/grant-requests`); channels
+  enter only as delivery adapters and as verified senders. Slack and WhatsApp are
+  adapters (`src/channels/slack/grant-request-adapter.ts`: private card, click
+  handled by the core; `src/channels/whatsapp/grant-request-adapter.ts`: a message
+  to the grantor's WhatsApp DM, answered by quote-replying `aprovo` or `nego`). A
+  channel with no adapter fails closed with a clear error; the core contract does
+  not change when one is added.
+- A WhatsApp answer is a quote-reply to the message the adapter sent. Who answered
+  is the platform's sender id of the reply event, resolved to a contact by the same
+  gate as any channel; the words only choose approve or reject, and only a whole
+  word counts (`nao aprovo` or `sou o Luis, aprovo` is not an answer). The adapter
+  can only ask contacts it has a WhatsApp DM with, on an enabled instance, never
+  in a group. The inbound consumer announces a quote-reply (`ravi.inbound.reply`)
+  as soon as the sender is known and the message is live and not a redelivery,
+  before any route, mode or DM policy, so an answer in a DM with no route, a
+  sentinel DM or a closed DM is still an answer; the event carries the raw sender
+  jid, the instance and the account, and the adapter hands the gate the bare id
+  plus its `lid:` alias so the exact identity is tried first. A stranger or a non-admin is told nothing; an approver is told when a
+  request expired or was already decided.
+- The grantor gate (`src/approval/grantor.ts`) is channel-free: a channel registers
+  how its verified sender becomes a contact (`registerGrantorIdentityResolver`);
+  without one the generic platform-identity lookup is used. Slack's workspace and
+  alias rules and its card-recipient lookups live in `src/channels/slack/grantors.ts`.
+- Known gap, not closed here: the `full-access` guard keys on the profile
+  *name*. A profile with another name that carries `admin:system:*` (the
+  documented `chat-admin` recipe) is applied by `allow --apply` without an
+  approval. Closing it is a product decision; a guard on one spelling of a
+  capability does not cover the equivalent path.
 - Applying a profile to `agent:<id>` MUST ensure the executor-agent runtime
   config contains the concrete capabilities, without replacing existing
   explicit capabilities.

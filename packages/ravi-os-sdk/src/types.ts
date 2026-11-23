@@ -1410,6 +1410,7 @@ export type AgentsSetInput = {
   force?: boolean;
   id: string;
   key: string;
+  model?: string;
   value: string;
 };
 
@@ -17907,6 +17908,66 @@ export type PermissionsMaterializeReturn = {
   };
 };
 
+/** Input shape for `permissions.request`. */
+export type PermissionsRequestInput = ({
+  agent: string;
+  chat?: string;
+  execute?: boolean;
+  profile: string;
+  to?: string;
+}) | ({
+  agent?: string;
+  chat: string;
+  execute?: boolean;
+  profile: string;
+  to?: string;
+}) | ({
+  agent?: string;
+  chat?: string;
+  execute?: boolean;
+  profile: string;
+  to: string;
+});
+
+/** Return shape for `permissions.request`. */
+export type PermissionsRequestReturn = {
+  agent: string;
+  chatId: string;
+  contactId: string;
+  deliveries: Array<{
+    channel: string;
+    contactId: string;
+  }>;
+  expiresAt: number;
+  hints: string[];
+  requestId: string;
+  reused: boolean;
+  status: "pending";
+};
+
+/** Input shape for `permissions.request-status`. */
+export type PermissionsRequestStatusInput = {
+  requestId: string;
+};
+
+/** Return shape for `permissions.request-status`. */
+export type PermissionsRequestStatusReturn = {
+  agent: string;
+  applied: boolean;
+  chatId: string;
+  contactId: string;
+  decidedByContactId: string | null;
+  decidedVia: string | null;
+  deliveries: Array<{
+    channel: string;
+    contactId: string;
+  }>;
+  expiresAt: number;
+  profile: "full-access";
+  requestId: string;
+  status: "pending" | "approved" | "rejected" | "expired" | "failed";
+};
+
 /** Input shape for `permissions.resolve`. */
 export type PermissionsResolveInput = {
   apply?: boolean;
@@ -21022,6 +21083,7 @@ export type SessionsSetModelReturn = {
 
 /** Input shape for `sessions.set-provider`. */
 export type SessionsSetProviderInput = {
+  model?: string;
   nameOrKey: string;
   propagate?: boolean;
   provider: string;

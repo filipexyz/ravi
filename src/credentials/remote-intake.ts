@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { actorCanGrantRequestedPermission } from "../approval/grantor.js";
+import "../channels/slack/grantors.js";
 import type { IntakeRequest } from "./intake.js";
 import { authorizeIntakeSubject } from "./intake-authorization.js";
 import { getDestination, type Destination } from "./remote/destinations.js";

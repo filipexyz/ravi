@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { listLocalInboxItems } from "../inbox/local-db.js";
+import { listLocalInboxEvents, listLocalInboxItems } from "../inbox/local-db.js";
 import { dbCreateCronJob } from "./cron-db.js";
-import { classifyCronFailure, notifyCronFailure } from "./failure-notification.js";
+import { classifyCronFailure, notifyCronFailure, recordUnreadableCronFailure } from "./failure-notification.js";
 
 let stateDir: string | null = null;
 beforeEach(async () => {
@@ -93,5 +93,29 @@ describe("cron failure notification", () => {
 
   it("keeps a report pending while an owned run has no delivery target yet", async () => {
     expect(await notifyCronFailure(job(), "timeout", { owner: () => null, deliver: async () => {} })).toBe(false);
+  });
+
+  it("records a run whose notice cannot be read once, as a high-priority inbox item with its own event", () => {
+    const run = { id: "run-1", job_id: "job-1", admitted_at: 1234 };
+    recordUnreadableCronFailure(run);
+    // A start that retries after a crash between the record and the mark.
+    recordUnreadableCronFailure(run);
+
+    const items = listLocalInboxItems({ sourceDomain: "cron" });
+    expect(items).toHaveLength(1);
+    const item = items[0]!;
+    expect(item).toMatchObject({
+      sourceType: "run_unreadable",
+      sourceId: "job-1",
+      priority: "high",
+      occurredAt: 1234,
+      assignedToAgentId: null,
+      assignedToContactId: null,
+    });
+    // The guidance names a command that exists and takes the job id (`cron show` opens the job, not the run).
+    expect(item.summary).toContain('"ravi cron show job-1"');
+    expect(listLocalInboxEvents(item.id).filter((event) => event.eventType === "cron.failure.unreadable")).toHaveLength(
+      1,
+    );
   });
 });

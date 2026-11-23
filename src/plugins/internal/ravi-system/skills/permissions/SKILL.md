@@ -48,10 +48,24 @@ existentes, como permission tags, grants de contato por chat e
 `full-access` sem uma tag previamente criada (também aceitam `permission-`
 antes do nome). O dry-run mostra as capabilities do runtime; `--apply` grava
 o profile e o grant para profiles elegíveis. `full-access --apply` é bloqueado
-com `FULL_ACCESS_APPROVAL_REQUIRED` (exit 3): `allow`/`resolve` ainda não
-consomem uma aprovação verificável do operador. Autorização do comando ou
-`--apply` sozinho não substituem essa aprovação. O preview e a revogação
-continuam disponíveis. `chat-only` e `explicit-only` sem capabilities são grants
+com `FULL_ACCESS_APPROVAL_REQUIRED` (exit 3): `allow`/`resolve` não consomem
+uma aprovação verificável do operador. Autorização do comando ou `--apply`
+sozinho não substituem essa aprovação. O preview e a revogação continuam
+disponíveis. Para conseguir full-access aprovado, de qualquer turno (Slack, WhatsApp, terminal):
+`ravi permissions request full-access --to contact:<id> --chat <chat-id>
+--agent <executor> --execute` (sem `--execute` só mostra o plano, exit 3). Ele
+não grava nada e volta na hora com um `requestId`: o pedido vai para todo contato
+com admin que algum canal consiga alcançar (o adaptador de Slack manda um
+cartão privado, "Full access requested", com contato e chat nomeados e seus ids; o de
+WhatsApp manda uma mensagem no DM do grantor e a resposta `aprovo` ou `nego`, citando
+a mensagem, decide; quem respondeu é o remetente verificado da plataforma, nunca o texto).
+Só aplica quando um desses aprova, naquele chat apenas; o pedido expira em 10
+minutos. Acompanhe com `ravi permissions request-status <requestId>` (`applied`
+só vale com o grant lido de volta). O executor de `--agent` precisa já ter admin
+por conta própria (`agents permissions <id> full-access`, ação de operador): o
+comando nunca alarga o teto de um agent. Sem adaptador, sem admin alcançável ou
+sem entrega: falha sem deixar nada pendente. Revogar:
+`ravi permissions deny permission-admin --to contact:<id> --chat <chat-id> --apply`. `chat-only` e `explicit-only` sem capabilities são grants
 válidos de zero autoridade. Outros grants do contato continuam somando;
 conceder um profile vazio não revoga grants existentes.
 

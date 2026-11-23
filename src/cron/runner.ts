@@ -49,7 +49,7 @@ import {
 } from "./turn-outcome.js";
 import type { CronJob } from "./types.js";
 import { notifyAutomationOff } from "./automation-notice.js";
-import { notifyCronFailure } from "./failure-notification.js";
+import { notifyCronFailure, recordUnreadableCronFailure, type CronFailureJob } from "./failure-notification.js";
 import {
   admitCronRun,
   getCronRun,
@@ -57,10 +57,20 @@ import {
   cronRunNotification,
   pendingCronFailureReports,
   markCronRunReported,
+  type CronRunRow,
 } from "./run-db.js";
 
 const log = logger.child("cron:runner");
 const MAX_NOTIFY_OUTPUT_CHARS = 4000;
+/**
+ * How long `stop()` waits for the failure report in flight. The daemon stops its
+ * components one after another inside a single 15 s guard, and a delivery may
+ * hold for 30 s (`deliverToChat`), so cron keeps its share to about a second; a
+ * report that has not settled by then stays pending for the next start.
+ */
+const FAILURE_REPORT_STOP_GRACE_MS = 1_000;
+/** Failures one reconciliation pass keeps for `stop()` to raise; every failure is logged. */
+const MAX_RECORDED_REPORT_FAILURES = 10;
 
 function captureRunAuthority(job: CronJob): CronRunAuthority {
   return {
@@ -81,7 +91,14 @@ export class CronRunner {
   private runtimeEventStream: ReturnType<typeof nats.subscribe> | null = null;
   private runtimeEventAbort: AbortController | null = null;
   private runtimeEventLoop: Promise<void> | null = null;
+  private failureReportLoop: Promise<void> | null = null;
+  private failureReportGeneration = 0;
+  private readonly failureReportStopGraceMs: number;
   private readonly runtimeEventStopFailures: Error[] = [];
+
+  constructor(options: { failureReportStopGraceMs?: number } = {}) {
+    this.failureReportStopGraceMs = options.failureReportStopGraceMs ?? FAILURE_REPORT_STOP_GRACE_MS;
+  }
 
   /**
    * Start the cron runner.
@@ -103,19 +120,80 @@ export class CronRunner {
 
     // Subscribe to runtime terminal events so job state reflects turn outcomes
     this.runtimeEventLoop = this.subscribeToRuntimeEvents();
-    for (const run of pendingCronFailureReports()) {
-      if (await notifyCronFailure(cronRunNotification(run), run.error ?? "Agent turn failed"))
-        markCronRunReported(run.id);
-    }
+    // Remote notification delivery must not hold daemon readiness hostage to a
+    // backlog or an offline channel. Stop waits only briefly for the report in
+    // flight; whatever is unsettled stays pending for the next start.
+    const generation = ++this.failureReportGeneration;
+    this.failureReportLoop = this.reconcileFailureReports(generation).catch((cause) => {
+      this.runtimeEventStopFailures.push(new Error("Cron failure report reconciliation failed", { cause }));
+      log.error("Cron failure report reconciliation failed", { error: cause });
+    });
 
     log.info("Cron runner started");
+  }
+
+  private async reconcileFailureReports(generation: number): Promise<void> {
+    let recorded = 0;
+    for (const run of pendingCronFailureReports()) {
+      // A later start owns the backlog once this generation has been superseded.
+      if (!this.running || generation !== this.failureReportGeneration) break;
+      try {
+        await this.reconcileFailureReport(run);
+      } catch (cause) {
+        // An unexpected failure (a refused write, say) must not strand the reports behind it.
+        // The report stays pending and `stop()` raises the failure.
+        log.error("Cron failure report reconciliation failed", { runId: run.id, error: cause });
+        if (recorded++ < MAX_RECORDED_REPORT_FAILURES)
+          this.runtimeEventStopFailures.push(
+            new Error(`Cron failure report ${run.id} reconciliation failed`, { cause }),
+          );
+      }
+      // Reports that settle locally never wait on I/O; give timers and sockets a turn between them.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+  }
+
+  private async reconcileFailureReport(run: CronRunRow): Promise<void> {
+    let notification: CronFailureJob;
+    try {
+      notification = cronRunNotification(run);
+    } catch (cause) {
+      if (!(cause instanceof SyntaxError)) throw cause;
+      // Bad data, not a fault to raise at every shutdown: a stored notice that does not parse never
+      // will, so retrying only repeats the failure. Record it once and settle it.
+      log.warn("Cron failure notice is unreadable; recorded in the inbox and settled", {
+        runId: run.id,
+        jobId: run.job_id,
+        error: cause,
+      });
+      recordUnreadableCronFailure(run);
+      markCronRunReported(run.id);
+      return;
+    }
+    if (await notifyCronFailure(notification, run.error ?? "Agent turn failed")) markCronRunReported(run.id);
+  }
+
+  /** Wait for the report in flight, but only a moment: the daemon stops its components in series. */
+  private async settleFailureReportLoop(): Promise<void> {
+    const loop = this.failureReportLoop;
+    if (!loop) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settled = await Promise.race([
+      loop.then(() => true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), this.failureReportStopGraceMs);
+      }),
+    ]);
+    clearTimeout(timer);
+    if (!settled) log.warn("Cron failure report still in flight at shutdown; it stays pending for the next start");
   }
 
   /**
    * Stop the cron runner.
    */
   async stop(): Promise<void> {
-    if (!this.running && !this.runtimeEventStream && !this.runtimeEventStopFailures.length) return;
+    if (!this.running && !this.runtimeEventStream && !this.failureReportLoop && !this.runtimeEventStopFailures.length)
+      return;
     this.running = false;
 
     log.info("Stopping cron runner");
@@ -134,6 +212,7 @@ export class CronRunner {
       }
     }
     await this.runtimeEventLoop;
+    await this.settleFailureReportLoop();
     if (this.runtimeEventStopFailures.length) {
       throw new AggregateError(this.runtimeEventStopFailures, "Cron runner shutdown failed", {
         cause: this.runtimeEventStopFailures[0],
@@ -142,6 +221,7 @@ export class CronRunner {
     this.runtimeEventStream = null;
     this.runtimeEventAbort = null;
     this.runtimeEventLoop = null;
+    this.failureReportLoop = null;
 
     log.info("Cron runner stopped");
   }

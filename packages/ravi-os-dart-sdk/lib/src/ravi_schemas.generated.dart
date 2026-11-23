@@ -7956,6 +7956,10 @@ class RaviSchemas {
       "description": "Property key",
       "type": "string"
     },
+    "model": {
+      "description": "With key=provider: set the model in the same write, so the pair is validated together",
+      "type": "string"
+    },
     "value": {
       "description": "Property value",
       "type": "string"
@@ -95776,6 +95780,306 @@ class RaviSchemas {
 }
 ''';
 
+  static const permissionsRequestInputSchema = r'''
+{
+  "additionalProperties": false,
+  "anyOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "description": "Executor agent that serves that chat. It must already hold admin on its own (full-access agent profile); this command never widens an agent",
+          "type": "string"
+        },
+        "chat": {
+          "description": "The one chat where the contact gets full access (canonical chat id, platform chat id, or 'current')",
+          "type": "string"
+        },
+        "execute": {
+          "description": "Send the request to the approvers. Without it, prints the plan and exits 3",
+          "type": "boolean"
+        },
+        "profile": {
+          "description": "Only full-access is supported; other profiles use `permissions allow`",
+          "type": "string"
+        },
+        "to": {
+          "description": "Exactly one contact: contact:<id>",
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent",
+        "profile"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "description": "Executor agent that serves that chat. It must already hold admin on its own (full-access agent profile); this command never widens an agent",
+          "type": "string"
+        },
+        "chat": {
+          "description": "The one chat where the contact gets full access (canonical chat id, platform chat id, or 'current')",
+          "type": "string"
+        },
+        "execute": {
+          "description": "Send the request to the approvers. Without it, prints the plan and exits 3",
+          "type": "boolean"
+        },
+        "profile": {
+          "description": "Only full-access is supported; other profiles use `permissions allow`",
+          "type": "string"
+        },
+        "to": {
+          "description": "Exactly one contact: contact:<id>",
+          "type": "string"
+        }
+      },
+      "required": [
+        "chat",
+        "profile"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "description": "Executor agent that serves that chat. It must already hold admin on its own (full-access agent profile); this command never widens an agent",
+          "type": "string"
+        },
+        "chat": {
+          "description": "The one chat where the contact gets full access (canonical chat id, platform chat id, or 'current')",
+          "type": "string"
+        },
+        "execute": {
+          "description": "Send the request to the approvers. Without it, prints the plan and exits 3",
+          "type": "boolean"
+        },
+        "profile": {
+          "description": "Only full-access is supported; other profiles use `permissions allow`",
+          "type": "string"
+        },
+        "to": {
+          "description": "Exactly one contact: contact:<id>",
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile",
+        "to"
+      ],
+      "type": "object"
+    }
+  ],
+  "properties": {
+    "agent": {
+      "description": "Executor agent that serves that chat. It must already hold admin on its own (full-access agent profile); this command never widens an agent",
+      "type": "string"
+    },
+    "chat": {
+      "description": "The one chat where the contact gets full access (canonical chat id, platform chat id, or 'current')",
+      "type": "string"
+    },
+    "execute": {
+      "description": "Send the request to the approvers. Without it, prints the plan and exits 3",
+      "type": "boolean"
+    },
+    "profile": {
+      "description": "Only full-access is supported; other profiles use `permissions allow`",
+      "type": "string"
+    },
+    "to": {
+      "description": "Exactly one contact: contact:<id>",
+      "type": "string"
+    }
+  },
+  "required": [
+    "profile"
+  ],
+  "type": "object"
+}
+''';
+
+  static const permissionsRequestReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "type": "string"
+    },
+    "chatId": {
+      "type": "string"
+    },
+    "contactId": {
+      "type": "string"
+    },
+    "deliveries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "contactId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "contactId",
+          "channel"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "expiresAt": {
+      "type": "number"
+    },
+    "hints": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "reused": {
+      "type": "boolean"
+    },
+    "status": {
+      "const": "pending",
+      "type": "string"
+    }
+  },
+  "required": [
+    "status",
+    "requestId",
+    "reused",
+    "expiresAt",
+    "contactId",
+    "chatId",
+    "agent",
+    "deliveries",
+    "hints"
+  ],
+  "type": "object"
+}
+''';
+
+  static const permissionsRequestStatusInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "requestId": {
+      "description": "Request id printed by `permissions request`",
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestId"
+  ],
+  "type": "object"
+}
+''';
+
+  static const permissionsRequestStatusReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "type": "string"
+    },
+    "applied": {
+      "type": "boolean"
+    },
+    "chatId": {
+      "type": "string"
+    },
+    "contactId": {
+      "type": "string"
+    },
+    "decidedByContactId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "decidedVia": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "deliveries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "contactId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "contactId",
+          "channel"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "expiresAt": {
+      "type": "number"
+    },
+    "profile": {
+      "const": "full-access",
+      "type": "string"
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "approved",
+        "rejected",
+        "expired",
+        "failed"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestId",
+    "status",
+    "profile",
+    "contactId",
+    "chatId",
+    "agent",
+    "expiresAt",
+    "decidedByContactId",
+    "decidedVia",
+    "applied",
+    "deliveries"
+  ],
+  "type": "object"
+}
+''';
+
   static const permissionsResolveInputSchema = r'''
 {
   "additionalProperties": false,
@@ -109394,6 +109698,10 @@ class RaviSchemas {
 {
   "additionalProperties": false,
   "properties": {
+    "model": {
+      "description": "Set the session model override in the same write, so the provider/model pair is validated together",
+      "type": "string"
+    },
     "nameOrKey": {
       "description": "Session name or key",
       "type": "string"

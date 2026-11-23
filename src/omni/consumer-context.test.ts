@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { createGrantRequest, recordGrantRequestDelivery } from "../permissions/grant-requests/store.js";
 import { logger } from "../utils/logger.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeAbortProvenance } from "../runtime/session-dispatcher.js";
@@ -297,6 +298,7 @@ const loggerChildSpy = spyOn(logger, "child").mockImplementation(
 );
 
 const { OmniConsumer, supportsOmniReadReceipts } = await import("./consumer.js");
+const { nats: natsMock } = await import("../nats.js");
 
 afterAll(() => {
   loggerChildSpy.mockRestore();
@@ -470,6 +472,156 @@ describe("OmniConsumer channel context", () => {
     expect(promptCalls[0]?.[1].prompt).toContain("whatsapp dm send --execute to reply if instructed");
     expect(sender.sendTyping).not.toHaveBeenCalled();
     expect(sender.send).not.toHaveBeenCalled();
+  });
+
+  describe("quote-reply announcement", () => {
+    /** A grant request prompt the WhatsApp adapter sent: the reply quotes its message id. */
+    function recordGrantPrompt(messageId: string) {
+      const requestId = `pgr_${messageId}`;
+      createGrantRequest({
+        id: requestId,
+        plan: {
+          profile: "full-access",
+          contactId: "c-grantee",
+          chatId: "chat-1",
+          executorAgentId: "xone",
+          contactLabel: "Breno",
+          chatLabel: "Group",
+        },
+        requester: { agentId: "main", channel: "whatsapp" },
+        grantorContactIds: ["c-admin"],
+        createdAt: 1,
+        expiresAt: Date.now() + 600_000,
+      });
+      recordGrantRequestDelivery({
+        requestId,
+        contactId: "c-admin",
+        channel: "whatsapp",
+        ref: { messageId },
+        createdAt: 1,
+      });
+    }
+
+    function receiveReply(
+      consumer: InstanceType<typeof OmniConsumer>,
+      id: string,
+      replyToId: string | null,
+      rawPayload: Record<string, unknown> = {},
+    ) {
+      return consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+        id: `evt-${id}`,
+        type: "message.received",
+        payload: {
+          externalId: `msg-${id}`,
+          chatId: "178035101794451@lid",
+          from: "178035101794451@lid",
+          content: { type: "text", text: "aprovo" },
+          ...(replyToId ? { replyToId } : {}),
+          rawPayload: { pushName: "Luis Filipe", isGroup: false, ...rawPayload },
+        },
+        metadata: { instanceId: "instance-1", channelType: "whatsapp-baileys", ingestMode: "realtime" },
+        timestamp: Date.now(),
+      });
+    }
+
+    const replyEmits = () =>
+      (natsMock.emit as unknown as { mock: { calls: Array<[string, Record<string, unknown>]> } }).mock.calls.filter(
+        ([topic]) => topic === "ravi.inbound.reply",
+      );
+
+    function newConsumer() {
+      const sender = {
+        send: mock(async () => {}),
+        sendTyping: mock(async () => {}),
+        markRead: mock(async () => {}),
+      };
+      return new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+        resolveGroupMetadata: async () => null,
+      });
+    }
+
+    it("announces a quote-reply with the raw sender, instance and account", async () => {
+      (natsMock.emit as unknown as { mockClear: () => void }).mockClear();
+      routeResult = defaultRouteResult();
+      recordGrantPrompt("bot-message-1");
+
+      await receiveReply(newConsumer(), "reply-routed", "bot-message-1");
+
+      expect(replyEmits()).toHaveLength(1);
+      expect(replyEmits()[0]?.[1]).toMatchObject({
+        targetMessageId: "bot-message-1",
+        text: "aprovo",
+        senderId: "178035101794451",
+        senderJid: "178035101794451@lid",
+        instanceId: "instance-1",
+      });
+      expect(typeof replyEmits()[0]?.[1].accountId).toBe("string");
+    });
+
+    it("announces a grant prompt reply even when the DM has no route or is a sentinel", async () => {
+      (natsMock.emit as unknown as { mockClear: () => void }).mockClear();
+      routeResult = null;
+      recordGrantPrompt("bot-message-2");
+      await receiveReply(newConsumer(), "reply-no-route", "bot-message-2");
+      expect(replyEmits()).toHaveLength(1);
+
+      (natsMock.emit as unknown as { mockClear: () => void }).mockClear();
+      routeResult = defaultRouteResult();
+      configuredAgentMode = "sentinel";
+      recordGrantPrompt("bot-message-3");
+      await receiveReply(newConsumer(), "reply-sentinel", "bot-message-3");
+      expect(replyEmits()).toHaveLength(1);
+      configuredAgentMode = "active";
+    });
+
+    it("does not announce early a quote-reply that quotes no grant prompt, or one with no route", async () => {
+      (natsMock.emit as unknown as { mockClear: () => void }).mockClear();
+      routeResult = null;
+      await receiveReply(newConsumer(), "reply-unknown-target", "someone-elses-message");
+      expect(replyEmits()).toHaveLength(0);
+    });
+
+    it("never announces a quote-reply sent by an agent, even when it quotes a grant prompt", async () => {
+      (natsMock.emit as unknown as { mockClear: () => void }).mockClear();
+      routeResult = defaultRouteResult();
+      recordGrantPrompt("bot-message-5");
+      agentPlatformIdentityByUser.set("lid:178035101794451", {
+        id: "pi_agent_replier",
+        ownerType: "agent",
+        ownerId: "dev",
+        channel: "whatsapp",
+        instanceId: "instance-1",
+        platformUserId: "178035101794451@lid",
+        normalizedPlatformUserId: "lid:178035101794451",
+        confidence: 1,
+      });
+      try {
+        await receiveReply(newConsumer(), "reply-agent", "bot-message-5");
+      } finally {
+        agentPlatformIdentityByUser.delete("lid:178035101794451");
+      }
+
+      expect(replyEmits()).toHaveLength(0);
+    });
+
+    it("never announces the bot's own echo, even when it quotes a grant prompt", async () => {
+      (natsMock.emit as unknown as { mockClear: () => void }).mockClear();
+      routeResult = defaultRouteResult();
+      recordGrantPrompt("bot-message-4");
+
+      await receiveReply(newConsumer(), "reply-echo", "bot-message-4", { key: { fromMe: true } });
+
+      expect(replyEmits()).toHaveLength(0);
+    });
+
+    it("announces nothing for a message that quotes nothing", async () => {
+      (natsMock.emit as unknown as { mockClear: () => void }).mockClear();
+      routeResult = defaultRouteResult();
+
+      await receiveReply(newConsumer(), "plain", null);
+
+      expect(replyEmits()).toHaveLength(0);
+    });
   });
 
   describe("leading message prefixes", () => {

@@ -16,6 +16,17 @@
 - Writing a direct `model` MUST clear `modelPresetId` in one transaction.
 - A provider write incompatible with a referenced preset MUST fail with an
   actionable error before commit.
+- `agents set <id> provider <p> --model <m>` MUST validate the pair together,
+  write both in one update, and drop a referenced preset in that same update.
+- `agents set <id> model clear` MUST clear the direct `model` without
+  validating it, and the provider MUST then be settable on its own.
+- `agents set ... --model` with any key other than `provider`, or with an empty
+  value, MUST be refused as `USAGE_ERROR` (exit 2) before any write, including
+  for keys that return early (`description`, `modelPreset`, `groupDebounceMs`).
+- `agents set <id> provider <p> --model <m> --force` MUST clear session model
+  overrides as well as provider overrides.
+- A provider argument MUST be trimmed once, so validation and storage use the
+  same value.
 - `agents show <id> --json` MUST expose `effectiveProvider`, `effectiveModel`,
   `modelSource`, `modelPresetId`, and `modelPresetVersion`.
 - Assigning a missing or disabled preset MUST fail and MUST NOT fall back to the

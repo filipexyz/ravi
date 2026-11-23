@@ -3,7 +3,7 @@ import { dbGetCronJob, dbMarkJobDispatched, dbRecordJobOutcome, dbDeleteCronJob 
 import type { CronFailureJob } from "./failure-notification.js";
 import type { CronJob, JobOutcomeUpdate } from "./types.js";
 
-interface CronRunRow {
+export interface CronRunRow {
   id: string;
   job_id: string;
   session_name: string;

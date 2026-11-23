@@ -53,6 +53,7 @@ import {
   type SessionAdapterRecord,
 } from "../../adapters/index.js";
 import {
+  applySessionRuntimeConfigAtomically,
   deleteSession,
   resetSession,
   getOrCreateSession,
@@ -81,6 +82,7 @@ import {
   describeSessionAgentDefaultDiff,
   rematerializeSessionToAgentRuntime,
   resolveAgentRuntimeDefaultProvider,
+  findSessionsStrandedByAgentDefaults,
   syncAgentSessionsToAgentRuntime,
 } from "../../runtime/agent-session-runtime-sync.js";
 import {
@@ -3950,6 +3952,11 @@ export class SessionCommands {
       description: "Also set the agent default provider and rematerialize sibling sessions without overrides",
     })
     propagate?: boolean,
+    @Option({
+      flags: "--model <model>",
+      description: "Set the session model override in the same write, so the provider/model pair is validated together",
+    })
+    pairedModel?: string,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -3963,12 +3970,38 @@ export class SessionCommands {
       return;
     }
 
+    const modelPair = pairedModel?.trim();
+    if (pairedModel !== undefined && !modelPair) {
+      failSessionUsage(
+        "sessions set-provider",
+        "--model cannot be empty",
+        `Pass a model: ravi sessions set-provider ${nameOrKey} <provider> --model <model>`,
+        asJson,
+      );
+    }
+
     const normalized = provider.trim().toLowerCase();
     if (!normalized) {
       fail(`Invalid provider: ${provider}. Valid providers: ${listRegisteredRuntimeProviderIds().join(", ")}, clear`);
       return;
     }
     const providerOverride = normalized === "clear" ? null : normalized;
+    if (modelPair && modelPair.toLowerCase() === "clear") {
+      failSessionUsage(
+        "sessions set-provider",
+        "--model cannot be 'clear': it names the model to set together with the provider.",
+        `To drop the model override: ravi sessions set-model ${nameOrKey} clear`,
+        asJson,
+      );
+    }
+    if (modelPair && !providerOverride) {
+      failSessionUsage(
+        "sessions set-provider",
+        "--model needs a concrete provider, not 'clear'.",
+        `To drop the overrides: ravi sessions set-provider ${nameOrKey} clear, then ravi sessions set-model ${nameOrKey} clear`,
+        asJson,
+      );
+    }
     if (providerOverride) {
       try {
         createRuntimeProvider(providerOverride);
@@ -3985,6 +4018,8 @@ export class SessionCommands {
     // turn needs agent-configuration authority to pick one. Clearing returns
     // to the agent's configured provider and stays open, as does picking it.
     if (propagate !== true) assertSessionProviderSelectionAuthorized(s, providerOverride);
+    // The pair also writes the session model, which `sessions set-model` guards separately.
+    if (modelPair) assertSessionModelWriteAuthorized(nameOrKey);
 
     const label = s.name ?? s.sessionKey;
     const beforeProviderOverride = s.runtimeProviderOverride ?? null;
@@ -4001,20 +4036,55 @@ export class SessionCommands {
       },
       agent,
     });
-    if (nextRuntime.model.value && nextRuntime.model.source !== "runtime_default") {
-      assertModelValidForProvider(nextRuntime.provider.value, nextRuntime.model.value);
+    if (modelPair && providerOverride) {
+      // The pair is validated together; the model the session carries today is about to be replaced.
+      assertModelValidForProvider(providerOverride, modelPair);
+    } else if (nextRuntime.model.value && nextRuntime.model.source !== "runtime_default") {
+      assertModelValidForProvider(
+        nextRuntime.provider.value,
+        nextRuntime.model.value,
+        providerOverride
+          ? `To switch in one write: ravi sessions set-provider ${nameOrKey} ${providerOverride} --model <model>, or clear the session model first: ravi sessions set-model ${nameOrKey} clear`
+          : undefined,
+      );
     }
     if (propagate === true && providerOverride && agent) {
-      if (agent.model) assertModelValidForProvider(providerOverride, agent.model);
+      if (agent.model && !modelPair) {
+        assertModelValidForProvider(
+          providerOverride,
+          agent.model,
+          `Change both in one write: ravi sessions set-provider ${nameOrKey} ${providerOverride} --model <model> --propagate`,
+        );
+      }
       const preset = agent.modelPresetId ? getRuntimeModelPreset(agent.modelPresetId) : null;
-      if (preset && preset.provider !== providerOverride) {
+      if (preset && preset.provider !== providerOverride && !modelPair) {
         fail(
           `Cannot propagate provider '${providerOverride}': agent ${s.agentId} references preset '${preset.id}' (provider '${preset.provider}'). Clear the preset first: ravi agents set ${s.agentId} modelPreset clear`,
         );
         return;
       }
     }
-    updateSessionRuntimeProviderOverride(s.sessionKey, providerOverride);
+    if (propagate === true && providerOverride && agent) {
+      // The agent defaults move for every sibling session: refuse when one of them could not start a turn.
+      const stranded = findSessionsStrandedByAgentDefaults({
+        provider: providerOverride,
+        ...(modelPair ? { model: modelPair } : {}),
+        sessions: getSessionsByAgent(s.agentId).filter((sibling) => sibling.sessionKey !== s.sessionKey),
+      });
+      if (stranded.length > 0) {
+        const names = stranded.map((sibling) => sibling.name?.trim() || sibling.sessionKey).join(", ");
+        fail(
+          `Cannot propagate to agent ${s.agentId}: ${stranded.length} sibling session(s) would be left on a provider/model pair they cannot run: ${names}. Change them first: ravi sessions set-model <session> <model|clear> or ravi sessions set-provider <session> <provider> --model <model>.`,
+        );
+        return;
+      }
+    }
+    // Provider and model land together or not at all: a failed second write must not leave the new
+    // provider next to the old model.
+    applySessionRuntimeConfigAtomically(() => {
+      updateSessionRuntimeProviderOverride(s.sessionKey, providerOverride);
+      if (modelPair) updateSessionModelOverride(s.sessionKey, modelPair);
+    });
     if (providerOverride && s.providerSessionId && s.runtimeProvider && s.runtimeProvider !== providerOverride) {
       clearProviderSession(s.sessionKey);
     }
@@ -4033,9 +4103,24 @@ export class SessionCommands {
 
     let propagated = false;
     if (propagate === true && providerOverride && agent) {
-      updateAgent(s.agentId, { provider: providerOverride });
+      // A paired write replaces the agent model too, and drops a preset reference like any direct model write.
+      const propagatedAgent = modelPair
+        ? { ...agent, id: s.agentId, provider: providerOverride, model: modelPair, modelPresetId: undefined }
+        : { ...agent, id: s.agentId, provider: providerOverride };
+      updateAgent(
+        s.agentId,
+        modelPair
+          ? { provider: providerOverride, model: modelPair, modelPresetId: null }
+          : { provider: providerOverride },
+      );
+      // Keep ConfigStore from serving the old agent defaults until its periodic refresh.
+      nats.emit("ravi.config.changed", {}).catch((error: unknown) => {
+        logger.child("cli:sessions").warn("Could not notify the gateway that agent defaults changed", {
+          diagnostic: errorDiagnostic(error, { operation: "sessions_set_provider_config_changed" }),
+        });
+      });
       const siblingSync = syncAgentSessionsToAgentRuntime({
-        agent: { ...agent, id: s.agentId, provider: providerOverride },
+        agent: propagatedAgent,
         rematerialize: true,
       });
       rematerializedSessions = siblingSync.rematerializedSessions;
@@ -4052,7 +4137,9 @@ export class SessionCommands {
 
     if (!asJson) {
       if (providerOverride) {
-        console.log(`Set runtime provider to "${providerOverride}" for: ${label}`);
+        console.log(
+          `Set runtime provider to "${providerOverride}"${modelPair ? ` and model to "${modelPair}"` : ""} for: ${label}`,
+        );
       } else {
         console.log(`Cleared runtime provider override for: ${label}`);
       }
@@ -4078,18 +4165,28 @@ export class SessionCommands {
       const after = readPersistedSessionMutation(
         s,
         "set-provider",
-        (session) => (session.runtimeProviderOverride ?? null) === providerOverride,
+        (session) =>
+          (session.runtimeProviderOverride ?? null) === providerOverride &&
+          (!modelPair || (session.modelOverride ?? null) === modelPair),
       );
       const effective = resolveEffectiveSessionSelection(after, after.modelOverride ?? null);
-      const payload = buildSessionMutationJson("set-provider", s, after, beforeProviderOverride !== providerOverride, {
-        runtimeProviderOverride: providerOverride,
-        effectiveProvider: effective.effectiveProvider,
-        providerSource: effective.providerSource,
-        appliesOn: "next-turn-runtime-restart",
-        ...agentDiff,
-        propagated,
-        rematerializedSessions,
-      });
+      const modelChanged = Boolean(modelPair) && (s.modelOverride ?? null) !== modelPair;
+      const payload = buildSessionMutationJson(
+        "set-provider",
+        s,
+        after,
+        beforeProviderOverride !== providerOverride || modelChanged,
+        {
+          runtimeProviderOverride: providerOverride,
+          ...(modelPair ? { modelOverride: modelPair } : {}),
+          effectiveProvider: effective.effectiveProvider,
+          providerSource: effective.providerSource,
+          appliesOn: "next-turn-runtime-restart",
+          ...agentDiff,
+          propagated,
+          rematerializedSessions,
+        },
+      );
       return returnStructuredResult(payload, asJson);
     }
   }
@@ -4141,8 +4238,27 @@ export class SessionCommands {
       session: { ...s, modelOverride: modelOverride ?? undefined },
       agent,
     });
+    if (modelOverride === null && !nextRuntime.model.value && agent?.modelPresetId) {
+      // A disabled or missing agent preset resolves to no model; clearing would unmask it and the next turn
+      // would be rejected at launch.
+      fail(
+        `Clearing leaves the session on agent preset '${agent.modelPresetId}', which is not usable (disabled or missing). Fix the preset or pick a model: ravi sessions set-model ${nameOrKey} <model>`,
+      );
+      return;
+    }
     if (nextRuntime.model.value && nextRuntime.model.source !== "runtime_default") {
-      assertModelValidForProvider(nextRuntime.provider.value, nextRuntime.model.value);
+      // The runtime default is exempt, as everywhere else in this file: it is `sonnet` by default and the
+      // launcher remaps it to the provider's own default model (applyProviderModelRule), so a clear that
+      // falls back to it runs fine. An agent model, on the other hand, must run on the session's provider.
+      assertModelValidForProvider(
+        nextRuntime.provider.value,
+        nextRuntime.model.value,
+        modelOverride === null
+          ? `Clearing leaves the session on the agent model '${nextRuntime.model.value}'. Pick a model the provider runs: ravi sessions set-model ${nameOrKey} <model>`
+          : listRegisteredRuntimeProviderIds().some((candidate) => validateRuntimeModelSelector(candidate, model).ok)
+            ? `To change runtime and model together: ravi sessions set-provider ${nameOrKey} <provider> --model ${model}`
+            : undefined,
+      );
     }
     if (propagate === true && modelOverride && agent) {
       assertModelValidForProvider(agent.provider, modelOverride);
@@ -8283,9 +8399,36 @@ function assertThreadHandoffAuthorized(mayCreate: boolean, asJson?: boolean): vo
   }
 }
 
-function assertModelValidForProvider(providerId: string | undefined, model: string): void {
+/** `set-provider --model` writes a model override too, so the caller needs the authority of `sessions set-model`. */
+function assertSessionModelWriteAuthorized(nameOrKey: string): void {
+  if (!getContext()?.context) return;
+  const access = enforceCliCommandAccess({
+    group: "sessions",
+    command: "set-model",
+    access: {
+      kind: "mutate",
+      resource: "sessions",
+      action: "set-model",
+      risk: "medium",
+      consoleScope: "session",
+      resourceId: "nameOrKey",
+    },
+    input: { nameOrKey },
+    source: "tool",
+  });
+  if (!access.allowed) {
+    throw new CliExpectedError(
+      `Permission denied: --model changes the session model and needs the authority of 'ravi sessions set-model'`,
+      "PERMISSION_DENIED",
+      1,
+      "Drop --model to change only the provider, or ask an operator to run ravi sessions set-model",
+    );
+  }
+}
+
+function assertModelValidForProvider(providerId: string | undefined, model: string, hint?: string): void {
   const result = validateRuntimeModelSelector(providerId ?? DEFAULT_RUNTIME_PROVIDER_ID, model);
-  if (!result.ok) fail(result.error ?? `Invalid model: ${model}`);
+  if (!result.ok) fail(`${result.error ?? `Invalid model: ${model}`}${hint ? ` ${hint}` : ""}`);
 }
 
 /**

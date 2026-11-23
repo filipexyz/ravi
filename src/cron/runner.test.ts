@@ -69,6 +69,7 @@ const BOB_CHAT: OwnerDirectTarget = {
 let operatorChat: OwnerDirectTarget | null = null;
 const contactChats = new Map<string, OwnerDirectTarget>();
 let directDeliveryFails = false;
+let directDeliveryGate: Promise<void> | null = null;
 const directMessages: Array<{ target: OwnerDirectTarget; text: string }> = [];
 // Every chat a direct message was tried on, including the ones that failed.
 const directAttempts: OwnerDirectTarget[] = [];
@@ -97,6 +98,7 @@ mock.module("../cloud-agents/chat-target.js", () => ({
   deliverToChat: mock(async (target: OwnerDirectTarget, message: { text: string }, timeoutMs?: number) => {
     if (!directChatsArmed()) return actualDeliverToChat(target, message, timeoutMs);
     directAttempts.push(target);
+    if (directDeliveryGate) await directDeliveryGate;
     if (directDeliveryFails) throw new Error("gateway offline");
     directMessages.push({ target, text: message.text });
     return { messageId: "m1", deliveries: [] };
@@ -129,6 +131,7 @@ beforeEach(async () => {
   operatorChat = null;
   contactChats.clear();
   directDeliveryFails = false;
+  directDeliveryGate = null;
   directMessages.length = 0;
   directAttempts.length = 0;
 });
@@ -158,6 +161,26 @@ function createAgentJob(overrides: Partial<Parameters<typeof dbCreateCronJob>[0]
     sessionTarget: "isolated",
     ...overrides,
   });
+}
+
+/** A run that failed and has not been reported yet; returns its id. */
+async function failedRun(overrides: Partial<Parameters<typeof dbCreateCronJob>[0]> = {}): Promise<string> {
+  const { settleCronRun } = await import("./run-db.js");
+  const job = createAgentJob(overrides);
+  await new CronRunner().triggerJob(job.id);
+  const dispatched = publishCalls.at(-1)!;
+  const runId = String(dispatched.payload._cronRunId);
+  settleCronRun(runId, dispatched.sessionName, { lastStatus: "error", lastError: "failed before report" });
+  return runId;
+}
+
+/** The database refuses to mark reports as reported (one run, or all), as a busy or read-only one would. */
+async function refuseMarks(runId?: string): Promise<void> {
+  const { getDb } = await import("../router/router-db.js");
+  const only = runId ? `WHEN NEW.id = '${runId}' ` : "";
+  getDb().run(
+    `CREATE TRIGGER refuse_marks BEFORE UPDATE OF reported ON cron_runs ${only}BEGIN SELECT RAISE(ABORT, 'database is busy'); END`,
+  );
 }
 
 function cronProvenance(jobId: string, index?: number) {
@@ -1202,6 +1225,242 @@ describe("CronRunner shell jobs and personal connectors", () => {
 });
 
 describe("durable cron run correlation", () => {
+  it.each([false, true])(
+    "starts while failure delivery is pending, then drains and retries (offline=%s)",
+    async (offline) => {
+      operatorChat = OPERATOR_CHAT;
+      directDeliveryFails = offline;
+      let release!: () => void;
+      directDeliveryGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const job = createAgentJob({ ownerPrincipal: "operator" });
+      const { settleCronRun, pendingCronFailureReports } = await import("./run-db.js");
+      for (let i = 0; i < 2; i++) {
+        await new CronRunner().triggerJob(job.id);
+        const dispatched = publishCalls.at(-1)!;
+        settleCronRun(String(dispatched.payload._cronRunId), dispatched.sessionName, {
+          lastStatus: "error",
+          lastError: "failed before report",
+        });
+      }
+      const runner = new CronRunner();
+      let started = false;
+      const starting = runner.start().then(() => {
+        started = true;
+      });
+      let stopping: Promise<void> | undefined;
+      try {
+        await waitUntil(() => directAttempts.length === 1);
+        await waitUntil(() => started, 500);
+        expect(pendingCronFailureReports()).toHaveLength(2);
+        await runner.start();
+        expect(directAttempts).toHaveLength(1);
+        let stopped = false;
+        stopping = runner.stop().then(() => {
+          stopped = true;
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(stopped).toBe(false);
+        release();
+        await stopping;
+        expect(directAttempts).toHaveLength(1);
+        expect(pendingCronFailureReports()).toHaveLength(offline ? 2 : 1);
+      } finally {
+        release();
+        await starting;
+        await (stopping ?? runner.stop());
+        directDeliveryGate = null;
+      }
+
+      directDeliveryFails = false;
+      const recovered = new CronRunner();
+      try {
+        await recovered.start();
+        await waitUntil(() => pendingCronFailureReports().length === 0);
+        expect(directMessages).toHaveLength(2);
+        expect(directAttempts).toHaveLength(offline ? 3 : 2);
+      } finally {
+        await recovered.stop();
+      }
+    },
+  );
+
+  it("stops after about a second while a failure delivery is still stalled, leaving the report for the next start", async () => {
+    operatorChat = OPERATOR_CHAT;
+    let release!: () => void;
+    directDeliveryGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const job = createAgentJob({ ownerPrincipal: "operator" });
+    const { settleCronRun, pendingCronFailureReports } = await import("./run-db.js");
+    await new CronRunner().triggerJob(job.id);
+    const dispatched = publishCalls.at(-1)!;
+    settleCronRun(String(dispatched.payload._cronRunId), dispatched.sessionName, {
+      lastStatus: "error",
+      lastError: "failed before report",
+    });
+    const runner = new CronRunner();
+    try {
+      await runner.start();
+      await waitUntil(() => directAttempts.length === 1);
+      const stoppedAt = Date.now();
+      // The delivery is still held: stop returns on the default grace (about a second, because the
+      // daemon stops its components in series inside one 15 s guard), not on the delivery.
+      await runner.stop();
+      const waited = Date.now() - stoppedAt;
+      expect(waited).toBeGreaterThanOrEqual(900);
+      expect(waited).toBeLessThan(4_000);
+      expect(pendingCronFailureReports()).toHaveLength(1);
+      expect(directMessages).toHaveLength(0);
+
+      // The next start finds the unconfirmed report still pending and tries it again.
+      const recovered = new CronRunner({ failureReportStopGraceMs: 50 });
+      try {
+        await recovered.start();
+        await waitUntil(() => directAttempts.length === 2);
+      } finally {
+        await recovered.stop();
+      }
+    } finally {
+      release();
+      directDeliveryGate = null;
+    }
+    // Let the abandoned sends settle so they cannot leak into the next test.
+    await waitUntil(() => pendingCronFailureReports().length === 0);
+  });
+
+  it("settles reports whose stored notice cannot be read instead of keeping them pending", async () => {
+    const { pendingCronFailureReports } = await import("./run-db.js");
+    const { getDb } = await import("../router/router-db.js");
+    const { listLocalInboxEvents, listLocalInboxItems } = await import("../inbox/local-db.js");
+    // The operator's chat is armed and the runs are operator-owned, so a message sent for an unreadable
+    // report (a fallback to the operator, say) would be recorded below.
+    operatorChat = OPERATOR_CHAT;
+    const unreadable = 12;
+    for (let i = 0; i < unreadable; i++) {
+      const runId = await failedRun({ ownerPrincipal: "operator" });
+      getDb().query("UPDATE cron_runs SET notification_json = ? WHERE id = ?").run("{not json", runId);
+    }
+    await failedRun({ ownerPrincipal: "operator" }); // one readable report behind them
+    expect(pendingCronFailureReports()).toHaveLength(unreadable + 1);
+
+    const runner = new CronRunner();
+    await runner.start();
+    // None of them stays: the readable report is delivered, the unreadable ones are settled.
+    await waitUntil(() => pendingCronFailureReports().length === 0);
+    // Bad data is not a fault to raise at shutdown.
+    await runner.stop();
+
+    const records = listLocalInboxItems({ sourceDomain: "cron" }).filter(
+      (item) => item.sourceType === "run_unreadable",
+    );
+    expect(records).toHaveLength(unreadable);
+    for (const item of records)
+      expect(listLocalInboxEvents(item.id).map((event) => event.eventType)).toContain("cron.failure.unreadable");
+    // No recipient can be known from a notice that does not parse: the only message is the readable report's.
+    expect(directMessages).toHaveLength(1);
+    expect(directAttempts).toHaveLength(1);
+
+    // A later start finds nothing to replay.
+    const later = new CronRunner();
+    await later.start();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await later.stop();
+    expect(pendingCronFailureReports()).toHaveLength(0);
+  });
+
+  it("keeps at most ten failures for stop to raise when the database refuses every mark", async () => {
+    const { pendingCronFailureReports } = await import("./run-db.js");
+    const { listLocalInboxItems } = await import("../inbox/local-db.js");
+    const refused = 12;
+    for (let i = 0; i < refused; i++) await failedRun();
+    await refuseMarks();
+
+    const runner = new CronRunner();
+    await runner.start();
+    // Each report is attempted (the unowned path records it in the inbox) and none can be marked.
+    await waitUntil(() => listLocalInboxItems({ sourceDomain: "cron" }).length === refused);
+    const failure = await runner.stop().then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(AggregateError);
+    const raised = (failure as AggregateError).errors as Error[];
+    expect(raised).toHaveLength(10);
+    expect(raised[0]!.cause).not.toBeInstanceOf(SyntaxError);
+    expect(pendingCronFailureReports()).toHaveLength(refused);
+  });
+
+  it("keeps a stop that raised for a refused mark failed on later stops, as the shutdown latch requires", async () => {
+    operatorChat = OPERATOR_CHAT;
+    await refuseMarks(await failedRun({ ownerPrincipal: "operator" }));
+
+    const runner = new CronRunner();
+    await runner.start();
+    await waitUntil(() => directMessages.length === 1);
+    await expect(runner.stop()).rejects.toThrow("Cron runner shutdown failed");
+    // Retrying cannot certify success after a failed stop (quality/state-boundary): the failure stays latched.
+    await expect(runner.stop()).rejects.toThrow("Cron runner shutdown failed");
+  });
+
+  it("keeps draining when a delivered report cannot be marked, and leaves it pending", async () => {
+    operatorChat = OPERATOR_CHAT;
+    const { settleCronRun, pendingCronFailureReports } = await import("./run-db.js");
+    const { getDb } = await import("../router/router-db.js");
+    const runIds: string[] = [];
+    for (let i = 0; i < 2; i++) {
+      const job = createAgentJob({ ownerPrincipal: "operator" });
+      await new CronRunner().triggerJob(job.id);
+      const dispatched = publishCalls.at(-1)!;
+      const runId = String(dispatched.payload._cronRunId);
+      runIds.push(runId);
+      settleCronRun(runId, dispatched.sessionName, { lastStatus: "error", lastError: "failed before report" });
+    }
+    // The database refuses to mark the first report as reported, as a busy or read-only database would.
+    getDb().run(
+      `CREATE TRIGGER refuse_first_report BEFORE UPDATE OF reported ON cron_runs WHEN NEW.id = '${runIds[0]}' BEGIN SELECT RAISE(ABORT, 'database is busy'); END`,
+    );
+
+    const runner = new CronRunner();
+    await runner.start();
+    // Both reports are delivered; the second is still marked, the first stays pending.
+    await waitUntil(() => pendingCronFailureReports().length === 1);
+    expect(directMessages).toHaveLength(2);
+    expect(pendingCronFailureReports()[0]!.id).toBe(runIds[0]);
+    const failure = await runner.stop().then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors).toHaveLength(1);
+  });
+
+  it("yields the event loop between reports that settle locally", async () => {
+    const { settleCronRun, pendingCronFailureReports } = await import("./run-db.js");
+    for (let i = 0; i < 6; i++) {
+      const job = createAgentJob();
+      await new CronRunner().triggerJob(job.id);
+      const dispatched = publishCalls.at(-1)!;
+      settleCronRun(String(dispatched.payload._cronRunId), dispatched.sessionName, {
+        lastStatus: "error",
+        lastError: "failed before report",
+      });
+    }
+    expect(pendingCronFailureReports()).toHaveLength(6);
+    const runner = new CronRunner();
+    try {
+      await runner.start();
+      // One turn of the event loop: a backlog that drained through microtasks alone would already be empty.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(pendingCronFailureReports().length).toBeGreaterThan(0);
+      await waitUntil(() => pendingCronFailureReports().length === 0);
+    } finally {
+      await runner.stop();
+    }
+  });
+
   it("reconciles a persisted failure whose notification was interrupted", async () => {
     const job = createAgentJob();
     await new CronRunner().triggerJob(job.id);

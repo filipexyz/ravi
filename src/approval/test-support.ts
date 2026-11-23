@@ -1,4 +1,5 @@
 import { createContact, linkContactIdentity, updateContact } from "../contacts.js";
+import "../channels/slack/grantors.js";
 import { actorCanGrantRequestedPermission, type ApprovalGrantorInput } from "./grantor.js";
 
 export const APPROVAL_TEST_WA_OWNER_PHONE = "5511987009601";

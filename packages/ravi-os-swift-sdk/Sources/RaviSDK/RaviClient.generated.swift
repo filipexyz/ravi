@@ -4887,6 +4887,19 @@ public struct PermissionsNamespace: Sendable {
     return try await transport.call(groupSegments: ["permissions"], command: "materialize", body: requestBody, as: PermissionsMaterializeReturn.self)
   }
 
+  public func request(_ profile: String, _ options: PermissionsRequestOptions) async throws -> PermissionsRequestReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["profile"] = try RaviJSON.fromEncodable(profile)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["permissions"], command: "request", body: requestBody, as: PermissionsRequestReturn.self)
+  }
+
+  public func requestStatus(_ requestId: String) async throws -> PermissionsRequestStatusReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["requestId"] = try RaviJSON.fromEncodable(requestId)
+    return try await transport.call(groupSegments: ["permissions"], command: "request-status", body: requestBody, as: PermissionsRequestStatusReturn.self)
+  }
+
   public func resolve(_ denialId: String, _ options: PermissionsResolveOptions = .init()) async throws -> PermissionsResolveReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["denialId"] = try RaviJSON.fromEncodable(denialId)

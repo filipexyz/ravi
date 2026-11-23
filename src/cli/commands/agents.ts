@@ -60,6 +60,7 @@ import {
   type AgentSessionOverrideReport,
   type AgentSessionRematerializeReport,
   type AgentSessionRuntimeSyncResult,
+  findSessionsStrandedByAgentDefaults,
   syncAgentSessionsToAgentRuntime,
 } from "../../runtime/agent-session-runtime-sync.js";
 import { formatRuntimeEffortLevels, parseRuntimeEffort } from "../../runtime/effort.js";
@@ -198,6 +199,8 @@ function syncAgentSetSessions(input: {
   agent: AgentConfig;
   key: string;
   force?: boolean;
+  /** `provider ... --model`: the write replaced the model default too, so session model overrides are stale. */
+  pairedModel?: boolean;
 }): AgentSessionRuntimeSyncResult {
   const rematerialize = isAgentRuntimeSyncKey(input.key);
   const force = rematerialize && input.force === true;
@@ -206,7 +209,13 @@ function syncAgentSetSessions(input: {
     rematerialize,
     force: force && input.key === "modelPreset",
     clearProviderOverrides: force && (input.key === "provider" || input.key === "modelPreset"),
-    clearModelOverrides: force && (input.key === "model" || input.key === "modelPreset"),
+    clearModelOverrides:
+      force &&
+      (input.key === "model" ||
+        input.key === "modelPreset" ||
+        (input.key === "provider" && input.pairedModel === true)),
+    // A forced provider switch also drops the session model overrides the new provider cannot run.
+    clearIncompatibleModelOverrides: force && input.key === "provider",
   });
 }
 
@@ -216,12 +225,14 @@ function buildAgentSetMutationPayload(input: {
   key: string;
   value: unknown;
   force?: boolean;
+  pairedModel?: boolean;
 }): AgentSetMutationPayload {
   const updatedAgent = getAgent(input.agentId) ?? input.before;
   const sync = syncAgentSetSessions({
     agent: updatedAgent,
     key: input.key,
     force: input.force,
+    pairedModel: input.pairedModel,
   });
   return {
     action: "set",
@@ -356,11 +367,23 @@ function buildAgentJson(agent: AgentConfig, defaultAgent: string): AgentJsonSumm
   };
 }
 
-function validateAgentModelValue(providerId: string | undefined, model: string): void {
+/** Invalid `agents set --model` input is a usage error (exit 2), like the other invalid flag/arg cases. */
+function failSetModelUsage(message: string, asJson?: boolean): never {
+  return contractFail("agents set", "USAGE_ERROR", message, {
+    ...{
+      asJson,
+      exitCode: 2,
+      details: { suggestedAction: "Use --model only with key=provider: ravi agents set <id> provider <p> --model <m>" },
+    },
+    diagnostic: errorDiagnostic(message, { operation: "agents set" }),
+  });
+}
+
+function validateAgentModelValue(providerId: string | undefined, model: string, hint?: string): void {
   const provider = providerId ?? resolveRequestedRuntimeProvider({ agent: {} }).value;
   const result = validateRuntimeModelSelector(provider, model);
   if (!result.ok) {
-    fail(result.error ?? `Invalid model: ${model}`);
+    fail(`${result.error ?? `Invalid model: ${model}`}${hint ? ` ${hint}` : ""}`);
   }
 }
 
@@ -1209,9 +1232,17 @@ RULES
   description is what the Library directory shows for this agent (at most 300
   characters; "clear" removes it). It is reported with the next pin sync.
 
+  Switching runtime: provider and model are validated against each other, so
+  changing only one can be rejected by the other's current value. Change both
+  in one write with --model, or clear the model first:
+    ravi agents set <id> provider <provider> --model <model>
+    ravi agents set <id> model clear        (then set provider, then model)
+
 EXAMPLES
   ravi agents set ravi-console description "Answers questions about the Console" --json
   ravi agents set ravi-console provider pi --json
+  ravi agents set ravi-console provider pi --model deepseek/deepseek-flash --json
+  ravi agents set ravi-console model clear
   ravi agents set ravi-console model deepseek/deepseek-flash
   ravi agents set ravi-console provider pi --force --json
 
@@ -1243,10 +1274,32 @@ SOURCES
       description: "Clear session provider/model overrides so those sessions adopt the agent config",
     })
     force?: boolean,
+    @Option({
+      flags: "--model <model>",
+      description: "With key=provider: set the model in the same write, so the pair is validated together",
+    })
+    pairedModel?: string,
   ) {
     const agent = getAgent(id);
     if (!agent) {
       failAgentNotFound("agents set", id, asJson);
+    }
+
+    // --model belongs to key=provider only; reject it before any branch below can return and ignore it.
+    if (pairedModel !== undefined && key !== "provider") {
+      failSetModelUsage(
+        `--model is only valid with key=provider. To change the model alone: ravi agents set ${id} model <model>`,
+        asJson,
+      );
+    }
+    if (pairedModel !== undefined && !pairedModel.trim()) {
+      failSetModelUsage("--model cannot be empty", asJson);
+    }
+    if (pairedModel !== undefined && pairedModel.trim().toLowerCase() === "clear") {
+      failSetModelUsage(
+        `--model cannot be 'clear': it names the model to set with the provider. To clear the model: ravi agents set ${id} model clear`,
+        asJson,
+      );
     }
 
     if (key === "description") return setAgentLibraryDescription(agent.id, value, asJson);
@@ -1372,20 +1425,63 @@ SOURCES
       }
     }
 
+    // One provider identity for validation, preset check and storage (create trims it the same way).
+    const providerValue = key === "provider" ? value.trim() : value;
+    const modelCleared = key === "model" && value.trim().toLowerCase() === "clear";
+
     // Provider ids are intentionally open; runtime registration decides whether an id can execute.
-    if (key === "model") {
-      validateAgentModelValue(agent.provider, value);
+    // `model clear` removes the stored model without validating it, which is the way out of a
+    // provider/model pair that no single write can fix.
+    if (key === "model" && !modelCleared) {
+      // Sessions with their own provider and no model override inherit the agent model: refuse when the
+      // new model is not one of theirs (--force does not touch provider overrides on a model write).
+      const inheritingSessions = findSessionsStrandedByAgentDefaults({
+        provider: agent.provider ?? resolveRequestedRuntimeProvider({ agent: {} }).value,
+        model: value,
+        sessions: getSessionsByAgent(agent.id).filter((session) => !session.modelOverride?.trim()),
+      });
+      if (inheritingSessions.length > 0) {
+        const names = inheritingSessions.map((session) => session.name?.trim() || session.sessionKey).join(", ");
+        fail(
+          `Model '${value}' would leave ${inheritingSessions.length} session(s) of ${id} on a provider that cannot run it: ${names}. Change their provider first: ravi sessions set-provider <session> <provider|clear>.`,
+        );
+      }
+      validateAgentModelValue(
+        agent.provider,
+        value,
+        `To switch runtime in one write: ravi agents set ${id} provider <provider> --model ${value}`,
+      );
     }
     if (key === "provider") {
-      if (agent.model) {
-        validateAgentModelValue(value, agent.model);
+      if (pairedModel !== undefined) {
+        // The pair is validated together; the stored model is about to be replaced.
+        validateAgentModelValue(providerValue, pairedModel.trim());
+      } else if (agent.model) {
+        validateAgentModelValue(
+          providerValue,
+          agent.model,
+          `Change both in one write: ravi agents set ${id} provider ${providerValue} --model <model>, or clear the model first: ravi agents set ${id} model clear`,
+        );
+      }
+      // Sessions that follow the agent provider but pin a model the new provider cannot run would end up
+      // on the new provider with the old provider's model ("Model not found" on the next turn).
+      const strandedSessions = findSessionsStrandedByAgentDefaults({
+        provider: providerValue,
+        ...(pairedModel !== undefined ? { model: pairedModel.trim() } : {}),
+        sessions: getSessionsByAgent(agent.id),
+      });
+      if (strandedSessions.length > 0 && force !== true) {
+        const names = strandedSessions.map((session) => session.name?.trim() || session.sessionKey).join(", ");
+        fail(
+          `This change would leave ${strandedSessions.length} session(s) of ${id} on a provider/model pair they cannot run: ${names}. Re-run with --force to clear their incompatible overrides, or change them first: ravi sessions set-model <session> <model|clear>.`,
+        );
       }
       // A provider write must stay compatible with any selected preset.
-      if (agent.modelPresetId) {
+      if (agent.modelPresetId && pairedModel === undefined) {
         const preset = getRuntimeModelPreset(agent.modelPresetId);
-        if (preset && preset.provider !== value) {
+        if (preset && preset.provider !== providerValue) {
           fail(
-            `Cannot set provider '${value}': agent references preset '${preset.id}' (provider '${preset.provider}'). Clear the preset first: ravi agents set ${id} modelPreset clear`,
+            `Cannot set provider '${providerValue}': agent references preset '${preset.id}' (provider '${preset.provider}'). Clear the preset first: ravi agents set ${id} modelPreset clear`,
           );
         }
       }
@@ -1431,7 +1527,7 @@ SOURCES
     }
 
     // Parse settingSources as JSON array
-    let parsedValue: unknown = value;
+    let parsedValue: unknown = providerValue;
     if (key === "effort") {
       parsedValue =
         normalizedEffortValue === "clear" || normalizedEffortValue === "null" || normalizedEffortValue === ""
@@ -1470,12 +1566,21 @@ SOURCES
     try {
       // A direct model write clears any existing preset reference atomically so
       // the two never coexist (mutual exclusion).
-      const updates: AgentUpdateInput =
-        key === "model"
-          ? agent.modelPresetId
-            ? { model: parsedValue as string, modelPresetId: null }
-            : { model: parsedValue as string }
-          : { [key]: parsedValue };
+      let updates: AgentUpdateInput;
+      if (modelCleared) {
+        updates = { model: null };
+      } else if (key === "model") {
+        updates = agent.modelPresetId
+          ? { model: parsedValue as string, modelPresetId: null }
+          : { model: parsedValue as string };
+      } else if (key === "provider" && pairedModel !== undefined) {
+        // Provider and model land in one row update; a direct model also drops any preset reference.
+        updates = agent.modelPresetId
+          ? { provider: providerValue, model: pairedModel.trim(), modelPresetId: null }
+          : { provider: providerValue, model: pairedModel.trim() };
+      } else {
+        updates = { [key]: parsedValue };
+      }
       updateAgent(id, updates);
       if (key === "cwd" || key === "provider") {
         ensureAgentDirs(loadRouterConfig());
@@ -1484,17 +1589,22 @@ SOURCES
         before: agent,
         agentId: id,
         key,
-        value: parsedValue,
+        value: modelCleared ? null : parsedValue,
         force,
+        pairedModel: key === "provider" && pairedModel !== undefined,
       });
       if (asJson) {
         printJson(payload);
       } else {
-        console.log(
-          `\u2713 ${key} ${payload.changed ? "set" : "unchanged"}: ${id} -> ${
-            typeof parsedValue === "string" ? parsedValue : JSON.stringify(parsedValue)
-          }`,
-        );
+        if (modelCleared) {
+          console.log(`\u2713 model ${payload.changed ? "cleared" : "already clear"}: ${id}`);
+        } else {
+          console.log(
+            `\u2713 ${key} ${payload.changed ? "set" : "unchanged"}: ${id} -> ${
+              typeof parsedValue === "string" ? parsedValue : JSON.stringify(parsedValue)
+            }${key === "provider" && pairedModel !== undefined ? ` (model -> ${pairedModel.trim()})` : ""}`,
+          );
+        }
         printAgentSessionRuntimeSync(payload);
       }
       emitConfigChanged();

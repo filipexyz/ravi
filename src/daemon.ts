@@ -54,6 +54,12 @@ import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js"
 import { startInboxRunner, stopInboxRunner } from "./inbox/index.js";
 import { startLinkRequestWatcher, stopLinkRequestWatcher } from "./identity-link/link-watcher.js";
 import { startSlackApprovalClickFeedback, stopSlackApprovalClickFeedback } from "./approval/slack-click-feedback.js";
+import { startSlackGrantRequestRunner, stopSlackGrantRequestRunner } from "./channels/slack/grant-request-adapter.js";
+import {
+  startWhatsAppGrantRequestRunner,
+  stopWhatsAppGrantRequestRunner,
+} from "./channels/whatsapp/grant-request-adapter.js";
+import { startGrantRequestSweeper, stopGrantRequestSweeper } from "./permissions/grant-requests/runner.js";
 import { startHookRunner, stopHookRunner } from "./hooks-runtime/index.js";
 import { startTaskCheckpointRunner, stopTaskCheckpointRunner } from "./tasks/index.js";
 import { startSignalsRunner, stopSignalsRunner } from "./signals/index.js";
@@ -304,6 +310,9 @@ async function shutdown(signal: string, exitCode = 0) {
       { name: "inbox", stop: stopInboxRunner },
       { name: "link-request", stop: stopLinkRequestWatcher },
       { name: "slack-approval-feedback", stop: stopSlackApprovalClickFeedback },
+      { name: "grant-request-sweeper", stop: stopGrantRequestSweeper },
+      { name: "slack-grant-request", stop: stopSlackGrantRequestRunner },
+      { name: "whatsapp-grant-request", stop: stopWhatsAppGrantRequestRunner },
       { name: "sync", stop: stopSyncRunner },
       { name: "library-pin", stop: stopLibraryPinRunner },
       { name: "library-request", stop: stopLibraryRequestRunner },
@@ -610,6 +619,11 @@ export async function startDaemon() {
 
   await startSlackApprovalClickFeedback();
   log.info("Slack approval click feedback started");
+
+  startGrantRequestSweeper();
+  await startSlackGrantRequestRunner();
+  await startWhatsAppGrantRequestRunner();
+  log.info("Grant request runners started");
 
   await startSyncRunner();
   log.info("Sync runner started");

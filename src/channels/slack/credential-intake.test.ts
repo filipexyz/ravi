@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:te
 import { generateKeyPairSync, sign } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { setApprovalGrantorRouterConfigForTest } from "../../approval/grantor.js";
+import { setApprovalGrantorRouterConfigForTest } from "./grantors.js";
 import { seedApprovalContact } from "../../approval/test-support.js";
 import {
   cancelIntakeRequest,

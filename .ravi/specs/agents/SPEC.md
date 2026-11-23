@@ -106,3 +106,11 @@ with an actionable error when incompatible with a referenced preset. Agent JSON
 `modelPresetVersion`, and `modelError`, resolved through the canonical
 `resolveEffectiveAgentModel` / `resolveRequestedRuntimeProvider`. See
 `runtime/model-presets` and `runtime/defaults`.
+
+Provider and model are validated against each other, so a runtime switch has to
+be one write. `agents set <id> provider <p> --model <m>` validates the pair
+together and replaces both in one update; like any direct `model` write it also
+drops a referenced preset instead of keeping a reference the new provider could
+not run. `agents set <id> model clear` removes the direct `model` without
+validating it. With `--force`, the paired write also clears session model
+overrides, because the agent's model default changed with the provider.
