@@ -29,6 +29,11 @@
 - A command that goes stale while the access metadata loads MUST NOT run.
 - `close idle` MUST NOT let refused threads use up its batch: it MUST count only the closes it made and MUST bound the tries.
 - Stopping the consumer MUST wait for the command being answered.
-- `bun test src/chat-commands/ src/channels/slack/slash-commands.test.ts src/channels/slack/slash-command-handler.test.ts src/channels/slack/interactions.test.ts src/cli/command-access.test.ts` MUST pass.
+- The card of a thread Ravi opened MUST carry Fechar and Parar (each behind Slack's own confirmation, carrying no thread id) while the thread is not closed, and a card built without `controls`, like a cloud run's, MUST NOT.
+- A click on Fechar or Parar MUST run the engine command `close <ts>` or `stop <ts>` for the thread whose card was clicked, found among the threads of the session the clicked chat resolves to, as the contact of the Slack user of the payload; it MUST NOT name another chat's thread, MUST NOT run without a contact, without `modify` on the session or without the CLI's capability, MUST NOT run when it arrived late or with no arrival time or with a `ts` that is not a Slack timestamp, MUST be audited with `surface: "button"`, and MUST be answered once when Slack delivers the same envelope twice.
+- `stop <thread>` MUST interrupt the turn of the thread's own session and not the chat's, MUST say when the thread is not found or has no session left, and MUST be refused before the thread is looked up when the person cannot modify the session.
+- The runner MUST publish `routeAccountId` on every interaction it publishes.
+- `close` and `stop` MUST be asked a mutating capability: a declared access that is not `mutate` MUST be refused, and a contact that modifies the session but lacks the CLI's capability for `sessions close-thread` or `sessions runtime interrupt` MUST be refused with the missing capability named (real contact, real command-level check, real CLI metadata).
+- `bun test src/chat-commands/ src/channels/slack/slash-commands.test.ts src/channels/slack/slash-command-handler.test.ts src/channels/slack/interactions.test.ts src/channels/slack/thread-card.test.ts src/channels/slack/thread-controls.test.ts src/cli/command-access.test.ts` MUST pass.
 - `bun test src/channels/slack/socket-mode.test.ts -t "slash commands"` MUST pass.
 - `bun run typecheck` MUST pass.

@@ -79,6 +79,8 @@ export interface ChatCommandOrigin {
   readonly actorId: string;
   /** The platform's id for this command, when it has one (an envelope, a message). */
   readonly requestId?: string;
+  /** How the person reached the command on that platform (a typed command, a button): a value, for the audit. */
+  readonly surface?: string;
 }
 
 /** One audit row per command, refused ones included. It carries no text typed, no URL and no token. */
@@ -97,6 +99,7 @@ export interface ChatCommandAudit {
   readonly decision: ChatCommandDecision;
   readonly code: string;
   readonly requestId?: string;
+  readonly surface?: string;
 }
 
 export type ChatCommandSessionResolution =
@@ -242,6 +245,8 @@ export interface ChatCommandChannel {
   /** The threads of a session. Absent when the channel has none: the thread commands then say so. */
   threads?(session: SessionEntry): ChatThreadIndex;
   closeThread?(session: SessionEntry, threadRef: string): Promise<ChatThreadCloseResult>;
+  /** One thread of a session, by whatever ref the person gave (its name, its request id, the platform's own id). */
+  findThread?(session: SessionEntry, threadRef: string): ChatThreadSummary | null;
   /**
    * The access metadata the CLI declares for the command that closes this channel's threads, so
    * what is asked of a person cannot drift from the CLI. Absent when the channel has no threads;
@@ -439,6 +444,7 @@ export async function runChatCommand(
       decision: outcome.decision,
       code: outcome.code,
       ...(channel.origin.requestId ? { requestId: channel.origin.requestId } : {}),
+      ...(channel.origin.surface ? { surface: channel.origin.surface } : {}),
     };
     log.info("Chat command", entry);
     try {
@@ -512,8 +518,10 @@ export async function runChatCommand(
       parse.kind === "stop" ? "interrupt" : parse.kind === "status" || parse.kind === "threads" ? null : "close-thread";
     if (operation) {
       const inherited = await (deps.inheritedAccess ?? ((name) => defaultInheritedAccess(name, channel)))(operation);
-      if (!inherited) {
-        // No declared metadata means no way to ask the CLI's question: refuse.
+      // No declared metadata means no way to ask the CLI's question: refuse. And a command that
+      // changes state must be asked a mutating capability: a channel that declared a read command
+      // for it (by mistake or otherwise) would let a reader close threads or stop turns.
+      if (!inherited || inherited.access.kind !== "mutate") {
         return finish({ kind: "access_metadata_missing" }, { decision: "error", code: "access_metadata_missing" });
       }
       const verdict = (deps.commandAccess ?? enforceCliCommandAccess)({
@@ -694,9 +702,32 @@ async function run(
     }
 
     case "stop": {
+      // `stop` interrupts the turn of the chat's session; `stop <thread>` that of the thread's own session.
+      let target = session;
+      let targetName = name;
+      if (parse.threadRef !== undefined) {
+        if (!channel.findThread) return unsupported;
+        const thread = channel.findThread(session, parse.threadRef);
+        if (!thread) {
+          return {
+            result: { kind: "thread_not_found", ref: parse.threadRef, sessionName: name },
+            outcome: { decision: "info", code: "thread_not_found" },
+          };
+        }
+        targetName = thread.childSessionName ?? thread.requestId;
+        const child = thread.childSessionKey ? getSession(thread.childSessionKey) : null;
+        if (!child) {
+          // A thread whose session is gone has no turn to interrupt.
+          return {
+            result: { kind: "session_not_active", sessionName: targetName },
+            outcome: { decision: "info", code: "session_not_active" },
+          };
+        }
+        target = child;
+      }
       let result: RuntimeControlResult;
       try {
-        result = await (deps.interrupt ?? defaultInterrupt)(session);
+        result = await (deps.interrupt ?? defaultInterrupt)(target);
       } catch (error) {
         const timedOut = error instanceof Error && error.message.startsWith("Request timeout");
         return {
@@ -705,17 +736,17 @@ async function run(
         };
       }
       if (result.ok) {
-        return { result: { kind: "stopped", sessionName: name }, outcome: { decision: "allowed", code: "ok" } };
+        return { result: { kind: "stopped", sessionName: targetName }, outcome: { decision: "allowed", code: "ok" } };
       }
       if (result.code === RUNTIME_NO_ACTIVE_TURN) {
         return {
-          result: { kind: "nothing_running", sessionName: name },
+          result: { kind: "nothing_running", sessionName: targetName },
           outcome: { decision: "info", code: "nothing_running" },
         };
       }
       if (result.code === RUNTIME_SESSION_NOT_ACTIVE) {
         return {
-          result: { kind: "session_not_active", sessionName: name },
+          result: { kind: "session_not_active", sessionName: targetName },
           outcome: { decision: "info", code: "session_not_active" },
         };
       }
