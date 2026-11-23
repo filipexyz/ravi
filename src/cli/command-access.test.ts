@@ -20,6 +20,7 @@ import {
   RAVI_RUNTIME_CONTEXT_ENV_KEYS,
 } from "../test/ravi-state.js";
 import { dbSetSetting, type ContextRecord } from "../router/router-db.js";
+import { type ConsoleInvocation, withConsoleInvocation } from "../sdk/gateway/console-context.js";
 import {
   EXTERNAL_AUTHORITY_ASSERTION_SETTING,
   EXTERNAL_AUTHORITY_PUBKEY_SETTING,
@@ -196,6 +197,50 @@ describe("CLI command access enforcement", () => {
       );
 
       expect(result.allowed).toBe(false);
+    });
+
+    it("never borrows the authority of a Console invocation it happens to run inside", () => {
+      const nobody = createContact({ phone: "5511900000046", name: "Duda", status: "allowed" });
+      // A live Console delegation that authorizes exactly this command.
+      const live: ConsoleInvocation = {
+        grant: {
+          exp: Math.floor(Date.now() / 1000) + 3600,
+          enrollmentId: "enrollment-1",
+          sub: "console-user",
+          projectId: "project-1",
+          epoch: 1,
+          policyRevision: 1,
+          policyDigest: "digest-1",
+          command: "sessions close-thread",
+          access: CLOSE_THREAD,
+          scope: { kind: "project" },
+          agents: [],
+        } as unknown as ConsoleInvocation["grant"],
+        enrollment: {} as ConsoleInvocation["enrollment"],
+        service: {
+          store: {
+            enrollment: () => ({ active: true, epoch: 1 }),
+            db: { query: () => ({ get: () => ({ revision: 1, digest: "digest-1" }) }) },
+          },
+        } as unknown as ConsoleInvocation["service"],
+      };
+      const input = {
+        canonicalName: "sessions close-thread",
+        group: "sessions",
+        command: "close-thread",
+        access: CLOSE_THREAD,
+      };
+
+      // The delegation does allow it for the CLI...
+      expect(withConsoleInvocation(live, () => enforceCliCommandAccess({ ...input, source: "cli" })).allowed).toBe(
+        true,
+      );
+      // ...and a channel command inside the same invocation is still only its contact: this one holds nothing.
+      const result = withConsoleInvocation(live, () =>
+        enforceCliCommandAccess({ ...input, source: "channel-command", subject: { type: "contact", id: nobody.id } }),
+      );
+      expect(result.allowed).toBe(false);
+      expect(result.errorMessage).toContain(`contact:${nobody.id}`);
     });
 
     it("refuses a blocked contact even when it carries the owner tag", () => {
