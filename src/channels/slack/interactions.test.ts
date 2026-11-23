@@ -26,7 +26,8 @@ describe("Slack interaction response boundary", () => {
         "https://rilke.slack.com/commands/T0SNL8S4S/37053613554/YMB2ZESDLNjNLqSFZ1quhNAh",
       ),
     ).toBe(true);
-    expect(isAllowedSlackInteractionResponseUrl("https://rilke.slack.com/actions/T1/B1/secret")).toBe(true);
+    // ...and only for slash commands: an interaction handle (`/actions/`) is Slack's `hooks.slack.com` and nothing else.
+    expect(isAllowedSlackInteractionResponseUrl("https://rilke.slack.com/actions/T1/B1/secret")).toBe(false);
     expect(isAllowedSlackInteractionResponseUrl("https://slack.com/commands/T1/B1/secret")).toBe(false);
     expect(isAllowedSlackInteractionResponseUrl("https://a.b.slack.com/commands/T1/B1/secret")).toBe(false);
     expect(isAllowedSlackInteractionResponseUrl("https://-bad.slack.com/commands/T1/B1/secret")).toBe(false);
