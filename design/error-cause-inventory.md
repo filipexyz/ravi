@@ -718,7 +718,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/meetings.ts | 1845 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:886ed0f5b26b083bf98db0d6 |
 | cli | src/cli/commands/meetings.ts | 1886 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:8cc4d2bb46d79c4e63627281 |
 | cli | src/cli/commands/observers.ts | 73 | fixed | binding retained / no recognized error surface | src/cli/commands/observers.ts:519804ad35a11d337d7f1665 |
-| cli | src/cli/commands/observers.ts | 986 | fixed | binding retained / no recognized error surface | src/cli/commands/observers.ts:8bfec284091984f85b4600dc |
+| cli | src/cli/commands/observers.ts | 993 | fixed | binding retained / no recognized error surface | src/cli/commands/observers.ts:8bfec284091984f85b4600dc |
 | cli | src/cli/commands/pages.ts | 518 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:90f0a2961f7492d920025729 |
 | cli | src/cli/commands/pages.ts | 1533 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:23b402e772b919537c1430af |
 | cli | src/cli/commands/pages.ts | 2405 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:3782eede5f9231e775e0fc9c |
@@ -1982,19 +1982,19 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/model-broker.ts | 348 | triaged-follow-up | catch-without-binding | src/runtime/model-broker.ts:c458c33af921185233b8c309 |
 | runtime-chat | src/runtime/model-catalog.ts | 370 | no-cause | An unreadable or malformed models cache means there is no authoritative codex list, so enforcement stays permissive instead of failing writes. | src/runtime/model-catalog.ts:1c7f0324e70c509a6e9a430f |
 | runtime-chat | src/runtime/model-catalog.ts | 394 | triaged-follow-up | catch-without-binding | src/runtime/model-catalog.ts:0adcd64c0cd06692bb6a46e6 |
-| runtime-chat | src/runtime/observation-plane.ts | 512 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:e11628eb1279fac1afdd8f38 |
-| runtime-chat | src/runtime/observation-plane.ts | 521 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:36058302af01275a6693381c |
-| runtime-chat | src/runtime/observation-plane.ts | 626 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:3fe0cc39ce1af907e7e2487e |
-| runtime-chat | src/runtime/observation-plane.ts | 1195 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:690f4485fca97753b92a891f |
-| runtime-chat | src/runtime/observation-plane.ts | 1353 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:c2e1a15e69233693dd5197e7 |
-| runtime-chat | src/runtime/observation-plane.ts | 1534 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:2430258265090179f2f0b4f8 |
-| runtime-chat | src/runtime/observation-plane.ts | 1708 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:b5c1a91072ca61082c76140e |
-| runtime-chat | src/runtime/observation-plane.ts | 1752 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:540d0526f217895b3167d71a |
-| runtime-chat | src/runtime/observation-plane.ts | 1795 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:5510399926eaeeaf9db57d52 |
+| runtime-chat | src/runtime/observation-plane.ts | 518 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:e11628eb1279fac1afdd8f38 |
+| runtime-chat | src/runtime/observation-plane.ts | 527 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:36058302af01275a6693381c |
+| runtime-chat | src/runtime/observation-plane.ts | 632 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:3fe0cc39ce1af907e7e2487e |
+| runtime-chat | src/runtime/observation-plane.ts | 1203 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:690f4485fca97753b92a891f |
+| runtime-chat | src/runtime/observation-plane.ts | 1361 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:c2e1a15e69233693dd5197e7 |
+| runtime-chat | src/runtime/observation-plane.ts | 1542 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:2430258265090179f2f0b4f8 |
+| runtime-chat | src/runtime/observation-plane.ts | 1716 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:b5c1a91072ca61082c76140e |
+| runtime-chat | src/runtime/observation-plane.ts | 1760 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:540d0526f217895b3167d71a |
+| runtime-chat | src/runtime/observation-plane.ts | 1803 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:5510399926eaeeaf9db57d52 |
 | runtime-chat | src/runtime/observation-profiles.ts | 403 | fixed | binding retained / no recognized error surface | src/runtime/observation-profiles.ts:a7b3c1ecbf0239f7ccee0b6c |
-| runtime-chat | src/runtime/observation-profiles.ts | 1262 | fixed | binding retained / no recognized error surface | src/runtime/observation-profiles.ts:2ecb316d9df440514ba0494c |
-| runtime-chat | src/runtime/observation-profiles.ts | 1274 | triaged-follow-up | surface-bypasses-constructor | src/runtime/observation-profiles.ts:05b3823fa50b92445eb38e95 |
-| runtime-chat | src/runtime/observation-profiles.ts | 1291 | fixed | binding retained / no recognized error surface | src/runtime/observation-profiles.ts:3d9655c74b97c60fe994a371 |
+| runtime-chat | src/runtime/observation-profiles.ts | 1276 | fixed | binding retained / no recognized error surface | src/runtime/observation-profiles.ts:2ecb316d9df440514ba0494c |
+| runtime-chat | src/runtime/observation-profiles.ts | 1288 | triaged-follow-up | surface-bypasses-constructor | src/runtime/observation-profiles.ts:05b3823fa50b92445eb38e95 |
+| runtime-chat | src/runtime/observation-profiles.ts | 1305 | fixed | binding retained / no recognized error surface | src/runtime/observation-profiles.ts:3d9655c74b97c60fe994a371 |
 | runtime-chat | src/runtime/pi-provider.ts | 494 | triaged-follow-up | catch-without-binding | src/runtime/pi-provider.ts:4ad88940138da1f4005af257 |
 | runtime-chat | src/runtime/pi-provider.ts | 564 | fixed | binding retained / no recognized error surface | src/runtime/pi-provider.ts:a0f47148d8d5fea88b5f82b0 |
 | runtime-chat | src/runtime/pi-provider.ts | 667 | fixed | binding retained / no recognized error surface | src/runtime/pi-provider.ts:25a4b5982d9791d587fb9944 |

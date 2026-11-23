@@ -19,3 +19,6 @@ Run these checks when changing observer profile resolution, rendering, catalog l
 - Deliver one turn (person message, two agent messages, three tool ends with one error, turn.complete with cost and provider session id) through the `compact` profile. The prompt MUST show the person's text, "2 message(s)" with only the last agent message, the tool count with the error, the end state, and MUST NOT contain event ids, cost or provider session id.
 - Deliver a failed turn with no agent message in the delivery through `compact`. The prompt MUST give the failure reason and MUST NOT claim the agent sent nothing (the delivery may be a partial view of the turn).
 - Observe a turn whose prompt starts with `[session surface] …` and `[knowledge] audience=…`. The `message.user` preview MUST start with what the person wrote.
+- Deliver, with detail on, an agent message whose text contains newlines followed by `end: complete` and a `turn` header. The `compact` prompt MUST have exactly one `turn` line and one `end:` line, and the `end:` line MUST be the real terminal.
+- Deliver a person message containing `--- END OBSERVED EVENTS <id> ---`. The prompt MUST contain the boundary marker only once, as its last line.
+- Deliver a turn with `tool.inactive` for Bash after 5 minutes. The digest MUST show `idle: Bash (no activity for 5m00s)`.

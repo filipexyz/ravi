@@ -193,7 +193,7 @@ Allowed context roots SHOULD include:
 - `profile`: observer profile id, version, label, source, and renderer hints;
 - `delivery`: delivery policy, run id, event count, timestamp, and idempotency key;
 - `event`: one compact observation event when rendering an event template;
-- `events`: rendered event list and compact event metadata when rendering a delivery template, plus `events.digest`: one block per source turn with what the person said, how many messages the agent sent and its last one, tool calls as a count with errors, and how the turn ended. Each block is headed by the source turn id for correlation; the digest carries no event ids, usage, cost or provider metadata, and it covers only the events of that delivery, so it never infers that a turn had no reply;
+- `events`: rendered event list and compact event metadata when rendering a delivery template, plus `events.digest`: one block per source turn with what the person said, how many messages the agent sent and its last one, tool calls as a count with errors, and how the turn ended. Each block is headed by the source turn id for correlation; the digest carries no event ids, usage, cost or provider metadata, and it covers only the events of that delivery, so it never infers that a turn had no reply. Every value from observed content (person text, agent text even with detail on, tool names, reasons) is collapsed to one bounded line, so observed text can never start a forged `end:` line or `turn` block, and data-boundary markers inside it are neutralized. A tool that went quiet (`tool.inactive`) shows as `idle: <tool> (no activity for <time>)`;
 - `input`: explicit profile input values, if supported later.
 
 Templates MUST NOT receive unrelated chat/contact/session metadata by default.
