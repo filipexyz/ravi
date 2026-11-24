@@ -1139,7 +1139,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cron | src/cron/failure-notification.ts | 270 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:9f4862c94ad1cdce954f6824 |
 | cron | src/cron/failure-notification.ts | 312 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:98c131f44f660ecbd2faaadd |
 | cron | src/cron/failure-notification.ts | 379 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:872eccb90cc73e208afc46cb |
-| cron | src/cron/failure-notification.ts | 481 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:cf7e5fa6a76d578e3ee226d1 |
+| cron | src/cron/failure-notification.ts | 484 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:cf7e5fa6a76d578e3ee226d1 |
 | cron | src/cron/runner.ts | 162 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:a67e22487d87b0d4e3fabe92 |
 | cron | src/cron/runner.ts | 210 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:e319db265d99dc0086b354de |
 | cron | src/cron/runner.ts | 234 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:d15c97abfdc45d2e8fa9a5ee |
