@@ -142,9 +142,10 @@ describe("permissions request / request-status", () => {
       const error = await request({ to: `contact:${admin.id}`, execute });
       expect(error).toMatchObject({ code: "FULL_ACCESS_ALREADY_HELD", exitCode: 3 });
       expect((error as Error).message).toContain(`Contact ${admin.id} already holds full access in chat ${chatId}`);
-      expect((error as { details?: { suggestedAction?: string } }).details?.suggestedAction).toContain(
-        "no grant lifts that",
-      );
+      const suggestedAction = (error as { details?: { suggestedAction?: string } }).details?.suggestedAction;
+      // In a governed chat their turn is narrowed to those grants: automation stays refused there too.
+      expect(suggestedAction).toContain("a chat governed by contact grants");
+      expect(suggestedAction).toContain("No grant lifts either");
     }
     expect(delivered).toEqual([]);
     expect(dbListContactChatGrants({ contactId: admin.id })).toEqual([]);

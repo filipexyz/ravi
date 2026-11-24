@@ -47,15 +47,17 @@
   a thread opened from a person with no grant MUST stay held
   (`runtime-request-context.test.ts`).
 - The automation refusal MUST name its cause, in the command and the store
-  guard: a held relay (also one narrowed to a governed chat's grants) says it is
-  a relay and that a grant does not lift it, and never speaks of a contact's chat
+  guard: a held relay (also one narrowed to a governed chat's grants, and a
+  stamped relay that still carries withheld break-glass) says it is a relay and
+  that a grant does not lift it, and never speaks of a contact's chat
   permissions; a person with no grant and an overlay turn say theirs; no advice
   points at a grant (`user-overlay-automation.test.ts`,
   `runtime-request-context.test.ts`). The `automationHold` field MUST reach the
   envelope (allowlisted; other details dropped, diagnostic and advice not
   replaceable) and the `pr publish` follow refusal (`agent-contract.test.ts`,
   `pr/service.test.ts`); the remote CLI MUST map each known cause to its fixed
-  advice and keep the generic denial advice for an unknown cause or none
+  advice and keep the generic denial advice for an unknown cause or none, and a
+  `failed` or `blocked` body carrying a cause MUST keep its own advice
   (`remote-gateway.test.ts`).
 - An app command resolving to anything but Ravi MUST be refused in a turn
   that withholds `execute:executable:*` (`turn-executable.test.ts`); observer

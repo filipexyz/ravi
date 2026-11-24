@@ -219,6 +219,39 @@ describe("automation hold refusals over the gateway", () => {
     expect(denial("held-relay")?.details.suggestedAction).toContain("does not lift it");
   });
 
+  it("never rewrites the advice of a failed or blocked body that carries a cause", () => {
+    // Only a PERMISSION_DENIED denial comes from the automation guard; any other body keeps its advice.
+    const body = (exitCode: number, outcome: string, code: string) =>
+      remoteGatewayErrorToContractError(
+        "cron add",
+        result({
+          status: exitCode === 3 ? 409 : 500,
+          body: JSON.stringify({
+            success: false,
+            op: "cron add",
+            exitCode,
+            outcome,
+            error: {
+              code,
+              message: "cron add could not be completed.",
+              retryable: false,
+              suggestedAction: "Retry after the scheduler is back.",
+              automationHold: "held-relay",
+            },
+          }),
+        }),
+      );
+    const failed = body(1, "failed", "COMMAND_FAILED");
+    const blocked = body(3, "blocked", "POLICY_BLOCKED");
+    for (const error of [failed, blocked]) {
+      expect(error).not.toBeNull();
+      expect(error?.details.automationHold).toBeUndefined();
+      expect(error?.details.suggestedAction).not.toBe(AUTOMATION_HOLD_SUGGESTED_ACTION["held-relay"]);
+    }
+    expect(failed?.details.suggestedAction).toBe("Retry after the scheduler is back.");
+    expect(blocked?.details.suggestedAction).toBe("Review the remote policy block before retrying the command");
+  });
+
   it("keeps the generic denial advice for an unknown cause or none", () => {
     for (const value of [undefined, "contact-full-access", 7]) {
       const error = denial(value);

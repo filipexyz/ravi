@@ -1161,7 +1161,7 @@ export async function requestFullAccessApproval(input: FullAccessRequestInput) {
       return policy(
         "FULL_ACCESS_ALREADY_HELD",
         error.message,
-        "Nothing was requested. If a command was refused in a turn of theirs, read its message: a relayed turn (a thread or a thread's return) is held by the relay, and no grant lifts that.",
+        "Nothing was requested. If a command of theirs was refused, its message names the cause: a relayed turn (a thread or a thread's return) is held by the relay, and automation from a turn in a chat governed by contact grants is refused whatever those grants hold. No grant lifts either.",
         error,
       );
     }
