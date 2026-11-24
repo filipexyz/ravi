@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { join } from "node:path";
+import { runWithContext, type ToolContext } from "../cli/context.js";
 import { openStateDatabase } from "../db/state-boundary.js";
 import { prepareThreadFence } from "../threads/schema-fence.js";
 import { enqueueTraceExportBatch } from "../session-trace/cloud-trace-export.js";
@@ -809,5 +810,69 @@ describe("settings compare-and-delete", () => {
     expect(dbDeleteSettingIfValue("test.removed", "value")).toBe(true);
     expect(dbGetSetting("test.keeps")).toBe("value");
     expect(dbDeleteSettingIfValue("test.missing", "value")).toBe(false);
+  });
+});
+
+// Spec permissions/break-glass, "sinks": dbUpdateAgent is where every writer of
+// agent runtime permissions lands, so a hypothetical new writer is refused too.
+describe("agent defaults break-glass sink", () => {
+  let sinkStateDir: string | null = null;
+
+  beforeEach(async () => {
+    sinkStateDir = await createIsolatedRaviState("ravi-router-break-glass-sink-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(sinkStateDir);
+    sinkStateDir = null;
+  });
+
+  const adminAgent: ToolContext = {
+    contextId: "ctx_sink",
+    agentId: "sink-admin",
+    sessionKey: "agent:sink-admin:main",
+    sessionName: "sink-admin-main",
+    context: {
+      contextId: "ctx_sink",
+      contextKey: "rctx_sink",
+      kind: "agent-runtime",
+      agentId: "sink-admin",
+      sessionKey: "agent:sink-admin:main",
+      sessionName: "sink-admin-main",
+      capabilities: [{ permission: "admin", objectType: "system", objectId: "*", source: "test" }],
+      createdAt: 0,
+    },
+  };
+
+  function refused(fn: () => unknown): unknown {
+    try {
+      fn();
+    } catch (error) {
+      return error;
+    }
+    return null;
+  }
+
+  it("refuses raising another agent from an agent turn, in either stored form", () => {
+    dbCreateAgent({ id: "sink-victim", cwd: "/tmp" });
+    runWithContext(adminAgent, () => {
+      expect(
+        refused(() => dbUpdateAgent("sink-victim", { defaults: { runtimePermissions: { profile: "Full-Access" } } })),
+      ).toMatchObject({ code: "FULL_ACCESS_APPROVAL_REQUIRED" });
+      expect(
+        refused(() => dbUpdateAgent("sink-victim", { defaults: { runtimePermissions: "full-access" } })),
+      ).toMatchObject({ code: "FULL_ACCESS_APPROVAL_REQUIRED" });
+      expect(
+        refused(() =>
+          dbUpdateAgent("sink-victim", {
+            defaults: { runtimePermissions: { profile: "explicit-only", capabilities: ["execute:executable:*"] } },
+          }),
+        ),
+      ).toMatchObject({ code: "FULL_ACCESS_APPROVAL_REQUIRED" });
+      dbUpdateAgent("sink-victim", { defaults: { tts_voice: "abc" } });
+    });
+    expect(JSON.stringify(dbGetAgent("sink-victim")?.defaults ?? {})).not.toContain("ull-");
+    dbUpdateAgent("sink-victim", { defaults: { runtimePermissions: { profile: "full-access" } } });
+    expect(JSON.stringify(dbGetAgent("sink-victim")?.defaults ?? {})).toContain("full-access");
   });
 });

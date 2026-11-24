@@ -19,7 +19,7 @@ import {
 } from "../contacts.js";
 import { runApprovedBreakGlassGrant } from "./break-glass.js";
 import type { ContextCapability } from "../router/router-db.js";
-import { dbCreateAgent, dbGetAgent, dbUpdateAgent, dbUpsertChat, dbUpsertInstance } from "../router/router-db.js";
+import { dbCreateAgent, dbGetAgent, dbUpsertChat, dbUpsertInstance } from "../router/router-db.js";
 import { dbCreateTagDefinition } from "../tags/index.js";
 import { dbEnsureContactChatGrant } from "./contact-chat-grants.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
@@ -359,17 +359,6 @@ describe("storage sinks refuse break-glass from any new writer", () => {
       addContactTag("5511900007010", "vip");
     });
     expect(materializeContactPolicyCapabilities(target.id)).toEqual([]);
-  });
-
-  it("refuses a hypothetical writer raising another agent through the defaults sink", () => {
-    dbCreateAgent({ id: "sink-victim", cwd: "/tmp" });
-    runWithContext(ADMIN_AGENT, () => {
-      expectBreakGlassDenied(() =>
-        dbUpdateAgent("sink-victim", { defaults: { runtimePermissions: { profile: "Full-Access" } } }),
-      );
-      expectBreakGlassDenied(() => dbUpdateAgent("sink-victim", { defaults: { runtimePermissions: "full-access" } }));
-    });
-    expect(JSON.stringify(dbGetAgent("sink-victim")?.defaults ?? {})).not.toContain("ull-");
   });
 
   it("opens the sinks only for the operator terminal and an approved grant", () => {
