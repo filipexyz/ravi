@@ -465,14 +465,26 @@ export async function waitForStateReady(options: WaitForStateReadyOptions): Prom
 async function daemonStateReady(): Promise<boolean> {
   const { getPm2Processes, PM2_PROCESS_NAME } = await import("../../pm2.js");
   const { readDaemonSchemaPhase } = await import("../../db/daemon-schema-owner.js");
-  const daemon = getPm2Processes().find((p) => p.name === PM2_PROCESS_NAME && p.status === "online");
-  if (!daemon) return false;
-  const phase = readDaemonSchemaPhase({ pid: daemon.pid, startedAt: daemon.startedAt ?? undefined });
-  if (phase === "ready") return true;
-  if (phase !== null) return false;
   const { dbListAgents } = await import("../../router/router-db.js");
+  const daemon = getPm2Processes().find((p) => p.name === PM2_PROCESS_NAME && p.status === "online");
+  return decideStateReady({
+    online: Boolean(daemon),
+    phase: daemon ? readDaemonSchemaPhase({ pid: daemon.pid, startedAt: daemon.startedAt ?? undefined }) : null,
+    probe: () => void dbListAgents(),
+  });
+}
+
+/** The readiness rule of `daemonStateReady`, apart from PM2 and the database. */
+export function decideStateReady(input: {
+  online: boolean;
+  phase: "waiting" | "owned" | "ready" | null;
+  probe: () => void;
+}): boolean {
+  if (!input.online) return false;
+  if (input.phase === "ready") return true;
+  if (input.phase !== null) return false;
   try {
-    dbListAgents();
+    input.probe();
     return true;
   } catch (error) {
     if (isStateNotReadyError(error)) return false;
@@ -488,7 +500,9 @@ export async function runStateStep(step: () => Promise<void>): Promise<boolean> 
   } catch (error) {
     if (!isStateNotReadyError(error)) throw error;
     warning("O daemon ainda não preparou o estado (STATE_SCHEMA_NOT_READY).");
-    info("Execute `ravi daemon start`, aguarde e rode `ravi setup` de novo.");
+    // The refusal names its own fix: `ravi daemon start` on a new install, a restart after an update.
+    info(error.message);
+    info("Depois, rode `ravi setup` de novo.");
     return false;
   }
 }
@@ -500,7 +514,8 @@ export async function runStateStep(step: () => Promise<void>): Promise<boolean> 
 export interface SetupSteps {
   omni: () => Promise<void>;
   environment: () => Promise<void>;
-  daemon: () => Promise<unknown>;
+  /** Whether the daemon is up and has prepared state. */
+  daemon: () => Promise<boolean>;
   agent: () => Promise<void>;
   settings: () => Promise<void>;
 }
@@ -522,11 +537,13 @@ export async function runSetup(steps: SetupSteps = DEFAULT_STEPS): Promise<boole
   await steps.omni();
   await steps.environment();
   // The daemon creates ravi.db; the agent and settings steps need it.
-  await steps.daemon();
-  const complete = (await runStateStep(steps.agent)) && (await runStateStep(steps.settings));
+  // Without a ready daemon the setup is not complete, even if the database already exists.
+  const daemonReady = await steps.daemon();
+  const complete = daemonReady && (await runStateStep(steps.agent)) && (await runStateStep(steps.settings));
 
   console.log();
   if (!complete) {
+    if (!daemonReady) info("O daemon não ficou pronto. Veja `ravi daemon logs`, depois rode `ravi setup` de novo.");
     console.log(`  ${c.yellow}${c.bold}Configuração incompleta${c.reset} ${c.gray}— leia os avisos acima${c.reset}`);
     console.log();
     return false;

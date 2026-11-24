@@ -1,6 +1,6 @@
 import { describe, expect, it, spyOn } from "bun:test";
 import { StateNotPreparedError } from "../../db/state-boundary.js";
-import { runSetup, runStateStep, waitForStateReady } from "./setup.js";
+import { decideStateReady, runSetup, runStateStep, waitForStateReady } from "./setup.js";
 
 function quiet() {
   return spyOn(console, "log").mockImplementation(() => {});
@@ -14,7 +14,10 @@ describe("ravi setup on a new install", () => {
       const complete = await runSetup({
         omni: async () => void order.push("omni"),
         environment: async () => void order.push("environment"),
-        daemon: async () => void order.push("daemon"),
+        daemon: async () => {
+          order.push("daemon");
+          return true;
+        },
         agent: async () => void order.push("agent"),
         settings: async () => void order.push("settings"),
       });
@@ -34,10 +37,10 @@ describe("ravi setup on a new install", () => {
       const complete = await runSetup({
         omni: async () => {},
         environment: async () => {},
-        daemon: async () => {},
+        daemon: async () => true,
         agent: async () => {
           order.push("agent");
-          throw new StateNotPreparedError("STATE_SCHEMA_NOT_READY: ravi.db does not exist");
+          throw new StateNotPreparedError("STATE_SCHEMA_NOT_READY: ravi.db does not exist. Run `ravi daemon start`.");
         },
         settings: async () => void order.push("settings"),
       });
@@ -46,8 +49,43 @@ describe("ravi setup on a new install", () => {
       log.mockRestore();
     }
     expect(order).toEqual(["agent"]);
-    expect(output).toContain("ravi daemon start");
+    expect(output).toContain("ravi.db does not exist. Run `ravi daemon start`.");
     expect(output).not.toContain("Configuração completa!");
+  });
+
+  it("passes on the refusal's own fix, such as a restart after an update", async () => {
+    const log = quiet();
+    let output = "";
+    log.mockImplementation((...args: unknown[]) => void (output += `${args.join(" ")}\n`));
+    try {
+      const ran = await runStateStep(async () => {
+        throw new StateNotPreparedError(
+          'STATE_SCHEMA_NOT_READY: router is not prepared for this release. Run `ravi daemon restart -m "prepare state"`.',
+        );
+      });
+      expect(ran).toBe(false);
+    } finally {
+      log.mockRestore();
+    }
+    expect(output).toContain('ravi daemon restart -m "prepare state"');
+  });
+
+  it("is not complete when the daemon never became ready, even if state steps would succeed", async () => {
+    const log = quiet();
+    const order: string[] = [];
+    try {
+      const complete = await runSetup({
+        omni: async () => {},
+        environment: async () => {},
+        daemon: async () => false,
+        agent: async () => void order.push("agent"),
+        settings: async () => void order.push("settings"),
+      });
+      expect(complete).toBe(false);
+    } finally {
+      log.mockRestore();
+    }
+    expect(order).toEqual([]);
   });
 
   it("rethrows errors other than state not ready", async () => {
@@ -90,5 +128,39 @@ describe("waitForStateReady", () => {
     });
     expect(ready).toBe(false);
     expect(clock).toBe(2_000);
+  });
+});
+
+describe("decideStateReady", () => {
+  const notReady = () => {
+    throw new StateNotPreparedError("STATE_SCHEMA_NOT_READY");
+  };
+  const fine = () => {};
+
+  it("is not ready without an online daemon", () => {
+    expect(decideStateReady({ online: false, phase: null, probe: fine })).toBe(false);
+  });
+
+  it("follows the daemon's schema phase when it reports one", () => {
+    expect(decideStateReady({ online: true, phase: "ready", probe: notReady })).toBe(true);
+    expect(decideStateReady({ online: true, phase: "owned", probe: fine })).toBe(false);
+    expect(decideStateReady({ online: true, phase: "waiting", probe: fine })).toBe(false);
+  });
+
+  it("probes the database when there is no phase receipt", () => {
+    expect(decideStateReady({ online: true, phase: null, probe: fine })).toBe(true);
+    expect(decideStateReady({ online: true, phase: null, probe: notReady })).toBe(false);
+  });
+
+  it("rethrows a probe error that is not state readiness", () => {
+    expect(() =>
+      decideStateReady({
+        online: true,
+        phase: null,
+        probe: () => {
+          throw new Error("disk");
+        },
+      }),
+    ).toThrow("disk");
   });
 });

@@ -193,10 +193,11 @@ Once you have run it with `--next`, a plain `ravi update` stays on `next`. Befor
   ravi daemon start
   pm2 save
   # The daemon creates ~/.ravi/ravi.db as it starts; until then the CLI answers STATE_SCHEMA_NOT_READY.
-  for i in $(seq 30); do ravi settings set defaultTimezone America/Sao_Paulo && break; sleep 2; done   # your time zone
+  ok=; for i in $(seq 30); do ravi settings set defaultTimezone America/Sao_Paulo && ok=1 && break; sleep 2; done   # your time zone
+  [ -n "$ok" ] || echo "The daemon has not prepared state yet: read ravi daemon logs" >&2
   ```
 
-  PM2 shows the daemon `online` before it has prepared the database, so the first state write retries for up to a minute. If it still fails, read `ravi daemon logs`.
+  PM2 shows the daemon `online` before it has prepared the database, so the first state write retries for up to a minute and says so if it never went through. Then read `ravi daemon logs`.
 
   Then continue with step 3 and [Choose the model provider](#choose-the-model-provider). `-js` turns on JetStream, which Ravi requires.
 

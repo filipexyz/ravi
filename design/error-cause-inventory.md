@@ -854,8 +854,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/setup.ts | 255 | triaged-follow-up | catch-without-binding | src/cli/commands/setup.ts:704f8220380c8932d5adca95 |
 | cli | src/cli/commands/setup.ts | 405 | fixed | binding retained / no recognized error surface | src/cli/commands/setup.ts:49d524f8cbc334df15427439 |
 | cli | src/cli/commands/setup.ts | 419 | triaged-follow-up | catch-without-binding | src/cli/commands/setup.ts:de76a145c308a6c9a19286a7 |
-| cli | src/cli/commands/setup.ts | 477 | fixed | binding retained / no recognized error surface | src/cli/commands/setup.ts:bda6229b2f8ba22d850202f9 |
-| cli | src/cli/commands/setup.ts | 488 | fixed | binding retained / no recognized error surface | src/cli/commands/setup.ts:62d32f56ca15e64a7ed7fd1b |
+| cli | src/cli/commands/setup.ts | 489 | fixed | binding retained / no recognized error surface | src/cli/commands/setup.ts:ca12a351509150a8f14ef8b9 |
+| cli | src/cli/commands/setup.ts | 500 | fixed | binding retained / no recognized error surface | src/cli/commands/setup.ts:c195d954462790cf72bb6433 |
 | cli | src/cli/commands/signals.ts | 227 | triaged-follow-up | catch-without-binding | src/cli/commands/signals.ts:92042d617676e84df9f4b55a |
 | cli | src/cli/commands/signals.ts | 492 | fixed | binding retained / no recognized error surface | src/cli/commands/signals.ts:17ed84b385d2e5d0ee9bd87d |
 | cli | src/cli/commands/signals.ts | 523 | fixed | binding retained / no recognized error surface | src/cli/commands/signals.ts:879cca8f6afbe2e4d7af6fb2 |
