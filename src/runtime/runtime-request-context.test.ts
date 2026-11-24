@@ -2,6 +2,12 @@ import { existsSync } from "node:fs";
 import { sessionCloneSeedPublisher } from "../cli/commands/sessions.js";
 import { buildSessionCloneSeedTurn } from "../sessions/clone-seed-turn.js";
 import { isActorBreakGlassLimitedContext, isRelayHeldBelowAgent } from "../permissions/actor-limit.js";
+import {
+  assertAutomationStoreWrite,
+  assertNoUserOverlayAutomationWrite,
+  automationHoldCause,
+} from "../permissions/user-overlay-automation.js";
+import { runWithContext } from "../cli/context.js";
 import { join } from "node:path";
 import { authorizeContextCapabilities } from "../permissions/context-capabilities-provider.js";
 import { canWithCapabilityContext } from "../permissions/capability-context.js";
@@ -2567,7 +2573,12 @@ describe("verified human work handoffs", () => {
     return { contact, caller, prompt };
   }
 
-  function handoff(caller: Turn, action: Action = "execute", override: Partial<RuntimeLaunchPrompt> = {}) {
+  function handoff(
+    caller: Turn,
+    action: Action = "execute",
+    override: Partial<RuntimeLaunchPrompt> = {},
+    target = workerAgent,
+  ) {
     const origin = action.startsWith("session.")
       ? buildChannelTurnOrigin(
           action as "session.bootstrap" | "session.return",
@@ -2585,7 +2596,7 @@ describe("verified human work handoffs", () => {
       _turnOrigin: origin,
       ...override,
     };
-    return runtimeFor(prompt, workerAgent, `human-worker-${++sequence}`);
+    return runtimeFor(prompt, target, `human-worker-${++sequence}`);
   }
 
   function connectorDeps(turn: Turn) {
@@ -2696,6 +2707,52 @@ describe("verified human work handoffs", () => {
     });
     expect(isRelayHeldBelowAgent(handoff(unstamped, "execute").metadata)).toBe(true);
     expect(isRelayHeldBelowAgent(handoff(overlayThread, "execute").metadata)).toBe(true);
+  });
+
+  it("the operator's thread returning to the agent that opened it is not held; a held one names the relay", () => {
+    // 24/11 in production: the operator (admin tag) asks a full-access agent for work in a chat with
+    // no grants, the agent opens a thread and the thread's report wakes it again (session.return).
+    // That turn writes cron jobs and triggers as the operator's own work.
+    dbUpdateAgent(originAgent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+    const operator = createContact({
+      phone: "5511900098101",
+      name: "Operator",
+      tags: ["permission-owner"],
+      status: "allowed",
+    });
+    const operatorTurn = runtimeFor(promptForContact(operator.id, "Plan it in a thread"), originAgent, "operator-dm");
+    expect(operatorTurn.metadata?.actorBreakGlassWithheld).toBeUndefined();
+    const operatorThread = handoff(operatorTurn, "session.bootstrap", {}, originAgent);
+    const back = handoff(operatorThread, "session.return", {}, originAgent);
+    expect(back.metadata?.actorPrincipal).toBe(`agent:${originAgent.id}`);
+    expect(back.metadata?.turnOrigin).toMatchObject({ producer: "channel", action: "session.return" });
+    expect(back.metadata?.relayNarrowing).toBe(true);
+    expect(back.metadata?.relayCallerUnrestricted).toBe(true);
+    expect(canWithCapabilities(back.capabilities, "admin", "system", "*")).toBe(true);
+    expect(automationHoldCause(back)).toBeNull();
+    const asTool = (turn: Turn) => ({ contextId: turn.contextId, agentId: turn.agentId, context: turn });
+    expect(() => runWithContext(asTool(back), () => assertNoUserOverlayAutomationWrite("cron add"))).not.toThrow();
+    expect(() => runWithContext(asTool(back), () => assertAutomationStoreWrite("cron job"))).not.toThrow();
+
+    // A person with no grant in that chat: the return of their thread stays held, and the refusal
+    // names the relay instead of anyone's chat permissions.
+    const stranger = createContact({ phone: "5511900098102", name: "Stranger" });
+    const strangerTurn = runtimeFor(promptForContact(stranger.id, "Plan it in a thread"), originAgent, "stranger-dm");
+    expect(strangerTurn.metadata?.actorBreakGlassWithheld).toEqual(["admin:system:*", "execute:executable:*"]);
+    const strangerThread = handoff(strangerTurn, "session.bootstrap", {}, originAgent);
+    const heldBack = handoff(strangerThread, "session.return", {}, originAgent);
+    expect(heldBack.metadata?.relayCallerUnrestricted).toBeUndefined();
+    expect(canWithCapabilities(heldBack.capabilities, "admin", "system", "*")).toBe(false);
+    expect(automationHoldCause(heldBack)).toBe("held-relay");
+    let refusal: unknown;
+    try {
+      runWithContext(asTool(heldBack), () => assertNoUserOverlayAutomationWrite("cron add"));
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toMatchObject({ code: "PERMISSION_DENIED" });
+    expect((refusal as Error).message).toContain("relayed turn");
+    expect((refusal as Error).message).not.toContain("contact's chat permissions");
   });
 
   it("a relay to an agent with more authority than the caller's ceiling is held, not stamped", () => {

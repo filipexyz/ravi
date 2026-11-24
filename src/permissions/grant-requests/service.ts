@@ -3,6 +3,7 @@ import { actorCanGrantRequestedPermission } from "../../approval/grantor.js";
 import { logger } from "../../utils/logger.js";
 import { applyPermissionGrant } from "../apply-grant.js";
 import { canWithCapabilities } from "../capability-snapshot.js";
+import { resolveContactChatOverlay } from "../contact-policy-permissions-provider.js";
 import { emitPermissionGrantAudit } from "../denials.js";
 import { materializeSubjectCapabilities } from "../provider-runtime.js";
 import {
@@ -62,7 +63,7 @@ export function resetGrantApprovalAdaptersForTest(): void {
 // Errors
 // ---------------------------------------------------------------------------
 
-export type GrantRequestErrorCode = "no_adapter" | "no_eligible_grantor" | "undeliverable";
+export type GrantRequestErrorCode = "already_held" | "no_adapter" | "no_eligible_grantor" | "undeliverable";
 
 export class GrantRequestError extends Error {
   constructor(
@@ -107,6 +108,27 @@ export function contactHoldsAdmin(contactId: string): boolean {
   );
 }
 
+/**
+ * Whether the contact's own turns in that chat already hold full access, so the
+ * grant would change nothing there and nobody should be asked. It reads what a
+ * turn of theirs gets: in a chat governed by contact grants, their overlay (chat
+ * grants and global permission tags such as an admin tag); in a chat with no
+ * grants, their own capabilities, which decide whether break-glass is withheld.
+ */
+export function contactHoldsFullAccessInChat(contactId: string, chatId: string): boolean {
+  const overlay = resolveContactChatOverlay({ contactId, chatId });
+  if (!overlay.active) return contactHoldsAdmin(contactId);
+  return (
+    overlay.eligible &&
+    canWithCapabilities(
+      overlay.capabilities,
+      FULL_ACCESS_CAPABILITY.permission,
+      FULL_ACCESS_CAPABILITY.objectType,
+      FULL_ACCESS_CAPABILITY.objectId,
+    )
+  );
+}
+
 interface GrantorTarget {
   readonly adapter: GrantApprovalChannelAdapter;
   readonly contact: ReachableContact;
@@ -145,6 +167,7 @@ export function previewGrantRequest(
   plan: GrantRequestPlan,
   dependencies: GrantRequestServiceDependencies = defaultDependencies,
 ): { readonly grantors: ReadonlyArray<{ readonly contactId: string; readonly channel: string }> } {
+  if (contactHoldsFullAccessInChat(plan.contactId, plan.chatId)) throw alreadyHeldError(plan);
   const channelAdapters = dependencies.adapters();
   if (channelAdapters.length === 0) throw noAdapterError();
   const targets = resolveGrantorTargets(plan, channelAdapters);
@@ -152,6 +175,13 @@ export function previewGrantRequest(
   return {
     grantors: targets.map((target) => ({ contactId: target.contact.contactId, channel: target.adapter.channel })),
   };
+}
+
+function alreadyHeldError(plan: GrantRequestPlan): GrantRequestError {
+  return new GrantRequestError(
+    "already_held",
+    `Contact ${plan.contactId} already holds full access in chat ${plan.chatId}: their own turns there run with the agent's whole authority, so there is nothing to approve and nobody was asked.`,
+  );
 }
 
 function noAdapterError(): GrantRequestError {
@@ -187,6 +217,8 @@ export async function requestGrant(
 ): Promise<RequestGrantResult> {
   const now = dependencies.now();
   expireGrantRequests(now);
+  // Checked before reuse: an open request for access the contact now holds is not worth answering.
+  if (contactHoldsFullAccessInChat(input.plan.contactId, input.plan.chatId)) throw alreadyHeldError(input.plan);
 
   const open = findOpenGrantRequest(input.plan, now);
   if (open) return { request: open, deliveries: listGrantRequestDeliveries(open.id), reused: true };

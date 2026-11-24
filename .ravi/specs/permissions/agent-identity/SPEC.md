@@ -128,6 +128,14 @@ Ungoverned chats keep `agent_identity ∩ turn_caps`, with one exception:
   chain through a held turn) stays held: the rule fails closed. Before this,
   every thread of the operator lost the CI follow of `ravi pr publish` (24/11,
   3.261124.15) and `triggers add`/`cron add`/follow-ups from it were refused.
+- The refusal names its cause, because the remedy differs
+  (`automationHoldCause`, `permissions/user-overlay-automation.ts`): a turn
+  narrowed to a contact's chat grants, a relayed turn whose caller does not carry
+  the agent's whole authority, or a person with no grant in the chat. A held
+  relay is not about anyone's grants: its message says so, and that requesting
+  access for a contact does not lift it. On 24/11 a relay refused with "limited
+  to a contact's chat permissions" led the main session to request full access
+  for the operator, who already held it.
 - What "everything except break-glass" still includes (declared): the admin
   shortcut still grants every other `(permission, objectType)`, e.g.
   `execute:group:*` CLI groups, `write_contacts:system:*` and `admin` on types

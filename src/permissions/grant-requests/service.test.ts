@@ -17,7 +17,7 @@ import {
 import { dbCreateAgent, dbUpsertChat } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { setPermissionAuditPublisherForTest } from "../denials.js";
-import { dbGetContactChatGrant, dbListContactChatGrants } from "../contact-chat-grants.js";
+import { dbEnsureContactChatGrant, dbGetContactChatGrant, dbListContactChatGrants } from "../contact-chat-grants.js";
 import {
   ensureAgentRuntimeCapability,
   readAgentRuntimePermissionsConfig,
@@ -188,6 +188,49 @@ describe("grant requests (core, no channel)", () => {
       expect(dbListContactChatGrants({ contactId: grantee.id })).toEqual([]);
     });
 
+    it("asks nobody for a contact whose own turns in that chat already hold full access", async () => {
+      const adapter = fakeAdapter("chan-a", [
+        { contactId: admin.id, address: {} },
+        { contactId: secondAdmin.id, address: {} },
+      ]);
+      // 24/11: the operator (admin tag) in a chat with no grants already runs with the whole agent;
+      // the request went to the only other admin.
+      const forAdmin = { ...plan, contactId: admin.id };
+      expect(() => previewGrantRequest(forAdmin, deps([adapter]))).toThrow(
+        expect.objectContaining({ code: "already_held" }),
+      );
+      const refused = await requestGrant({ plan: forAdmin, requester }, deps([adapter])).catch((e: unknown) => e);
+      expect(refused).toBeInstanceOf(GrantRequestError);
+      expect(refused).toMatchObject({ code: "already_held" });
+      expect(adapter.delivered).toEqual([]);
+      expect(findOpenGrantRequest(forAdmin, nowMs)).toBeNull();
+
+      // An open identical request is not reused once the contact holds it.
+      const open = await requestGrant({ plan, requester }, deps([adapter]));
+      expect(adapter.delivered).toHaveLength(2);
+      seedApprovalContact({ phone: APPROVAL_TEST_STRANGER_PHONE, name: "Breno", tags: ["permission.admin"] });
+      await expect(requestGrant({ plan, requester }, deps([adapter]))).rejects.toMatchObject({ code: "already_held" });
+      expect(adapter.delivered).toHaveLength(2);
+      expect(getGrantRequest(open.request.id)?.status).toBe("pending");
+    });
+
+    it("reads the contact's overlay in a chat governed by contact grants", async () => {
+      const adapter = fakeAdapter("chan-a", [{ contactId: secondAdmin.id, address: {} }]);
+      dbEnsureContactChatGrant({
+        contactId: bystander.id,
+        profileSlug: "permission-image",
+        scopeType: "chat",
+        scopeId: plan.chatId,
+      });
+      // A global admin tag is part of the overlay: the admin already holds it here too.
+      await expect(
+        requestGrant({ plan: { ...plan, contactId: admin.id }, requester }, deps([adapter])),
+      ).rejects.toMatchObject({ code: "already_held" });
+      // A contact whose overlay does not cover full access is still asked for.
+      const asked = await requestGrant({ plan, requester }, deps([adapter]));
+      expect(asked.deliveries.map((delivery) => delivery.contactId)).toEqual([secondAdmin.id]);
+    });
+
     it("previews the approvers without asking anyone", () => {
       const adapter = fakeAdapter("chan-a", [{ contactId: admin.id, address: {} }]);
       expect(previewGrantRequest(plan, deps([adapter])).grantors).toEqual([{ contactId: admin.id, channel: "chan-a" }]);
@@ -227,6 +270,10 @@ describe("grant requests (core, no channel)", () => {
       ).not.toBeNull();
       expect(dbListContactChatGrants({ contactId: grantee.id })).toHaveLength(1);
       expect(readAgentRuntimePermissionsConfig("xone")?.capabilities ?? []).toEqual([]);
+      // Asking again for what was just granted asks nobody.
+      await expect(
+        requestGrant({ plan, requester }, deps([fakeAdapter("chan-a", [{ contactId: admin.id, address: {} }])])),
+      ).rejects.toMatchObject({ code: "already_held" });
     });
 
     it("decides the same way from any channel: asked on one, answered on another", async () => {
@@ -286,16 +333,20 @@ describe("grant requests (core, no channel)", () => {
     });
 
     it("never lets the grantee decide their own access, even if they are an admin", async () => {
-      const adminGrantee = { ...plan, contactId: secondAdmin.id, chatId: `${plan.chatId}-self` };
+      // A request is never opened for someone who already holds full access there, so the grantee
+      // becomes an admin after being asked for.
+      const selfPlan = { ...plan, chatId: `${plan.chatId}-self` };
       const request = (
         await requestGrant(
-          { plan: adminGrantee, requester },
+          { plan: selfPlan, requester },
           deps([fakeAdapter("chan-a", [{ contactId: admin.id, address: {} }])]),
         )
       ).request;
+      seedApprovalContact({ phone: APPROVAL_TEST_STRANGER_PHONE, name: "Breno", tags: ["permission.admin"] });
+      expect(contactHoldsAdmin(grantee.id)).toBe(true);
 
       const self = decide(
-        { requestId: request.id, decision: "approve", actor: sender(APPROVAL_TEST_SUPERADMIN_PHONE) },
+        { requestId: request.id, decision: "approve", actor: sender(APPROVAL_TEST_STRANGER_PHONE) },
         deps([]),
       );
 

@@ -42,6 +42,15 @@
   stamp MUST still be refused (`runtime-request-context.test.ts`,
   `user-overlay-automation.test.ts`, `automation-store-guard.test.ts`,
   `gh-watch.test.ts`, `cron-commands.test.ts`).
+- The return of the operator's thread to the agent that opened it
+  (`session.return`) MUST be stamped and pass the automation guards; the return of
+  a thread opened from a person with no grant MUST stay held
+  (`runtime-request-context.test.ts`).
+- The automation refusal MUST name its cause, in the command and the store
+  guard: a held relay says it is a relay and that a grant does not lift it, and
+  never speaks of a contact's chat permissions; a person with no grant and an
+  overlay turn say theirs (`user-overlay-automation.test.ts`,
+  `runtime-request-context.test.ts`).
 - An app command resolving to anything but Ravi MUST be refused in a turn
   that withholds `execute:executable:*` (`turn-executable.test.ts`); observer
   rules written from such a turn MUST be refused (`automation-store-guard.test.ts`).

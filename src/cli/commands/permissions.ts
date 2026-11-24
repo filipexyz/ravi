@@ -1156,6 +1156,13 @@ export async function requestFullAccessApproval(input: FullAccessRequestInput) {
   };
   const mapGrantRequestError = (error: unknown): never => {
     if (!(error instanceof GrantRequestError)) throw error;
+    if (error.code === "already_held") {
+      return policy(
+        "FULL_ACCESS_ALREADY_HELD",
+        error.message,
+        "Nothing was requested. If a command was refused in a turn of theirs, read its message: a relayed turn (a thread or a thread's return) is held by the relay, and no grant lifts that.",
+      );
+    }
     const code =
       error.code === "no_adapter"
         ? "FULL_ACCESS_APPROVAL_UNAVAILABLE"

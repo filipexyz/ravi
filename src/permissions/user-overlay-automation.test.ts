@@ -1,6 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { runWithContext, type ToolContext } from "../cli/context.js";
-import { assertAutomationStoreWrite, assertNoUserOverlayAutomationWrite } from "./user-overlay-automation.js";
+import type { CliExpectedError } from "../cli/expected-error.js";
+import {
+  assertAutomationStoreWrite,
+  assertNoUserOverlayAutomationWrite,
+  automationHoldCause,
+} from "./user-overlay-automation.js";
 
 function turn(actorAuthorizationMode: string, extra: Record<string, unknown> = {}): ToolContext {
   return {
@@ -109,5 +114,59 @@ describe("automation store guard (sink)", () => {
   it("leaves turns without limits and code outside a turn alone", () => {
     expect(() => runWithContext(turn("invoke-only"), () => assertAutomationStoreWrite("trigger"))).not.toThrow();
     expect(() => assertAutomationStoreWrite("trigger")).not.toThrow();
+  });
+});
+
+describe("the refusal names its cause", () => {
+  const withheld = { actorBreakGlassWithheld: ["admin:system:*", "execute:executable:*"] };
+
+  function refusal(ctx: ToolContext, write: () => void): CliExpectedError {
+    try {
+      runWithContext(ctx, write);
+    } catch (error) {
+      return error as CliExpectedError;
+    }
+    throw new Error("expected a refusal");
+  }
+
+  it("names a held relay as a relay, never as a contact's chat permissions", () => {
+    // 24/11: a thread's return refused as "limited to a contact's chat permissions" led the main
+    // session to ask full access for the operator, who already held it.
+    for (const metadata of [{ relayNarrowing: true }, { relayNarrowing: true, ...withheld }]) {
+      const ctx = turn("invoke-only", metadata);
+      expect(automationHoldCause(ctx.context)).toBe("held-relay");
+      const command = refusal(ctx, () => assertNoUserOverlayAutomationWrite("cron add"));
+      expect(command).toMatchObject({ code: "PERMISSION_DENIED" });
+      expect(command.message).toContain("cron add is not available in a relayed turn");
+      expect(command.message).not.toContain("contact's chat permissions");
+      expect(command.suggestedAction).toContain("requesting access for a contact does not lift it");
+      const store = refusal(ctx, () => assertAutomationStoreWrite("cron job"));
+      expect(store.message).toContain("(a relay whose caller does not carry the agent's whole authority)");
+      expect(store.suggestedAction).toBe(command.suggestedAction);
+    }
+  });
+
+  it("names a contact-narrowed turn and a person with no grant in the chat", () => {
+    expect(refusal(turn("user-overlay"), () => assertNoUserOverlayAutomationWrite("triggers add")).message).toBe(
+      "triggers add is not available in a turn limited to a contact's chat permissions: it would run later with the agent's full authority.",
+    );
+    expect(refusal(turn("user-overlay"), () => assertAutomationStoreWrite("trigger")).message).toContain(
+      "(a contact's chat permissions)",
+    );
+    const person = turn("invoke-only", withheld);
+    expect(automationHoldCause(person.context)).toBe("person-without-chat-grant");
+    const command = refusal(person, () => assertNoUserOverlayAutomationWrite("triggers add"));
+    expect(command.message).toContain("the turn of a person with no grant in this chat");
+    expect(command.suggestedAction).toContain("ravi permissions request full-access");
+    expect(refusal(person, () => assertAutomationStoreWrite("trigger")).message).toContain(
+      "(a person with no grant in this chat)",
+    );
+  });
+
+  it("finds no cause in the operator's relay, a plain turn or outside a turn", () => {
+    const operatorRelay = turn("invoke-only", { relayNarrowing: true, relayCallerUnrestricted: true });
+    expect(automationHoldCause(operatorRelay.context)).toBeNull();
+    expect(automationHoldCause(turn("invoke-only").context)).toBeNull();
+    expect(automationHoldCause()).toBeNull();
   });
 });
