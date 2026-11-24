@@ -100,6 +100,7 @@ ravi whatsapp group send <jid> "oi, Gustavo! ..." --mention 5511987860700 --acco
 
 - `--mention` aceita telefone (DDI + número, só dígitos), JID ou nome. Nome só funciona para quem o Omni conhece nesse chat. Pode repetir ou separar por vírgula.
 - Não precisa escrever o `@` no texto: o comando põe `@<número>` na frente. Se você escrever (`@5511987860700 oi`), ele reconhece e não repete.
+- A mesma pessoa escrita como `@lid` e como telefone (no texto e no `--mention`, ou em dois `--mention`) vira **uma** menção só quando o Omni conhece a ligação entre os dois (o chat model do grupo traz o LID e o telefone da pessoa). Sem essa ligação nada dá para saber que são a mesma pessoa e saem duas menções: use uma forma só.
 - O dry-run esconde o texto de propósito (só mostra tamanho e quantidade de menções): revise a mensagem antes de rodar com `--execute`. O resultado traz `messageId`, `mentionCount` e `resolvedMentions`.
 - Marcou por telefone num grupo `@lid`? O envio usa o JID de telefone. Confirme no grupo, ou com a pessoa, que a marcação apareceu como menção e não como texto solto.
 - Escreva a mensagem final, no tom de quem pediu, e envie uma vez. Não existe desfazer.
@@ -255,7 +256,7 @@ Todos os comandos aceitam `--account <id>` pra especificar qual conta WhatsApp u
 - turno que veio do WhatsApp (o canal do turno pode vir como `whatsapp-baileys`; é o mesmo canal): a conta do próprio turno;
 - turno de outro canal (Slack, por exemplo) ou terminal, com **uma** conta WhatsApp habilitada: essa conta;
 - turno de outro canal com **várias** contas WhatsApp: erro que lista as contas (`WhatsApp accounts: main, luis. Pass --account <id>`); passe `--account`;
-- sem turno nenhum (terminal, cron, script) e várias contas: a primeira conta WhatsApp habilitada.
+- sem turno nenhum (terminal, cron, script) e várias contas: também erro que lista as contas. A primeira por nome pode ser uma conta desconectada, e enviar por ela chega em gente de verdade; passe `--account`.
 
 `--account` apontando para uma conta que não é WhatsApp (`ravi-slack`, por exemplo) é recusado com a lista das contas WhatsApp. Versões antigas usavam a conta do turno de qualquer canal e falhavam com `No omni instance mapped for account "ravi-slack"`: passe `--account <conta-whatsapp>`.
 

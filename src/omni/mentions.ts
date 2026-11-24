@@ -295,7 +295,13 @@ function participantPhoneAliasBase(participant: OmniMentionParticipant): string 
     const jid = asWhatsAppPhoneJid(value);
     if (jid) return baseIdentity(jid);
   }
-  return undefined;
+  return formattedPhoneDigits(participant);
+}
+
+/** `phoneNumber` is a phone by definition, so it counts even when stored with formatting ("+55 11 98786-0700"). */
+function formattedPhoneDigits(participant: OmniMentionParticipant): string | undefined {
+  const digits = digitsOnly(participant.phoneNumber ?? "");
+  return isPlausibleWhatsAppMentionDigits(digits) ? digits : undefined;
 }
 
 function participantNativeMentionId(participant: OmniMentionParticipant): string {
@@ -350,14 +356,32 @@ function participantCandidates(participants: readonly OmniMentionParticipant[] =
   });
 }
 
+/**
+ * Lookup keys of a mention reference. `<number>@s.whatsapp.net` and `<number>@lid` are a number plus a suffix, and
+ * Omni's chat model carries members as the bare number (`platformUserId`, `normalizedPlatformUserId`), so the number
+ * alone must be tried too.
+ */
+function referenceLookupKeys(ref: string): string[] {
+  const keys = new Set<string>();
+  const add = (value: string) => {
+    const normalized = normalizeLookup(value);
+    if (normalized) keys.add(normalized);
+    const compact = compactLookup(value);
+    if (compact) keys.add(compact);
+  };
+  add(ref);
+  const cleaned = cleanMentionRef(ref);
+  if (/^\d+@(?:s\.whatsapp\.net|lid)$/i.test(cleaned)) add(baseIdentity(cleaned));
+  return [...keys];
+}
+
 function findParticipant(
   ref: string,
   participants: readonly OmniMentionParticipant[] = [],
 ): { participant: OmniMentionParticipant; ambiguous: boolean } | null {
-  const normalized = normalizeLookup(ref);
-  const compact = compactLookup(ref);
+  const refKeys = referenceLookupKeys(ref);
   const candidates = participantCandidates(participants);
-  const exact = candidates.filter((candidate) => candidate.keys.has(normalized) || candidate.keys.has(compact));
+  const exact = candidates.filter((candidate) => refKeys.some((key) => candidate.keys.has(key)));
   if (exact.length === 1) return { participant: exact[0].participant, ambiguous: false };
   if (exact.length > 1) return { participant: exact[0].participant, ambiguous: true };
 
@@ -404,6 +428,8 @@ function aliasSurfacesForParticipant(participant: OmniMentionParticipant, firstC
       surfaces.add(digits);
     }
   }
+  const formattedPhone = formattedPhoneDigits(participant);
+  if (formattedPhone) surfaces.add(formattedPhone);
 
   return Array.from(surfaces).filter((surface) => normalizeLookup(surface));
 }
@@ -449,6 +475,25 @@ function isVisiblePlaceholderAt(text: string, offset: number, placeholder: strin
   return normalizeLookup(text.slice(offset, offset + placeholder.length)) === normalizeLookup(placeholder);
 }
 
+/**
+ * Mention id for an explicit target that matched a member.
+ *
+ * `participantNativeMentionId` has to guess `@s.whatsapp.net` for a member carried as a bare number with no distinct
+ * phone alias. A JID the caller supplied for that same number beats the guess (the live roster gives `<lid>@lid`), so it
+ * is kept. When the native id is proven (the id already has a suffix, or a phone alias makes the number a LID) it wins.
+ */
+function explicitMentionId(ref: string, participant: OmniMentionParticipant): string {
+  const native = participantMentionId(participant);
+  const supplied = cleanMentionRef(ref);
+  if (!/^\d+@(?:s\.whatsapp\.net|lid)$/i.test(supplied)) return native;
+  const platformUserId = cleanMentionRef(participant.platformUserId);
+  const bareNumber =
+    platformUserId !== "" && !platformUserId.includes("@") && digitsOnly(platformUserId) === platformUserId;
+  const phoneAlias = participantPhoneAliasBase(participant);
+  const nativeIsGuess = bareNumber && !(phoneAlias && phoneAlias !== platformUserId);
+  return nativeIsGuess && baseIdentity(supplied) === platformUserId ? supplied : native;
+}
+
 function resolveMention(
   ref: string,
   participants: readonly OmniMentionParticipant[] = [],
@@ -457,7 +502,7 @@ function resolveMention(
   if (participant?.ambiguous) return { id: participantMentionId(participant.participant), ambiguous: true };
   if (participant) {
     return {
-      id: participantMentionId(participant.participant),
+      id: explicitMentionId(ref, participant.participant),
       ...(participant.participant.displayName?.trim()
         ? { displayName: participant.participant.displayName.trim() }
         : {}),
@@ -479,15 +524,33 @@ function canonicalMentionId(id: string): string {
   return asWhatsAppPhoneJid(id) ?? cleanMentionRef(id);
 }
 
+/**
+ * Who a mention id belongs to, to decide whether two ids are the same person. A member can be written as
+ * `<lid>@lid`, as `<phone>@s.whatsapp.net` or as a bare number, and the group metadata is what says those are one
+ * person. Without metadata only the forms of one number (phone JID, bare digits) are united.
+ */
+function mentionOwnerKey(id: string, participants: readonly OmniMentionParticipant[]): string {
+  const digits = digitsOnly(baseIdentity(id));
+  if (digits) {
+    for (const participant of participants) {
+      if (participantIdentityValues(participant).some((identity) => digitsOnly(baseIdentity(identity)) === digits)) {
+        return participantMentionId(participant);
+      }
+    }
+  }
+  return canonicalMentionId(id);
+}
+
 function findResolvedMention(
   resolvedById: Map<string, ResolvedOmniMention>,
   id: string,
+  participants: readonly OmniMentionParticipant[],
 ): ResolvedOmniMention | undefined {
   const exact = resolvedById.get(id);
   if (exact) return exact;
-  const canonical = canonicalMentionId(id);
+  const owner = mentionOwnerKey(id, participants);
   for (const resolved of resolvedById.values()) {
-    if (canonicalMentionId(resolved.id) === canonical) return resolved;
+    if (mentionOwnerKey(resolved.id, participants) === owner) return resolved;
   }
   return undefined;
 }
@@ -616,7 +679,7 @@ export function prepareOmniMentionMessage(input: {
     }
 
     // The same person may already be resolved from an inline `@<phone>` under a different id form.
-    if (findResolvedMention(resolvedById, resolution.id)) continue;
+    if (findResolvedMention(resolvedById, resolution.id, participants)) continue;
 
     const resolved = addResolvedMention(resolvedById, {
       id: resolution.id,
