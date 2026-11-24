@@ -77,7 +77,8 @@ export async function describeSecret(
   const addr = env.VAULT_ADDR?.replace(/\/+$/, "");
   const token = env.VAULT_TOKEN;
   if (!addr || !token) return { available: false, reason: "not_configured" };
-  const url = `${addr}/v1/${encodeURIComponent(parsed.mount)}/metadata/${vaultPathSegments(parsed.path)}`;
+  const url = vaultMetadataUrl(addr, parsed.mount, parsed.path);
+  if (!url) return { available: false, reason: "invalid_ref" };
   let response: Response;
   try {
     response = await (deps.fetch ?? fetch)(url, {
@@ -123,8 +124,45 @@ function parseVaultTime(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function vaultPathSegments(path: string): string {
-  return path.split("/").map(encodeURIComponent).join("/");
+/**
+ * One mount or path segment of a describable ref: starts with a letter, digit
+ * or underscore, then letters, digits, `.`, `_`, `-`. Rejects `""`, `.`, `..`,
+ * `%`-encodings, `\`, `?`, `#` and anything a URL parser would reinterpret.
+ */
+const VAULT_SEGMENT = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/;
+
+/**
+ * The KV v2 metadata URL for a ref, or null when the ref could reach anything
+ * else. Two independent checks, both fail closed: every segment passes the
+ * allowlist, and the URL as `fetch` will send it (after WHATWG normalization
+ * of dot segments and encodings) is exactly `/v1/<mount>/metadata/<path>` on
+ * the configured origin.
+ */
+export function vaultMetadataUrl(addr: string, mount: string, path: string): string | null {
+  const segments = path.split("/");
+  if (!VAULT_SEGMENT.test(mount) || !segments.every((segment) => VAULT_SEGMENT.test(segment))) return null;
+  const url = `${addr}/v1/${mount}/metadata/${segments.join("/")}`;
+  return isExactVaultMetadataUrl(url, addr, mount, segments) ? url : null;
+}
+
+/** Compares the normalized URL, never the raw string: `..` and encodings collapse before the request leaves. */
+export function isExactVaultMetadataUrl(url: string, addr: string, mount: string, segments: string[]): boolean {
+  let target: URL;
+  let base: URL;
+  try {
+    target = new URL(url);
+    base = new URL(addr);
+  } catch {
+    // no-cause: An unparsable Vault address or URL only means "do not call"; the caller reports invalid_ref.
+    return false;
+  }
+  const basePath = base.pathname.replace(/\/+$/, "");
+  return (
+    target.origin === base.origin &&
+    target.search === "" &&
+    target.hash === "" &&
+    target.pathname === `${basePath}/v1/${mount}/metadata/${segments.join("/")}`
+  );
 }
 
 export function redactSecretRef(secretRef: string): string {

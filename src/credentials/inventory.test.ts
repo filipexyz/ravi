@@ -4,7 +4,7 @@ import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describeSecret } from "./backends.js";
+import { describeSecret, isExactVaultMetadataUrl, vaultMetadataUrl } from "./backends.js";
 import { buildCredentialInventory } from "./inventory.js";
 import {
   closeCredentialsDb,
@@ -46,13 +46,14 @@ function vaultConnection(options: CredentialStoreOptions, connection = "rbbt", e
   );
 }
 
-type FakeCall = { url: string; method: string; body: unknown };
+/** `path` is what the request really hits: the URL after WHATWG normalization, as fetch sends it. */
+type FakeCall = { url: string; path: string; method: string; body: unknown };
 
 function fakeVault(respond: (url: string) => Response | Promise<Response>) {
   const calls: FakeCall[] = [];
   const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
-    calls.push({ url, method: init?.method ?? "GET", body: init?.body });
+    calls.push({ url, path: new URL(url).pathname, method: init?.method ?? "GET", body: init?.body });
     return respond(url);
   }) as typeof fetch;
   return { calls, fetchFn };
@@ -176,7 +177,9 @@ describe("describeSecret", () => {
       });
       const description = await describeSecret("vault:secret/a/b#token", { fetch: vault.fetchFn, env: VAULT_ENV });
       expect(description).toMatchObject(expected as Record<string, unknown>);
-      expect(vault.calls.every((call) => call.url.includes("/metadata/") && call.method === "GET")).toBe(true);
+      expect(vault.calls.every((call) => call.path.startsWith("/v1/secret/metadata/") && call.method === "GET")).toBe(
+        true,
+      );
     }
   });
 
@@ -208,7 +211,7 @@ describe("buildCredentialInventory", () => {
     setCredentialConnectionStatus("slack", "sales", "disabled", options);
     // A vault that would hand out the value if anyone asked the data endpoint.
     const vault = fakeVault((url) =>
-      url.includes("/data/")
+      new URL(url).pathname.includes("/data/")
         ? Response.json({ data: { data: { token: SECRET_VALUE } } })
         : Response.json(metadataPayload),
     );
@@ -218,7 +221,7 @@ describe("buildCredentialInventory", () => {
       describeSecret: (ref) => describeSecret(ref, { fetch: vault.fetchFn, env: VAULT_ENV }),
     });
 
-    expect(vault.calls.some((call) => call.url.includes("/data/"))).toBe(false);
+    expect(vault.calls.some((call) => !call.path.startsWith("/v1/secret/metadata/"))).toBe(false);
     const serialized = JSON.stringify(inventory);
     expect(serialized).not.toContain(SECRET_VALUE);
     expect(serialized).not.toContain("ravi/credentials");
@@ -306,5 +309,60 @@ describe("buildCredentialInventory", () => {
     });
     expect(inventory.items[0]?.secret).toEqual({ available: false, reason: "error" });
     expect(JSON.stringify(inventory)).not.toContain(SECRET_VALUE);
+  });
+});
+
+describe("describeSecret path containment (B1, #968)", () => {
+  const traversals = [
+    // The reviewer's probe: each one collapsed /metadata/ into another endpoint after URL normalization.
+    "vault:secret/x/../../data/ravi/credentials/a/b#token",
+    "vault:secret/ravi/credentials/a/../../../../data/other/thing#k",
+    "vault:../metadata/../v1/sys/health#k",
+    // Encoded and edge variants.
+    "vault:secret/x/%2e%2e/%2e%2e/data/a#k",
+    "vault:secret/x/%2E%2E/data/a#k",
+    "vault:secret/x/.%2e/data/a#k",
+    "vault:secret/x/%2f../data/a#k",
+    "vault:secret/x/./a#k",
+    "vault:secret/x//a#k",
+    "vault:secret/x/#k",
+    "vault:secret/x\\..\\data#k",
+    "vault:secret/x?list=true#k",
+    "vault:..%2fsys/health#k",
+    "vault:secret%2f..%2fsys/health#k",
+    "vault:.secret/x#k",
+  ];
+
+  it("refuses every traversal or encoded ref as invalid_ref without any request", async () => {
+    for (const ref of traversals) {
+      const vault = fakeVault(() => Response.json(metadataPayload));
+      const description = await describeSecret(ref, { fetch: vault.fetchFn, env: VAULT_ENV });
+      expect({ ref, description }).toEqual({ ref, description: { available: false, reason: "invalid_ref" } });
+      expect({ ref, calls: vault.calls.length }).toEqual({ ref, calls: 0 });
+    }
+  });
+
+  it("accepts the convention paths and keeps them on the metadata endpoint", () => {
+    expect(vaultMetadataUrl("https://bao.test:8200", "secret", "ravi/credentials/slack/rbbt")).toBe(
+      "https://bao.test:8200/v1/secret/metadata/ravi/credentials/slack/rbbt",
+    );
+    expect(vaultMetadataUrl("https://bao.test:8200/prefix", "kv_2", "ravi/credentials/a.b/c-d_e")).toBe(
+      "https://bao.test:8200/prefix/v1/kv_2/metadata/ravi/credentials/a.b/c-d_e",
+    );
+  });
+
+  it("compares the normalized URL, not the raw string", () => {
+    const addr = "https://bao.test:8200";
+    // Built from the same segments, so a raw-string comparison would accept it.
+    const dotted = ["x", "%2e%2e", "%2e%2e", "data", "a"];
+    expect(isExactVaultMetadataUrl(`${addr}/v1/secret/metadata/${dotted.join("/")}`, addr, "secret", dotted)).toBe(
+      false,
+    );
+    const plain = ["x", "..", "..", "data", "a"];
+    expect(isExactVaultMetadataUrl(`${addr}/v1/secret/metadata/${plain.join("/")}`, addr, "secret", plain)).toBe(false);
+    // Another origin or a query never passes.
+    expect(isExactVaultMetadataUrl("https://evil.test/v1/secret/metadata/a", addr, "secret", ["a"])).toBe(false);
+    expect(isExactVaultMetadataUrl(`${addr}/v1/secret/metadata/a?list=true`, addr, "secret", ["a"])).toBe(false);
+    expect(isExactVaultMetadataUrl(`${addr}/v1/secret/metadata/a`, addr, "secret", ["a"])).toBe(true);
   });
 });
