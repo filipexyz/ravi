@@ -135,6 +135,21 @@ describe("permissions request / request-status", () => {
     expect(dbListContactChatGrants({ contactId: grantee.id })).toEqual([]);
   });
 
+  it("refuses a contact who already holds full access in that chat, in the plan too, asking nobody", async () => {
+    register();
+    // 24/11: an admin (the operator) asked full access for themselves; the card went to another admin.
+    for (const execute of [true, false]) {
+      const error = await request({ to: `contact:${admin.id}`, execute });
+      expect(error).toMatchObject({ code: "FULL_ACCESS_ALREADY_HELD", exitCode: 3 });
+      expect((error as Error).message).toContain(`Contact ${admin.id} already holds full access in chat ${chatId}`);
+      expect((error as { details?: { suggestedAction?: string } }).details?.suggestedAction).toContain(
+        "no grant lifts that",
+      );
+    }
+    expect(delivered).toEqual([]);
+    expect(dbListContactChatGrants({ contactId: admin.id })).toEqual([]);
+  });
+
   it("accepts only full-access, one contact, one chat and an executor that already holds admin", async () => {
     register();
 

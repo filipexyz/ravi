@@ -445,6 +445,7 @@ describe("verified Git Data API publication", () => {
         "PERMISSION_DENIED",
         1,
         "Ask the operator to set it up.",
+        { automationHold: "held-relay" },
       );
     };
     const failure = await publish().catch((error) => error);
@@ -454,6 +455,8 @@ describe("verified Git Data API publication", () => {
         retryable: false,
         cause: "trigger cannot be written in a turn limited below the agent's authority.",
         suggestedAction: "Ask the operator to set it up.",
+        // The guard's cause travels, so a remote caller reads its fixed advice.
+        automationHold: "held-relay",
         partial: { phase: "follow", refPublished: true, prNumber: 7 },
       },
     });

@@ -2,6 +2,7 @@ import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
 import { enforceRaviAppRunResult } from "../apps/error-contract.js";
+import { AUTOMATION_HOLD_CAUSES, AUTOMATION_HOLD_SUGGESTED_ACTION } from "../permissions/automation-hold.js";
 import { projectAppCliFailure } from "../apps/failure.js";
 import { resolveAccountHome } from "../utils/account-home.js";
 import { CloudAuthError } from "../cloud-auth/errors.js";
@@ -181,6 +182,51 @@ function result(overrides: Partial<RemoteDispatchResult>): RemoteDispatchResult 
     ...overrides,
   };
 }
+
+describe("automation hold refusals over the gateway", () => {
+  // 24/11: the generic denial advice ("request the permission") sent an agent to ask full access
+  // for the operator, when the refusal came from a relayed turn.
+  function denial(automationHold?: unknown) {
+    return remoteGatewayErrorToContractError(
+      "cron add",
+      result({
+        status: 403,
+        body: JSON.stringify({
+          success: false,
+          op: "cron add",
+          exitCode: 1,
+          outcome: "denied",
+          error: {
+            code: "PERMISSION_DENIED",
+            message: "cron add is not available in a relayed turn: it would run later with the agent's full authority.",
+            retryable: false,
+            suggestedAction: "server advice is not forwarded",
+            ...(automationHold === undefined ? {} : { automationHold }),
+          },
+        }),
+      }),
+    );
+  }
+
+  it("gives each cause its fixed advice and keeps the cause", () => {
+    for (const cause of AUTOMATION_HOLD_CAUSES) {
+      const error = denial(cause);
+      expect(error?.code).toBe("PERMISSION_DENIED");
+      expect(error?.details.automationHold).toBe(cause);
+      expect(error?.details.suggestedAction).toBe(AUTOMATION_HOLD_SUGGESTED_ACTION[cause]);
+    }
+    expect(denial("held-relay")?.message).toContain("relayed turn");
+    expect(denial("held-relay")?.details.suggestedAction).toContain("does not lift it");
+  });
+
+  it("keeps the generic denial advice for an unknown cause or none", () => {
+    for (const value of [undefined, "contact-full-access", 7]) {
+      const error = denial(value);
+      expect(error?.details.automationHold).toBeUndefined();
+      expect(error?.details.suggestedAction).toBe("Request the required remote permission before retrying the command");
+    }
+  });
+});
 
 describe("remote gateway exit taxonomy", () => {
   it.each([true, false])(

@@ -99,6 +99,7 @@ const CONTROL_FIELDS = [
   "denialId",
   "domainSetup",
   "triggerIds",
+  "automationHold",
   "conflict",
   "currentVersion",
   "refusal",
@@ -570,6 +571,8 @@ export function expectedErrorToContractError(op: string, error: unknown): Contra
   const suggestedAction =
     sanitizePublicContractMessage(error.suggestedAction) ?? `Inspect the command input and retry '${op}'`;
   return new ContractError(op, error.code, message, error.exitCode, {
+    // Structured fields first: the diagnostic and the advice are never theirs to replace.
+    ...(error.details ?? {}),
     ...errorDiagnostic(error, { operation: op }),
     ...{
       suggestedAction,

@@ -319,6 +319,15 @@ Semantics:
   it MUST fail closed (`FULL_ACCESS_APPROVAL_UNAVAILABLE`,
   `FULL_ACCESS_APPROVER_UNAVAILABLE`, `FULL_ACCESS_APPROVER_UNREACHABLE`, exit 3)
   and leave nothing pending. The grantee is never a candidate.
+- A request for a contact whose own turns in that chat already hold full access
+  MUST be refused before anyone is asked (`FULL_ACCESS_ALREADY_HELD`, exit 3),
+  even with an identical request open, which is closed (`failed`) so its prompts
+  can no longer write a grant: the grant would change nothing. It reads
+  what a turn of theirs gets: in a chat with no grants, their own capabilities
+  (an admin tag keeps break-glass); in a governed chat, their overlay. On 24/11 a
+  relayed turn refused automation with a message about "a contact's chat
+  permissions", the main session asked full access for the operator, who already
+  held it, and the card went to the only other admin.
 - The decision has one path in the core, whatever the channel: an adapter hands
   over a *verified actor* (the platform's own sender id, never message text) and
   the core runs the same `actorCanGrantRequestedPermission` gate. The answer is
