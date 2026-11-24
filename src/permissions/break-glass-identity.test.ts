@@ -251,6 +251,24 @@ describe("every writer of agent runtime permissions keeps the rule", () => {
     expect(JSON.stringify(dbGetAgent("victim")?.defaults ?? {})).toContain("full-access");
   });
 
+  it("refuses planting dormant break-glass by agents set defaults, and waking it by agents permissions", async () => {
+    dbCreateAgent({ id: "plant-victim", cwd: "/tmp" });
+    const commands = new AgentsCommands();
+    const denied = { code: "FULL_ACCESS_APPROVAL_REQUIRED", exitCode: 3 };
+    const dormant = JSON.stringify({ runtimePermissions: { profile: "chat-only", capabilities: ["admin:system:*"] } });
+    await runWithContext(ADMIN_AGENT, async () => {
+      await expect(commands.set("plant-victim", "defaults", dormant)).rejects.toMatchObject(denied);
+    });
+    expect(JSON.stringify(dbGetAgent("plant-victim")?.defaults ?? {})).not.toContain("admin");
+
+    // The operator stored it; an agent asking for "bootstrap" must not wake it.
+    await commands.set("plant-victim", "defaults", dormant, true);
+    runWithContext(ADMIN_AGENT, () =>
+      expectBreakGlassDenied(() => commands.permissions("plant-victim", "bootstrap", undefined, true, undefined, true)),
+    );
+    expect(JSON.stringify(dbGetAgent("plant-victim")?.defaults ?? {})).toContain("chat-only");
+  });
+
   it("refuses a Library install or update with a full-access profile, before any write", () => {
     const install = {
       plan: { agent: { id: "library-new", cwd: "/tmp/library-new-never" }, profile: { apply: "full-access" } },

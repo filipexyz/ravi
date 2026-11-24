@@ -111,8 +111,14 @@ an operator approval, each sink refuses a new write that confers break-glass:
 - Slugs are judged the way the provider reads them: admin names in any
   spelling, and the definition under the normalized slug
   (`permission.legacy.root` is `permission-legacy-root`).
-- A stored `chat-only` agent config confers nothing, whatever capabilities
-  it lists, so it never counts as already holding break-glass.
+- Agent configs are judged two ways. Effective: a stored `chat-only` config
+  confers nothing, so it never counts as already holding break-glass. Stored:
+  break-glass written even dormant (`chat-only` with `admin:system:*`) counts,
+  because a later profile change wakes it. From an agent turn, a write is
+  refused when break-glass becomes effective (a raise, or a dormant one woken)
+  or when new break-glass is stored; adjusting an agent that already stores the
+  same dormant break-glass is not refused. Invariant: nothing an agent writes
+  carries break-glass, not even dormant.
 - `dbEnsureContactChatGrant` (`src/permissions/contact-chat-grants.ts`): a new
   contact chat grant.
 - `dbUpdateAgent` (`src/router/router-db.ts`): agent defaults that raise

@@ -145,13 +145,17 @@ interface AgentPermissionsConfigLike {
 }
 
 /** Break-glass an agent runtime config carries: the full-access profile or break-glass capabilities. */
-export function agentConfigBreakGlassReasons(config: AgentPermissionsConfigLike | null | undefined): string[] {
+export function agentConfigBreakGlassReasons(
+  config: AgentPermissionsConfigLike | null | undefined,
+  mode: "effective" | "stored" = "effective",
+): string[] {
   if (!config) return [];
   const profile = String(config.profile ?? "")
     .trim()
     .toLowerCase();
-  // chat-only drops every capability at runtime: it confers nothing, whatever is stored.
-  if (profile === "chat-only") return [];
+  // chat-only drops every capability at runtime, so it confers nothing EFFECTIVE.
+  // What it stores still counts ("stored"): another profile change would wake it.
+  if (profile === "chat-only" && mode === "effective") return [];
   const reasons = profile === "full-access" ? ["full-access"] : [];
   const capabilities = (config.capabilities ?? []).flatMap((value): CapabilityLike[] => {
     if (typeof value === "string") {
@@ -178,8 +182,16 @@ export function assertAgentBreakGlassRaiseAllowed(
   before: AgentPermissionsConfigLike | null | undefined,
   after: AgentPermissionsConfigLike | null | undefined,
 ): void {
-  const raised = agentConfigBreakGlassReasons(after);
-  if (raised.length === 0 || agentConfigBreakGlassReasons(before).length > 0) return;
+  // An agent that already holds break-glass effectively keeps it; nothing to judge.
+  if (agentConfigBreakGlassReasons(before, "effective").length > 0) return;
+  // Refused: break-glass becomes effective (a raise, or a dormant one woken by a
+  // profile change), or new break-glass is stored even dormant (chat-only with
+  // admin:system:* planted for a later profile change to wake). Adjusting an
+  // agent that already stores the same dormant break-glass is not refused.
+  const storedBefore = new Set(agentConfigBreakGlassReasons(before, "stored"));
+  const newlyStored = agentConfigBreakGlassReasons(after, "stored").filter((reason) => !storedBefore.has(reason));
+  const raised = [...new Set([...agentConfigBreakGlassReasons(after, "effective"), ...newlyStored])];
+  if (raised.length === 0) return;
   if (approvedBreakGlassGrant.getStore()) return;
   if (!callerIsAgentOrRemote()) return;
   if (scopeAgentId() === targetAgentId) return;

@@ -900,6 +900,41 @@ describe("agent defaults break-glass sink", () => {
       ).toMatchObject({ code: "FULL_ACCESS_APPROVAL_REQUIRED" });
     });
     expect(JSON.stringify(dbGetAgent("sink-victim")?.defaults ?? {})).not.toContain("ull-");
+
+    // B4: planting dormant break-glass (chat-only with admin:system:*) is refused from an agent turn.
+    dbCreateAgent({ id: "sink-plant", cwd: "/tmp" });
+    runWithContext(adminAgent, () => {
+      expect(
+        refused(() =>
+          dbUpdateAgent("sink-plant", {
+            defaults: { runtimePermissions: { profile: "chat-only", capabilities: ["admin:system:*"] } },
+          }),
+        ),
+      ).toMatchObject({ code: "FULL_ACCESS_APPROVAL_REQUIRED" });
+    });
+    expect(JSON.stringify(dbGetAgent("sink-plant")?.defaults ?? {})).not.toContain("admin");
+
+    // A dormant one already stored (by the operator) is not woken by an agent, but can be adjusted.
+    dbUpdateAgent("sink-plant", {
+      defaults: { runtimePermissions: { profile: "chat-only", capabilities: ["admin:system:*"] } },
+    });
+    runWithContext(adminAgent, () => {
+      expect(
+        refused(() =>
+          dbUpdateAgent("sink-plant", {
+            defaults: { runtimePermissions: { profile: "bootstrap", capabilities: ["admin:system:*"] } },
+          }),
+        ),
+      ).toMatchObject({ code: "FULL_ACCESS_APPROVAL_REQUIRED" });
+      dbUpdateAgent("sink-plant", {
+        defaults: {
+          tts_voice: "abc",
+          runtimePermissions: { profile: "chat-only", capabilities: ["admin:system:*"] },
+        },
+      });
+    });
+    expect(JSON.stringify(dbGetAgent("sink-plant")?.defaults ?? {})).toContain("tts_voice");
+
     dbUpdateAgent("sink-victim", { defaults: { runtimePermissions: { profile: "full-access" } } });
     expect(JSON.stringify(dbGetAgent("sink-victim")?.defaults ?? {})).toContain("full-access");
   });
