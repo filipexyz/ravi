@@ -403,10 +403,10 @@ describe("credentials connections compact mode", () => {
 });
 
 describe("credentials connections inventory and lifecycle flags", () => {
-  it("inventory describes backends by default and skips them with --no-describe", async () => {
+  it("inventory describes backends by default and skips them with --skip-describe", async () => {
     const commands = new CredentialConnectionsCommands();
     await silenced(() => commands.inventory(undefined, "5", true));
-    await silenced(() => commands.inventory(false, undefined, true));
+    await silenced(() => commands.inventory(true, undefined, true));
     expect(inventoryCalls).toEqual([
       { describe: true, auditLimit: 5 },
       { describe: false, auditLimit: 20 },
@@ -494,6 +494,47 @@ describe("credentials connections inventory and lifecycle flags", () => {
         "soon",
       ),
     ).rejects.toThrow("--expires-at must be an ISO date");
+    expect(upsertCalls).toHaveLength(0);
+  });
+});
+
+describe("credentials connections add --expires-at format", () => {
+  const add = (expiresAt: string) =>
+    new CredentialConnectionsCommands().add(
+      "slack",
+      "main",
+      "keychain",
+      undefined,
+      undefined,
+      undefined,
+      "keychain:x",
+      undefined,
+      undefined,
+      undefined,
+      true,
+      undefined,
+      undefined,
+      expiresAt,
+    );
+
+  it("accepts ISO dates and date-times with an explicit zone", async () => {
+    for (const value of ["2027-02-16", "2027-02-16T10:00:00Z", "2027-02-16T10:00:00.250-03:00", "2027-02-16T10:00Z"]) {
+      upsertCalls.length = 0;
+      await silenced(() => add(value));
+      expect(upsertCalls[0]?.expiresAt).toBe(Date.parse(value));
+    }
+  });
+
+  it("refuses HTTP-dates, locale strings and zoneless date-times", async () => {
+    for (const value of [
+      "Tue, 16 Feb 2027 00:00:00 GMT",
+      "February 16, 2027",
+      "2027-02-16T10:00",
+      "16/02/2027",
+      "1803168000000",
+    ]) {
+      await expect(add(value)).rejects.toThrow("--expires-at must be an ISO date");
+    }
     expect(upsertCalls).toHaveLength(0);
   });
 });

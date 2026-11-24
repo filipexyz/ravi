@@ -444,3 +444,39 @@ describe("describeSecret never follows redirects (N1 → fix, #968)", () => {
     expect(JSON.stringify(inventory)).not.toContain(SECRET_VALUE);
   });
 });
+
+describe("describeSecret deletion time (CodeRabbit, #968)", () => {
+  const withDeletion = (deletionTime: string, destroyed = false) => {
+    const payload = structuredClone(metadataPayload);
+    payload.data.versions["3"].deletion_time = deletionTime;
+    payload.data.versions["3"].destroyed = destroyed;
+    return fakeVault(() => Response.json(payload));
+  };
+  const NOW = Date.parse("2026-11-24T12:00:00Z");
+
+  it("a deletion scheduled in the future (delete_version_after) is not deleted yet", async () => {
+    const vault = withDeletion("2026-12-24T12:00:00Z");
+    const description = await describeSecret("vault:secret/a/b#token", {
+      fetch: vault.fetchFn,
+      env: VAULT_ENV,
+      now: NOW,
+    });
+    expect(description).toMatchObject({ available: true, deleted: false });
+  });
+
+  it("a deletion time at or before now, or a destroyed version, is deleted", async () => {
+    for (const [time, destroyed] of [
+      ["2026-11-24T12:00:00Z", false],
+      ["2026-11-01T00:00:00Z", false],
+      ["", true],
+    ] as const) {
+      const vault = withDeletion(time, destroyed);
+      const description = await describeSecret("vault:secret/a/b#token", {
+        fetch: vault.fetchFn,
+        env: VAULT_ENV,
+        now: NOW,
+      });
+      expect({ time, destroyed, description }).toMatchObject({ time, destroyed, description: { deleted: true } });
+    }
+  });
+});

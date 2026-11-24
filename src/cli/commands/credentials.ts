@@ -204,7 +204,9 @@ function backendValue(value: string | undefined): CredentialBackend {
 
 function expiresAtValue(value: string | undefined): number | undefined {
   if (value === undefined) return undefined;
-  const parsed = Date.parse(value);
+  // ISO 8601 only (date, or date-time with Z/offset); Date.parse alone also takes HTTP-dates and locale strings.
+  const iso = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2}))?$/;
+  const parsed = iso.test(value) ? Date.parse(value) : Number.NaN;
   if (!Number.isFinite(parsed)) throw new Error("--expires-at must be an ISO date, e.g. 2027-02-16");
   return parsed;
 }
@@ -318,19 +320,19 @@ export class CredentialConnectionsCommands {
   @Command({
     name: "inventory",
     description:
-      "Metadata-only snapshot of every connection: lifecycle, last use, backend version/times and recent audit. Never reads a secret value",
+      "Metadata-only snapshot of up to 500 connections (active and disabled; `total` counts all): lifecycle, last use, backend version/times and recent audit. Never reads a secret value",
   })
   @CommandAccess({ kind: "read", resource: "credentials.connections", action: "inventory", risk: "low" })
   @Returns(credentialInventoryReturnSchema)
   async inventory(
-    @Option({ flags: "--no-describe", description: "Skip backend metadata (versions, times); local data only" })
-    describe?: boolean,
+    @Option({ flags: "--skip-describe", description: "Skip backend metadata (versions, times); local data only" })
+    skipDescribe?: boolean,
     @Option({ flags: "--audit-limit <n>", description: "Recent audit rows to include (0-200)", defaultValue: "20" })
     auditLimit?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const payload = await buildCredentialInventory({
-      describe: describe !== false,
+      describe: skipDescribe !== true,
       auditLimit: parseIntOption(auditLimit, 20),
     });
     if (asJson) {
