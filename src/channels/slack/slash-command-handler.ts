@@ -55,6 +55,7 @@ import { parseSlackCommandEvent, SLACK_COMMAND_TOPIC, type SlackCommandEvent } f
 import {
   closeSlackThreadRecord,
   findSlackThreadForParent,
+  findSlackThreadForParentInChat,
   slackThreadParentSessionKey,
   summarizeSlackThread,
 } from "./thread-lifecycle.js";
@@ -93,9 +94,12 @@ export interface SlackCommandDeps extends ChatCommandDeps {
   contactForSlackUser?: (userId: string, instanceId: string) => string | null;
   resolveSession?: (where: SlackCommandLocation, config: RouterConfig) => SlackCommandSessionResolution;
   threads?: (session: SessionEntry) => SlackThreadIndex;
-  /** One thread of the session of a chat, by name, request id or Slack `thread_ts`. */
-  findThread?: (parentSessionKey: string, threadRef: string) => ChatThreadSummary | null;
-  closeThread?: (parentSessionKey: string, threadRef: string) => Promise<SlackCommandCloseResult>;
+  /**
+   * One thread of the session of a chat, by name, request id or Slack `thread_ts`. With `chatId` the
+   * ref is the root `ts` of a thread opened in that channel, and no other thread answers to it.
+   */
+  findThread?: (parentSessionKey: string, threadRef: string, chatId?: string) => ChatThreadSummary | null;
+  closeThread?: (parentSessionKey: string, threadRef: string, chatId?: string) => Promise<SlackCommandCloseResult>;
 }
 
 /**
@@ -183,13 +187,24 @@ function defaultThreadIndex(session: SessionEntry): SlackThreadIndex {
   };
 }
 
-function defaultFindThread(parentSessionKey: string, threadRef: string): ChatThreadSummary | null {
-  const record = findSlackThreadForParent(parentSessionKey, threadRef);
+/** The thread a ref names: by chat and root `ts` when a chat is given, by any of its names otherwise. */
+function lookupThread(parentSessionKey: string, threadRef: string, chatId?: string) {
+  return chatId
+    ? findSlackThreadForParentInChat(parentSessionKey, chatId, threadRef)
+    : findSlackThreadForParent(parentSessionKey, threadRef);
+}
+
+function defaultFindThread(parentSessionKey: string, threadRef: string, chatId?: string): ChatThreadSummary | null {
+  const record = lookupThread(parentSessionKey, threadRef, chatId);
   return record ? summarizeSlackThread(record) : null;
 }
 
-async function defaultCloseThread(parentSessionKey: string, threadRef: string): Promise<SlackCommandCloseResult> {
-  const record = findSlackThreadForParent(parentSessionKey, threadRef);
+async function defaultCloseThread(
+  parentSessionKey: string,
+  threadRef: string,
+  chatId?: string,
+): Promise<SlackCommandCloseResult> {
+  const record = lookupThread(parentSessionKey, threadRef, chatId);
   if (!record) return { kind: "not_found" };
   const name = record.childSessionName ?? record.requestId;
   try {
@@ -256,6 +271,7 @@ export interface SlackCommandSource extends SlackCommandLocation {
 
 /** What the engine needs from Slack for one command: who, where, the threads, and how to answer. */
 export function slackCommandChannel(source: SlackCommandSource, deps: SlackCommandDeps = {}): ChatCommandChannel {
+  const scopeChat = source.surface === "command" ? undefined : source.channelId;
   return {
     origin: {
       channel: "slack",
@@ -271,10 +287,12 @@ export function slackCommandChannel(source: SlackCommandSource, deps: SlackComma
     contactId: () => (deps.contactForSlackUser ?? slackUserContactId)(source.userId, source.instanceId),
     resolveSession: (config) => (deps.resolveSession ?? resolveSlackCommandSession)(source, config),
     threads: (session) => (deps.threads ?? defaultThreadIndex)(session),
+    // A shortcut and a button name the thread by the message they were used on: its root `ts`, in this
+    // chat. A typed command names it by any of its names, among every thread of the session.
     findThread: (session, threadRef) =>
-      (deps.findThread ?? defaultFindThread)(slackThreadParentSessionKey(session.sessionKey), threadRef),
+      (deps.findThread ?? defaultFindThread)(slackThreadParentSessionKey(session.sessionKey), threadRef, scopeChat),
     closeThread: (session, threadRef) =>
-      (deps.closeThread ?? defaultCloseThread)(slackThreadParentSessionKey(session.sessionKey), threadRef),
+      (deps.closeThread ?? defaultCloseThread)(slackThreadParentSessionKey(session.sessionKey), threadRef, scopeChat),
     closeAccess: defaultCloseAccess,
     reply: async (result) => {
       // The runner answers static text inside the ack when Slack takes it there; only when Slack

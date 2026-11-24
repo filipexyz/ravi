@@ -319,6 +319,30 @@ export function findSlackThreadLifecycleByParentAndProviderThread(
   return row ? rowToSlackThreadLifecycle(row) : null;
 }
 
+/**
+ * One of a parent's threads by the channel it was opened in and its root `ts`, exactly. A `ts` is only
+ * unique within a channel, so a shortcut or a button, which name the thread by where they were used,
+ * ask for it this way and never get another chat's thread of the same parent.
+ */
+export function findSlackThreadLifecycleByParentChatAndProviderThread(
+  parentSessionKey: string,
+  platformChatId: string,
+  providerThreadId: string,
+): SlackThreadLifecycleRecord | null {
+  const row = getDb()
+    .prepare(
+      `
+      SELECT *
+      FROM slack_thread_lifecycle
+      WHERE parent_session_key = ? AND platform_chat_id = ? AND provider_thread_id = ?
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `,
+    )
+    .get(parentSessionKey, platformChatId, providerThreadId) as SlackThreadLifecycleRow | undefined;
+  return row ? rowToSlackThreadLifecycle(row) : null;
+}
+
 export function markSlackThreadRootDelivered(input: {
   requestId: string;
   providerThreadId: string;

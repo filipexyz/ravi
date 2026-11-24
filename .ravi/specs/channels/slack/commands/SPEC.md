@@ -116,7 +116,8 @@ Confirm and Cancel, and run only when Confirm is pressed.
   nobody could be told what happened.
 - A shortcut (`message_action`, `shortcut`) whose response handle is of a shape
   Ravi does not trust MUST be published without the handle, with a log line naming
-  only the host and the first path segment: a shortcut answers with a private
+  only the host and the first path segment, and saying whether the shape is one
+  Slack does not issue or the handle could not be stored: a shortcut answers with a private
   card and does not need it. Any other interaction whose handle is not trusted MUST
   still be refused.
 - The event is `ravi.inbound.command` with `provider`, `source`, `accountId`,
@@ -210,7 +211,9 @@ values, never code.
 - The person MUST be the Slack user id of the interaction payload, resolved to a
   contact like a typed command's. The thread MUST be the clicked card's own
   message, looked up among the threads of the session the clicked chat resolves
-  to: a card MUST NOT name a thread of another chat's session.
+  to and opened in the clicked chat (a Slack `ts` is only unique within a channel,
+  so another channel's thread of the same session with the same root MUST NOT
+  answer): a card MUST NOT name a thread of another chat's session.
 - The same engine decides, so the freshness window, the authority (`modify` on the
   session and the CLI's capability) and the audit are a typed command's; the
   audit row MUST record `surface: "button"`. The answer MUST be ephemeral,
@@ -229,8 +232,9 @@ values, never code.
   timestamp, MUST NOT run.
 - The thread MUST be the root of the thread the message is in (`thread_ts`, or
   the message's own `ts` when it starts one), looked up among the threads of the
-  session the chat resolves to: a shortcut MUST NOT name a thread of another
-  chat's session. The person MUST be the Slack user id of the payload, resolved
+  session the chat resolves to and opened in the chat it was used in: a shortcut
+  MUST NOT name a thread of another chat's session, nor another channel's thread
+  of the same session with the same root `ts`. The person MUST be the Slack user id of the payload, resolved
   to a contact; nothing typed or written in the message is read.
 - `status` MUST run the engine command `status <ts>`. `close` and `stop` MUST NOT
   change anything when picked: they MUST send a private card with Confirm and
@@ -238,6 +242,9 @@ values, never code.
   Confirm is pressed. Authority MUST be read when it runs, by the same engine as a
   typed command: `modify` on the session and the CLI's capability. A shortcut that
   arrived more than 60 seconds after it was picked MUST NOT ask.
+- A confirmation click MUST be read only from the chat of its card or from a DM
+  with the app (a `D` conversation, where Slack puts the card when it will not
+  show it in the chat); a click from any other conversation MUST NOT run.
 - The confirmation card MUST carry only the thread and the time it was asked (in
   the button value, a hint the click checks and never an authority), and MUST NOT
   name a person. A confirmation asked more than ten minutes ago, or stamped more
@@ -298,6 +305,10 @@ feature alone, with no change planned here:
   only when it runs). It sits in the thread it is about; in the DM fallback, where
   Slack refused to show it in the chat, it is only as clear as that DM.
 - `/ravi status <word>` used to ignore the word. It now names a thread.
+- A typed command names a thread by any of its names (name, request id, root
+  `ts`) among every thread of the session of the chat, so a root `ts` copied from
+  another channel of the same session names that channel's thread. Shortcuts and
+  buttons are tighter: they name the thread by the chat they were used in.
 
 ## Out of scope for this feature
 
