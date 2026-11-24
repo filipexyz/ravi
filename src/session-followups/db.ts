@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { assertAutomationStoreWrite } from "../permissions/user-overlay-automation.js";
 import type { Database, SQLQueryBindings } from "bun:sqlite";
 import { getDb } from "../router/router-db.js";
 import { calculateNextRun, isValidCronExpression } from "../cron/schedule.js";
@@ -136,6 +137,7 @@ export function ensureSessionFollowupTables(): void {
 }
 
 export function createSessionFollowupCadence(input: SessionFollowupCadenceInput): SessionFollowupCadence {
+  assertAutomationStoreWrite("session followup");
   ensureSessionFollowupTables();
   const now = input.now ?? Date.now();
   const id = normalizeId(input.id) ?? `sfup_${randomUUID().replace(/-/g, "").slice(0, 18)}`;
@@ -281,6 +283,7 @@ export function updateSessionFollowupCadence(
   id: string,
   input: SessionFollowupCadenceUpdateInput,
 ): SessionFollowupCadence | null {
+  assertAutomationStoreWrite("session followup");
   ensureSessionFollowupTables();
   const current = getSessionFollowupCadence(id);
   if (!current) return null;

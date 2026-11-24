@@ -1,4 +1,5 @@
 import { errorDiagnostic, redactDiagnosticText } from "../../utils/error-diagnostic.js";
+import { assertNoUserOverlayAutomationWrite } from "../../permissions/user-overlay-automation.js";
 import "reflect-metadata";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import {
@@ -344,6 +345,8 @@ export class WatchCommands {
     execute?: boolean,
   ) {
     return runWatchCommand("watch trigger", asJson, async () => {
+      // Refuse before the dry-run too: the plan is impossible from such a turn.
+      assertNoUserOverlayAutomationWrite("watch trigger");
       if (!message?.trim()) fail("--message is required");
       const watch = requireWatch("watch trigger", id, asJson);
       const eventType = event?.trim() || watch.eventTypes[0];

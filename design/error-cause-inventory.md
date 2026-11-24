@@ -926,7 +926,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/update.ts | 1347 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:74bbfa2976253cbe237bad91 |
 | cli | src/cli/commands/update.ts | 1353 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:74bbfa2976253cbe237bad91 |
 | cli | src/cli/commands/update.ts | 1383 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:c33f18a27e6494675a063425 |
-| cli | src/cli/commands/watch.ts | 558 | fixed | binding retained / no recognized error surface | src/cli/commands/watch.ts:fbff794a5bddadc3ca9ea59f |
+| cli | src/cli/commands/watch.ts | 561 | fixed | binding retained / no recognized error surface | src/cli/commands/watch.ts:fbff794a5bddadc3ca9ea59f |
 | cli | src/cli/commands/widgets.ts | 68 | triaged-follow-up | catch-without-binding | src/cli/commands/widgets.ts:8c447b55c38f008aa381b929 |
 | cli | src/cli/commands/widgets.ts | 80 | triaged-follow-up | catch-without-binding | src/cli/commands/widgets.ts:13d9ce0b17bf6fda14a722e3 |
 | cli | src/cli/commands/work-objects.ts | 370 | fixed | binding retained / no recognized error surface | src/cli/commands/work-objects.ts:8cbfe85b7901d7339492b04d |
@@ -1260,7 +1260,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | handoffs | src/handoffs/reconcile.ts | 237 | fixed | binding retained / no recognized error surface | src/handoffs/reconcile.ts:1fe0cdfdac0978f7c13db234 |
 | handoffs | src/handoffs/service.ts | 114 | fixed | binding retained / no recognized error surface | src/handoffs/service.ts:303b83e82808b2a089484a5e |
 | heartbeat | src/heartbeat/runner.ts | 152 | fixed | binding retained / no recognized error surface | src/heartbeat/runner.ts:a6b2da222c3e90ad6cb30904 |
-| hooks-runtime | src/hooks-runtime/db.ts | 101 | triaged-follow-up | catch-without-binding | src/hooks-runtime/db.ts:3c08a152288c09ea27823b56 |
+| hooks-runtime | src/hooks-runtime/db.ts | 102 | triaged-follow-up | catch-without-binding | src/hooks-runtime/db.ts:3c08a152288c09ea27823b56 |
 | hooks-runtime | src/hooks-runtime/runner.ts | 298 | fixed | binding retained / no recognized error surface | src/hooks-runtime/runner.ts:62f3b527b3513d4a42ca504e |
 | hooks-runtime | src/hooks-runtime/runner.ts | 317 | fixed | binding retained / no recognized error surface | src/hooks-runtime/runner.ts:aa7b74d815ad7dd19f8fe2f1 |
 | hooks-runtime | src/hooks-runtime/runner.ts | 321 | fixed | binding retained / no recognized error surface | src/hooks-runtime/runner.ts:0e2962298a519845e9e5f341 |
@@ -2207,9 +2207,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | permissions | src/security/state-dir-permissions.ts | 125 | triaged-follow-up | surface-bypasses-constructor | src/security/state-dir-permissions.ts:872665d1f8faab0dde1ade9f |
 | permissions | src/security/state-dir-permissions.ts | 135 | triaged-follow-up | surface-bypasses-constructor | src/security/state-dir-permissions.ts:125e9bb4e62cd7d127008e1b |
 | permissions | src/security/state-dir-permissions.ts | 189 | triaged-follow-up | surface-bypasses-constructor | src/security/state-dir-permissions.ts:cd2d9b65bc84e03900e30b98 |
-| sessions | src/session-followups/db.ts | 739 | triaged-follow-up | catch-without-binding | src/session-followups/db.ts:17d64fc41b374281847855be |
-| sessions | src/session-followups/db.ts | 757 | fixed | binding retained / no recognized error surface | src/session-followups/db.ts:385b3989b925df351081ba77 |
-| sessions | src/session-followups/db.ts | 802 | triaged-follow-up | catch-without-binding | src/session-followups/db.ts:4ede2bfe32dd151d3fecfc99 |
+| sessions | src/session-followups/db.ts | 742 | triaged-follow-up | catch-without-binding | src/session-followups/db.ts:17d64fc41b374281847855be |
+| sessions | src/session-followups/db.ts | 760 | fixed | binding retained / no recognized error surface | src/session-followups/db.ts:385b3989b925df351081ba77 |
+| sessions | src/session-followups/db.ts | 805 | triaged-follow-up | catch-without-binding | src/session-followups/db.ts:4ede2bfe32dd151d3fecfc99 |
 | sessions | src/session-followups/runner.ts | 38 | fixed | binding retained / no recognized error surface | src/session-followups/runner.ts:efdeb4ee19ffb6ce6279efc1 |
 | sessions | src/session-followups/runner.ts | 51 | fixed | binding retained / no recognized error surface | src/session-followups/runner.ts:a34eac625a0a1e1da353f67c |
 | sessions | src/session-followups/service.ts | 387 | triaged-follow-up | surface-bypasses-constructor | src/session-followups/service.ts:38acd893e384577eea0a35c5 |
@@ -2228,8 +2228,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | signals | src/signals/render.ts | 241 | fixed | binding retained / no recognized error surface | src/signals/render.ts:ea1ac8f60b00a61e7749ddcc |
 | signals | src/signals/runner.ts | 47 | fixed | binding retained / no recognized error surface | src/signals/runner.ts:0446d1134b60763bc097c7e4 |
 | signals | src/signals/service.ts | 348 | fixed | binding retained / no recognized error surface | src/signals/service.ts:9bf1d047b098d837c1cab774 |
-| signals | src/signals/signal-db.ts | 35 | triaged-follow-up | catch-without-binding | src/signals/signal-db.ts:a950a0e9fc4f35f84a6b602d |
-| signals | src/signals/signal-db.ts | 121 | triaged-follow-up | catch-without-binding | src/signals/signal-db.ts:7fa5d5553713cf6ee96024d1 |
+| signals | src/signals/signal-db.ts | 36 | triaged-follow-up | catch-without-binding | src/signals/signal-db.ts:a950a0e9fc4f35f84a6b602d |
+| signals | src/signals/signal-db.ts | 122 | triaged-follow-up | catch-without-binding | src/signals/signal-db.ts:7fa5d5553713cf6ee96024d1 |
 | signals | src/signals/tick.ts | 173 | fixed | binding retained / no recognized error surface | src/signals/tick.ts:7d3b3f8663d80276eea432c7 |
 | signals | src/signals/tick.ts | 346 | fixed | binding retained / no recognized error surface | src/signals/tick.ts:bdaed36cdc0d67dff6f30965 |
 | signals | src/signals/tick.ts | 364 | fixed | binding retained / no recognized error surface | src/signals/tick.ts:4793a529ccbea970d3c8bdca |
@@ -2269,9 +2269,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | tags | src/tags/targets.ts | 128 | triaged-follow-up | catch-without-binding | src/tags/targets.ts:0ee41ba823cb46c11f8646bf |
 | tags | src/tags/targets.ts | 219 | triaged-follow-up | catch-without-binding | src/tags/targets.ts:52135baf66518ab1d5c052ea |
 | tags | src/tags/targets.ts | 236 | triaged-follow-up | catch-without-binding | src/tags/targets.ts:12d7135056e28970d9737f45 |
-| tasks | src/tasks/automations-db.ts | 89 | triaged-follow-up | catch-without-binding | src/tasks/automations-db.ts:c207d24b85f4be3879530c1b |
-| tasks | src/tasks/automations-db.ts | 111 | triaged-follow-up | catch-without-binding | src/tasks/automations-db.ts:3427bc60a2f466bb2ccd47a1 |
-| tasks | src/tasks/automations-db.ts | 135 | triaged-follow-up | catch-without-binding | src/tasks/automations-db.ts:d06a994d278f62a57e0de92c |
+| tasks | src/tasks/automations-db.ts | 90 | triaged-follow-up | catch-without-binding | src/tasks/automations-db.ts:c207d24b85f4be3879530c1b |
+| tasks | src/tasks/automations-db.ts | 112 | triaged-follow-up | catch-without-binding | src/tasks/automations-db.ts:3427bc60a2f466bb2ccd47a1 |
+| tasks | src/tasks/automations-db.ts | 136 | triaged-follow-up | catch-without-binding | src/tasks/automations-db.ts:d06a994d278f62a57e0de92c |
 | tasks | src/tasks/automations.ts | 579 | fixed | binding retained / no recognized error surface | src/tasks/automations.ts:a20828076d25dd0073a29f73 |
 | tasks | src/tasks/automations.ts | 608 | fixed | binding retained / no recognized error surface | src/tasks/automations.ts:a311488ebb2d6524ea576ef4 |
 | tasks | src/tasks/checkpoint-runner.ts | 38 | fixed | binding retained / no recognized error surface | src/tasks/checkpoint-runner.ts:1493c92fb6b56e2239e56521 |
@@ -2368,7 +2368,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | triggers | src/triggers/runner.ts | 1442 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:98d070593ad0a160c67acebc |
 | triggers | src/triggers/shell-env-file.ts | 52 | fixed | binding retained / no recognized error surface | src/triggers/shell-env-file.ts:d1d19eafa3e41c1a6f2e98b1 |
 | triggers | src/triggers/shell-env-file.ts | 196 | fixed | binding retained / no recognized error surface | src/triggers/shell-env-file.ts:38a87581adb392a895da7126 |
-| triggers | src/triggers/triggers-db.ts | 67 | triaged-follow-up | catch-without-binding | src/triggers/triggers-db.ts:18050dd160921a6db0880e71 |
+| triggers | src/triggers/triggers-db.ts | 68 | triaged-follow-up | catch-without-binding | src/triggers/triggers-db.ts:18050dd160921a6db0880e71 |
 | tui | src/tui/App.tsx | 208 | triaged-follow-up | rejection-without-binding | src/tui/App.tsx:0aedf48025a85ece64c6b534 |
 | tui | src/tui/App.tsx | 243 | triaged-follow-up | rejection-without-binding | src/tui/App.tsx:0aedf48025a85ece64c6b534 |
 | tui | src/tui/App.tsx | 359 | fixed | binding retained / no recognized error surface | src/tui/App.tsx:03ce87c9b871302095023186 |

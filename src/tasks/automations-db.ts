@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { assertAutomationStoreWrite } from "../permissions/user-overlay-automation.js";
 import { getDb, getDbChanges, getRaviDbPath } from "../router/router-db.js";
 import {
   TASK_AUTOMATION_EVENTS,
@@ -245,6 +246,7 @@ function ensureTaskAutomationSchema(): void {
 }
 
 export function dbCreateTaskAutomation(input: TaskAutomationInput): TaskAutomation {
+  assertAutomationStoreWrite("task automation");
   ensureTaskAutomationSchema();
 
   const db = getDb();

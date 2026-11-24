@@ -33,3 +33,6 @@
 - Automation writes (cron, triggers, followups, hooks, signals, tasks) MUST be
   refused in a turn with `actorBreakGlassWithheld`
   (`user-overlay-automation.test.ts`, `cron-commands.test.ts`).
+- A writer that reaches the automation stores directly from a turn with
+  `actorBreakGlassWithheld` MUST be refused (`automation-store-guard.test.ts`);
+  `watch trigger` MUST refuse even as a dry-run (`watch.test.ts`).

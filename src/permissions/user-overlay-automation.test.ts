@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { runWithContext, type ToolContext } from "../cli/context.js";
-import { assertNoUserOverlayAutomationWrite } from "./user-overlay-automation.js";
+import { assertAutomationStoreWrite, assertNoUserOverlayAutomationWrite } from "./user-overlay-automation.js";
 
 function turn(actorAuthorizationMode: string, extra: Record<string, unknown> = {}): ToolContext {
   return {
@@ -49,5 +49,41 @@ describe("automation writes from a contact-narrowed turn", () => {
       runWithContext(turn("invoke-only"), () => assertNoUserOverlayAutomationWrite("triggers add")),
     ).not.toThrow();
     expect(() => assertNoUserOverlayAutomationWrite("triggers add")).not.toThrow();
+  });
+});
+
+describe("automation store guard (sink)", () => {
+  const withheld = { actorBreakGlassWithheld: ["admin:system:*", "execute:executable:*"] };
+
+  it("refuses a store write from a person's turn held below break-glass, whatever the caller", () => {
+    expect(() => runWithContext(turn("invoke-only", withheld), () => assertAutomationStoreWrite("trigger"))).toThrow(
+      expect.objectContaining({ code: "PERMISSION_DENIED" }),
+    );
+  });
+
+  it("does not let a cron binding to the overlay chat excuse a person held below break-glass", () => {
+    expect(() =>
+      runWithContext(turn("invoke-only", withheld), () =>
+        assertAutomationStoreWrite("cron job", { bindableToOverlayChat: true }),
+      ),
+    ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
+  });
+
+  it("lets an overlay turn write a cron job bound to its chat, and anyone disable", () => {
+    expect(() =>
+      runWithContext(turn("user-overlay"), () =>
+        assertAutomationStoreWrite("cron job", { bindableToOverlayChat: true }),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      runWithContext(turn("invoke-only", withheld), () =>
+        assertAutomationStoreWrite("trigger", { disablesOnly: true }),
+      ),
+    ).not.toThrow();
+  });
+
+  it("leaves turns without limits and code outside a turn alone", () => {
+    expect(() => runWithContext(turn("invoke-only"), () => assertAutomationStoreWrite("trigger"))).not.toThrow();
+    expect(() => assertAutomationStoreWrite("trigger")).not.toThrow();
   });
 });

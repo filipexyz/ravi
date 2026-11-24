@@ -102,8 +102,17 @@ Ungoverned chats keep `agent_identity ∩ turn_caps`, with one exception:
 - Automation cannot outlive the limit: a turn carrying
   `actorBreakGlassWithheld` (or a relay of one) cannot write cron jobs,
   triggers, session followups, hooks, signals or tasks; the write is refused
-  with `PERMISSION_DENIED` and the operator sets it up. Binding the job to the
-  creator's ceiling is deferred.
+  with `PERMISSION_DENIED` and the operator sets it up. The rule lives in the
+  stores, not only in commands: `assertAutomationStoreWrite`
+  (`permissions/user-overlay-automation.ts`) runs in `dbCreateTrigger`,
+  `dbUpdateTrigger`, `dbCreateCronJob`, `dbUpdateCronJob`, `dbCreateHook`,
+  `dbUpdateHook`, `createSessionFollowupCadence`,
+  `updateSessionFollowupCadence`, `dbInsertSignal` and
+  `dbCreateTaskAutomation`, so any writer (`watch trigger`, page comment
+  follow, bug follow, or a new one) is refused from such a turn. Disabling is
+  always allowed; code outside a turn is unaffected; an overlay turn may still
+  write a cron job bound to its chat (`creatorChat`). Command guards remain
+  for a good error. Binding the job to the creator's ceiling is deferred.
 - What "everything except break-glass" still includes (declared): the admin
   shortcut still grants every other `(permission, objectType)`, e.g.
   `execute:group:*` CLI groups, `write_contacts:system:*` and `admin` on types
