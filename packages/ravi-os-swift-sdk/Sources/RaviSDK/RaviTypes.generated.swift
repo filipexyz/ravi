@@ -13353,24 +13353,24 @@ public struct CredentialsConnectionsEnableReturn: Codable, Sendable {
 
 public struct CredentialsConnectionsInventoryOptions: Codable, Sendable {
   public var auditLimit: String?
-  public var noDescribe: Bool?
+  public var skipDescribe: Bool?
 
-  public init(auditLimit: String? = nil, noDescribe: Bool? = nil) {
+  public init(auditLimit: String? = nil, skipDescribe: Bool? = nil) {
     self.auditLimit = auditLimit
-    self.noDescribe = noDescribe
+    self.skipDescribe = skipDescribe
   }
 
   enum CodingKeys: String, CodingKey {
     case auditLimit = "auditLimit"
-    case noDescribe = "noDescribe"
+    case skipDescribe = "skipDescribe"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
     if let value = self.auditLimit {
       body["auditLimit"] = try RaviJSON.fromEncodable(value)
     }
-    if let value = self.noDescribe {
-      body["noDescribe"] = try RaviJSON.fromEncodable(value)
+    if let value = self.skipDescribe {
+      body["skipDescribe"] = try RaviJSON.fromEncodable(value)
     }
   }
 }

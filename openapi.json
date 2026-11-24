@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "847eb1327abfd6cb"
+    "version": "eb32eb41e0b98676"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -68500,8 +68500,7 @@
                     "description": "Recent audit rows to include (0-200)",
                     "type": "string"
                   },
-                  "noDescribe": {
-                    "default": false,
+                  "skipDescribe": {
                     "description": "Skip backend metadata (versions, times); local data only",
                     "type": "boolean"
                   }
@@ -68859,7 +68858,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Metadata-only snapshot of every connection: lifecycle, last use, backend version/times and recent audit. Never reads a secret value",
+        "summary": "Metadata-only snapshot of up to 500 connections (active and disabled; `total` counts all): lifecycle, last use, backend version/times and recent audit. Never reads a secret value",
         "tags": [
           "credentials"
         ]

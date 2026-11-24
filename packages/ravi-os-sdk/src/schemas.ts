@@ -63147,8 +63147,7 @@ export const CredentialsConnectionsInventoryInputSchema = {
       "description": "Recent audit rows to include (0-200)",
       "type": "string"
     },
-    "noDescribe": {
-      "default": false,
+    "skipDescribe": {
       "description": "Skip backend metadata (versions, times); local data only",
       "type": "boolean"
     }

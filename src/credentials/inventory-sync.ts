@@ -1,0 +1,145 @@
+import { createHash } from "node:crypto";
+import { enqueueSyncEvent, getSyncCursor, setSyncCursor } from "../sync/db.js";
+import { sanitizeSyncPayload } from "../sync/redaction.js";
+import { buildCredentialInventory, type BuildCredentialInventoryInput } from "./inventory.js";
+import type { CredentialInventory, CredentialInventoryItem } from "./types.js";
+
+/** Opt-in: sending credential metadata to the Console is a new egress. */
+export const CREDENTIAL_INVENTORY_SYNC_ENV = "RAVI_SYNC_CREDENTIALS_INVENTORY";
+export const CREDENTIAL_INVENTORY_SYNC_DOMAIN = "credentials";
+export const CREDENTIAL_INVENTORY_EVENT_TYPE = "credentials.inventory";
+export const CREDENTIAL_INVENTORY_SCHEMA = "credentials.inventory/v1";
+/** The inventory is built (and the Vault asked) at most this often; a change goes up at the next check. */
+export const CREDENTIAL_INVENTORY_MIN_INTERVAL_MS = 15 * 60_000;
+/** An unchanged inventory still goes up this often, so the Console knows the installation is alive. */
+export const CREDENTIAL_INVENTORY_HEARTBEAT_MS = 6 * 60 * 60_000;
+const CURSOR_KEY = "inventory";
+/** When the inventory was last built (Vault asked), enqueued or not. */
+const CHECK_CURSOR_KEY = "inventory.check";
+
+export function isCredentialInventorySyncEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return env[CREDENTIAL_INVENTORY_SYNC_ENV] === "1";
+}
+
+/**
+ * The Console payload. `secret` becomes `storage`: the sync redactor blanks any
+ * key that ends in "secret", and this field never holds one (it is the
+ * backend's version/time description).
+ */
+export interface CredentialInventorySyncPayload {
+  schema: typeof CREDENTIAL_INVENTORY_SCHEMA;
+  generatedAt: number;
+  degraded: boolean;
+  degradedReasons: CredentialInventory["degradedReasons"];
+  total: number;
+  items: Array<Omit<CredentialInventoryItem, "secret"> & { storage: CredentialInventoryItem["secret"] }>;
+  audit: CredentialInventory["audit"];
+}
+
+/** Longest free text a person-typed field may carry to the Console. */
+export const FREE_TEXT_MAX_CHARS = 200;
+const SCOPE_MAX_CHARS = 100;
+
+/**
+ * Token shapes a person might paste into a label, owner or purpose. Matched
+ * words are replaced; the field itself still goes up so the Console shows
+ * that something was there.
+ */
+const TOKEN_PATTERNS: RegExp[] = [
+  /\b(?:hvs|hvb|hvr|s|b|r)\.[A-Za-z0-9_-]{20,}/g, // Vault / OpenBao tokens
+  /\bxox[abposr]-[A-Za-z0-9-]{10,}/g, // Slack
+  /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}/g, // GitHub
+  /\bgithub_pat_[A-Za-z0-9_]{20,}/g,
+  /\bsk-[A-Za-z0-9_-]{12,}/g, // OpenAI-style
+  /\bAKIA[0-9A-Z]{16}\b/g, // AWS access key id
+  /\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}/g, // JWT
+  /\b[A-Za-z0-9+/_-]{40,}={0,2}/g, // any long unbroken key-like run
+];
+
+export function guardFreeText(value: string | null, maxChars = FREE_TEXT_MAX_CHARS): string | null {
+  if (value === null) return null;
+  let text = value;
+  for (const pattern of TOKEN_PATTERNS) text = text.replace(pattern, "[redacted]");
+  return text.length > maxChars ? `${text.slice(0, maxChars - 1)}…` : text;
+}
+
+export function credentialInventorySyncPayload(inventory: CredentialInventory): CredentialInventorySyncPayload {
+  return {
+    schema: CREDENTIAL_INVENTORY_SCHEMA,
+    generatedAt: inventory.generatedAt,
+    degraded: inventory.degraded,
+    degradedReasons: inventory.degradedReasons,
+    total: inventory.total,
+    items: inventory.items.map(({ secret, ...item }) => ({
+      ...item,
+      // Free text typed by people: capped, and token-shaped values never leave.
+      label: guardFreeText(item.label),
+      owner: guardFreeText(item.owner),
+      purpose: guardFreeText(item.purpose),
+      scopes: item.scopes.map((scope) => guardFreeText(scope, SCOPE_MAX_CHARS) ?? ""),
+      storage: secret,
+    })),
+    audit: inventory.audit,
+  };
+}
+
+export interface EnqueueCredentialInventoryResult {
+  status: "disabled" | "unchanged" | "throttled" | "enqueued";
+  hash: string | null;
+  outboxId: string | null;
+}
+
+/**
+ * Snapshot the inventory into the sync outbox when it changed (at most every
+ * 15 min) or as a 6 h heartbeat. Opt-in by `RAVI_SYNC_CREDENTIALS_INVENTORY=1`
+ * unless `force`. The payload is metadata only and passes the sync redactor
+ * unchanged.
+ */
+export async function enqueueCredentialInventorySnapshot(
+  input: {
+    now?: number;
+    force?: boolean;
+    env?: Record<string, string | undefined>;
+    inventory?: Omit<BuildCredentialInventoryInput, "now">;
+  } = {},
+): Promise<EnqueueCredentialInventoryResult> {
+  if (!input.force && !isCredentialInventorySyncEnabled(input.env)) {
+    return { status: "disabled", hash: null, outboxId: null };
+  }
+  const now = input.now ?? Date.now();
+  // The Vault is asked at most once per interval: the throttle runs BEFORE the inventory is built.
+  const lastCheck = getSyncCursor(CREDENTIAL_INVENTORY_SYNC_DOMAIN, CHECK_CURSOR_KEY);
+  if (!input.force && lastCheck && now - lastCheck.updatedAt < CREDENTIAL_INVENTORY_MIN_INTERVAL_MS) {
+    return { status: "throttled", hash: null, outboxId: null };
+  }
+  setSyncCursor(CREDENTIAL_INVENTORY_SYNC_DOMAIN, CHECK_CURSOR_KEY, now, undefined, now);
+  const payload = credentialInventorySyncPayload(await buildCredentialInventory({ ...input.inventory, now }));
+  const hash = contentHash(payload);
+  const previous = getSyncCursor(CREDENTIAL_INVENTORY_SYNC_DOMAIN, CURSOR_KEY);
+  const lastEnqueue = previous?.updatedAt ?? 0;
+  if (!input.force && previous?.cursorValue === hash && now - lastEnqueue < CREDENTIAL_INVENTORY_HEARTBEAT_MS) {
+    return { status: "unchanged", hash, outboxId: null };
+  }
+  const outbox = enqueueSyncEvent({
+    domain: CREDENTIAL_INVENTORY_SYNC_DOMAIN,
+    eventType: CREDENTIAL_INVENTORY_EVENT_TYPE,
+    entityType: "credential_inventory",
+    entityId: "installation",
+    idempotencyKey: `credentials.inventory:${hash}:${now}`,
+    payload,
+    schemaVersion: 1,
+    occurredAt: now,
+    now,
+  });
+  setSyncCursor(CREDENTIAL_INVENTORY_SYNC_DOMAIN, CURSOR_KEY, hash, { enqueuedAt: now }, now);
+  return { status: "enqueued", hash, outboxId: outbox?.id ?? null };
+}
+
+/** Hash of what the Console would show, without the snapshot time. */
+function contentHash(payload: CredentialInventorySyncPayload): string {
+  const { generatedAt: _generatedAt, ...stable } = payload;
+  return createHash("sha256")
+    .update(JSON.stringify(sanitizeSyncPayload(stable)))
+    .digest("hex")
+    .slice(0, 32);
+}

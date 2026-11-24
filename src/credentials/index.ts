@@ -55,3 +55,12 @@ export {
   CREDENTIAL_INVENTORY_MAX_ITEMS,
   type BuildCredentialInventoryInput,
 } from "./inventory.js";
+export {
+  CREDENTIAL_INVENTORY_SYNC_DOMAIN,
+  CREDENTIAL_INVENTORY_SYNC_ENV,
+  credentialInventorySyncPayload,
+  enqueueCredentialInventorySnapshot,
+  isCredentialInventorySyncEnabled,
+  type CredentialInventorySyncPayload,
+  type EnqueueCredentialInventoryResult,
+} from "./inventory-sync.js";

@@ -63,7 +63,7 @@ export async function deleteSecret(secretRef: string): Promise<boolean> {
  */
 export async function describeSecret(
   secretRef: string,
-  deps: { fetch?: typeof fetch; env?: NodeJS.ProcessEnv; timeoutMs?: number } = {},
+  deps: { fetch?: typeof fetch; env?: NodeJS.ProcessEnv; timeoutMs?: number; now?: number } = {},
 ): Promise<CredentialSecretDescription> {
   if (!secretRef.startsWith("vault:")) return { available: false, reason: "unsupported" };
   let parsed: { mount: string; path: string; key: string };
@@ -120,8 +120,14 @@ export async function describeSecret(
     version,
     createdAt: parseVaultTime(data.created_time),
     updatedAt: parseVaultTime(data.updated_time),
-    deleted: current.destroyed === true || deletionTime !== "",
+    // A future deletion_time is a scheduled delete (delete_version_after): the version is still readable.
+    deleted: current.destroyed === true || isPastVaultTime(deletionTime, deps.now ?? Date.now()),
   };
+}
+
+function isPastVaultTime(value: string, now: number): boolean {
+  const at = parseVaultTime(value);
+  return at !== null && at <= now;
 }
 
 function parseVaultTime(value: unknown): number | null {

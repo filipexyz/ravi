@@ -3398,10 +3398,10 @@ export class RaviClient {
           body: { ...(options ?? {}) },
         });
       },
-      /** Metadata-only snapshot of every connection: lifecycle, last use, backend version/times and recent audit. Never reads a secret value */
+      /** Metadata-only snapshot of up to 500 connections (active and disabled; `total` counts all): lifecycle, last use, backend version/times and recent audit. Never reads a secret value */
       inventory: async (options?: {
         auditLimit?: string;
-        noDescribe?: boolean;
+        skipDescribe?: boolean;
       }): Promise<CredentialsConnectionsInventoryReturn> => {
         return this.transport.call({
           groupSegments: ["credentials","connections"],

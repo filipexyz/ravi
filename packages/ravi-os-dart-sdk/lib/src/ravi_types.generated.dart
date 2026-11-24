@@ -11240,17 +11240,17 @@ class CredentialsConnectionsEnableReturn {
 CredentialsConnectionsEnableReturn credentialsConnectionsEnableReturnFromJson(Object? json) => CredentialsConnectionsEnableReturn.fromJsonValue(json);
 
 class CredentialsConnectionsInventoryOptions {
-  const CredentialsConnectionsInventoryOptions({this.auditLimit, this.noDescribe});
+  const CredentialsConnectionsInventoryOptions({this.auditLimit, this.skipDescribe});
 
   final String? auditLimit;
-  final bool? noDescribe;
+  final bool? skipDescribe;
 
   void encodeBody(Map<String, RaviJson> into) {
     if (auditLimit != null) {
       into["auditLimit"] = RaviJson.from(auditLimit);
     }
-    if (noDescribe != null) {
-      into["noDescribe"] = RaviJson.from(noDescribe);
+    if (skipDescribe != null) {
+      into["skipDescribe"] = RaviJson.from(skipDescribe);
     }
   }
 }

@@ -11574,7 +11574,7 @@ export type CredentialsConnectionsEnableReturn = {
 /** Input shape for `credentials.connections.inventory`. */
 export type CredentialsConnectionsInventoryInput = {
   auditLimit?: string;
-  noDescribe?: boolean;
+  skipDescribe?: boolean;
 };
 
 /** Return shape for `credentials.connections.inventory`. */

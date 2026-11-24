@@ -272,6 +272,34 @@ shows. It MUST:
 `expiresAt` is recorded and shown; the broker does not yet deny an expired
 connection (the SHOULD in the invariants above stays open).
 
+### Console publication
+
+The daemon publishes the inventory through the Console sync bridge
+(`src/credentials/inventory-sync.ts`, called from the sync runner tick):
+
+- It is opt-in: only with `RAVI_SYNC_CREDENTIALS_INVENTORY=1` (in addition to
+  `RAVI_SYNC_RUNNER_ENABLED=1` and a Console login). Without the flag nothing
+  is built or enqueued. Existing installations keep their egress unchanged.
+- Event: domain `credentials`, type `credentials.inventory`, entity
+  `credential_inventory/installation`, payload schema `credentials.inventory/v1`.
+- The payload is the inventory with each item's `secret` renamed `storage`:
+  the sync redactor blanks every key ending in "secret". The payload MUST be a
+  fixed point of `sanitizeSyncPayload` (nothing for the redactor to remove) and
+  MUST NOT contain a secret value, Vault path, key or actor id.
+- The inventory is built (and the Vault asked) at most every 15 minutes: the
+  throttle runs before the build, on a check cursor written before it, so a
+  failing build also waits. A change goes up at the next check; an unchanged
+  inventory goes up every 6 hours as a heartbeat. The hash ignores
+  `generatedAt`.
+- The runner starts the snapshot in the background, one at a time: push and
+  pull of every domain never wait on the Vault, and a throw or rejection is
+  logged with `sanitizeSyncError` and retried on a later tick.
+- Person-typed text (`label`, `owner`, `purpose`, `scopes`) is capped (200 and
+  100 characters) and token-shaped values (Vault/OpenBao, Slack, GitHub,
+  `sk-`, AWS key ids, JWTs, any unbroken run of 40+ key characters) are
+  replaced with `[redacted]` before the payload is built. These fields are
+  visible to the Console; the Console MUST render them as plain text.
+
 The default `file` backend MUST keep secret bytes in broker-owned private files
 (0700 directory, 0600 files) with atomic writes and strict opaque references.
 It is plaintext protected by the host account and works on headless Linux;
