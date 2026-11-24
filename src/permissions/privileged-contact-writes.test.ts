@@ -136,6 +136,60 @@ describe("break-glass power is never conferred by an agent tag write", () => {
     expect(materializeContactPolicyCapabilities(target.id)).toEqual([]);
   });
 
+  it("judges the profile source and kind after the casing the tag store applies", () => {
+    const tags = new TagCommands();
+    expectBreakGlassDenied(() =>
+      tags.create(
+        "permission-cased",
+        "Cased",
+        undefined,
+        "SYSTEM",
+        "Permissions",
+        JSON.stringify({ permissions: { capabilities: ["admin:system:*"] } }),
+        true,
+      ),
+    );
+    tags.create(
+      "permission-convert",
+      "Convert",
+      undefined,
+      "system",
+      "notes",
+      JSON.stringify({ permissions: { capabilities: ["execute:executable:*"] } }),
+      true,
+    );
+    expectBreakGlassDenied(() => tags.set("permission-convert", "source", "PERMISSIONS", true));
+  });
+
+  it("lets an admin agent attach a break-glass tag to a non-contact asset", () => {
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "break-glass-chat-binding",
+      chatType: "group",
+      title: "binding",
+    });
+    dbCreateTagDefinition({
+      slug: "permission-legacy-chat",
+      label: "Legacy",
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["admin:system:*"] } },
+    });
+    runWithContext(ADMIN, () =>
+      new TagCommands().attach(
+        "permission-legacy-chat",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        chat.id,
+      ),
+    );
+  });
+
   it("refuses a permission profile definition that carries break-glass, from any caller", () => {
     const tags = new TagCommands();
     expectBreakGlassDenied(() =>

@@ -10,3 +10,6 @@
 - `src/permissions/break-glass.ts` MUST NOT name any channel.
 - `bun test src/cli/commands/permissions.test.ts src/permissions/privileged-contact-writes.test.ts src/permissions/break-glass.test.ts` MUST pass.
 - `bun run typecheck` MUST pass.
+- An admin profile MUST be recognized in every spelling the contact-policy provider reads (`Admin.`, `admin_`, `OWNER`), including on a global (`--force`) grant, and its preview MUST show `admin:system:*` instead of failing as an unknown profile.
+- A permission definition MUST be judged after the casing the tag store applies: `--kind SYSTEM --source Permissions` and `tags set <slug> source PERMISSIONS` are permission definitions.
+- `tags attach` of a break-glass tag to a non-contact asset (chat, task) MUST NOT be refused by this rule; only a contact binding confers authority.

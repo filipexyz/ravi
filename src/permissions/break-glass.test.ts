@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { ADMIN_PERMISSION_PROFILES } from "./apply-grant.js";
 import {
   ADMIN_PROFILE_SLUGS,
+  isAdminProfileSlug,
   isBreakGlassCapability,
   profileBreakGlassReasons,
   tagDefinitionBreakGlassReasons,
@@ -27,6 +28,19 @@ describe("break-glass power", () => {
     expect(isBreakGlassCapability(cap("execute:executable:curl"))).toBe(false);
     expect(isBreakGlassCapability(cap("admin:agent:*"))).toBe(false);
     expect(isBreakGlassCapability(cap("use:tool:*"))).toBe(false);
+  });
+
+  it("reads admin profile names in every spelling the contact provider reads", () => {
+    for (const spelling of [
+      "permission-admin",
+      "Permission.Owner",
+      "permission_superadmin",
+      "PERMISSION:ADMIN",
+      "permission-admin-",
+    ]) {
+      expect(isAdminProfileSlug(spelling)).toBe(true);
+    }
+    expect(isAdminProfileSlug("permission-administrator")).toBe(false);
   });
 
   it("names the admin profile and the capabilities that make a profile break-glass", () => {

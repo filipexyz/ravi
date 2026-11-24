@@ -81,7 +81,11 @@ import {
 import { safeLabel } from "../../permissions/grant-requests/labels.js";
 import type { GrantRequestPlan } from "../../permissions/grant-requests/types.js";
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
-import { BREAK_GLASS_REQUEST_COMMAND, profileBreakGlassReasons } from "../../permissions/break-glass.js";
+import {
+  BREAK_GLASS_REQUEST_COMMAND,
+  isAdminProfileSlug,
+  profileBreakGlassReasons,
+} from "../../permissions/break-glass.js";
 import { authorizePermission, materializeSubjectCapabilities } from "../../permissions/provider-runtime.js";
 
 function printJson(payload: unknown): void {
@@ -956,9 +960,9 @@ function buildPermissionAllowPlan(input: PermissionAllowInput): PermissionAllowP
       exitCode: CONTRACT_EXIT_POLICY,
       diagnostic: errorDiagnostic(breakGlassMessage, { operation: op }),
       details: {
-        breakGlass,
+        // The contract keeps suggestedAction, so the reasons travel there too.
         suggestedAction:
-          "Preview without --apply. To get full access approved by the operator, run: " +
+          `Break-glass: ${breakGlass.join(", ")}. Preview without --apply. To get full access approved by the operator, run: ` +
           `${BREAK_GLASS_REQUEST_COMMAND} (from any turn).`,
       },
     });
@@ -1942,6 +1946,9 @@ function resolveProfileCapabilities(
   explicitCapabilities: AuthorizationCapability[] | undefined,
   asJson?: boolean,
 ): AuthorizationCapability[] {
+  // Admin profiles have no definition: the contact-policy provider gives them
+  // admin:system:* by name, so the plan shows that power and the guard sees it.
+  if (isAdminProfileSlug(tagSlug)) return [{ permission: "admin", objectType: "system", objectId: "*" }];
   const normalized = normalizeAgentRuntimePermissionProfile(tagSlug.slice("permission-".length));
   const builtin = normalized === "none" ? null : normalized;
   // A known zero-authority profile is valid. chat-only never inherits stale

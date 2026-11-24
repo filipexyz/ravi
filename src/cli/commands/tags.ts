@@ -33,6 +33,7 @@ import {
   assertPermissionDefinitionWithoutBreakGlass,
   assertProviderOwnedTagWriteAuthority,
 } from "../../permissions/privileged-contact-writes.js";
+import { isPermissionProfileDefinition } from "../../permissions/break-glass.js";
 import { hasTagTargetSelector, type TagTargetSelectorInput } from "../../tags/targets.js";
 import type {
   TagAssetType,
@@ -364,7 +365,8 @@ function rethrowTagCommandError(op: string, slug: string, err: unknown, asJson?:
 
 /** Definitions the contact-policy provider reads as permission profiles. */
 function isPermissionDefinition(kind: string | null | undefined, source: string | null | undefined): boolean {
-  return kind === "system" && source === "permissions";
+  // Judged after the casing the tag store applies (normalizeTagSource lowercases).
+  return isPermissionProfileDefinition({ kind, source });
 }
 
 @Group({
@@ -734,7 +736,10 @@ export class TagCommands {
       normalizedSlug,
       isPermissionDefinition(attachedDefinition?.kind, attachedDefinition?.source),
     );
-    assertBreakGlassTagWriteAllowed("tags attach", [normalizedSlug]);
+    // Only a contact binding confers authority; a task or chat binding does not.
+    if (contactId || targetSelector?.trim().toLowerCase().startsWith("contact:")) {
+      assertBreakGlassTagWriteAllowed("tags attach", [normalizedSlug]);
+    }
     const { binding } = (() => {
       try {
         return attachTagToSelector({

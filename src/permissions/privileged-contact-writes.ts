@@ -16,6 +16,7 @@ import {
   BREAK_GLASS_REQUEST_COMMAND,
   breakGlassCapabilities,
   callerIsAgentOrRemote,
+  isPermissionProfileDefinition,
   tagDefinitionBreakGlassReasons,
 } from "./break-glass.js";
 import { dbListContactChatGrants } from "./contact-chat-grants.js";
@@ -114,7 +115,7 @@ export function assertPermissionDefinitionWithoutBreakGlass(
   slug: string,
   resulting: Pick<TagDefinition, "kind" | "source" | "metadata"> | null,
 ): void {
-  if (!resulting || resulting.kind !== "system" || resulting.source !== "permissions") return;
+  if (!resulting || !isPermissionProfileDefinition(resulting)) return;
   const reasons = breakGlassCapabilities(readPermissionTagCapabilities(resulting as TagDefinition));
   if (reasons.length === 0) return;
   throw breakGlassDenied(

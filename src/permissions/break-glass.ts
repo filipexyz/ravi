@@ -22,6 +22,7 @@
 import { currentConsoleInvocation } from "../sdk/gateway/console-context.js";
 import type { TagDefinition } from "../tags/types.js";
 import { readPermissionTagCapabilities } from "./authorization-guidance.js";
+import { normalizePermissionTag } from "./permission-tags.js";
 import { getScopeContext } from "./scope.js";
 
 export interface CapabilityLike {
@@ -59,7 +60,9 @@ export function breakGlassCapabilities(capabilities: readonly CapabilityLike[]):
 }
 
 export function isAdminProfileSlug(slug: string): boolean {
-  return ADMIN_PROFILE_SLUGS.includes(slug.trim().toLowerCase());
+  // Same spelling the contact-policy provider reads (`Admin.`, `permission_owner`).
+  const normalized = normalizePermissionTag(slug);
+  return normalized ? ADMIN_PROFILE_SLUGS.includes(normalized) : false;
 }
 
 /**
@@ -68,16 +71,25 @@ export function isAdminProfileSlug(slug: string): boolean {
  */
 export function profileBreakGlassReasons(slug: string, capabilities: readonly CapabilityLike[]): string[] {
   const reasons = breakGlassCapabilities(capabilities);
-  if (isAdminProfileSlug(slug)) reasons.unshift(`${slug.trim().toLowerCase()} (admin profile)`);
+  if (isAdminProfileSlug(slug)) reasons.unshift(`${normalizePermissionTag(slug)} (admin profile)`);
   return [...new Set(reasons)];
 }
 
 /** Break-glass power a stored permission tag confers (admin name or its capabilities). */
 export function tagDefinitionBreakGlassReasons(slug: string, definition: TagDefinition | null | undefined): string[] {
-  const isPermissionDefinition = definition?.kind === "system" && definition.source === "permissions";
+  const isPermissionDefinition = isPermissionProfileDefinition(definition);
   return profileBreakGlassReasons(
     slug,
     isPermissionDefinition && definition ? readPermissionTagCapabilities(definition) : [],
+  );
+}
+
+/** A permission profile definition, judged after the casing the tag store applies. */
+export function isPermissionProfileDefinition(
+  definition: { kind?: string | null; source?: string | null } | null | undefined,
+): boolean {
+  return (
+    definition?.kind?.trim().toLowerCase() === "system" && definition.source?.trim().toLowerCase() === "permissions"
   );
 }
 

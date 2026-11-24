@@ -444,6 +444,7 @@ describe("PermissionsCommands provider-runtime surface", () => {
     ["an admin profile by name", "admin", "read:skills:show", undefined],
     ["an owner profile by name", "owner", "read:skills:show", undefined],
     ["a stored profile that already carries admin", "legacy-admin", undefined, "admin:system:*"],
+    ["an admin profile with no capabilities given", "superadmin", undefined, undefined],
   ] as const) {
     it(`blocks apply of ${name} before any write`, () => {
       const contact = createContact({ phone: "+15550000081", name: "Shortcut Grant User" });
@@ -493,6 +494,29 @@ describe("PermissionsCommands provider-runtime surface", () => {
       expect(dbListContactChatGrants({ contactId: contact.id })).toEqual([]);
       expect(getContact(contact.id)?.tags ?? []).not.toContain(`permission-${profile}`);
       expect(readAgentRuntimePermissionsConfig("bg-target")).toBeNull();
+    });
+  }
+
+  for (const spelling of ["admin_", "Admin.", "OWNER"]) {
+    it(`blocks a global apply of the admin profile spelled ${spelling}`, () => {
+      const contact = createContact({ phone: "+15550000084", name: "Global Admin Spelling" });
+      const error = captureContractError(() =>
+        new PermissionsCommands().allow(
+          spelling,
+          `contact:${contact.id}`,
+          undefined,
+          "read:skills:show",
+          undefined,
+          undefined,
+          true,
+          true,
+          undefined,
+          undefined,
+          true,
+        ),
+      );
+      expect(error.code).toBe("FULL_ACCESS_APPROVAL_REQUIRED");
+      expect(getContact(contact.id)?.tags ?? []).toEqual([]);
     });
   }
 

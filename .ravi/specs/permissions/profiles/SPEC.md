@@ -362,11 +362,11 @@ Semantics:
   how its verified sender becomes a contact (`registerGrantorIdentityResolver`);
   without one the generic platform-identity lookup is used. Slack's workspace and
   alias rules and its card-recipient lookups live in `src/channels/slack/grantors.ts`.
-- Known gap, not closed here: the `full-access` guard keys on the profile
-  *name*. A profile with another name that carries `admin:system:*` (the
-  documented `chat-admin` recipe) is applied by `allow --apply` without an
-  approval. Closing it is a product decision; a guard on one spelling of a
-  capability does not cover the equivalent path.
+- `allow --apply` judges a profile by the power it confers, not by its name:
+  any profile whose capabilities include `admin:system:*` or
+  `execute:executable:*`, or that is an admin profile by name, is refused for
+  every caller (spec `permissions/break-glass`). Governing a chat needs no
+  power: the owner grants themself `chat-only` there.
 - Applying a profile to `agent:<id>` MUST ensure the executor-agent runtime
   config contains the concrete capabilities, without replacing existing
   explicit capabilities.

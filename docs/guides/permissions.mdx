@@ -175,16 +175,14 @@ A chat becomes governed as soon as any contact holds a grant scoped to it. In a 
   </Step>
   <Step title="Plan the grant">
     ```bash
-    ravi permissions allow chat-admin --to contact:<owner-id> --chat <chat-id> \
-      --agent main --capabilities 'admin:system:*'
+    ravi permissions allow chat-only --to contact:<owner-id> --chat <chat-id>
     ```
 
-    Without `--apply` this prints a plan (`permission allow plan`) and the exact apply command. Nothing is written.
+    Any grant governs the chat, and the owner's admin tag keeps full power inside it, so the grant needs no power of its own. Without `--apply` this prints a plan (`permission allow plan`) and the exact apply command. Nothing is written. A profile carrying `admin:system:*` or `execute:executable:*` gets no apply command: it is break-glass and goes through `ravi permissions request full-access`.
   </Step>
   <Step title="Apply and check">
     ```bash
-    ravi permissions allow chat-admin --to contact:<owner-id> --chat <chat-id> \
-      --agent main --capabilities 'admin:system:*' --apply
+    ravi permissions allow chat-only --to contact:<owner-id> --chat <chat-id> --apply
     ravi permissions list --chat <chat-id>
     ```
   </Step>
@@ -193,7 +191,7 @@ A chat becomes governed as soon as any contact holds a grant scoped to it. In a 
 Grant other members their own profiles the same way, with only the capabilities they need. Revoke with `deny`; when the last grant in a chat is gone, the chat is no longer governed:
 
 ```bash
-ravi permissions deny chat-admin --to contact:<id> --chat <chat-id> --apply
+ravi permissions deny chat-only --to contact:<id> --chat <chat-id> --apply
 ```
 
 <Warning>

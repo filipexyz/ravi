@@ -117,12 +117,12 @@ Only a contact whose own capabilities cover the request, or who has `admin:syste
 
 In a chat that is not governed, every sender that resolves to a contact drives the agent with its full ceiling. Before you share a group with other people, govern it. Once any contact has a permission grant in a chat, each contact there gets only its own grants (within the ceiling) and contacts without a grant get no tools. Your `permission-owner` tag still applies, so you keep full power in that chat.
 
-To govern a chat, grant yourself a profile in it. Use a profile name other than `owner`: `owner` is the `permission-owner` tag you already added, and Ravi refuses to reuse it as a profile.
+To govern a chat, grant yourself a profile in it. Any grant governs the chat, and your `permission-owner` tag keeps your full power there, so the grant itself needs no power: use `chat-only`. A profile that carries `admin:system:*` or `execute:executable:*` is refused by `--apply` (break-glass needs `ravi permissions request full-access`).
 
 ```bash
 ravi chats list --json        # find the chat id
-ravi permissions allow chat-admin --to contact:<contact-id> --chat <chat-id> --agent main --capabilities 'admin:system:*'
-ravi permissions allow chat-admin --to contact:<contact-id> --chat <chat-id> --agent main --capabilities 'admin:system:*' --apply
+ravi permissions allow chat-only --to contact:<contact-id> --chat <chat-id>
+ravi permissions allow chat-only --to contact:<contact-id> --chat <chat-id> --apply
 ravi permissions list --chat <chat-id> --json
 ```
 
