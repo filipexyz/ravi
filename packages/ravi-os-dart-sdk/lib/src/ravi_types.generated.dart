@@ -24857,6 +24857,68 @@ class SessionsListReturn {
 
 SessionsListReturn sessionsListReturnFromJson(Object? json) => SessionsListReturn.fromJsonValue(json);
 
+class SessionsObserveOptions {
+  const SessionsObserveOptions({this.follow, this.to, this.when});
+
+  final bool? follow;
+  final String? to;
+  final String? when;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (follow != null) {
+      into["follow"] = RaviJson.from(follow);
+    }
+    if (to != null) {
+      into["to"] = RaviJson.from(to);
+    }
+    if (when != null) {
+      into["when"] = RaviJson.from(when);
+    }
+  }
+}
+
+class SessionsObserveReturn {
+  const SessionsObserveReturn({required this.observing, required this.success});
+
+  final RaviJson observing;
+  final bool success;
+
+  factory SessionsObserveReturn.fromJson(Map<String, Object?> json) {
+    return SessionsObserveReturn(
+      observing: RaviJson.from(json["observing"]),
+      success: raviJsonAsBool(json["success"]),
+    );
+  }
+
+  static SessionsObserveReturn fromJsonValue(Object? json) {
+    return SessionsObserveReturn.fromJson(raviJsonObject(json, "SessionsObserveReturn"));
+  }
+}
+
+SessionsObserveReturn sessionsObserveReturnFromJson(Object? json) => SessionsObserveReturn.fromJsonValue(json);
+
+class SessionsObservingReturn {
+  const SessionsObservingReturn({required this.observing, required this.success, required this.total});
+
+  final List<RaviJson> observing;
+  final bool success;
+  final int total;
+
+  factory SessionsObservingReturn.fromJson(Map<String, Object?> json) {
+    return SessionsObservingReturn(
+      observing: raviJsonAsList(json["observing"], RaviJson.from),
+      success: raviJsonAsBool(json["success"]),
+      total: raviJsonAsInt(json["total"]),
+    );
+  }
+
+  static SessionsObservingReturn fromJsonValue(Object? json) {
+    return SessionsObservingReturn.fromJson(raviJsonObject(json, "SessionsObservingReturn"));
+  }
+}
+
+SessionsObservingReturn sessionsObservingReturnFromJson(Object? json) => SessionsObservingReturn.fromJsonValue(json);
+
 class SessionsPruneOptions {
   const SessionsPruneOptions({this.agent, this.ephemeral, this.execute, this.inactiveFor, this.namePrefix});
 
@@ -25814,6 +25876,44 @@ class SessionsTraceOptions {
 typedef SessionsTraceReturn = Map<String, RaviJson>;
 
 SessionsTraceReturn sessionsTraceReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
+
+class SessionsUnobserveOptions {
+  const SessionsUnobserveOptions({this.to});
+
+  final String? to;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (to != null) {
+      into["to"] = RaviJson.from(to);
+    }
+  }
+}
+
+class SessionsUnobserveReturn {
+  const SessionsUnobserveReturn({required this.removed, required this.ruleId, required this.source, required this.success, required this.to});
+
+  final bool removed;
+  final String ruleId;
+  final String source;
+  final bool success;
+  final String to;
+
+  factory SessionsUnobserveReturn.fromJson(Map<String, Object?> json) {
+    return SessionsUnobserveReturn(
+      removed: raviJsonAsBool(json["removed"]),
+      ruleId: raviJsonAsString(json["ruleId"]),
+      source: raviJsonAsString(json["source"]),
+      success: raviJsonAsBool(json["success"]),
+      to: raviJsonAsString(json["to"]),
+    );
+  }
+
+  static SessionsUnobserveReturn fromJsonValue(Object? json) {
+    return SessionsUnobserveReturn.fromJson(raviJsonObject(json, "SessionsUnobserveReturn"));
+  }
+}
+
+SessionsUnobserveReturn sessionsUnobserveReturnFromJson(Object? json) => SessionsUnobserveReturn.fromJsonValue(json);
 
 class SessionsUpdateOptions {
   const SessionsUpdateOptions({this.effort, this.model, this.probeTimeout, this.provider, this.skipProbe, this.thinking});
