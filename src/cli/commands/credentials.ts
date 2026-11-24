@@ -19,7 +19,7 @@ import {
   type CredentialConnectionStatus,
 } from "../../credentials/index.js";
 import { buildCommand, buildOffsetPagination } from "../../utils/pagination.js";
-import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { CONTRACT_EXIT_USAGE, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { jsonObjectSchema } from "../return-schemas.js";
@@ -202,12 +202,29 @@ function backendValue(value: string | undefined): CredentialBackend {
   throw new Error("--backend must be file, keychain or vault");
 }
 
-function expiresAtValue(value: string | undefined): number | undefined {
+const EXPIRES_AT_USAGE = "--expires-at must be an ISO date, e.g. 2027-02-16";
+
+/**
+ * ISO 8601 only (date, or date-time with Z/offset) and a real calendar date.
+ * Date.parse alone also takes HTTP-dates and locale strings, and rolls
+ * 2027-02-30 over to March. An invalid value is a usage error (exit 2).
+ */
+function expiresAtValue(value: string | undefined, asJson?: boolean): number | undefined {
   if (value === undefined) return undefined;
-  // ISO 8601 only (date, or date-time with Z/offset); Date.parse alone also takes HTTP-dates and locale strings.
-  const iso = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2}))?$/;
-  const parsed = iso.test(value) ? Date.parse(value) : Number.NaN;
-  if (!Number.isFinite(parsed)) throw new Error("--expires-at must be an ISO date, e.g. 2027-02-16");
+  const match = /^(\d{4})-(\d{2})-(\d{2})(T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2}))?$/.exec(value);
+  const parsed = match ? Date.parse(value) : Number.NaN;
+  const [year, month, day] = match ? [Number(match[1]), Number(match[2]), Number(match[3])] : [0, 0, 0];
+  const calendar = new Date(Date.UTC(year, month - 1, day));
+  const realDate =
+    calendar.getUTCFullYear() === year && calendar.getUTCMonth() === month - 1 && calendar.getUTCDate() === day;
+  if (!Number.isFinite(parsed) || !realDate) {
+    contractFail("credentials connections add", "USAGE_ERROR", EXPIRES_AT_USAGE, {
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: { suggestedAction: "Pass a date like 2027-02-16 or 2027-02-16T10:00:00Z" },
+      diagnostic: errorDiagnostic(EXPIRES_AT_USAGE, { operation: "credentials connections add" }),
+    });
+  }
   return parsed;
 }
 
@@ -416,7 +433,7 @@ export class CredentialConnectionsCommands {
     const providerId = normalizeCredentialIdentifier(provider, "provider");
     const connectionId = normalizeCredentialIdentifier(connection, "connection");
     const resolvedBackend = backendValue(backend);
-    const resolvedExpiresAt = expiresAtValue(expiresAt);
+    const resolvedExpiresAt = expiresAtValue(expiresAt, asJson);
     const existed = getCredentialConnection(providerId, connectionId) !== null;
     if (secretStdin && secretRef) fail("Use either --secret-stdin or --secret-ref, not both.");
     if (!secretStdin && !secretRef) fail("Provide --secret-stdin or --secret-ref.");

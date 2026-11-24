@@ -525,15 +525,24 @@ describe("credentials connections add --expires-at format", () => {
     }
   });
 
-  it("refuses HTTP-dates, locale strings and zoneless date-times", async () => {
+  it("refuses HTTP-dates, locale strings, zoneless date-times and impossible dates as a usage error (exit 2)", async () => {
     for (const value of [
       "Tue, 16 Feb 2027 00:00:00 GMT",
       "February 16, 2027",
       "2027-02-16T10:00",
       "16/02/2027",
       "1803168000000",
+      "2027-02-30",
+      "2027-02-29",
+      "2027-13-01",
     ]) {
-      await expect(add(value)).rejects.toThrow("--expires-at must be an ISO date");
+      const error = await add(value).then(
+        () => null,
+        (caught: unknown) => caught,
+      );
+      expect({ value, isContract: error instanceof ContractError }).toEqual({ value, isContract: true });
+      expect((error as InstanceType<typeof ContractError>).exitCode).toBe(2);
+      expect((error as InstanceType<typeof ContractError>).code).toBe("USAGE_ERROR");
     }
     expect(upsertCalls).toHaveLength(0);
   });
