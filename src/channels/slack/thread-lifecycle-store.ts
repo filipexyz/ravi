@@ -296,6 +296,53 @@ export function findSlackThreadLifecycleByProviderThread(input: {
   return row ? rowToSlackThreadLifecycle(row) : null;
 }
 
+/**
+ * One of a parent's threads by the Slack root `ts`, asked of the table itself: a thread older than the
+ * newest page of a parent's listing is still found. The newest row wins when two chats of one parent
+ * share a `ts`.
+ */
+export function findSlackThreadLifecycleByParentAndProviderThread(
+  parentSessionKey: string,
+  providerThreadId: string,
+): SlackThreadLifecycleRecord | null {
+  const row = getDb()
+    .prepare(
+      `
+      SELECT *
+      FROM slack_thread_lifecycle
+      WHERE parent_session_key = ? AND provider_thread_id = ?
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `,
+    )
+    .get(parentSessionKey, providerThreadId) as SlackThreadLifecycleRow | undefined;
+  return row ? rowToSlackThreadLifecycle(row) : null;
+}
+
+/**
+ * One of a parent's threads by the channel it was opened in and its root `ts`, exactly. A `ts` is only
+ * unique within a channel, so a shortcut or a button, which name the thread by where they were used,
+ * ask for it this way and never get another chat's thread of the same parent.
+ */
+export function findSlackThreadLifecycleByParentChatAndProviderThread(
+  parentSessionKey: string,
+  platformChatId: string,
+  providerThreadId: string,
+): SlackThreadLifecycleRecord | null {
+  const row = getDb()
+    .prepare(
+      `
+      SELECT *
+      FROM slack_thread_lifecycle
+      WHERE parent_session_key = ? AND platform_chat_id = ? AND provider_thread_id = ?
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `,
+    )
+    .get(parentSessionKey, platformChatId, providerThreadId) as SlackThreadLifecycleRow | undefined;
+  return row ? rowToSlackThreadLifecycle(row) : null;
+}
+
 export function markSlackThreadRootDelivered(input: {
   requestId: string;
   providerThreadId: string;

@@ -159,6 +159,10 @@ function harness(
 describe("the grammar", () => {
   it("is the same for every channel and answers static text without a session", () => {
     expect(parseChatCommandText("status")).toEqual({ kind: "status" });
+    expect(parseChatCommandText("status 1795189835.360089")).toEqual({
+      kind: "status",
+      threadRef: "1795189835.360089",
+    });
     expect(parseChatCommandText("stop")).toEqual({ kind: "stop" });
     expect(parseChatCommandText("stop 1795189835.360089")).toEqual({ kind: "stop", threadRef: "1795189835.360089" });
     expect(parseChatCommandText("close idle")).toEqual({ kind: "close_idle", hours: CHAT_COMMAND_DEFAULT_IDLE_HOURS });
@@ -643,6 +647,111 @@ describe("stop <thread>", () => {
       code: "threads_unsupported",
     });
     expect(none.calls.interrupt).toBe(0);
+  });
+});
+
+describe("status <thread>", () => {
+  it("says that thread's own state as facts, found in the session of the chat", async () => {
+    const h = harness({
+      deps: {
+        activity: () => ({ busy: true, lastActivityAt: NOW - 7 * 60_000 }),
+      },
+    });
+    const looked: string[] = [];
+
+    const outcome = await runChatCommand(
+      h.channel("status 1795189835.360089", {
+        findThread: (_session, ref) => {
+          looked.push(ref);
+          return thread({
+            status: "open",
+            title: "Study",
+            openDecisionCount: 2,
+            pendingAnswerCount: 1,
+            parentReturn: { pending: true },
+            turnHealth: { state: "running", lastSignalAt: NOW - 60_000 },
+          });
+        },
+      }),
+      h.deps,
+    );
+
+    expect(outcome).toEqual({ decision: "allowed", code: "ok" });
+    expect(looked).toEqual(["1795189835.360089"]);
+    expect(h.replies).toEqual([
+      {
+        kind: "thread_status",
+        sessionName: "main",
+        thread: {
+          name: "main-t-1",
+          title: "Study",
+          ageMs: 7 * 60_000,
+          busy: true,
+          health: "running",
+          openDecisionCount: 2,
+          returnPending: true,
+          sessionGone: false,
+          closed: false,
+          pendingAnswerCount: 1,
+        },
+      },
+    ]);
+    // It reads: no capability of the CLI is asked, only access to the session.
+    expect(h.calls.access).toEqual([]);
+    expect(h.calls.interrupt).toBe(0);
+  });
+
+  it("says a closed thread is closed", async () => {
+    const h = harness();
+
+    await runChatCommand(h.channel("status main-t-1", { findThread: () => thread({ status: "closed" }) }), h.deps);
+
+    expect(h.replies[0]).toMatchObject({ kind: "thread_status", thread: { closed: true } });
+  });
+
+  it("lets a reader ask, and refuses a person with no access to the session before anything is looked up", async () => {
+    const reader = harness({ capabilities: READER });
+    expect(
+      await runChatCommand(reader.channel("status main-t-1", { findThread: () => thread() }), reader.deps),
+    ).toEqual({ decision: "allowed", code: "ok" });
+
+    const outsider = harness({ capabilities: NOBODY });
+    let looked = 0;
+    expect(
+      await runChatCommand(
+        outsider.channel("status main-t-1", {
+          findThread: () => {
+            looked += 1;
+            return thread();
+          },
+        }),
+        outsider.deps,
+      ),
+    ).toEqual({ decision: "denied", code: "not_authorized_access" });
+    expect(looked).toBe(0);
+  });
+
+  it("says when the thread is not found, or the channel has no threads at all", async () => {
+    const missing = harness();
+    expect(await runChatCommand(missing.channel("status nope", { findThread: () => null }), missing.deps)).toEqual({
+      decision: "info",
+      code: "thread_not_found",
+    });
+    expect(missing.replies).toEqual([{ kind: "thread_not_found", ref: "nope", sessionName: "main" }]);
+
+    const none = harness();
+    expect(await runChatCommand(none.channel("status main-t-1"), none.deps)).toEqual({
+      decision: "info",
+      code: "threads_unsupported",
+    });
+  });
+
+  it("is still the plain status when no thread is named", async () => {
+    const h = harness({ threads: [thread()] });
+
+    await runChatCommand(h.channel("status", { findThread: () => thread() }), h.deps);
+
+    expect(h.replies[0]).toMatchObject({ kind: "status", openThreads: 1 });
   });
 });
 

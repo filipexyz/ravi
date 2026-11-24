@@ -34,28 +34,51 @@ export interface OwnerTargetDeps {
 }
 
 export function resolveOwnerDirectTarget(deps: OwnerTargetDeps = {}): OwnerDirectTarget | null {
+  return resolveOwnerDirectTargets(deps)[0] ?? null;
+}
+
+/**
+ * Every direct chat of the owner, best first: the one the setting names, then
+ * WhatsApp, then the rest. A caller whose first choice cannot be reached (an
+ * instance that is offline for good) tries the next instead of queueing forever.
+ */
+export function resolveOwnerDirectTargets(deps: OwnerTargetDeps = {}): OwnerDirectTarget[] {
   try {
     const owners = [...new Set((deps.listOwnerContactIds ?? defaultOwnerContactIds)())];
-    if (owners.length !== 1) return null;
+    if (owners.length !== 1) return [];
     const contactId = owners[0] as string;
     const identities = (deps.identitiesForContact ?? defaultIdentities)(contactId);
     const instances = (deps.listInstances ?? dbListInstances)();
     const candidates = identities
       .map((identity) => targetForIdentity(identity, contactId, instances))
       .filter((target): target is OwnerDirectTarget => target !== null);
-    if (candidates.length === 0) return null;
+    if (candidates.length === 0) return [];
 
+    const ordered = [
+      ...candidates.filter((target) => target.channel === "whatsapp"),
+      ...candidates.filter((target) => target.channel !== "whatsapp"),
+    ];
     const setting = (deps.readTargetSetting ?? defaultTargetSetting)()?.trim();
     if (setting) {
       const chosen = pickBySetting(setting, candidates, instances);
-      if (chosen) return chosen;
+      if (chosen) return uniqueTargets([chosen, ...ordered]);
       log.warn("knowledge.owner.target names no identity of the owner contact; ignored");
     }
-    return candidates.find((target) => target.channel === "whatsapp") ?? candidates[0] ?? null;
+    return uniqueTargets(ordered);
   } catch (error) {
     log.warn("owner target unresolved", { error: error instanceof Error ? error.message : String(error) });
-    return null;
+    return [];
   }
+}
+
+function uniqueTargets(targets: OwnerDirectTarget[]): OwnerDirectTarget[] {
+  const seen = new Set<string>();
+  return targets.filter((target) => {
+    const key = `${target.channel}:${target.accountId}:${target.to}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function defaultOwnerContactIds(): string[] {

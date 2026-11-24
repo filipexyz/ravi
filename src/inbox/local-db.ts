@@ -310,6 +310,48 @@ export function markLocalInboxItem(
   );
 }
 
+/**
+ * When an event of this type last happened on any item of one source, whatever the item's status
+ * (open, done, archived) and however many other items exist. Null if never.
+ */
+export function latestLocalInboxEventAt(input: {
+  sourceDomain: string;
+  sourceType: string;
+  sourceId: string;
+  eventType: string;
+}): number | null {
+  ensureLocalInboxSchema();
+  const row = getDb()
+    .prepare(
+      `SELECT MAX(e.created_at) AS at FROM inbox_item_events e
+       JOIN inbox_items i ON i.id = e.item_id
+       WHERE i.source_domain = ? AND i.source_type = ? AND i.source_id = ? AND e.event_type = ?`,
+    )
+    .get(input.sourceDomain, input.sourceType, input.sourceId, input.eventType) as { at: number | null } | undefined;
+  return row?.at ?? null;
+}
+
+/** How many events of this kind the items of one source got at or after `since`. */
+export function countLocalInboxEventsSince(input: {
+  sourceDomain: string;
+  sourceType: string;
+  sourceId: string;
+  eventType: string;
+  since: number;
+}): number {
+  ensureLocalInboxSchema();
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS n FROM inbox_item_events e
+       JOIN inbox_items i ON i.id = e.item_id
+       WHERE i.source_domain = ? AND i.source_type = ? AND i.source_id = ? AND e.event_type = ? AND e.created_at >= ?`,
+    )
+    .get(input.sourceDomain, input.sourceType, input.sourceId, input.eventType, input.since) as
+    | { n: number }
+    | undefined;
+  return row?.n ?? 0;
+}
+
 export function listLocalInboxEvents(itemId: string): LocalInboxEvent[] {
   ensureLocalInboxSchema();
   const rows = getDb()

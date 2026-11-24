@@ -435,6 +435,141 @@ describe("PermissionsCommands provider-runtime surface", () => {
     });
   }
 
+  // Spec permissions/break-glass: the guard is on the power a grant confers,
+  // not on the profile name. Each case used to apply before this guard.
+  for (const [name, profile, capabilities, setup] of [
+    ["another name with admin:system:*", "chat-admin", "admin:system:*", undefined],
+    ["another name with execute:executable:*", "host-shell", "execute:executable:*", undefined],
+    ["admin among narrow capabilities", "ops-bundle", "read:skills:show,admin:system:*", undefined],
+    ["an admin profile by name", "admin", "read:skills:show", undefined],
+    ["an owner profile by name", "owner", "read:skills:show", undefined],
+    ["a stored profile that already carries admin", "legacy-admin", undefined, "admin:system:*"],
+    ["an admin profile with no capabilities given", "superadmin", undefined, undefined],
+  ] as const) {
+    it(`blocks apply of ${name} before any write`, () => {
+      const contact = createContact({ phone: "+15550000081", name: "Shortcut Grant User" });
+      const chat = groupChat(`break-glass-${profile}`);
+      dbCreateAgent({ id: "bg-target", cwd: "/tmp" });
+      if (setup) {
+        dbCreateTagDefinition({
+          slug: `permission-${profile}`,
+          label: "Stored",
+          kind: "system",
+          source: "permissions",
+          metadata: { permissions: { capabilities: [setup] } },
+        });
+      }
+      const tagBefore = dbGetTagDefinition(`permission-${profile}`);
+      const commands = new PermissionsCommands();
+      const preview = commands.allow(
+        profile,
+        `contact:${contact.id}`,
+        undefined,
+        capabilities,
+        undefined,
+        undefined,
+        false,
+        true,
+        chat.id,
+      );
+      expect(preview.nextCommand).toBeUndefined();
+      expect(preview.hints.some((hint: string) => hint.includes("break-glass power"))).toBe(true);
+      const error = captureContractError(() =>
+        commands.allow(
+          profile,
+          `contact:${contact.id},agent:bg-target`,
+          "bg-target",
+          capabilities,
+          undefined,
+          undefined,
+          true,
+          true,
+          chat.id,
+        ),
+      );
+      expect(error.code).toBe("FULL_ACCESS_APPROVAL_REQUIRED");
+      expect(error.exitCode).toBe(3);
+      expect(String(error.details?.suggestedAction)).toContain("ravi permissions request full-access");
+      expect(dbGetTagDefinition(`permission-${profile}`)).toEqual(tagBefore);
+      expect(dbListContactChatGrants({ contactId: contact.id })).toEqual([]);
+      expect(getContact(contact.id)?.tags ?? []).not.toContain(`permission-${profile}`);
+      expect(readAgentRuntimePermissionsConfig("bg-target")).toBeNull();
+    });
+  }
+
+  for (const spelling of ["admin_", "Admin.", "OWNER"]) {
+    it(`blocks a global apply of the admin profile spelled ${spelling}`, () => {
+      const contact = createContact({ phone: "+15550000084", name: "Global Admin Spelling" });
+      const error = captureContractError(() =>
+        new PermissionsCommands().allow(
+          spelling,
+          `contact:${contact.id}`,
+          undefined,
+          "read:skills:show",
+          undefined,
+          undefined,
+          true,
+          true,
+          undefined,
+          undefined,
+          true,
+        ),
+      );
+      expect(error.code).toBe("FULL_ACCESS_APPROVAL_REQUIRED");
+      expect(getContact(contact.id)?.tags ?? []).toEqual([]);
+    });
+  }
+
+  it("still applies a narrow profile, including a narrow executable pattern", () => {
+    const contact = createContact({ phone: "+15550000082", name: "Narrow Grant User" });
+    const chat = groupChat("break-glass-narrow");
+    const applied = new PermissionsCommands().allow(
+      "git-runner",
+      `contact:${contact.id}`,
+      undefined,
+      "execute:executable:git*,read:skills:show",
+      undefined,
+      undefined,
+      true,
+      true,
+      chat.id,
+    );
+    expect(applied.changedCount).toBeGreaterThan(0);
+    expect(dbListContactChatGrants({ contactId: contact.id })).toHaveLength(1);
+  });
+
+  it("does not revoke a grant that already carries break-glass power", () => {
+    const contact = createContact({ phone: "+15550000083", name: "Existing Grant User" });
+    const chat = groupChat("break-glass-existing");
+    dbCreateTagDefinition({
+      slug: "permission-legacy-root",
+      label: "Legacy",
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["admin:system:*"] } },
+    });
+    dbEnsureContactChatGrant({
+      contactId: contact.id,
+      profileSlug: "permission-legacy-root",
+      scopeType: "chat",
+      scopeId: chat.id,
+    });
+    captureContractError(() =>
+      new PermissionsCommands().allow(
+        "legacy-root",
+        `contact:${contact.id}`,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+        chat.id,
+      ),
+    );
+    expect(dbListContactChatGrants({ contactId: contact.id })).toHaveLength(1);
+  });
+
   it("keeps unknown-profile diagnostics within the remote message budget with many stored profiles", () => {
     for (let index = 0; index < 30; index++) {
       dbCreateTagDefinition({
@@ -1186,6 +1321,41 @@ describe("PermissionsCommands provider-runtime surface", () => {
     expect(readAgentRuntimePermissionsConfig("overlay-agent")?.capabilities).toEqual([
       { permission: "mutate", objectType: "image", objectId: "generate" },
     ]);
+  });
+
+  it("resolves a withheld break-glass denial into a chat-scoped grant for the person, not the agent", () => {
+    const contact = createContact({ phone: "+15550000021", name: "Ungoverned Group User" });
+    const chat = groupChat("120363400000000021@g.us");
+    dbCreateAgent({ id: "ungoverned-agent", cwd: "/tmp" });
+    const denial = recordPermissionDenial({
+      subjectType: "agent",
+      subjectId: "ungoverned-agent",
+      relation: "execute",
+      objectType: "executable",
+      objectId: "curl",
+      agentId: "ungoverned-agent",
+      sessionName: "ungoverned-session",
+      contextId: "ctx_permission_ungoverned_resolve",
+      detail: {
+        context: {
+          authorityMode: "agent-identity",
+          actorPrincipal: `contact:${contact.id}`,
+          actorAuthorizationMode: "invoke-only",
+          surfacePrincipal: `chat:${chat.id}`,
+          actorBreakGlassWithheld: ["admin:system:*", "execute:executable:*"],
+          executorAgentId: "ungoverned-agent",
+          agentIdentityPrincipal: `agent_identity:ungoverned-agent:chat:${chat.id}`,
+        },
+      },
+    });
+
+    const payload = new PermissionsCommands().resolve(String(denial!.id), "curl workflow", undefined, false, true);
+
+    expect(payload).toMatchObject({
+      targets: [{ type: "contact", id: contact.id }],
+      agentCeilings: ["ungoverned-agent"],
+      scopes: [{ type: "chat", chatId: chat.id }],
+    });
   });
 
   it("blocks resolve --profile full-access before any provider write", () => {

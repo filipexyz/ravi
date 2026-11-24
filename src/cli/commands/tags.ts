@@ -28,7 +28,12 @@ import {
   dbUpdateTagDefinition,
 } from "../../tags/index.js";
 import { attachTagToSelector, detachTagFromSelector, resolveTagTarget } from "../../tags/service.js";
-import { assertProviderOwnedTagWriteAuthority } from "../../permissions/privileged-contact-writes.js";
+import {
+  assertBreakGlassTagWriteAllowed,
+  assertPermissionDefinitionWithoutBreakGlass,
+  assertProviderOwnedTagWriteAuthority,
+} from "../../permissions/privileged-contact-writes.js";
+import { isPermissionProfileDefinition } from "../../permissions/break-glass.js";
 import { hasTagTargetSelector, type TagTargetSelectorInput } from "../../tags/targets.js";
 import type {
   TagAssetType,
@@ -360,7 +365,8 @@ function rethrowTagCommandError(op: string, slug: string, err: unknown, asJson?:
 
 /** Definitions the contact-policy provider reads as permission profiles. */
 function isPermissionDefinition(kind: string | null | undefined, source: string | null | undefined): boolean {
-  return kind === "system" && source === "permissions";
+  // Judged after the casing the tag store applies (normalizeTagSource lowercases).
+  return isPermissionProfileDefinition({ kind, source });
 }
 
 @Group({
@@ -405,6 +411,11 @@ export class TagCommands {
       normalizeSlug(slug),
       isPermissionDefinition(requestedKind, source?.trim()),
     );
+    assertPermissionDefinitionWithoutBreakGlass("tags create", normalizeSlug(slug), {
+      kind: requestedKind,
+      source: source?.trim(),
+      metadata: parseMetadata(metadataJson),
+    } as Parameters<typeof assertPermissionDefinitionWithoutBreakGlass>[2]);
     const tag = dbCreateTagDefinition({
       slug: normalizeSlug(slug),
       label: label?.trim() || normalizeSlug(slug),
@@ -562,6 +573,14 @@ export class TagCommands {
           normalizedKey === "source" ? value.trim() : existing?.source,
         ),
     );
+    if (existing && ["kind", "source", "metadata", "meta"].includes(normalizedKey)) {
+      assertPermissionDefinitionWithoutBreakGlass("tags set", normalizedSlug, {
+        kind: normalizedKey === "kind" ? (value.trim().toLowerCase() as typeof existing.kind) : existing.kind,
+        source: normalizedKey === "source" ? value.trim() : existing.source,
+        metadata:
+          normalizedKey === "metadata" || normalizedKey === "meta" ? (parseMetadata(value) ?? {}) : existing.metadata,
+      });
+    }
     const base = { slug: normalizedSlug, updatedBy: resolveTagActor() };
     const tag = (() => {
       try {
@@ -717,6 +736,10 @@ export class TagCommands {
       normalizedSlug,
       isPermissionDefinition(attachedDefinition?.kind, attachedDefinition?.source),
     );
+    // Only a contact binding confers authority; a task or chat binding does not.
+    if (contactId || targetSelector?.trim().toLowerCase().startsWith("contact:")) {
+      assertBreakGlassTagWriteAllowed("tags attach", [normalizedSlug]);
+    }
     const { binding } = (() => {
       try {
         return attachTagToSelector({

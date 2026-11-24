@@ -69,8 +69,9 @@ mock.module("../decorators.js", () => ({
   Option: () => () => {},
 }));
 
+let mockToolContext: unknown;
 mock.module("../context.js", () => ({
-  getContext: () => undefined,
+  getContext: () => mockToolContext,
   // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
   // ContractError instead of process.exit, which is what tests need.
   hasContext: () => true,
@@ -251,6 +252,29 @@ describe("watch write brake", () => {
 
     expect(removeWatchCalls).toEqual(["watch-gh-1"]);
     expect(payload).toMatchObject({ deleted: true, id: "watch-gh-1" });
+  });
+
+  it("trigger is refused, even as a dry-run, in a person's turn held below the agent's break-glass", async () => {
+    mockToolContext = {
+      context: { metadata: { actorBreakGlassWithheld: ["admin:system:*", "execute:executable:*"] } },
+    };
+    try {
+      await expect(
+        new WatchCommands().trigger(
+          "watch-gh-1",
+          "do anything",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          undefined,
+        ),
+      ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    } finally {
+      mockToolContext = undefined;
+    }
   });
 
   it("trigger without --execute is a dry-run: exit 3 with the resolved watch + trigger plan, NO trigger created", async () => {

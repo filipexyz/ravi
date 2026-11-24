@@ -1,3 +1,4 @@
+import { reassignContactChatGrantsOnMerge } from "./permissions/contact-merge-grants.js";
 import { configureStateJournalMode, initializeStateSchema } from "./db/schema-owner.js";
 import { assertDatabaseTargetAllowed, openStateDatabase } from "./db/state-boundary.js";
 import { type Database, type SQLQueryBindings } from "bun:sqlite";
@@ -12,7 +13,15 @@ import {
   canonicalTagSlugsForAsset,
   replaceMirroredTagSlugsForAsset,
 } from "./tags/helpers.js";
-import { dbFindTagBindings } from "./tags/tag-db.js";
+import { dbFindTagBindings, dbGetTagDefinition } from "./tags/tag-db.js";
+import {
+  assertBreakGlassStoreWrite,
+  grantProfileBreakGlassReasons,
+  slugBreakGlassReasons,
+  warnOperatorBreakGlass,
+} from "./permissions/break-glass.js";
+import { dbListContactChatGrants } from "./permissions/contact-chat-grants.js";
+import { isPermissionPolicyTag, normalizePermissionTag } from "./permissions/permission-tags.js";
 import { detachTagFromSelector, searchTagBindingsForSelector } from "./tags/service.js";
 import { buildSqlWhereClause, countRows, normalizeLimitOffsetPage, type ListPage } from "./utils/pagination.js";
 import { nats } from "./nats.js";
@@ -1235,20 +1244,28 @@ function deleteCanonicalContactTagBindings(contactId: string): void {
   }
 }
 
+/** Tags that carry no break-glass power (a merge never carries break-glass over, like chat grants). */
+function withoutBreakGlassTags(tags: readonly string[]): string[] {
+  return tags.filter((tag) => slugBreakGlassReasons(tag, dbGetTagDefinition).length === 0);
+}
+
 function moveCanonicalContactTagBindings(sourceContactId: string, targetContactId: string): void {
   for (const binding of searchTagBindingsForSelector({ selector: { target: `contact:${sourceContactId}` } }).bindings) {
-    attachTagSlugsToAsset({
-      assetType: "contact",
-      assetId: targetContactId,
-      tags: [binding.tagSlug],
-      source: binding.source,
-      createdBy: binding.createdBy ?? "contacts",
-      metadata: {
-        ...(binding.metadata ?? {}),
-        source: binding.metadata?.source ?? "contact_merge",
-        mergedFromContactId: sourceContactId,
-      },
-    });
+    // A break-glass tag is dropped with the source, never moved (#952 review N3).
+    const carriesBreakGlass = withoutBreakGlassTags([binding.tagSlug]).length === 0;
+    if (!carriesBreakGlass)
+      attachTagSlugsToAsset({
+        assetType: "contact",
+        assetId: targetContactId,
+        tags: [binding.tagSlug],
+        source: binding.source,
+        createdBy: binding.createdBy ?? "contacts",
+        metadata: {
+          ...(binding.metadata ?? {}),
+          source: binding.metadata?.source ?? "contact_merge",
+          mergedFromContactId: sourceContactId,
+        },
+      });
     detachTagFromSelector({
       slug: binding.tagSlug,
       selector: { target: `contact:${sourceContactId}` },
@@ -1256,6 +1273,65 @@ function moveCanonicalContactTagBindings(sourceContactId: string, targetContactI
       actor: "contacts",
     });
   }
+}
+
+/** Refuse new break-glass tags for a contact from an agent turn, before any write. */
+function assertContactPolicyTagsAllowed(database: Database, contactId: string | null, tags: readonly string[]): void {
+  if (tags.length === 0) return;
+  const spelling = (tag: string) => normalizePermissionTag(tag) ?? tag.trim().toLowerCase();
+  const current = new Set((contactId ? currentContactPolicyTags(database, contactId) : []).map(spelling));
+  assertBreakGlassStoreWrite(
+    `contact policy tags on ${contactId ? `contact:${contactId}` : "a new contact"}`,
+    tags.filter((tag) => !current.has(spelling(tag))).flatMap((tag) => slugBreakGlassReasons(tag, dbGetTagDefinition)),
+  );
+}
+
+/** Break-glass a contact holds or would hold once active: its tags (both stores) and chat grants. */
+function contactPolicyBreakGlassReasons(
+  database: Database,
+  contactId: string,
+  extraTags: readonly string[] = [],
+): string[] {
+  const tags = [...currentContactPolicyTags(database, contactId), ...extraTags];
+  return [
+    ...new Set([
+      ...tags.flatMap((tag) => slugBreakGlassReasons(tag, dbGetTagDefinition)),
+      ...dbListContactChatGrants({ contactId }).flatMap((grant) =>
+        grantProfileBreakGlassReasons(grant.profileSlug, dbGetTagDefinition),
+      ),
+    ]),
+  ];
+}
+
+/**
+ * Refuse, from an agent turn, a policy write that activates a contact holding
+ * break-glass (status becomes allowed, or opt-out is cleared, while it was not
+ * active). Reaches every activation path: approve, allow, add, instances
+ * approve, platform-identity upserts, whichever contact the reference resolves to.
+ */
+function assertContactActivationAllowed(
+  database: Database,
+  input: { contactId: string; status?: ContactStatus | null; optOut?: boolean | null; tags?: string[] | null },
+): void {
+  if ((input.status === undefined || input.status === null) && (input.optOut === undefined || input.optOut === null))
+    return;
+  const previous = database
+    .prepare("SELECT status, opt_out FROM contact_policies WHERE contact_id = ?")
+    .get(input.contactId) as { status: string | null; opt_out: number | null } | undefined;
+  const wasActive = previous?.status === "allowed" && !previous?.opt_out;
+  const nextStatus = input.status ?? previous?.status ?? null;
+  const nextOptOut = input.optOut ?? Boolean(previous?.opt_out);
+  if (wasActive || nextStatus !== "allowed" || nextOptOut) return;
+  const reasons = contactPolicyBreakGlassReasons(database, input.contactId, input.tags ?? []);
+  assertBreakGlassStoreWrite(`activating contact:${input.contactId}`, reasons);
+  warnOperatorBreakGlass(`activating contact:${input.contactId}`, reasons);
+}
+
+function currentContactPolicyTags(database: Database, contactId: string): string[] {
+  const row = database.prepare("SELECT tags_json FROM contact_policies WHERE contact_id = ?").get(contactId) as
+    | { tags_json: string | null }
+    | undefined;
+  return contactTags(contactId, row?.tags_json ?? null);
 }
 
 function contactTags(contactId: string, tagsJson: string | null): string[] {
@@ -3122,6 +3198,11 @@ function upsertCanonicalContactPolicy(
     source?: ContactSource | null;
   },
 ): void {
+  // Sink guards (spec permissions/break-glass): tags_json is read as contact
+  // policy, and status/opt-out decide whether its tags count. Both are judged
+  // here, before any write, whatever code path calls this.
+  assertContactPolicyTagsAllowed(database, input.contactId, input.tags ?? []);
+  assertContactActivationAllowed(database, input);
   database
     .prepare(
       `
@@ -8038,7 +8119,9 @@ export function ensureContactFromInbound(input: EnsureContactFromInboundInput): 
         const refreshedContact = getCanonicalCompatContactById(database, contact.id);
         const existingTags = refreshedContact?.tags ?? contact.tags;
         const appliedSlugs: string[] = [];
-        for (const tag of input.defaultTags) {
+        // Instance default tags never carry permission tags (same rule as tag
+        // rules' withoutPermissionTags): a new sender never arrives with power.
+        for (const tag of input.defaultTags.filter((value) => !isPermissionPolicyTag(value))) {
           const slug = attachCanonicalContactTag(contact.id, tag, "inbound_contact_intake_default_tag");
           if (slug) appliedSlugs.push(slug);
         }
@@ -9483,6 +9566,8 @@ export function createContact(input: {
   if (existing) {
     throw new Error(`Contact already exists: ${normalized}`);
   }
+  // Judged before the contact record is written, so a refusal leaves nothing behind.
+  assertContactPolicyTagsAllowed(database, null, input.tags ?? []);
 
   const contact = createCanonicalContactForIdentity(database, normalized, {
     name: input.name ?? null,
@@ -9530,6 +9615,8 @@ export function updateContact(
 ): Contact {
   const database = ensureDb();
   const contact = resolveContact(phone);
+  // Judged before any field is written, so a refused tag change leaves the contact untouched.
+  if (contact && updates.tags !== undefined) assertContactPolicyTagsAllowed(database, contact.id, updates.tags ?? []);
   if (!contact) {
     throw new Error(`Contact not found: ${phone}`);
   }
@@ -10614,11 +10701,21 @@ export function mergeContacts(targetId: string, sourceId: string): { merged: num
           .prepare("UPDATE contacts SET primary_email = ?, updated_at = datetime('now') WHERE id = ?")
           .run(source.email, targetId);
       }
-      const mergedTags = target.tags.length === 0 && source.tags.length > 0 ? source.tags : target.tags;
+      // The source's break-glass tags are dropped, not carried (#952 N3; review N10: tags_json is
+      // written directly here, so it never receives what the sinks would refuse).
+      const sourceTags = withoutBreakGlassTags(source.tags);
+      const droppedTags = source.tags.filter((tag) => !sourceTags.includes(tag));
+      if (droppedTags.length > 0) {
+        // Bindings and policy-only tags alike: say what the merge left behind.
+        process.stderr.write(
+          `warning: contact merge dropped the break-glass tag(s) ${droppedTags.join(", ")} of contact:${sourceId}; re-tag contact:${targetId} from the operator terminal if it should keep them.\n`,
+        );
+      }
+      const mergedTags = target.tags.length === 0 && sourceTags.length > 0 ? sourceTags : target.tags;
       const mergedNotes =
         Object.keys(target.notes).length === 0 && Object.keys(source.notes).length > 0 ? source.notes : target.notes;
-      if (target.tags.length === 0 && source.tags.length > 0) {
-        syncCanonicalContactTags(targetId, source.tags);
+      if (target.tags.length === 0 && sourceTags.length > 0) {
+        syncCanonicalContactTags(targetId, sourceTags);
       }
       database
         .prepare(
@@ -10707,6 +10804,22 @@ export function mergeContacts(targetId: string, sourceId: string): { merged: num
     },
     { label: "contacts:mergeContacts" },
   );
+  // Grants live in ravi.db, outside this chat.db transaction. A failure here
+  // leaves the grants on the deleted source id, where they authorize no one.
+  // The boot repair removes those rows (keeping the last one covering a
+  // scope); it does not move them to the target.
+  try {
+    reassignContactChatGrantsOnMerge(sourceId, targetId);
+  } catch (error) {
+    console.warn(
+      "[contacts] grant reassignment after merge failed; leftover rows stay on the deleted id until the boot repair removes them",
+      {
+        sourceId,
+        targetId,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    );
+  }
   return { merged: sourceIdentities.length };
 }
 
@@ -10842,3 +10955,46 @@ export function closeContacts(): void {
 }
 
 export { ensureDb as ensureContactsDb };
+
+/**
+ * Follows `contact_merge` link events from a contact id that no longer exists
+ * to the contact it was merged into. Returns null when the id was never merged
+ * or the chain ends at a contact that is also gone.
+ */
+export function resolveMergedContactId(contactId: string): string | null {
+  const database = ensureDb();
+  const seen = new Set<string>([contactId]);
+  let current = contactId;
+  // No hop limit: merge events only point forward, and a repeated id (a cycle
+  // in corrupt data) ends the walk.
+  for (;;) {
+    const row = database
+      .prepare(
+        `SELECT target_owner_id FROM identity_link_events
+          WHERE event_type = 'merge' AND source_owner_type = 'contact' AND source_owner_id = ?
+            AND target_owner_type = 'contact'
+          ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(current) as { target_owner_id: string } | undefined;
+    if (!row?.target_owner_id || seen.has(row.target_owner_id)) return null;
+    current = row.target_owner_id;
+    seen.add(current);
+    if (getCanonicalContactById(database, current)) return current;
+  }
+}
+
+export function contactExists(contactId: string): boolean {
+  return getCanonicalContactById(ensureDb(), contactId) !== null;
+}
+
+/** Audit trail for permission grants touched by a contact merge or its repair. */
+export function recordContactPermissionGrantEvent(contactId: string, payload: Record<string, unknown>): void {
+  insertContactEvent(ensureDb(), {
+    contactId,
+    eventType: "permission.grant.merged",
+    source: "permissions",
+    actorType: "system",
+    confidence: 1,
+    payload,
+  });
+}

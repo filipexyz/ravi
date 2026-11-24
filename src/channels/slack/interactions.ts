@@ -127,8 +127,9 @@ export async function respondToSlackInteraction(
 const SLACK_WORKSPACE_HOST = /^[a-z0-9][a-z0-9-]{0,62}\.slack\.com$/;
 
 /**
- * Slack posts interaction handles under `/actions/` (Block Kit, shortcuts) and
- * slash-command handles under `/commands/`, both on `hooks.slack.com`. The
+ * Slack posts interaction handles under `/actions/` (Block Kit), the handle of a
+ * message shortcut under `/app-actions/` (the shape its shortcut payload reference
+ * shows) and slash-command handles under `/commands/`, all on `hooks.slack.com`. The
  * workspace's own `<workspace>.slack.com` is allowed only for `/commands/`: it is
  * where Slack's Socket Mode example for a slash command puts its handle
  * (`https://<workspace>.slack.com/commands/...`, while its HTTP example shows
@@ -144,9 +145,21 @@ export function isAllowedSlackInteractionResponseUrl(value: string): boolean {
   }
   if (url.protocol !== "https:" || url.username || url.password || url.port || url.hash) return false;
   if (url.hostname === "hooks.slack.com") {
-    return url.pathname.startsWith("/actions/") || url.pathname.startsWith("/commands/");
+    return (
+      url.pathname.startsWith("/actions/") ||
+      url.pathname.startsWith("/app-actions/") ||
+      url.pathname.startsWith("/commands/")
+    );
   }
   return SLACK_WORKSPACE_HOST.test(url.hostname) && url.pathname.startsWith("/commands/");
+}
+
+/**
+ * Why a response handle was not kept, for a log line: its shape is not one Slack issues, or it is and
+ * the store failed. The two are different problems for whoever reads the log.
+ */
+export function describeSlackResponseUrlFailure(responseUrl: string): "untrusted_shape" | "storage_failed" {
+  return isAllowedSlackInteractionResponseUrl(responseUrl) ? "storage_failed" : "untrusted_shape";
 }
 
 function ensureSlackInteractionResponseUrlTable(): void {

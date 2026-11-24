@@ -5,7 +5,15 @@ import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 
 import "reflect-metadata";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
-import { CONTRACT_EXIT_POLICY, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import {
+  CONTRACT_EXIT_POLICY,
+  CONTRACT_EXIT_USAGE,
+  contractDryRun,
+  contractFail,
+  pickFields,
+  suggestSimilar,
+} from "../agent-contract.js";
+import { childRunParentRefusal, findChildRunByChildSession } from "../../automation/child-runs.js";
 import { shellEnvFileRefusal } from "../../triggers/shell-env-file.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
@@ -389,6 +397,52 @@ function serializeTrigger(trigger: Trigger) {
  * authority. A trigger nobody owns is refused everywhere, which `Runs as`
  * already says.
  */
+function failTriggerUsage(message: string, suggestedAction: string, asJson?: boolean): never {
+  contractFail("triggers add", "USAGE_ERROR", message, {
+    asJson,
+    exitCode: CONTRACT_EXIT_USAGE,
+    details: { suggestedAction },
+    diagnostic: errorDiagnostic(message, { operation: "triggers add" }),
+  });
+  throw new Error(message);
+}
+
+/**
+ * The session a `--thread` trigger's fires report to: `--report-to`, else the
+ * creating session (inside an automation run: that run's parent), else the
+ * agent's main session (undefined here). It must belong to the trigger's
+ * agent and be lasting: never a trigger's own session, an automation run's
+ * session or an ephemeral one. Returns its key.
+ */
+function resolveTriggerThreadReportTo(
+  reportTo: string | undefined,
+  creatingSession: string | undefined,
+  agentId: string,
+): string | undefined {
+  const ref = reportTo?.trim() || creatingSession;
+  if (!ref) return undefined;
+  // Checked before anything about the session is said: one the caller may not touch reads as missing.
+  const scopeCtx = getScopeContext();
+  if (reportTo?.trim() && isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, ref)) {
+    fail(`Report-to session not found: ${ref}`);
+  }
+  let target = resolveSession(ref);
+  if (!target || isTriggerOwnSessionKey(target.sessionKey)) fail(`Report-to session not found: ${ref}`);
+  const creatingRun = reportTo?.trim() ? null : findChildRunByChildSession(target!.sessionKey);
+  if (creatingRun) {
+    target = resolveSession(creatingRun.parentSessionKey);
+    if (!target) fail(`Report-to session not found: ${creatingRun.parentSessionName}`);
+  }
+  const refusal = childRunParentRefusal(target!);
+  if (refusal) fail(`${refusal}; fires could not report there. Pass --report-to <a lasting session of ${agentId}>`);
+  if (target!.agentId !== agentId) {
+    fail(
+      `The fires of a --thread trigger report to a session of its own agent (${agentId}); ${target!.name ?? target!.sessionKey} belongs to ${target!.agentId}. Pass --report-to <a session of ${agentId}>`,
+    );
+  }
+  return target!.sessionKey;
+}
+
 function describeSession(
   trigger: Pick<Trigger, "id" | "agentId" | "session" | "ownerPrincipal" | "executionType">,
 ): string {
@@ -785,6 +839,18 @@ export class TriggersCommands {
         "Batch a burst of events into one fire, this long after the last event, carrying every event (e.g., 2s, 1m). Default: off",
     })
     debounce?: string,
+    @Option({
+      flags: "--thread",
+      description:
+        "Run each fire in a fresh session of its own that returns its result once to the report-to session (agent triggers; one fire at a time, the owner's Bases access is not lent)",
+    })
+    thread?: boolean,
+    @Option({
+      flags: "--report-to <session>",
+      description:
+        "With --thread: the session each fire reports to, of the trigger's agent (default: the creating session, else the agent's main session)",
+    })
+    reportTo?: string,
   ) {
     if (!topic) {
       fail("--topic is required");
@@ -801,6 +867,37 @@ export class TriggersCommands {
     }
     if (!isShellTrigger && (onError || timeout || envFile)) {
       fail("--on-error, --timeout and --env-file are only valid with --shell/--exec");
+    }
+    if (isShellTrigger && (thread || reportTo !== undefined)) {
+      failTriggerUsage(
+        "--thread and --report-to are only valid for agent triggers",
+        "drop them, or use --message instead of --shell",
+        asJson,
+      );
+    }
+    if (thread && session !== undefined) {
+      failTriggerUsage(
+        "--thread and --session cannot be combined: a thread trigger runs each fire in a session of its own",
+        "drop --session",
+        asJson,
+      );
+    }
+    if (reportTo !== undefined && !thread) {
+      failTriggerUsage("--report-to only applies with --thread", "add --thread, or drop --report-to", asJson);
+    }
+    if (thread && replySessionOverride !== undefined) {
+      failTriggerUsage(
+        "--reply-session does not apply with --thread: a thread trigger's fires reach no chat and report to --report-to",
+        "replace --reply-session with --report-to",
+        asJson,
+      );
+    }
+    if (session?.trim() === "thread") {
+      failTriggerUsage(
+        "Use --thread for a session per fire; thread is not a session name",
+        "replace --session thread with --thread",
+        asJson,
+      );
     }
     if (isShellTrigger) {
       assertShellAutomationAuthorized("triggers add");
@@ -856,9 +953,21 @@ export class TriggersCommands {
     }
     // A trigger's own session takes that trigger's fires only, so a trigger
     // created during one of its turns has no current session to default to.
-    const currentSession = isTriggerOwnSessionKey(ctx?.sessionKey) ? undefined : ctx?.sessionName || ctx?.sessionKey;
-    const sessionTarget: SessionTarget = session?.trim() || currentSession || "main";
+    // Inside an automation run, the session that lasts is the run's parent: the run's own is pruned.
+    const creatingRun = ctx?.sessionKey ? findChildRunByChildSession(ctx.sessionKey) : null;
+    const currentSession = isTriggerOwnSessionKey(ctx?.sessionKey)
+      ? undefined
+      : creatingRun
+        ? creatingRun.parentSessionKey
+        : ctx?.sessionName || ctx?.sessionKey;
+    const sessionTarget: SessionTarget = thread ? "thread" : session?.trim() || currentSession || "main";
     const resolvedAgent = agent ?? ctx?.agentId;
+    const addWarningsBefore: string[] = [];
+    if (session?.trim() === "isolated") {
+      addWarningsBefore.push(
+        "--session isolated is deprecated: use --thread (each fire gets a session of its own and returns its result). Keep isolated only for a trigger that reads Bases as its owner: thread runs do not lend the owner's access.",
+      );
+    }
 
     // Resolve account in this order:
     //   1. explicit --account flag
@@ -868,7 +977,11 @@ export class TriggersCommands {
     // getAccountForAgent: it picks the wrong account in multi-account setups
     // and causes outbound deliveries to fail with "chat not found".
     const resolvedAccount =
-      account ?? ctx?.source?.accountId ?? (resolvedAgent ? getAccountForAgent(resolvedAgent) : undefined);
+      account ??
+      ctx?.source?.accountId ??
+      // Inside a run, replies go to the parent's chat: through the parent's account.
+      (creatingRun ? resolveSession(creatingRun.parentSessionKey)?.lastAccountId : undefined) ??
+      (resolvedAgent ? getAccountForAgent(resolvedAgent) : undefined);
 
     // Capture reply session from caller context for source routing.
     // Prefer the friendly session name when available so `triggers show`
@@ -876,13 +989,21 @@ export class TriggersCommands {
     // session_key, so resolution at fire time is identical either way.
     // --reply-session overrides the auto-capture when the caller knows the
     // trigger should reply to a different session than the one creating it.
-    const replySession = replySessionOverride?.trim() || (ctx?.sessionName ?? ctx?.sessionKey);
+    const replySession = thread
+      ? resolveTriggerThreadReportTo(
+          reportTo,
+          isTriggerOwnSessionKey(ctx?.sessionKey) ? undefined : ctx?.sessionKey,
+          resolvedAgent ?? getDefaultAgentId(),
+        )
+      : replySessionOverride?.trim() ||
+        (creatingRun ? creatingRun.parentSessionKey : (ctx?.sessionName ?? ctx?.sessionKey));
     assertTriggerTargetAuthorized(
       "triggers add",
       {
         ...(agent ? { agentId: agent } : {}),
-        ...(session !== undefined ? { session: sessionTarget } : {}),
-        ...(replySessionOverride?.trim() ? { replySession } : {}),
+        // A run's parent standing in for the caller's own session is checked like an explicit target.
+        ...(session !== undefined || (creatingRun && !thread) ? { session: sessionTarget } : {}),
+        ...(replySessionOverride?.trim() || reportTo?.trim() || creatingRun ? { replySession } : {}),
       },
       asJson,
     );
@@ -928,7 +1049,7 @@ export class TriggersCommands {
 
       await nats.emit("ravi.triggers.refresh", {});
       const runsAsWarning = triggerRunsAsWarning(trigger);
-      const addWarnings = [...topicWarnings, ...(runsAsWarning ? [runsAsWarning] : [])];
+      const addWarnings = [...addWarningsBefore, ...topicWarnings, ...(runsAsWarning ? [runsAsWarning] : [])];
 
       const payload = {
         status: "created" as const,
@@ -1052,6 +1173,13 @@ export class TriggersCommands {
     const trigger = dbGetTrigger(id);
     if (!trigger) failTriggerNotFound("triggers set", id, asJson);
     assertTriggerMutable("triggers set", id, trigger, asJson);
+    // Mode conflicts first, before any authorization: a thread trigger runs agent fires only.
+    if ((key === "shell" || key === "exec") && trigger.session === "thread") {
+      fail(`A thread trigger runs agent fires only: set its session first (ravi triggers set ${id} session main)`);
+    }
+    if (key === "session" && value.trim() === "thread" && (trigger.executionType ?? "agent") === "shell") {
+      fail("A shell trigger cannot run in thread mode: thread runs are agent fires");
+    }
     // Every edit (message, filter, topic...) changes what runs later as the agent.
     assertNoUserOverlayAutomationWrite("triggers set");
     const clearing = value === "null" || value === "-";
@@ -1174,6 +1302,10 @@ export class TriggersCommands {
               fail(`Agent not found: ${agentId}`);
             }
           }
+          if (trigger!.session === "thread" && trigger!.replySession) {
+            // A thread trigger's fires report to a session of its own agent: the pair stays valid.
+            resolveTriggerThreadReportTo(undefined, trigger!.replySession, agentId ?? getDefaultAgentId());
+          }
           updated = update({ agentId });
           normalizedValue = agentId ?? null;
           logHuman(`✓ Agent set: ${id} -> ${agentId ?? "(default)"}`);
@@ -1192,6 +1324,16 @@ export class TriggersCommands {
           const error = sessionTargetError(value) ?? triggerSessionTargetError(value);
           if (error) fail(error);
           const session = value.trim();
+          if (session === "thread") {
+            if (trigger!.replySession) {
+              resolveTriggerThreadReportTo(undefined, trigger!.replySession, trigger!.agentId ?? getDefaultAgentId());
+            }
+          }
+          if (session === "isolated") {
+            logHuman(
+              "Warning: session isolated is deprecated: use thread. Keep isolated only for a trigger that reads Bases as its owner.",
+            );
+          }
           updated = update({ session });
           normalizedValue = session;
           logHuman(`✓ Session set: ${id} -> ${session}`);
@@ -1229,7 +1371,12 @@ export class TriggersCommands {
           // for a clear request would leave the column unchanged. Use `null`
           // to force the SQL UPDATE to set reply_session = NULL.
           const cleared = value === "null" || value === "-";
-          const replySession: string | null = cleared ? null : value.trim();
+          let replySession: string | null = cleared ? null : value.trim();
+          if (trigger!.session === "thread" && replySession) {
+            // Stored by key, and only a lasting session of the trigger's own agent: its fires report there.
+            replySession =
+              resolveTriggerThreadReportTo(replySession, undefined, trigger!.agentId ?? getDefaultAgentId()) ?? null;
+          }
           updated = update({ replySession });
           normalizedValue = replySession;
           logHuman(`✓ Reply session set: ${id} -> ${replySession ?? "(none)"}`);

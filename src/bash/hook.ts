@@ -31,10 +31,15 @@ import {
   canWithCapabilityContext,
   materializeSubjectCapabilities,
 } from "../permissions/provider-runtime.js";
+import { isWithheldByDeny } from "../permissions/capability-snapshot.js";
 import { emitPermissionDeniedAudit, recordAndEmitPermissionDenial } from "../permissions/denials.js";
 import { buildAuditContextProvenance, type AuditContextProvenance } from "../permissions/audit-provenance.js";
 import { SDK_TOOLS } from "../cli/tool-registry.js";
-import { fileWriteToolTargets, providerConfigWriteDenial } from "../permissions/provider-config-paths.js";
+import {
+  fileWriteToolTargets,
+  providerConfigWriteDenial,
+  isActorBreakGlassLimited,
+} from "../permissions/provider-config-paths.js";
 import type { ContextCapability, ContextRecord, ContextSource } from "../router/router-db.js";
 
 const log = logger.child("bash:hook");
@@ -379,6 +384,12 @@ function canWithBashContext(
   // turns need both: the snapshot holds agent ∩ contact chat grants, and the
   // live ceiling may only narrow it further.
   if (canUseLiveExecutorCeiling(ctx)) {
+    // A person's turn in an ungoverned chat carries `deny_*` entries for the
+    // agent's break-glass the person does not hold; the live ceiling must not
+    // reopen them (no system admin, no arbitrary commands).
+    if (hasContextCapabilities(ctx) && isWithheldByDeny(ctx.capabilities, permission, objectType, objectId)) {
+      return false;
+    }
     if (isUserOverlayTurn(ctx)) {
       return (
         hasContextCapabilities(ctx) &&
@@ -765,6 +776,7 @@ function checkExecutablePermissionsForContext(command: string, ctx: BashPermissi
           agentId: ctx.agentId,
           targets: [write.target],
           cwd,
+          restrictToWorkspace: isActorBreakGlassLimited(ctx),
         }),
       ),
     )
@@ -1140,6 +1152,7 @@ export function createToolPermissionHook(options: BashHookOptions): HookCallback
       agentId,
       targets: fileWriteToolTargets(toolName, input.tool_input),
       cwd: input.cwd,
+      restrictToWorkspace: isActorBreakGlassLimited(bashContext),
     });
     if (configWriteDenial) {
       log.warn("Tool blocked: provider settings write", { agentId, tool: toolName });

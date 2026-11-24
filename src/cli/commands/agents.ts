@@ -28,6 +28,7 @@ import {
   declareCommandReturns,
 } from "./operational-return-schemas.js";
 import { getScopeContext, filterVisibleAgents, canViewAgent } from "../../permissions/scope.js";
+import { assertAgentBreakGlassRaiseAllowed } from "../../permissions/break-glass.js";
 import { nats } from "../../nats.js";
 import {
   getAgent,
@@ -1562,6 +1563,16 @@ SOURCES
         fail(`defaults must be valid JSON object, e.g. '{"tts_voice":"abc","image_mode":"fast"}'`);
       }
     }
+    if (key === "defaults") {
+      // defaults carries runtimePermissions: the same break-glass rule as `agents permissions`.
+      assertAgentBreakGlassRaiseAllowed(
+        "agents set defaults",
+        id,
+        getAgentRuntimePermissionsConfigFromDefaults(agent.defaults),
+        getAgentRuntimePermissionsConfigFromDefaults(parsedValue as Record<string, unknown>),
+        { warnOperator: false },
+      );
+    }
 
     try {
       // A direct model write clears any existing preset reference atomically so
@@ -1723,6 +1734,9 @@ SOURCES
     }
     const after: AgentRuntimePermissionsConfig | null =
       nextConfig && Object.keys(nextConfig).length > 0 ? nextConfig : null;
+
+    // Spec permissions/break-glass: an agent never raises ANOTHER agent to break-glass.
+    assertAgentBreakGlassRaiseAllowed("agents permissions", id, before, after, { warnOperator: false });
 
     if (execute !== true && expandsRuntimePermissionAuthority(before, after)) {
       // A brake protects only authority expansion. Revocation, capability

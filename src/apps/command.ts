@@ -1,4 +1,5 @@
 import { basename, resolve } from "node:path";
+import { assertTurnMayExecute } from "../permissions/turn-executable.js";
 import type { ContextCapability } from "../router/router-db.js";
 
 export interface RaviAppCommandTemplate {
@@ -171,6 +172,8 @@ export function resolveRaviAppCommand(
   }
 
   let executable = parsed.executable;
+  // Anything but Ravi itself is an arbitrary process: the turn must allow it.
+  if (!isRaviExecutable(executable)) assertTurnMayExecute(executable, "app command");
   if (isRaviExecutable(executable)) {
     const execPath = runtime.execPath ?? process.execPath;
     const entrypoint = runtime.entrypoint ?? process.argv[1];

@@ -1,14 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { runWithContext, type ToolContext } from "../cli/context.js";
-import { fileWriteToolTargets, isProviderConfigPath } from "../permissions/provider-config-paths.js";
+import {
+  fileWriteToolTargets,
+  isProviderConfigPath,
+  providerConfigWriteDenial,
+} from "../permissions/provider-config-paths.js";
 import type { ContextCapability } from "../router/router-db.js";
 import { dbCreateAgent } from "../router/router-db.js";
 import { createRuntimeContext } from "../runtime/context-registry.js";
 import { createRuntimeHostServices } from "../runtime/host-services.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { getRaviStateDir } from "../utils/paths.js";
 import { createToolPermissionHook, evaluateBashPermission } from "./hook.js";
 
 const agentId = "writer";
@@ -221,5 +226,73 @@ describe("writes to runtime provider settings", () => {
     expect(fileWriteToolTargets("Read", { file_path: ".claude/settings.json" })).toEqual([]);
     expect(isProviderConfigPath("~/.claude/settings.json")).toBe(true);
     expect(isProviderConfigPath("docs/claude.md")).toBe(false);
+  });
+});
+
+describe("file writes for a person held below the agent's break-glass", () => {
+  const denyAll = () => false;
+  const home = homedir();
+  let workspace: string;
+  let outside: string;
+
+  beforeEach(() => {
+    workspace = mkdtempSync(join(tmpdir(), "ravi-person-workspace-"));
+    outside = mkdtempSync(join(home, ".ravi-person-outside-"));
+  });
+  afterEach(() => {
+    rmSync(workspace, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  const deniedFor = (target: string, cwd = workspace) =>
+    providerConfigWriteDenial({
+      can: denyAll,
+      agentId: "full-agent",
+      targets: [target],
+      cwd,
+      restrictToWorkspace: true,
+    });
+
+  it("refuses operator config and boot-time files: ~/.ravi/.env, installed bundle, shell rc, launch agents", () => {
+    for (const target of [
+      "~/.ravi/.env",
+      join(home, ".bun/install/global/node_modules/ravi.bot/dist/bundle/index.js"),
+      "~/.zshrc",
+      join(home, "Library/LaunchAgents/ravi.plist"),
+    ]) {
+      expect(deniedFor(target)).toContain("outside the session workspace");
+    }
+  });
+
+  it("keeps operator config denied even when the session workspace is the Ravi state dir or ~/.ravi", () => {
+    expect(deniedFor(".env", getRaviStateDir())).toContain("outside the session workspace");
+    expect(deniedFor(join(home, ".ravi", ".env"), join(home, ".ravi"))).toContain("outside the session workspace");
+    expect(deniedFor(".zshrc", home)).toContain("outside the session workspace");
+  });
+
+  it("refuses a symlink inside the workspace that points outside", () => {
+    symlinkSync(outside, join(workspace, "escape"));
+    expect(deniedFor(join(workspace, "escape", "payload.sh"))).toContain("outside the session workspace");
+  });
+
+  it("allows the session workspace and the temp directory", () => {
+    expect(deniedFor(join(workspace, "notes.md"))).toBeUndefined();
+    expect(deniedFor("relative/file.txt")).toBeUndefined();
+    expect(deniedFor(join(tmpdir(), "scratch.txt"))).toBeUndefined();
+  });
+
+  it("does not restrict turns without the limit or principals with break-glass", () => {
+    expect(
+      providerConfigWriteDenial({ can: denyAll, agentId: "a", targets: ["~/.zshrc"], cwd: workspace }),
+    ).toBeUndefined();
+    expect(
+      providerConfigWriteDenial({
+        can: (permission) => permission === "admin",
+        agentId: "owner",
+        targets: ["~/.zshrc"],
+        cwd: workspace,
+        restrictToWorkspace: true,
+      }),
+    ).toBeUndefined();
   });
 });

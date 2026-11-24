@@ -13131,8 +13131,52 @@ class CrmTaskSnoozeReturn {
 
 CrmTaskSnoozeReturn crmTaskSnoozeReturnFromJson(Object? json) => CrmTaskSnoozeReturn.fromJsonValue(json);
 
+class CronAckFailuresOptions {
+  const CronAckFailuresOptions({this.execute, this.job});
+
+  final bool? execute;
+  final String? job;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (job != null) {
+      into["job"] = RaviJson.from(job);
+    }
+  }
+}
+
+class CronAckFailuresReturn {
+  const CronAckFailuresReturn({required this.changedCount, required this.denied, required this.jobs, required this.pending, required this.status, required this.target});
+
+  final double changedCount;
+  final double denied;
+  final List<RaviJson> jobs;
+  final double pending;
+  final String status;
+  final RaviJson target;
+
+  factory CronAckFailuresReturn.fromJson(Map<String, Object?> json) {
+    return CronAckFailuresReturn(
+      changedCount: raviJsonAsDouble(json["changedCount"]),
+      denied: raviJsonAsDouble(json["denied"]),
+      jobs: raviJsonAsList(json["jobs"], RaviJson.from),
+      pending: raviJsonAsDouble(json["pending"]),
+      status: raviJsonAsString(json["status"]),
+      target: RaviJson.from(json["target"]),
+    );
+  }
+
+  static CronAckFailuresReturn fromJsonValue(Object? json) {
+    return CronAckFailuresReturn.fromJson(raviJsonObject(json, "CronAckFailuresReturn"));
+  }
+}
+
+CronAckFailuresReturn cronAckFailuresReturnFromJson(Object? json) => CronAckFailuresReturn.fromJsonValue(json);
+
 class CronAddOptions {
-  const CronAddOptions({this.account, this.agent, this.at, this.cron, this.deleteAfter, this.description, this.envFile, this.every, this.exec, this.idempotencyKey, this.isolated, this.message, this.onError, this.shell, this.timeout, this.tz});
+  const CronAddOptions({this.account, this.agent, this.at, this.cron, this.deleteAfter, this.description, this.envFile, this.every, this.exec, this.idempotencyKey, this.isolated, this.message, this.onError, this.reportTo, this.shell, this.thread, this.timeout, this.tz});
 
   final String? account;
   final String? agent;
@@ -13147,7 +13191,9 @@ class CronAddOptions {
   final bool? isolated;
   final String? message;
   final String? onError;
+  final String? reportTo;
   final String? shell;
+  final bool? thread;
   final String? timeout;
   final String? tz;
 
@@ -13191,8 +13237,14 @@ class CronAddOptions {
     if (onError != null) {
       into["onError"] = RaviJson.from(onError);
     }
+    if (reportTo != null) {
+      into["reportTo"] = RaviJson.from(reportTo);
+    }
     if (shell != null) {
       into["shell"] = RaviJson.from(shell);
+    }
+    if (thread != null) {
+      into["thread"] = RaviJson.from(thread);
     }
     if (timeout != null) {
       into["timeout"] = RaviJson.from(timeout);
@@ -23919,41 +23971,9 @@ class SessionsCloseThreadOptions {
   }
 }
 
-class SessionsCloseThreadReturn {
-  const SessionsCloseThreadReturn({required this.actionId, required this.changed, required this.childSession, required this.closeSequence, required this.closed, required this.parentReturn, required this.parentSession, required this.requestId, required this.slack, required this.status});
+typedef SessionsCloseThreadReturn = RaviJson;
 
-  final String actionId;
-  final bool changed;
-  final RaviJson childSession;
-  final int closeSequence;
-  final bool closed;
-  final RaviJson parentReturn;
-  final RaviJson parentSession;
-  final String requestId;
-  final RaviJson slack;
-  final String status;
-
-  factory SessionsCloseThreadReturn.fromJson(Map<String, Object?> json) {
-    return SessionsCloseThreadReturn(
-      actionId: raviJsonAsString(json["actionId"]),
-      changed: raviJsonAsBool(json["changed"]),
-      childSession: RaviJson.from(json["childSession"]),
-      closeSequence: raviJsonAsInt(json["closeSequence"]),
-      closed: raviJsonAsBool(json["closed"]),
-      parentReturn: RaviJson.from(json["parentReturn"]),
-      parentSession: RaviJson.from(json["parentSession"]),
-      requestId: raviJsonAsString(json["requestId"]),
-      slack: RaviJson.from(json["slack"]),
-      status: raviJsonAsString(json["status"]),
-    );
-  }
-
-  static SessionsCloseThreadReturn fromJsonValue(Object? json) {
-    return SessionsCloseThreadReturn.fromJson(raviJsonObject(json, "SessionsCloseThreadReturn"));
-  }
-}
-
-SessionsCloseThreadReturn sessionsCloseThreadReturnFromJson(Object? json) => SessionsCloseThreadReturn.fromJsonValue(json);
+SessionsCloseThreadReturn sessionsCloseThreadReturnFromJson(Object? json) => RaviJson.from(json);
 
 typedef SessionsConversationsAgentsReturn = List<RaviJson>;
 
@@ -24706,11 +24726,15 @@ class SessionsHandoffAckReturn {
 SessionsHandoffAckReturn sessionsHandoffAckReturnFromJson(Object? json) => SessionsHandoffAckReturn.fromJsonValue(json);
 
 class SessionsHandoffsOptions {
-  const SessionsHandoffsOptions({this.session});
+  const SessionsHandoffsOptions({this.all, this.session});
 
+  final bool? all;
   final String? session;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (all != null) {
+      into["all"] = RaviJson.from(all);
+    }
     if (session != null) {
       into["session"] = RaviJson.from(session);
     }
@@ -25010,15 +25034,19 @@ typedef SessionsRenameReturn = Map<String, RaviJson>;
 SessionsRenameReturn sessionsRenameReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
 
 class SessionsReportOptions {
-  const SessionsReportOptions({this.awaiting, this.ref, this.session});
+  const SessionsReportOptions({this.awaiting, this.pr, this.ref, this.session});
 
   final String? awaiting;
+  final String? pr;
   final String? ref;
   final String? session;
 
   void encodeBody(Map<String, RaviJson> into) {
     if (awaiting != null) {
       into["awaiting"] = RaviJson.from(awaiting);
+    }
+    if (pr != null) {
+      into["pr"] = RaviJson.from(pr);
     }
     if (ref != null) {
       into["ref"] = RaviJson.from(ref);
@@ -25029,33 +25057,9 @@ class SessionsReportOptions {
   }
 }
 
-class SessionsReportReturn {
-  const SessionsReportReturn({required this.actionId, this.handoff, required this.messageId, required this.parentSession, required this.requestId, required this.status});
+typedef SessionsReportReturn = RaviJson;
 
-  final String actionId;
-  final RaviJson? handoff;
-  final String messageId;
-  final RaviJson parentSession;
-  final String requestId;
-  final String status;
-
-  factory SessionsReportReturn.fromJson(Map<String, Object?> json) {
-    return SessionsReportReturn(
-      actionId: raviJsonAsString(json["actionId"]),
-      handoff: json["handoff"] == null ? null : RaviJson.from(json["handoff"]),
-      messageId: raviJsonAsString(json["messageId"]),
-      parentSession: RaviJson.from(json["parentSession"]),
-      requestId: raviJsonAsString(json["requestId"]),
-      status: raviJsonAsString(json["status"]),
-    );
-  }
-
-  static SessionsReportReturn fromJsonValue(Object? json) {
-    return SessionsReportReturn.fromJson(raviJsonObject(json, "SessionsReportReturn"));
-  }
-}
-
-SessionsReportReturn sessionsReportReturnFromJson(Object? json) => SessionsReportReturn.fromJsonValue(json);
+SessionsReportReturn sessionsReportReturnFromJson(Object? json) => RaviJson.from(json);
 
 class SessionsResetOptions {
   const SessionsResetOptions({this.execute});
@@ -33362,7 +33366,7 @@ class TranscribeFileReturn {
 TranscribeFileReturn transcribeFileReturnFromJson(Object? json) => TranscribeFileReturn.fromJsonValue(json);
 
 class TriggersAddOptions {
-  const TriggersAddOptions({this.account, this.agent, this.cooldown, this.debounce, this.envFile, this.exec, this.filter, this.message, this.onError, this.replySession, this.session, this.shell, this.timeout, this.topic});
+  const TriggersAddOptions({this.account, this.agent, this.cooldown, this.debounce, this.envFile, this.exec, this.filter, this.message, this.onError, this.replySession, this.reportTo, this.session, this.shell, this.thread, this.timeout, this.topic});
 
   final String? account;
   final String? agent;
@@ -33374,8 +33378,10 @@ class TriggersAddOptions {
   final String? message;
   final String? onError;
   final String? replySession;
+  final String? reportTo;
   final String? session;
   final String? shell;
+  final bool? thread;
   final String? timeout;
   final String? topic;
 
@@ -33410,11 +33416,17 @@ class TriggersAddOptions {
     if (replySession != null) {
       into["replySession"] = RaviJson.from(replySession);
     }
+    if (reportTo != null) {
+      into["reportTo"] = RaviJson.from(reportTo);
+    }
     if (session != null) {
       into["session"] = RaviJson.from(session);
     }
     if (shell != null) {
       into["shell"] = RaviJson.from(shell);
+    }
+    if (thread != null) {
+      into["thread"] = RaviJson.from(thread);
     }
     if (timeout != null) {
       into["timeout"] = RaviJson.from(timeout);

@@ -12484,6 +12484,32 @@ export type CrmTaskSnoozeReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `cron.ack-failures`. */
+export type CronAckFailuresInput = {
+  execute?: boolean;
+  job?: string;
+};
+
+/** Return shape for `cron.ack-failures`. */
+export type CronAckFailuresReturn = {
+  changedCount: number;
+  denied: number;
+  jobs: Array<{
+    jobId: string;
+    name: string | null;
+    newestAt: string;
+    oldestAt: string;
+    ownerAgentId: string | null;
+    runs: number;
+  }>;
+  pending: number;
+  status: "acknowledged";
+  target: {
+    id: string;
+    type: "cron";
+  };
+};
+
 /** Input shape for `cron.add`. */
 export type CronAddInput = {
   account?: string;
@@ -12500,7 +12526,9 @@ export type CronAddInput = {
   message?: string;
   name: string;
   onError?: string;
+  reportTo?: string;
   shell?: string;
+  thread?: boolean;
   timeout?: string;
   tz?: string;
 };
@@ -19835,7 +19863,7 @@ export type SessionsCloseThreadInput = {
 };
 
 /** Return shape for `sessions.close-thread`. */
-export type SessionsCloseThreadReturn = {
+export type SessionsCloseThreadReturn = ({
   actionId: "thread.close";
   changed: boolean;
   childSession: {
@@ -19859,7 +19887,27 @@ export type SessionsCloseThreadReturn = {
     threadTs: string | null;
   };
   status: "closed";
-};
+}) | ({
+  actionId: "thread.close";
+  changed: boolean;
+  childSession: {
+    sessionKey: string;
+    sessionName: string;
+  };
+  closed: true;
+  parentReturn: {
+    delivered: boolean;
+    pending: boolean;
+    requested: boolean;
+  };
+  parentSession: {
+    sessionKey: string;
+    sessionName: string;
+  };
+  runId: string;
+  status: "closed";
+  surface: "headless";
+});
 
 /** Input shape for `sessions.conversations.agents`. */
 export type SessionsConversationsAgentsInput = {
@@ -20517,12 +20565,15 @@ export type SessionsHandoffAckReturn = {
 
 /** Input shape for `sessions.handoffs`. */
 export type SessionsHandoffsInput = {
+  all?: boolean;
   session?: string;
 };
 
 /** Return shape for `sessions.handoffs`. */
 export type SessionsHandoffsReturn = {
   handoffs: Array<{
+    ackReason: string | null;
+    acknowledgedAt: number | null;
     ageMin: number;
     id: string;
     kind: "review" | "decision" | "merge" | "dispatch" | "instruction";
@@ -20535,6 +20586,7 @@ export type SessionsHandoffsReturn = {
     };
     ref: string | null;
     since: number;
+    status: "open" | "acknowledged" | "superseded";
     thread: {
       sessionKey: string;
       sessionName: string;
@@ -20767,26 +20819,54 @@ export type SessionsRenameReturn = Record<string, unknown>;
 export type SessionsReportInput = {
   awaiting?: string;
   message: string;
+  pr?: string;
   ref?: string;
   session?: string;
 };
 
 /** Return shape for `sessions.report`. */
-export type SessionsReportReturn = {
+export type SessionsReportReturn = ({
   actionId: "thread.report";
   handoff?: {
     id: string;
     kind: "review" | "decision" | "merge" | "dispatch" | "instruction";
     ref: string | null;
+    status: "open" | "acknowledged" | "superseded";
   };
+  handoffError?: string;
   messageId: string;
   parentSession: {
     sessionKey: string;
     sessionName: string;
   };
   requestId: string;
+  reviewDispatch?: ({
+    gate: {
+      checkRunId: number | null;
+      completedAt: string | null;
+      name: string;
+    };
+    model: string;
+    provider: string;
+    publishPending: boolean;
+    replayed: boolean;
+    requestId: string;
+    status: "dispatched";
+  }) | ({
+    reason: string;
+    status: "skipped";
+  });
   status: "published";
-};
+}) | ({
+  actionId: "thread.report";
+  messageId: string;
+  parentSession: {
+    sessionKey: string;
+    sessionName: string;
+  };
+  runId: string;
+  status: "published";
+});
 
 /** Input shape for `sessions.reset`. */
 export type SessionsResetInput = {
@@ -26488,8 +26568,10 @@ export type TriggersAddInput = {
   name: string;
   onError?: string;
   replySession?: string;
+  reportTo?: string;
   session?: string;
   shell?: string;
+  thread?: boolean;
   timeout?: string;
   topic?: string;
 };

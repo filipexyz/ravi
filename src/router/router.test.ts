@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { join } from "node:path";
+import { runWithContext, type ToolContext } from "../cli/context.js";
 import { openStateDatabase } from "../db/state-boundary.js";
 import { prepareThreadFence } from "../threads/schema-fence.js";
 import { enqueueTraceExportBatch } from "../session-trace/cloud-trace-export.js";
@@ -33,6 +34,7 @@ import {
   dbUpsertChatMessage,
   dbUpsertInstance,
   closeRouterDb,
+  ensureAgentDefaultsCapability,
   getDb,
   warnBackfilledSlackChannelsWithoutConnection,
 } from "./router-db.js";
@@ -248,6 +250,25 @@ describe("router context queries", () => {
       owner_principal: string | null;
     };
     expect(legacy.owner_principal).toBeNull();
+  });
+
+  it("creates the automation child-run table on reopen, refusing unknown states", () => {
+    const db = getDb();
+    db.exec("DROP TABLE automation_child_runs");
+    closeRouterDb();
+    const reopened = getDb();
+    const insert = (status: string) =>
+      reopened
+        .query(`INSERT INTO automation_child_runs (id, origin_kind, origin_id, origin_name, agent_id,
+          parent_session_key, parent_session_name, child_session_key, child_session_name, surface,
+          status, return_state, created_at, updated_at)
+          VALUES (?, 'cron', 'job', 'job', 'main', 'agent:main:main', 'main', ?, ?, 'headless', ?, 'none', 1, 1)`)
+        .run(`run-${status}`, `agent:main:cron:job:run:${status}`, `main-run-${status}`, status);
+    insert("open");
+    expect(reopened.query("SELECT status, return_state FROM automation_child_runs").all()).toEqual([
+      { status: "open", return_state: "none" },
+    ]);
+    expect(() => insert("running")).toThrow();
   });
 
   it("creates the durable cron run ledger on reopen without replaying legacy jobs and retains admitted owners after deletion", () => {
@@ -809,5 +830,169 @@ describe("settings compare-and-delete", () => {
     expect(dbDeleteSettingIfValue("test.removed", "value")).toBe(true);
     expect(dbGetSetting("test.keeps")).toBe("value");
     expect(dbDeleteSettingIfValue("test.missing", "value")).toBe(false);
+  });
+});
+
+// Spec permissions/break-glass, "sinks": dbUpdateAgent is where every writer of
+// agent runtime permissions lands, so a hypothetical new writer is refused too.
+describe("agent defaults break-glass sink", () => {
+  let sinkStateDir: string | null = null;
+
+  beforeEach(async () => {
+    sinkStateDir = await createIsolatedRaviState("ravi-router-break-glass-sink-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(sinkStateDir);
+    sinkStateDir = null;
+  });
+
+  const adminAgent: ToolContext = {
+    contextId: "ctx_sink",
+    agentId: "sink-admin",
+    sessionKey: "agent:sink-admin:main",
+    sessionName: "sink-admin-main",
+    context: {
+      contextId: "ctx_sink",
+      contextKey: "rctx_sink",
+      kind: "agent-runtime",
+      agentId: "sink-admin",
+      sessionKey: "agent:sink-admin:main",
+      sessionName: "sink-admin-main",
+      capabilities: [{ permission: "admin", objectType: "system", objectId: "*", source: "test" }],
+      createdAt: 0,
+    },
+  };
+
+  function refused(fn: () => unknown): unknown {
+    try {
+      fn();
+    } catch (error) {
+      return error;
+    }
+    return null;
+  }
+
+  it("refuses raising another agent from an agent turn, in either stored form", () => {
+    dbCreateAgent({ id: "sink-victim", cwd: "/tmp" });
+    runWithContext(adminAgent, () => {
+      expect(
+        refused(() => dbUpdateAgent("sink-victim", { defaults: { runtimePermissions: { profile: "Full-Access" } } })),
+      ).toMatchObject({ code: "FULL_ACCESS_APPROVAL_REQUIRED" });
+      expect(
+        refused(() => dbUpdateAgent("sink-victim", { defaults: { runtimePermissions: "full-access" } })),
+      ).toMatchObject({ code: "FULL_ACCESS_APPROVAL_REQUIRED" });
+      expect(
+        refused(() =>
+          dbUpdateAgent("sink-victim", {
+            defaults: { runtimePermissions: { profile: "explicit-only", capabilities: ["execute:executable:*"] } },
+          }),
+        ),
+      ).toMatchObject({ code: "FULL_ACCESS_APPROVAL_REQUIRED" });
+      dbUpdateAgent("sink-victim", { defaults: { tts_voice: "abc" } });
+    });
+    // A stored chat-only config confers nothing, so it does not count as already break-glass.
+    dbUpdateAgent("sink-victim", {
+      defaults: { runtimePermissions: { profile: "chat-only", capabilities: ["admin:system:*"] } },
+    });
+    runWithContext(adminAgent, () => {
+      expect(
+        refused(() => dbUpdateAgent("sink-victim", { defaults: { runtimePermissions: { profile: "full-access" } } })),
+      ).toMatchObject({ code: "FULL_ACCESS_APPROVAL_REQUIRED" });
+    });
+    expect(JSON.stringify(dbGetAgent("sink-victim")?.defaults ?? {})).not.toContain("ull-");
+
+    // B4: planting dormant break-glass (chat-only with admin:system:*) is refused from an agent turn.
+    dbCreateAgent({ id: "sink-plant", cwd: "/tmp" });
+    runWithContext(adminAgent, () => {
+      expect(
+        refused(() =>
+          dbUpdateAgent("sink-plant", {
+            defaults: { runtimePermissions: { profile: "chat-only", capabilities: ["admin:system:*"] } },
+          }),
+        ),
+      ).toMatchObject({ code: "FULL_ACCESS_APPROVAL_REQUIRED" });
+    });
+    expect(JSON.stringify(dbGetAgent("sink-plant")?.defaults ?? {})).not.toContain("admin");
+
+    // A dormant one already stored (by the operator) is not woken by an agent, but can be adjusted.
+    dbUpdateAgent("sink-plant", {
+      defaults: { runtimePermissions: { profile: "chat-only", capabilities: ["admin:system:*"] } },
+    });
+    runWithContext(adminAgent, () => {
+      expect(
+        refused(() =>
+          dbUpdateAgent("sink-plant", {
+            defaults: { runtimePermissions: { profile: "bootstrap", capabilities: ["admin:system:*"] } },
+          }),
+        ),
+      ).toMatchObject({ code: "FULL_ACCESS_APPROVAL_REQUIRED" });
+      dbUpdateAgent("sink-plant", {
+        defaults: {
+          tts_voice: "abc",
+          runtimePermissions: { profile: "chat-only", capabilities: ["admin:system:*"] },
+        },
+      });
+    });
+    expect(JSON.stringify(dbGetAgent("sink-plant")?.defaults ?? {})).toContain("tts_voice");
+
+    dbUpdateAgent("sink-victim", { defaults: { runtimePermissions: { profile: "full-access" } } });
+    expect(JSON.stringify(dbGetAgent("sink-victim")?.defaults ?? {})).toContain("full-access");
+  });
+});
+
+// Review N9: ensureAgentDefaultsCapability writes agents.defaults by SQL,
+// outside dbUpdateAgent, so it runs the same break-glass rule.
+describe("agent defaults capability writer keeps the break-glass rule", () => {
+  let writerStateDir: string | null = null;
+
+  beforeEach(async () => {
+    writerStateDir = await createIsolatedRaviState("ravi-router-defaults-writer-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(writerStateDir);
+    writerStateDir = null;
+  });
+
+  it("refuses a break-glass capability from an agent turn and keeps view capabilities", () => {
+    dbCreateAgent({ id: "writer-victim", cwd: "/tmp" });
+    const agentTurn: ToolContext = {
+      contextId: "ctx_writer",
+      agentId: "writer-admin",
+      sessionKey: "agent:writer-admin:main",
+      sessionName: "writer-admin-main",
+      context: {
+        contextId: "ctx_writer",
+        contextKey: "rctx_writer",
+        kind: "agent-runtime",
+        agentId: "writer-admin",
+        sessionKey: "agent:writer-admin:main",
+        sessionName: "writer-admin-main",
+        capabilities: [{ permission: "admin", objectType: "system", objectId: "*", source: "test" }],
+        createdAt: 0,
+      },
+    };
+    runWithContext(agentTurn, () => {
+      let error: unknown = null;
+      try {
+        ensureAgentDefaultsCapability(getDb(), "writer-victim", {
+          permission: "admin",
+          objectType: "system",
+          objectId: "*",
+        });
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toMatchObject({ code: "FULL_ACCESS_APPROVAL_REQUIRED" });
+      expect(
+        ensureAgentDefaultsCapability(getDb(), "writer-victim", {
+          permission: "view",
+          objectType: "agent",
+          objectId: "*",
+        }),
+      ).toBe(true);
+    });
+    expect(JSON.stringify(dbGetAgent("writer-victim")?.defaults ?? {})).not.toContain("admin");
   });
 });

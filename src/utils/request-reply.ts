@@ -9,6 +9,9 @@
 import { randomUUID } from "node:crypto";
 import { nats } from "../nats.js";
 
+/** The request was sent and no reply came in time: the receiver may still have acted on it. */
+export class RequestReplyTimeoutError extends Error {}
+
 /**
  * Send a request and wait for a reply via NATS.
  *
@@ -43,7 +46,7 @@ export async function requestReply<T = Record<string, unknown>>(
 
     const timer = setTimeout(() => {
       cleanup();
-      reject(new Error(`Request timeout (${timeoutMs}ms) on ${topic}`));
+      reject(new RequestReplyTimeoutError(`Request timeout (${timeoutMs}ms) on ${topic}`));
     }, timeoutMs);
 
     (async () => {

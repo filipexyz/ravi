@@ -3143,6 +3143,12 @@ public struct CronNamespace: Sendable {
     self.transport = transport
   }
 
+  public func ackFailures(_ options: CronAckFailuresOptions = .init()) async throws -> CronAckFailuresReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["cron"], command: "ack-failures", body: requestBody, as: CronAckFailuresReturn.self)
+  }
+
   public func add(_ name: String, _ options: CronAddOptions = .init()) async throws -> CronAddReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["name"] = try RaviJSON.fromEncodable(name)

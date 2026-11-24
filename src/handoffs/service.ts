@@ -1,7 +1,7 @@
 import { getSession } from "../router/index.js";
 import { logger } from "../utils/logger.js";
 import { publishHandoffEvent } from "./events.js";
-import { describeHandoff, registerHandoffDeliveryPorts } from "./reconcile.js";
+import { describeHandoff, HandoffDeliveryUncertain, registerHandoffDeliveryPorts } from "./reconcile.js";
 import {
   type Handoff,
   type HandoffKind,
@@ -30,12 +30,14 @@ export async function declareHandoff(input: {
   ref?: string | null;
   note?: string | null;
   callerContextId?: string | null;
+  closedReason?: string | null;
   now?: number;
 }): Promise<Handoff> {
   const now = input.now ?? Date.now();
   const { handoff, superseded } = openHandoff({ ...input, now });
   for (const old of superseded) await publishHandoffEvent("acknowledged", { ...old, ackReason: "superseded" }, now);
-  await publishHandoffEvent("pending", handoff, now);
+  // A wait recorded already closed never was pending: one event, not a pending that vanishes.
+  await publishHandoffEvent(handoff.status === "open" ? "pending" : "acknowledged", handoff, now);
   return handoff;
 }
 
@@ -44,8 +46,13 @@ export async function declareHandoff(input: {
  * explicitly). Only an explicit reference to the child or the handoff closes it:
  * unrelated activity of the parent never does.
  */
-export async function acknowledgeChildHandoffs(childSessionKey: string, reason: string, now = Date.now()) {
-  const acked = acknowledgeHandoffsForChild(childSessionKey, reason, now);
+export async function acknowledgeChildHandoffs(
+  childSessionKey: string,
+  reason: string,
+  now = Date.now(),
+  kinds?: readonly HandoffKind[],
+) {
+  const acked = acknowledgeHandoffsForChild(childSessionKey, reason, now, kinds);
   for (const handoff of acked) await publishHandoffEvent("acknowledged", handoff, now);
   return acked;
 }
@@ -55,6 +62,13 @@ export async function acknowledgeHandoffById(id: string, reason: string, now = D
   if (acked) await publishHandoffEvent("acknowledged", acked, now);
   return acked;
 }
+
+/**
+ * What a message from the parent to the thread answers. A review, a merge or a dispatch is an action the
+ * parent takes elsewhere: a message to the thread ("hold on", "publish PR 2") does not do it, so those stay
+ * open until the thread closes or the parent runs `handoff-ack`.
+ */
+export const HANDOFF_KINDS_ANSWERED_BY_MESSAGE: readonly HandoffKind[] = ["instruction", "decision"];
 
 export function listOpenHandoffs(parentSessionKey?: string): Handoff[] {
   return listHandoffs({ parentSessionKey });
@@ -68,7 +82,9 @@ export function ownerHandoffNoticeText(parentSessionKey: string, handoffs: reado
   return [
     `${count === 1 ? "1 thread espera" : `${count} threads esperam`} a sessão ${parentName} há mais de 45 min:`,
     ...lines,
-    `A sessão ${parentName} já foi lembrada. Ver: ravi sessions handoffs`,
+    handoffs.every((h) => h.parentNudgedAt !== null)
+      ? `A sessão ${parentName} já foi lembrada. Ver: ravi sessions handoffs`
+      : `O lembrete à sessão ${parentName} não foi confirmado. Ver: ravi sessions handoffs`,
   ].join("\n");
 }
 
@@ -92,7 +108,14 @@ export function registerDefaultHandoffOwnerPort(): void {
         return false;
       }
       const { deliverToChat } = await import("../cloud-agents/chat-target.js");
-      await deliverToChat(target, { text: ownerHandoffNoticeText(parentSessionKey, handoffs, now) });
+      const { RequestReplyTimeoutError } = await import("../utils/request-reply.js");
+      try {
+        await deliverToChat(target, { text: ownerHandoffNoticeText(parentSessionKey, handoffs, now) });
+      } catch (error) {
+        // The request went out and no reply came: the notice may have been sent, so it is never sent again.
+        if (error instanceof RequestReplyTimeoutError) throw new HandoffDeliveryUncertain(error.message);
+        throw error;
+      }
       return true;
     },
   });

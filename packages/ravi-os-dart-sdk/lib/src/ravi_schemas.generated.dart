@@ -67042,6 +67042,119 @@ class RaviSchemas {
 }
 ''';
 
+  static const cronAckFailuresInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "execute": {
+      "description": "Actually mark the runs reported; default is a dry-run that lists them (exit 3)",
+      "type": "boolean"
+    },
+    "job": {
+      "description": "Only this job's failed runs",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const cronAckFailuresReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "denied": {
+      "type": "number"
+    },
+    "jobs": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "newestAt": {
+            "type": "string"
+          },
+          "oldestAt": {
+            "type": "string"
+          },
+          "ownerAgentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "runs": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "jobId",
+          "name",
+          "ownerAgentId",
+          "runs",
+          "oldestAt",
+          "newestAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pending": {
+      "type": "number"
+    },
+    "status": {
+      "const": "acknowledged",
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "const": "cron",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "id"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount",
+    "pending",
+    "denied",
+    "jobs"
+  ],
+  "type": "object"
+}
+''';
+
   static const cronAddInputSchema = r'''
 {
   "additionalProperties": false,
@@ -67087,7 +67200,7 @@ class RaviSchemas {
       "type": "string"
     },
     "isolated": {
-      "description": "Run in isolated session",
+      "description": "Deprecated: use --thread. Runs every execution in one shared session that keeps growing",
       "type": "boolean"
     },
     "message": {
@@ -67102,9 +67215,17 @@ class RaviSchemas {
       "description": "Error action, e.g. notify-session:<session>",
       "type": "string"
     },
+    "reportTo": {
+      "description": "With --thread: the session each run reports to, of the job's agent (default: the creating session, else the agent's main session)",
+      "type": "string"
+    },
     "shell": {
       "description": "Run a shell command directly without invoking an agent",
       "type": "string"
+    },
+    "thread": {
+      "description": "Run each execution in a fresh session of its own that returns its result once to the report-to session (agent jobs)",
+      "type": "boolean"
     },
     "timeout": {
       "description": "Shell timeout, e.g. 60 or 5m",
@@ -103938,127 +104059,222 @@ class RaviSchemas {
 
   static const sessionsCloseThreadReturnSchema = r'''
 {
-  "additionalProperties": false,
-  "properties": {
-    "actionId": {
-      "const": "thread.close",
-      "type": "string"
-    },
-    "changed": {
-      "type": "boolean"
-    },
-    "childSession": {
+  "anyOf": [
+    {
       "additionalProperties": false,
       "properties": {
-        "sessionKey": {
+        "actionId": {
+          "const": "thread.close",
           "type": "string"
         },
-        "sessionName": {
-          "anyOf": [
-            {
+        "changed": {
+          "type": "boolean"
+        },
+        "childSession": {
+          "additionalProperties": false,
+          "properties": {
+            "sessionKey": {
               "type": "string"
             },
-            {
-              "type": "null"
+            "sessionName": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             }
-          ]
-        }
-      },
-      "required": [
-        "sessionKey",
-        "sessionName"
-      ],
-      "type": "object"
-    },
-    "closeSequence": {
-      "maximum": 9007199254740991,
-      "minimum": 0,
-      "type": "integer"
-    },
-    "closed": {
-      "const": true,
-      "type": "boolean"
-    },
-    "parentReturn": {
-      "additionalProperties": false,
-      "properties": {
-        "delivered": {
+          },
+          "required": [
+            "sessionKey",
+            "sessionName"
+          ],
+          "type": "object"
+        },
+        "closeSequence": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "closed": {
+          "const": true,
           "type": "boolean"
         },
-        "pending": {
-          "type": "boolean"
+        "parentReturn": {
+          "additionalProperties": false,
+          "properties": {
+            "delivered": {
+              "type": "boolean"
+            },
+            "pending": {
+              "type": "boolean"
+            },
+            "requested": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "requested",
+            "delivered",
+            "pending"
+          ],
+          "type": "object"
         },
-        "requested": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "requested",
-        "delivered",
-        "pending"
-      ],
-      "type": "object"
-    },
-    "parentSession": {
-      "additionalProperties": false,
-      "properties": {
-        "sessionKey": {
-          "type": "string"
-        },
-        "sessionName": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "sessionKey",
-        "sessionName"
-      ],
-      "type": "object"
-    },
-    "requestId": {
-      "type": "string"
-    },
-    "slack": {
-      "additionalProperties": false,
-      "properties": {
-        "channelId": {
-          "type": "string"
-        },
-        "threadTs": {
-          "anyOf": [
-            {
+        "parentSession": {
+          "additionalProperties": false,
+          "properties": {
+            "sessionKey": {
               "type": "string"
             },
-            {
-              "type": "null"
+            "sessionName": {
+              "type": "string"
             }
-          ]
+          },
+          "required": [
+            "sessionKey",
+            "sessionName"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "slack": {
+          "additionalProperties": false,
+          "properties": {
+            "channelId": {
+              "type": "string"
+            },
+            "threadTs": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "channelId",
+            "threadTs"
+          ],
+          "type": "object"
+        },
+        "status": {
+          "const": "closed",
+          "type": "string"
         }
       },
       "required": [
-        "channelId",
-        "threadTs"
+        "status",
+        "actionId",
+        "closed",
+        "changed",
+        "requestId",
+        "closeSequence",
+        "parentReturn",
+        "parentSession",
+        "childSession",
+        "slack"
       ],
       "type": "object"
     },
-    "status": {
-      "const": "closed",
-      "type": "string"
+    {
+      "additionalProperties": false,
+      "properties": {
+        "actionId": {
+          "const": "thread.close",
+          "type": "string"
+        },
+        "changed": {
+          "type": "boolean"
+        },
+        "childSession": {
+          "additionalProperties": false,
+          "properties": {
+            "sessionKey": {
+              "type": "string"
+            },
+            "sessionName": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionKey",
+            "sessionName"
+          ],
+          "type": "object"
+        },
+        "closed": {
+          "const": true,
+          "type": "boolean"
+        },
+        "parentReturn": {
+          "additionalProperties": false,
+          "properties": {
+            "delivered": {
+              "type": "boolean"
+            },
+            "pending": {
+              "type": "boolean"
+            },
+            "requested": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "requested",
+            "delivered",
+            "pending"
+          ],
+          "type": "object"
+        },
+        "parentSession": {
+          "additionalProperties": false,
+          "properties": {
+            "sessionKey": {
+              "type": "string"
+            },
+            "sessionName": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionKey",
+            "sessionName"
+          ],
+          "type": "object"
+        },
+        "runId": {
+          "type": "string"
+        },
+        "status": {
+          "const": "closed",
+          "type": "string"
+        },
+        "surface": {
+          "const": "headless",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "actionId",
+        "closed",
+        "changed",
+        "runId",
+        "surface",
+        "parentReturn",
+        "parentSession",
+        "childSession"
+      ],
+      "type": "object"
     }
-  },
-  "required": [
-    "status",
-    "actionId",
-    "closed",
-    "changed",
-    "requestId",
-    "closeSequence",
-    "parentReturn",
-    "parentSession",
-    "childSession",
-    "slack"
-  ],
-  "type": "object"
+  ]
 }
 ''';
 
@@ -107028,6 +107244,10 @@ class RaviSchemas {
 {
   "additionalProperties": false,
   "properties": {
+    "all": {
+      "description": "Also list closed handoffs (acknowledged, superseded, expired), newest 100, to audit how each wait ended",
+      "type": "boolean"
+    },
     "session": {
       "description": "Only handoffs waiting on this parent session (defaults to all)",
       "type": "string"
@@ -107045,6 +107265,26 @@ class RaviSchemas {
       "items": {
         "additionalProperties": false,
         "properties": {
+          "ackReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "acknowledgedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "ageMin": {
             "type": "number"
           },
@@ -107120,6 +107360,14 @@ class RaviSchemas {
           "since": {
             "type": "number"
           },
+          "status": {
+            "enum": [
+              "open",
+              "acknowledged",
+              "superseded"
+            ],
+            "type": "string"
+          },
           "thread": {
             "additionalProperties": false,
             "properties": {
@@ -107147,7 +107395,10 @@ class RaviSchemas {
           "since",
           "ageMin",
           "parentNudgedAt",
-          "ownerEscalatedAt"
+          "ownerEscalatedAt",
+          "status",
+          "acknowledgedAt",
+          "ackReason"
         ],
         "type": "object"
       },
@@ -108110,6 +108361,10 @@ class RaviSchemas {
       "description": "Progress, blocker or decision the parent session needs now",
       "type": "string"
     },
+    "pr": {
+      "description": "With --awaiting review and --ref <full SHA>: the PR to review. When that SHA is the PR head and its quality gate passed, the runtime opens the independent review itself (reviewer on another model)",
+      "type": "string"
+    },
     "ref": {
       "description": "What the parent should act on (commit SHA, PR number). Only with --awaiting",
       "type": "string"
@@ -108128,81 +108383,229 @@ class RaviSchemas {
 
   static const sessionsReportReturnSchema = r'''
 {
-  "additionalProperties": false,
-  "properties": {
-    "actionId": {
-      "const": "thread.report",
-      "type": "string"
-    },
-    "handoff": {
+  "anyOf": [
+    {
       "additionalProperties": false,
       "properties": {
-        "id": {
+        "actionId": {
+          "const": "thread.report",
           "type": "string"
         },
-        "kind": {
-          "enum": [
-            "review",
-            "decision",
-            "merge",
-            "dispatch",
-            "instruction"
-          ],
-          "type": "string"
-        },
-        "ref": {
-          "anyOf": [
-            {
+        "handoff": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
               "type": "string"
             },
-            {
-              "type": "null"
+            "kind": {
+              "enum": [
+                "review",
+                "decision",
+                "merge",
+                "dispatch",
+                "instruction"
+              ],
+              "type": "string"
+            },
+            "ref": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "status": {
+              "enum": [
+                "open",
+                "acknowledged",
+                "superseded"
+              ],
+              "type": "string"
             }
-          ]
-        }
-      },
-      "required": [
-        "id",
-        "kind",
-        "ref"
-      ],
-      "type": "object"
-    },
-    "messageId": {
-      "type": "string"
-    },
-    "parentSession": {
-      "additionalProperties": false,
-      "properties": {
-        "sessionKey": {
+          },
+          "required": [
+            "id",
+            "kind",
+            "ref",
+            "status"
+          ],
+          "type": "object"
+        },
+        "handoffError": {
           "type": "string"
         },
-        "sessionName": {
+        "messageId": {
+          "type": "string"
+        },
+        "parentSession": {
+          "additionalProperties": false,
+          "properties": {
+            "sessionKey": {
+              "type": "string"
+            },
+            "sessionName": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionKey",
+            "sessionName"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "reviewDispatch": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "gate": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "checkRunId": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "completedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "checkRunId",
+                    "completedAt"
+                  ],
+                  "type": "object"
+                },
+                "model": {
+                  "type": "string"
+                },
+                "provider": {
+                  "type": "string"
+                },
+                "publishPending": {
+                  "type": "boolean"
+                },
+                "replayed": {
+                  "type": "boolean"
+                },
+                "requestId": {
+                  "type": "string"
+                },
+                "status": {
+                  "const": "dispatched",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "status",
+                "requestId",
+                "replayed",
+                "provider",
+                "model",
+                "publishPending",
+                "gate"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "reason": {
+                  "type": "string"
+                },
+                "status": {
+                  "const": "skipped",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "status",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "status": {
+          "const": "published",
           "type": "string"
         }
       },
       "required": [
-        "sessionKey",
-        "sessionName"
+        "status",
+        "actionId",
+        "requestId",
+        "messageId",
+        "parentSession"
       ],
       "type": "object"
     },
-    "requestId": {
-      "type": "string"
-    },
-    "status": {
-      "const": "published",
-      "type": "string"
+    {
+      "additionalProperties": false,
+      "properties": {
+        "actionId": {
+          "const": "thread.report",
+          "type": "string"
+        },
+        "messageId": {
+          "type": "string"
+        },
+        "parentSession": {
+          "additionalProperties": false,
+          "properties": {
+            "sessionKey": {
+              "type": "string"
+            },
+            "sessionName": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionKey",
+            "sessionName"
+          ],
+          "type": "object"
+        },
+        "runId": {
+          "type": "string"
+        },
+        "status": {
+          "const": "published",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "actionId",
+        "runId",
+        "messageId",
+        "parentSession"
+      ],
+      "type": "object"
     }
-  },
-  "required": [
-    "status",
-    "actionId",
-    "requestId",
-    "messageId",
-    "parentSession"
-  ],
-  "type": "object"
+  ]
 }
 ''';
 
@@ -137168,6 +137571,10 @@ class RaviSchemas {
       "description": "Override the session used for outbound delivery (defaults to caller session)",
       "type": "string"
     },
+    "reportTo": {
+      "description": "With --thread: the session each fire reports to, of the trigger's agent (default: the creating session, else the agent's main session)",
+      "type": "string"
+    },
     "session": {
       "description": "Session to run in, by name; may be a template resolved per event (e.g. issue-{{data.payload.row.values.topic_id.0}}) for one session per value; an event whose name does not resolve is skipped, never sent to another session. Created when missing. Default: the current session, or the agent main session outside one. The reserved values main and isolated keep their old meaning (the agent main session; one session per trigger)",
       "type": "string"
@@ -137175,6 +137582,10 @@ class RaviSchemas {
     "shell": {
       "description": "Run a shell command directly without invoking an agent",
       "type": "string"
+    },
+    "thread": {
+      "description": "Run each fire in a fresh session of its own that returns its result once to the report-to session (agent triggers; one fire at a time, the owner's Bases access is not lent)",
+      "type": "boolean"
     },
     "timeout": {
       "description": "Shell timeout, e.g. 60 or 5m",

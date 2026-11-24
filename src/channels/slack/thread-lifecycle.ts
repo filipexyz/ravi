@@ -49,7 +49,10 @@ import {
   closeSlackThreadLifecycle,
   completeSlackThreadCreation,
   completeSlackThreadParentReturn,
+  findSlackThreadLifecycleByChildRef,
   findSlackThreadLifecycleByChildSession,
+  findSlackThreadLifecycleByParentAndProviderThread,
+  findSlackThreadLifecycleByParentChatAndProviderThread,
   getSlackThreadLifecycle,
   listPendingSlackThreadCreations,
   listPendingSlackThreadParentReturns,
@@ -975,6 +978,12 @@ export function findSlackThreadForParent(parentSessionKey: string, ref: string):
   if (!normalized) return null;
   const direct = getSlackThreadLifecycle(normalized);
   if (direct) return direct.parentSessionKey === parentSessionKey ? direct : null;
+  // Asked of the table itself first: the page below holds only the newest 500 threads of the parent,
+  // closed ones included, and an older thread must still be found by its root `ts` or its name.
+  const byRoot = findSlackThreadLifecycleByParentAndProviderThread(parentSessionKey, normalized);
+  if (byRoot) return byRoot;
+  const byChild = findSlackThreadLifecycleByChildRef(normalized);
+  if (byChild && byChild.parentSessionKey === parentSessionKey) return byChild;
   return (
     listSlackThreadLifecyclesByParent(parentSessionKey, { includeClosed: true, limit: 500 }).find(
       (record) =>
@@ -983,6 +992,20 @@ export function findSlackThreadForParent(parentSessionKey: string, ref: string):
         record.providerThreadId === normalized,
     ) ?? null
   );
+}
+
+/**
+ * One of a parent's threads by the channel it was opened in and its root `ts`, and no other. This is how
+ * a shortcut or a button names a thread: by the message it was used on, in the chat it was used in.
+ */
+export function findSlackThreadForParentInChat(
+  parentSessionKey: string,
+  platformChatId: string,
+  rootTs: string,
+): SlackThreadLifecycleRecord | null {
+  const ts = rootTs.trim();
+  if (!ts) return null;
+  return findSlackThreadLifecycleByParentChatAndProviderThread(parentSessionKey, platformChatId, ts);
 }
 
 /** A thread child tells its parent session about progress without closing the thread. */

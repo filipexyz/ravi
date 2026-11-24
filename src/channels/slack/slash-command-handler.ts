@@ -49,11 +49,13 @@ import { logger } from "../../utils/logger.js";
 import { resolveSubscriptionPrecedence } from "../subscription-precedence.js";
 import { resolveSlackInstanceAliases } from "./instance-alias.js";
 import { respondToSlackInteraction } from "./interactions.js";
+import { type DeliverSlackPrivateCard, deliverSlackPrivateCard } from "./private-card.js";
 import { formatSlackCommandAge, renderSlackCommandResult } from "./slash-command-render.js";
 import { parseSlackCommandEvent, SLACK_COMMAND_TOPIC, type SlackCommandEvent } from "./slash-commands.js";
 import {
   closeSlackThreadRecord,
   findSlackThreadForParent,
+  findSlackThreadForParentInChat,
   slackThreadParentSessionKey,
   summarizeSlackThread,
 } from "./thread-lifecycle.js";
@@ -87,12 +89,17 @@ export type SlackCommandLocation = Pick<SlackCommandEvent, "channelId" | "userId
 
 export interface SlackCommandDeps extends ChatCommandDeps {
   respond?: (input: { responseUrlId: string; payload: Record<string, unknown> }) => Promise<unknown>;
+  /** Sends a card only the person sees, in a thread: how a shortcut answers (tests replace it). */
+  deliverPrivate?: DeliverSlackPrivateCard;
   contactForSlackUser?: (userId: string, instanceId: string) => string | null;
   resolveSession?: (where: SlackCommandLocation, config: RouterConfig) => SlackCommandSessionResolution;
   threads?: (session: SessionEntry) => SlackThreadIndex;
-  /** One thread of the session of a chat, by name, request id or Slack `thread_ts`. */
-  findThread?: (parentSessionKey: string, threadRef: string) => ChatThreadSummary | null;
-  closeThread?: (parentSessionKey: string, threadRef: string) => Promise<SlackCommandCloseResult>;
+  /**
+   * One thread of the session of a chat, by name, request id or Slack `thread_ts`. With `chatId` the
+   * ref is the root `ts` of a thread opened in that channel, and no other thread answers to it.
+   */
+  findThread?: (parentSessionKey: string, threadRef: string, chatId?: string) => ChatThreadSummary | null;
+  closeThread?: (parentSessionKey: string, threadRef: string, chatId?: string) => Promise<SlackCommandCloseResult>;
 }
 
 /**
@@ -180,13 +187,24 @@ function defaultThreadIndex(session: SessionEntry): SlackThreadIndex {
   };
 }
 
-function defaultFindThread(parentSessionKey: string, threadRef: string): ChatThreadSummary | null {
-  const record = findSlackThreadForParent(parentSessionKey, threadRef);
+/** The thread a ref names: by chat and root `ts` when a chat is given, by any of its names otherwise. */
+function lookupThread(parentSessionKey: string, threadRef: string, chatId?: string) {
+  return chatId
+    ? findSlackThreadForParentInChat(parentSessionKey, chatId, threadRef)
+    : findSlackThreadForParent(parentSessionKey, threadRef);
+}
+
+function defaultFindThread(parentSessionKey: string, threadRef: string, chatId?: string): ChatThreadSummary | null {
+  const record = lookupThread(parentSessionKey, threadRef, chatId);
   return record ? summarizeSlackThread(record) : null;
 }
 
-async function defaultCloseThread(parentSessionKey: string, threadRef: string): Promise<SlackCommandCloseResult> {
-  const record = findSlackThreadForParent(parentSessionKey, threadRef);
+async function defaultCloseThread(
+  parentSessionKey: string,
+  threadRef: string,
+  chatId?: string,
+): Promise<SlackCommandCloseResult> {
+  const record = lookupThread(parentSessionKey, threadRef, chatId);
   if (!record) return { kind: "not_found" };
   const name = record.childSessionName ?? record.requestId;
   try {
@@ -237,14 +255,23 @@ export interface SlackCommandSource extends SlackCommandLocation {
   readonly responseUrlId?: string;
   /** The command as typed, with its slash, for the answers that name it. */
   readonly command: string;
-  /** How the person reached it, for the audit: `command` or `button`. */
-  readonly surface: "command" | "button";
+  /** How the person reached it, for the audit: `command`, `button` or `shortcut`. */
+  readonly surface: "command" | "button" | "shortcut";
   /** The runner already answered static text inside the ack. */
   readonly ackedWithHelp?: boolean;
+  /** The answer takes the place of the card that was clicked, instead of adding a message. */
+  readonly replaceOriginal?: boolean;
+  /**
+   * The answer is a private card in the thread with this root ts, and not a reply on a
+   * `response_url`: a shortcut's own response handle posts at channel level, where a person
+   * looking at a thread does not see it.
+   */
+  readonly privateThreadTs?: string;
 }
 
 /** What the engine needs from Slack for one command: who, where, the threads, and how to answer. */
 export function slackCommandChannel(source: SlackCommandSource, deps: SlackCommandDeps = {}): ChatCommandChannel {
+  const scopeChat = source.surface === "command" ? undefined : source.channelId;
   return {
     origin: {
       channel: "slack",
@@ -260,15 +287,37 @@ export function slackCommandChannel(source: SlackCommandSource, deps: SlackComma
     contactId: () => (deps.contactForSlackUser ?? slackUserContactId)(source.userId, source.instanceId),
     resolveSession: (config) => (deps.resolveSession ?? resolveSlackCommandSession)(source, config),
     threads: (session) => (deps.threads ?? defaultThreadIndex)(session),
+    // A shortcut and a button name the thread by the message they were used on: its root `ts`, in this
+    // chat. A typed command names it by any of its names, among every thread of the session.
     findThread: (session, threadRef) =>
-      (deps.findThread ?? defaultFindThread)(slackThreadParentSessionKey(session.sessionKey), threadRef),
+      (deps.findThread ?? defaultFindThread)(slackThreadParentSessionKey(session.sessionKey), threadRef, scopeChat),
     closeThread: (session, threadRef) =>
-      (deps.closeThread ?? defaultCloseThread)(slackThreadParentSessionKey(session.sessionKey), threadRef),
+      (deps.closeThread ?? defaultCloseThread)(slackThreadParentSessionKey(session.sessionKey), threadRef, scopeChat),
     closeAccess: defaultCloseAccess,
     reply: async (result) => {
       // The runner answers static text inside the ack when Slack takes it there; only when Slack
       // would not does the daemon say it, so nobody gets it twice.
       if (result.kind === "static" && source.ackedWithHelp) return;
+      const message = renderSlackCommandResult(result, source.command);
+      if (source.privateThreadTs) {
+        try {
+          await (deps.deliverPrivate ?? deliverSlackPrivateCard)(
+            {
+              accountId: source.accountId,
+              chatId: source.channelId,
+              userId: source.userId,
+              threadTs: source.privateThreadTs,
+            },
+            { text: message.text, blocks: message.blocks },
+          );
+          return;
+        } catch (error) {
+          // The response handle still answers, at channel level and only to this person: better than silence.
+          log.warn("Slack command private card was not delivered; using the response handle", {
+            error: errorText(error),
+          });
+        }
+      }
       if (!source.responseUrlId) {
         log.warn("Slack command has no response handle; the answer is dropped", { envelopeId: source.envelopeId });
         return;
@@ -276,7 +325,10 @@ export function slackCommandChannel(source: SlackCommandSource, deps: SlackComma
       try {
         await (deps.respond ?? respondToSlackInteraction)({
           responseUrlId: source.responseUrlId,
-          payload: renderSlackCommandResult(result, source.command) as unknown as Record<string, unknown>,
+          payload: (source.replaceOriginal ? { ...message, replace_original: true } : message) as unknown as Record<
+            string,
+            unknown
+          >,
         });
       } catch (error) {
         log.warn("Slack command answer was not delivered", { error: errorText(error) });

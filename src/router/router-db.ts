@@ -1,4 +1,5 @@
 import { configureStateJournalMode, initializeStateSchema } from "../db/schema-owner.js";
+import { assertAgentBreakGlassRaiseAllowed } from "../permissions/break-glass.js";
 import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "../db/state-boundary.js";
 import { migrateDecisions } from "../decisions/schema.js";
 import { assertThreadFenceReady } from "../threads/schema-fence.js";
@@ -3424,6 +3425,30 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
     );
     CREATE INDEX IF NOT EXISTS idx_cron_runs_job ON cron_runs(job_id);
 
+    -- One automation run in a child session of its own ("thread mode"), parented to the session it reports to.
+    CREATE TABLE IF NOT EXISTS automation_child_runs (
+      id TEXT PRIMARY KEY,
+      origin_kind TEXT NOT NULL CHECK(origin_kind IN ('cron', 'trigger')),
+      origin_id TEXT NOT NULL,
+      origin_name TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      parent_session_key TEXT NOT NULL,
+      parent_session_name TEXT NOT NULL,
+      child_session_key TEXT NOT NULL UNIQUE,
+      child_session_name TEXT NOT NULL,
+      surface TEXT NOT NULL CHECK(surface IN ('headless')),
+      status TEXT NOT NULL CHECK(status IN ('open', 'closed')),
+      return_state TEXT NOT NULL CHECK(return_state IN ('none', 'pending', 'returned', 'silent', 'error')),
+      return_kind TEXT CHECK(return_kind IS NULL OR return_kind IN ('result', 'auto', 'error')),
+      return_text TEXT,
+      closed_at INTEGER,
+      parent_notified_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_automation_child_runs_origin ON automation_child_runs(origin_kind, origin_id);
+    CREATE INDEX IF NOT EXISTS idx_automation_child_runs_open ON automation_child_runs(status) WHERE status = 'open';
+
     -- Durable idempotency ledger for reactions whose target may later be deleted.
     CREATE TABLE IF NOT EXISTS reaction_actions (
       idempotency_key_hash TEXT PRIMARY KEY,
@@ -4326,7 +4351,8 @@ function getDefaultAgentIdFromDatabase(database: Database): string {
   return row?.value?.trim() || "main";
 }
 
-function ensureAgentDefaultsCapability(
+/** Exported for the break-glass sink test only; the boot visibility migration is its caller. */
+export function ensureAgentDefaultsCapability(
   database: Database,
   agentId: string,
   capability: { permission: string; objectType: string; objectId: string },
@@ -4343,9 +4369,17 @@ function ensureAgentDefaultsCapability(
     return false;
   }
 
+  const beforeRuntimePermissions = runtimePermissionsForBreakGlass(defaults.runtimePermissions);
   capabilities.push({ ...capability });
   runtimePermissions.capabilities = capabilities;
   defaults.runtimePermissions = runtimePermissions;
+  // Sink guard (review N9): this writes agents.defaults by SQL, outside dbUpdateAgent.
+  assertAgentBreakGlassRaiseAllowed(
+    `agent defaults of ${agentId}`,
+    agentId,
+    beforeRuntimePermissions,
+    runtimePermissionsForBreakGlass(runtimePermissions),
+  );
   database
     .prepare("UPDATE agents SET defaults = ?, updated_at = ? WHERE id = ?")
     .run(JSON.stringify(defaults), Date.now(), agentId);
@@ -4361,6 +4395,21 @@ function parseAgentDefaultsRecord(value: string | null): Record<string, unknown>
   } catch {
     return {};
   }
+}
+
+/** runtimePermissions in either stored form (a profile string or an object), for the break-glass sink. */
+function runtimePermissionsForBreakGlass(value: unknown): {
+  profile?: string;
+  capabilities?: Array<string | Record<string, string>>;
+} {
+  if (typeof value === "string") return { profile: value };
+  const record = parseAgentRuntimePermissionsRecord(value);
+  return {
+    ...(typeof record.profile === "string" ? { profile: record.profile } : {}),
+    ...(Array.isArray(record.capabilities)
+      ? { capabilities: record.capabilities as Array<string | Record<string, string>> }
+      : {}),
+  };
 }
 
 function parseAgentRuntimePermissionsRecord(value: unknown): Record<string, unknown> {
@@ -9712,6 +9761,7 @@ export function dbPlantLegacySessionChatBindingForTests(input: {
  * Create a new agent
  */
 export function dbCreateAgent(input: z.input<typeof AgentInputSchema>): AgentConfig {
+  assertAgentWorkspaceChangeAllowed(`agent create ${String(input.id ?? "")}`.trim());
   const validated = AgentInputSchema.parse(input);
   const now = Date.now();
   const s = getStatements();
@@ -9795,6 +9845,22 @@ export function dbUpdateAgent(id: string, updates: AgentUpdateInput): AgentConfi
 
   if (!row) {
     throw new Error(`Agent not found: ${id}`);
+  }
+
+  if (updates.cwd !== undefined && updates.cwd !== row.cwd) {
+    assertAgentWorkspaceChangeAllowed(`agent cwd of ${id}`);
+  }
+
+  if (updates.defaults !== undefined) {
+    // Sink guard (spec permissions/break-glass): every writer of agent runtime
+    // permissions lands here; raising another agent to break-glass from an
+    // agent turn is refused unless an operator approval is running.
+    assertAgentBreakGlassRaiseAllowed(
+      `agent defaults of ${id}`,
+      id,
+      runtimePermissionsForBreakGlass(parseAgentDefaultsRecord(row.defaults ?? null).runtimePermissions),
+      runtimePermissionsForBreakGlass((updates.defaults ?? {}).runtimePermissions),
+    );
   }
 
   // Validate dmScope if provided
@@ -11986,4 +12052,14 @@ export function migrateTriggerSessionCheck(database: Database): void {
     }
     throw error;
   }
+}
+
+/**
+ * Lazily required: the permissions module reaches the CLI context, which
+ * imports this module back at load time.
+ */
+function assertAgentWorkspaceChangeAllowed(op: string): void {
+  const { assertNotActorBreakGlassLimited } =
+    require("../permissions/user-overlay-automation.js") as typeof import("../permissions/user-overlay-automation.js");
+  assertNotActorBreakGlassLimited(op);
 }

@@ -9,6 +9,8 @@ afterAll(() => mock.restore());
 
 const actualRouterIndexModule = await import("../../router/index.js");
 const actualRouterSessionsModule = await import("../../router/sessions.js");
+// Captured before the module is mocked below: the mock replaces the namespace in place.
+const realGetOrCreateSession = actualRouterSessionsModule.getOrCreateSession;
 const actualRouterDbModule = await import("../../router/router-db.js");
 const actualRuntimeContextRegistryModule = await import("../../runtime/context-registry.js");
 const actualStickerCatalogModule = await import("../../stickers/catalog.js");
@@ -668,6 +670,8 @@ const {
   SessionCommands,
   sessionCloseThreadReturnSchema,
   sessionCreateThreadReturnSchema,
+  sessionHandoffAckReturnSchema,
+  sessionHandoffsReturnSchema,
   sessionReportReturnSchema,
   sessionThreadSendReturnSchema,
   sessionThreadsReturnSchema,
@@ -2965,13 +2969,357 @@ describe("SessionCommands attach hints", () => {
     reportSlackThreadError = null;
     expect(listOpenHandoffs(parentKey).map((h) => [h.id, h.kind])).toEqual([[result.handoff.id, "review"]]);
 
-    // Unrelated parent activity does not close it; messaging this thread does.
+    // The thread cannot mark its own wait as handled.
+    await expect(new SessionCommands().handoffAck(result.handoff.id, undefined, true)).rejects.toMatchObject({
+      code: "HANDOFF_SELF_ACK",
+    });
+
+    // A message to the thread answers an instruction or a decision, not a review: it stays open.
     resolvedSession = { sessionKey: parentKey, name: "dev-slack", agentId: "dev", agentCwd: "/tmp/dev" };
     toolContext = { sessionKey: parentKey, sessionName: "dev-slack" };
     await new SessionCommands().threadSend("other-thread", "segue", undefined, true);
+    await new SessionCommands().threadSend("handoff-child", "segura o despacho", undefined, true);
     expect(listOpenHandoffs(parentKey)).toHaveLength(1);
-    await new SessionCommands().threadSend("handoff-child", "revisão despachada", undefined, true);
+    const acked = (await new SessionCommands().handoffAck(result.handoff.id, "review dispatched", true)) as Record<
+      string,
+      any
+    >;
+    expectReturnShape(sessionHandoffAckReturnSchema, acked);
+    expect(acked).toMatchObject({ changed: true, status: "acknowledged" });
     expect(listOpenHandoffs(parentKey)).toHaveLength(0);
+    const audit = (await new SessionCommands().handoffs(undefined, true, true)) as Record<string, any>;
+    expectReturnShape(sessionHandoffsReturnSchema, audit);
+    expect(audit.handoffs.find((h: any) => h.id === result.handoff.id)).toMatchObject({
+      status: "acknowledged",
+      ackReason: "review dispatched",
+    });
+
+    // An instruction wait is closed by the parent's next message to the thread.
+    resolvedSession = {
+      sessionKey: childKey,
+      name: "dev-slack-t-1713000000000100",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+    toolContext = { sessionKey: childKey, sessionName: "dev-slack-t-1713000000000100" };
+    await new SessionCommands().report("qual caminho?", undefined, true, "instruction");
+    resolvedSession = { sessionKey: parentKey, name: "dev-slack", agentId: "dev", agentCwd: "/tmp/dev" };
+    toolContext = { sessionKey: parentKey, sessionName: "dev-slack" };
+    await new SessionCommands().threadSend("handoff-child", "vai pelo caminho A", undefined, true);
+    expect(listOpenHandoffs(parentKey)).toHaveLength(0);
+  });
+
+  it("report --awaiting review --pr opens the review only for the PR head with a green gate", async () => {
+    const { listOpenHandoffs, acknowledgeHandoffById } = await import("../../handoffs/service.js");
+    const { setReviewGithubReadForTest } = await import("../../handoffs/review-dispatch.js");
+    const sha = "135fbbc78acc79545ca641d4ae21819c56d498e1";
+    const childKey = "agent:dev:slack:ravi-slack:C123:thread:1713000000.000100";
+    const parentKey = "agent:dev:slack:ravi-slack:C123";
+    resolvedSession = {
+      sessionKey: childKey,
+      name: "dev-slack-t-1713000000000100",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+    toolContext = { sessionKey: childKey, sessionName: "dev-slack-t-1713000000000100" };
+    childThreadLifecycle = { parentSessionKey: parentKey };
+    for (const open of listOpenHandoffs()) await acknowledgeHandoffById(open.id, "test reset");
+
+    for (const [args, label] of [
+      [["review", undefined, "filipexyz/ravi#938"], "no ref"],
+      [["review", sha.slice(0, 8), "filipexyz/ravi#938"], "short sha"],
+      [["decision", sha, "filipexyz/ravi#938"], "not a review or merge"],
+      [["review", sha, "ravi#938"], "bad pr"],
+    ] as const) {
+      await expect(
+        new SessionCommands().report("pronta", undefined, true, args[0], args[1], args[2]),
+        label,
+      ).rejects.toMatchObject({ code: "USAGE_ERROR" });
+    }
+
+    const { dbCreateTrigger, dbDeleteTrigger } = await import("../../triggers/triggers-db.js");
+    let followId: string | null = null;
+    let gate: { status: string; conclusion: string | null } = { status: "in_progress", conclusion: null };
+    let pull: Record<string, unknown> = { state: "open", head: { sha } };
+    setReviewGithubReadForTest(async (endpoint) =>
+      endpoint.endsWith("/pulls/938")
+        ? pull
+        : {
+            check_runs: [
+              {
+                id: 7,
+                name: "Quality Gate",
+                head_sha: sha,
+                status: gate.status,
+                conclusion: gate.conclusion,
+                completed_at: gate.conclusion ? "2026-11-23T23:33:30Z" : null,
+              },
+            ],
+          },
+    );
+    try {
+      // Only a PR this thread follows (the follow `pr publish` arms) can be reviewed by the runtime.
+      const stranger = (await new SessionCommands().report(
+        "PR alheia",
+        undefined,
+        true,
+        "review",
+        sha,
+        "filipexyz/ravi#938",
+      )) as Record<string, any>;
+      expect(stranger.reviewDispatch).toEqual({
+        status: "skipped",
+        reason: "this thread does not follow filipexyz/ravi#938 (publish it from here with ravi pr publish)",
+      });
+      const follow = dbCreateTrigger({
+        name: "gh-follow:filipexyz/ravi#938",
+        topic: "ravi.watch.github.>",
+        message: "follow",
+        replySession: "dev-slack-t-1713000000000100",
+      });
+      followId = follow.id;
+      const pending = (await new SessionCommands().report(
+        "PR 2 pronta",
+        undefined,
+        true,
+        "review",
+        sha,
+        "filipexyz/ravi#938",
+      )) as Record<string, any>;
+      expectReturnShape(sessionReportReturnSchema, pending);
+      expect(pending.reviewDispatch).toEqual({
+        status: "skipped",
+        reason: "quality gate still running; report again with the same flags when it passes",
+      });
+      // With --pr the wait names the PR, so it closes by itself when the PR does.
+      expect(pending.handoff).toMatchObject({ kind: "review", status: "open", ref: `filipexyz/ravi#938@${sha}` });
+      expect(reportedSlackThreads.at(-1)?.message).toContain("Revisão não despachada pelo runtime: quality gate");
+
+      gate = { status: "completed", conclusion: "success" };
+      // The reviewer's thread opens at the parent's Slack channel, like any create-thread from a thread.
+      realGetOrCreateSession(parentKey, "dev", "/tmp/dev", { name: "dev-slack" });
+      realGetOrCreateSession(childKey, "dev", "/tmp/dev", {
+        name: "dev-slack-t-1713000000000100",
+      });
+      toolContext = {
+        sessionKey: childKey,
+        sessionName: "dev-slack-t-1713000000000100",
+        source: {
+          channel: "slack",
+          accountId: "ravi-slack",
+          instanceId: "ravi-slack",
+          chatId: "C123",
+          canonicalChatId: "chat_slack",
+        },
+      };
+      chatRecords.set("chat_slack", {
+        id: "chat_slack",
+        title: "ravi",
+        channel: "slack",
+        instanceId: "ravi-slack",
+        platformChatId: "C123",
+        chatType: "channel",
+      });
+      routerConfig = {
+        agents: {},
+        channels: {
+          "ravi-slack": {
+            name: "ravi-slack",
+            provider: "slack",
+            enabled: true,
+            credentialConnection: "ravi-slack-secret",
+          },
+        },
+        instances: {},
+        instanceToAccount: {},
+      };
+      // Without the author's model, "another model" cannot be kept: no dispatch.
+      const unknownModel = (await new SessionCommands().report(
+        "PR 2 pronta",
+        undefined,
+        true,
+        "review",
+        sha,
+        "filipexyz/ravi#938",
+      )) as Record<string, any>;
+      expect(unknownModel.reviewDispatch).toEqual({
+        status: "skipped",
+        reason: "the author's model is unknown, so another model cannot be chosen",
+      });
+      routerConfig.agents = { dev: { id: "dev", provider: "claude", model: "opus" } };
+
+      // Every guard leaves the wait on the parent and says why, without opening anything.
+      const lifecyclesAtGuards = createdSlackThreadLifecycles.length;
+      const guarded = async () =>
+        (
+          (await new SessionCommands().report(
+            "PR 2 pronta",
+            undefined,
+            true,
+            "review",
+            sha,
+            "filipexyz/ravi#938",
+          )) as Record<string, any>
+        ).reviewDispatch;
+      pull = { state: "closed", head: { sha } };
+      expect(await guarded()).toEqual({ status: "skipped", reason: "the PR is not open at this SHA" });
+      pull = { state: "open", head: { sha: "b".repeat(40) } };
+      expect(await guarded()).toEqual({ status: "skipped", reason: "the PR is not open at this SHA" });
+      pull = { state: "open", head: { sha } };
+      gate = { status: "completed", conclusion: "failure" };
+      expect(await guarded()).toEqual({ status: "skipped", reason: "quality gate concluded failure" });
+      gate = { status: "completed", conclusion: "success" };
+      const { dbSetSetting, dbDeleteSetting } = await import("../../router/router-db.js");
+      dbSetSetting("handoffs.review.autoDispatch", "off");
+      try {
+        expect(await guarded()).toEqual({ status: "skipped", reason: "auto-dispatch is off" });
+      } finally {
+        dbDeleteSetting("handoffs.review.autoDispatch");
+      }
+      expect(createdSlackThreadLifecycles.length).toBe(lifecyclesAtGuards);
+
+      const lifecyclesBefore = createdSlackThreadLifecycles.length;
+      const green = (await new SessionCommands().report(
+        "PR 2 pronta",
+        undefined,
+        true,
+        "review",
+        sha,
+        "filipexyz/ravi#938",
+      )) as Record<string, any>;
+      expectReturnShape(sessionReportReturnSchema, green);
+      expect(green.reviewDispatch).toMatchObject({
+        status: "dispatched",
+        replayed: false,
+        provider: "claude",
+        model: "sonnet",
+        publishPending: false,
+        gate: { name: "Quality Gate", checkRunId: 7 },
+      });
+      // Nothing is left for the parent to dispatch: the wait closes, with the reviewer's request as the reason.
+      expect(green.handoff).toMatchObject({ kind: "review", status: "acknowledged" });
+      expect(createdSlackThreadLifecycles.length).toBe(lifecyclesBefore + 1);
+      expect(createdSlackThreadLifecycles.at(-1)).toMatchObject({
+        parentSessionKey: parentKey,
+        initialPrompt: expect.stringContaining(`SHA a revisar: ${sha}`),
+        providerOverride: "claude",
+        effortOverride: "high",
+      });
+      expect(reportedSlackThreads.at(-1)?.message).toContain("Revisão despachada pelo runtime:");
+      expect(listOpenHandoffs(parentKey)).toHaveLength(0);
+
+      // The same review again, with another note and the repo spelled differently, returns the first request.
+      const again = (await new SessionCommands().report(
+        "PR 2 pronta; notas de teste manual acrescentadas",
+        undefined,
+        true,
+        "review",
+        sha,
+        "FilipeXYZ/Ravi#938",
+      )) as Record<string, any>;
+      expect(again.reviewDispatch).toMatchObject({ status: "dispatched", replayed: true, publishPending: false });
+      expect(again.handoff).toMatchObject({ kind: "review", status: "acknowledged" });
+      expect(createdSlackThreadLifecycles.length).toBe(lifecyclesBefore + 1);
+      expect(again.reviewDispatch.requestId).toBe(green.reviewDispatch.requestId);
+
+      // A review whose thread closed is not "dispatched" any more: the wait goes back to the parent.
+      storedSlackThreadRequests.get(green.reviewDispatch.requestId)!.status = "closed";
+      const closed = (await new SessionCommands().report(
+        "PR 2 pronta",
+        undefined,
+        true,
+        "review",
+        sha,
+        "filipexyz/ravi#938",
+      )) as Record<string, any>;
+      expect(closed.reviewDispatch).toMatchObject({ status: "skipped", reason: expect.stringContaining("is closed") });
+      expect(closed.handoff).toMatchObject({ kind: "review", status: "open" });
+
+      // A merge wait never dispatches a review, even on a followed PR with a green gate.
+      const lifecyclesAtMerge = createdSlackThreadLifecycles.length;
+      const mergeWait = (await new SessionCommands().report(
+        "MERGEÁVEL",
+        undefined,
+        true,
+        "merge",
+        sha,
+        "filipexyz/ravi#938",
+      )) as Record<string, any>;
+      expect(mergeWait.reviewDispatch).toBeUndefined();
+      expect(mergeWait.handoff).toMatchObject({ kind: "merge", status: "open", ref: `filipexyz/ravi#938@${sha}` });
+      expect(createdSlackThreadLifecycles.length).toBe(lifecyclesAtMerge);
+
+      // A wait declared after the PR merged (its event went to nobody) is recorded already closed.
+      pull = { state: "closed", merged: true, head: { sha } };
+      const late = (await new SessionCommands().report(
+        "MERGEÁVEL",
+        undefined,
+        true,
+        "merge",
+        sha,
+        "filipexyz/ravi#938",
+      )) as Record<string, any>;
+      expect(late.handoff).toMatchObject({ kind: "merge", status: "acknowledged" });
+      expect(reportedSlackThreads.at(-1)?.message).toContain("já está mergeada: a espera nasce fechada");
+      expect(listOpenHandoffs(parentKey)).toHaveLength(0);
+
+      // A PR this thread does not follow is never read: its state is not exposed in the report and the wait
+      // stays open, even when the PR is long merged.
+      const reads: string[] = [];
+      setReviewGithubReadForTest(async (endpoint) => {
+        reads.push(endpoint);
+        return { state: "closed", merged: true, head: { sha } };
+      });
+      const reportsBeforeAlien = reportedSlackThreads.length;
+      const alien = (await new SessionCommands().report(
+        "PR alheia",
+        undefined,
+        true,
+        "merge",
+        sha,
+        "other/repo#9",
+      )) as Record<string, any>;
+      expect(reads).toEqual([]);
+      expect(alien.handoff).toMatchObject({ kind: "merge", status: "open", ref: `other/repo#9@${sha}` });
+      expect(reportedSlackThreads.length).toBe(reportsBeforeAlien + 1);
+      expect(reportedSlackThreads.at(-1)?.message).not.toContain("já está");
+
+      // A followed PR whose state cannot be read (gh down, 404, odd payload) leaves the wait open and the
+      // report still goes out: a failed read must never turn into a failed report.
+      const followed = dbCreateTrigger({
+        name: "gh-follow:filipexyz/ravi#939",
+        topic: "ravi.watch.github.>",
+        message: "follow",
+        replySession: "dev-slack-t-1713000000000100",
+      });
+      try {
+        const failedReads: string[] = [];
+        setReviewGithubReadForTest(async (endpoint) => {
+          failedReads.push(endpoint);
+          throw new Error("gh api: 502");
+        });
+        const reportsBeforeUnread = reportedSlackThreads.length;
+        const unread = (await new SessionCommands().report(
+          "MERGEÁVEL",
+          undefined,
+          true,
+          "merge",
+          sha,
+          "filipexyz/ravi#939",
+        )) as Record<string, any>;
+        // The read really was attempted (a guard that skipped it would also leave the wait open), and it is the
+        // report of this call, not the previous one, that went out.
+        expect(failedReads).toEqual([expect.stringContaining("/pulls/939")]);
+        expect(unread.handoff).toMatchObject({ kind: "merge", status: "open", ref: `filipexyz/ravi#939@${sha}` });
+        expect(reportedSlackThreads.length).toBe(reportsBeforeUnread + 1);
+        expect(reportedSlackThreads.at(-1)?.message).not.toContain("já está");
+      } finally {
+        dbDeleteTrigger(followed.id);
+      }
+    } finally {
+      if (followId) dbDeleteTrigger(followId);
+      setReviewGithubReadForTest(null);
+    }
   });
 
   it("refuses report and close-thread with THREAD_IDENTITY_MISMATCH from a session that took an open thread's name", async () => {

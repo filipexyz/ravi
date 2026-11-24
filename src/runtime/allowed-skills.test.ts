@@ -8,6 +8,7 @@ import {
   resolveAgentSkills,
 } from "./allowed-skills.js";
 import { isSkillAuthorizedForAgent } from "./skill-authorization.js";
+import { isAdminAll } from "./skill-capability-implication.js";
 import { dbReplaceLibraryPins } from "../library/pins-db.js";
 import { fakeSkill } from "../library/test-fixtures.js";
 
@@ -343,5 +344,17 @@ describe("resolveAgentSkills — custom grants integration", () => {
     expect(isSkillAuthorizedForAgent("pi-agent", "ravi-system-sessions")).toBe(true);
     expect(isSkillAuthorizedForAgent("pi-agent", "ravi-system-whatsapp-manager")).toBe(false);
     expect(isSkillAuthorizedForAgent(undefined, "ravi-system-whatsapp-manager")).toBe(true);
+  });
+});
+
+describe("isAdminAll and a person held below the agent's break-glass", () => {
+  const admin = { permission: "admin", objectType: "system", objectId: "*" };
+
+  it("is true for the admin shortcut", () => {
+    expect(isAdminAll([admin])).toBe(true);
+  });
+
+  it("is false when the turn withholds admin from a person (deny_admin:system:*)", () => {
+    expect(isAdminAll([admin, { permission: "deny_admin", objectType: "system", objectId: "*" }])).toBe(false);
   });
 });

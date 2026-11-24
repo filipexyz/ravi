@@ -36,6 +36,7 @@ export interface AuditContextProvenance {
   userOverlayChat?: string;
   userOverlayThreadChat?: string;
   userOverlayGrants?: string[];
+  actorBreakGlassWithheld?: string[];
   actorCapabilityCount?: number;
   surfaceCapabilityCount?: number;
   actorOverrideCapabilityCount?: number;
@@ -104,6 +105,7 @@ export function buildAuditContextProvenance(input?: AuditProvenanceInput | null)
   }
   assignStringArray(context, "delegationOverridePrincipals", metadata?.delegationOverridePrincipals);
   assignStringArray(context, "userOverlayGrants", metadata?.userOverlayGrants);
+  assignStringArray(context, "actorBreakGlassWithheld", metadata?.actorBreakGlassWithheld);
   assignCapabilityArray(context, "turnCapabilities", metadata?.turnCapabilities);
 
   if (Array.isArray(capabilities)) {

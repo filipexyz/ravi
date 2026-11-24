@@ -135,6 +135,20 @@ export function renderSlackCommandResult(result: ChatCommandResult, command: str
       return slackCommandMessage(lines.join("\n"));
     }
 
+    case "thread_status": {
+      const { thread } = result;
+      const title = thread.title ? ` ${oneLine(thread.title)}` : "";
+      const lines = [`*Thread* \`${escapeMrkdwn(thread.name)}\`${title}`];
+      // Closing a thread does not interrupt a turn, so a closed thread can still be working: say both.
+      lines.push(`*State*: ${thread.closed ? "closed, " : ""}${threadStateLabel(thread)}`);
+      const age = formatSlackCommandAge(thread.ageMs);
+      lines.push(`*Last activity*: ${age === "now" ? age : `${age} ago`}`);
+      if (thread.pendingAnswerCount > 0) {
+        lines.push(`*Answers not delivered yet*: ${thread.pendingAnswerCount}`);
+      }
+      return slackCommandMessage(lines.join("\n"));
+    }
+
     case "threads_none":
       return slackCommandMessage(`No open threads in \`${escapeMrkdwn(result.sessionName)}\`.`);
 

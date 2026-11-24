@@ -47,6 +47,7 @@ import { revokeOrphanedShellCronContexts } from "./cron/shell-context.js";
 import { startLocalWatchRunner, stopLocalWatchRunner } from "./watch/local-runner.js";
 import { startGhFollowMaintenanceRunner, stopGhFollowMaintenanceRunner } from "./hooks/gh-follow-sweep.js";
 import { repairThreadBoundPageCommentFollows } from "./pages/comment-follow.js";
+import { repairOrphanContactChatGrants } from "./permissions/contact-merge-grants.js";
 import { startJobsRunner, stopJobsRunner } from "./jobs/index.js";
 import { startSessionFollowupRunner, stopSessionFollowupRunner } from "./session-followups/index.js";
 import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
@@ -59,6 +60,7 @@ import { createSlackOmieConversationAuthority } from "./channels/slack/omie-conv
 import { registerOmieConversationAuthority } from "./apps/omie-orders/conversation-authority.js";
 import { registerHandoffDeliveryPorts } from "./handoffs/reconcile.js";
 import { registerDefaultHandoffOwnerPort } from "./handoffs/service.js";
+import { startHandoffPullRequestListener } from "./handoffs/pr-events.js";
 import { createSlackThreadHandoffParentNotifier } from "./channels/slack/thread-lifecycle.js";
 import { registerOmieProviderReads } from "./apps/omie-orders/provider-reads.js";
 import {
@@ -78,6 +80,7 @@ import { startCloudWorkerRunner, stopCloudWorkerRunner } from "./cloud-agents/wo
 import { startCloudApprovalClicks, stopCloudApprovalClicks } from "./cloud-agents/chat-routing.js";
 import { startSlackCommandConsumer, stopSlackCommandConsumer } from "./channels/slack/slash-command-handler.js";
 import { startSlackThreadControls, stopSlackThreadControls } from "./channels/slack/thread-controls.js";
+import { startSlackThreadShortcuts, stopSlackThreadShortcuts } from "./channels/slack/thread-shortcuts.js";
 import { startCloudDeliveryRunner, stopCloudDeliveryRunner } from "./cloud-agents/delivery-runner.js";
 import { startCalendarAssistantRunner, stopCalendarAssistantRunner } from "./calendar/assistant-runner.js";
 import { createSessionAdapterBus } from "./adapters/index.js";
@@ -246,6 +249,7 @@ process.on("unhandledRejection", (reason, promise) => {
 let humanBridge: { stop(): Promise<void> } | null = null;
 let bot: RaviBot | null = null;
 let gateway: ReturnType<typeof createGateway> | null = null;
+let handoffPullRequestListener: { stop(): Promise<void> } | null = null;
 let sessionAdapterBus: ReturnType<typeof createSessionAdapterBus> | null = null;
 let shuttingDown = false;
 let omniConsumer: OmniConsumer | null = null;
@@ -329,6 +333,7 @@ async function shutdown(signal: string, exitCode = 0) {
       { name: "cloud-approval", stop: stopCloudApprovalClicks },
       { name: "slack-commands", stop: stopSlackCommandConsumer },
       { name: "slack-thread-controls", stop: stopSlackThreadControls },
+      { name: "slack-thread-shortcuts", stop: stopSlackThreadShortcuts },
       { name: "calendar-assistant", stop: stopCalendarAssistantRunner },
       { name: "ephemeral", stop: stopEphemeralRunner },
       { name: "hook", stop: stopHookRunner },
@@ -344,6 +349,7 @@ async function shutdown(signal: string, exitCode = 0) {
       { name: "knowledge", stop: stopKnowledgeLeaderRunners },
       { name: "leadership", stop: () => releaseLeadership("runners") },
       { name: "gateway", stop: () => gateway?.stop() },
+      { name: "handoff-pr-events", stop: () => handoffPullRequestListener?.stop() },
       { name: "session-adapters", stop: () => sessionAdapterBus?.stop() },
       { name: "work-objects", stop: () => workObjectNatsService?.stop() },
       { name: "webhook-http", stop: () => webhookHttpServer?.stop() },
@@ -453,6 +459,21 @@ function repairThreadBoundPageCommentFollowsAtBoot(): void {
   }
 }
 
+function repairOrphanContactChatGrantsAtBoot(): void {
+  try {
+    for (const result of repairOrphanContactChatGrants()) {
+      log.info("Repaired chat grants left on a merged contact", {
+        sourceContactId: result.sourceContactId,
+        targetContactId: result.targetContactId,
+        outcomes: result.grants.map((grant) => `${grant.grantId}:${grant.outcome}`),
+      });
+    }
+  } catch (error) {
+    // Boot continues: an orphan grant names a contact id nothing resolves to.
+    log.error("Failed to repair orphan contact chat grants at boot", { error });
+  }
+}
+
 export async function startDaemon() {
   assertRuntimeMaintenanceInactive();
   acquireDaemonSchemaOwnership();
@@ -466,6 +487,7 @@ export async function startDaemon() {
   revokeOrphanedShellCronKeysAtBoot();
   // Before the trigger runner loads: its subscriptions read the repaired owners.
   repairThreadBoundPageCommentFollowsAtBoot();
+  repairOrphanContactChatGrantsAtBoot();
 
   // Step 1: Connect to NATS (with retry for PM2 parallel startup)
   const natsUrl = process.env.NATS_URL || "nats://127.0.0.1:4222";
@@ -637,6 +659,7 @@ export async function startDaemon() {
   registerOmieConversationAuthority(createSlackOmieConversationAuthority());
   registerHandoffDeliveryPorts({ notifyParent: createSlackThreadHandoffParentNotifier() });
   registerDefaultHandoffOwnerPort();
+  handoffPullRequestListener = startHandoffPullRequestListener();
   // The broker must know the executor's reads before any query has loaded the executor (spec credentials/broker).
   registerOmieProviderReads();
 
@@ -662,6 +685,8 @@ export async function startDaemon() {
   log.info("Slack command consumer started");
   await startSlackThreadControls();
   log.info("Slack thread controls started");
+  await startSlackThreadShortcuts();
+  log.info("Slack thread shortcuts started");
 
   sessionAdapterBus = createSessionAdapterBus();
   await sessionAdapterBus.start();

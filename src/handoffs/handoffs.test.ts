@@ -1,22 +1,34 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import * as chatTarget from "../cloud-agents/chat-target.js";
+import * as ownerTarget from "../knowledge/owner.js";
 import { closeSessionStore, getOrCreateSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { RequestReplyTimeoutError } from "../utils/request-reply.js";
 import { handoffEventPayload } from "./events.js";
+import { HANDOFF_PR_EVENT_TOPICS, handleHandoffPullRequestEvent } from "./pr-events.js";
 import {
+  HANDOFF_EXPIRY_MS,
   HANDOFF_OWNER_ESCALATION_MS,
   HANDOFF_PARENT_NUDGE_MS,
+  HANDOFF_REMINDER_WINDOW_MS,
+  handoffsForReminder,
+  HandoffDeliveryUncertain,
   planHandoffActions,
   reconcileHandoffs,
+  resetHandoffDeliveryPortsForTest,
+  resetUncertainParentRemindersForTest,
   type HandoffDeliveryPorts,
 } from "./reconcile.js";
 import {
   acknowledgeChildHandoffs,
   acknowledgeHandoffById,
   declareHandoff,
+  HANDOFF_KINDS_ANSWERED_BY_MESSAGE,
   listOpenHandoffs,
   ownerHandoffNoticeText,
+  registerDefaultHandoffOwnerPort,
 } from "./service.js";
 import { getHandoff, listHandoffs, type Handoff } from "./store.js";
 
@@ -136,10 +148,16 @@ describe("handoffs store and reconciler", () => {
         return true;
       },
     };
-    expect(await reconcileHandoffs({ now: T0 + 5 * 60_000, ports })).toEqual({ nudged: 0, escalated: 0, failures: 0 });
+    expect(await reconcileHandoffs({ now: T0 + 5 * 60_000, ports })).toEqual({
+      nudged: 0,
+      escalated: 0,
+      expired: 0,
+      failures: 0,
+    });
     expect(await reconcileHandoffs({ now: T0 + HANDOFF_PARENT_NUDGE_MS, ports })).toEqual({
       nudged: 2,
       escalated: 0,
+      expired: 0,
       failures: 0,
     });
     // One reminder turn for the parent, naming both waits.
@@ -150,6 +168,7 @@ describe("handoffs store and reconciler", () => {
     expect(await reconcileHandoffs({ now: T0 + HANDOFF_OWNER_ESCALATION_MS, ports })).toEqual({
       nudged: 0,
       escalated: 2,
+      expired: 0,
       failures: 0,
     });
     expect(ownerCalls).toEqual([[CHILD_A, CHILD_B]]);
@@ -166,7 +185,7 @@ describe("handoffs store and reconciler", () => {
       },
     };
     const result = await reconcileHandoffs({ now: T0 + HANDOFF_OWNER_ESCALATION_MS, ports });
-    expect(result).toEqual({ nudged: 0, escalated: 0, failures: 1 });
+    expect(result).toEqual({ nudged: 0, escalated: 0, expired: 0, failures: 1 });
     expect(getHandoff(h.id)?.parentNudgedAt).toBeNull();
     expect(getHandoff(h.id)?.ownerEscalatedAt).toBeNull();
   });
@@ -199,6 +218,241 @@ describe("handoffs store and reconciler", () => {
     expect(text).toContain("2 threads esperam a sessão main há mais de 45 min");
     expect(text).toContain("thread-a espera revisão (sha1) há 45 min");
     expect(text).toContain("thread-b espera decisão há 45 min");
+    // The parent was never reminded in these rows: the notice must not claim it was.
+    expect(text).toContain("O lembrete à sessão main não foi confirmado");
+    const reminded = ownerHandoffNoticeText(
+      PARENT,
+      [handoff({ parentNudgedAt: T0 + 1 })],
+      T0 + HANDOFF_OWNER_ESCALATION_MS,
+    );
+    expect(reminded).toContain("A sessão main já foi lembrada");
+  });
+
+  it("a message to the thread closes only instruction and decision waits", async () => {
+    const review = await declareHandoff({
+      childSessionKey: CHILD_A,
+      parentSessionKey: PARENT,
+      kind: "review",
+      now: T0,
+    });
+    await acknowledgeChildHandoffs(CHILD_A, "parent sent instructions", T0 + 1, HANDOFF_KINDS_ANSWERED_BY_MESSAGE);
+    expect(getHandoff(review.id)?.status).toBe("open");
+    const decision = await declareHandoff({
+      childSessionKey: CHILD_B,
+      parentSessionKey: PARENT,
+      kind: "decision",
+      now: T0,
+    });
+    await acknowledgeChildHandoffs(CHILD_B, "parent sent instructions", T0 + 1, HANDOFF_KINDS_ANSWERED_BY_MESSAGE);
+    expect(getHandoff(decision.id)?.status).toBe("acknowledged");
+  });
+
+  it("claims the owner notice before delivering and releases it when delivery fails", async () => {
+    const h = await declareHandoff({ childSessionKey: CHILD_A, parentSessionKey: PARENT, kind: "merge", now: T0 });
+    let seenClaimed: number | null | undefined;
+    const failing: HandoffDeliveryPorts = {
+      notifyOwner: async () => {
+        seenClaimed = getHandoff(h.id)?.ownerEscalatedAt;
+        return false;
+      },
+    };
+    const now = T0 + HANDOFF_OWNER_ESCALATION_MS;
+    expect(await reconcileHandoffs({ now, ports: failing })).toMatchObject({ escalated: 0 });
+    expect(seenClaimed).toBe(now);
+    expect(getHandoff(h.id)?.ownerEscalatedAt).toBeNull();
+    let calls = 0;
+    const ok: HandoffDeliveryPorts = {
+      notifyOwner: async () => {
+        calls++;
+        return true;
+      },
+    };
+    expect(await reconcileHandoffs({ now: now + 30_000, ports: ok })).toMatchObject({ escalated: 1 });
+    await reconcileHandoffs({ now: now + 60_000, ports: ok });
+    expect(calls).toBe(1);
+  });
+
+  it("an overlapping tick does nothing while one is delivering", async () => {
+    await declareHandoff({ childSessionKey: CHILD_A, parentSessionKey: PARENT, kind: "merge", now: T0 });
+    let release: () => void = () => {};
+    let calls = 0;
+    const slow: HandoffDeliveryPorts = {
+      notifyOwner: () => {
+        calls++;
+        return new Promise<boolean>((resolve) => {
+          release = () => resolve(true);
+        });
+      },
+    };
+    const now = T0 + HANDOFF_OWNER_ESCALATION_MS;
+    const first = reconcileHandoffs({ now, ports: slow });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(await reconcileHandoffs({ now: now + 30_000, ports: slow })).toMatchObject({ skipped: true });
+    release();
+    expect(await first).toMatchObject({ escalated: 1 });
+    expect(calls).toBe(1);
+  });
+
+  it("closes a review or merge wait on a PR when the watch reports the PR merged or closed", async () => {
+    const sha = "a".repeat(40);
+    const merge = await declareHandoff({
+      childSessionKey: CHILD_A,
+      parentSessionKey: PARENT,
+      kind: "merge",
+      ref: `filipexyz/ravi#942@${sha}`,
+      now: T0,
+    });
+    const plain = await declareHandoff({
+      childSessionKey: CHILD_B,
+      parentSessionKey: PARENT,
+      kind: "merge",
+      ref: sha,
+      now: T0,
+    });
+    // Another PR of the same repo, and a malformed event, close nothing.
+    expect(
+      await handleHandoffPullRequestEvent("ravi.watch.github.pull_request.merged", {
+        payload: { repository: "filipexyz/ravi", number: 94 },
+      }),
+    ).toBe(0);
+    expect(await handleHandoffPullRequestEvent("ravi.watch.github.pull_request.merged", { payload: {} })).toBe(0);
+    expect(
+      await handleHandoffPullRequestEvent(
+        "ravi.watch.github.pull_request.merged",
+        { payload: { repository: "FilipeXYZ/Ravi", number: 942 } },
+        T0 + 1,
+      ),
+    ).toBe(1);
+    expect(getHandoff(merge.id)).toMatchObject({ status: "acknowledged", ackReason: "PR merged" });
+    // A ref that names no PR is left to the parent.
+    expect(getHandoff(plain.id)?.status).toBe("open");
+    expect(handoffEventPayload("acknowledged", getHandoff(merge.id)!, T0)).toMatchObject({ sha, pr: 942 });
+
+    // A closed (not merged) PR, numbered as a string, closes a review wait too.
+    const review = await declareHandoff({
+      childSessionKey: CHILD_A,
+      parentSessionKey: PARENT,
+      kind: "review",
+      ref: `filipexyz/ravi#950@${sha}`,
+      now: T0,
+    });
+    // Only review and merge waits end with the PR: a decision that names the PR stays with the parent.
+    const decision = await declareHandoff({
+      childSessionKey: CHILD_B,
+      parentSessionKey: PARENT,
+      kind: "decision",
+      ref: `filipexyz/ravi#950@${sha}`,
+      now: T0,
+    });
+    expect(
+      await handleHandoffPullRequestEvent("ravi.watch.github.pull_request.closed", {
+        payload: { repository: "filipexyz/ravi", number: "950" },
+      }),
+    ).toBe(1);
+    expect(getHandoff(review.id)).toMatchObject({ status: "acknowledged", ackReason: "PR closed" });
+    // The listener subscribes to both endings of a PR.
+    expect([...HANDOFF_PR_EVENT_TOPICS].sort()).toEqual([
+      "ravi.watch.github.pull_request.closed",
+      "ravi.watch.github.pull_request.merged",
+    ]);
+    expect(getHandoff(decision.id)?.status).toBe("open");
+  });
+
+  it("a delivery that times out is never sent again (at most once)", async () => {
+    await declareHandoff({ childSessionKey: CHILD_A, parentSessionKey: PARENT, kind: "merge", now: T0 });
+    let ownerCalls = 0;
+    let parentCalls = 0;
+    const hung: HandoffDeliveryPorts = {
+      notifyParent: () => {
+        parentCalls++;
+        return new Promise<boolean>(() => {});
+      },
+      notifyOwner: () => {
+        ownerCalls++;
+        return new Promise<boolean>(() => {});
+      },
+    };
+    const now = T0 + HANDOFF_OWNER_ESCALATION_MS;
+    expect(await reconcileHandoffs({ now, ports: hung, portTimeoutMs: 10 })).toMatchObject({ failures: 2 });
+    await reconcileHandoffs({ now: now + 30_000, ports: hung, portTimeoutMs: 10 });
+    await reconcileHandoffs({ now: now + 60_000, ports: hung, portTimeoutMs: 10 });
+    expect({ parentCalls, ownerCalls }).toEqual({ parentCalls: 1, ownerCalls: 1 });
+  });
+
+  it("an unconfirmed reminder is neither resent nor reported to the owner as sent", async () => {
+    resetUncertainParentRemindersForTest();
+    const h = await declareHandoff({ childSessionKey: CHILD_A, parentSessionKey: PARENT, kind: "review", now: T0 });
+    let parentCalls = 0;
+    const ownerSaw: Array<number | null> = [];
+    const ports: HandoffDeliveryPorts = {
+      notifyParent: () => {
+        parentCalls++;
+        return new Promise<boolean>(() => {});
+      },
+      notifyOwner: async ({ handoffs }) => {
+        ownerSaw.push(...handoffs.map((x) => x.parentNudgedAt));
+        // The owner port may also report an unknown outcome: the claim is kept, never resent.
+        throw new HandoffDeliveryUncertain("request timeout");
+      },
+    };
+    await reconcileHandoffs({ now: T0 + HANDOFF_PARENT_NUDGE_MS, ports, portTimeoutMs: 10 });
+    expect(getHandoff(h.id)?.parentNudgedAt).toBeNull();
+    await reconcileHandoffs({ now: T0 + HANDOFF_OWNER_ESCALATION_MS, ports, portTimeoutMs: 10 });
+    await reconcileHandoffs({ now: T0 + HANDOFF_OWNER_ESCALATION_MS + 30_000, ports, portTimeoutMs: 10 });
+    expect(parentCalls).toBe(1);
+    expect(ownerSaw).toEqual([null]);
+    expect(getHandoff(h.id)?.ownerEscalatedAt).toBe(T0 + HANDOFF_OWNER_ESCALATION_MS);
+  });
+
+  it("the default owner port treats a delivery that timed out as maybe sent, and any other failure as not sent", async () => {
+    const h = await declareHandoff({ childSessionKey: CHILD_A, parentSessionKey: PARENT, kind: "review", now: T0 });
+    const target = { channel: "slack", accountId: "ravi-slack", to: "U1", chatId: "D1", contactId: "c1" };
+    const target_ = spyOn(ownerTarget, "resolveOwnerDirectTarget").mockReturnValue(target);
+    let calls = 0;
+    let failure: Error = new RequestReplyTimeoutError("Request timeout (30000ms) on ravi.outbound.deliver");
+    const deliver = spyOn(chatTarget, "deliverToChat").mockImplementation(async () => {
+      calls++;
+      throw failure;
+    });
+    registerDefaultHandoffOwnerPort();
+    try {
+      const at = T0 + HANDOFF_OWNER_ESCALATION_MS;
+      // Timed out: the notice may have gone out. The claim stays and the next tick does not send it again.
+      expect(await reconcileHandoffs({ now: at })).toMatchObject({ escalated: 0, failures: 1 });
+      expect(getHandoff(h.id)?.ownerEscalatedAt).toBe(at);
+      await reconcileHandoffs({ now: at + 30_000 });
+      expect(calls).toBe(1);
+
+      // Any other failure is "not sent": the claim is released and the next tick tries again.
+      const other = await declareHandoff({
+        childSessionKey: CHILD_B,
+        parentSessionKey: PARENT,
+        kind: "review",
+        now: T0,
+      });
+      failure = new Error("gateway refused");
+      await reconcileHandoffs({ now: at + 60_000 });
+      expect(getHandoff(other.id)?.ownerEscalatedAt).toBeNull();
+      const callsAfterFailure = calls;
+      await reconcileHandoffs({ now: at + 90_000 });
+      expect(calls).toBe(callsAfterFailure + 1);
+    } finally {
+      deliver.mockRestore();
+      target_.mockRestore();
+      resetHandoffDeliveryPortsForTest();
+    }
+  });
+
+  it("expires a wait nobody acted on for 7 days and lists only recent or due waits in a reminder", async () => {
+    const old = await declareHandoff({ childSessionKey: CHILD_A, parentSessionKey: PARENT, kind: "review", now: T0 });
+    const now = T0 + HANDOFF_EXPIRY_MS;
+    expect(await reconcileHandoffs({ now, ports: {} })).toMatchObject({ expired: 1 });
+    expect(getHandoff(old.id)?.ackReason).toBe("expired: no action for 7 days");
+
+    const stale = handoff({ id: "old", createdAt: T0 - 2 * HANDOFF_REMINDER_WINDOW_MS, parentNudgedAt: T0 });
+    const fresh = handoff({ id: "fresh", createdAt: T0 - 60_000 });
+    const due = handoff({ id: "due", createdAt: T0 - HANDOFF_PARENT_NUDGE_MS });
+    expect(handoffsForReminder([stale, fresh, due], PARENT, [due], T0).map((h) => h.id)).toEqual(["fresh", "due"]);
   });
 });
 
