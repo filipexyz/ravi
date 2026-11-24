@@ -107400,8 +107400,52 @@ public enum RaviSchemas {
 
   public static let SessionsObserveReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "additionalProperties": false,
+    "properties": {
+      "observing": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "alerts",
+              "follow"
+            ],
+            "type": "string"
+          },
+          "ruleId": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "when": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "ruleId",
+          "source",
+          "to",
+          "mode",
+          "when"
+        ],
+        "type": "object"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "success",
+      "observing"
+    ],
     "type": "object"
   }
   """#
@@ -107416,8 +107460,61 @@ public enum RaviSchemas {
 
   public static let SessionsObservingReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "additionalProperties": false,
+    "properties": {
+      "observing": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "alerts",
+                "follow"
+              ],
+              "type": "string"
+            },
+            "ruleId": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "to": {
+              "type": "string"
+            },
+            "when": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "ruleId",
+            "source",
+            "to",
+            "mode",
+            "when"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "total": {
+        "maximum": 9007199254740991,
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "success",
+      "observing",
+      "total"
+    ],
     "type": "object"
   }
   """#
@@ -112294,8 +112391,32 @@ public enum RaviSchemas {
 
   public static let SessionsUnobserveReturnSchema = #"""
   {
-    "additionalProperties": {},
-    "properties": {},
+    "additionalProperties": false,
+    "properties": {
+      "removed": {
+        "type": "boolean"
+      },
+      "ruleId": {
+        "type": "string"
+      },
+      "source": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "to": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "success",
+      "removed",
+      "ruleId",
+      "source",
+      "to"
+    ],
     "type": "object"
   }
   """#

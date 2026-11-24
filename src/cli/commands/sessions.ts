@@ -659,6 +659,34 @@ export const sessionHandoffsReturnSchema = z
     ),
   })
   .strict();
+const sessionObservationSchema = z
+  .object({
+    ruleId: z.string(),
+    source: z.string(),
+    to: z.string(),
+    mode: z.enum(["alerts", "follow"]),
+    when: z.array(z.string()),
+  })
+  .strict();
+export const sessionObserveReturnSchema = z
+  .object({ success: z.literal(true), observing: sessionObservationSchema })
+  .strict();
+export const sessionUnobserveReturnSchema = z
+  .object({
+    success: z.literal(true),
+    removed: z.boolean(),
+    ruleId: z.string(),
+    source: z.string(),
+    to: z.string(),
+  })
+  .strict();
+export const sessionObservingReturnSchema = z
+  .object({
+    success: z.literal(true),
+    observing: z.array(sessionObservationSchema),
+    total: z.number().int().nonnegative(),
+  })
+  .strict();
 export const sessionHandoffAckReturnSchema = z
   .object({
     id: z.string(),
@@ -6001,12 +6029,12 @@ export class SessionCommands {
     // Attach now: a running source session would otherwise only pick the rule up on its next launch.
     ensureObserverBindingsForSession({ sessionName: sessionLabel(source), session: source });
     const payload = {
-      success: true,
+      success: true as const,
       observing: {
         ruleId: rule.id,
         source: sessionLabel(source),
         to: sessionLabel(target),
-        mode: when ? "alerts" : "follow",
+        mode: (when ? "alerts" : "follow") as "alerts" | "follow",
         when: when ?? [],
       },
     };
@@ -6050,7 +6078,13 @@ export class SessionCommands {
     const ruleId = observeRuleId(target, source);
     // Deleting the rule disables its binding in the same transaction.
     const removed = dbDeleteObserverRule(ruleId);
-    const payload = { success: true, removed, ruleId, source: sessionLabel(source), to: sessionLabel(target) };
+    const payload = {
+      success: true as const,
+      removed,
+      ruleId,
+      source: sessionLabel(source),
+      to: sessionLabel(target),
+    };
     if (asJson) {
       printJson(payload);
       return payload;
@@ -6084,12 +6118,12 @@ export class SessionCommands {
           ruleId: rule.id,
           source: rule.sourceSession ?? "",
           to: typeof rule.metadata?.deliverTo === "string" ? rule.metadata.deliverTo : "",
-          mode: when.length > 0 ? "alerts" : "follow",
+          mode: (when.length > 0 ? "alerts" : "follow") as "alerts" | "follow",
           when,
         };
       })
       .filter((item) => !enforced || (canAccessSession(scopeCtx, item.source) && canAccessSession(scopeCtx, item.to)));
-    const payload = { success: true, observing: items, total: items.length };
+    const payload = { success: true as const, observing: items, total: items.length };
     if (asJson) {
       printJson(payload);
       return payload;
@@ -8716,9 +8750,9 @@ declareCommandReturns(SessionCommands, {
   info: commandEnvelopeReturnSchema,
   inform: commandEnvelopeReturnSchema,
   keep: commandEnvelopeReturnSchema,
-  observe: commandEnvelopeReturnSchema,
-  observing: commandEnvelopeReturnSchema,
-  unobserve: commandEnvelopeReturnSchema,
+  observe: sessionObserveReturnSchema,
+  observing: sessionObservingReturnSchema,
+  unobserve: sessionUnobserveReturnSchema,
   list: pagedItemsReturnSchema,
   prune: commandEnvelopeReturnSchema,
   read: sessionReadReturnSchema,

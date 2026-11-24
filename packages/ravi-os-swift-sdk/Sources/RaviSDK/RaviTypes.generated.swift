@@ -29106,9 +29106,38 @@ public struct SessionsObserveOptions: Codable, Sendable {
   }
 }
 
-public typealias SessionsObserveReturn = [String: RaviJSON]
+public struct SessionsObserveReturn: Codable, Sendable {
+  public var observing: RaviJSON
+  public var success: Bool
 
-public typealias SessionsObservingReturn = [String: RaviJSON]
+  public init(observing: RaviJSON, success: Bool) {
+    self.observing = observing
+    self.success = success
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case observing = "observing"
+    case success = "success"
+  }
+}
+
+public struct SessionsObservingReturn: Codable, Sendable {
+  public var observing: [RaviJSON]
+  public var success: Bool
+  public var total: Int
+
+  public init(observing: [RaviJSON], success: Bool, total: Int) {
+    self.observing = observing
+    self.success = success
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case observing = "observing"
+    case success = "success"
+    case total = "total"
+  }
+}
 
 public struct SessionsPruneOptions: Codable, Sendable {
   public var agent: String?
@@ -30319,7 +30348,29 @@ public struct SessionsUnobserveOptions: Codable, Sendable {
   }
 }
 
-public typealias SessionsUnobserveReturn = [String: RaviJSON]
+public struct SessionsUnobserveReturn: Codable, Sendable {
+  public var removed: Bool
+  public var ruleId: String
+  public var source: String
+  public var success: Bool
+  public var to: String
+
+  public init(removed: Bool, ruleId: String, source: String, success: Bool, to: String) {
+    self.removed = removed
+    self.ruleId = ruleId
+    self.source = source
+    self.success = success
+    self.to = to
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case removed = "removed"
+    case ruleId = "ruleId"
+    case source = "source"
+    case success = "success"
+    case to = "to"
+  }
+}
 
 public struct SessionsUpdateOptions: Codable, Sendable {
   public var effort: String?

@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "8cb1ff78fd8da8e0"
+    "version": "4d0aa1c636b20f15"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -121425,8 +121425,52 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {},
-                  "properties": {},
+                  "additionalProperties": false,
+                  "properties": {
+                    "observing": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "mode": {
+                          "enum": [
+                            "alerts",
+                            "follow"
+                          ],
+                          "type": "string"
+                        },
+                        "ruleId": {
+                          "type": "string"
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "to": {
+                          "type": "string"
+                        },
+                        "when": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "ruleId",
+                        "source",
+                        "to",
+                        "mode",
+                        "when"
+                      ],
+                      "type": "object"
+                    },
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "observing"
+                  ],
                   "type": "object"
                 }
               }
@@ -121455,8 +121499,61 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {},
-                  "properties": {},
+                  "additionalProperties": false,
+                  "properties": {
+                    "observing": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "mode": {
+                            "enum": [
+                              "alerts",
+                              "follow"
+                            ],
+                            "type": "string"
+                          },
+                          "ruleId": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string"
+                          },
+                          "to": {
+                            "type": "string"
+                          },
+                          "when": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "ruleId",
+                          "source",
+                          "to",
+                          "mode",
+                          "when"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "total": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "observing",
+                    "total"
+                  ],
                   "type": "object"
                 }
               }
@@ -127103,8 +127200,32 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {},
-                  "properties": {},
+                  "additionalProperties": false,
+                  "properties": {
+                    "removed": {
+                      "type": "boolean"
+                    },
+                    "ruleId": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "to": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "removed",
+                    "ruleId",
+                    "source",
+                    "to"
+                  ],
                   "type": "object"
                 }
               }
