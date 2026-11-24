@@ -39,6 +39,8 @@ export interface CredentialInventorySyncPayload {
 /** Longest free text a person-typed field may carry to the Console. */
 export const FREE_TEXT_MAX_CHARS = 200;
 const SCOPE_MAX_CHARS = 100;
+/** Scopes per connection that go up; the rest collapse into one "+N more" entry, so one item always fits a page. */
+export const SCOPES_MAX_ITEMS = 50;
 
 /**
  * Token shapes a person might paste into a label, owner or purpose. Matched
@@ -76,11 +78,26 @@ export function credentialInventorySyncPayload(inventory: CredentialInventory): 
       label: guardFreeText(item.label),
       owner: guardFreeText(item.owner),
       purpose: guardFreeText(item.purpose),
-      scopes: item.scopes.map((scope) => guardFreeText(scope, SCOPE_MAX_CHARS) ?? ""),
+      scopes: capScopes(item.scopes),
       storage: secret,
     })),
-    audit: inventory.audit,
+    // Audit strings are system values, but nothing bounds their length: capped like free text.
+    audit: inventory.audit.map((entry) => ({
+      ...entry,
+      provider: guardFreeText(entry.provider) ?? "",
+      connection: guardFreeText(entry.connection) ?? "",
+      action: guardFreeText(entry.action) ?? "",
+      decision: guardFreeText(entry.decision) ?? "",
+      resultStatus: guardFreeText(entry.resultStatus),
+      errorCode: guardFreeText(entry.errorCode),
+    })),
   };
+}
+
+function capScopes(scopes: string[]): string[] {
+  const kept = scopes.slice(0, SCOPES_MAX_ITEMS).map((scope) => guardFreeText(scope, SCOPE_MAX_CHARS) ?? "");
+  const rest = scopes.length - kept.length;
+  return rest > 0 ? [...kept, `+${rest} more`] : kept;
 }
 
 export interface EnqueueCredentialInventoryResult {
@@ -107,29 +124,36 @@ export interface CredentialInventorySyncPage extends CredentialInventorySyncPayl
 /**
  * Split a snapshot into pages of at most CREDENTIAL_INVENTORY_PAGE_MAX_BYTES
  * (UTF-8 JSON). Page 1 carries the audit; every page repeats the header.
+ * Page 1 may hold only the audit when its first item does not fit beside it.
+ * An audit too large for a page alone loses its oldest entries (the list is
+ * newest first). Every page is measured at the end; one over the limit throws.
  */
 export function paginateCredentialInventoryPayload(
   payload: CredentialInventorySyncPayload,
   snapshotId: string,
   maxBytes = CREDENTIAL_INVENTORY_PAGE_MAX_BYTES,
 ): CredentialInventorySyncPage[] {
+  const size = (value: unknown) => Buffer.byteLength(JSON.stringify(value), "utf8");
+  const audit = [...payload.audit];
   const build = (items: CredentialInventorySyncPayload["items"], page: number): CredentialInventorySyncPage => ({
     ...payload,
     items,
-    audit: page === 1 ? payload.audit : [],
+    audit: page === 1 ? audit : [],
     snapshotId,
     page,
     pages: 0,
   });
-  const size = (value: unknown) => Buffer.byteLength(JSON.stringify(value), "utf8");
   // Conservative header: the page-1 audit and the widest page numbers.
-  const header = size({ ...build([], 1), page: 99_999, pages: 99_999 });
+  const headerSize = () => size({ ...build([], 1), page: 99_999, pages: 99_999 });
+  while (audit.length > 0 && headerSize() > maxBytes) audit.pop();
+  const header = headerSize();
   const groups: CredentialInventorySyncPayload["items"][] = [];
   let current: CredentialInventorySyncPayload["items"] = [];
   let bytes = header;
   for (const item of payload.items) {
     const itemBytes = size(item) + 1; // + the separating comma
-    if (current.length > 0 && bytes + itemBytes > maxBytes) {
+    // No exception for an empty page: page 1 then goes up with the audit alone.
+    if (bytes + itemBytes > maxBytes && (current.length > 0 || groups.length === 0)) {
       groups.push(current);
       current = [];
       bytes = header;
@@ -138,7 +162,14 @@ export function paginateCredentialInventoryPayload(
     bytes += itemBytes;
   }
   groups.push(current);
-  return groups.map((items, index) => ({ ...build(items, index + 1), pages: groups.length }));
+  const pages = groups.map((items, index) => ({ ...build(items, index + 1), pages: groups.length }));
+  for (const page of pages) {
+    const bytes = size(page);
+    if (bytes > maxBytes) {
+      throw new Error(`credential inventory page ${page.page}/${page.pages} is ${bytes} bytes, over ${maxBytes}`);
+    }
+  }
+  return pages;
 }
 
 /**
@@ -165,7 +196,10 @@ export async function enqueueCredentialInventorySnapshot(
     return { status: "throttled", hash: null, outboxId: null };
   }
   setSyncCursor(CREDENTIAL_INVENTORY_SYNC_DOMAIN, CHECK_CURSOR_KEY, now, undefined, now);
-  const payload = credentialInventorySyncPayload(await buildCredentialInventory({ ...input.inventory, now }));
+  // Sized and hashed as the outbox will store it: the sync redactor can lengthen text ("Bearer x" -> "Bearer [REDACTED]").
+  const payload = sanitizeSyncPayload(
+    credentialInventorySyncPayload(await buildCredentialInventory({ ...input.inventory, now })),
+  );
   const hash = contentHash(payload);
   const previous = getSyncCursor(CREDENTIAL_INVENTORY_SYNC_DOMAIN, CURSOR_KEY);
   const lastEnqueue = previous?.updatedAt ?? 0;
@@ -192,11 +226,18 @@ export async function enqueueCredentialInventorySnapshot(
   return { status: "enqueued", hash, outboxId: outboxIds[0] ?? null, outboxIds, pages: pages.length };
 }
 
+/**
+ * Wire format in the hash: a cursor written by an older format (the unpaged
+ * #970 payload) never matches, so the first check after an upgrade publishes
+ * the pages instead of waiting for the heartbeat.
+ */
+const CREDENTIAL_INVENTORY_WIRE_FORMAT = "paged/v1";
+
 /** Hash of what the Console would show, without the snapshot time. */
 function contentHash(payload: CredentialInventorySyncPayload): string {
   const { generatedAt: _generatedAt, ...stable } = payload;
   return createHash("sha256")
-    .update(JSON.stringify(sanitizeSyncPayload(stable)))
+    .update(JSON.stringify({ format: CREDENTIAL_INVENTORY_WIRE_FORMAT, ...sanitizeSyncPayload(stable) }))
     .digest("hex")
     .slice(0, 32);
 }

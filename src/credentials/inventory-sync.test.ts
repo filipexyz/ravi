@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { listPendingOutboxBatch } from "../sync/db.js";
+import { createHash } from "node:crypto";
+import { listPendingOutboxBatch, setSyncCursor } from "../sync/db.js";
 import { sanitizeSyncPayload } from "../sync/redaction.js";
 import {
   CREDENTIAL_INVENTORY_HEARTBEAT_MS,
@@ -8,6 +9,8 @@ import {
   CREDENTIAL_INVENTORY_MIN_INTERVAL_MS,
   CREDENTIAL_INVENTORY_SYNC_DOMAIN,
   FREE_TEXT_MAX_CHARS,
+  SCOPES_MAX_ITEMS,
+  type CredentialInventorySyncPayload,
   credentialInventorySyncPayload,
   enqueueCredentialInventorySnapshot,
   paginateCredentialInventoryPayload,
@@ -278,5 +281,126 @@ describe("credential inventory pages stay under the Console payload limit", () =
     );
     expect(pages).toHaveLength(1);
     expect(pages[0]).toMatchObject({ snapshotId: "abc", page: 1, pages: 1, items: [] });
+  });
+});
+
+describe("pagination edge cases from the bot review of #971", () => {
+  const item = (connection: string, scopes: string[]): CredentialInventorySyncPayload["items"][number] =>
+    ({
+      provider: "slack",
+      connection,
+      label: null,
+      owner: null,
+      purpose: null,
+      scopes,
+      status: "active",
+      storage: null,
+    }) as unknown as CredentialInventorySyncPayload["items"][number];
+  const base = (items: CredentialInventorySyncPayload["items"], audit: CredentialInventorySyncPayload["audit"]) => ({
+    schema: "credentials.inventory/v1" as const,
+    generatedAt: T0,
+    degraded: false,
+    degradedReasons: [],
+    total: items.length,
+    items,
+    audit,
+  });
+  const auditEntry = (i: number) => ({
+    at: T0 - i,
+    provider: "slack",
+    connection: `conn-${i}`,
+    action: "a".repeat(150),
+    decision: "allow",
+    resultStatus: "secret_resolved",
+    errorCode: null,
+  });
+  const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), "utf8");
+
+  it("page 1 goes up with the audit alone when the first item fits by itself but not beside the audit", () => {
+    const max = 4_000;
+    const audit = Array.from({ length: 10 }, (_, i) => auditEntry(i)); // ~2.4 KB
+    const big = item(
+      "big",
+      Array.from({ length: 20 }, (_, i) => `scope-${i}-${"x".repeat(80)}`),
+    ); // ~2 KB
+    expect(bytes(big)).toBeLessThan(max - bytes(base([], [])) - 200);
+    const pages = paginateCredentialInventoryPayload(base([big, item("small", [])], audit), "s", max);
+    for (const page of pages) expect(bytes(page)).toBeLessThanOrEqual(max);
+    expect(pages[0]).toMatchObject({ page: 1, items: [] });
+    expect(pages[0]!.audit).toHaveLength(10);
+    expect(pages.flatMap((page) => page.items.map((entry) => entry.connection))).toEqual(["big", "small"]);
+  });
+
+  it("an audit too large for a page alone loses its oldest entries and the page stays under the limit", () => {
+    const max = 2_000;
+    const audit = Array.from({ length: 20 }, (_, i) => auditEntry(i));
+    const pages = paginateCredentialInventoryPayload(base([item("a", [])], audit), "s", max);
+    for (const page of pages) expect(bytes(page)).toBeLessThanOrEqual(max);
+    const kept = pages[0]!.audit;
+    expect(kept.length).toBeGreaterThan(0);
+    expect(kept.length).toBeLessThan(20);
+    expect(kept).toEqual(audit.slice(0, kept.length)); // newest first: the tail goes
+  });
+
+  it("throws instead of emitting a page over the limit when one item cannot fit by itself", () => {
+    const huge = item(
+      "huge",
+      Array.from({ length: 40 }, (_, i) => `scope-${i}-${"x".repeat(80)}`),
+    );
+    expect(() => paginateCredentialInventoryPayload(base([huge], []), "s", 1_000)).toThrow(/over 1000/);
+  });
+
+  it("caps the scopes of one connection so one item always fits a page", async () => {
+    upsertCredentialConnection({
+      provider: "google",
+      connection: "wide",
+      backend: "vault",
+      secretRef: "vault:secret/ravi/credentials/google/wide#token",
+      status: "active",
+      scopes: Array.from({ length: 625 }, (_, i) => `https://www.googleapis.com/auth/resource-${i}-${"r".repeat(50)}`),
+    });
+    const payload = credentialInventorySyncPayload(await buildCredentialInventory({ now: T0, describeSecret }));
+    const scopes = payload.items[0]!.scopes;
+    expect(scopes).toHaveLength(SCOPES_MAX_ITEMS + 1);
+    expect(scopes.at(-1)).toBe(`+${625 - SCOPES_MAX_ITEMS} more`);
+  });
+
+  it("sizes pages after the sync redactor, which lengthens labels like 'Bearer token'", async () => {
+    for (let i = 0; i < 400; i += 1) {
+      upsertCredentialConnection({
+        provider: "slack",
+        connection: `conn-${String(i).padStart(3, "0")}`,
+        backend: "vault",
+        secretRef: `vault:secret/ravi/credentials/slack/conn-${i}#token`,
+        status: "active",
+        label: "Bearer token for the operations workspace",
+      });
+    }
+    await enqueueCredentialInventorySnapshot({ env: ENABLED, now: T0, inventory: { describeSecret } });
+    const rows = listPendingOutboxBatch({
+      domain: CREDENTIAL_INVENTORY_SYNC_DOMAIN,
+      limit: 100,
+      maxBytes: 10_000_000,
+    }).items;
+    expect(rows.length).toBeGreaterThan(1);
+    for (const row of rows) {
+      expect(bytes(row.payload)).toBeLessThanOrEqual(CREDENTIAL_INVENTORY_PAGE_MAX_BYTES);
+    }
+    expect((rows[0]!.payload as { items: Array<{ label: string }> }).items[0]!.label).toBe(
+      "Bearer [REDACTED] for the operations workspace",
+    );
+  });
+
+  it("a cursor written by the unpaged format (#970) does not hold back the first paged publication", async () => {
+    seed("rbbt");
+    const payload = sanitizeSyncPayload(
+      credentialInventorySyncPayload(await buildCredentialInventory({ now: T0, describeSecret })),
+    );
+    const { generatedAt: _generatedAt, ...stable } = payload;
+    const legacyHash = createHash("sha256").update(JSON.stringify(stable)).digest("hex").slice(0, 32);
+    setSyncCursor(CREDENTIAL_INVENTORY_SYNC_DOMAIN, "inventory", legacyHash, { enqueuedAt: T0 - 60_000 }, T0 - 60_000);
+    const result = await enqueueCredentialInventorySnapshot({ env: ENABLED, now: T0, inventory: { describeSecret } });
+    expect(result.status).toBe("enqueued");
+    expect(result.hash).not.toBe(legacyHash);
   });
 });
