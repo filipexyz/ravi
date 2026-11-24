@@ -24706,11 +24706,15 @@ class SessionsHandoffAckReturn {
 SessionsHandoffAckReturn sessionsHandoffAckReturnFromJson(Object? json) => SessionsHandoffAckReturn.fromJsonValue(json);
 
 class SessionsHandoffsOptions {
-  const SessionsHandoffsOptions({this.session});
+  const SessionsHandoffsOptions({this.all, this.session});
 
+  final bool? all;
   final String? session;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (all != null) {
+      into["all"] = RaviJson.from(all);
+    }
     if (session != null) {
       into["session"] = RaviJson.from(session);
     }
@@ -24948,15 +24952,19 @@ typedef SessionsRenameReturn = Map<String, RaviJson>;
 SessionsRenameReturn sessionsRenameReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
 
 class SessionsReportOptions {
-  const SessionsReportOptions({this.awaiting, this.ref, this.session});
+  const SessionsReportOptions({this.awaiting, this.pr, this.ref, this.session});
 
   final String? awaiting;
+  final String? pr;
   final String? ref;
   final String? session;
 
   void encodeBody(Map<String, RaviJson> into) {
     if (awaiting != null) {
       into["awaiting"] = RaviJson.from(awaiting);
+    }
+    if (pr != null) {
+      into["pr"] = RaviJson.from(pr);
     }
     if (ref != null) {
       into["ref"] = RaviJson.from(ref);
@@ -24968,22 +24976,26 @@ class SessionsReportOptions {
 }
 
 class SessionsReportReturn {
-  const SessionsReportReturn({required this.actionId, this.handoff, required this.messageId, required this.parentSession, required this.requestId, required this.status});
+  const SessionsReportReturn({required this.actionId, this.handoff, this.handoffError, required this.messageId, required this.parentSession, required this.requestId, this.reviewDispatch, required this.status});
 
   final String actionId;
   final RaviJson? handoff;
+  final String? handoffError;
   final String messageId;
   final RaviJson parentSession;
   final String requestId;
+  final RaviJson? reviewDispatch;
   final String status;
 
   factory SessionsReportReturn.fromJson(Map<String, Object?> json) {
     return SessionsReportReturn(
       actionId: raviJsonAsString(json["actionId"]),
       handoff: json["handoff"] == null ? null : RaviJson.from(json["handoff"]),
+      handoffError: json["handoffError"] == null ? null : raviJsonAsString(json["handoffError"]),
       messageId: raviJsonAsString(json["messageId"]),
       parentSession: RaviJson.from(json["parentSession"]),
       requestId: raviJsonAsString(json["requestId"]),
+      reviewDispatch: json["reviewDispatch"] == null ? null : RaviJson.from(json["reviewDispatch"]),
       status: raviJsonAsString(json["status"]),
     );
   }

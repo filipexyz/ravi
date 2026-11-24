@@ -1,5 +1,12 @@
 import { logger } from "../utils/logger.js";
-import { type Handoff, claimOwnerEscalation, claimParentNudge, listHandoffs } from "./store.js";
+import {
+  type Handoff,
+  acknowledgeHandoff,
+  claimOwnerEscalation,
+  claimParentNudge,
+  listHandoffs,
+  releaseOwnerEscalation,
+} from "./store.js";
 import { publishHandoffEvent } from "./events.js";
 
 const log = logger.child("handoffs");
@@ -8,8 +15,13 @@ const log = logger.child("handoffs");
 export const HANDOFF_PARENT_NUDGE_MS = 15 * 60_000;
 /** The owner gets one aggregated notice for handoffs that waited this long. */
 export const HANDOFF_OWNER_ESCALATION_MS = 45 * 60_000;
+/** A reminder lists the waits that are due plus the ones opened in this window, not every old one. */
+export const HANDOFF_REMINDER_WINDOW_MS = 24 * 60 * 60_000;
+/** An open handoff nobody acted on for this long is closed as expired: an abandoned thread is not a live wait. */
+export const HANDOFF_EXPIRY_MS = 7 * 24 * 60 * 60_000;
 
 export interface HandoffPlan {
+  expire: Handoff[];
   nudge: Handoff[];
   /** Handoffs to escalate to the owner, grouped by parent session. */
   escalate: Map<string, Handoff[]>;
@@ -17,11 +29,16 @@ export interface HandoffPlan {
 
 /** Pure policy: which open handoffs are owed a parent reminder or an owner notice now. */
 export function planHandoffActions(open: readonly Handoff[], now: number): HandoffPlan {
+  const expire: Handoff[] = [];
   const nudge: Handoff[] = [];
   const escalate = new Map<string, Handoff[]>();
   for (const handoff of open) {
     if (handoff.status !== "open") continue;
     const age = now - handoff.createdAt;
+    if (age >= HANDOFF_EXPIRY_MS) {
+      expire.push(handoff);
+      continue;
+    }
     if (age >= HANDOFF_PARENT_NUDGE_MS && handoff.parentNudgedAt === null) nudge.push(handoff);
     if (age >= HANDOFF_OWNER_ESCALATION_MS && handoff.ownerEscalatedAt === null) {
       const group = escalate.get(handoff.parentSessionKey) ?? [];
@@ -29,7 +46,7 @@ export function planHandoffActions(open: readonly Handoff[], now: number): Hando
       escalate.set(handoff.parentSessionKey, group);
     }
   }
-  return { nudge, escalate };
+  return { expire, nudge, escalate };
 }
 
 /**
@@ -60,17 +77,58 @@ export function resetHandoffDeliveryPortsForTest(): void {
   registered = {};
 }
 
+/** The waits a reminder to this parent lists: the due ones and the ones opened in the reminder window. */
+export function handoffsForReminder(
+  open: readonly Handoff[],
+  parentSessionKey: string,
+  due: readonly Handoff[],
+  now: number,
+): Handoff[] {
+  const dueIds = new Set(due.map((h) => h.id));
+  return open.filter(
+    (h) =>
+      h.parentSessionKey === parentSessionKey && (dueIds.has(h.id) || now - h.createdAt < HANDOFF_REMINDER_WINDOW_MS),
+  );
+}
+
+let ticking = false;
+
 export async function reconcileHandoffs(
   options: { now?: number; ports?: HandoffDeliveryPorts } = {},
-): Promise<{ nudged: number; escalated: number; failures: number }> {
+): Promise<{ nudged: number; escalated: number; expired: number; failures: number; skipped?: true }> {
+  // Ticks overlap when a delivery outlasts the interval: the late one would deliver the same notice again.
+  if (ticking) return { nudged: 0, escalated: 0, expired: 0, failures: 0, skipped: true };
+  ticking = true;
+  try {
+    return await reconcileOnce(options);
+  } finally {
+    ticking = false;
+  }
+}
+
+async function reconcileOnce(options: {
+  now?: number;
+  ports?: HandoffDeliveryPorts;
+}): Promise<{ nudged: number; escalated: number; expired: number; failures: number }> {
   const now = options.now ?? Date.now();
   const ports = options.ports ?? registered;
-  const open = listHandoffs();
-  const plan = planHandoffActions(open, now);
+  const all = listHandoffs();
+  const plan = planHandoffActions(all, now);
   let nudged = 0;
   let escalated = 0;
+  let expired = 0;
   let failures = 0;
 
+  for (const handoff of plan.expire) {
+    const acked = acknowledgeHandoff(handoff.id, "expired: no action for 7 days", now);
+    if (!acked) continue;
+    expired++;
+    await publishHandoffEvent("acknowledged", acked, now);
+  }
+  const expiredIds = new Set(plan.expire.map((h) => h.id));
+  const open = all.filter((h) => !expiredIds.has(h.id));
+
+  const nudgedNow = new Set<string>();
   const nudgeByParent = new Map<string, Handoff[]>();
   for (const handoff of plan.nudge) {
     const group = nudgeByParent.get(handoff.parentSessionKey) ?? [];
@@ -79,13 +137,14 @@ export async function reconcileHandoffs(
   }
   for (const [parentSessionKey, due] of nudgeByParent) {
     if (!ports.notifyParent) break;
-    const siblings = open.filter((h) => h.parentSessionKey === parentSessionKey);
+    const siblings = handoffsForReminder(open, parentSessionKey, due, now);
     try {
       const delivered = await ports.notifyParent({ parentSessionKey, due, open: siblings, now });
       if (!delivered) continue;
       for (const handoff of due) {
         if (!claimParentNudge(handoff.id, now)) continue;
         nudged++;
+        nudgedNow.add(handoff.id);
         await publishHandoffEvent("stale", { ...handoff, parentNudgedAt: now }, now);
       }
     } catch (error) {
@@ -94,22 +153,33 @@ export async function reconcileHandoffs(
     }
   }
 
-  for (const [parentSessionKey, handoffs] of plan.escalate) {
+  for (const [parentSessionKey, due] of plan.escalate) {
     if (!ports.notifyOwner) break;
-    try {
-      const delivered = await ports.notifyOwner({ parentSessionKey, handoffs, now });
-      if (!delivered) continue;
-      const claimed = claimOwnerEscalation(
-        handoffs.map((h) => h.id),
+    // Claim before delivering: a delivery that is slow, or a crash right after it, must not send the notice
+    // twice. A delivery that did not happen releases the claim, so the next tick tries again.
+    const claimed = new Set(
+      claimOwnerEscalation(
+        due.map((h) => h.id),
         now,
-      );
-      escalated += claimed.length;
+      ),
+    );
+    const handoffs = due.filter((h) => claimed.has(h.id)).map((h) => ({ ...h, ownerEscalatedAt: now }));
+    if (handoffs.length === 0) continue;
+    // The parent may have been reminded in this same tick: the notice states what actually happened.
+    const reminded = handoffs.map((h) =>
+      h.parentNudgedAt === null && nudgedNow.has(h.id) ? { ...h, parentNudgedAt: now } : h,
+    );
+    let delivered = false;
+    try {
+      delivered = await ports.notifyOwner({ parentSessionKey, handoffs: reminded, now });
     } catch (error) {
       failures++;
       log.warn("Handoff owner notice failed", { parentSessionKey, error: errorMessage(error) });
     }
+    if (delivered) escalated += handoffs.length;
+    else releaseOwnerEscalation([...claimed], now);
   }
-  return { nudged, escalated, failures };
+  return { nudged, escalated, expired, failures };
 }
 
 export function formatHandoffAge(handoff: Handoff, now: number): string {

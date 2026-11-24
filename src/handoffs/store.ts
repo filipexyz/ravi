@@ -129,7 +129,16 @@ export function openHandoff(input: {
 }
 
 /** Acknowledge every open handoff of a child (the parent acted on that child). */
-export function acknowledgeHandoffsForChild(childSessionKey: string, reason: string, now: number): Handoff[] {
+/**
+ * Acknowledge the child's open handoffs. `kinds` limits it to handoffs of those kinds: a message to the
+ * thread answers an instruction or a decision, but it does not dispatch a review nor merge.
+ */
+export function acknowledgeHandoffsForChild(
+  childSessionKey: string,
+  reason: string,
+  now: number,
+  kinds?: readonly HandoffKind[],
+): Handoff[] {
   return executeWrite(
     getDb(),
     (db) => {
@@ -137,12 +146,15 @@ export function acknowledgeHandoffsForChild(childSessionKey: string, reason: str
         db
           .prepare("SELECT * FROM session_handoffs WHERE child_session_key = ? AND status = 'open'")
           .all(childSessionKey) as HandoffRow[]
-      ).map(fromRow);
+      )
+        .map(fromRow)
+        .filter((h) => !kinds || kinds.includes(h.kind));
       if (open.length === 0) return [];
-      db.prepare(
+      const stmt = db.prepare(
         `UPDATE session_handoffs SET status = 'acknowledged', acknowledged_at = ?, ack_reason = ?, updated_at = ?
-         WHERE child_session_key = ? AND status = 'open'`,
-      ).run(now, reason, now, childSessionKey);
+         WHERE id = ? AND status = 'open'`,
+      );
+      for (const h of open) stmt.run(now, reason, now, h.id);
       return open.map((h) => ({ ...h, status: "acknowledged" as const, acknowledgedAt: now, ackReason: reason }));
     },
     { label: "handoff-ack-child" },
@@ -173,7 +185,9 @@ export function getHandoff(id: string): Handoff | null {
   return row ? fromRow(row) : null;
 }
 
-export function listHandoffs(filter: { parentSessionKey?: string; includeClosed?: boolean } = {}): Handoff[] {
+export function listHandoffs(
+  filter: { parentSessionKey?: string; includeClosed?: boolean; limit?: number } = {},
+): Handoff[] {
   const clauses: string[] = [];
   const args: string[] = [];
   if (!filter.includeClosed) clauses.push("status = 'open'");
@@ -182,9 +196,14 @@ export function listHandoffs(filter: { parentSessionKey?: string; includeClosed?
     args.push(filter.parentSessionKey);
   }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  // With a limit the newest rows are kept (closed history grows forever), still returned oldest first.
+  const limit = filter.limit && filter.limit > 0 ? Math.floor(filter.limit) : null;
+  const sql = limit
+    ? `SELECT * FROM (SELECT * FROM session_handoffs ${where} ORDER BY created_at DESC LIMIT ${limit}) ORDER BY created_at ASC`
+    : `SELECT * FROM session_handoffs ${where} ORDER BY created_at ASC`;
   return (
     getDb()
-      .prepare(`SELECT * FROM session_handoffs ${where} ORDER BY created_at ASC`)
+      .prepare(sql)
       .all(...args) as HandoffRow[]
   ).map(fromRow);
 }
@@ -219,5 +238,24 @@ export function claimOwnerEscalation(ids: readonly string[], now: number): strin
       return claimed;
     },
     { label: "handoff-escalate" },
+  );
+}
+
+/**
+ * Undo an owner claim whose delivery did not happen. Only the claim made at `claimedAt` is released, so a
+ * later claim (another tick) is never cleared by an older failure.
+ */
+export function releaseOwnerEscalation(ids: readonly string[], claimedAt: number): void {
+  if (ids.length === 0) return;
+  executeWrite(
+    getDb(),
+    (db) => {
+      const stmt = db.prepare(
+        `UPDATE session_handoffs SET owner_escalated_at = NULL, updated_at = ?
+         WHERE id = ? AND status = 'open' AND owner_escalated_at = ?`,
+      );
+      for (const id of ids) stmt.run(claimedAt, id, claimedAt);
+    },
+    { label: "handoff-escalate-release" },
   );
 }

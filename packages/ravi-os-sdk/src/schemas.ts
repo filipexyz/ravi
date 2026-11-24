@@ -105779,6 +105779,10 @@ export const SessionsHandoffAckReturnSchema = {
 export const SessionsHandoffsInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "all": {
+      "description": "Also list closed handoffs (acknowledged, superseded, expired), newest 100, to audit how each wait ended",
+      "type": "boolean"
+    },
     "session": {
       "description": "Only handoffs waiting on this parent session (defaults to all)",
       "type": "string"
@@ -105795,6 +105799,26 @@ export const SessionsHandoffsReturnSchema = {
       "items": {
         "additionalProperties": false,
         "properties": {
+          "ackReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "acknowledgedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "ageMin": {
             "type": "number"
           },
@@ -105870,6 +105894,14 @@ export const SessionsHandoffsReturnSchema = {
           "since": {
             "type": "number"
           },
+          "status": {
+            "enum": [
+              "open",
+              "acknowledged",
+              "superseded"
+            ],
+            "type": "string"
+          },
           "thread": {
             "additionalProperties": false,
             "properties": {
@@ -105897,7 +105929,10 @@ export const SessionsHandoffsReturnSchema = {
           "since",
           "ageMin",
           "parentNudgedAt",
-          "ownerEscalatedAt"
+          "ownerEscalatedAt",
+          "status",
+          "acknowledgedAt",
+          "ackReason"
         ],
         "type": "object"
       },
@@ -106694,6 +106729,10 @@ export const SessionsReportInputSchema = {
       "description": "Progress, blocker or decision the parent session needs now",
       "type": "string"
     },
+    "pr": {
+      "description": "With --awaiting review and --ref <full SHA>: the PR to review. When that SHA is the PR head and its quality gate passed, the runtime opens the independent review itself (reviewer on another model)",
+      "type": "string"
+    },
     "ref": {
       "description": "What the parent should act on (commit SHA, PR number). Only with --awaiting",
       "type": "string"
@@ -106742,14 +106781,26 @@ export const SessionsReportReturnSchema = {
               "type": "null"
             }
           ]
+        },
+        "status": {
+          "enum": [
+            "open",
+            "acknowledged",
+            "superseded"
+          ],
+          "type": "string"
         }
       },
       "required": [
         "id",
         "kind",
-        "ref"
+        "ref",
+        "status"
       ],
       "type": "object"
+    },
+    "handoffError": {
+      "type": "string"
     },
     "messageId": {
       "type": "string"
@@ -106772,6 +106823,91 @@ export const SessionsReportReturnSchema = {
     },
     "requestId": {
       "type": "string"
+    },
+    "reviewDispatch": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "gate": {
+              "additionalProperties": false,
+              "properties": {
+                "checkRunId": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "completedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "checkRunId",
+                "completedAt"
+              ],
+              "type": "object"
+            },
+            "model": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "replayed": {
+              "type": "boolean"
+            },
+            "requestId": {
+              "type": "string"
+            },
+            "status": {
+              "const": "dispatched",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "requestId",
+            "replayed",
+            "provider",
+            "model",
+            "gate"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "type": "string"
+            },
+            "status": {
+              "const": "skipped",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "status": {
       "const": "published",
