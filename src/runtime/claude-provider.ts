@@ -30,6 +30,7 @@ import { materializeRuntimeModelBroker } from "./model-broker-materializer.js";
 import { SANITIZED_ENV_VARS } from "../hooks/sanitize-bash.js";
 import { logger } from "../utils/logger.js";
 import { coalesceAssistantTextBlocks } from "./assistant-transcript.js";
+import { applyClaudeRequiredPromptEnv } from "./claude-prompt-env.js";
 import { isRuntimeProviderLoginStub } from "./provider-login-stub.js";
 import {
   CLAUDE_INHERITED_AUTH_ENV_KEYS,
@@ -446,6 +447,9 @@ export function buildClaudeCodeEnvironment(inputEnv?: Record<string, string>): R
     : Object.fromEntries(
         Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
       );
+
+  // Set before every return: no path below may start Claude Code without it.
+  applyClaudeRequiredPromptEnv(env);
 
   if (env.RAVI_MODEL_BROKER_ACTIVE === "1") {
     for (const key of SANITIZED_ENV_VARS) delete env[key];

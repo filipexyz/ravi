@@ -100,6 +100,8 @@ setTimeout(() => finish(null), 3000);
     // Claude Code still logs in from the daemon env, as a real Claude turn does.
     expect(names).toContain("CLAUDE_CODE_OAUTH_TOKEN");
     expect(names).toContain("PATH");
+    // An `@path` in the prompt stays text: the file guard below only sees tool calls.
+    expect(names).toContain("CLAUDE_CODE_DISABLE_FILE_MENTIONS");
 
     // The tool limit is `tools` (removes the tools), not `allowedTools` (auto-approves).
     // Dropping any of these flags gives the memory agent Bash again.
