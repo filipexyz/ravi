@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { canonicalizeRouteIdentity, isBroadcastJid, normalizeRoutePattern } from "./phone.js";
+import { canonicalizeRouteIdentity, isBroadcastJid, isPhoneShapedRef, normalizeRoutePattern } from "./phone.js";
 
 describe("isBroadcastJid", () => {
   it("recognizes WhatsApp status and broadcast-list feeds", () => {
@@ -63,5 +63,25 @@ describe("normalizeRoutePattern", () => {
     expect(normalizeRoutePattern("U012ABCDEF")).toBe("u012abcdef");
     expect(normalizeRoutePattern("group:C0BG33ZUWJC")).toBe("group:c0bg33zuwjc");
     expect(normalizeRoutePattern("LID:*")).toBe("lid:*");
+  });
+});
+
+describe("isPhoneShapedRef", () => {
+  it("accepts phone numbers, JIDs and lid:/group: refs", () => {
+    expect(isPhoneShapedRef("+55 (11) 99999-0001")).toBe(true);
+    expect(isPhoneShapedRef("5511999990001")).toBe(true);
+    expect(isPhoneShapedRef("5511999990001@s.whatsapp.net")).toBe(true);
+    expect(isPhoneShapedRef("123456@lid")).toBe(true);
+    expect(isPhoneShapedRef("lid:123456")).toBe(true);
+    expect(isPhoneShapedRef("group:120363000000000000")).toBe(true);
+    expect(isPhoneShapedRef("5511999990001@c.us")).toBe(true);
+  });
+
+  it("rejects free-form refs that would collapse to stray digits", () => {
+    expect(isPhoneShapedRef("missing-ref-1")).toBe(false);
+    expect(isPhoneShapedRef("U0BAA2B1LTS")).toBe(false);
+    expect(isPhoneShapedRef("person@example.com")).toBe(false);
+    expect(isPhoneShapedRef("()-")).toBe(false);
+    expect(isPhoneShapedRef("")).toBe(false);
   });
 });

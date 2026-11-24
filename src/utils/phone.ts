@@ -85,6 +85,26 @@ export function normalizePhone(input: string): string {
 }
 
 /**
+ * True when `input` names a phone-like identity: a phone number (digits with
+ * optional `+` and formatting), a WhatsApp JID, or a `lid:`/`group:` ref.
+ *
+ * Callers that resolve free-form refs (contact names, ids, emails, Slack ids)
+ * must only phone-normalize refs for which this holds. `normalizePhone`
+ * strips every non-digit from anything else, so a ref such as
+ * `missing-ref-1` would otherwise collapse to `1` and match an unrelated
+ * contact.
+ */
+export function isPhoneShapedRef(input: string): boolean {
+  const trimmed = input.trim();
+  if (!trimmed) return false;
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith("lid:") || lower.startsWith("group:")) return /\d/.test(trimmed);
+  if (parseJid(trimmed)) return true;
+  if (/^\d+@c\.us$/i.test(trimmed)) return true;
+  return PHONE_RE.test(trimmed) && /\d/.test(trimmed);
+}
+
+/**
  * Canonical identity for route matching and persistence.
  *
  * Unlike `normalizePhone`, the non-phone fallback does not strip letters.
