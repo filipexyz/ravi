@@ -3162,9 +3162,9 @@ describe("SessionCommands attach hints", () => {
           )) as Record<string, any>
         ).reviewDispatch;
       pull = { state: "closed", head: { sha } };
-      expect(await guarded()).toEqual({ status: "skipped", reason: "PR #938 is not open" });
+      expect(await guarded()).toEqual({ status: "skipped", reason: "the PR is not open at this SHA" });
       pull = { state: "open", head: { sha: "b".repeat(40) } };
-      expect(await guarded()).toEqual({ status: "skipped", reason: "PR head is bbbbbbbb, not 135fbbc7" });
+      expect(await guarded()).toEqual({ status: "skipped", reason: "the PR is not open at this SHA" });
       pull = { state: "open", head: { sha } };
       gate = { status: "completed", conclusion: "failure" };
       expect(await guarded()).toEqual({ status: "skipped", reason: "quality gate concluded failure" });

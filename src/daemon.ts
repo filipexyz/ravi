@@ -59,6 +59,7 @@ import { createSlackOmieConversationAuthority } from "./channels/slack/omie-conv
 import { registerOmieConversationAuthority } from "./apps/omie-orders/conversation-authority.js";
 import { registerHandoffDeliveryPorts } from "./handoffs/reconcile.js";
 import { registerDefaultHandoffOwnerPort } from "./handoffs/service.js";
+import { startHandoffPullRequestListener } from "./handoffs/pr-events.js";
 import { createSlackThreadHandoffParentNotifier } from "./channels/slack/thread-lifecycle.js";
 import { registerOmieProviderReads } from "./apps/omie-orders/provider-reads.js";
 import {
@@ -247,6 +248,7 @@ process.on("unhandledRejection", (reason, promise) => {
 let humanBridge: { stop(): Promise<void> } | null = null;
 let bot: RaviBot | null = null;
 let gateway: ReturnType<typeof createGateway> | null = null;
+let handoffPullRequestListener: { stop(): Promise<void> } | null = null;
 let sessionAdapterBus: ReturnType<typeof createSessionAdapterBus> | null = null;
 let shuttingDown = false;
 let omniConsumer: OmniConsumer | null = null;
@@ -346,6 +348,7 @@ async function shutdown(signal: string, exitCode = 0) {
       { name: "knowledge", stop: stopKnowledgeLeaderRunners },
       { name: "leadership", stop: () => releaseLeadership("runners") },
       { name: "gateway", stop: () => gateway?.stop() },
+      { name: "handoff-pr-events", stop: () => handoffPullRequestListener?.stop() },
       { name: "session-adapters", stop: () => sessionAdapterBus?.stop() },
       { name: "work-objects", stop: () => workObjectNatsService?.stop() },
       { name: "webhook-http", stop: () => webhookHttpServer?.stop() },
@@ -639,6 +642,7 @@ export async function startDaemon() {
   registerOmieConversationAuthority(createSlackOmieConversationAuthority());
   registerHandoffDeliveryPorts({ notifyParent: createSlackThreadHandoffParentNotifier() });
   registerDefaultHandoffOwnerPort();
+  handoffPullRequestListener = startHandoffPullRequestListener();
   // The broker must know the executor's reads before any query has loaded the executor (spec credentials/broker).
   registerOmieProviderReads();
 

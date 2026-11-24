@@ -4,16 +4,15 @@ import { join } from "node:path";
 import { closeSessionStore, getOrCreateSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { handoffEventPayload } from "./events.js";
+import { handleHandoffPullRequestEvent } from "./pr-events.js";
 import {
   HANDOFF_EXPIRY_MS,
   HANDOFF_OWNER_ESCALATION_MS,
   HANDOFF_PARENT_NUDGE_MS,
-  HANDOFF_PR_CHECK_MS,
   HANDOFF_REMINDER_WINDOW_MS,
   handoffsForReminder,
   planHandoffActions,
   reconcileHandoffs,
-  resetHandoffPrChecksForTest,
   type HandoffDeliveryPorts,
 } from "./reconcile.js";
 import {
@@ -146,14 +145,12 @@ describe("handoffs store and reconciler", () => {
       nudged: 0,
       escalated: 0,
       expired: 0,
-      closedByPr: 0,
       failures: 0,
     });
     expect(await reconcileHandoffs({ now: T0 + HANDOFF_PARENT_NUDGE_MS, ports })).toEqual({
       nudged: 2,
       escalated: 0,
       expired: 0,
-      closedByPr: 0,
       failures: 0,
     });
     // One reminder turn for the parent, naming both waits.
@@ -165,7 +162,6 @@ describe("handoffs store and reconciler", () => {
       nudged: 0,
       escalated: 2,
       expired: 0,
-      closedByPr: 0,
       failures: 0,
     });
     expect(ownerCalls).toEqual([[CHILD_A, CHILD_B]]);
@@ -182,7 +178,7 @@ describe("handoffs store and reconciler", () => {
       },
     };
     const result = await reconcileHandoffs({ now: T0 + HANDOFF_OWNER_ESCALATION_MS, ports });
-    expect(result).toEqual({ nudged: 0, escalated: 0, expired: 0, closedByPr: 0, failures: 1 });
+    expect(result).toEqual({ nudged: 0, escalated: 0, expired: 0, failures: 1 });
     expect(getHandoff(h.id)?.parentNudgedAt).toBeNull();
     expect(getHandoff(h.id)?.ownerEscalatedAt).toBeNull();
   });
@@ -290,8 +286,7 @@ describe("handoffs store and reconciler", () => {
     expect(calls).toBe(1);
   });
 
-  it("closes a review or merge wait on a PR when the PR is merged or closed, checking at most every 5 min", async () => {
-    resetHandoffPrChecksForTest();
+  it("closes a review or merge wait on a PR when the watch reports the PR merged or closed", async () => {
     const sha = "a".repeat(40);
     const merge = await declareHandoff({
       childSessionKey: CHILD_A,
@@ -307,20 +302,20 @@ describe("handoffs store and reconciler", () => {
       ref: sha,
       now: T0,
     });
-    let state: "open" | "closed" = "open";
-    const reads: string[] = [];
-    const readPull = async (target: { repo: string; pr: number }) => {
-      reads.push(`${target.repo}#${target.pr}`);
-      return { state, merged: state === "closed" };
-    };
-    expect(await reconcileHandoffs({ now: T0 + 60_000, ports: {}, readPull })).toMatchObject({ closedByPr: 0 });
-    state = "closed";
-    // Inside the 5-min window GitHub is not asked again.
-    expect(await reconcileHandoffs({ now: T0 + 120_000, ports: {}, readPull })).toMatchObject({ closedByPr: 0 });
-    expect(reads).toEqual(["filipexyz/ravi#942"]);
-    expect(await reconcileHandoffs({ now: T0 + 60_000 + HANDOFF_PR_CHECK_MS, ports: {}, readPull })).toMatchObject({
-      closedByPr: 1,
-    });
+    // Another PR of the same repo, and a malformed event, close nothing.
+    expect(
+      await handleHandoffPullRequestEvent("ravi.watch.github.pull_request.merged", {
+        payload: { repository: "filipexyz/ravi", number: 94 },
+      }),
+    ).toBe(0);
+    expect(await handleHandoffPullRequestEvent("ravi.watch.github.pull_request.merged", { payload: {} })).toBe(0);
+    expect(
+      await handleHandoffPullRequestEvent(
+        "ravi.watch.github.pull_request.merged",
+        { payload: { repository: "FilipeXYZ/Ravi", number: 942 } },
+        T0 + 1,
+      ),
+    ).toBe(1);
     expect(getHandoff(merge.id)).toMatchObject({ status: "acknowledged", ackReason: "PR merged" });
     // A ref that names no PR is left to the parent.
     expect(getHandoff(plain.id)?.status).toBe("open");

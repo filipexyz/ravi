@@ -179,9 +179,9 @@ export function replayedReviewDecision(status: string): { usable: true } | { usa
 
 /** Pure: the same guards the parent applies by hand before dispatching a review. */
 export function decideReviewDispatch(target: ReviewTarget, evidence: ReviewEvidence): ReviewDispatchDecision {
-  if (evidence.prState !== "open") return { dispatch: false, reason: `PR #${target.pr} is not open` };
-  if (evidence.headSha !== target.sha)
-    return { dispatch: false, reason: `PR head is ${evidence.headSha.slice(0, 8)}, not ${target.sha.slice(0, 8)}` };
+  // One reason for both: the answer must not tell a caller the state or the head of a PR it cannot read.
+  if (evidence.prState !== "open" || evidence.headSha !== target.sha)
+    return { dispatch: false, reason: "the PR is not open at this SHA" };
   if (!evidence.gate) return { dispatch: false, reason: "no quality gate check-run on this SHA" };
   if (evidence.gate.conclusion === null)
     return { dispatch: false, reason: "quality gate still running; report again with the same flags when it passes" };

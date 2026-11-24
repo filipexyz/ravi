@@ -8,7 +8,6 @@ import {
   releaseOwnerEscalation,
 } from "./store.js";
 import { publishHandoffEvent } from "./events.js";
-import { parsePullRequestHandoffRef, reviewGithubRead, type ReviewTarget } from "./review-dispatch.js";
 
 const log = logger.child("handoffs");
 
@@ -20,23 +19,8 @@ export const HANDOFF_OWNER_ESCALATION_MS = 45 * 60_000;
 export const HANDOFF_REMINDER_WINDOW_MS = 24 * 60 * 60_000;
 /** An open handoff nobody acted on for this long is closed as expired: an abandoned thread is not a live wait. */
 export const HANDOFF_EXPIRY_MS = 7 * 24 * 60 * 60_000;
-/** How often an open review/merge wait that names a PR asks GitHub whether that PR is still open. */
-export const HANDOFF_PR_CHECK_MS = 5 * 60_000;
-/** A delivery or a GitHub read that takes longer is a failure: a hung port must not hold every later tick. */
+/** A delivery that takes longer is a failure: a hung port must not hold every later tick. */
 export const HANDOFF_PORT_TIMEOUT_MS = 60_000;
-
-export type PullStateRead = (target: ReviewTarget) => Promise<{ state: "open" | "closed"; merged: boolean }>;
-
-function defaultPullStateRead(): PullStateRead {
-  return async (target) => {
-    const pull = (await reviewGithubRead()(`repos/${target.repo}/pulls/${target.pr}`)) as {
-      state?: string;
-      merged?: boolean;
-      merged_at?: string | null;
-    };
-    return { state: pull.state === "closed" ? "closed" : "open", merged: pull.merged === true || !!pull.merged_at };
-  };
-}
 
 function withTimeout<T>(work: Promise<T>, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -50,8 +34,6 @@ function withTimeout<T>(work: Promise<T>, label: string): Promise<T> {
     }),
   ]).finally(() => clearTimeout(timer));
 }
-
-const lastPrCheck = new Map<string, number>();
 
 export interface HandoffPlan {
   expire: Handoff[];
@@ -130,16 +112,15 @@ type ReconcileResult = {
   nudged: number;
   escalated: number;
   expired: number;
-  closedByPr: number;
   failures: number;
   skipped?: true;
 };
 
 export async function reconcileHandoffs(
-  options: { now?: number; ports?: HandoffDeliveryPorts; readPull?: PullStateRead } = {},
+  options: { now?: number; ports?: HandoffDeliveryPorts } = {},
 ): Promise<ReconcileResult> {
   // Ticks overlap when a delivery outlasts the interval: the late one would deliver the same notice again.
-  if (ticking) return { nudged: 0, escalated: 0, expired: 0, closedByPr: 0, failures: 0, skipped: true };
+  if (ticking) return { nudged: 0, escalated: 0, expired: 0, failures: 0, skipped: true };
   ticking = true;
   try {
     return await reconcileOnce(options);
@@ -148,40 +129,13 @@ export async function reconcileHandoffs(
   }
 }
 
-async function reconcileOnce(options: {
-  now?: number;
-  ports?: HandoffDeliveryPorts;
-  readPull?: PullStateRead;
-}): Promise<ReconcileResult> {
+async function reconcileOnce(options: { now?: number; ports?: HandoffDeliveryPorts }): Promise<ReconcileResult> {
   const now = options.now ?? Date.now();
   const ports = options.ports ?? registered;
   let nudged = 0;
   let escalated = 0;
   let expired = 0;
-  let closedByPr = 0;
   let failures = 0;
-
-  // A review or merge wait on a PR ends when the PR does: nobody has to acknowledge a merge by hand.
-  const readPull = options.readPull ?? defaultPullStateRead();
-  for (const handoff of listHandoffs()) {
-    if (handoff.kind !== "merge" && handoff.kind !== "review") continue;
-    const target = parsePullRequestHandoffRef(handoff.ref);
-    if (!target) continue;
-    if (now - (lastPrCheck.get(handoff.id) ?? 0) < HANDOFF_PR_CHECK_MS) continue;
-    lastPrCheck.set(handoff.id, now);
-    try {
-      const pull = await withTimeout(readPull(target), "PR state read");
-      if (pull.state !== "closed") continue;
-      const acked = acknowledgeHandoff(handoff.id, pull.merged ? "PR merged" : "PR closed", now);
-      if (!acked) continue;
-      closedByPr++;
-      await publishHandoffEvent("acknowledged", acked, now);
-    } catch (error) {
-      failures++;
-      log.warn("Handoff PR state read failed", { handoffId: handoff.id, error: errorMessage(error) });
-    }
-  }
-  for (const id of lastPrCheck.keys()) if (now - lastPrCheck.get(id)! > HANDOFF_EXPIRY_MS) lastPrCheck.delete(id);
 
   const all = listHandoffs();
   const plan = planHandoffActions(all, now);
@@ -249,7 +203,7 @@ async function reconcileOnce(options: {
     if (delivered) escalated += handoffs.length;
     else releaseOwnerEscalation([...claimed], now);
   }
-  return { nudged, escalated, expired, closedByPr, failures };
+  return { nudged, escalated, expired, failures };
 }
 
 export function formatHandoffAge(handoff: Handoff, now: number): string {
@@ -280,8 +234,4 @@ export function describeHandoff(handoff: Handoff, childName: string, now: number
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-export function resetHandoffPrChecksForTest(): void {
-  lastPrCheck.clear();
 }

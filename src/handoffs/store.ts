@@ -265,3 +265,27 @@ export function releaseOwnerEscalation(ids: readonly string[], claimedAt: number
     { label: "handoff-escalate-release" },
   );
 }
+
+/** Close the open `review`/`merge` waits whose ref names this PR (`owner/repo#n@<sha>`, any head). */
+export function acknowledgeHandoffsForPullRequest(repo: string, pr: number, reason: string, now: number): Handoff[] {
+  const prefix = `${repo.toLowerCase()}#${pr}@`;
+  return executeWrite(
+    getDb(),
+    (db) => {
+      const open = (
+        db
+          .prepare(
+            "SELECT * FROM session_handoffs WHERE status = 'open' AND kind IN ('review', 'merge') AND substr(lower(ref), 1, ?) = ?",
+          )
+          .all(prefix.length, prefix) as HandoffRow[]
+      ).map(fromRow);
+      const stmt = db.prepare(
+        `UPDATE session_handoffs SET status = 'acknowledged', acknowledged_at = ?, ack_reason = ?, updated_at = ?
+         WHERE id = ? AND status = 'open'`,
+      );
+      for (const h of open) stmt.run(now, reason, now, h.id);
+      return open.map((h) => ({ ...h, status: "acknowledged" as const, acknowledgedAt: now, ackReason: reason }));
+    },
+    { label: "handoff-ack-pr" },
+  );
+}

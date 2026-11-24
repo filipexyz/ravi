@@ -46,10 +46,14 @@ describe("review dispatch", () => {
 
   it("dispatches only an open PR whose head is the SHA with the gate green", () => {
     expect(decideReviewDispatch(TARGET, GREEN)).toEqual({ dispatch: true });
-    expect(decideReviewDispatch(TARGET, { ...GREEN, prState: "closed" })).toMatchObject({ dispatch: false });
-    expect(decideReviewDispatch(TARGET, { ...GREEN, headSha: "a".repeat(40) })).toMatchObject({
+    expect(decideReviewDispatch(TARGET, { ...GREEN, prState: "closed" })).toEqual({
       dispatch: false,
-      reason: expect.stringContaining("PR head is aaaaaaaa"),
+      reason: "the PR is not open at this SHA",
+    });
+    // The reason never echoes the PR head: a caller learns nothing about a PR it could not read.
+    expect(decideReviewDispatch(TARGET, { ...GREEN, headSha: "a".repeat(40) })).toEqual({
+      dispatch: false,
+      reason: "the PR is not open at this SHA",
     });
     expect(decideReviewDispatch(TARGET, { ...GREEN, gate: null })).toMatchObject({ dispatch: false });
     expect(decideReviewDispatch(TARGET, { ...GREEN, gate: { ...GREEN.gate!, conclusion: null } })).toEqual({

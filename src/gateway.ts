@@ -1104,7 +1104,7 @@ export class Gateway {
       try {
         const handoffs = await reconcileHandoffs();
         if (handoffs.failures > 0) this.workDrain.recordFailure("handoff-reconciliation-record");
-        if (handoffs.nudged > 0 || handoffs.escalated > 0 || handoffs.expired > 0 || handoffs.closedByPr > 0) {
+        if (handoffs.nudged > 0 || handoffs.escalated > 0 || handoffs.expired > 0) {
           log.info("Reconciled handoffs", handoffs);
         }
       } catch (error) {
