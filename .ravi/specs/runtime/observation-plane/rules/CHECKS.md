@@ -14,3 +14,5 @@
 - Configure two rules for the same observer role with conflicting delivery policies. Validation or explain MUST surface the conflict.
 - Run explain on a session with matched and unmatched rules. Output MUST identify the tag or selector that caused each decision.
 - Sort rules with identical priority by stable id. Matching output MUST be deterministic.
+- Enable a rule in text mode. The output MUST say bindings come back when each source session next launches and name `ravi observers refresh <session> --reconcile attach-missing`.
+- Save a rule disabled while its binding cascade fails. The rule row MUST roll back with it (one transaction): no disabled rule with a live binding.

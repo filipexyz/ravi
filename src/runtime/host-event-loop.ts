@@ -143,6 +143,7 @@ import {
   createObservationEvent,
   deliverObservationEvents,
   observedUserPreview,
+  truncateObservationText,
   getObservationDebounceMs,
   getObservationPulseMs,
   logObservationDeliveryFailure,
@@ -1319,8 +1320,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const observationEvents: ObservationEvent[] = [];
   const debouncedObservationEvents: ObservationEvent[] = [];
   let debounceObservationTimer: ReturnType<typeof setTimeout> | undefined;
-  const truncateObservationPreview = (value: string, maxLength = 500): string =>
-    value.length > maxLength ? `${value.slice(0, maxLength - 15)}... [truncated]` : value;
+  const truncateObservationPreview = truncateObservationText;
   let pulseObservationTimer: ReturnType<typeof setInterval> | undefined;
   let pulseCheckedTurnId: string | undefined;
   const clearObservationPulse = () => {
@@ -1672,6 +1672,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
       });
     }
+    // Observers must see this turn end: the runtime is closed below without a provider terminal, and
+    // a turn that dies on inactivity is exactly what an end-of-turn observer exists to catch.
+    flushObservationEvents(exhausted ? "turn.failed" : "turn.interrupt", {
+      provider: runtimeSession.provider,
+      reason: exhausted ? "inactivity_recovery_exhausted" : input.reason,
+      kind: input.kind,
+      name: input.name,
+      timeoutMs: input.timeoutMs,
+      autoRecovered: !exhausted,
+    });
     recordTraceEvent({
       turnId: streaming.currentTraceTurnId,
       provider: runtimeSession.provider,
@@ -3941,6 +3951,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                   preview: truncateObservationPreview(text),
                   payload: {
                     chars: text.length,
+                    commentary: commentaryResponse,
                     metadata: event.metadata ?? null,
                     detail: { text: truncateObservationPreview(text, OBSERVATION_DETAIL_TEXT_MAX) },
                   },
@@ -4466,6 +4477,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           usage: event.usage,
           costUsd: resolvedCost?.totalCost ?? null,
           responseChars: responseText.trim().length,
+          // An intentional silence (@@SILENT@@, heartbeat, no response requested) is not a missing reply.
+          silent: intentionalSilence,
           providerSessionIdAfter,
           promptTooLongReset: streaming._promptTooLong ?? false,
         });

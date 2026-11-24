@@ -1,3 +1,11 @@
+import { sessionHoldsTriggerOwnerHistory } from "../router/sessions.js";
+import { isTriggerOwnSessionKey } from "../triggers/authority.js";
+import {
+  evaluateObservationConditions,
+  parseObservationConditions,
+  renderObservationConditions,
+  type ObservationConditionHit,
+} from "./observation-conditions.js";
 import { createHash } from "node:crypto";
 import { assertAutomationStoreWrite } from "../permissions/user-overlay-automation.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
@@ -386,10 +394,14 @@ export function ensureObservationSchema(): void {
 // the source agent how to answer; an observer reading what the person said only pays for them.
 const OBSERVATION_PREAMBLE_LINE = /^\[(?:session surface|knowledge)\] [^\n]*(?:\n|$)/;
 
+/** The one truncation every observation preview uses. */
+export function truncateObservationText(value: string, maxLength = 500): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 15)}... [truncated]` : value;
+}
+
 /** The `message.user` preview observers get: the prompt without its runtime lines, truncated. */
 export function observedUserPreview(text: string, maxLength = 500): string {
-  const value = stripObservationPreamble(text);
-  return value.length > maxLength ? `${value.slice(0, maxLength - 15)}... [truncated]` : value;
+  return truncateObservationText(stripObservationPreamble(text), maxLength);
 }
 
 /** The source prompt without its leading runtime lines, as observers should read it. */
@@ -600,6 +612,66 @@ function observerSourceExclusions(metadata?: Record<string, unknown>): ObserverS
     sessionNames: sourceExclusionList(raw.sessionNames),
     sessionKeyFragments: sourceExclusionList(raw.sessionKeyFragments),
   };
+}
+
+/** `metadata.when`: the conditions that gate delivery; the binding then delivers only at end of turn. */
+function observerConditions(metadata?: Record<string, unknown>): string[] | null {
+  const value = metadata?.when;
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
+    throw new Error("Observer metadata.when must be a list of condition names.");
+  }
+  return parseObservationConditions(value as string[]);
+}
+
+/**
+ * `metadata.deliverTo`: a live session that gets the observation as a `[System] Inform`, through the
+ * normal prompt path, instead of a dedicated observer session. Used by `ravi sessions observe`.
+ */
+function bindingInformTarget(binding: { metadata?: Record<string, unknown> }): string | null {
+  const value = binding.metadata?.deliverTo;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/**
+ * Why a source session may not feed a live receiver, or null. A trigger's own session, and any
+ * session whose history holds what a turn read with its trigger owner's authority, answer no chat
+ * (`sessionHoldsTriggerOwnerHistory`); forwarding their turns to a conversation would be that answer.
+ */
+export function liveReceiverSourceRefusal(sourceSessionKey: string): string | null {
+  if (isTriggerOwnSessionKey(sourceSessionKey)) return "source is a trigger's own session";
+  if (sessionHoldsTriggerOwnerHistory(sourceSessionKey)) return "source holds what a turn read for its trigger's owner";
+  return null;
+}
+
+function validateObserverInformTarget(
+  metadata: Record<string, unknown> | undefined,
+  scope: ObserverScope,
+  sourceSession: string | null | undefined,
+): void {
+  if (metadata?.deliverTo === undefined || metadata.deliverTo === null) return;
+  const target = bindingInformTarget({ metadata });
+  if (!target) throw new Error("Observer metadata.deliverTo must be a session name.");
+  if (scope !== "session" || !sourceSession) {
+    throw new Error("Observer metadata.deliverTo needs a session-scoped rule with a source session.");
+  }
+  if (target === sourceSession.trim()) {
+    throw new Error("A session cannot observe itself.");
+  }
+  // For every writer, operator included: owner reads never reach a conversation.
+  const source = readSessionByNameOrKey(sourceSession.trim());
+  const refusal = liveReceiverSourceRefusal(source?.sessionKey ?? sourceSession.trim());
+  if (refusal) throw new Error(`A live receiver cannot observe this source: ${refusal}.`);
+}
+
+function validateObserverConditions(
+  metadata: Record<string, unknown> | undefined,
+  deliveryPolicy: ObservationDeliveryPolicy,
+): void {
+  const conditions = observerConditions(metadata);
+  if (conditions && deliveryPolicy !== "end_of_turn") {
+    throw new Error("Observer conditions (metadata.when) are checked at end of turn: use --delivery end_of_turn.");
+  }
 }
 
 function validateObserverSourceExclusions(metadata?: Record<string, unknown>): void {
@@ -885,6 +957,8 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
   const selector = resolveSelectorOverride(input.selector, existing?.selector);
   const metadata = input.metadata ?? existing?.metadata;
   validateObserverSourceExclusions(metadata);
+  validateObserverConditions(metadata, deliveryPolicy);
+  validateObserverInformTarget(metadata, scope, input.sourceSession ?? existing?.sourceSession);
 
   validateRuleSafety({
     scope,
@@ -1559,11 +1633,13 @@ function composeObservationPrompt(input: {
   runId?: string;
   deliveryId?: string;
   input?: Record<string, unknown>;
+  conditions?: readonly ObservationConditionHit[];
 }): string {
   const profile = input.binding.observerProfileSnapshotMarkdown
     ? resolveObserverProfileFromSnapshotMarkdown(input.binding.observerProfileSnapshotMarkdown)
     : resolveObserverProfile(input.binding.observerProfileId);
-  return renderObservationPromptForProfile({
+  const conditionsText = input.conditions ? renderObservationConditions(input.conditions) : "";
+  const rendered = renderObservationPromptForProfile({
     profile,
     source: input.source,
     binding: input.binding,
@@ -1572,7 +1648,12 @@ function composeObservationPrompt(input: {
     ...(input.runId ? { runId: input.runId } : {}),
     ...(input.deliveryId ? { deliveryId: input.deliveryId } : {}),
     ...(input.input ? { input: input.input } : {}),
+    conditionsText,
   });
+  // A profile (or an older snapshot) that does not place the condition lines still gets them first:
+  // the reason the observer was woken must never be lost.
+  const template = profile.templates.delivery[input.binding.deliveryPolicy] ?? "";
+  return conditionsText && !template.includes("delivery.conditions") ? `${conditionsText}\n\n${rendered}` : rendered;
 }
 
 /** Full text and tool input ride on events as `payload.detail`; only bindings that ask for them read them. */
@@ -1659,15 +1740,69 @@ export async function deliverObservationEvents(input: {
   const deliveryPolicies = input.deliveryPolicies ? new Set(input.deliveryPolicies) : undefined;
   const pulse = input.pulse === true;
 
+  // Conditions are facts about a finished turn: computed once, over every event of the batch (an
+  // end-of-turn batch holds the whole turn, pulses included), never from a partial view.
+  let turnConditions: ObservationConditionHit[] | undefined;
+  const endOfTurnBatch = !pulse && (!deliveryPolicies || deliveryPolicies.has("end_of_turn"));
+
   for (const binding of bindings) {
     if (pulse && bindingPulseMs(binding) === null) {
       skipped.push({ bindingId: binding.id, reason: "no_pulse" });
       continue;
     }
+    let conditionHits: ObservationConditionHit[] | undefined;
+    let wanted: string[] | null;
+    try {
+      wanted = observerConditions(binding.metadata);
+    } catch (error) {
+      // A persisted invalid condition list fails closed, like an invalid selector, and says why.
+      log.warn("Skipping observer binding with invalid conditions", {
+        bindingId: binding.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      skipped.push({ bindingId: binding.id, reason: "invalid_conditions" });
+      continue;
+    }
+    if (wanted) {
+      if (!endOfTurnBatch) {
+        skipped.push({ bindingId: binding.id, reason: "conditions_wait_end_of_turn" });
+        continue;
+      }
+      turnConditions ??= evaluateObservationConditions(input.events);
+      conditionHits = turnConditions.filter((hit) => wanted!.includes(hit.condition));
+      if (conditionHits.length === 0) {
+        skipped.push({ bindingId: binding.id, reason: "no_condition" });
+        continue;
+      }
+    }
     const exclusionReason = sourceExclusionReason(binding.metadata, source);
     if (exclusionReason) {
       skipped.push({ bindingId: binding.id, reason: exclusionReason });
       continue;
+    }
+    // A live receiver is stored by session key and published to under its current name: a rename
+    // keeps the observation, and a name reused by another session never receives it.
+    let informTarget: string | null = null;
+    const informKey = bindingInformTarget(binding);
+    if (informKey) {
+      const receiver = getSession(informKey);
+      if (!receiver || receiver.sessionKey !== informKey) {
+        skipped.push({ bindingId: binding.id, reason: "receiver_missing" });
+        continue;
+      }
+      informTarget = receiver.name ?? receiver.sessionKey;
+      // Checked at every delivery: the owner-read mark is written on a trigger's first fire, which
+      // can come after the rule was created.
+      const refusal = liveReceiverSourceRefusal(source.sessionKey);
+      if (refusal) {
+        log.warn("Refusing to forward a session that holds owner reads to a live receiver", {
+          bindingId: binding.id,
+          sourceSessionKey: source.sessionKey,
+          reason: refusal,
+        });
+        skipped.push({ bindingId: binding.id, reason: "source_holds_owner_reads" });
+        continue;
+      }
     }
     const selected = input.events.filter((event) => bindingAllowsEvent(binding, source, event, deliveryPolicies));
     if (selected.length === 0) {
@@ -1692,34 +1827,47 @@ export async function deliverObservationEvents(input: {
       events: bindingReadsDetail(binding) ? claimed : stripObservationDetail(claimed),
       ...(input.runId ? { runId: input.runId } : {}),
       deliveryId,
+      ...(conditionHits ? { conditions: conditionHits } : {}),
     });
     const sourceTurnIds = [
       ...new Set(claimed.map((event) => event.turnId).filter((id): id is string => Boolean(id))),
     ].sort();
     try {
-      await observationPromptPublisher(binding.observerSessionName, {
-        prompt,
-        _agentId: binding.observerAgentId,
-        ...(binding.observerRuntimeProviderId ? { _runtimeProviderId: binding.observerRuntimeProviderId } : {}),
-        ...(binding.observerModel ? { _runtimeModel: binding.observerModel } : {}),
-        _observation: {
-          sourceSessionKey: source.sessionKey,
-          sourceSessionName: source.sessionName,
-          bindingId: binding.id,
-          ruleId: binding.ruleId,
-          role: binding.observerRole,
-          mode: binding.observerMode,
-          ...(binding.observerProfileId ? { profileId: binding.observerProfileId } : {}),
-          ...(binding.observerProfileVersion ? { profileVersion: binding.observerProfileVersion } : {}),
-          ...(binding.permissionGrants.length > 0 ? { permissionGrants: binding.permissionGrants } : {}),
-          eventIds: claimed.map((event) => event.id),
-          ...(sourceTurnIds.length > 0 ? { sourceTurnIds } : {}),
-          ...(source.taskId ? { taskId: source.taskId } : {}),
-          deliveryId,
-          trigger,
-        },
-        deliveryBarrier: "after_response",
-      });
+      if (informTarget) {
+        // A live session (often a conversation) is not an observer session: it gets a normal
+        // `[System] Inform` it can act on, not an `_observation` prompt with observer isolation.
+        // The notice is observer-originated, so the receiving turn emits no observation events.
+        await observationPromptPublisher(informTarget, {
+          prompt: `[System] Inform: [from: ravi observer] ${prompt}`,
+          deliveryBarrier: "after_response",
+          _observationNotice: { bindingId: binding.id, sourceSessionKey: source.sessionKey },
+        });
+      } else {
+        await observationPromptPublisher(binding.observerSessionName, {
+          prompt,
+          _agentId: binding.observerAgentId,
+          ...(binding.observerRuntimeProviderId ? { _runtimeProviderId: binding.observerRuntimeProviderId } : {}),
+          ...(binding.observerModel ? { _runtimeModel: binding.observerModel } : {}),
+          _observation: {
+            sourceSessionKey: source.sessionKey,
+            sourceSessionName: source.sessionName,
+            bindingId: binding.id,
+            ruleId: binding.ruleId,
+            role: binding.observerRole,
+            mode: binding.observerMode,
+            ...(binding.observerProfileId ? { profileId: binding.observerProfileId } : {}),
+            ...(binding.observerProfileVersion ? { profileVersion: binding.observerProfileVersion } : {}),
+            ...(binding.permissionGrants.length > 0 ? { permissionGrants: binding.permissionGrants } : {}),
+            eventIds: claimed.map((event) => event.id),
+            ...(sourceTurnIds.length > 0 ? { sourceTurnIds } : {}),
+            ...(source.taskId ? { taskId: source.taskId } : {}),
+            deliveryId,
+            trigger,
+            ...(conditionHits ? { conditions: conditionHits.map((hit) => hit.condition) } : {}),
+          },
+          deliveryBarrier: "after_response",
+        });
+      }
     } catch (error) {
       releaseObservationEventClaims(binding.id, claimed);
       throw error;
@@ -1729,7 +1877,7 @@ export async function deliverObservationEvents(input: {
       .run(Date.now(), Date.now(), binding.id);
     delivered.push({
       bindingId: binding.id,
-      observerSessionName: binding.observerSessionName,
+      observerSessionName: informTarget ?? binding.observerSessionName,
       eventCount: claimed.length,
     });
   }
@@ -1783,7 +1931,11 @@ export function getObservationPulseMs(input: {
 }): number | null {
   if (isObserverSessionName(input.sourceSessionName)) return null;
   const bindings = dbListObserverBindings({ sourceSessionKey: input.sourceSession.sessionKey, enabled: true });
-  const pulses = bindings.map(bindingPulseMs).filter((value): value is number => value !== null);
+  // A condition-gated binding is only read at end of turn: it must not arm a pulse it would refuse.
+  const pulses = bindings
+    .filter((binding) => binding.metadata?.when === undefined || binding.metadata?.when === null)
+    .map(bindingPulseMs)
+    .filter((value): value is number => value !== null);
   return pulses.length > 0 ? Math.min(...pulses) : null;
 }
 
@@ -1796,6 +1948,7 @@ export function validateObserverRules(): {
     try {
       if (rule.selector) compileObserverSelector(rule.selector);
       validateObserverSourceExclusions(rule.metadata);
+      validateObserverConditions(rule.metadata, rule.deliveryPolicy);
       validateRuleSafety({
         scope: rule.scope,
         mode: rule.observerMode,

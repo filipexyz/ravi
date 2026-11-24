@@ -106360,6 +106360,151 @@ export const SessionsListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `sessions.observe`. */
+export const SessionsObserveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "follow": {
+      "description": "Get a compact summary of every finished turn instead of only when a condition holds",
+      "type": "boolean"
+    },
+    "source": {
+      "description": "Session to observe",
+      "type": "string"
+    },
+    "to": {
+      "description": "Session that receives the notices (default: the current session)",
+      "type": "string"
+    },
+    "when": {
+      "description": "Comma-separated conditions (default: turn.no_final_reply,chat.narration,turn.failed,tool.idle); one of turn.no_final_reply, chat.narration, turn.failed, turn.interrupt, tool.idle",
+      "type": "string"
+    }
+  },
+  "required": [
+    "source"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.observe`. */
+export const SessionsObserveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "observing": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "alerts",
+            "follow"
+          ],
+          "type": "string"
+        },
+        "ruleId": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "when": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "ruleId",
+        "source",
+        "to",
+        "mode",
+        "when"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "observing"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.observing`. */
+export const SessionsObservingInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.observing`. */
+export const SessionsObservingReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "observing": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "alerts",
+              "follow"
+            ],
+            "type": "string"
+          },
+          "ruleId": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "when": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "ruleId",
+          "source",
+          "to",
+          "mode",
+          "when"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "total": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "success",
+    "observing",
+    "total"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.prune`. */
 export const SessionsPruneInputSchema = {
   "additionalProperties": false,
@@ -111309,6 +111454,56 @@ export const SessionsTraceInputSchema = {
 export const SessionsTraceReturnSchema = {
   "additionalProperties": {},
   "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.unobserve`. */
+export const SessionsUnobserveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "source": {
+      "description": "Observed session",
+      "type": "string"
+    },
+    "to": {
+      "description": "Session that was receiving the notices (default: the current session)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "source"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `sessions.unobserve`. */
+export const SessionsUnobserveReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "removed": {
+      "type": "boolean"
+    },
+    "ruleId": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "to": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
+    "removed",
+    "ruleId",
+    "source",
+    "to"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
