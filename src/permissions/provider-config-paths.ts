@@ -207,7 +207,10 @@ function canonicalCase(path: string): string {
     try {
       const real = realpathSync.native(prefix);
       return suffix.length > 0 ? join(real, ...suffix.reverse()) : real;
-    } catch {
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      // Only a missing component walks up; anything else keeps the given spelling.
+      if (code !== "ENOENT" && code !== "ENOTDIR") return path;
       suffix.push(basename(prefix));
       prefix = dirname(prefix);
     }
@@ -220,8 +223,10 @@ function isHardlinkedFile(path: string): boolean {
   try {
     const stat = statSync(path);
     return stat.isFile() && stat.nlink > 1;
-  } catch {
-    return false;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    // A file that does not exist yet has no other name; an unreadable one fails closed.
+    return code !== "ENOENT" && code !== "ENOTDIR";
   }
 }
 
