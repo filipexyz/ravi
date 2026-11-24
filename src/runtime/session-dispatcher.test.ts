@@ -6550,9 +6550,9 @@ describe("stateless observer deliveries (memory none)", () => {
     } as unknown as RuntimeHostStreamingSession;
     return { live, counters };
   }
-  const delivery = (memory?: "none") =>
+  const delivery = (memory?: "none", text = "[observation] turn.complete") =>
     ({
-      prompt: "[observation] turn.complete",
+      prompt: text,
       _agentId: "observer",
       _observation: {
         sourceSessionKey: "agent:worker:main",
@@ -6612,6 +6612,22 @@ describe("stateless observer deliveries (memory none)", () => {
       expect(counters.pushed).toBe(0);
       expect(started).toHaveLength(1);
       expect(dispatcher.statelessObservationWaits.has(OBS)).toBe(false);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("keeps delivery order when a later delivery arrives before the waiting one is released", async () => {
+    const { stateDir, dispatcher, live, started, OBS } = await setup({ turnActive: true });
+    try {
+      await dispatcher.handlePromptImmediate(OBS, delivery("none", "[observation] first"));
+      // The observer turn ends; the next delivery arrives before the wait is released.
+      live.turnActive = false;
+      await dispatcher.handlePromptImmediate(OBS, delivery("none", "[observation] second"));
+      expect(started).toHaveLength(0);
+      expect(dispatcher.statelessObservationWaits.get(OBS)?.prompts).toHaveLength(2);
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+      expect(started.map((prompt) => prompt.prompt)).toEqual(["[observation] first", "[observation] second"]);
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }

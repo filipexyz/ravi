@@ -19,3 +19,5 @@
 - A binding with `metadata.memory: "none"` MUST clear its observer session's provider state before delivering; the default MUST keep it; an unknown memory value MUST be rejected (`observation-plane.test.ts`, "Stateless observers").
 - A `memory: "none"` delivery to an idle live observer runtime MUST retire it and start a new one; to a busy one it MUST wait for the turn to end, then do the same; a rolling delivery MUST keep the live conversation (`session-dispatcher.test.ts`, "stateless observer deliveries").
 - A cold start for a `memory: "none"` delivery MUST NOT recover earlier deliveries from saved history; a rolling one MUST (`runtime-request-builder.crash-recovery.test.ts`).
+- A `memory: "none"` delivery MUST NOT resume a stored conversation, even one a busy observer turn wrote back after the plane cleared it; a rolling delivery MUST resume it (`host-event-loop.reset-failure.test.ts`, "stateless observer delivery after a busy live turn").
+- A `memory: "none"` delivery that arrives while an earlier one waits for the same observer MUST run after it (`session-dispatcher.test.ts`, "keeps delivery order").

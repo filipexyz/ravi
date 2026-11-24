@@ -1201,6 +1201,12 @@ export class RuntimeSessionDispatcher {
       );
     };
     let statelessRetired = false;
+    // A delivery already waiting for this observer goes first: a later one queues behind it, even if
+    // the observer turn just ended and the waiting one has not been released yet.
+    if (prompt._observation?.memory === "none" && this.statelessObservationWaits.has(sessionName)) {
+      this.deferStatelessObservation(sessionName, prompt, canonicalSessionKey);
+      return;
+    }
     // A stateless observer delivery never joins a live conversation: an idle observer runtime is
     // retired first; a busy one finishes its turn (the delivery's after_response barrier) and the
     // delivery waits for it, then retires it.

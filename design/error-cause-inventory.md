@@ -2130,27 +2130,27 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | sessions | src/runtime/session-dispatcher.ts | 800 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:54030f2e9450161bd9da0492 |
 | sessions | src/runtime/session-dispatcher.ts | 913 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:d127618980adff40591b3ed9 |
 | sessions | src/runtime/session-dispatcher.ts | 1030 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:dc09ff5ebccd287b53b1fdc2 |
-| sessions | src/runtime/session-dispatcher.ts | 1553 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:6ce4201b5db6f5898f2c642b |
-| sessions | src/runtime/session-dispatcher.ts | 1607 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:6ce4201b5db6f5898f2c642b |
-| sessions | src/runtime/session-dispatcher.ts | 1717 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:6ce4201b5db6f5898f2c642b |
-| sessions | src/runtime/session-dispatcher.ts | 1774 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:6ce4201b5db6f5898f2c642b |
-| sessions | src/runtime/session-dispatcher.ts | 1831 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:10629a4f9826288a518a68c0 |
-| sessions | src/runtime/session-dispatcher.ts | 2213 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:b2f0afd26c1d652aa53d2444 |
-| sessions | src/runtime/session-dispatcher.ts | 2288 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:16acbd69b410038490ef207d |
-| sessions | src/runtime/session-dispatcher.ts | 2306 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:f31f081ba295b0f474588c36 |
-| sessions | src/runtime/session-dispatcher.ts | 2332 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:e05868aa155fb10918702c2b |
-| sessions | src/runtime/session-dispatcher.ts | 2635 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:9a16a13ef9a7105fc1555061 |
-| sessions | src/runtime/session-dispatcher.ts | 2892 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:cf08f65d293c9575f0ea6959 |
-| sessions | src/runtime/session-dispatcher.ts | 2908 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:f3a9e29dec513be89b423239 |
-| sessions | src/runtime/session-dispatcher.ts | 3045 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:1b0ec88b5e9890b937d700e2 |
-| sessions | src/runtime/session-dispatcher.ts | 3097 | triaged-follow-up | rejection-without-binding | src/runtime/session-dispatcher.ts:3492c97db9af80a465fd92bf |
-| sessions | src/runtime/session-dispatcher.ts | 3220 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:85b0fe593d30d58509983a67 |
-| sessions | src/runtime/session-dispatcher.ts | 3292 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:85b0fe593d30d58509983a67 |
-| sessions | src/runtime/session-dispatcher.ts | 3322 | triaged-follow-up | surface-bypasses-constructor | src/runtime/session-dispatcher.ts:aaa52d8cc280e8c4c5c5db58 |
-| sessions | src/runtime/session-dispatcher.ts | 3385 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:3f040970fed01bb89639a3cc |
-| sessions | src/runtime/session-dispatcher.ts | 3556 | triaged-follow-up | catch-without-binding | src/runtime/session-dispatcher.ts:855c60e17e371364329f36ef |
-| sessions | src/runtime/session-dispatcher.ts | 3959 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:83c38f7b3c42a656b76aaef9 |
-| sessions | src/runtime/session-dispatcher.ts | 4121 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:9fddb1856b8b7217e6bf2e4c |
+| sessions | src/runtime/session-dispatcher.ts | 1559 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:6ce4201b5db6f5898f2c642b |
+| sessions | src/runtime/session-dispatcher.ts | 1613 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:6ce4201b5db6f5898f2c642b |
+| sessions | src/runtime/session-dispatcher.ts | 1723 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:6ce4201b5db6f5898f2c642b |
+| sessions | src/runtime/session-dispatcher.ts | 1780 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:6ce4201b5db6f5898f2c642b |
+| sessions | src/runtime/session-dispatcher.ts | 1837 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:10629a4f9826288a518a68c0 |
+| sessions | src/runtime/session-dispatcher.ts | 2219 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:b2f0afd26c1d652aa53d2444 |
+| sessions | src/runtime/session-dispatcher.ts | 2294 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:16acbd69b410038490ef207d |
+| sessions | src/runtime/session-dispatcher.ts | 2312 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:f31f081ba295b0f474588c36 |
+| sessions | src/runtime/session-dispatcher.ts | 2338 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:e05868aa155fb10918702c2b |
+| sessions | src/runtime/session-dispatcher.ts | 2641 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:9a16a13ef9a7105fc1555061 |
+| sessions | src/runtime/session-dispatcher.ts | 2898 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:cf08f65d293c9575f0ea6959 |
+| sessions | src/runtime/session-dispatcher.ts | 2914 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:f3a9e29dec513be89b423239 |
+| sessions | src/runtime/session-dispatcher.ts | 3051 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:1b0ec88b5e9890b937d700e2 |
+| sessions | src/runtime/session-dispatcher.ts | 3103 | triaged-follow-up | rejection-without-binding | src/runtime/session-dispatcher.ts:3492c97db9af80a465fd92bf |
+| sessions | src/runtime/session-dispatcher.ts | 3226 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:85b0fe593d30d58509983a67 |
+| sessions | src/runtime/session-dispatcher.ts | 3298 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:85b0fe593d30d58509983a67 |
+| sessions | src/runtime/session-dispatcher.ts | 3328 | triaged-follow-up | surface-bypasses-constructor | src/runtime/session-dispatcher.ts:aaa52d8cc280e8c4c5c5db58 |
+| sessions | src/runtime/session-dispatcher.ts | 3391 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:3f040970fed01bb89639a3cc |
+| sessions | src/runtime/session-dispatcher.ts | 3562 | triaged-follow-up | catch-without-binding | src/runtime/session-dispatcher.ts:855c60e17e371364329f36ef |
+| sessions | src/runtime/session-dispatcher.ts | 3965 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:83c38f7b3c42a656b76aaef9 |
+| sessions | src/runtime/session-dispatcher.ts | 4127 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:9fddb1856b8b7217e6bf2e4c |
 | sessions | src/runtime/session-goals.ts | 226 | fixed | binding retained / no recognized error surface | src/runtime/session-goals.ts:4ef050b2e8731ddd08e57a55 |
 | sessions | src/runtime/session-goals.ts | 500 | fixed | binding retained / no recognized error surface | src/runtime/session-goals.ts:2d19ffb7f402a9dd80b4b3d6 |
 | sessions | src/runtime/session-launcher.ts | 219 | fixed | binding retained / no recognized error surface | src/runtime/session-launcher.ts:786b7b96bc8faf7b7df73e4f |
