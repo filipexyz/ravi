@@ -272,6 +272,25 @@ shows. It MUST:
 `expiresAt` is recorded and shown; the broker does not yet deny an expired
 connection (the SHOULD in the invariants above stays open).
 
+### Console publication
+
+The daemon publishes the inventory through the Console sync bridge
+(`src/credentials/inventory-sync.ts`, called from the sync runner tick):
+
+- It is opt-in: only with `RAVI_SYNC_CREDENTIALS_INVENTORY=1` (in addition to
+  `RAVI_SYNC_RUNNER_ENABLED=1` and a Console login). Without the flag nothing
+  is built or enqueued. Existing installations keep their egress unchanged.
+- Event: domain `credentials`, type `credentials.inventory`, entity
+  `credential_inventory/installation`, payload schema `credentials.inventory/v1`.
+- The payload is the inventory with each item's `secret` renamed `storage`:
+  the sync redactor blanks every key ending in "secret". The payload MUST be a
+  fixed point of `sanitizeSyncPayload` (nothing for the redactor to remove) and
+  MUST NOT contain a secret value, Vault path, key or actor id.
+- A changed inventory is enqueued at most every 15 minutes; an unchanged one
+  every 6 hours as a heartbeat. The content hash ignores `generatedAt`.
+- A snapshot failure never blocks the rest of the tick and logs only the
+  sanitized error.
+
 The default `file` backend MUST keep secret bytes in broker-owned private files
 (0700 directory, 0600 files) with atomic writes and strict opaque references.
 It is plaintext protected by the host account and works on headless Linux;

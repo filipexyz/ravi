@@ -226,3 +226,13 @@ built.
   appHash MUST NOT enter source, manifests, argv, fixture artifacts or reports.
 - Connection authentication and real provider results require separately
   authorized operational evidence; the fake HTTP suite does not certify them.
+
+## Console Publication Checks
+
+`src/credentials/inventory-sync.test.ts` and `src/sync/runner.test.ts` MUST prove, each with a mutant that fails it:
+
+- nothing is enqueued without `RAVI_SYNC_CREDENTIALS_INVENTORY=1` (mutants: opt-in removed in the enqueue; env read ignored);
+- `storage` survives the sync redactor and no `[REDACTED`, secret value, Vault path, key or actor id appears in the outbox row (mutants: key back to `secret`; raw ref added);
+- the payload is a fixed point of `sanitizeSyncPayload`;
+- an unchanged inventory waits for the 6 h heartbeat and a change waits 15 min (mutants: heartbeat and throttle removed);
+- a linked runner tick enqueues only with the flag (mutant: runner call removed).
