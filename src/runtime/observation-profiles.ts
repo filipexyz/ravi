@@ -848,6 +848,9 @@ function buildEventContext(event: ObserverProfileRenderEvent): Record<string, un
 }
 
 const DIGEST_TEXT_MAX = 300;
+// With detail on, the agent's last message may be longer than a preview, but it is still one line:
+// a newline in observed text must never start a forged `end:` line or `turn` block.
+const DIGEST_DETAIL_MAX = 2_000;
 
 function oneLine(value: string, max = DIGEST_TEXT_MAX): string {
   return truncate(value.replace(/\s+/g, " ").trim(), max);
@@ -897,16 +900,20 @@ export function buildObservationTurnDigest(events: readonly ObserverProfileRende
     const users = turnEvents.filter((event) => event.type === "message.user");
     const replies = turnEvents.filter((event) => event.type === "message.assistant");
     const toolEnds = turnEvents.filter((event) => event.type === "tool.end");
+    const idleTools = turnEvents.filter((event) => event.type === "tool.inactive");
     const toolStarts = turnEvents.filter((event) => event.type === "tool.start");
     const terminal = turnEvents.filter((event) => event.type.startsWith("turn.")).at(-1);
     const first = turnEvents[0]?.timestamp ?? 0;
     const duration = terminal ? formatDuration(terminal.timestamp - first) : "";
-    lines.push(`turn ${turnId}${duration ? ` · ${duration}` : ""}`);
+    lines.push(`turn ${oneLine(turnId, 80)}${duration ? ` · ${duration}` : ""}`);
     for (const user of users) lines.push(`user: ${user.preview ? oneLine(user.preview) : "-"}`);
     if (replies.length > 0) {
       const last = replies.at(-1)!;
       const detail = readEventDetail(last);
-      const text = typeof detail.text === "string" && detail.text ? detail.text.trim() : oneLine(last.preview ?? "");
+      const text =
+        typeof detail.text === "string" && detail.text
+          ? oneLine(detail.text, DIGEST_DETAIL_MAX)
+          : oneLine(last.preview ?? "");
       lines.push(`agent: ${replies.length} message(s) · last: ${text || "-"}`);
     }
     // No "agent sent nothing" line: a realtime or pulse-split delivery sees only part of the turn,
@@ -915,7 +922,7 @@ export function buildObservationTurnDigest(events: readonly ObserverProfileRende
     if (toolEvents.length > 0) {
       const counts = new Map<string, number>();
       for (const event of toolEvents) {
-        const name = payloadString(event.payload, "toolName") ?? event.preview ?? "tool";
+        const name = oneLine(payloadString(event.payload, "toolName") ?? event.preview ?? "tool", 60);
         counts.set(name, (counts.get(name) ?? 0) + 1);
       }
       const names = [...counts.entries()]
@@ -925,11 +932,18 @@ export function buildObservationTurnDigest(events: readonly ObserverProfileRende
       const errors = toolEnds.filter((event) => event.payload?.isError === true).length;
       lines.push(`tools: ${toolEvents.length} (${names})${errors ? ` · ${errors} error(s)` : ""}`);
     }
+    // A tool that went quiet is the sign of a stuck turn: say which tool and for how long.
+    for (const event of idleTools) {
+      const name = oneLine(payloadString(event.payload, "toolName") ?? event.preview ?? "tool", 60);
+      const timeoutMs = event.payload?.timeoutMs;
+      const after = typeof timeoutMs === "number" ? formatDuration(timeoutMs) : "";
+      lines.push(`idle: ${name}${after ? ` (no activity for ${after})` : ""}`);
+    }
     for (const event of turnEvents) {
       if (event.type.startsWith("message.") || event.type.startsWith("tool.") || event.type.startsWith("turn.")) {
         continue;
       }
-      lines.push(`${event.type}: ${event.preview ? oneLine(event.preview, 160) : "-"}`);
+      lines.push(`${oneLine(event.type, 60)}: ${event.preview ? oneLine(event.preview, 160) : "-"}`);
     }
     if (terminal) lines.push(`end: ${digestEnd(terminal)}`);
     blocks.push(lines.join("\n"));
