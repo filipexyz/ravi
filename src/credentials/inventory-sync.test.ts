@@ -10,6 +10,7 @@ import {
   CREDENTIAL_INVENTORY_SYNC_DOMAIN,
   FREE_TEXT_MAX_CHARS,
   SCOPES_MAX_ITEMS,
+  guardFreeText,
   type CredentialInventorySyncPayload,
   credentialInventorySyncPayload,
   enqueueCredentialInventorySnapshot,
@@ -340,6 +341,30 @@ describe("pagination edge cases from the bot review of #971", () => {
     expect(kept.length).toBeGreaterThan(0);
     expect(kept.length).toBeLessThan(20);
     expect(kept).toEqual(audit.slice(0, kept.length)); // newest first: the tail goes
+  });
+
+  it("never cuts a surrogate pair in half (N9)", () => {
+    const text = `${"a ".repeat((FREE_TEXT_MAX_CHARS - 2) / 2)}😀😀😀`;
+    const guarded = guardFreeText(text)!;
+    expect(guarded.length).toBeLessThanOrEqual(FREE_TEXT_MAX_CHARS);
+    expect(guarded.endsWith("…")).toBe(true);
+    const beforeEllipsis = guarded.charCodeAt(guarded.length - 2);
+    expect(beforeEllipsis >= 0xd800 && beforeEllipsis <= 0xdbff).toBe(false);
+    expect(guarded).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  });
+
+  it("bounds identifiers to what the Console schema accepts", async () => {
+    const long = `c${"x".repeat(180)}`;
+    upsertCredentialConnection({
+      provider: "slack",
+      connection: long,
+      backend: "vault",
+      secretRef: "vault:secret/ravi/credentials/slack/long#token",
+      status: "active",
+    });
+    const payload = credentialInventorySyncPayload(await buildCredentialInventory({ now: T0, describeSecret }));
+    expect(payload.items[0]!.connection.length).toBeLessThanOrEqual(100);
+    expect(payload.items[0]!.secretRefAlias.length).toBeLessThanOrEqual(250);
   });
 
   it("throws instead of emitting a page over the limit when one item cannot fit by itself", () => {

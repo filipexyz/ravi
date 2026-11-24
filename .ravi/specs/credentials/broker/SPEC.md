@@ -294,6 +294,9 @@ The daemon publishes the inventory through the Console sync bridge
   over the limit is never emitted: the build fails instead. The content hash
   includes the wire format, so the first check after an upgrade from the
   unpaged format publishes instead of waiting for the heartbeat.
+  Every string is bounded to what the Console schema accepts (identifiers
+  100, alias 250, other text 200), since the Console drops a whole page over
+  any bound; a cut never splits a surrogate pair.
 - The payload is the inventory with each item's `secret` renamed `storage`:
   the sync redactor blanks every key ending in "secret". The payload MUST be a
   fixed point of `sanitizeSyncPayload` (nothing for the redactor to remove) and

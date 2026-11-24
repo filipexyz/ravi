@@ -62,8 +62,16 @@ export function guardFreeText(value: string | null, maxChars = FREE_TEXT_MAX_CHA
   if (value === null) return null;
   let text = value;
   for (const pattern of TOKEN_PATTERNS) text = text.replace(pattern, "[redacted]");
-  return text.length > maxChars ? `${text.slice(0, maxChars - 1)}…` : text;
+  if (text.length <= maxChars) return text;
+  // Never cut between the two halves of a surrogate pair (an emoji would leave a lone half).
+  let cut = maxChars - 1;
+  const last = text.charCodeAt(cut - 1);
+  if (last >= 0xd800 && last <= 0xdbff) cut -= 1;
+  return `${text.slice(0, cut)}…`;
 }
+
+/** Identifiers have no length rule in the store; the Console accepts at most this many characters. */
+const IDENTIFIER_MAX_CHARS = 100;
 
 export function credentialInventorySyncPayload(inventory: CredentialInventory): CredentialInventorySyncPayload {
   return {
@@ -74,6 +82,10 @@ export function credentialInventorySyncPayload(inventory: CredentialInventory): 
     total: inventory.total,
     items: inventory.items.map(({ secret, ...item }) => ({
       ...item,
+      // Bounded to the Console schema, which drops a whole page over any field limit.
+      provider: guardFreeText(item.provider, IDENTIFIER_MAX_CHARS) ?? "",
+      connection: guardFreeText(item.connection, IDENTIFIER_MAX_CHARS) ?? "",
+      secretRefAlias: guardFreeText(item.secretRefAlias, 250) ?? "",
       // Free text typed by people: capped, and token-shaped values never leave.
       label: guardFreeText(item.label),
       owner: guardFreeText(item.owner),
@@ -84,8 +96,8 @@ export function credentialInventorySyncPayload(inventory: CredentialInventory): 
     // Audit strings are system values, but nothing bounds their length: capped like free text.
     audit: inventory.audit.map((entry) => ({
       ...entry,
-      provider: guardFreeText(entry.provider) ?? "",
-      connection: guardFreeText(entry.connection) ?? "",
+      provider: guardFreeText(entry.provider, IDENTIFIER_MAX_CHARS) ?? "",
+      connection: guardFreeText(entry.connection, IDENTIFIER_MAX_CHARS) ?? "",
       action: guardFreeText(entry.action) ?? "",
       decision: guardFreeText(entry.decision) ?? "",
       resultStatus: guardFreeText(entry.resultStatus),
