@@ -148,11 +148,11 @@ A binding MAY carry `metadata.when`, a list of conditions from `src/runtime/obse
 - `turn.failed`, `turn.interrupt`: the terminal type, with the runtime reason.
 - `tool.idle`: a `tool.inactive` event in the turn.
 
-The delivery carries the condition lines (`⚠ <condition> (turn <id>): <detail>`) outside the data boundary and the condition names in its metadata. A rule with `metadata.when` MUST use `end_of_turn` delivery; unknown condition names are rejected.
+The delivery carries the condition lines (`⚠ <condition> (turn <id>): <detail>`) outside the data boundary and the condition names in its metadata. A rule with `metadata.when` MUST use `end_of_turn` delivery; unknown condition names are rejected. A condition-gated binding MUST NOT arm a pulse. When the binding's profile has no `{{delivery.conditions}}` placeholder (another profile or an older snapshot), the condition lines MUST be prepended to the prompt.
 
 ### Delivery to a live session
 
-A binding MAY carry `metadata.deliverTo`, a session name. Its deliveries go to that session as a normal `[System] Inform: [from: ravi observer] …` prompt instead of an `_observation` prompt to a dedicated observer session. A rule with `deliverTo` MUST be session-scoped with a source session, and `deliverTo` MUST NOT be the source. This is how `ravi sessions observe` (spec `sessions/observe`) reaches a conversation.
+A binding MAY carry `metadata.deliverTo`, a session key; each delivery is published to that session's current name, and a key that no longer exists skips the delivery (`receiver_missing`). Its deliveries go to that session as a normal `[System] Inform: [from: ravi observer] …` prompt instead of an `_observation` prompt to a dedicated observer session. A rule with `deliverTo` MUST be session-scoped with a source session, and `deliverTo` MUST NOT be the source. This is how `ravi sessions observe` (spec `sessions/observe`) reaches a conversation.
 
 The Observation Plane SHOULD support per-observer budgets for max events, max payload bytes, max prompt tokens, max runtime cost, and max executions per source turn.
 

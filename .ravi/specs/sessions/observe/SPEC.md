@@ -36,11 +36,13 @@ Let a session watch another one cheaply. `ravi sessions observe <source>` makes 
 
 - `observe` MUST resolve both sessions with the same scope check as any session target: a session the caller cannot reach is reported as not found, on either end.
 - The notices run as a turn of the receiving session's agent, so that agent MUST be the caller's own or one the caller may mutate.
-- A session MUST NOT observe itself.
-- `observe` creates or overwrites one rule per (receiver, source) pair, id `observe:<receiver>:<source>`, session-scoped, profile `compact`, delivery `end_of_turn`, mode `observe`, no permission grants. Running it again changes the mode in place; it never creates a second rule.
+- A session MUST NOT observe itself, and a trigger's own session MUST NOT be a receiver (it only takes its trigger's fires).
+- Both ends are stored by session key: a rename keeps the observation, and a name later reused by another session MUST NOT receive its notices.
+- Flag misuse (`--follow` with `--when`) and unknown condition names MUST fail as usage errors (exit 2).
+- `observe` creates or overwrites one rule per (receiver, source) pair, id `observe:<hash of both session keys>`, session-scoped, profile `compact`, delivery `end_of_turn`, mode `observe`, no permission grants. Running it again changes the mode in place; it never creates a second rule.
 - The binding MUST be attached at once, so a running source session is observed without relaunching.
 - Without `--follow`, the rule carries `metadata.when` (default `turn.no_final_reply`, `chat.narration`, `turn.failed`, `tool.idle`); `--when` replaces the list and unknown names fail. `--follow` and `--when` are exclusive.
-- Delivery goes to the receiving session as a normal `[System] Inform: [from: ravi observer] …` prompt, not as an `_observation` prompt: the receiver is a live conversation, not an isolated observer session, and an `_observation` prompt would start a second runtime beside it.
+- Delivery goes to the receiving session as a normal `[System] Inform: [from: ravi observer] …` prompt, marked `_observationNotice`, not as an `_observation` prompt: the notice turn is observer-originated, so it emits no observation events (two sessions watching each other cannot loop); the receiver is a live conversation, not an isolated observer session, and an `_observation` prompt would start a second runtime beside it.
 - `unobserve` deletes the rule; deleting a rule disables its binding in the same transaction.
 - `observing` lists active `observe:` rules whose both ends the caller can reach.
 - The command is channel-free: the receiver's own delivery path decides where its reply goes.

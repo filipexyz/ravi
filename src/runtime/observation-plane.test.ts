@@ -16,6 +16,7 @@ import {
   ensureObserverBindingsForSession,
   explainObserverRulesForSession,
   getObservationDebounceMs,
+  getObservationPulseMs,
   migrateObservationCommandAccessGrants,
   observedUserPreview,
   resolveObservationAllowedTools,
@@ -1351,6 +1352,45 @@ describe("Condition-gated observer bindings", () => {
     });
     expect(result.skipped.map((item) => item.reason)).toEqual(["invalid_conditions"]);
     expect(publishedPrompts).toHaveLength(0);
+  });
+
+  it("arms no pulse for a condition-gated binding", () => {
+    const session = getOrCreateSession("gate-pulse", "worker", "/tmp/worker", { name: "gate-pulse" });
+    dbUpsertObserverRule({
+      id: "gate-pulse-rule",
+      scope: "session",
+      sourceSession: "gate-pulse",
+      observerAgentId: "observer",
+      observerRole: "alerts",
+      deliveryPolicy: "end_of_turn",
+      metadata: { when: ["turn.failed"], pulseMs: 60_000 },
+    });
+    ensureObserverBindingsForSession({ sessionName: "gate-pulse", session });
+    expect(getObservationPulseMs({ sourceSessionName: "gate-pulse", sourceSession: session, agentId: "worker" })).toBe(
+      null,
+    );
+  });
+
+  it("puts the condition lines first when the profile has no place for them", async () => {
+    const session = getOrCreateSession("gate-default", "worker", "/tmp/worker", { name: "gate-default" });
+    dbUpsertObserverRule({
+      id: "gate-default-rule",
+      scope: "session",
+      sourceSession: "gate-default",
+      observerAgentId: "observer",
+      observerRole: "alerts",
+      deliveryPolicy: "end_of_turn",
+      metadata: { when: ["turn.failed"] },
+    });
+    ensureObserverBindingsForSession({ sessionName: "gate-default", session });
+    await deliverObservationEvents({
+      sourceSessionName: "gate-default",
+      sourceSession: session,
+      agentId: "worker",
+      deliveryPolicies: ["end_of_turn"],
+      events: [ev(1, "message.user"), ev(2, "turn.failed", { payload: { error: "boom" } })],
+    });
+    expect(String(publishedPrompts.at(-1)?.payload.prompt).startsWith("⚠ turn.failed (turn turn-g): boom")).toBe(true);
   });
 
   it("rejects unknown conditions and conditions on a non end-of-turn rule", () => {

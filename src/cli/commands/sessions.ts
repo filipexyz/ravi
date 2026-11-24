@@ -13,7 +13,7 @@ import {
   resolveSession,
   findSessionByChatId,
 } from "../session-targets.js";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { Group, Command, CommandAccess, CliOnly, Arg, Option } from "../decorators.js";
 import {
@@ -1048,14 +1048,13 @@ function sessionActionRef(session: Pick<SessionEntry, "name" | "sessionKey">): s
 
 const OBSERVE_RULE_PREFIX = "observe:";
 
-/** One rule per (observer, source) pair, so observe is idempotent and unobserve finds it. */
+/**
+ * One rule per (receiver, source) pair, so observe is idempotent and unobserve finds it. Derived
+ * from the session keys, not names: no two pairs share an id, and a rename keeps the rule.
+ */
 function observeRuleId(target: SessionEntry, source: SessionEntry): string {
-  const slug = (value: string) =>
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9_.-]+/g, "-")
-      .slice(0, 56);
-  return `${OBSERVE_RULE_PREFIX}${slug(sessionLabel(target))}:${slug(sessionLabel(source))}`;
+  const digest = createHash("sha256").update(`${target.sessionKey}\n${source.sessionKey}`).digest("hex");
+  return `${OBSERVE_RULE_PREFIX}${digest.slice(0, 32)}`;
 }
 
 function resolveCurrentSessionRef(): string | undefined {
@@ -5996,18 +5995,30 @@ export class SessionCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
-    if (follow && whenRaw) fail("Use either --follow (every turn) or --when (only on conditions), not both.");
+    if (follow && whenRaw) {
+      throw new CliExpectedError(
+        "Use either --follow (every turn) or --when (only on conditions), not both.",
+        "USAGE_ERROR",
+        2,
+      );
+    }
     const { source, target } = this.resolveObservePair(sourceRef, toRef);
     if (!source || !target) return;
-    const when = follow
-      ? null
-      : parseObservationConditions(whenRaw ? whenRaw.split(",") : [...DEFAULT_ALERT_CONDITIONS]);
+    let when: string[] | null = null;
+    if (!follow) {
+      try {
+        when = parseObservationConditions(whenRaw ? whenRaw.split(",") : [...DEFAULT_ALERT_CONDITIONS]);
+      } catch (error) {
+        throw new CliExpectedError(error instanceof Error ? error.message : String(error), "USAGE_ERROR", 2);
+      }
+    }
     const ruleId = observeRuleId(target, source);
     const rule = dbUpsertObserverRule({
       id: ruleId,
       enabled: true,
       scope: "session",
-      sourceSession: sessionLabel(source),
+      // Keys, not names: a rename keeps the observation, and a reused name never receives it.
+      sourceSession: source.sessionKey,
       observerAgentId: target.agentId,
       observerRole: ruleId.replace(/[^a-z0-9_-]/g, "-").slice(0, 64),
       observerMode: "observe",
@@ -6024,7 +6035,7 @@ export class SessionCommands {
         "turn.interrupt",
       ],
       permissionGrants: [],
-      metadata: { deliverTo: sessionLabel(target), ...(when ? { when } : {}), createdBy: "sessions observe" },
+      metadata: { deliverTo: target.sessionKey, ...(when ? { when } : {}), createdBy: "sessions observe" },
     });
     // Attach now: a running source session would otherwise only pick the rule up on its next launch.
     ensureObserverBindingsForSession({ sessionName: sessionLabel(source), session: source });
@@ -6114,10 +6125,16 @@ export class SessionCommands {
       .filter((rule) => rule.id.startsWith(OBSERVE_RULE_PREFIX) && rule.enabled)
       .map((rule) => {
         const when = Array.isArray(rule.metadata?.when) ? (rule.metadata?.when as string[]) : [];
+        const sourceKey = rule.sourceSession ?? "";
+        const toKey = typeof rule.metadata?.deliverTo === "string" ? rule.metadata.deliverTo : "";
+        const label = (key: string) => {
+          const session = getSession(key);
+          return session ? sessionLabel(session) : key;
+        };
         return {
           ruleId: rule.id,
-          source: rule.sourceSession ?? "",
-          to: typeof rule.metadata?.deliverTo === "string" ? rule.metadata.deliverTo : "",
+          source: label(sourceKey),
+          to: label(toKey),
           mode: (when.length > 0 ? "alerts" : "follow") as "alerts" | "follow",
           when,
         };
@@ -6154,6 +6171,11 @@ export class SessionCommands {
     if (!target) return { source, target: null };
     if (source.sessionKey === target.sessionKey) {
       fail("A session cannot observe itself.");
+      return { source: null, target: null };
+    }
+    if (isTriggerOwnSessionKey(target.sessionKey)) {
+      // A trigger's own session only takes that trigger's fires: every notice would be dropped.
+      fail(`${sessionLabel(target)} is a trigger's own session and cannot receive observation notices.`);
       return { source: null, target: null };
     }
     // The notices run as a turn of the target's agent: that agent must be the caller's own or one it may mutate.

@@ -1614,7 +1614,8 @@ function composeObservationPrompt(input: {
   const profile = input.binding.observerProfileSnapshotMarkdown
     ? resolveObserverProfileFromSnapshotMarkdown(input.binding.observerProfileSnapshotMarkdown)
     : resolveObserverProfile(input.binding.observerProfileId);
-  return renderObservationPromptForProfile({
+  const conditionsText = input.conditions ? renderObservationConditions(input.conditions) : "";
+  const rendered = renderObservationPromptForProfile({
     profile,
     source: input.source,
     binding: input.binding,
@@ -1623,8 +1624,12 @@ function composeObservationPrompt(input: {
     ...(input.runId ? { runId: input.runId } : {}),
     ...(input.deliveryId ? { deliveryId: input.deliveryId } : {}),
     ...(input.input ? { input: input.input } : {}),
-    conditionsText: input.conditions ? renderObservationConditions(input.conditions) : "",
+    conditionsText,
   });
+  // A profile (or an older snapshot) that does not place the condition lines still gets them first:
+  // the reason the observer was woken must never be lost.
+  const template = profile.templates.delivery[input.binding.deliveryPolicy] ?? "";
+  return conditionsText && !template.includes("delivery.conditions") ? `${conditionsText}\n\n${rendered}` : rendered;
 }
 
 /** Full text and tool input ride on events as `payload.detail`; only bindings that ask for them read them. */
@@ -1751,6 +1756,18 @@ export async function deliverObservationEvents(input: {
       skipped.push({ bindingId: binding.id, reason: exclusionReason });
       continue;
     }
+    // A live receiver is stored by session key and published to under its current name: a rename
+    // keeps the observation, and a name reused by another session never receives it.
+    let informTarget: string | null = null;
+    const informKey = bindingInformTarget(binding);
+    if (informKey) {
+      const receiver = getSession(informKey);
+      if (!receiver || receiver.sessionKey !== informKey) {
+        skipped.push({ bindingId: binding.id, reason: "receiver_missing" });
+        continue;
+      }
+      informTarget = receiver.name ?? receiver.sessionKey;
+    }
     const selected = input.events.filter((event) => bindingAllowsEvent(binding, source, event, deliveryPolicies));
     if (selected.length === 0) {
       skipped.push({
@@ -1779,14 +1796,15 @@ export async function deliverObservationEvents(input: {
     const sourceTurnIds = [
       ...new Set(claimed.map((event) => event.turnId).filter((id): id is string => Boolean(id))),
     ].sort();
-    const informTarget = bindingInformTarget(binding);
     try {
       if (informTarget) {
         // A live session (often a conversation) is not an observer session: it gets a normal
         // `[System] Inform` it can act on, not an `_observation` prompt with observer isolation.
+        // The notice is observer-originated, so the receiving turn emits no observation events.
         await observationPromptPublisher(informTarget, {
           prompt: `[System] Inform: [from: ravi observer] ${prompt}`,
           deliveryBarrier: "after_response",
+          _observationNotice: { bindingId: binding.id, sourceSessionKey: source.sessionKey },
         });
       } else {
         await observationPromptPublisher(binding.observerSessionName, {
@@ -1877,7 +1895,11 @@ export function getObservationPulseMs(input: {
 }): number | null {
   if (isObserverSessionName(input.sourceSessionName)) return null;
   const bindings = dbListObserverBindings({ sourceSessionKey: input.sourceSession.sessionKey, enabled: true });
-  const pulses = bindings.map(bindingPulseMs).filter((value): value is number => value !== null);
+  // A condition-gated binding is only read at end of turn: it must not arm a pulse it would refuse.
+  const pulses = bindings
+    .filter((binding) => binding.metadata?.when === undefined || binding.metadata?.when === null)
+    .map(bindingPulseMs)
+    .filter((value): value is number => value !== null);
   return pulses.length > 0 ? Math.min(...pulses) : null;
 }
 
@@ -1890,6 +1912,7 @@ export function validateObserverRules(): {
     try {
       if (rule.selector) compileObserverSelector(rule.selector);
       validateObserverSourceExclusions(rule.metadata);
+      validateObserverConditions(rule.metadata, rule.deliveryPolicy);
       validateRuleSafety({
         scope: rule.scope,
         mode: rule.observerMode,

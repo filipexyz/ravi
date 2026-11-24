@@ -235,6 +235,12 @@ export interface PromptMessage {
   _modelBrokerTurnId?: string;
   /** Observation Plane metadata for observer-session prompts. */
   _observation?: ObservationPromptMetadata;
+  /**
+   * Marks an observation notice delivered to a live session (`ravi sessions observe`). It reuses the
+   * receiving runtime like any prompt, but its turn is observer-originated, so it never produces
+   * observation events of its own (two sessions watching each other cannot loop).
+   */
+  _observationNotice?: { bindingId: string; sourceSessionKey: string };
   /** Task runtime metadata for reports, stall notices and observer nudges. */
   _taskRuntime?: TaskRuntimePromptMetadata;
   /** Heartbeat runner prompt marker. */

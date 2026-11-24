@@ -10,6 +10,9 @@ import {
 } from "../../runtime/observation-plane.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { runWithContext } from "../context.js";
+import { CliExpectedError } from "../expected-error.js";
+import { renameSessionName } from "../../router/sessions.js";
+import { classifyTurnProvenance, isObserverOriginated } from "../../runtime/turn-provenance.js";
 
 const { SessionCommands } = await import("./sessions.js");
 
@@ -122,6 +125,76 @@ describe("ravi sessions observe", () => {
     });
     expect(published).toHaveLength(1);
     expect(commands.observing(true)).toMatchObject({ observing: [], total: 0 });
+  });
+
+  it("marks the notice as observer-originated, so two sessions watching each other cannot loop", async () => {
+    const { source } = sessions();
+    const commands = new SessionCommands();
+    commands.observe("client-group", "lead-dm", undefined, true, true);
+    commands.observe("lead-dm", "client-group", undefined, true, true);
+    await deliverObservationEvents({
+      sourceSessionName: "client-group",
+      sourceSession: source,
+      agentId: "client-agent",
+      deliveryPolicies: ["end_of_turn"],
+      events: [ev(1, "message.user", "m1", { preview: "oi" }), ev(2, "turn.complete", "m1")],
+    });
+    expect(published).toHaveLength(1);
+    const notice = published[0]!.payload as { _observationNotice?: { bindingId: string } };
+    expect(notice._observationNotice?.bindingId).toBeTruthy();
+    // The receiving turn is classified as an observer turn: the event loop emits no observation for it.
+    expect(isObserverOriginated(classifyTurnProvenance({ prompt: notice as never }))).toBe(true);
+  });
+
+  it("survives renames and never delivers to a session that reuses an old name", async () => {
+    const { source, target } = sessions();
+    const commands = new SessionCommands();
+    commands.observe("client-group", "lead-dm", undefined, true, true);
+    renameSessionName(target.sessionKey, "lead-dm-renamed");
+    // Another session now holds the receiver's old name.
+    getOrCreateSession("lead-dm-impostor", "lead", "/tmp/lead", { name: "lead-dm" });
+    await deliverObservationEvents({
+      sourceSessionName: "client-group",
+      sourceSession: source,
+      agentId: "client-agent",
+      deliveryPolicies: ["end_of_turn"],
+      events: [ev(1, "message.user", "r1", { preview: "oi" }), ev(2, "turn.complete", "r1")],
+    });
+    expect(published.map((item) => item.sessionName)).toEqual(["lead-dm-renamed"]);
+    expect(commands.observing(true)).toMatchObject({ observing: [{ source: "client-group", to: "lead-dm-renamed" }] });
+
+    renameSessionName(source.sessionKey, "client-group-renamed");
+    expect(commands.unobserve("client-group-renamed", "lead-dm-renamed", true)).toMatchObject({ removed: true });
+    expect(commands.observing(true)).toMatchObject({ total: 0 });
+  });
+
+  it("refuses a trigger's own session as the receiver", () => {
+    sessions();
+    getOrCreateSession("agent:lead:trigger:t1:own", "lead", "/tmp/lead", undefined, { triggerRunner: true });
+    const commands = new SessionCommands();
+    expect(() =>
+      runWithContext({}, () =>
+        commands.observe("client-group", "agent:lead:trigger:t1:own", undefined, undefined, true),
+      ),
+    ).toThrow(/trigger's own session/);
+  });
+
+  it("reports flag misuse and unknown conditions as usage errors (exit 2)", () => {
+    sessions();
+    const commands = new SessionCommands();
+    for (const call of [
+      () => commands.observe("client-group", "lead-dm", "turn.vibes", undefined, true),
+      () => commands.observe("client-group", "lead-dm", "turn.failed", true, true),
+    ]) {
+      try {
+        call();
+        throw new Error("expected a usage error");
+      } catch (error) {
+        expect(error).toBeInstanceOf(CliExpectedError);
+        expect((error as CliExpectedError).exitCode).toBe(2);
+        expect((error as CliExpectedError).code).toBe("USAGE_ERROR");
+      }
+    }
   });
 
   it("hides sessions a scoped caller cannot reach, on both ends", () => {
