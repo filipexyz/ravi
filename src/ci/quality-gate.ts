@@ -320,6 +320,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // Chat commands: the channel-free engine every channel's adapter feeds, and the authority it asks.
     "src/chat-commands/engine.test.ts",
     "src/sessions/clone.test.ts",
+    "src/cli/commands/sessions-clone.test.ts",
     "src/cli/command-access.test.ts",
     "src/channels/slack/slash-command-handler.test.ts",
   ],

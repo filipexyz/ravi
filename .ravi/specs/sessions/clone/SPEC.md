@@ -40,12 +40,17 @@ A person copies the session they are in into a new chat with a name they choose:
 - The name MUST match `^[a-z0-9][a-z0-9_-]{0,79}$` after trimming and lowercasing, and MUST NOT be the name of an existing session.
 - The new session MUST run the origin's agent, in the origin agent's cwd, under a session key the router will use for an inbound message in the new chat (the provisioner computes it from the route it just wrote).
 - What is copied MUST be what the caller can already read: the origin's recap (`sessions recap`: the last N user/assistant messages, N ≤ 40, each truncated, tools omitted, plus the goal). The CLI MUST refuse an origin the caller cannot access as not found.
-- Copied text MUST be masked for credentials (`key=value` secrets, bearer tokens, `rctx_`, Slack, GitHub, OpenAI, AWS tokens, private keys) and MUST be fenced as data, one line per message, so no copied line can start like a system or role marker.
-- The seed MUST be delivered as a channel `session.bootstrap` turn with `after_response`. From the CLI it carries the caller's context id, so it can only be narrowed by the caller's turn.
+- Copied text MUST be masked for credentials on a best-effort basis (`key=value` secrets, bearer and Basic headers, URL passwords, JWT, `rctx_`, Slack, GitHub, OpenAI, Stripe, AWS, OpenBao/Vault, Google, npm tokens, private keys).
+- Everything that came from the origin (messages, its goal, its name) MUST pass through one fold: every line separator (LF, CR, VT, FF, NEL, LS, PS) becomes ` ⏎ `, control and direction-override characters are dropped, and the text cannot spell `CLONE_CONTEXT`. Messages and the goal MUST sit inside the fence; nothing copied may start a line a reader sees.
+- The fence MUST be `CLONE_CONTEXT_<nonce>` with a random nonce per seed. A history over budget MUST be cut at whole lines.
+- The seed MUST run with no authority, whoever asked: it is a `session.bootstrap` turn (`after_response`) whose caller context grants nothing and is a narrowed relay (`clone-seed` context, `src/sessions/clone-seed-turn.ts`). The runtime caps the turn at that empty ceiling and every automation sink sees it as held. The CLI's publisher MUST go through that builder.
+- `--invite` MUST be refused from a turn (`CLONE_INVITE_REQUIRES_OPERATOR`); only the operator's terminal names other people. `/ravi clone` invites only the verified person who asked.
 - No grant of the origin chat is copied. The new chat starts with none, so a person turn there gets the minimum (#953) and the asker acts with their own grants.
 - `/ravi clone` MUST ask the person for access to the origin session AND for the mutating capability `sessions clone` declares (read from the CLI metadata, as `close` and `stop` do); without that metadata, or with a non-mutating one, it MUST be refused.
 - A failure after the chat exists MUST say so (chat id and session name) instead of looking like nothing happened.
 
 ## Slack
+
+Creating the chat and its route is part of `sessions clone`: a person with that capability gets a private channel routed to the origin's agent without holding `slack channels-create` (decided by the main session, 24/11).
 
 The Slack provisioner creates a private channel through `slack channels-create --private --agent` (#867), using the origin's Slack account as the channel config, invites only Slack user ids, and refuses a channel it could not route to the agent.

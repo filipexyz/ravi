@@ -54,6 +54,7 @@ import {
   SESSION_CLONE_DEFAULT_MESSAGES,
   SESSION_CLONE_MAX_MESSAGES,
   SessionCloneError,
+  type SessionCloneDeps,
   type SessionClonePlan,
 } from "../../sessions/clone.js";
 import { ensureSessionCloneProvisioners } from "../../channels/session-clone-provisioners.js";
@@ -132,7 +133,7 @@ import type {
 } from "../../runtime/message-types.js";
 import { buildRuntimeCallerPrincipal, buildSessionRelayTurnOrigin } from "../../runtime/turn-origin.js";
 import type { RuntimeTurnOriginPrincipal } from "../../runtime/message-types.js";
-import { publishChannelSessionPrompt } from "../../channels/session-prompt.js";
+import { buildSessionCloneSeedTurn } from "../../sessions/clone-seed-turn.js";
 import { toPersistedChannelContext } from "../../channels/context.js";
 import {
   CHAT_ACTION_DESCRIPTORS,
@@ -2007,6 +2008,19 @@ function loadSessionReadTranscript(session: SessionEntry, maxMessages: number): 
   };
 }
 
+/** How the CLI delivers a clone's seed: always through the no-authority seed turn (clone-seed-turn.ts). */
+export function sessionCloneSeedPublisher(
+  requestedBy: RuntimeTurnOriginPrincipal,
+  transport: (sessionName: string, payload: Record<string, unknown>) => Promise<void> = publishSessionPrompt,
+): SessionCloneDeps["publishSeed"] {
+  return async ({ sessionKey, agentId, sessionName, prompt, source }) => {
+    await transport(
+      sessionName,
+      buildSessionCloneSeedTurn({ agentId, sessionKey, sessionName, prompt, source, requestedBy }),
+    );
+  };
+}
+
 /**
  * `sessions clone` with the real stores: the recap the way `sessions recap` reads it, the
  * session row, and the seed published as the new session's first prompt. Also the chat
@@ -2024,10 +2038,7 @@ export async function runSessionCloneFromCli(
   },
 ): Promise<SessionClonePlan> {
   ensureSessionCloneProvisioners();
-  const context = getContext();
-  const principal = input.principal ?? buildRuntimeCallerPrincipal(context);
-  // The seed turn can only be narrowed by the caller's own turn, never widened.
-  const callerContextId = input.principal ? undefined : context?.contextId;
+  const principal = input.principal ?? buildRuntimeCallerPrincipal(getContext());
   return runSessionClone(
     {
       origin,
@@ -2059,15 +2070,7 @@ export async function runSessionCloneFromCli(
       sessionNameTaken: (name) => getSessionByName(name) !== null,
       createSession: ({ sessionKey, agentId, agentCwd, name }) =>
         getOrCreateSession(sessionKey, agentId, agentCwd, { name }),
-      publishSeed: async ({ sessionName, prompt, source }) => {
-        await publishChannelSessionPrompt({
-          sessionName,
-          action: "session.bootstrap",
-          principal,
-          ...(callerContextId ? { callerContextId } : {}),
-          payload: { prompt, source, deliveryBarrier: "after_response" },
-        });
-      },
+      publishSeed: sessionCloneSeedPublisher(principal),
     },
   );
 }
@@ -6643,7 +6646,8 @@ export class SessionCommands {
     messages?: string,
     @Option({
       flags: "--invite <ids>",
-      description: "Comma-separated platform user ids to invite to the new chat (the channel decides which it accepts)",
+      description:
+        "Comma-separated platform user ids to invite to the new chat (operator terminal only; the channel decides which it accepts)",
     })
     invite?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
@@ -6668,6 +6672,17 @@ export class SessionCommands {
           .map((value) => value.trim())
           .filter(Boolean)
       : [];
+    // Inviting puts the copied history in front of other people, who may not read the origin. From a
+    // turn (an agent, or a person through one) only the operator's terminal may name them; the chat
+    // command invites the verified person who asked, and nobody else.
+    if (inviteActorIds.length > 0 && getContext()?.agentId) {
+      throw new CliExpectedError(
+        "--invite is only accepted from the operator's terminal: the copied history must not reach people the caller chose.",
+        "CLONE_INVITE_REQUIRES_OPERATOR",
+        2,
+        "Run without --invite and add people to the new chat yourself, or use /ravi clone, which invites only you.",
+      );
+    }
     let plan: SessionClonePlan;
     try {
       plan = await runSessionCloneFromCli(origin, {
