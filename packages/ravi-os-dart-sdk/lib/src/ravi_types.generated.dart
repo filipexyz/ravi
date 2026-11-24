@@ -24003,6 +24003,58 @@ typedef SessionsAttachReturn = Map<String, RaviJson>;
 
 SessionsAttachReturn sessionsAttachReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
 
+class SessionsCloneOptions {
+  const SessionsCloneOptions({this.execute, this.invite, this.messages, this.session});
+
+  final bool? execute;
+  final String? invite;
+  final String? messages;
+  final String? session;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (invite != null) {
+      into["invite"] = RaviJson.from(invite);
+    }
+    if (messages != null) {
+      into["messages"] = RaviJson.from(messages);
+    }
+    if (session != null) {
+      into["session"] = RaviJson.from(session);
+    }
+  }
+}
+
+class SessionsCloneReturn {
+  const SessionsCloneReturn({required this.agentId, required this.clone, required this.name, required this.origin, required this.seed, required this.status});
+
+  final String agentId;
+  final RaviJson clone;
+  final String name;
+  final RaviJson origin;
+  final RaviJson seed;
+  final String status;
+
+  factory SessionsCloneReturn.fromJson(Map<String, Object?> json) {
+    return SessionsCloneReturn(
+      agentId: raviJsonAsString(json["agentId"]),
+      clone: RaviJson.from(json["clone"]),
+      name: raviJsonAsString(json["name"]),
+      origin: RaviJson.from(json["origin"]),
+      seed: RaviJson.from(json["seed"]),
+      status: raviJsonAsString(json["status"]),
+    );
+  }
+
+  static SessionsCloneReturn fromJsonValue(Object? json) {
+    return SessionsCloneReturn.fromJson(raviJsonObject(json, "SessionsCloneReturn"));
+  }
+}
+
+SessionsCloneReturn sessionsCloneReturnFromJson(Object? json) => SessionsCloneReturn.fromJsonValue(json);
+
 class SessionsCloseThreadOptions {
   const SessionsCloseThreadOptions({this.return_, this.session});
 

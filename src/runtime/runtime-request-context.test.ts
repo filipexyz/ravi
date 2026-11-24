@@ -1,4 +1,6 @@
 import { existsSync } from "node:fs";
+import { sessionCloneSeedPublisher } from "../cli/commands/sessions.js";
+import { buildSessionCloneSeedTurn } from "../sessions/clone-seed-turn.js";
 import { isActorBreakGlassLimitedContext, isRelayHeldBelowAgent } from "../permissions/actor-limit.js";
 import { join } from "node:path";
 import { authorizeContextCapabilities } from "../permissions/context-capabilities-provider.js";
@@ -2731,6 +2733,88 @@ describe("verified human work handoffs", () => {
       }
     },
   );
+
+  it("the seed of a cloned session holds nothing, even on a full-access agent and for any asker", () => {
+    dbUpdateAgent(workerAgent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+    const positive = (turn: Turn) =>
+      (turn.capabilities ?? []).filter((capability) => !capability.permission.startsWith("deny_"));
+    const seedFor = (requestedBy: { type: "agent" | "automation"; id: string }) => {
+      // The clone's session exists before its seed is queued (runSessionClone creates it first).
+      const cloneSession = getOrCreateSession(
+        `agent:${workerAgent.id}:clone-${++sequence}`,
+        workerAgent.id,
+        workerAgent.cwd,
+        {
+          name: `clone-${sequence}`,
+        },
+      );
+      const payload = buildSessionCloneSeedTurn({
+        agentId: workerAgent.id,
+        sessionKey: cloneSession.sessionKey,
+        sessionName: `clone-${sequence}`,
+        prompt: "[System] Inform: clone",
+        source: { channel: "testchat", accountId: "acct", chatId: "room-2" },
+        requestedBy,
+      });
+      const prompt: RuntimeLaunchPrompt = {
+        ...promptForContact("forged-destination-contact", "[System] Inform: clone"),
+        _turnOrigin: payload._turnOrigin as RuntimeLaunchPrompt["_turnOrigin"],
+      };
+      return runtimeFor(prompt, workerAgent, `clone-seed-${sequence}`);
+    };
+    // The CLI's publisher goes through the same seed turn (no raw prompt).
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const viaCli = getOrCreateSession(
+      `agent:${workerAgent.id}:clone-cli-${++sequence}`,
+      workerAgent.id,
+      workerAgent.cwd,
+      {
+        name: `clone-cli-${sequence}`,
+      },
+    );
+    void sessionCloneSeedPublisher({ type: "agent", id: originAgent.id }, async (sessionName, payload) => {
+      published.push({ sessionName, payload });
+    })({
+      sessionKey: viaCli.sessionKey,
+      agentId: workerAgent.id,
+      sessionName: `clone-cli-${sequence}`,
+      prompt: "[System] Inform: clone",
+      source: { channel: "testchat", accountId: "acct", chatId: "room-3" },
+    });
+    expect(published).toHaveLength(1);
+    const cliSeed = runtimeFor(
+      {
+        ...promptForContact("forged-destination-contact", "[System] Inform: clone"),
+        _turnOrigin: published[0]!.payload._turnOrigin as RuntimeLaunchPrompt["_turnOrigin"],
+      },
+      workerAgent,
+      `clone-seed-cli-${sequence}`,
+    );
+    expect(positive(cliSeed)).toEqual([]);
+
+    // Control: the same bootstrap with no caller context runs with the agent's whole authority.
+    const unbounded = runtimeFor(
+      {
+        ...promptForContact("forged-destination-contact", "[System] Inform: clone"),
+        _turnOrigin: buildChannelTurnOrigin("session.bootstrap", { type: "agent", id: originAgent.id }),
+      },
+      workerAgent,
+      `clone-seed-control-${++sequence}`,
+    );
+    expect(positive(unbounded).length).toBeGreaterThan(0);
+    // The operator (CLI), an agent, and a contact through the chat command: the seed holds nothing.
+    for (const requestedBy of [
+      { type: "automation" as const, id: "operator:local" },
+      { type: "agent" as const, id: originAgent.id },
+      { type: "automation" as const, id: "chat-command:contact:limited" },
+    ]) {
+      const seed = seedFor(requestedBy);
+      expect(positive(seed)).toEqual([]);
+      expect(seed.metadata?.relayNarrowing).toBe(true);
+      expect(seed.metadata?.relayCallerUnrestricted).toBeUndefined();
+      expect(isRelayHeldBelowAgent(seed.metadata)).toBe(true);
+    }
+  });
 
   it.each(["inform", "answer", "session.return"] as const)(
     "%s never turns a notification into a human request",

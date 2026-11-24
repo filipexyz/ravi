@@ -181,6 +181,7 @@ describe("who may run a command", () => {
       close: "modify",
       close_idle: "modify",
       stop: "modify",
+      clone: "access",
     });
   });
 
@@ -885,5 +886,126 @@ describe("architecture", () => {
     const specifiers = specifiersOf(readFileSync(join(import.meta.dir, "engine.ts"), "utf8"));
 
     expect(specifiers).not.toContain("../cli/commands/sessions.js");
+  });
+});
+
+describe("clone <name>", () => {
+  it("parses a name, and asks for usage without one or with more than one word", () => {
+    expect(parseChatCommandText("clone pesquisa-voz")).toEqual({ kind: "clone", name: "pesquisa-voz" });
+    expect(parseChatCommandText("CLONE x")).toEqual({ kind: "clone", name: "x" });
+    expect(parseChatCommandText("clone")).toEqual({ kind: "usage", command: "clone" });
+    expect(parseChatCommandText("clone a b")).toEqual({ kind: "usage", command: "clone" });
+  });
+
+  it("clones for a reader who holds the clone command, inviting the person by their platform id", async () => {
+    const seen: Array<{ name: string; contactId: string; actorId: string; sessionKey: string }> = [];
+    const h = harness({
+      capabilities: READER,
+      deps: {
+        cloneSession: async (input) => {
+          seen.push({
+            name: input.name,
+            contactId: input.contactId,
+            actorId: input.actorId,
+            sessionKey: input.session.sessionKey,
+          });
+          return {
+            kind: "cloned",
+            sessionName: "pesquisa",
+            chatId: "C1",
+            messages: 3,
+            redacted: true,
+            inviteFailed: false,
+          };
+        },
+      },
+    });
+    const outcome = await runChatCommand(h.channel("clone pesquisa"), h.deps);
+    expect(outcome).toEqual({ decision: "allowed", code: "ok" });
+    expect(seen).toEqual([{ name: "pesquisa", contactId: CONTACT, actorId: "user-1", sessionKey: "agent:main:main" }]);
+    // The command's own capability is asked, as the CLI declares it.
+    expect(h.calls.access.map((input) => input.command)).toEqual(["clone"]);
+    expect(h.replies).toEqual([
+      {
+        kind: "cloned",
+        sessionName: "main",
+        cloneName: "pesquisa",
+        chatId: "C1",
+        messages: 3,
+        redacted: true,
+        inviteFailed: false,
+      },
+    ]);
+    expect(h.audits[0]).toMatchObject({ subcommand: "clone", decision: "allowed", code: "ok" });
+  });
+
+  it("refuses without access to the session, and never clones", async () => {
+    let called = 0;
+    const h = harness({
+      capabilities: NOBODY,
+      deps: {
+        cloneSession: async () => {
+          called += 1;
+          return { kind: "refused", code: "X", message: "x" };
+        },
+      },
+    });
+    const outcome = await runChatCommand(h.channel("clone pesquisa"), h.deps);
+    expect(outcome).toEqual({ decision: "denied", code: "not_authorized_access" });
+    expect(called).toBe(0);
+  });
+
+  it("refuses a reader who lacks the clone command's capability, and never clones", async () => {
+    let called = 0;
+    const h = harness({
+      capabilities: READER,
+      commandAccess: () =>
+        ({
+          allowed: false,
+          errorMessage: "no",
+          attempted: [],
+          denialDetails: { capability: "mutate:sessions:clone" },
+        }) as unknown as CliCommandAccessResult,
+      deps: {
+        cloneSession: async () => {
+          called += 1;
+          return { kind: "refused", code: "X", message: "x" };
+        },
+      },
+    });
+    const outcome = await runChatCommand(h.channel("clone pesquisa"), h.deps);
+    expect(outcome).toEqual({ decision: "denied", code: "not_authorized_command" });
+    expect(h.replies).toEqual([
+      { kind: "not_authorized_command", operation: "clone", capability: "mutate:sessions:clone" },
+    ]);
+    expect(called).toBe(0);
+  });
+
+  it("refuses when the CLI declares no mutating access for clone", async () => {
+    const h = harness({
+      deps: {
+        inheritedAccess: async () => ({
+          group: "sessions",
+          command: "clone",
+          access: { kind: "read", resource: "sessions", action: "clone", risk: "low" },
+        }),
+        cloneSession: async () => {
+          throw new Error("must not run");
+        },
+      },
+    });
+    const outcome = await runChatCommand(h.channel("clone pesquisa"), h.deps);
+    expect(outcome).toEqual({ decision: "error", code: "access_metadata_missing" });
+  });
+
+  it("says a refusal of the core as facts (name, channel)", async () => {
+    const h = harness({
+      deps: {
+        cloneSession: async () => ({ kind: "refused", code: "CLONE_NAME_TAKEN", message: "taken" }),
+      },
+    });
+    const outcome = await runChatCommand(h.channel("clone pesquisa"), h.deps);
+    expect(outcome).toEqual({ decision: "info", code: "CLONE_NAME_TAKEN" });
+    expect(h.replies).toEqual([{ kind: "clone_refused", code: "CLONE_NAME_TAKEN", message: "taken" }]);
   });
 });

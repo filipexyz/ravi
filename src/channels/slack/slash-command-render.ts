@@ -75,6 +75,16 @@ function refusalText(name: string, code: string, message: string): string {
   return `I could not close ${label} (\`${code}\`).`;
 }
 
+function cloneRefusalText(code: string, message: string, command: string): string {
+  if (code === "CLONE_NAME_INVALID") {
+    return `That name does not work for a channel: use lowercase letters, digits, \`-\` or \`_\` (up to 80), like \`${command} clone pesquisa-voz\`.`;
+  }
+  if (code === "CLONE_NAME_TAKEN") return "A session with that name already exists. Pick another name.";
+  if (code === "CLONE_CHANNEL_UNSUPPORTED") return "Cloning is not available for this chat yet.";
+  if (code === "CLONE_ORIGIN_UNBOUND") return "This session is not bound to a chat, so there is nothing to clone into.";
+  return `I could not clone this session (\`${code}\`): ${oneLine(message)}`;
+}
+
 /** The Slack message for one result. `command` is the command as typed, with its slash: `/ravi`. */
 export function renderSlackCommandResult(result: ChatCommandResult, command: string): SlackCommandMessage {
   switch (result.kind) {
@@ -119,7 +129,13 @@ export function renderSlackCommandResult(result: ChatCommandResult, command: str
 
     case "not_authorized_command":
       return slackCommandMessage(
-        `You are not allowed to ${result.operation === "interrupt" ? "stop turns" : "close threads"}${result.capability ? ` (missing \`${result.capability}\`)` : ""}.`,
+        `You are not allowed to ${
+          result.operation === "interrupt"
+            ? "stop turns"
+            : result.operation === "clone"
+              ? "clone sessions"
+              : "close threads"
+        }${result.capability ? ` (missing \`${result.capability}\`)` : ""}.`,
       );
 
     case "threads_unsupported":
@@ -230,6 +246,18 @@ export function renderSlackCommandResult(result: ChatCommandResult, command: str
 
     case "stop_failed":
       return slackCommandMessage(`I could not interrupt (\`${result.code}\`).`);
+
+    case "cloned": {
+      const lines = [
+        `Cloned \`${escapeMrkdwn(result.sessionName)}\` into <#${result.chatId}> (session \`${escapeMrkdwn(result.cloneName)}\`), with the last ${result.messages} ${plural(result.messages, "message", "messages")} as context${result.redacted ? " (secrets masked)" : ""}.`,
+        "The new session goes on by itself: nothing there comes back here.",
+      ];
+      if (result.inviteFailed) lines.push("I could not invite you: join the channel yourself.");
+      return slackCommandMessage(lines.join("\n"));
+    }
+
+    case "clone_refused":
+      return slackCommandMessage(cloneRefusalText(result.code, result.message, command));
 
     case "failed":
       return slackCommandMessage("I could not run that right now. Try again in a moment.");
