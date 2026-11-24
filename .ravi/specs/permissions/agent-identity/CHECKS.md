@@ -57,8 +57,11 @@
   replaceable) and the `pr publish` follow refusal (`agent-contract.test.ts`,
   `pr/service.test.ts`); the remote CLI MUST map each known cause to its fixed
   advice and keep the generic denial advice for an unknown cause or none, and a
-  `failed` or `blocked` body carrying a cause MUST keep its own advice
-  (`remote-gateway.test.ts`).
+  body carrying a cause MUST NOT get the cause's advice unless it is both
+  `denied` and `PERMISSION_DENIED`: a `failed` body keeps its own advice, a
+  `blocked` one the generic advice of its outcome, and a body that pairs only
+  one half (`PERMISSION_DENIED` without `denied`, or the reverse) is rejected as
+  malformed before the gate (`remote-gateway.test.ts`).
 - An app command resolving to anything but Ravi MUST be refused in a turn
   that withholds `execute:executable:*` (`turn-executable.test.ts`); observer
   rules written from such a turn MUST be refused (`automation-store-guard.test.ts`).

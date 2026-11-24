@@ -1762,9 +1762,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | permissions | src/permissions/external-authority-provider.ts | 279 | triaged-follow-up | catch-without-binding | src/permissions/external-authority-provider.ts:ea3cce06a9b84d07571d739f |
 | permissions | src/permissions/external-authority-provider.ts | 324 | fixed | binding retained / no recognized error surface | src/permissions/external-authority-provider.ts:246ebf20a63fb8171d85dfd7 |
 | permissions | src/permissions/grant-requests/runner.ts | 15 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/runner.ts:0af4833007804829812bb722 |
-| permissions | src/permissions/grant-requests/service.ts | 269 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:97faa890175ca9178433118e |
-| permissions | src/permissions/grant-requests/service.ts | 381 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:f40c7396592b295b1f24760b |
-| permissions | src/permissions/grant-requests/service.ts | 411 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:463fd044a194df89861eef7a |
+| permissions | src/permissions/grant-requests/service.ts | 272 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:97faa890175ca9178433118e |
+| permissions | src/permissions/grant-requests/service.ts | 384 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:f40c7396592b295b1f24760b |
+| permissions | src/permissions/grant-requests/service.ts | 414 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:463fd044a194df89861eef7a |
 | permissions | src/permissions/grant-requests/store.ts | 290 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/store.ts:4d2c02c75762345efbd4df15 |
 | permissions | src/permissions/grant-requests/store.ts | 301 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/store.ts:0f6e90634e8a1fecf83e5e95 |
 | permissions | src/permissions/provider-config-paths.ts | 59 | fixed | binding retained / no recognized error surface | src/permissions/provider-config-paths.ts:478e4cc0b615ab3752dae1ed |

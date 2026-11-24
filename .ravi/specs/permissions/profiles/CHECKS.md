@@ -70,7 +70,9 @@ capability: profiles
   without `--execute`, fails closed with the three codes, refuses a contact that
   already holds full access in that chat (`FULL_ACCESS_ALREADY_HELD`, exit 3,
   nobody asked, also in the plan; its advice names the held relay and the
-  governed-chat automation refusal, which no grant lifts), accepts only full-access
+  governed-chat automation refusal, which no grant lifts, and that a cron job
+  bound to that chat is allowed; its message says an open identical request was
+  closed only when a real request closed one, never in the plan), accepts only full-access
   / one contact / one chat / an executor that already holds admin, reads the
   request back with `request-status` (`applied` only when the grant is in place)
   and the printed revoke command removes it.

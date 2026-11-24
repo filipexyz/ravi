@@ -141,10 +141,18 @@ describe("permissions request / request-status", () => {
     for (const execute of [true, false]) {
       const error = await request({ to: `contact:${admin.id}`, execute });
       expect(error).toMatchObject({ code: "FULL_ACCESS_ALREADY_HELD", exitCode: 3 });
-      expect((error as Error).message).toContain(`Contact ${admin.id} already holds full access in chat ${chatId}`);
+      const message = (error as Error).message;
+      expect(message).toContain(`Contact ${admin.id} already holds full access in chat ${chatId}`);
+      // Says only what holds: the grant adds nothing; it never claims their turns run with the whole agent.
+      expect(message).toContain("would add nothing to what their own turns hold");
+      expect(message).not.toContain("whole authority");
+      // Nothing was open, so nothing was closed, in the plan or the real request.
+      expect(message).not.toContain("was closed");
       const suggestedAction = (error as { details?: { suggestedAction?: string } }).details?.suggestedAction;
-      // In a governed chat their turn is narrowed to those grants: automation stays refused there too.
+      // In a governed chat their turn is narrowed to those grants: automation stays refused there too,
+      // except a cron job bound to that chat.
       expect(suggestedAction).toContain("a chat governed by contact grants");
+      expect(suggestedAction).toContain("a cron job bound to that chat is allowed");
       expect(suggestedAction).toContain("No grant lifts either");
     }
     expect(delivered).toEqual([]);
