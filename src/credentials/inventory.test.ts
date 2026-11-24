@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { sleepSync } from "bun";
 import { Database } from "bun:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -91,6 +92,8 @@ describe("credential lifecycle metadata", () => {
     const disabled = setCredentialConnectionStatus("slack", "rbbt", "disabled", options);
     expect(disabled?.disabledAt).toBeNumber();
     const firstDisable = disabled?.disabledAt;
+    // A later clock tick: a reset would show up as a different time.
+    sleepSync(5);
     // Re-disabling keeps the first time; an upsert that stays disabled keeps it too.
     expect(setCredentialConnectionStatus("slack", "rbbt", "disabled", options)?.disabledAt).toBe(firstDisable!);
     vaultConnection(options, "rbbt", { status: "disabled" });
