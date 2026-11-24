@@ -74,6 +74,16 @@ export function pendingCronFailureReports(): CronRunRow[] {
     .all();
 }
 
+/** Failed runs of one job whose report is still unsettled, this one included. */
+export function countPendingCronFailures(jobId: string): number {
+  const row = getDb()
+    .query<{ n: number }, [string]>(
+      "SELECT COUNT(*) AS n FROM cron_runs WHERE job_id = ? AND status = 'error' AND reported = 0",
+    )
+    .get(jobId);
+  return row?.n ?? 0;
+}
+
 export function cronRunNotification(run: CronRunRow): CronFailureJob {
   return JSON.parse(run.notification_json) as CronFailureJob;
 }

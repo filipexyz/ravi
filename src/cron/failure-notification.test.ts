@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { listLocalInboxEvents, listLocalInboxItems } from "../inbox/local-db.js";
 import { dbCreateCronJob } from "./cron-db.js";
-import { classifyCronFailure, notifyCronFailure, recordUnreadableCronFailure } from "./failure-notification.js";
+import {
+  CRON_FAILURE_MAX_DELIVERY_ATTEMPTS,
+  CRON_FAILURE_NOTICE_WINDOW_MS,
+  classifyCronFailure,
+  notifyCronFailure,
+  recordUnreadableCronFailure,
+} from "./failure-notification.js";
 
 let stateDir: string | null = null;
 beforeEach(async () => {
@@ -22,7 +28,7 @@ function job() {
       schedule: { type: "every", every: 60000 },
       ownerPrincipal: "operator",
     }),
-    lastRunAt: 1000,
+    lastRunAt: Date.now(),
   };
 }
 
@@ -56,8 +62,88 @@ describe("cron failure notification", () => {
       metadata: { category: "credential" },
     });
     expect(JSON.stringify(items)).not.toContain("PRIVATE_TOKEN_123");
-    await notifyCronFailure({ ...current, lastRunAt: 2000 }, "interrupted", deps);
+    // Another run of the same job inside the window joins the first notice.
+    await notifyCronFailure({ ...current, lastRunAt: Date.now() + 1 }, "interrupted", deps);
+    expect(sent).toHaveLength(1);
+    // After the window the owner hears about the job again.
+    await notifyCronFailure({ ...current, lastRunAt: Date.now() + CRON_FAILURE_NOTICE_WINDOW_MS }, "interrupted", {
+      ...deps,
+      now: () => Date.now() + CRON_FAILURE_NOTICE_WINDOW_MS + 1,
+    });
     expect(sent).toHaveLength(2);
+  });
+
+  it("sends one message for a job's backlog of failed runs, with the count, never one per run", async () => {
+    const current = job();
+    const sent: string[] = [];
+    const deps = {
+      owner: () => target,
+      deliver: async (_target: typeof target, text: string) => void sent.push(text),
+      pendingFailures: () => 31,
+    };
+    for (let run = 0; run < 31; run++) {
+      expect(await notifyCronFailure({ ...current, runId: `run-${run}` }, "timeout", deps)).toBe(true);
+    }
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain("falhou 31 vezes");
+    const items = listLocalInboxItems({ sourceDomain: "cron" });
+    expect(items).toHaveLength(31);
+    const aggregated = items.filter((item) =>
+      listLocalInboxEvents(item.id).some((event) => event.eventType === "cron.failure.aggregated"),
+    );
+    expect(aggregated).toHaveLength(30);
+  });
+
+  it("settles a failure older than the window without a message, keeping it in the inbox", async () => {
+    let delivered = 0;
+    const old = { ...job(), lastRunAt: Date.now() - CRON_FAILURE_NOTICE_WINDOW_MS - 60_000 };
+    const deps = { owner: () => target, deliver: async () => void delivered++ };
+    expect(await notifyCronFailure(old, "timeout", deps)).toBe(true);
+    expect(await notifyCronFailure(old, "timeout", deps)).toBe(true);
+    expect(delivered).toBe(0);
+    const item = listLocalInboxItems({ sourceDomain: "cron" })[0]!;
+    expect(item.status).toBe("open");
+    expect(listLocalInboxEvents(item.id).filter((event) => event.eventType === "cron.failure.stale")).toHaveLength(1);
+  });
+
+  it("falls through to the owner's next chat when the first one cannot be reached", async () => {
+    const whatsapp = { channel: "whatsapp", accountId: "luis", to: "5511@s", chatId: "5511@s", contactId: "owner" };
+    const tried: string[] = [];
+    const ok = await notifyCronFailure(job(), "timeout", {
+      owners: () => [whatsapp, target],
+      deliver: async (to) => {
+        tried.push(to.channel);
+        if (to.channel === "whatsapp") throw new Error("instance not connected");
+      },
+    });
+    expect(ok).toBe(true);
+    expect(tried).toEqual(["whatsapp", "slack"]);
+    const item = listLocalInboxItems({ sourceDomain: "cron" })[0]!;
+    const notified = listLocalInboxEvents(item.id).find((event) => event.eventType === "cron.failure.notified");
+    expect(notified?.payload).toMatchObject({ channel: "slack" });
+  });
+
+  it("settles a report no chat accepts as undeliverable after bounded attempts, instead of retrying every start", async () => {
+    const current = job();
+    let attempts = 0;
+    const deps = {
+      owner: () => target,
+      deliver: async () => {
+        attempts++;
+        throw new Error("not connected");
+      },
+    };
+    expect(await notifyCronFailure(current, "timeout", deps)).toBe(false);
+    expect(await notifyCronFailure(current, "timeout", deps)).toBe(false);
+    expect(await notifyCronFailure(current, "timeout", deps)).toBe(true);
+    // Settled: a later start does not try again.
+    expect(await notifyCronFailure(current, "timeout", deps)).toBe(true);
+    expect(attempts).toBe(CRON_FAILURE_MAX_DELIVERY_ATTEMPTS);
+    const item = listLocalInboxItems({ sourceDomain: "cron" })[0]!;
+    expect(item.status).toBe("open");
+    expect(
+      listLocalInboxEvents(item.id).filter((event) => event.eventType === "cron.failure.undeliverable"),
+    ).toHaveLength(1);
   });
 
   it("keeps failed delivery retryable and never falls back to an unrelated chat", async () => {
@@ -74,7 +160,10 @@ describe("cron failure notification", () => {
     expect(listLocalInboxItems({ sourceDomain: "cron" })[0]?.status).toBe("open");
     await notifyCronFailure(current, "timeout", deps);
     expect(attempts).toBe(2);
-    await notifyCronFailure({ ...current, lastRunAt: 3000 }, "timeout", { owner: () => null, deliver: deps.deliver });
+    await notifyCronFailure({ ...current, lastRunAt: Date.now() + 2 }, "timeout", {
+      owner: () => null,
+      deliver: deps.deliver,
+    });
     expect(attempts).toBe(2);
   });
 

@@ -112,3 +112,13 @@ RAVI_CONTEXT_KEY=<viewer-ctx> ravi cron disable <other-agent-job-id> --json
   failed runs by job, never selects runs of jobs the caller may not modify (they are
   counted as denied), narrows to one job with `--job`, and marks exactly the selected
   runs reported without sending anything.
+
+## Failure Notices MUST Aggregate And Stop Retrying
+
+- `bun test src/cron/failure-notification.test.ts` MUST prove a job's backlog of failed runs
+  sends one message with the count (31 runs → one "falhou 31 vezes", 30 aggregated), a second
+  run inside the 24 h window sends nothing and one after it sends again, delivery falls through
+  from an unreachable chat to the owner's next one, and a report no chat accepts settles as
+  undeliverable after 3 attempts and is not tried again.
+- `bun test src/cron/runner.test.ts` MUST prove two failed runs of one job drained at start
+  settle with one message that says "falhou 2 vezes", online and offline.

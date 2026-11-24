@@ -80,6 +80,7 @@ const actualChatTargetModule = await import("../cloud-agents/chat-target.js");
 // Only what a test armed is faked: with nothing armed these call through to the real ones, so the mocks
 // are harmless to other files that share this process.
 const actualResolveOwnerDirectTarget = actualOwnerModule.resolveOwnerDirectTarget;
+const actualResolveOwnerDirectTargets = actualOwnerModule.resolveOwnerDirectTargets;
 const actualDeliverToChat = actualChatTargetModule.deliverToChat;
 const directChatsArmed = () => operatorChat !== null || contactChats.size > 0;
 
@@ -90,6 +91,12 @@ mock.module("../knowledge/owner.js", () => ({
     if (!directChatsArmed()) return actualResolveOwnerDirectTarget(deps);
     const ids = deps?.listOwnerContactIds?.();
     return ids ? (contactChats.get(ids[0] ?? "") ?? null) : operatorChat;
+  },
+  resolveOwnerDirectTargets: (deps?: Parameters<typeof actualResolveOwnerDirectTarget>[0]) => {
+    if (!directChatsArmed()) return actualResolveOwnerDirectTargets(deps);
+    const ids = deps?.listOwnerContactIds?.();
+    const chat = ids ? (contactChats.get(ids[0] ?? "") ?? null) : operatorChat;
+    return chat ? [chat] : [];
   },
 }));
 
@@ -1279,8 +1286,10 @@ describe("durable cron run correlation", () => {
       try {
         await recovered.start();
         await waitUntil(() => pendingCronFailureReports().length === 0);
-        expect(directMessages).toHaveLength(2);
-        expect(directAttempts).toHaveLength(offline ? 3 : 2);
+        // Both failed runs of the job settle with one message that carries the count.
+        expect(directMessages).toHaveLength(1);
+        expect(directMessages[0]!.text).toContain("falhou 2 vezes");
+        expect(directAttempts).toHaveLength(offline ? 2 : 1);
       } finally {
         await recovered.stop();
       }
