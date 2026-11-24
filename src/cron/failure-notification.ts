@@ -430,6 +430,9 @@ export async function notifyUndeliveredRunReturn(
     sourceId: run.originId,
     dedupeKey: `run-return-undelivered:${run.runId}`,
     title: `Resultado não entregue: ${name}`,
+    // The local inbox is the operator's record: `ravi inbox` reads it (no contact grant reaches
+    // `read:inbox`, nothing filters by the assigned contact) and these items emit no event, so the
+    // summary keeps the session names. The contact's own words are the message below.
     summary: `O resultado de uma execução do ${kind} “${name}” não chegou a ${run.parentSessionName} em 24 h e foi descartado. A execução: ravi sessions read ${run.runSessionName}.`,
     priority: "normal",
     assignedToAgentId: run.agentId,

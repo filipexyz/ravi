@@ -51,6 +51,7 @@ import { repairOrphanContactChatGrants } from "./permissions/contact-merge-grant
 import { startJobsRunner, stopJobsRunner } from "./jobs/index.js";
 import { startSessionFollowupRunner, stopSessionFollowupRunner } from "./session-followups/index.js";
 import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
+import { registerSlackAutomationSurface } from "./channels/slack/automation-surface.js";
 import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js";
 import { startInboxRunner, stopInboxRunner } from "./inbox/index.js";
 import { startLinkRequestWatcher, stopLinkRequestWatcher } from "./identity-link/link-watcher.js";
@@ -581,6 +582,9 @@ export async function startDaemon() {
     },
     onError: (error) => log.warn("Channel runner liveness check failed", { error }),
   });
+
+  // Automation runs whose parent answers in Slack show as Slack threads (the core knows no channel).
+  registerSlackAutomationSurface();
 
   // Step 7: Start runners — leader election ensures only one daemon runs heartbeat/cron
   // Trigger, ephemeral, and inbox are per-daemon (each daemon handles its own).

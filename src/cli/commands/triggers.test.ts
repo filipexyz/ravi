@@ -1763,7 +1763,7 @@ describe("TriggersCommands owner", () => {
 });
 
 describe("TriggersCommands --thread", () => {
-  const add = (opts: { session?: string; thread?: boolean; reportTo?: string }) =>
+  const add = (opts: { session?: string; thread?: boolean; reportTo?: string; visible?: boolean }) =>
     new TriggersCommands().add(
       "watch",
       "ravi.test.thread",
@@ -1783,6 +1783,7 @@ describe("TriggersCommands --thread", () => {
       undefined,
       opts.thread,
       opts.reportTo,
+      opts.visible,
     );
 
   beforeEach(() => {
@@ -1931,5 +1932,40 @@ describe("TriggersCommands --thread", () => {
     );
 
     await expect(add({ thread: true, reportTo: "other-parent" })).rejects.toThrow(/belongs to other/);
+  });
+
+  it("shows fires only when asked: --visible goes with --thread and is absent otherwise", async () => {
+    const { getOrCreateSession } = await import("../../router/sessions.js");
+    getOrCreateSession("agent:main:slack:dm:visible-parent", "main", "/tmp/main", { name: "visible-parent" });
+
+    await expect(add({ visible: true })).rejects.toThrow("--visible only applies with --thread");
+    await add({ thread: true, reportTo: "visible-parent" });
+    expect(createdTriggers.at(-1)).not.toHaveProperty("threadVisible");
+    await add({ thread: true, reportTo: "visible-parent", visible: true });
+    expect(createdTriggers.at(-1)).toMatchObject({ session: "thread", threadVisible: true });
+  });
+
+  it("sets visible on a thread trigger only, and turns it off when the trigger leaves thread mode", async () => {
+    const quiet = console.log;
+    console.log = () => {};
+    try {
+      updatedTriggers.length = 0;
+      triggerRecord = { ...buildTriggerRecord(), session: "thread", ownerPrincipal: "operator" };
+      const commands = new TriggersCommands();
+
+      await expect(commands.set("trg_1", "visible", "maybe", true)).rejects.toThrow(/Invalid boolean/);
+      await commands.set("trg_1", "visible", "on", true);
+      expect(updatedTriggers.at(-1)?.patch).toEqual({ threadVisible: true });
+
+      triggerRecord = { ...triggerRecord, threadVisible: true };
+      await commands.set("trg_1", "session", "main", true);
+      expect(updatedTriggers.at(-1)?.patch).toMatchObject({ session: "main", threadVisible: false });
+
+      triggerRecord = { ...triggerRecord, session: "main", threadVisible: false };
+      await expect(commands.set("trg_1", "visible", "yes", true)).rejects.toThrow(/thread triggers only/);
+    } finally {
+      console.log = quiet;
+      triggerRecord = buildTriggerRecord();
+    }
   });
 });

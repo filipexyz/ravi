@@ -66615,6 +66615,10 @@ export const CronAddInputSchema = {
     "tz": {
       "description": "Timezone (e.g., America/Sao_Paulo)",
       "type": "string"
+    },
+    "visible": {
+      "description": "With --thread: show each run where the report-to session answers (a thread in its Slack chat), seen by everyone in that chat; elsewhere runs stay unseen. Off by default",
+      "type": "boolean"
     }
   },
   "required": [
@@ -67065,7 +67069,7 @@ export const CronSetInputSchema = {
       "type": "string"
     },
     "key": {
-      "description": "Property: name, message, shell, exec, timeout, env-file, on-error, cron, every, tz, agent, account, description, session, reply-session, delete-after",
+      "description": "Property: name, message, shell, exec, timeout, env-file, on-error, cron, every, tz, agent, account, description, session, reply-session, visible, delete-after",
       "type": "string"
     },
     "value": {
@@ -135957,6 +135961,10 @@ export const TriggersAddInputSchema = {
     "topic": {
       "description": "Notif topic pattern to subscribe to",
       "type": "string"
+    },
+    "visible": {
+      "description": "With --thread: show each fire's run where the report-to session answers (a thread in its Slack chat), seen by everyone in that chat; elsewhere runs stay unseen. Off by default",
+      "type": "boolean"
     }
   },
   "required": [
@@ -136306,7 +136314,7 @@ export const TriggersSetInputSchema = {
       "type": "string"
     },
     "key": {
-      "description": "Property: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, debounce, filter, replySession",
+      "description": "Property: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, debounce, filter, replySession, visible",
       "type": "string"
     },
     "value": {

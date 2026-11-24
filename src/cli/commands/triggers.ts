@@ -444,8 +444,11 @@ function resolveTriggerThreadReportTo(
 }
 
 function describeSession(
-  trigger: Pick<Trigger, "id" | "agentId" | "session" | "ownerPrincipal" | "executionType">,
+  trigger: Pick<Trigger, "id" | "agentId" | "session" | "ownerPrincipal" | "executionType" | "threadVisible">,
 ): string {
+  if (trigger.session === "thread" && trigger.threadVisible) {
+    return "thread (visible: each fire shows where its report-to session answers, seen by that chat)";
+  }
   // Show the isolated session's name once it exists, so its owner can read it.
   const isolatedName = triggerIsolatedSessionName(trigger.agentId ?? getDefaultAgentId(), trigger);
   if (isolatedName) return `${trigger.session} (${isolatedName})`;
@@ -851,6 +854,12 @@ export class TriggersCommands {
         "With --thread: the session each fire reports to, of the trigger's agent (default: the creating session, else the agent's main session)",
     })
     reportTo?: string,
+    @Option({
+      flags: "--visible",
+      description:
+        "With --thread: show each fire's run where the report-to session answers (a thread in its Slack chat), seen by everyone in that chat; elsewhere runs stay unseen. Off by default",
+    })
+    visible?: boolean,
   ) {
     if (!topic) {
       fail("--topic is required");
@@ -884,6 +893,9 @@ export class TriggersCommands {
     }
     if (reportTo !== undefined && !thread) {
       failTriggerUsage("--report-to only applies with --thread", "add --thread, or drop --report-to", asJson);
+    }
+    if (visible && !thread) {
+      failTriggerUsage("--visible only applies with --thread", "add --thread, or drop --visible", asJson);
     }
     if (thread && replySessionOverride !== undefined) {
       failTriggerUsage(
@@ -1038,6 +1050,7 @@ export class TriggersCommands {
       replySession,
       replySource,
       session: sessionTarget,
+      ...(thread && visible ? { threadVisible: true } : {}),
       cooldownMs,
       debounceMs,
       filter,
@@ -1164,7 +1177,7 @@ export class TriggersCommands {
     @Arg("id", { description: "Trigger ID" }) id: string,
     @Arg("key", {
       description:
-        "Property: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, debounce, filter, replySession",
+        "Property: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, debounce, filter, replySession, visible",
     })
     key: string,
     @Arg("value", { description: "Property value" }) value: string,
@@ -1334,9 +1347,32 @@ export class TriggersCommands {
               "Warning: session isolated is deprecated: use thread. Keep isolated only for a trigger that reads Bases as its owner.",
             );
           }
-          updated = update({ session });
+          // Visible runs are a thread trigger's: leaving thread mode turns them off.
+          updated = update({
+            session,
+            ...(session !== "thread" && trigger!.threadVisible ? { threadVisible: false } : {}),
+          });
           normalizedValue = session;
           logHuman(`✓ Session set: ${id} -> ${session}`);
+          break;
+        }
+
+        case "visible": {
+          const normalizedBooleanInput = value.toLowerCase();
+          if (!["true", "false", "yes", "no", "on", "off", "1", "0"].includes(normalizedBooleanInput)) {
+            fail(`Invalid boolean value: ${value}. Use: true, false, yes, no, on, off, 1, 0`);
+          }
+          const visible = ["true", "yes", "on", "1"].includes(normalizedBooleanInput);
+          if (visible && trigger!.session !== "thread") {
+            fail(`visible applies to thread triggers only. Set it with: ravi triggers set ${id} session thread`);
+          }
+          updated = update({ threadVisible: visible });
+          normalizedValue = visible;
+          logHuman(
+            visible
+              ? `✓ Visible set: ${id} -> yes (each fire shows where its report-to session answers, seen by that chat)`
+              : `✓ Visible set: ${id} -> no (fires stay unseen; only their return reaches the report-to session)`,
+          );
           break;
         }
 
@@ -1385,7 +1421,7 @@ export class TriggersCommands {
 
         default:
           fail(
-            `Unknown property: ${key}. Valid: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, debounce, filter, replySession`,
+            `Unknown property: ${key}. Valid: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, debounce, filter, replySession, visible`,
           );
       }
 
