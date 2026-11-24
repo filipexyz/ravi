@@ -44,8 +44,13 @@ export async function declareHandoff(input: {
  * explicitly). Only an explicit reference to the child or the handoff closes it:
  * unrelated activity of the parent never does.
  */
-export async function acknowledgeChildHandoffs(childSessionKey: string, reason: string, now = Date.now()) {
-  const acked = acknowledgeHandoffsForChild(childSessionKey, reason, now);
+export async function acknowledgeChildHandoffs(
+  childSessionKey: string,
+  reason: string,
+  now = Date.now(),
+  kinds?: readonly HandoffKind[],
+) {
+  const acked = acknowledgeHandoffsForChild(childSessionKey, reason, now, kinds);
   for (const handoff of acked) await publishHandoffEvent("acknowledged", handoff, now);
   return acked;
 }
@@ -55,6 +60,13 @@ export async function acknowledgeHandoffById(id: string, reason: string, now = D
   if (acked) await publishHandoffEvent("acknowledged", acked, now);
   return acked;
 }
+
+/**
+ * What a message from the parent to the thread answers. A review, a merge or a dispatch is an action the
+ * parent takes elsewhere: a message to the thread ("hold on", "publish PR 2") does not do it, so those stay
+ * open until the thread closes or the parent runs `handoff-ack`.
+ */
+export const HANDOFF_KINDS_ANSWERED_BY_MESSAGE: readonly HandoffKind[] = ["instruction", "decision"];
 
 export function listOpenHandoffs(parentSessionKey?: string): Handoff[] {
   return listHandoffs({ parentSessionKey });
@@ -68,7 +80,9 @@ export function ownerHandoffNoticeText(parentSessionKey: string, handoffs: reado
   return [
     `${count === 1 ? "1 thread espera" : `${count} threads esperam`} a sessão ${parentName} há mais de 45 min:`,
     ...lines,
-    `A sessão ${parentName} já foi lembrada. Ver: ravi sessions handoffs`,
+    handoffs.every((h) => h.parentNudgedAt !== null)
+      ? `A sessão ${parentName} já foi lembrada. Ver: ravi sessions handoffs`
+      : `O lembrete à sessão ${parentName} não saiu. Ver: ravi sessions handoffs`,
   ].join("\n");
 }
 

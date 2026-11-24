@@ -9,6 +9,8 @@ afterAll(() => mock.restore());
 
 const actualRouterIndexModule = await import("../../router/index.js");
 const actualRouterSessionsModule = await import("../../router/sessions.js");
+// Captured before the module is mocked below: the mock replaces the namespace in place.
+const realGetOrCreateSession = actualRouterSessionsModule.getOrCreateSession;
 const actualRouterDbModule = await import("../../router/router-db.js");
 const actualRuntimeContextRegistryModule = await import("../../runtime/context-registry.js");
 const actualStickerCatalogModule = await import("../../stickers/catalog.js");
@@ -668,6 +670,8 @@ const {
   SessionCommands,
   sessionCloseThreadReturnSchema,
   sessionCreateThreadReturnSchema,
+  sessionHandoffAckReturnSchema,
+  sessionHandoffsReturnSchema,
   sessionReportReturnSchema,
   sessionThreadSendReturnSchema,
   sessionThreadsReturnSchema,
@@ -2965,13 +2969,185 @@ describe("SessionCommands attach hints", () => {
     reportSlackThreadError = null;
     expect(listOpenHandoffs(parentKey).map((h) => [h.id, h.kind])).toEqual([[result.handoff.id, "review"]]);
 
-    // Unrelated parent activity does not close it; messaging this thread does.
+    // The thread cannot mark its own wait as handled.
+    await expect(new SessionCommands().handoffAck(result.handoff.id, undefined, true)).rejects.toMatchObject({
+      code: "HANDOFF_SELF_ACK",
+    });
+
+    // A message to the thread answers an instruction or a decision, not a review: it stays open.
     resolvedSession = { sessionKey: parentKey, name: "dev-slack", agentId: "dev", agentCwd: "/tmp/dev" };
     toolContext = { sessionKey: parentKey, sessionName: "dev-slack" };
     await new SessionCommands().threadSend("other-thread", "segue", undefined, true);
+    await new SessionCommands().threadSend("handoff-child", "segura o despacho", undefined, true);
     expect(listOpenHandoffs(parentKey)).toHaveLength(1);
-    await new SessionCommands().threadSend("handoff-child", "revisão despachada", undefined, true);
+    const acked = (await new SessionCommands().handoffAck(result.handoff.id, "review dispatched", true)) as Record<
+      string,
+      any
+    >;
+    expectReturnShape(sessionHandoffAckReturnSchema, acked);
+    expect(acked).toMatchObject({ changed: true, status: "acknowledged" });
     expect(listOpenHandoffs(parentKey)).toHaveLength(0);
+    const audit = (await new SessionCommands().handoffs(undefined, true, true)) as Record<string, any>;
+    expectReturnShape(sessionHandoffsReturnSchema, audit);
+    expect(audit.handoffs.find((h: any) => h.id === result.handoff.id)).toMatchObject({
+      status: "acknowledged",
+      ackReason: "review dispatched",
+    });
+
+    // An instruction wait is closed by the parent's next message to the thread.
+    resolvedSession = {
+      sessionKey: childKey,
+      name: "dev-slack-t-1713000000000100",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+    toolContext = { sessionKey: childKey, sessionName: "dev-slack-t-1713000000000100" };
+    await new SessionCommands().report("qual caminho?", undefined, true, "instruction");
+    resolvedSession = { sessionKey: parentKey, name: "dev-slack", agentId: "dev", agentCwd: "/tmp/dev" };
+    toolContext = { sessionKey: parentKey, sessionName: "dev-slack" };
+    await new SessionCommands().threadSend("handoff-child", "vai pelo caminho A", undefined, true);
+    expect(listOpenHandoffs(parentKey)).toHaveLength(0);
+  });
+
+  it("report --awaiting review --pr opens the review only for the PR head with a green gate", async () => {
+    const { listOpenHandoffs, acknowledgeHandoffById } = await import("../../handoffs/service.js");
+    const { setReviewGithubReadForTest } = await import("../../handoffs/review-dispatch.js");
+    const sha = "135fbbc78acc79545ca641d4ae21819c56d498e1";
+    const childKey = "agent:dev:slack:ravi-slack:C123:thread:1713000000.000100";
+    const parentKey = "agent:dev:slack:ravi-slack:C123";
+    resolvedSession = {
+      sessionKey: childKey,
+      name: "dev-slack-t-1713000000000100",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+    toolContext = { sessionKey: childKey, sessionName: "dev-slack-t-1713000000000100" };
+    childThreadLifecycle = { parentSessionKey: parentKey };
+    for (const open of listOpenHandoffs()) await acknowledgeHandoffById(open.id, "test reset");
+
+    for (const [args, label] of [
+      [["review", undefined, "filipexyz/ravi#938"], "no ref"],
+      [["review", sha.slice(0, 8), "filipexyz/ravi#938"], "short sha"],
+      [["merge", sha, "filipexyz/ravi#938"], "not a review"],
+      [["review", sha, "ravi#938"], "bad pr"],
+    ] as const) {
+      await expect(
+        new SessionCommands().report("pronta", undefined, true, args[0], args[1], args[2]),
+        label,
+      ).rejects.toMatchObject({ code: "USAGE_ERROR" });
+    }
+
+    let gate: { status: string; conclusion: string | null } = { status: "in_progress", conclusion: null };
+    setReviewGithubReadForTest(async (endpoint) =>
+      endpoint.endsWith("/pulls/938")
+        ? { state: "open", head: { sha } }
+        : {
+            check_runs: [
+              {
+                id: 7,
+                name: "Quality Gate",
+                head_sha: sha,
+                status: gate.status,
+                conclusion: gate.conclusion,
+                completed_at: gate.conclusion ? "2026-11-23T23:33:30Z" : null,
+              },
+            ],
+          },
+    );
+    try {
+      const pending = (await new SessionCommands().report(
+        "PR 2 pronta",
+        undefined,
+        true,
+        "review",
+        sha,
+        "filipexyz/ravi#938",
+      )) as Record<string, any>;
+      expectReturnShape(sessionReportReturnSchema, pending);
+      expect(pending.reviewDispatch).toEqual({ status: "skipped", reason: "quality gate still running" });
+      expect(pending.handoff).toMatchObject({ kind: "review", status: "open" });
+      expect(reportedSlackThreads.at(-1)?.message).toContain("Revisão não despachada pelo runtime: quality gate");
+
+      gate = { status: "completed", conclusion: "success" };
+      // The reviewer's thread opens at the parent's Slack channel, like any create-thread from a thread.
+      realGetOrCreateSession(parentKey, "dev", "/tmp/dev", { name: "dev-slack" });
+      realGetOrCreateSession(childKey, "dev", "/tmp/dev", {
+        name: "dev-slack-t-1713000000000100",
+      });
+      toolContext = {
+        sessionKey: childKey,
+        sessionName: "dev-slack-t-1713000000000100",
+        source: {
+          channel: "slack",
+          accountId: "ravi-slack",
+          instanceId: "ravi-slack",
+          chatId: "C123",
+          canonicalChatId: "chat_slack",
+        },
+      };
+      chatRecords.set("chat_slack", {
+        id: "chat_slack",
+        title: "ravi",
+        channel: "slack",
+        instanceId: "ravi-slack",
+        platformChatId: "C123",
+        chatType: "channel",
+      });
+      routerConfig = {
+        agents: {},
+        channels: {
+          "ravi-slack": {
+            name: "ravi-slack",
+            provider: "slack",
+            enabled: true,
+            credentialConnection: "ravi-slack-secret",
+          },
+        },
+        instances: {},
+        instanceToAccount: {},
+      };
+      const lifecyclesBefore = createdSlackThreadLifecycles.length;
+      const green = (await new SessionCommands().report(
+        "PR 2 pronta",
+        undefined,
+        true,
+        "review",
+        sha,
+        "filipexyz/ravi#938",
+      )) as Record<string, any>;
+      expectReturnShape(sessionReportReturnSchema, green);
+      expect(green.reviewDispatch).toMatchObject({
+        status: "dispatched",
+        replayed: false,
+        provider: "claude",
+        gate: { name: "Quality Gate", checkRunId: 7 },
+      });
+      // Nothing is left for the parent to dispatch: the wait closes, with the reviewer's request as the reason.
+      expect(green.handoff).toMatchObject({ kind: "review", status: "acknowledged" });
+      expect(createdSlackThreadLifecycles.length).toBe(lifecyclesBefore + 1);
+      expect(createdSlackThreadLifecycles.at(-1)).toMatchObject({
+        parentSessionKey: parentKey,
+        initialPrompt: expect.stringContaining(`SHA a revisar: ${sha}`),
+        providerOverride: "claude",
+        effortOverride: "high",
+      });
+      expect(reportedSlackThreads.at(-1)?.message).toContain("Revisão despachada pelo runtime:");
+      expect(listOpenHandoffs(parentKey)).toHaveLength(0);
+
+      // The same report again does not open a second review: the key returns the first request.
+      const again = (await new SessionCommands().report(
+        "PR 2 pronta",
+        undefined,
+        true,
+        "review",
+        sha,
+        "filipexyz/ravi#938",
+      )) as Record<string, any>;
+      expect(again.reviewDispatch).toMatchObject({ status: "dispatched", replayed: true });
+      expect(again.reviewDispatch.requestId).toBe(green.reviewDispatch.requestId);
+    } finally {
+      setReviewGithubReadForTest(null);
+    }
   });
 
   it("refuses report and close-thread with THREAD_IDENTITY_MISMATCH from a session that took an open thread's name", async () => {
