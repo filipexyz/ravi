@@ -10,6 +10,8 @@ import {
   isFullSha,
   parsePullRequestRef,
   pickReviewerRuntime,
+  pullRequestFollowedHere,
+  readPullClosure,
   readReviewEvidence,
   reviewAutoDispatchEnabled,
   reviewThreadKey,
@@ -117,10 +119,26 @@ describe("review dispatch", () => {
     expect(followsPullRequest([{ ...follow, replySession: "main" }], TARGET, session)).toBe(false);
     expect(followsPullRequest([{ ...follow, enabled: false }], TARGET, session)).toBe(false);
     expect(followsPullRequest([follow], { repo: "other/repo", pr: 938 }, session)).toBe(false);
+    // A wait may name a PR its thread did not publish, but only a PR this install follows is read.
+    expect(pullRequestFollowedHere([{ name: follow.name }], TARGET)).toBe(true);
+    expect(pullRequestFollowedHere([follow], { repo: "other/private", pr: 1 })).toBe(false);
+    expect(pullRequestFollowedHere([{ ...follow, enabled: false }], TARGET)).toBe(false);
     expect(replayedReviewDecision("open")).toEqual({ usable: true });
     expect(replayedReviewDecision("queued")).toEqual({ usable: true });
     expect(replayedReviewDecision("closed")).toMatchObject({ usable: false });
     expect(replayedReviewDecision("failed")).toMatchObject({ usable: false });
+    expect(replayedReviewDecision("failed")).toMatchObject({
+      reason: expect.stringContaining("open a new one by hand (ravi sessions create-thread)"),
+    });
+  });
+
+  it("reads whether a PR already ended, merged or not", async () => {
+    expect(await readPullClosure(TARGET, async () => ({ state: "open" }))).toBeNull();
+    expect(await readPullClosure(TARGET, async () => ({ state: "closed", merged: true }))).toEqual({ merged: true });
+    expect(await readPullClosure(TARGET, async () => ({ state: "closed", merged_at: "2026-11-24T01:30:00Z" }))).toEqual(
+      { merged: true },
+    );
+    expect(await readPullClosure(TARGET, async () => ({ state: "closed", merged: false }))).toEqual({ merged: false });
   });
 
   it("is on unless the setting turns it off", () => {

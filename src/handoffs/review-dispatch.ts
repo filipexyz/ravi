@@ -77,6 +77,18 @@ export function followsPullRequest(
   );
 }
 
+/**
+ * Whether any session of this install follows the PR. A wait may name a PR its thread did not publish (the
+ * reviewer names the author's), but the runtime reads the state only of PRs this install already follows.
+ */
+export function pullRequestFollowedHere(
+  triggers: ReadonlyArray<{ name: string; enabled?: boolean }>,
+  target: Pick<ReviewTarget, "repo" | "pr">,
+): boolean {
+  const name = `gh-follow:${target.repo}#${target.pr}`;
+  return triggers.some((trigger) => trigger.enabled !== false && trigger.name.toLowerCase() === name);
+}
+
 /** On unless the setting turns it off. */
 export function reviewAutoDispatchEnabled(read: (key: string) => string | null = dbGetSetting): boolean {
   const value = read(REVIEW_AUTO_DISPATCH_SETTING)?.trim().toLowerCase();
@@ -163,6 +175,24 @@ export async function readReviewEvidence(
   };
 }
 
+const pullClosureSchema = z.object({
+  state: z.enum(["open", "closed"]),
+  merged: z.boolean().optional(),
+  merged_at: z.string().nullable().optional(),
+});
+
+/**
+ * Whether a PR already ended, read once when a wait on it is declared: a merge that happened before the wait
+ * existed sent its event to nobody. Null when the PR is open; a failed read throws and the caller opens the wait.
+ */
+export async function readPullClosure(
+  target: Pick<ReviewTarget, "repo" | "pr">,
+  read: GithubRead,
+): Promise<{ merged: boolean } | null> {
+  const pull = pullClosureSchema.parse(await read(`repos/${target.repo}/pulls/${target.pr}`));
+  return pull.state === "closed" ? { merged: pull.merged === true || !!pull.merged_at } : null;
+}
+
 export type ReviewDispatchDecision = { dispatch: true } | { dispatch: false; reason: string };
 
 export const REVIEW_NOTE_MAX = 280;
@@ -173,7 +203,10 @@ export const REVIEW_NOTE_MAX = 280;
  */
 export function replayedReviewDecision(status: string): { usable: true } | { usable: false; reason: string } {
   if (status === "failed" || status === "closed")
-    return { usable: false, reason: `the review opened for this head is ${status}; the parent decides what next` };
+    return {
+      usable: false,
+      reason: `the review opened for this head is ${status}; open a new one by hand (ravi sessions create-thread) or publish a new SHA`,
+    };
   return { usable: true };
 }
 

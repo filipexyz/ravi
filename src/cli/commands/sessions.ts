@@ -249,6 +249,8 @@ import {
   isFullSha,
   parsePullRequestRef,
   pickReviewerRuntime,
+  pullRequestFollowedHere,
+  readPullClosure,
   readReviewEvidence,
   reviewAutoDispatchEnabled,
   reviewGateCheckName,
@@ -7881,6 +7883,23 @@ export class SessionCommands {
     // fails the report: a review it could not open stays an ordinary wait on the parent.
     const reviewDispatch =
       reviewTarget && awaitingKind === "review" ? await this.dispatchReview(session, reviewTarget, message) : undefined;
+    // A PR that already ended before this wait existed sent its merged/closed event to nobody: read it once
+    // and record the wait already closed. A failed read leaves the wait open, as before.
+    const prClosure =
+      reviewTarget &&
+      pendingHandoff &&
+      reviewDispatch?.status !== "dispatched" &&
+      pullRequestFollowedHere(dbListTriggers(), reviewTarget)
+        ? await readPullClosure(reviewTarget, reviewGithubRead()).catch((error) => {
+            logger.child("cli:sessions").debug("PR state not read when declaring a wait; the wait opens", {
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return null;
+          })
+        : null;
+    if (prClosure) {
+      reportText = `${reportText}\nA PR ${reviewTarget!.repo}#${reviewTarget!.pr} já está ${prClosure.merged ? "mergeada" : "fechada"}: a espera nasce fechada.`;
+    }
     if (reviewDispatch?.status === "dispatched") {
       reportText = `${reportText}\nRevisão despachada pelo runtime: ${reviewDispatch.requestId} (${reviewDispatch.provider}/${reviewDispatch.model}), ${reviewDispatch.gate.name} ${reviewDispatch.gate.checkRunId} success.`;
     } else if (reviewDispatch) {
@@ -7902,7 +7921,9 @@ export class SessionCommands {
           ...pendingHandoff,
           ...(reviewDispatch?.status === "dispatched"
             ? { closedReason: `review dispatched: ${reviewDispatch.requestId}` }
-            : {}),
+            : prClosure
+              ? { closedReason: prClosure.merged ? "PR merged" : "PR closed" }
+              : {}),
         });
       } catch (error) {
         handoffError = error instanceof Error ? error.message : String(error);
