@@ -14,7 +14,11 @@ import {
   replaceMirroredTagSlugsForAsset,
 } from "./tags/helpers.js";
 import { dbFindTagBindings, dbGetTagDefinition } from "./tags/tag-db.js";
-import { assertBreakGlassStoreWrite, slugBreakGlassReasons } from "./permissions/break-glass.js";
+import {
+  assertBreakGlassStoreWrite,
+  slugBreakGlassReasons,
+  warnOperatorBreakGlass,
+} from "./permissions/break-glass.js";
 import { dbListContactChatGrants } from "./permissions/contact-chat-grants.js";
 import { isPermissionPolicyTag, normalizePermissionTag } from "./permissions/permission-tags.js";
 import { detachTagFromSelector, searchTagBindingsForSelector } from "./tags/service.js";
@@ -1239,20 +1243,33 @@ function deleteCanonicalContactTagBindings(contactId: string): void {
   }
 }
 
+/** Tags that carry no break-glass power (a merge never carries break-glass over, like chat grants). */
+function withoutBreakGlassTags(tags: readonly string[]): string[] {
+  return tags.filter((tag) => slugBreakGlassReasons(tag, dbGetTagDefinition).length === 0);
+}
+
 function moveCanonicalContactTagBindings(sourceContactId: string, targetContactId: string): void {
   for (const binding of searchTagBindingsForSelector({ selector: { target: `contact:${sourceContactId}` } }).bindings) {
-    attachTagSlugsToAsset({
-      assetType: "contact",
-      assetId: targetContactId,
-      tags: [binding.tagSlug],
-      source: binding.source,
-      createdBy: binding.createdBy ?? "contacts",
-      metadata: {
-        ...(binding.metadata ?? {}),
-        source: binding.metadata?.source ?? "contact_merge",
-        mergedFromContactId: sourceContactId,
-      },
-    });
+    // A break-glass tag is dropped with the source, never moved (#952 review N3).
+    const carriesBreakGlass = withoutBreakGlassTags([binding.tagSlug]).length === 0;
+    if (carriesBreakGlass) {
+      process.stderr.write(
+        `warning: contact merge dropped the break-glass tag ${binding.tagSlug} of contact:${sourceContactId}; re-tag contact:${targetContactId} from the operator terminal if it should keep it.\n`,
+      );
+    }
+    if (!carriesBreakGlass)
+      attachTagSlugsToAsset({
+        assetType: "contact",
+        assetId: targetContactId,
+        tags: [binding.tagSlug],
+        source: binding.source,
+        createdBy: binding.createdBy ?? "contacts",
+        metadata: {
+          ...(binding.metadata ?? {}),
+          source: binding.metadata?.source ?? "contact_merge",
+          mergedFromContactId: sourceContactId,
+        },
+      });
     detachTagFromSelector({
       slug: binding.tagSlug,
       selector: { target: `contact:${sourceContactId}` },
@@ -1309,10 +1326,9 @@ function assertContactActivationAllowed(
   const nextStatus = input.status ?? previous?.status ?? null;
   const nextOptOut = input.optOut ?? Boolean(previous?.opt_out);
   if (wasActive || nextStatus !== "allowed" || nextOptOut) return;
-  assertBreakGlassStoreWrite(
-    `activating contact:${input.contactId}`,
-    contactPolicyBreakGlassReasons(database, input.contactId, input.tags ?? []),
-  );
+  const reasons = contactPolicyBreakGlassReasons(database, input.contactId, input.tags ?? []);
+  assertBreakGlassStoreWrite(`activating contact:${input.contactId}`, reasons);
+  warnOperatorBreakGlass(`activating contact:${input.contactId}`, reasons);
 }
 
 function currentContactPolicyTags(database: Database, contactId: string): string[] {
@@ -10689,11 +10705,14 @@ export function mergeContacts(targetId: string, sourceId: string): { merged: num
           .prepare("UPDATE contacts SET primary_email = ?, updated_at = datetime('now') WHERE id = ?")
           .run(source.email, targetId);
       }
-      const mergedTags = target.tags.length === 0 && source.tags.length > 0 ? source.tags : target.tags;
+      // The source's break-glass tags are dropped, not carried (#952 N3; review N10: tags_json is
+      // written directly here, so it never receives what the sinks would refuse).
+      const sourceTags = withoutBreakGlassTags(source.tags);
+      const mergedTags = target.tags.length === 0 && sourceTags.length > 0 ? sourceTags : target.tags;
       const mergedNotes =
         Object.keys(target.notes).length === 0 && Object.keys(source.notes).length > 0 ? source.notes : target.notes;
-      if (target.tags.length === 0 && source.tags.length > 0) {
-        syncCanonicalContactTags(targetId, source.tags);
+      if (target.tags.length === 0 && sourceTags.length > 0) {
+        syncCanonicalContactTags(targetId, sourceTags);
       }
       database
         .prepare(

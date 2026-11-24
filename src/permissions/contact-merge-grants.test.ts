@@ -1,7 +1,15 @@
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
-import { closeContacts, contactExists, createContact, mergeContacts, resolveMergedContactId } from "../contacts.js";
+import {
+  closeContacts,
+  contactExists,
+  createContact,
+  getContact,
+  mergeContacts,
+  resolveMergedContactId,
+} from "../contacts.js";
+import { materializeContactPolicyCapabilities } from "./contact-policy-permissions-provider.js";
 import { dbGetContext } from "../router/router-db.js";
 import { createRuntimeContext } from "../runtime/context-registry.js";
 import { dbCreateTagDefinition } from "../tags/tag-db.js";
@@ -90,6 +98,29 @@ describe("chat grants follow a contact merge", () => {
     expect(profileCarriesBreakGlass("permission-exec-all")).toBe(true);
     expect(profileCarriesBreakGlass("permission-system-narrow")).toBe(true);
     expect(profileCarriesBreakGlass("permission-chat-reader")).toBe(false);
+    // One rule with the sinks: the provider's spelling counts too.
+    expect(profileCarriesBreakGlass("permission.sneaky.full")).toBe(true);
+  });
+
+  it("drops the source's break-glass tags instead of carrying them to the target", () => {
+    const source = createContact({ phone: "5511900008101", tags: ["permission-admin", "vip"] });
+    const target = createContact({ phone: "5511900008102" });
+    const stderr: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      stderr.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      mergeContacts(target.id, source.id);
+    } finally {
+      process.stderr.write = original;
+    }
+    const merged = getContact(target.id);
+    expect(merged?.tags ?? []).toContain("vip");
+    expect(merged?.tags ?? []).not.toContain("permission-admin");
+    expect(materializeContactPolicyCapabilities(target.id)).toEqual([]);
+    expect(stderr.join("")).toContain("dropped the break-glass tag permission-admin");
   });
 
   it("moves ordinary grants to the target and drops break-glass ones", () => {

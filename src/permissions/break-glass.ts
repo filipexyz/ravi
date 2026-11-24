@@ -64,10 +64,12 @@ function definitionCapabilities(definition: TagDefinition): CapabilityLike[] {
       return permission && objectType && objectId ? [{ permission, objectType, objectId }] : [];
     }
     if (value && typeof value === "object") {
-      const entry = value as Partial<CapabilityLike>;
-      return entry.permission && entry.objectType && entry.objectId
-        ? [{ permission: entry.permission, objectType: entry.objectType, objectId: entry.objectId }]
-        : [];
+      // Malformed metadata (numbers, nested objects) is ignored, as the provider does (review N11).
+      const entry = value as Record<string, unknown>;
+      const permission = typeof entry.permission === "string" ? entry.permission.trim() : "";
+      const objectType = typeof entry.objectType === "string" ? entry.objectType.trim() : "";
+      const objectId = typeof entry.objectId === "string" ? entry.objectId.trim() : "";
+      return permission && objectType && objectId ? [{ permission, objectType, objectId }] : [];
     }
     return [];
   });
@@ -162,7 +164,12 @@ export function agentConfigBreakGlassReasons(
       const [permission, objectType, objectId] = value.split(":");
       return permission && objectType && objectId ? [{ permission, objectType, objectId }] : [];
     }
-    return value?.permission && value.objectType && value.objectId
+    return typeof value?.permission === "string" &&
+      typeof value.objectType === "string" &&
+      typeof value.objectId === "string" &&
+      value.permission &&
+      value.objectType &&
+      value.objectId
       ? [{ permission: value.permission, objectType: value.objectType, objectId: value.objectId }]
       : [];
   });
@@ -190,10 +197,18 @@ export function assertAgentBreakGlassRaiseAllowed(
   // agent that already stores the same dormant break-glass is not refused.
   const storedBefore = new Set(agentConfigBreakGlassReasons(before, "stored"));
   const newlyStored = agentConfigBreakGlassReasons(after, "stored").filter((reason) => !storedBefore.has(reason));
-  const raised = [...new Set([...agentConfigBreakGlassReasons(after, "effective"), ...newlyStored])];
+  const effectiveAfter = agentConfigBreakGlassReasons(after, "effective");
+  const raised = [...new Set([...effectiveAfter, ...newlyStored])];
   if (raised.length === 0) return;
   if (approvedBreakGlassGrant.getStore()) return;
-  if (!callerIsAgentOrRemote()) return;
+  if (!callerIsAgentOrRemote()) {
+    // The operator may do it; say so when it wakes something that was dormant.
+    warnOperatorBreakGlass(
+      `waking dormant break-glass on agent ${targetAgentId}`,
+      effectiveAfter.filter((reason) => storedBefore.has(reason)),
+    );
+    return;
+  }
   if (scopeAgentId() === targetAgentId) return;
   throw new CliExpectedError(
     `${action}: raising agent ${targetAgentId} to break-glass (${raised.join(", ")}) is for the operator terminal; an agent never raises another agent.`,
@@ -208,8 +223,31 @@ export function assertAgentBreakGlassRaiseAllowed(
  * `permissions request`, a denial approval card). Inside it, the storage sinks
  * accept a break-glass tag or grant; nothing else opens them for an agent.
  */
-export function runApprovedBreakGlassGrant<T>(approval: string, fn: () => T): T {
-  return approvedBreakGlassGrant.run(approval, fn);
+export function runApprovedBreakGlassGrant<T>(
+  approval: string,
+  fn: () => T extends PromiseLike<unknown> ? never : T,
+): T {
+  // The scope must close when fn returns: an async body would let every
+  // continuation after an await inherit an open approval (review N7).
+  return approvedBreakGlassGrant.run(approval, () => {
+    const result = fn() as T;
+    if (result && typeof (result as { then?: unknown }).then === "function") {
+      throw new Error("runApprovedBreakGlassGrant: the approved body must be synchronous.");
+    }
+    return result;
+  });
+}
+
+/**
+ * Tell the operator, on stderr, when a write from the terminal wakes or grants
+ * break-glass that an agent would have been refused: a dormant agent config
+ * becoming effective, or a contact holding break-glass being activated.
+ */
+export function warnOperatorBreakGlass(action: string, reasons: readonly string[]): void {
+  if (reasons.length === 0 || approvedBreakGlassGrant.getStore() || callerIsAgentOrRemote()) return;
+  process.stderr.write(
+    `warning: ${action} gives break-glass power (${[...new Set(reasons)].join(", ")}). Undo it if that was not intended.\n`,
+  );
 }
 
 /**

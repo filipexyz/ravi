@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { ADMIN_PERMISSION_PROFILES } from "./apply-grant.js";
 import {
   ADMIN_PROFILE_SLUGS,
+  assertAgentBreakGlassRaiseAllowed,
+  runApprovedBreakGlassGrant,
   isAdminProfileSlug,
   isBreakGlassCapability,
   profileBreakGlassReasons,
@@ -72,5 +74,47 @@ describe("break-glass power", () => {
     for (const channel of ["slack", "whatsapp", "telegram", "omni", "matrix", "discord"]) {
       expect(source).not.toContain(channel);
     }
+  });
+
+  it("refuses an asynchronous approved body, so the scope never crosses an await", () => {
+    expect(() => runApprovedBreakGlassGrant("test", (async () => 1) as never)).toThrow(/synchronous/);
+    expect(runApprovedBreakGlassGrant("test", () => 2)).toBe(2);
+  });
+
+  it("ignores malformed capabilities in a definition instead of throwing", () => {
+    const malformed = {
+      slug: "permission-bad",
+      label: "bad",
+      createdAt: 0,
+      updatedAt: 0,
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: [{ permission: 1, objectType: "system", objectId: "*" }, 42, null] } },
+    } as never;
+    expect(() => tagDefinitionBreakGlassReasons("permission-bad", malformed)).not.toThrow();
+    expect(tagDefinitionBreakGlassReasons("permission-bad", malformed)).toEqual([]);
+  });
+
+  it("warns the operator on stderr when a terminal write wakes dormant break-glass", () => {
+    const stderr: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      stderr.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      assertAgentBreakGlassRaiseAllowed(
+        "test",
+        "dormant-agent",
+        { profile: "chat-only", capabilities: ["admin:system:*"] },
+        { profile: "bootstrap", capabilities: ["admin:system:*"] },
+      );
+      assertAgentBreakGlassRaiseAllowed("test", "deliberate-agent", null, { profile: "full-access" });
+    } finally {
+      process.stderr.write = original;
+    }
+    const output = stderr.join("");
+    expect(output).toContain("waking dormant break-glass on agent dormant-agent");
+    expect(output).not.toContain("deliberate-agent");
   });
 });

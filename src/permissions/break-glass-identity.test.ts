@@ -409,6 +409,25 @@ describe("storage sinks refuse break-glass from any new writer", () => {
     expect(materializeContactPolicyCapabilities(dormant.id)).toEqual([]);
   });
 
+  it("lets the operator terminal activate a dormant admin, with a warning on stderr", () => {
+    upsertContact("5511900007016", "Dormant terminal", "pending");
+    addContactTag("5511900007016", "permission-admin");
+    const dormant = getContact("5511900007016")!;
+    const stderr: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      stderr.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      allowContact(dormant.id);
+    } finally {
+      process.stderr.write = original;
+    }
+    expect(materializeContactPolicyCapabilities(dormant.id).map((cap) => cap.permission)).toEqual(["admin"]);
+    expect(stderr.join("")).toContain(`activating contact:${dormant.id} gives break-glass power`);
+  });
+
   it("refuses a new contact created with a break-glass tag and leaves nothing behind", () => {
     runWithContext(ADMIN_AGENT, () => {
       expectBreakGlassDenied(() => createContact({ phone: "5511900007015", tags: ["permission-owner"] }));

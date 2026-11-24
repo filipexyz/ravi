@@ -19,3 +19,7 @@
 - An admin profile MUST be recognized in every spelling the contact-policy provider reads (`Admin.`, `admin_`, `OWNER`), including on a global (`--force`) grant, and its preview MUST show `admin:system:*` instead of failing as an unknown profile.
 - A permission definition MUST be judged after the casing the tag store applies: `--kind SYSTEM --source Permissions` and `tags set <slug> source PERMISSIONS` are permission definitions.
 - `tags attach` of a break-glass tag to a non-contact asset (chat, task) MUST NOT be refused by this rule; only a contact binding confers authority.
+- A contact merge MUST NOT carry a break-glass tag from the source to the target, and MUST say so on stderr.
+- `ensureAgentDefaultsCapability` MUST refuse a break-glass capability from an agent turn.
+- `runApprovedBreakGlassGrant` MUST refuse an asynchronous body; malformed capabilities MUST be ignored, not thrown on.
+- A terminal write that wakes dormant break-glass on an agent, or activates a contact holding it, MUST warn on stderr.

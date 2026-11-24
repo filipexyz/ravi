@@ -6,7 +6,12 @@ import {
   dbEnsureContactChatGrant,
   dbListContactChatGrants,
 } from "./contact-chat-grants.js";
-import { formatContactGrantScope, readProfileCapabilityStrings } from "./contact-policy-permissions-provider.js";
+import { dbGetTagDefinition } from "../tags/tag-db.js";
+import { logger } from "../utils/logger.js";
+import { slugBreakGlassReasons } from "./break-glass.js";
+import { formatContactGrantScope } from "./contact-policy-permissions-provider.js";
+
+const log = logger.child("permissions:contact-merge-grants");
 
 /**
  * Chat-scoped grants follow a contact merge.
@@ -44,13 +49,9 @@ export interface ReassignResult {
   grants: MergedGrantOutcome[];
 }
 
-export function isBreakGlassCapabilityString(value: string): boolean {
-  const capability = value.trim().toLowerCase();
-  return capability.startsWith("admin:system") || capability === "execute:executable:*";
-}
-
+/** One rule for break-glass (spec permissions/break-glass), the same the sinks use (#952 review N6). */
 export function profileCarriesBreakGlass(profileSlug: string): boolean {
-  return readProfileCapabilityStrings(profileSlug).some(isBreakGlassCapabilityString);
+  return slugBreakGlassReasons(profileSlug, dbGetTagDefinition).length > 0;
 }
 
 function grantScopeLabel(grant: ContactChatGrant): string {
@@ -145,6 +146,12 @@ export function repairOrphanContactChatGrants(): ReassignResult[] {
         targetContactId,
         grants: outcomes,
         repair: true,
+      });
+    } else {
+      // No survivor to hold the audit event: leave the trace in the log (#952 review N5).
+      log.warn("Repaired orphan contact chat grants with no surviving contact", {
+        sourceContactId,
+        grants: outcomes,
       });
     }
     results.push({ sourceContactId, targetContactId, grants: outcomes });
