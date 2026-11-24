@@ -20,7 +20,10 @@ describe("/ravi clone in Slack", () => {
       command: "/ravi",
       surface: "command",
     } as Parameters<typeof slackCommandChannel>[0]);
-    expect(await channel.cloneAccess?.()).toEqual({ group: "sessions", command: "clone", access });
+    const declared = await channel.cloneAccess?.();
+    expect(declared?.group).toBe("sessions");
+    expect(declared?.command).toBe("clone");
+    expect(declared?.access).toBe(access as NonNullable<typeof access>);
     expect(typeof channel.clone).toBe("function");
   });
 
