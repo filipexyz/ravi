@@ -152,7 +152,7 @@ The delivery carries the condition lines (`⚠ <condition> (turn <id>): <detail>
 
 ### Delivery to a live session
 
-A binding MAY carry `metadata.deliverTo`, a session key; each delivery is published to that session's current name, and a key that no longer exists skips the delivery (`receiver_missing`). Its deliveries go to that session as a normal `[System] Inform: [from: ravi observer] …` prompt instead of an `_observation` prompt to a dedicated observer session. A rule with `deliverTo` MUST be session-scoped with a source session, and `deliverTo` MUST NOT be the source. This is how `ravi sessions observe` (spec `sessions/observe`) reaches a conversation.
+A binding MAY carry `metadata.deliverTo`, a session key; each delivery is published to that session's current name, and a key that no longer exists skips the delivery (`receiver_missing`). Its deliveries go to that session as a normal `[System] Inform: [from: ravi observer] …` prompt instead of an `_observation` prompt to a dedicated observer session. A rule with `deliverTo` MUST be session-scoped with a source session, and `deliverTo` MUST NOT be the source. A scoped caller setting `deliverTo` (through `ravi sessions observe` or `observers rules set --metadata`) MUST reach the receiver session, and the receiver's agent MUST be the caller's own or one it may mutate; an unreachable receiver is reported as not found. This is how `ravi sessions observe` (spec `sessions/observe`) reaches a conversation.
 
 The Observation Plane SHOULD support per-observer budgets for max events, max payload bytes, max prompt tokens, max runtime cost, and max executions per source turn.
 

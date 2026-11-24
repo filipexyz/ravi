@@ -731,7 +731,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/meetings.ts | 1845 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:886ed0f5b26b083bf98db0d6 |
 | cli | src/cli/commands/meetings.ts | 1886 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:8cc4d2bb46d79c4e63627281 |
 | cli | src/cli/commands/observers.ts | 73 | fixed | binding retained / no recognized error surface | src/cli/commands/observers.ts:519804ad35a11d337d7f1665 |
-| cli | src/cli/commands/observers.ts | 993 | fixed | binding retained / no recognized error surface | src/cli/commands/observers.ts:8bfec284091984f85b4600dc |
+| cli | src/cli/commands/observers.ts | 1009 | fixed | binding retained / no recognized error surface | src/cli/commands/observers.ts:8bfec284091984f85b4600dc |
 | cli | src/cli/commands/pages.ts | 518 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:90f0a2961f7492d920025729 |
 | cli | src/cli/commands/pages.ts | 1533 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:23b402e772b919537c1430af |
 | cli | src/cli/commands/pages.ts | 2405 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:3782eede5f9231e775e0fc9c |
