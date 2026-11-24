@@ -32,8 +32,31 @@ export interface RuntimePromptDeliveryMessage extends Partial<Omit<RuntimeLaunch
   commands?: RaviCommandPromptMetadata[];
 }
 
+/**
+ * Barreira efetiva de uma mensagem que chega a uma sessão.
+ *
+ * Aviso de sistema (retorno de thread, alerta de saúde, handoff) nunca corta o
+ * turno em curso: sem barreira explícita, ele espera a resposta terminar. Antes,
+ * o retorno `thread.closed` e o alerta `thread.attention` saíam com `after_tool`,
+ * o runtime abortava a ferramenta seguinte e o modelo recebia "the user doesn't
+ * want to proceed", sem que pessoa alguma tivesse recusado nada (24/11).
+ * Só quem pede explicitamente (`deliveryBarrierSource: "explicit"`) pode
+ * interromper; mensagem de pessoa segue com o padrão `after_tool`.
+ */
 export function getRuntimePromptDeliveryBarrier(prompt: RuntimePromptDeliveryMessage): DeliveryBarrier {
-  return prompt.deliveryBarrier ?? DEFAULT_DELIVERY_BARRIER;
+  const barrier = prompt.deliveryBarrier ?? DEFAULT_DELIVERY_BARRIER;
+  if (isSystemNotice(prompt) && prompt.deliveryBarrierSource !== "explicit" && interruptsTurn(barrier)) {
+    return "after_response";
+  }
+  return barrier;
+}
+
+function isSystemNotice(prompt: RuntimePromptDeliveryMessage): boolean {
+  return prompt.source?.actorType === "system";
+}
+
+function interruptsTurn(barrier: DeliveryBarrier): boolean {
+  return barrier === "immediate_interrupt" || barrier === "after_tool";
 }
 
 export function createQueuedRuntimeUserMessage(prompt: RuntimePromptDeliveryMessage): RuntimeUserMessage {

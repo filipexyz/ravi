@@ -386,7 +386,7 @@ async function reconcileThreadTurnHealth(dependencies: SlackThreadLifecycleDepen
             prompt: buildSlackThreadParentNotice(record, "precisa de atenção.", "Estado", description),
             _agentId: parent.agentId,
             source: buildSlackThreadParentSource(record, record.providerThreadId),
-            deliveryBarrier: "after_tool",
+            deliveryBarrier: "after_response",
             deliveryBarrierSource: "default",
             _slackThreadLifecycle: {
               eventId: messageId,
@@ -789,7 +789,7 @@ export async function deliverSlackThreadParentReturn(
         payload: {
           prompt: buildSlackThreadParentNotice(record, "concluída.", "Resultado", record.closeResult),
           source: buildSlackThreadCompletionSource(record, record.providerThreadId),
-          deliveryBarrier: "after_tool",
+          deliveryBarrier: "after_response",
           deliveryBarrierSource: "default",
           _slackThreadLifecycle: {
             eventId: record.parentEventId,
