@@ -147,12 +147,12 @@ interface AgentPermissionsConfigLike {
 /** Break-glass an agent runtime config carries: the full-access profile or break-glass capabilities. */
 export function agentConfigBreakGlassReasons(config: AgentPermissionsConfigLike | null | undefined): string[] {
   if (!config) return [];
-  const reasons =
-    String(config.profile ?? "")
-      .trim()
-      .toLowerCase() === "full-access"
-      ? ["full-access"]
-      : [];
+  const profile = String(config.profile ?? "")
+    .trim()
+    .toLowerCase();
+  // chat-only drops every capability at runtime: it confers nothing, whatever is stored.
+  if (profile === "chat-only") return [];
+  const reasons = profile === "full-access" ? ["full-access"] : [];
   const capabilities = (config.capabilities ?? []).flatMap((value): CapabilityLike[] => {
     if (typeof value === "string") {
       const [permission, objectType, objectId] = value.split(":");
@@ -217,4 +217,17 @@ export function assertBreakGlassStoreWrite(action: string, reasons: readonly str
     3,
     `Break-glass reaches a contact only through operator approval: ${BREAK_GLASS_REQUEST_COMMAND}`,
   );
+}
+
+/**
+ * Break-glass a tag or profile slug confers, read the way the contact-policy
+ * provider reads it: admin names in any spelling, and the definition stored
+ * under the normalized slug (`permission.legacy.root` is read as
+ * `permission-legacy-root`) as well as under the spelling given.
+ */
+export function slugBreakGlassReasons(raw: string, lookup: (slug: string) => TagDefinition | null): string[] {
+  const given = raw.trim().toLowerCase();
+  const normalized = normalizePermissionTag(raw) ?? given;
+  const slugs = [...new Set([normalized, given].filter(Boolean))];
+  return [...new Set(slugs.flatMap((slug) => tagDefinitionBreakGlassReasons(slug, lookup(slug))))];
 }

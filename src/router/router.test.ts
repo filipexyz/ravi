@@ -890,6 +890,15 @@ describe("agent defaults break-glass sink", () => {
       ).toMatchObject({ code: "FULL_ACCESS_APPROVAL_REQUIRED" });
       dbUpdateAgent("sink-victim", { defaults: { tts_voice: "abc" } });
     });
+    // A stored chat-only config confers nothing, so it does not count as already break-glass.
+    dbUpdateAgent("sink-victim", {
+      defaults: { runtimePermissions: { profile: "chat-only", capabilities: ["admin:system:*"] } },
+    });
+    runWithContext(adminAgent, () => {
+      expect(
+        refused(() => dbUpdateAgent("sink-victim", { defaults: { runtimePermissions: { profile: "full-access" } } })),
+      ).toMatchObject({ code: "FULL_ACCESS_APPROVAL_REQUIRED" });
+    });
     expect(JSON.stringify(dbGetAgent("sink-victim")?.defaults ?? {})).not.toContain("ull-");
     dbUpdateAgent("sink-victim", { defaults: { runtimePermissions: { profile: "full-access" } } });
     expect(JSON.stringify(dbGetAgent("sink-victim")?.defaults ?? {})).toContain("full-access");

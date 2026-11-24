@@ -104,7 +104,15 @@ an operator approval, each sink refuses a new write that confers break-glass:
 
 - `dbUpsertTagBinding` (`src/tags/tag-db.ts`): a new contact tag binding.
 - `upsertCanonicalContactPolicy` (`src/contacts.ts`): new tags in
-  `contact_policies.tags_json`, judged before the write.
+  `contact_policies.tags_json`, and activating a contact that holds
+  break-glass (status becomes `allowed` or opt-out is cleared), judged before
+  the write on the contact actually written. `createContact` and
+  `updateContact` check tags before writing anything else.
+- Slugs are judged the way the provider reads them: admin names in any
+  spelling, and the definition under the normalized slug
+  (`permission.legacy.root` is `permission-legacy-root`).
+- A stored `chat-only` agent config confers nothing, whatever capabilities
+  it lists, so it never counts as already holding break-glass.
 - `dbEnsureContactChatGrant` (`src/permissions/contact-chat-grants.ts`): a new
   contact chat grant.
 - `dbUpdateAgent` (`src/router/router-db.ts`): agent defaults that raise

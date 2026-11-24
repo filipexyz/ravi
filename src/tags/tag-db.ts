@@ -3,7 +3,7 @@ import {
   CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS,
   migratePermissionTagMetadata,
 } from "../permissions/command-access-kind-migration.js";
-import { assertBreakGlassStoreWrite, tagDefinitionBreakGlassReasons } from "../permissions/break-glass.js";
+import { assertBreakGlassStoreWrite, slugBreakGlassReasons } from "../permissions/break-glass.js";
 import { getDb, getRaviDbPath } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
 import {
@@ -634,7 +634,7 @@ export function dbUpsertTagBinding(input: UpsertTagBindingInput): TagBinding {
     // confers break-glass is refused for an agent turn, whatever wrote it.
     assertBreakGlassStoreWrite(
       `tag binding ${slug} on contact:${assetId}`,
-      tagDefinitionBreakGlassReasons(slug, dbGetTagDefinition(slug)),
+      slugBreakGlassReasons(slug, dbGetTagDefinition),
     );
   }
   const source = input.source === undefined && previous ? previous.source : normalizeTagSource(input.source);

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { getDb, getRaviDbPath } from "../router/router-db.js";
 import { dbGetTagDefinition } from "../tags/tag-db.js";
-import { assertBreakGlassStoreWrite, tagDefinitionBreakGlassReasons } from "./break-glass.js";
+import { assertBreakGlassStoreWrite, slugBreakGlassReasons } from "./break-glass.js";
 
 /**
  * Provider-owned storage for chat-scoped contact permission grants.
@@ -100,7 +100,7 @@ export function dbEnsureContactChatGrant(key: ContactChatGrantKey & { createdBy?
   // break-glass is refused for an agent turn, whatever wrote it.
   assertBreakGlassStoreWrite(
     `chat grant ${key.profileSlug} for contact:${key.contactId}`,
-    tagDefinitionBreakGlassReasons(key.profileSlug, dbGetTagDefinition(key.profileSlug)),
+    slugBreakGlassReasons(key.profileSlug, dbGetTagDefinition),
   );
   const now = Date.now();
   const id = `pcg_${randomUUID().replace(/-/g, "").slice(0, 16)}`;

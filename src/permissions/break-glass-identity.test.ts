@@ -11,6 +11,7 @@ import {
   addContactTag,
   allowContact,
   closeContacts,
+  createContact,
   ensureContactFromInbound,
   getContact,
   setOptOut,
@@ -359,6 +360,42 @@ describe("storage sinks refuse break-glass from any new writer", () => {
       addContactTag("5511900007010", "vip");
     });
     expect(materializeContactPolicyCapabilities(target.id)).toEqual([]);
+  });
+
+  it("judges a dotted spelling by the definition the provider reads", () => {
+    upsertContact("5511900007013", "Dotted");
+    allowContact("5511900007013");
+    const dotted = getContact("5511900007013")!;
+    dbCreateTagDefinition({
+      slug: "permission-legacy-root",
+      label: "Legacy",
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["admin:system:*"] } },
+    });
+    runWithContext(ADMIN_AGENT, () => {
+      expectBreakGlassDenied(() => addContactTag("5511900007013", "permission.legacy.root"));
+      expectBreakGlassDenied(() => updateContact("5511900007013", { tags: ["permission.legacy.root"] }));
+    });
+    expect(materializeContactPolicyCapabilities(dotted.id)).toEqual([]);
+  });
+
+  it("refuses activating a dormant admin by any path, including the library calls", () => {
+    upsertContact("5511900007014", "Dormant", "pending");
+    addContactTag("5511900007014", "permission-admin");
+    const dormant = getContact("5511900007014")!;
+    runWithContext(ADMIN_AGENT, () => {
+      expectBreakGlassDenied(() => allowContact(dormant.id));
+      expectBreakGlassDenied(() => allowContact("5511900007014"));
+    });
+    expect(materializeContactPolicyCapabilities(dormant.id)).toEqual([]);
+  });
+
+  it("refuses a new contact created with a break-glass tag and leaves nothing behind", () => {
+    runWithContext(ADMIN_AGENT, () => {
+      expectBreakGlassDenied(() => createContact({ phone: "5511900007015", tags: ["permission-owner"] }));
+    });
+    expect(getContact("5511900007015")).toBeNull();
   });
 
   it("opens the sinks only for the operator terminal and an approved grant", () => {

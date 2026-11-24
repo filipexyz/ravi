@@ -865,9 +865,10 @@ export class ContactsCommands {
     failIfChatContact(contactRef, contact);
     assertNoBreakGlassContactChange("contacts approve", [contact.id]);
 
-    allowContact(contact.phone);
+    // Write to the contact that was checked, not whatever the phone resolves to.
+    allowContact(contact.id);
     if (replyMode) {
-      setContactReplyMode(contact.phone, replyMode as ReplyMode);
+      setContactReplyMode(contact.id, replyMode as ReplyMode);
     }
     if (agentIds) {
       const agents = parseAgentIds(agentIds) ?? [];
@@ -962,7 +963,7 @@ export class ContactsCommands {
     }
     failIfChatContact(contactRef, contact);
     assertNoBreakGlassContactChange("contacts allow", [contact.id]);
-    allowContact(contact.phone);
+    allowContact(contact.id);
     const updated = getUpdatedContact(contact);
     const payload = {
       status: "allowed" as const,

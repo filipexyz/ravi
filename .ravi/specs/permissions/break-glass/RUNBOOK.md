@@ -11,7 +11,7 @@ The operator approves on the card (Slack) or by replying (WhatsApp).
 
 ## A grant was refused with FULL_ACCESS_APPROVAL_REQUIRED
 
-`details.breakGlass` lists what made it break-glass: an admin profile name, or
+`details.suggestedAction` (and the message) lists what made it break-glass: an admin profile name, or
 `admin:system:*` / `execute:executable:*` among the capabilities. Narrow the
 capabilities (`execute:executable:git`) or ask for approval as above.
 
