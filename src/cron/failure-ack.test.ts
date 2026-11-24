@@ -43,6 +43,8 @@ describe("cron failure ack", () => {
 
   it("narrows to one job", () => {
     const plan = planCronFailureAck({ jobId: "b", canAck: () => true }, { listPending: () => pending });
+    // Counts are scoped to the job too.
+    expect(plan.pending).toBe(1);
     expect(plan.selected).toBe(1);
     expect(plan.jobs.map((job) => job.jobId)).toEqual(["b"]);
   });

@@ -1348,10 +1348,24 @@ export class CronCommands {
     })
     execute?: boolean,
   ) {
+    if (jobId !== undefined && !jobId.trim()) {
+      // A blank filter must never widen into "every job".
+      contractFail("cron ack-failures", "USAGE_ERROR", "--job needs a job id", {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: { suggestedAction: "omit --job to settle every job you can modify, or pass one job id" },
+        diagnostic: errorDiagnostic("--job needs a job id", { operation: "cron ack-failures" }),
+      });
+    }
     const scopeCtx = getScopeContext();
     const plan = planCronFailureAck({
       jobId: jobId?.trim() || undefined,
-      canAck: (owner) => canAccessResource(scopeCtx, cronJobOwnerId({ agentId: owner ?? undefined }), "mutate"),
+      // Settling needs modify authority, and the caller must also be able to see the job:
+      // the plan lists job names and failure history.
+      canAck: (owner) => {
+        const ownerId = cronJobOwnerId({ agentId: owner ?? undefined });
+        return canAccessResource(scopeCtx, ownerId, "read") && canAccessResource(scopeCtx, ownerId, "mutate");
+      },
     });
     const jobs = plan.jobs.map((job) => ({
       jobId: job.jobId,

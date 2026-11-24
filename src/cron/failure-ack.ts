@@ -46,11 +46,11 @@ function runIdentity(run: CronRunRow): { name: string | null; ownerAgentId: stri
 }
 
 export function planCronFailureAck(filter: CronFailureAckFilter, deps: CronFailureAckDeps = {}): CronFailureAckPlan {
-  const pending = (deps.listPending ?? pendingCronFailureReports)();
+  const all = (deps.listPending ?? pendingCronFailureReports)();
+  const pending = filter.jobId ? all.filter((run) => run.job_id === filter.jobId) : all;
   const byJob = new Map<string, CronFailureAckJob>();
   let denied = 0;
   for (const run of pending) {
-    if (filter.jobId && run.job_id !== filter.jobId) continue;
     const { name, ownerAgentId } = runIdentity(run);
     if (!filter.canAck(ownerAgentId)) {
       denied += 1;

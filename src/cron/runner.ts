@@ -64,6 +64,7 @@ import {
   cronRunNotification,
   pendingCronFailureReports,
   markCronRunReported,
+  isCronFailureReportPending,
   type CronRunRow,
 } from "./run-db.js";
 
@@ -167,18 +168,20 @@ export class CronRunner {
       // Reports that settle locally never wait on I/O; give timers and sockets a turn between them.
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
-    if (owed.length === 0 || !this.running || generation !== this.failureReportGeneration) return;
+    // A report settled meanwhile (`cron ack-failures`) is not sent.
+    const stillOwed = owed.filter(({ runId }) => isCronFailureReportPending(runId));
+    if (stillOwed.length === 0 || !this.running || generation !== this.failureReportGeneration) return;
     let settled: Set<string>;
     try {
       settled = await deliverCronFailureReports(
-        owed.map(({ report }) => report),
+        stillOwed.map(({ report }) => report),
         { extraFailures: failuresByJob },
       );
     } catch (cause) {
-      recordFailure(owed[0]!.runId, cause);
+      recordFailure(stillOwed[0]!.runId, cause);
       return;
     }
-    for (const { runId, report } of owed) {
+    for (const { runId, report } of stillOwed) {
       if (!settled.has(report.itemId)) continue;
       try {
         markCronRunReported(runId);
