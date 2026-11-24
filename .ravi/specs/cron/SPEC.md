@@ -14,6 +14,7 @@ tags:
   - runners
 applies_to:
   - src/cron
+  - src/automation
   - src/cli/commands/cron.ts
   - src/cli/cron-show-output.ts
 owners:
@@ -134,11 +135,18 @@ Cron jobs follow `permissions/resource-visibility` for owned runtime resources:
 
 ## Thread mode
 
+The contract below is shared by cron jobs and agent triggers (`triggers add --thread`, the core in `src/automation/child-runs.ts`); trigger specifics are at the end of the section.
+
 - An agent job MAY run in thread mode (`cron add --thread [--report-to <session>]`, `cron set <id> session thread`). Each run MUST open a fresh child session `agent:<agent>:cron:<job>:run:<runId>`, named after the whole run id (never truncated), so no run takes the name or the history of an earlier one. Only that run enters it.
-- The run reports to the job's reply session, else the agent's main session. That parent MUST be a session of the job's agent and never a trigger's own session: `cron add` and `cron set agent|reply-session` refuse a pair that breaks this, and the runner fails the run (`THREAD_PARENT_MISSING`, `THREAD_PARENT_OTHER_AGENT`) without opening a child.
+- The run reports to the job's reply session, else the agent's main session. That parent MUST be a lasting session of the job's agent: never a trigger's own session, an automation run's own session (pruned after it closes) or an ephemeral session. A job created inside a run reports where that run reports. These are refused  by `cron add` and `cron set agent|reply-session`, and the runner fails the run (`THREAD_PARENT_MISSING`, `THREAD_PARENT_OTHER_AGENT`, `THREAD_PARENT_UNSTABLE`) without opening a child.
 - The run's prompt MUST carry the same authority envelope as the other modes (`_cronAuthority`, `_cronRunId`) and no source: its replies reach no chat. The core surface is headless; a channel adapter MAY add a visible surface (a Slack thread) without changing this contract.
+- The run's text reaches the parent quoted line by line under a label that it is data, not instruction: a run may have read untrusted data, and no line of it can pass for a line of the notice (a `[System]` one).
 - The run reaches its parent only through `sessions report` (progress) and `sessions close-thread [--return]` (once). A return on a closed run MUST fail (`THREAD_CLOSED`), never be dropped as delivered. A return is a `session.return` prompt carrying text only.
 - When the run's turn ends and the run is still open, the runner MUST close it: the final reply, read from the run's own message history, reaches the parent once; `@@SILENT@@` or no reply closes silently; a failed or interrupted turn sends one error return with the classified reason, never raw provider text. The owner's failure notice comes first: a parent that cannot be reached never delays it.
 - One run at a time per job: while the previous run is open, a scheduled run is skipped (next run advanced, last outcome untouched); a manual run still goes. A run open longer than 2 h is closed as failed, with one error return, so the job is never stuck behind it.
-- After a run closes, the runner releases the child's runtime and keeps the job's 20 newest closed runs; older ones are deleted with their sessions. A run whose return is still pending is kept.
+- After a run closes, the runner releases the child's runtime and keeps the job's 20 newest closed runs; older ones are deleted with their sessions and transcripts. A run whose return is still pending is kept.
+- The leader reconciles runs in the background every 5 minutes (never on the readiness path): a return left `pending` because its publish failed is delivered again; one still undelivered 24 h after its run closed is given up (`error` without `parentNotifiedAt`), its owner told (cron: the failure notice), and becomes prunable. A run open longer than 2 h (its job disabled since, its turn's end never seen) is closed as failed with one error return and its runtime released.
+- Delivery to the parent is at least once: the publish is deduplicated by a fixed message id inside the stream's window; a crash between the publish and the `returned` mark followed by a retry after that window can deliver twice.
 - `--isolated` (`session isolated`) is deprecated: still accepted and executed as before, with a warning pointing at `--thread`.
+- Triggers: `triggers add --thread [--report-to <session>]` (agent triggers only; refused with `--session` or `--shell`; `--session thread` is refused in favour of `--thread`). Each fire opens `agent:<agent>:trigger:<id>:run:<runId>` with the trigger's authority snapshot and NO owner lending (`ownSessionKey` null): what a run reads goes back to its parent, so the owner's Bases access stays with `--session isolated`. One fire at a time: while the previous run is open a fire is skipped, as a cooldown would. The trigger runner closes a run when its turn ends (runtime events matched by the run session's name). A fire never falls back to the trigger's frozen creator chat: its replies reach no chat. CLI calls from a run session count as trigger-originated (no loop).
+- `--session isolated` on triggers is deprecated with an explicit exception: keep it only for a trigger that reads Bases as its owner.

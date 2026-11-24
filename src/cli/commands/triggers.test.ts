@@ -1759,3 +1759,60 @@ describe("TriggersCommands owner", () => {
     });
   });
 });
+
+describe("TriggersCommands --thread", () => {
+  const add = (opts: { session?: string; thread?: boolean; reportTo?: string }) =>
+    new TriggersCommands().add(
+      "watch",
+      "ravi.test.thread",
+      "hello",
+      undefined,
+      undefined,
+      undefined,
+      opts.session,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      opts.thread,
+      opts.reportTo,
+    );
+
+  beforeEach(() => {
+    createdTriggers.length = 0;
+    mockToolContext = undefined;
+  });
+
+  it("refuses --thread with --session, --report-to without --thread, and --session thread", async () => {
+    await expect(add({ thread: true, session: "named" })).rejects.toThrow(/cannot be combined/);
+    await expect(add({ reportTo: "named" })).rejects.toThrow("--report-to only applies with --thread");
+    await expect(add({ session: "thread" })).rejects.toThrow(/Use --thread/);
+    expect(createdTriggers).toHaveLength(0);
+  });
+
+  it("warns that --session isolated is deprecated, naming the Bases exception", async () => {
+    const warnings = await captureWarnings(() => add({ session: "isolated" }));
+
+    expect(createdTriggers).toContainEqual(expect.objectContaining({ session: "isolated" }));
+    expect(warnings.join("\n")).toContain("--session isolated is deprecated");
+    expect(warnings.join("\n")).toContain("reads Bases as its owner");
+  });
+
+  it("stores thread mode reporting to a lasting session of the trigger's agent", async () => {
+    const { getOrCreateSession } = await import("../../router/sessions.js");
+    getOrCreateSession("agent:main:slack:dm:thread-parent", "main", "/tmp/main", { name: "thread-parent" });
+    getOrCreateSession("agent:other:slack:dm:other-parent", "other", "/tmp/other", { name: "other-parent" });
+
+    await add({ thread: true, reportTo: "thread-parent" });
+    expect(createdTriggers).toContainEqual(
+      expect.objectContaining({ session: "thread", replySession: "agent:main:slack:dm:thread-parent" }),
+    );
+
+    await expect(add({ thread: true, reportTo: "other-parent" })).rejects.toThrow(/belongs to other/);
+  });
+});

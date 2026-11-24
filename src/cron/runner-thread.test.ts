@@ -171,7 +171,7 @@ describe("cron thread mode", () => {
     const returns = parentReturns();
     expect(returns).toHaveLength(1);
     expect(returns[0]!.sessionName).toBe("grupo-updates");
-    expect(String(returns[0]!.payload.prompt)).toContain("Resultado: Post novo no blog: release 3.261124.1 saiu");
+    expect(String(returns[0]!.payload.prompt)).toContain("\n> Post novo no blog: release 3.261124.1 saiu");
     expect(returns[0]!.payload._turnOrigin).toMatchObject({ action: "session.return" });
     expect(getChildRun(run.runId)).toMatchObject({ status: "closed", returnState: "returned", returnKind: "auto" });
   });
@@ -202,7 +202,7 @@ describe("cron thread mode", () => {
 
     const returns = parentReturns();
     expect(returns).toHaveLength(1);
-    expect(String(returns[0]!.payload.prompt)).toContain("Resultado: resultado explícito");
+    expect(String(returns[0]!.payload.prompt)).toContain("\n> resultado explícito");
     expect(getChildRun(runId)).toMatchObject({ status: "closed", returnState: "returned", returnKind: "result" });
   });
 
@@ -217,7 +217,7 @@ describe("cron thread mode", () => {
     expect(returns).toHaveLength(1);
     expect(String(returns[0]!.payload.prompt)).toContain("falhou.");
     // The parent may relay it to a shared chat: a classified reason, never the provider's raw text.
-    expect(String(returns[0]!.payload.prompt)).toContain("Erro: erro de execução");
+    expect(String(returns[0]!.payload.prompt)).toContain("\n> erro de execução");
     expect(String(returns[0]!.payload.prompt)).not.toContain("provider refused the model");
     expect(getChildRun(run.runId)).toMatchObject({ status: "closed", returnState: "error" });
     expect(dbGetCronJob(job.id)?.lastStatus).toBe("error");
@@ -233,6 +233,21 @@ describe("cron thread mode", () => {
     const stored = dbGetCronJob(job.id)!;
     expect(stored.lastStatus).toBe("error");
     expect(stored.lastError).toContain("THREAD_PARENT_OTHER_AGENT");
+  });
+
+  it("refuses a report-to session that is another run's own session, and opens no child", async () => {
+    createParent();
+    const first = createThreadJob();
+    const runner = new CronRunner();
+    await runner.triggerJob(first.id);
+    const runSession = resolveSession(runDispatch(first.id).sessionName)!;
+    const job = createThreadJob({ replySession: runSession.sessionKey });
+
+    await runner.triggerJob(job.id);
+
+    expect(publishCalls.filter((call) => call.payload._jobId === job.id)).toHaveLength(0);
+    expect(listChildRunsForOrigin("cron", job.id)).toHaveLength(0);
+    expect(dbGetCronJob(job.id)!.lastError).toContain("THREAD_PARENT_UNSTABLE");
   });
 
   it("reports to the agent's main session when the job has no reply session", async () => {

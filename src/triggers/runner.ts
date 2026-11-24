@@ -6,11 +6,23 @@
  * emits it to the agent session.
  */
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { nats, getNats } from "../nats.js";
+import {
+  CHILD_RUN_STALE_MS,
+  childRunParentRefusal,
+  childRunPromptNote,
+  closeChildRunAfterTurn,
+  findChildRunByChildSessionName,
+  listOpenChildRuns,
+  openChildRun,
+} from "../automation/child-runs.js";
+import { describeCronFailure } from "../cron/failure-notification.js";
+import { CRON_RUNTIME_EVENTS_TOPIC, parseCronTurnOutcome } from "../cron/turn-outcome.js";
+import { slugify } from "../router/session-name.js";
 import type { Subscription } from "nats";
 import { followFingerprint, followHealthTopic } from "../pr/follow-health.js";
 import { getLocalWatchRunner } from "../watch/local-runner.js";
@@ -270,8 +282,14 @@ export function isTriggerOriginatedEvent(topic: string, data: unknown): boolean 
   // record. What such a turn does is not another trigger's to act on.
   const invocation = record.cliInvocation as { raviContext?: { sessionKey?: unknown } } | undefined;
   const invocationSession = invocation?.raviContext?.sessionKey;
-  return typeof invocationSession === "string" && isTriggerOwnSessionKey(invocationSession);
+  return (
+    typeof invocationSession === "string" &&
+    (isTriggerOwnSessionKey(invocationSession) || TRIGGER_RUN_SESSION_KEY.test(invocationSession))
+  );
 }
+
+/** The session of one fire of a `--thread` trigger: like its own session, nothing else enters it. */
+const TRIGGER_RUN_SESSION_KEY = /^agent:[^:]+:trigger:[^:]+:run:[^:]+$/;
 
 export function shouldRetryTriggerTopic(
   topic: string,
@@ -329,6 +347,9 @@ export class TriggerRunner {
   /** Last desired topic set, used to prevent delayed retries from reviving removed subscriptions. */
   private desiredTopics = new Set<string>();
   private running = false;
+  private runTurnAbort: AbortController | null = null;
+  private runTurnStream: ReturnType<typeof nats.subscribe> | null = null;
+  private runTurnLoop: Promise<void> | null = null;
   private recentEventFires = new Map<string, number>();
   /** Last fire per resolved session of named-session triggers (per-session cooldown). */
   private keyedLastFiredAt = new Map<string, { at: number; cooldownMs: number }>();
@@ -353,6 +374,7 @@ export class TriggerRunner {
     this.subscribePublicationHealth();
     this.subscribeToConfigRefresh();
     this.subscribeToTestEvents();
+    this.runTurnLoop = this.watchThreadRunTurns();
 
     log.info("Trigger runner started");
   }
@@ -374,6 +396,17 @@ export class TriggerRunner {
     }
 
     failures.push(...(await this.teardownSubscriptions()));
+    // Abort, then end the stream: an idle next() must be woken before the loop can be awaited.
+    this.runTurnAbort?.abort();
+    try {
+      await this.runTurnStream?.return?.(undefined);
+      await this.runTurnLoop;
+    } catch (cause) {
+      failures.push(new Error("Trigger run turn watch failed during shutdown", { cause }));
+    }
+    this.runTurnAbort = null;
+    this.runTurnStream = null;
+    this.runTurnLoop = null;
     failures.push(...this.flushFilterRejects());
     try {
       const pendingDebounced = this.debouncer.clear();
@@ -746,6 +779,8 @@ export class TriggerRunner {
     // The key of the trigger's own session, when this fire runs there. Only an
     // `isolated` trigger a person owns has one; nothing else enters it.
     let ownSessionKey: string | null = null;
+    // Set for a `--thread` fire: the session its run reports to.
+    let threadParentName: string | null = null;
 
     if (trigger.session === "main") {
       // If replySession is set, resolve it for session name + source routing
@@ -811,6 +846,17 @@ export class TriggerRunner {
           deriveSourceFromSessionKey(trigger.replySession) ??
           undefined;
       }
+    } else if (trigger.session === "thread") {
+      // One fire, one run in a session of its own; its replies reach no chat (no source) and only its
+      // return reaches the parent. It never lends the owner's authority: what it reads goes back up.
+      if ((trigger.executionType ?? "agent") === "shell") {
+        log.warn("Skipping trigger fire; a shell trigger cannot run in thread mode", { triggerId: trigger.id });
+        return;
+      }
+      const run = this.openThreadRun(trigger, agentId, agentCwd);
+      if (!run) return;
+      sessionName = run.sessionName;
+      threadParentName = run.parentName;
     } else {
       const targetName = opts.test
         ? resolveSessionTargetName(trigger.session, event, { fillUnresolved: "test" })
@@ -881,7 +927,7 @@ export class TriggerRunner {
 
     // Final fallback: the source the creator was talking to when the trigger
     // was registered. Frozen at creation time, immune to later session edits.
-    if (!source && trigger.replySource) {
+    if (!source && trigger.replySource && threadParentName === null) {
       source = {
         channel: trigger.replySource.channel,
         accountId: trigger.replySource.accountId,
@@ -899,7 +945,8 @@ export class TriggerRunner {
       return;
     }
 
-    const prompt = buildTriggerPrompt(trigger, event, opts.batch);
+    const basePrompt = buildTriggerPrompt(trigger, event, opts.batch);
+    const prompt = threadParentName === null ? basePrompt : `${basePrompt}\n\n${childRunPromptNote(threadParentName)}`;
 
     log.info("Firing trigger", {
       triggerId: trigger.id,
@@ -926,6 +973,105 @@ export class TriggerRunner {
 
     // Update in-memory trigger too (for cooldown tracking)
     trigger.lastFiredAt = Date.now();
+  }
+
+  /**
+   * Open the run of one `--thread` fire: a fresh session
+   * `agent:<agent>:trigger:<id>:run:<runId>`, named after the whole run id,
+   * parented to the trigger's report-to session. One fire at a time: while
+   * the previous run is open the fire is skipped, as a cooldown would (a
+   * trigger's prompt processes current state). A run left open longer than
+   * `CHILD_RUN_STALE_MS` no longer blocks; the leader's reconciliation closes it.
+   */
+  private openThreadRun(
+    trigger: Trigger,
+    agentId: string,
+    agentCwd: string,
+  ): { sessionName: string; parentName: string } | null {
+    const now = Date.now();
+    if (listOpenChildRuns("trigger", trigger.id).some((run) => now - run.createdAt < CHILD_RUN_STALE_MS)) {
+      log.info("Skipping trigger fire; its previous thread run is still open", { triggerId: trigger.id });
+      return null;
+    }
+    const ref = trigger.replySession ?? this.resolveMainSessionName(agentId, agentCwd);
+    const parent = resolveSession(ref);
+    const refusal = !parent
+      ? `the session it reports to (${ref}) does not resolve`
+      : isTriggerOwnSessionKey(parent.sessionKey)
+        ? `the session it reports to (${ref}) is a trigger's own session`
+        : parent.agentId !== agentId
+          ? `the session it reports to (${parent.name ?? parent.sessionKey}) belongs to agent ${parent.agentId}, not ${agentId}`
+          : childRunParentRefusal(parent);
+    if (!parent || refusal) {
+      log.warn("Skipping trigger fire; its thread run has no valid session to report to", {
+        triggerId: trigger.id,
+        reason: refusal,
+        hint: `ravi triggers set ${trigger.id} reply-session <a lasting session of ${agentId}>`,
+      });
+      return null;
+    }
+    const runId = randomUUID();
+    const childKey = `agent:${agentId}:trigger:${trigger.id}:run:${runId}`;
+    const childName = ensureUniqueName(`${slugify(agentId).slice(0, 24)}-run-${runId}`);
+    const session = getOrCreateSession(childKey, agentId, agentCwd, { name: childName }, { triggerRunner: true });
+    if (!session.name) updateSessionName(session.sessionKey, childName);
+    const parentName = parent.name ?? parent.sessionKey;
+    openChildRun({
+      id: runId,
+      originKind: "trigger",
+      originId: trigger.id,
+      originName: trigger.name,
+      agentId,
+      parentSessionKey: parent.sessionKey,
+      parentSessionName: parentName,
+      childSessionKey: childKey,
+      childSessionName: childName,
+      now,
+    });
+    return { sessionName: childName, parentName };
+  }
+
+  /**
+   * Close each `--thread` fire's run when its turn ends (runtime events are
+   * core pub/sub: any daemon's turn is seen). Matched by the run session's
+   * name, which only that fire enters.
+   */
+  private async watchThreadRunTurns(): Promise<void> {
+    const controller = new AbortController();
+    this.runTurnAbort = controller;
+    const stream = nats.subscribe(CRON_RUNTIME_EVENTS_TOPIC, { signal: controller.signal });
+    this.runTurnStream = stream;
+    try {
+      for await (const event of stream) {
+        if (!this.running) break;
+        const outcome = parseCronTurnOutcome(event);
+        if (!outcome) continue;
+        const run = findChildRunByChildSessionName(outcome.sessionName);
+        if (!run || run.originKind !== "trigger" || run.status !== "open") continue;
+        try {
+          await closeChildRunAfterTurn(
+            run,
+            { failed: outcome.kind !== "complete", error: outcome.error ?? outcome.reason },
+            {
+              describeFailure: describeCronFailure,
+              details: `Detalhes para o operador: ravi triggers show ${run.originId}`,
+              releaseSource: "trigger-runner",
+            },
+          );
+        } catch (error) {
+          log.warn("Failed to close a trigger's thread run after its turn", {
+            runId: run.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    } catch (error) {
+      if (!this.running || controller.signal.aborted) return;
+      log.error("Trigger run turn watch failed; retrying", { error });
+      setTimeout(() => {
+        if (this.running && this.runTurnAbort === controller) this.runTurnLoop = this.watchThreadRunTurns();
+      }, 5000);
+    }
   }
 
   /**

@@ -10264,8 +10264,10 @@ export class RaviClient {
       message?: string;
       onError?: string;
       replySession?: string;
+      reportTo?: string;
       session?: string;
       shell?: string;
+      thread?: boolean;
       timeout?: string;
       topic?: string;
     }): Promise<TriggersAddReturn> => {
