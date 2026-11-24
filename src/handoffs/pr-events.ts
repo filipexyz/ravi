@@ -59,7 +59,11 @@ export function startHandoffPullRequestListener(): { stop(): Promise<void> } {
   return {
     async stop() {
       controller.abort();
-      await loop.catch(() => {});
+      await loop.catch((error) => {
+        log.warn("Handoff PR event listener did not start", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
     },
   };
 }
