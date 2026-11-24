@@ -44,6 +44,18 @@ export function admitCronRun(
     .immediate();
 }
 
+/**
+ * A visible run was admitted under a placeholder session; once its surface binds the real one,
+ * the admission follows it, so the turn's outcome settles the run. Only from that placeholder.
+ */
+export function rebindCronRunSession(id: string, fromSessionName: string, toSessionName: string): boolean {
+  return (
+    getDb()
+      .query("UPDATE cron_runs SET session_name = ? WHERE id = ? AND session_name = ? AND status = 'pending'")
+      .run(toSessionName, id, fromSessionName).changes > 0
+  );
+}
+
 /** Consume a specific run once; old results never overwrite a newer admission. */
 export function settleCronRun(id: string, sessionName: string, outcome: JobOutcomeUpdate): CronRunRow | null {
   return getDb()

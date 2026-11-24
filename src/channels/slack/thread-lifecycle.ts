@@ -5,6 +5,7 @@ import { CliExpectedError } from "../../cli/expected-error.js";
 import { nats } from "../../nats.js";
 import { publishSessionPrompt, type PublishSessionPromptOptions } from "../../omni/session-stream.js";
 import { publishChannelSessionPrompt } from "../session-prompt.js";
+import { bindChildRunSession, isChildRunSurfaceRef, markChildRunLaunched } from "../../automation/child-runs.js";
 import { handOffClosingThreadFollows } from "../../triggers/follow-owner.js";
 import { clearTriggersRefreshPending, markTriggersRefreshPending } from "../../triggers/refresh-intent.js";
 import { prepareThreadAttentionNotice } from "./thread-attention-admission.js";
@@ -184,23 +185,49 @@ export async function finalizeSlackThreadCreation(
 
   try {
     const materialized = materializeSlackThreadChild(record);
-    await publishChannelSessionPrompt(
-      {
-        sessionName: materialized.childSessionName,
-        action: "session.bootstrap",
-        principal: resolveChannelLifecyclePrincipal(
-          "session.bootstrap",
-          record.initiatorSessionKey ?? record.parentSessionKey,
-          materialized.agentId,
-        ),
-        callerContextId: record.initiatorContextId,
-        payload: buildSlackThreadInitialPrompt(record, materialized),
-        options: {
-          messageId: `slack-thread-start:${record.requestId}`,
+    // An automation run's thread starts with the run's own launch (its job's or trigger's
+    // authority envelope), never the agent's bootstrap turn. Handed back until its publish is
+    // confirmed (a retried creation still starts the run; the stable message id keeps it to one).
+    // A run closed or gone before its root landed starts nothing; its thread is closed below.
+    const automationRun = isChildRunSurfaceRef(record.requestId);
+    const bound = automationRun
+      ? bindChildRunSession(
+          "slack-thread",
+          record.requestId,
+          materialized.childSessionKey,
+          materialized.childSessionName,
+        )
+      : null;
+    if (bound?.launch && !bound.closed) {
+      await dependencies.publishPrompt(
+        materialized.childSessionName,
+        {
+          ...bound.launch,
+          source: buildSlackThreadChildSource(record, materialized.threadCanonicalChatId, materialized.agentId),
+          context: buildSlackThreadMessageContext(record, materialized.threadCanonicalChatId, materialized.agentId),
         },
-      },
-      dependencies.publishPrompt,
-    );
+        { messageId: `slack-thread-start:${record.requestId}` },
+      );
+      markChildRunLaunched(bound.run.id);
+    }
+    if (!automationRun)
+      await publishChannelSessionPrompt(
+        {
+          sessionName: materialized.childSessionName,
+          action: "session.bootstrap",
+          principal: resolveChannelLifecyclePrincipal(
+            "session.bootstrap",
+            record.initiatorSessionKey ?? record.parentSessionKey,
+            materialized.agentId,
+          ),
+          callerContextId: record.initiatorContextId,
+          payload: buildSlackThreadInitialPrompt(record, materialized),
+          options: {
+            messageId: `slack-thread-start:${record.requestId}`,
+          },
+        },
+        dependencies.publishPrompt,
+      );
     const completed = completeSlackThreadCreation({
       requestId: record.requestId,
       claimId,
@@ -216,6 +243,12 @@ export async function finalizeSlackThreadCreation(
           error: errorMessage(error),
         });
       });
+    if (automationRun && (!bound || bound.closed)) {
+      // The run was given up while its root was on the way: the late thread closes without a word.
+      await closeSlackThreadRecord(completed, undefined, dependencies).catch((error) => {
+        log.warn("Failed to close the late thread of a closed run", { requestId, error: errorMessage(error) });
+      });
+    }
     return {
       status: "opened",
       requestId,
@@ -322,6 +355,8 @@ async function reconcileThreadTurnHealth(dependencies: SlackThreadLifecycleDepen
       const health = getThreadTurnHealth(requestId)!;
       if (health.state !== "attention" || !health.turnId || !record.childSessionKey || !record.providerThreadId)
         continue;
+      // An automation run's thread needs no notice: the core returns the run's outcome to its parent.
+      if (isChildRunSurfaceRef(record.requestId)) continue;
       claimId = claimThreadTurnNotice(requestId, health.turnId, now);
       if (!claimId) continue;
       // Fence a concurrent close/reopen/new turn before publishing the observation.
@@ -392,6 +427,8 @@ async function reconcileThreadParentReturn(
   budget: { nudges: number },
 ): Promise<void> {
   if (!record.childSessionKey || !record.providerThreadId) return;
+  // An automation run's thread ends silently by design (`@@SILENT@@`); its return is the core's.
+  if (isChildRunSurfaceRef(record.requestId)) return;
   const childSessionKey = record.childSessionKey;
   const providerThreadId = record.providerThreadId;
   const turn = getLatestSessionTurn(childSessionKey);
