@@ -806,6 +806,12 @@ describe("runtime delivery queue", () => {
           typeof hasIsolatedRuntimeTurnEnvelope
         >[0]);
       expect(isolated(authority("operator", true))).toBe(true);
+      // An observation notice is always its own turn (N2 on #943).
+      expect(
+        hasIsolatedRuntimeTurnEnvelope({
+          _observationNotice: { bindingId: "ob_1", sourceSessionKey: "agent:a:main" },
+        }),
+      ).toBe(true);
       expect(isolated(authority("contact:c_ana"))).toBe(true);
       // Nobody to act for.
       expect(isolated(authority("unknown"))).toBe(false);

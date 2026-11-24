@@ -5,6 +5,7 @@ import { runWithContext, type ToolContext } from "../cli/context.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { dbCreateAgent, dbUpsertSessionParticipant, getDb } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/index.js";
+import { markSessionTriggerOwnerLent } from "../router/sessions.js";
 import { dbCreateTagDefinition, dbUpsertTagBinding } from "../tags/index.js";
 import {
   createObservationEvent,
@@ -1302,6 +1303,28 @@ describe("Observer conditions", () => {
     ]);
   });
 
+  it("does not count replies that never reached a chat as narration (N1)", () => {
+    expect(
+      names([
+        e("message.user"),
+        e("message.assistant", { chatEmitted: false }),
+        e("tool.end"),
+        e("message.assistant", { chatEmitted: false }),
+        e("turn.complete"),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("uses runtime reason codes, never provider error text, in condition lines (N3)", () => {
+    const hits = evaluateObservationConditions([
+      e("message.user"),
+      e("message.assistant"),
+      e("turn.failed", { error: "upstream said: OWNER-PRIVATE saldo 12.345", abortReason: "provider_error" }),
+    ]);
+    expect(hits).toEqual([{ condition: "turn.failed", turnId: "t1", detail: "provider_error" }]);
+    expect(JSON.stringify(hits)).not.toContain("OWNER-PRIVATE");
+  });
+
   it("yields nothing for a turn still running", () => {
     expect(names([e("message.user"), e("tool.start"), e("tool.end")])).toEqual([]);
   });
@@ -1450,9 +1473,45 @@ describe("Condition-gated observer bindings", () => {
       sourceSession: session,
       agentId: "worker",
       deliveryPolicies: ["end_of_turn"],
-      events: [ev(1, "message.user"), ev(2, "turn.failed", { payload: { error: "boom" } })],
+      events: [ev(1, "message.user"), ev(2, "turn.failed", { payload: { reason: "provider_error" } })],
     });
-    expect(String(publishedPrompts.at(-1)?.payload.prompt).startsWith("⚠ turn.failed (turn turn-g): boom")).toBe(true);
+    expect(
+      String(publishedPrompts.at(-1)?.payload.prompt).startsWith("⚠ turn.failed (turn turn-g): provider_error"),
+    ).toBe(true);
+  });
+
+  it.each([
+    ["rules set", false],
+    ["rules enable", true],
+  ])("re-checks owner reads at delivery for a live receiver written by %s (N5)", async (_path, viaEnable) => {
+    const session = getOrCreateSession("owner-src", "worker", "/tmp/worker", { name: "owner-src" });
+    getOrCreateSession("owner-dst", "observer", "/tmp/observer", { name: "owner-dst" });
+    const rule = {
+      id: "owner-live",
+      scope: "session" as const,
+      sourceSession: session.sessionKey,
+      observerAgentId: "observer",
+      observerProfileId: "compact",
+      deliveryPolicy: "end_of_turn" as const,
+      metadata: { deliverTo: "owner-dst" },
+    };
+    dbUpsertObserverRule(rule);
+    if (viaEnable) {
+      setObserverRuleEnabled("owner-live", false);
+      setObserverRuleEnabled("owner-live", true);
+    }
+    ensureObserverBindingsForSession({ sessionName: "owner-src", session });
+    // The mark comes on the trigger's first fire, after the rule was written.
+    markSessionTriggerOwnerLent(session.sessionKey);
+    const result = await deliverObservationEvents({
+      sourceSessionName: "owner-src",
+      sourceSession: session,
+      agentId: "worker",
+      deliveryPolicies: ["end_of_turn"],
+      events: [ev(1, "message.user"), ev(2, "message.assistant", { preview: "OWNER-PRIVATE" }), ev(3, "turn.complete")],
+    });
+    expect(result.skipped.map((item) => item.reason)).toEqual(["source_holds_owner_reads"]);
+    expect(publishedPrompts).toHaveLength(0);
   });
 
   it("rejects unknown conditions and conditions on a non end-of-turn rule", () => {

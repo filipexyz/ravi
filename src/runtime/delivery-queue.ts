@@ -109,7 +109,10 @@ export function pickRuntimeTurnAuthorityEnvelope(
 
 export function hasIsolatedRuntimeTurnEnvelope(
   prompt:
-    | Pick<RuntimeLaunchPrompt, "_channelBackend" | "_turnOrigin" | "_cronRunId" | "_triggerAuthority">
+    | Pick<
+        RuntimeLaunchPrompt,
+        "_channelBackend" | "_turnOrigin" | "_cronRunId" | "_triggerAuthority" | "_observationNotice"
+      >
     | null
     | undefined,
 ): boolean {
@@ -117,6 +120,9 @@ export function hasIsolatedRuntimeTurnEnvelope(
     prompt?._channelBackend !== undefined ||
     prompt?._turnOrigin !== undefined ||
     prompt?._cronRunId !== undefined ||
+    // An observation notice is its own turn: batched with a person's message, the turn would take
+    // one provenance for both (observer turns emit no observation events).
+    prompt?._observationNotice !== undefined ||
     // A trigger fire that lends its owner's authority: no other prompt's text may share its turn.
     triggerAuthorityLendsOwner(prompt?._triggerAuthority)
   );

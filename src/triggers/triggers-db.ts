@@ -32,6 +32,7 @@ interface TriggerRow {
   message_template_id: string | null;
   session: string;
   reply_session: string | null;
+  thread_visible?: number | null;
   reply_source: string | null;
   enabled: number;
   cooldown_ms: number;
@@ -112,6 +113,7 @@ function rowToTrigger(row: TriggerRow): Trigger {
   if (row.on_error !== null) trigger.onError = row.on_error;
   if (row.message_template_id !== null) trigger.messageTemplateId = row.message_template_id;
   if (row.reply_session !== null) trigger.replySession = row.reply_session;
+  if (row.thread_visible) trigger.threadVisible = true;
   const replySource = parseReplySource(row.reply_source);
   if (replySource) trigger.replySource = replySource;
   if (row.filter !== null) trigger.filter = row.filter;
@@ -139,9 +141,9 @@ export function dbCreateTrigger(input: TriggerInput): Trigger {
   const stmt = db.prepare(`
     INSERT INTO triggers (
       id, name, agent_id, account_id, topic, message, execution_type, shell_command, shell_timeout_ms,
-      shell_env_file, on_error, message_source, message_template_id, session, reply_session,
+      shell_env_file, on_error, message_source, message_template_id, session, reply_session, thread_visible,
       reply_source, enabled, cooldown_ms, debounce_ms, filter, owner_principal, fire_count, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -160,6 +162,7 @@ export function dbCreateTrigger(input: TriggerInput): Trigger {
     input.messageTemplateId ?? null,
     input.session ?? "isolated",
     input.replySession ?? null,
+    input.threadVisible ? 1 : 0,
     serializeReplySource(input.replySource),
     input.enabled !== false ? 1 : 0,
     input.cooldownMs ?? 5000,
@@ -343,6 +346,10 @@ export function dbUpdateTrigger(id: string, updates: TriggerUpdate, options: Tri
   if (updates.replySession !== undefined) {
     fields.push("reply_session = ?");
     values.push(updates.replySession ?? null);
+  }
+  if (updates.threadVisible !== undefined) {
+    fields.push("thread_visible = ?");
+    values.push(updates.threadVisible ? 1 : 0);
   }
   if (updates.replySource !== undefined) {
     fields.push("reply_source = ?");
