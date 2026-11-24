@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { runWithContext, type ToolContext } from "../cli/context.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { dbCreateAgent, dbUpsertSessionParticipant, getDb } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/index.js";
@@ -101,6 +102,50 @@ describe("Observation Plane", () => {
       addedGrants: 0,
       ambiguousGrants: 0,
     });
+  });
+
+  it("lets a limited turn disable a rule when the write repeats what is stored, and refuses any other change", () => {
+    dbUpsertObserverRule({
+      id: "limited-disable",
+      scope: "agent",
+      sourceAgentId: "worker",
+      observerAgentId: "observer",
+      eventTypes: ["message.user", "turn.complete"],
+    });
+    const limited = {
+      agentId: "worker",
+      context: {
+        contextId: "ctx_limited",
+        contextKey: "rctx_limited",
+        kind: "turn-runtime",
+        agentId: "worker",
+        capabilities: [
+          { permission: "deny_admin", objectType: "system", objectId: "*" },
+          { permission: "deny_execute", objectType: "executable", objectId: "*" },
+        ],
+        metadata: { actorBreakGlassWithheld: ["admin:system:*", "execute:executable:*"] },
+        createdAt: 0,
+      },
+    } as unknown as ToolContext;
+    // A different priority is a stored change: refused, nothing written.
+    expect(() =>
+      runWithContext(limited, () =>
+        dbUpsertObserverRule({ id: "limited-disable", observerAgentId: "observer", priority: 1, enabled: false }),
+      ),
+    ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
+    expect(dbGetObserverRule("limited-disable")).toMatchObject({ enabled: true, priority: 100 });
+    // Repeating stored values in a form the store normalizes still only disables.
+    runWithContext(limited, () =>
+      dbUpsertObserverRule({
+        id: "limited-disable",
+        observerAgentId: "observer",
+        sourceAgentId: " worker ",
+        eventTypes: ["message.user", "turn.complete"],
+        observerModel: null,
+        enabled: false,
+      }),
+    );
+    expect(dbGetObserverRule("limited-disable")).toMatchObject({ enabled: false, sourceAgentId: "worker" });
   });
 
   it("creates one idempotent observer binding for a matched agent rule", () => {
