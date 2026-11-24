@@ -272,8 +272,8 @@ describe("TriggerRunner debounce", () => {
     expect(publishCalls).toHaveLength(1);
     const prompt = String(publishCalls[0]?.payload.prompt);
     expect(prompt).toContain("Batch: 2 events debounced into this fire");
-    expect(prompt).toContain('"eventId": "a"');
-    expect(prompt).toContain('"eventId": "b"');
+    expect(prompt).toContain("  eventId: a");
+    expect(prompt).toContain("  eventId: b");
   });
 
   it("holds a burst that lands inside the cooldown instead of dropping it", async () => {
