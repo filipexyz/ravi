@@ -36,6 +36,12 @@
 - A writer that reaches the automation stores directly from a turn with
   `actorBreakGlassWithheld` MUST be refused (`automation-store-guard.test.ts`);
   `watch trigger` MUST refuse even as a dry-run (`watch.test.ts`).
+- The operator's own relay (a thread they asked for) MUST write a trigger, a cron
+  job and the CI follow of `pr publish`; a relay of an overlay turn, of a turn
+  holding `deny_*`, of a held relay, a relay to an agent with more authority than the caller's ceiling (also with N>=3 specific grants inside the target's wildcards), or one without the `relayCallerUnrestricted`
+  stamp MUST still be refused (`runtime-request-context.test.ts`,
+  `user-overlay-automation.test.ts`, `automation-store-guard.test.ts`,
+  `gh-watch.test.ts`, `cron-commands.test.ts`).
 - An app command resolving to anything but Ravi MUST be refused in a turn
   that withholds `execute:executable:*` (`turn-executable.test.ts`); observer
   rules written from such a turn MUST be refused (`automation-store-guard.test.ts`).

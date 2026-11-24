@@ -1,6 +1,6 @@
 import { getContext } from "../cli/context.js";
 import { CliExpectedError } from "../cli/expected-error.js";
-import { isActorBreakGlassLimitedContext } from "./actor-limit.js";
+import { isActorBreakGlassLimitedContext, isRelayHeldBelowAgent } from "./actor-limit.js";
 
 /**
  * A turn narrowed to a contact's chat grants (`actorAuthorizationMode:
@@ -16,7 +16,9 @@ export function isUserOverlayAutomationTurn(): boolean {
   const metadata = getContext()?.context?.metadata;
   return (
     metadata?.actorAuthorizationMode === "user-overlay" ||
-    metadata?.relayNarrowing === true ||
+    // A relay of a held turn. The operator's own relay (a thread they asked for) carries
+    // `relayNarrowing` too, but holds the agent's authority and writes automation as itself.
+    isRelayHeldBelowAgent(metadata) ||
     // A person's turn (or a relay or derived context of it) held to "agent
     // minus break-glass": automation written here would run later as the whole agent.
     isActorBreakGlassLimitedContext(getContext()?.context)
@@ -56,7 +58,7 @@ export function assertAutomationStoreWrite(
   if (!context) return;
   const metadata = context.metadata ?? {};
   const withheld = isActorBreakGlassLimitedContext(context);
-  const narrowed = metadata.actorAuthorizationMode === "user-overlay" || metadata.relayNarrowing === true;
+  const narrowed = metadata.actorAuthorizationMode === "user-overlay" || isRelayHeldBelowAgent(metadata);
   if (!withheld && (!narrowed || options.bindableToOverlayChat)) return;
   throw new CliExpectedError(
     `${store} cannot be written in a turn limited below the agent's authority: it would run later with the agent's full authority.`,

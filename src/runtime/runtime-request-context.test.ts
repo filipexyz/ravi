@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { isActorBreakGlassLimitedContext, isRelayHeldBelowAgent } from "../permissions/actor-limit.js";
 import { join } from "node:path";
 import { authorizeContextCapabilities } from "../permissions/context-capabilities-provider.js";
 import { canWithCapabilityContext } from "../permissions/capability-context.js";
@@ -2617,6 +2618,117 @@ describe("verified human work handoffs", () => {
       expect(canWithCapabilities(child.capabilities, "read", "bases", "list")).toBe(true);
       expect(canWithCapabilities(child.capabilities, "use", "tool", "Bash")).toBe(false);
       expect(accessFor(child)).toMatchObject({ kind: "contact", contactId: contact.id });
+    },
+  );
+
+  it("a thread opened for the operator holds the agent's authority; one opened from a held turn stays held", () => {
+    // The requester here holds the agent's whole authority (no overlay, nothing withheld): the
+    // thread carries the caller's capabilities as a ceiling and is stamped unrestricted, so
+    // automation guards do not read it as a turn held below the agent.
+    const { caller } = humanTurn();
+    const operatorThread = handoff(caller, "session.bootstrap");
+    expect(operatorThread.metadata?.relayNarrowing).toBe(true);
+    expect(operatorThread.metadata?.relayCallerUnrestricted).toBe(true);
+    expect(isRelayHeldBelowAgent(operatorThread.metadata)).toBe(false);
+    // A chain through that thread is still the operator's.
+    const chained = handoff(operatorThread, "execute");
+    expect(isRelayHeldBelowAgent(chained.metadata)).toBe(false);
+
+    // A caller narrowed to a contact's chat grants.
+    const overlayCaller = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: originAgent.id,
+      sessionKey: caller.sessionKey,
+      sessionName: caller.sessionName,
+      capabilities: [{ permission: "read", objectType: "bases", objectId: "list", source: "test" }],
+      metadata: { actorAuthorizationMode: "user-overlay", actorPrincipal: caller.metadata?.actorPrincipal },
+    });
+    const overlayThread = handoff(overlayCaller, "session.bootstrap");
+    expect(overlayThread.metadata?.relayNarrowing).toBe(true);
+    expect(overlayThread.metadata?.relayCallerUnrestricted).toBeUndefined();
+    expect(isRelayHeldBelowAgent(overlayThread.metadata)).toBe(true);
+
+    // A caller held below the agent's break-glass (a person with no grant in a chat of a full-access agent).
+    const heldCaller = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: originAgent.id,
+      sessionKey: caller.sessionKey,
+      sessionName: caller.sessionName,
+      capabilities: [
+        { permission: "read", objectType: "bases", objectId: "list", source: "test" },
+        { permission: "deny_admin", objectType: "system", objectId: "*", source: "test" },
+      ],
+      metadata: { actorAuthorizationMode: "invoke-only", actorPrincipal: caller.metadata?.actorPrincipal },
+    });
+    const heldThread = handoff(heldCaller, "session.bootstrap");
+    expect(heldThread.metadata?.relayCallerUnrestricted).toBeUndefined();
+    expect(isActorBreakGlassLimitedContext(heldThread)).toBe(true);
+
+    // Each reason on its own, with a plain relay (the work-handoff proof check cannot mask it).
+    const overlayRelay = handoff(overlayCaller, "inform");
+    expect(overlayRelay.metadata?.relayNarrowing).toBe(true);
+    expect(overlayRelay.metadata?.relayCallerUnrestricted).toBeUndefined();
+    const stampedButWithheld = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: originAgent.id,
+      sessionKey: caller.sessionKey,
+      sessionName: caller.sessionName,
+      capabilities: [
+        { permission: "read", objectType: "bases", objectId: "list", source: "test" },
+        { permission: "deny_execute", objectType: "executable", objectId: "*", source: "test" },
+      ],
+      metadata: { actorAuthorizationMode: "invoke-only", relayNarrowing: true, relayCallerUnrestricted: true },
+    });
+    const withheldRelay = handoff(stampedButWithheld, "inform");
+    expect(withheldRelay.metadata?.relayCallerUnrestricted).toBeUndefined();
+    expect(isActorBreakGlassLimitedContext(withheldRelay)).toBe(true);
+
+    // A relay of a held relay stays held, and so does one with no stamp (an older context).
+    const unstamped = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: originAgent.id,
+      sessionKey: caller.sessionKey,
+      sessionName: caller.sessionName,
+      capabilities: [],
+      metadata: { actorAuthorizationMode: "invoke-only", relayNarrowing: true },
+    });
+    expect(isRelayHeldBelowAgent(handoff(unstamped, "execute").metadata)).toBe(true);
+    expect(isRelayHeldBelowAgent(handoff(overlayThread, "execute").metadata)).toBe(true);
+  });
+
+  it("a relay to an agent with more authority than the caller's ceiling is held, not stamped", () => {
+    // A plain contact in the origin agent's chat relays to a full-access agent: the turn is
+    // narrowed to the caller's ceiling, so automation written there would run later as the
+    // worker's full authority. It must not be stamped unrestricted.
+    dbUpdateAgent(workerAgent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+    const { caller } = humanTurn();
+    for (const action of ["execute", "session.bootstrap"] as const) {
+      const toStronger = handoff(caller, action);
+      expect(toStronger.metadata?.relayNarrowing).toBe(true);
+      expect(toStronger.metadata?.relayCallerUnrestricted).toBeUndefined();
+      expect(isRelayHeldBelowAgent(toStronger.metadata)).toBe(true);
+      // And a chain through it stays held.
+      expect(isRelayHeldBelowAgent(handoff(toStronger, "execute").metadata)).toBe(true);
+    }
+  });
+
+  it.each([3, 4, 10])(
+    "a ceiling with %i specific grants inside the target's wildcards still does not stamp the relay",
+    (extra) => {
+      // Size is not coverage: the caller's specific grants land in the target's effective set as
+      // items of their own, so a count comparison would let `default + N` equal the target's count.
+      dbUpdateAgent(workerAgent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+      const { caller } = humanTurn();
+      const specifics = ["Bash", "Read", "Write", "Edit", "Grep", "Glob", "WebFetch", "WebSearch", "Task", "Skill"]
+        .slice(0, extra)
+        .map((tool) => ({ permission: "use", objectType: "tool", objectId: tool, source: "test" }));
+      const widened = dbUpdateContextCapabilities(caller.contextId, [...(caller.capabilities ?? []), ...specifics]);
+      for (const action of ["execute", "session.bootstrap"] as const) {
+        const toStronger = handoff(widened, action);
+        expect(toStronger.metadata?.relayNarrowing).toBe(true);
+        expect(toStronger.metadata?.relayCallerUnrestricted).toBeUndefined();
+        expect(isRelayHeldBelowAgent(toStronger.metadata)).toBe(true);
+      }
     },
   );
 

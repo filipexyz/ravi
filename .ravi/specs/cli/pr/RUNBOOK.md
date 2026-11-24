@@ -23,6 +23,12 @@ thread publications hand CI to their durable parent.
   context; run through the gateway/agent.`: a runtime context that belongs to
   no session ran the command. It cannot name another session; run it in a
   session, or from the operator's terminal.
+- `PR_PUBLICATION_INCOMPLETE` in the `follow` phase: the PR exists and the ref
+  is published. Read `details.cause`: it is the reason, not load. If it is
+  retryable, run `details.suggestedAction` (the same publication with the same
+  `--expect-sha` repairs the same PR and follow, creating nothing twice). A
+  `PERMISSION_DENIED` there is a refusal and repeating it changes nothing: do
+  what `suggestedAction` says (the operator sets the follow up).
 - `RUNTIME_CONTEXT_INACTIVE`: the context that started publish is no longer
   live (revoked, e.g. its turn ended, or expired), possibly mid-upload. The grant is not the problem; do not ask for
   one. Rerun the same command with the same `--expect-sha` from a live turn and
