@@ -6,6 +6,7 @@ import { getRaviStateDir } from "../utils/paths.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { dbUpsertObserverRule } from "../runtime/observation-plane.js";
 import { dbCreateTrigger, dbListTriggers } from "../triggers/triggers-db.js";
+import { runCanonicalFollowWrite } from "./user-overlay-automation.js";
 
 let stateDir: string | null = null;
 
@@ -108,5 +109,49 @@ describe("automation store guard on the real stores", () => {
 
   it("still lets code outside a turn write (daemon, terminal)", () => {
     expect(() => dbCreateTrigger({ name: "operator", topic: "ravi.watch.github.>", message: "ok" })).not.toThrow();
+  });
+});
+
+describe("the canonical-follow scope of the automation store guard", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-automation-store-guard-follow-");
+  });
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  const canonical = { name: "gh-follow:o/r#7", topic: "ravi.watch.github.*", message: "fixed", enabled: true };
+
+  it("lets a turn held below the agent write exactly the follow the scope names, and nothing else", () => {
+    runWithContext(personTurnHeldBelowBreakGlass(), () => {
+      runCanonicalFollowWrite({ fields: canonical }, () => dbCreateTrigger({ ...canonical }));
+      // Same scope, different instruction / extra field: still the plain refusal.
+      expect(() =>
+        runCanonicalFollowWrite({ fields: canonical }, () => dbCreateTrigger({ ...canonical, message: "other" })),
+      ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
+      expect(() =>
+        runCanonicalFollowWrite({ fields: canonical }, () =>
+          dbCreateTrigger({ ...canonical, executionType: "shell", shellCommand: "id" } as never),
+        ),
+      ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
+    });
+    expect(dbListTriggers().map((trigger) => trigger.name)).toEqual(["gh-follow:o/r#7"]);
+  });
+
+  it("does not outlive the write: the next write in the same turn is refused again", () => {
+    runWithContext(personTurnHeldBelowBreakGlass(), () => {
+      runCanonicalFollowWrite({ fields: canonical }, () => dbCreateTrigger({ ...canonical }));
+      expect(() => dbCreateTrigger({ ...canonical, name: "gh-follow:o/r#8" })).toThrow(
+        expect.objectContaining({ code: "PERMISSION_DENIED" }),
+      );
+    });
+  });
+
+  it("takes a synchronous body only, so a continuation can never run inside the scope", () => {
+    expect(() => runCanonicalFollowWrite({ fields: canonical }, (async () => undefined) as never)).toThrow(
+      /synchronous/,
+    );
+    expect(() => runCanonicalFollowWrite({ fields: canonical }, (() => Promise.resolve()) as never)).toThrow(/promise/);
   });
 });

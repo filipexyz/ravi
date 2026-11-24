@@ -113,6 +113,19 @@ Ungoverned chats keep `agent_identity ∩ turn_caps`, with one exception:
   always allowed; code outside a turn is unaffected; an overlay turn may still
   write a cron job bound to its chat (`creatorChat`). Command guards remain
   for a good error. Binding the job to the creator's ceiling is deferred.
+- One automation a limited turn may still leave behind: the CI follow that
+  `ravi pr publish` arms for the publishing session (`gh-follow:<repo>#<n>`).
+  Its topic, filter, message and routing come only from the verified
+  repository, PR number and the publisher's own session, and the publisher
+  already holds `mutate:pr:publish`, so it carries nothing the person wrote.
+  `runCanonicalFollowWrite` (`permissions/user-overlay-automation.ts`) opens a
+  synchronous scope that the publication alone enters (`systemOwned` in
+  `ensureGhWatchFollow`); inside it a trigger write is accepted only if every
+  field it sets equals the canonical follow. Another field, another value, a
+  later write, or any other caller (the Bash observation hook, `watch
+  trigger`, a new writer) is refused as above. Before this scope existed, every
+  thread turn (relayed, so held) lost its follow with a generic
+  `PR_PUBLICATION_INCOMPLETE` that read as transient.
 - What "everything except break-glass" still includes (declared): the admin
   shortcut still grants every other `(permission, objectType)`, e.g.
   `execute:group:*` CLI groups, `write_contacts:system:*` and `admin` on types

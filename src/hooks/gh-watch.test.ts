@@ -24,7 +24,8 @@ import type { WatchRecord } from "../watch/types.js";
 
 import { registerInboundSlackThread, closeSlackThreadLifecycle } from "../channels/slack/thread-lifecycle-store.js";
 import { getOrCreateSession, deleteSession } from "../router/sessions.js";
-import { dbCreateTrigger, dbGetTrigger } from "../triggers/triggers-db.js";
+import { dbCreateTrigger, dbGetTrigger, dbListTriggers } from "../triggers/triggers-db.js";
+import { runWithContext, type ToolContext } from "../cli/context.js";
 import { runGhFollowMaintenance } from "./gh-follow-sweep.js";
 import { createIsolatedRaviState, cleanupIsolatedRaviState } from "../test/ravi-state.js";
 import { dbCreateAgent } from "../router/router-db.js";
@@ -1463,5 +1464,98 @@ describe("durable PR follow owner", () => {
     expect(dbGetTrigger(unrelated.id)).toMatchObject({ cooldownMs: 30_000, debounceMs: 2_000 });
     expect((await runGhFollowMaintenance(maintenanceDeps)).triggersRepaired).toBe(0);
     expect(refreshes).toBe(1);
+  });
+});
+
+describe("the CI follow that `pr publish` leaves from a turn held below the agent", () => {
+  /** A thread started by the main session: relayed, so held to the caller's grants (24/11: every thread). */
+  function relayedThreadTurn(): ToolContext {
+    return {
+      contextId: "ctx_thread",
+      agentId: "main",
+      context: {
+        contextId: "ctx_thread",
+        contextKey: "rctx_thread",
+        kind: "turn-runtime",
+        agentId: "main",
+        capabilities: [],
+        metadata: { actorAuthorizationMode: "invoke-only", relayNarrowing: true },
+        createdAt: 0,
+      },
+    };
+  }
+
+  const followDeps = {
+    localOnly: true,
+    listWatches: () => ({ items: [], total: 0 }) as never,
+    createWatch: async () => ({
+      watch: watch({ id: "local_1", placement: "local", filters: { managedBy: "gh-follow" } }),
+      createdRemote: false,
+    }),
+    emitTriggersRefresh: async () => {},
+  };
+  const publisher = { sessionName: "dev-thread" };
+
+  it("is registered, and registering it again repairs nothing twice", async () => {
+    const first = await runWithContext(relayedThreadTurn(), () =>
+      ensureGhWatchFollow(
+        { repo: "o/r", prNumber: 7, context: publisher, reconcile: true },
+        { ...followDeps, systemOwned: true },
+      ),
+    );
+    expect(first.triggerReused).toBe(false);
+    const desired = buildGhFollowTriggerInput("o/r", 7, publisher);
+    expect(dbListTriggers().map((item) => [item.name, item.message, item.replySession])).toEqual([
+      [desired.name, desired.message, "dev-thread"],
+    ]);
+
+    const again = await runWithContext(relayedThreadTurn(), () =>
+      ensureGhWatchFollow(
+        { repo: "o/r", prNumber: 7, context: publisher, reconcile: true },
+        { ...followDeps, systemOwned: true },
+      ),
+    );
+    expect(again.triggerReused).toBe(true);
+    expect(dbListTriggers()).toHaveLength(1);
+  });
+
+  it("repairs a stale follow of the same PR instead of leaving it silent", async () => {
+    const desired = buildGhFollowTriggerInput("o/r", 7, publisher);
+    const stale = dbCreateTrigger({ ...desired, message: "old", cooldownMs: 30_000, enabled: false });
+    await runWithContext(relayedThreadTurn(), () =>
+      ensureGhWatchFollow(
+        { repo: "o/r", prNumber: 7, context: publisher, reconcile: true },
+        { ...followDeps, systemOwned: true },
+      ),
+    );
+    expect(dbGetTrigger(stale.id)).toMatchObject({ message: desired.message, cooldownMs: 0, enabled: true });
+  });
+
+  it("still refuses the same write from anything that is not the publication (the Bash observation, the next caller)", async () => {
+    await expect(
+      runWithContext(relayedThreadTurn(), () =>
+        ensureGhWatchFollow({ repo: "o/r", prNumber: 7, context: publisher }, followDeps),
+      ),
+    ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    expect(dbListTriggers()).toHaveLength(0);
+  });
+
+  it("does not let the publication's allowance carry a trigger the person wrote", async () => {
+    const desired = buildGhFollowTriggerInput("o/r", 7, publisher);
+    await expect(
+      runWithContext(relayedThreadTurn(), () =>
+        ensureGhWatchFollow(
+          { repo: "o/r", prNumber: 7, context: publisher, reconcile: true },
+          {
+            ...followDeps,
+            systemOwned: true,
+            // A writer that swaps the instruction for its own text.
+            createTrigger: (input) => dbCreateTrigger({ ...input, message: "run this as the agent" }),
+          },
+        ),
+      ),
+    ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    expect(dbListTriggers()).toHaveLength(0);
+    expect(desired.message).not.toBe("run this as the agent");
   });
 });

@@ -131,7 +131,7 @@ function rowToTrigger(row: TriggerRow): Trigger {
  * Create a new trigger.
  */
 export function dbCreateTrigger(input: TriggerInput): Trigger {
-  assertAutomationStoreWrite("trigger");
+  assertAutomationStoreWrite("trigger", { canonicalFollow: input as unknown as Record<string, unknown> });
   const db = getDb();
   const id = randomUUID().slice(0, 8);
   const now = Date.now();
@@ -274,7 +274,7 @@ export function dbUpdateTrigger(id: string, updates: TriggerUpdate, options: Tri
   const disablesOnly = Object.entries(updates as Record<string, unknown>).every(
     ([key, value]) => value === undefined || (key === "enabled" && value === false),
   );
-  assertAutomationStoreWrite("trigger", { disablesOnly });
+  assertAutomationStoreWrite("trigger", { disablesOnly, canonicalFollow: updates as Record<string, unknown> });
   const db = getDb();
   const existing = dbGetTrigger(id);
 

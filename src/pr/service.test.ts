@@ -1,3 +1,4 @@
+import { CliExpectedError } from "../cli/expected-error.js";
 import { runThreadMutation } from "../threads/schema-fence.js";
 import { errorDiagnostic } from "../utils/error-diagnostic.js";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
@@ -414,6 +415,49 @@ describe("verified Git Data API publication", () => {
     expect(result.pr).toMatchObject({ reused: true, ready: true });
     expect(f.pr()).toMatchObject({ title: "human edit", body: "human review context" });
     expect(f.triggers).toHaveLength(1);
+  });
+
+  it("says what stopped the follow, and the command that completes it, instead of a bare rerun", async () => {
+    f = publicationFixture();
+    f.options.publication.verifyFollow = async () => {
+      throw new Error("runner unavailable");
+    };
+    const failure = await publish().catch((error) => error);
+    expect(failure).toMatchObject({
+      code: "PR_PUBLICATION_INCOMPLETE",
+      details: { retryable: true, cause: "Error: runner unavailable" },
+    });
+    expect(failure.message).toContain("follow phase");
+    expect(failure.message).toContain("runner unavailable");
+    expect(failure.details.suggestedAction).toContain("ravi pr publish --repo");
+    expect(failure.details.suggestedAction).toContain("--expect-sha");
+    const journaled = f.db
+      .query("SELECT detail_json FROM pr_publication_events WHERE phase='follow' AND state='uncertain'")
+      .all() as Array<{ detail_json: string }>;
+    expect(JSON.parse(journaled.at(-1)!.detail_json)).toMatchObject({ cause: "Error: runner unavailable" });
+  });
+
+  it("does not present a policy refusal of the follow as a transient fault to rerun", async () => {
+    f = publicationFixture();
+    f.options.publication.verifyFollow = async () => {
+      throw new CliExpectedError(
+        "trigger cannot be written in a turn limited below the agent's authority.",
+        "PERMISSION_DENIED",
+        1,
+        "Ask the operator to set it up.",
+      );
+    };
+    const failure = await publish().catch((error) => error);
+    expect(failure).toMatchObject({
+      code: "PERMISSION_DENIED",
+      details: {
+        retryable: false,
+        cause: "trigger cannot be written in a turn limited below the agent's authority.",
+        suggestedAction: "Ask the operator to set it up.",
+        partial: { phase: "follow", refPublished: true, prNumber: 7 },
+      },
+    });
+    expect(failure.message).toContain("turn limited below the agent's authority");
   });
 
   it("refuses an advanced ref and never uses force", async () => {

@@ -36,6 +36,11 @@
 - A writer that reaches the automation stores directly from a turn with
   `actorBreakGlassWithheld` MUST be refused (`automation-store-guard.test.ts`);
   `watch trigger` MUST refuse even as a dry-run (`watch.test.ts`).
+- The CI follow of `pr publish` MUST be registered from a held (relayed) turn,
+  and ONLY the canonical one: another message, an extra field, a later write,
+  an async scope body or a non-publication caller MUST still be refused
+  (`gh-watch.test.ts`, "the CI follow that `pr publish` leaves";
+  `automation-store-guard.test.ts`, "canonical-follow scope").
 - An app command resolving to anything but Ravi MUST be refused in a turn
   that withholds `execute:executable:*` (`turn-executable.test.ts`); observer
   rules written from such a turn MUST be refused (`automation-store-guard.test.ts`).
