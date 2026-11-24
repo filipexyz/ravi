@@ -1273,7 +1273,8 @@ describe("durable cron run correlation", () => {
         release();
         await stopping;
         expect(directAttempts).toHaveLength(1);
-        expect(pendingCronFailureReports()).toHaveLength(offline ? 2 : 1);
+        // The backlog goes out as one digest: both runs settle together, or stay pending together.
+        expect(pendingCronFailureReports()).toHaveLength(offline ? 2 : 0);
       } finally {
         release();
         await starting;
@@ -1434,9 +1435,9 @@ describe("durable cron run correlation", () => {
 
     const runner = new CronRunner();
     await runner.start();
-    // Both reports are delivered; the second is still marked, the first stays pending.
+    // Both reports go out in one digest; the second is still marked, the first stays pending.
     await waitUntil(() => pendingCronFailureReports().length === 1);
-    expect(directMessages).toHaveLength(2);
+    expect(directMessages).toHaveLength(1);
     expect(pendingCronFailureReports()[0]!.id).toBe(runIds[0]);
     const failure = await runner.stop().then(
       () => null,

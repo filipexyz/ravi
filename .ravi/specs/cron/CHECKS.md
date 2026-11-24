@@ -115,10 +115,14 @@ RAVI_CONTEXT_KEY=<viewer-ctx> ravi cron disable <other-agent-job-id> --json
 
 ## Failure Notices MUST Aggregate And Stop Retrying
 
-- `bun test src/cron/failure-notification.test.ts` MUST prove a job's backlog of failed runs
-  sends one message with the count (31 runs → one "falhou 31 vezes", 30 aggregated), a second
-  run inside the 24 h window sends nothing and one after it sends again, delivery falls through
-  from an unreachable chat to the owner's next one, and a report no chat accepts settles as
-  undeliverable after 3 attempts and is not tried again.
-- `bun test src/cron/runner.test.ts` MUST prove two failed runs of one job drained at start
-  settle with one message that says "falhou 2 vezes", online and offline.
+- `bun test src/cron/failure-notification.test.ts` MUST reproduce the pile-up: 42 failed runs of
+  3 jobs with the owner's WhatsApp offline produce one digest on the owner's next chat with a
+  line per job ("31 falhas", "10 falhas", "1 falha"), the offline chat is never tried, and every
+  run settles. It MUST also prove: every owner chat offline → no send, settled undeliverable
+  (`owner_chats_offline`) at once; no owner chat → undeliverable (`no_owner_chat`); an erroring
+  delivery settles after 3 attempts and is not tried again; a second live failure of a job
+  inside the window sends nothing and one after it sends; a failure older than the window
+  settles as stale without a message.
+- `bun test src/cron/runner.test.ts` MUST prove failed runs drained at start go out as one
+  digest ("falhou 2 vezes" for one job), online and offline, and that a run whose report was
+  delivered but cannot be marked stays pending while the others settle.

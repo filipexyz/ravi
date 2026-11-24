@@ -49,7 +49,14 @@ import {
 } from "./turn-outcome.js";
 import type { CronJob } from "./types.js";
 import { notifyAutomationOff } from "./automation-notice.js";
-import { notifyCronFailure, recordUnreadableCronFailure, type CronFailureJob } from "./failure-notification.js";
+import {
+  deliverCronFailureReports,
+  notifyCronFailure,
+  prepareCronFailureReport,
+  recordUnreadableCronFailure,
+  type CronFailureJob,
+  type CronFailureReport,
+} from "./failure-notification.js";
 import {
   admitCronRun,
   getCronRun,
@@ -134,26 +141,56 @@ export class CronRunner {
 
   private async reconcileFailureReports(generation: number): Promise<void> {
     let recorded = 0;
+    const recordFailure = (runId: string, cause: unknown) => {
+      // An unexpected failure (a refused write, say) must not strand the reports behind it.
+      // The report stays pending and `stop()` raises the failure.
+      log.error("Cron failure report reconciliation failed", { runId, error: cause });
+      if (recorded++ < MAX_RECORDED_REPORT_FAILURES)
+        this.runtimeEventStopFailures.push(new Error(`Cron failure report ${runId} reconciliation failed`, { cause }));
+    };
+    // Settle locally what needs no message, and gather the rest: the backlog goes out as one digest
+    // per owner (a line per job with its count), never one message per failed run.
+    const owed: Array<{ runId: string; report: CronFailureReport }> = [];
+    const failuresByJob = new Map<string, number>();
     for (const run of pendingCronFailureReports()) {
       // A later start owns the backlog once this generation has been superseded.
-      if (!this.running || generation !== this.failureReportGeneration) break;
+      if (!this.running || generation !== this.failureReportGeneration) return;
       try {
-        await this.reconcileFailureReport(run);
+        const report = this.prepareFailureReport(run);
+        if (report) {
+          owed.push({ runId: run.id, report });
+          failuresByJob.set(report.jobId, (failuresByJob.get(report.jobId) ?? 0) + 1);
+        }
       } catch (cause) {
-        // An unexpected failure (a refused write, say) must not strand the reports behind it.
-        // The report stays pending and `stop()` raises the failure.
-        log.error("Cron failure report reconciliation failed", { runId: run.id, error: cause });
-        if (recorded++ < MAX_RECORDED_REPORT_FAILURES)
-          this.runtimeEventStopFailures.push(
-            new Error(`Cron failure report ${run.id} reconciliation failed`, { cause }),
-          );
+        recordFailure(run.id, cause);
       }
       // Reports that settle locally never wait on I/O; give timers and sockets a turn between them.
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
+    if (owed.length === 0 || !this.running || generation !== this.failureReportGeneration) return;
+    let settled: Set<string>;
+    try {
+      settled = await deliverCronFailureReports(
+        owed.map(({ report }) => report),
+        { extraFailures: failuresByJob },
+      );
+    } catch (cause) {
+      recordFailure(owed[0]!.runId, cause);
+      return;
+    }
+    for (const { runId, report } of owed) {
+      if (!settled.has(report.itemId)) continue;
+      try {
+        markCronRunReported(runId);
+      } catch (cause) {
+        // Delivered but not marked: it stays pending (an unconfirmed send may go again next start).
+        recordFailure(runId, cause);
+      }
+    }
   }
 
-  private async reconcileFailureReport(run: CronRunRow): Promise<void> {
+  /** `null` when the run is settled without a message (and marked reported); otherwise its report. */
+  private prepareFailureReport(run: CronRunRow): CronFailureReport | null {
     let notification: CronFailureJob;
     try {
       notification = cronRunNotification(run);
@@ -168,9 +205,11 @@ export class CronRunner {
       });
       recordUnreadableCronFailure(run);
       markCronRunReported(run.id);
-      return;
+      return null;
     }
-    if (await notifyCronFailure(notification, run.error ?? "Agent turn failed")) markCronRunReported(run.id);
+    const report = prepareCronFailureReport(notification, run.error ?? "Agent turn failed");
+    if (!report) markCronRunReported(run.id);
+    return report;
   }
 
   /** Wait for the report in flight, but only a moment: the daemon stops its components in series. */
