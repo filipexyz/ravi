@@ -1811,6 +1811,32 @@ describe("CronCommands --thread", () => {
     await expect(addJob({ thread: true, isolated: true })).rejects.toThrow(/cannot be combined/);
   });
 
+  it("reports where the creating run reports, and refuses a run's session as an explicit report-to", async () => {
+    const { openChildRun } = await import("../../automation/child-runs.js");
+    const RUN = { sessionKey: "agent:main:cron:job-x:run:run-x", name: "main-run-run-x", agentId: "main" };
+    mockSessions[RUN.sessionKey] = RUN;
+    mockSessions[RUN.name] = RUN;
+    openChildRun({
+      id: `run-x-${Math.random().toString(36).slice(2, 8)}`,
+      originKind: "cron",
+      originId: "job-x",
+      originName: "job-x",
+      agentId: "main",
+      parentSessionKey: MAIN_DM.sessionKey,
+      parentSessionName: MAIN_DM.name,
+      childSessionKey: RUN.sessionKey,
+      childSessionName: RUN.name,
+    });
+    mockCliContext = { sessionKey: RUN.sessionKey, agentId: "main" };
+
+    await captureJson(() => addJob({ thread: true }));
+    expect(cronJob).toMatchObject({ sessionTarget: "thread", replySession: MAIN_DM.sessionKey });
+
+    cronJob = null;
+    await expect(addJob({ thread: true, reportTo: RUN.name })).rejects.toThrow(/session of an automation run/);
+    expect(cronJob).toBeNull();
+  });
+
   it("keeps a thread job's agent and report-to session paired on cron set", async () => {
     cronJob = {
       id: "cron-1",

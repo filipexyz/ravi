@@ -137370,6 +137370,10 @@ public enum RaviSchemas {
         "description": "Override the session used for outbound delivery (defaults to caller session)",
         "type": "string"
       },
+      "reportTo": {
+        "description": "With --thread: the session each fire reports to, of the trigger's agent (default: the creating session, else the agent's main session)",
+        "type": "string"
+      },
       "session": {
         "description": "Session to run in, by name; may be a template resolved per event (e.g. issue-{{data.payload.row.values.topic_id.0}}) for one session per value; an event whose name does not resolve is skipped, never sent to another session. Created when missing. Default: the current session, or the agent main session outside one. The reserved values main and isolated keep their old meaning (the agent main session; one session per trigger)",
         "type": "string"
@@ -137377,6 +137381,10 @@ public enum RaviSchemas {
       "shell": {
         "description": "Run a shell command directly without invoking an agent",
         "type": "string"
+      },
+      "thread": {
+        "description": "Run each fire in a fresh session of its own that returns its result once to the report-to session (agent triggers; one fire at a time, the owner's Bases access is not lent)",
+        "type": "boolean"
       },
       "timeout": {
         "description": "Shell timeout, e.g. 60 or 5m",

@@ -306,6 +306,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     // thread can close; page comment triggers an older ship left on a thread are
     // moved to the parent at boot.
     "src/triggers/page-comment-owner.test.ts",
+    // `--thread`: one fire, one run in a session of its own, no source, no owner lending, returned to its parent.
+    "src/triggers/__tests__/runner-thread.test.ts",
   ],
   "src/chat-commands/": [
     // Chat commands: the channel-free engine every channel's adapter feeds, and the authority it asks.

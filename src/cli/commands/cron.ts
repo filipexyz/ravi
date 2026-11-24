@@ -35,6 +35,7 @@ import {
 import { getAgent } from "../../router/config.js";
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { resolveSession } from "../../router/sessions.js";
+import { childRunParentRefusal, findChildRunByChildSession } from "../../automation/child-runs.js";
 import { getDefaultTimezone, getAccountForAgent, getDefaultAgentId, dbGetAgent } from "../../router/router-db.js";
 import {
   createCronJobIdempotently,
@@ -310,9 +311,24 @@ function resolveThreadReportTo(
 ): string | undefined {
   const ref = reportTo?.trim() || creatingSession;
   if (!ref) return undefined;
-  const session = resolveSession(ref);
+  // Checked before anything about the session is said: one the caller may not touch reads as missing.
+  const scopeCtx = getScopeContext();
+  if (reportTo?.trim() && isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, ref)) {
+    fail(`Report-to session not found: ${ref}`);
+  }
+  let session = resolveSession(ref);
   if (!session || isTriggerOwnSessionKey(session.sessionKey)) {
     fail(`Report-to session not found: ${ref}`);
+  }
+  // A job created inside an automation run reports where that run reports: the run's own session is pruned.
+  const creatingRun = reportTo?.trim() ? null : findChildRunByChildSession(session!.sessionKey);
+  if (creatingRun) {
+    session = resolveSession(creatingRun.parentSessionKey);
+    if (!session) fail(`Report-to session not found: ${creatingRun.parentSessionName}`);
+  }
+  const refusal = childRunParentRefusal(session!);
+  if (refusal) {
+    fail(`${refusal}; runs could not report there. Pass --report-to <a lasting session of ${agentId}>`);
   }
   if (session!.agentId !== agentId) {
     fail(
