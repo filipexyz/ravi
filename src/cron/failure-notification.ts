@@ -1,7 +1,7 @@
 import { deliverToChat } from "../cloud-agents/chat-target.js";
 import {
+  latestLocalInboxEventAt,
   listLocalInboxEvents,
-  listLocalInboxItems,
   markLocalInboxItem,
   upsertLocalInboxItem,
 } from "../inbox/local-db.js";
@@ -10,7 +10,7 @@ import { createOmniClient } from "../omni/client.js";
 import { resolveOmniConnection } from "../omni-config.js";
 import { dbGetInstance } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
-import { countPendingCronFailures } from "./run-db.js";
+import { countCronFailuresSince } from "./run-db.js";
 import type { CronJob } from "./types.js";
 
 const log = logger.child("cron:failure-notification");
@@ -68,15 +68,14 @@ const SETTLED_EVENTS = new Set([
 
 /** When this job last messaged its owner about a failure, from the inbox ledger; null if never. */
 function lastJobNoticeAt(jobId: string): number | null {
-  let latest: number | null = null;
-  for (const item of listLocalInboxItems({ sourceDomain: "cron" })) {
-    if (item.sourceType !== "run_failed" || item.sourceId !== jobId) continue;
-    for (const event of listLocalInboxEvents(item.id)) {
-      if (event.eventType !== "cron.failure.notified") continue;
-      if (latest === null || event.createdAt > latest) latest = event.createdAt;
-    }
-  }
-  return latest;
+  // Every item of the job, any status: a notice the owner marked done still counts, and other
+  // jobs' items never push it out of view.
+  return latestLocalInboxEventAt({
+    sourceDomain: "cron",
+    sourceType: "run_failed",
+    sourceId: jobId,
+    eventType: "cron.failure.notified",
+  });
 }
 
 /** The operator or a contact owns the run, so a direct message is owed (and retried, a bounded number of times). */
@@ -116,7 +115,7 @@ export interface CronFailureNoticeDeps {
   deliver?: (target: OwnerDirectTarget, text: string) => Promise<unknown>;
   reachable?: CronFailureReachability;
   lastNoticeAt?: (jobId: string) => number | null;
-  pendingFailures?: (jobId: string) => number;
+  failuresSince?: (jobId: string, since: number) => number;
   now?: () => number;
 }
 
@@ -130,6 +129,8 @@ export interface CronFailureReport {
   ownerKey: string;
   targets: OwnerDirectTarget[];
   priorAttempts: number;
+  /** Failed runs of the job this notice covers: since its last notice, or within the window. */
+  failureCount: number;
 }
 
 /**
@@ -202,6 +203,12 @@ export function prepareCronFailureReport(
     ownerKey: job.ownerPrincipal && job.ownerPrincipal !== "operator" ? job.ownerPrincipal : "operator",
     targets,
     priorAttempts: events.filter((event) => event.eventType === "cron.failure.delivery_failed").length,
+    // Runs joined to the previous notice were settled without a message: count them here, so the
+    // owner learns how often the job failed since then.
+    failureCount: Math.max(
+      1,
+      (deps.failuresSince ?? countCronFailuresSince)(job.id, lastNotice ?? now - CRON_FAILURE_NOTICE_WINDOW_MS),
+    ),
   };
 }
 
@@ -213,16 +220,16 @@ function formatFailedAt(at: number | null): string {
   return at === null ? "hora desconhecida" : `${new Date(at).toISOString().slice(0, 16).replace("T", " ")} UTC`;
 }
 
+/** Lines in a digest before the rest is summed up in one line. */
+export const CRON_FAILURE_DIGEST_MAX_LINES = 20;
+
 /** One message for an owner's reports: one line per job with how many runs failed and the last one. */
-export function cronFailureDigestText(
-  reports: CronFailureReport[],
-  extraFailures: Map<string, number> = new Map(),
-): string {
+export function cronFailureDigestText(reports: CronFailureReport[]): string {
   const byJob = new Map<string, CronFailureReport[]>();
   for (const report of reports) byJob.set(report.jobId, [...(byJob.get(report.jobId) ?? []), report]);
   const jobs = [...byJob.values()].map((runs) => {
     const last = runs.reduce((a, b) => ((b.failedAt ?? 0) > (a.failedAt ?? 0) ? b : a));
-    const count = Math.max(runs.length, extraFailures.get(last.jobId) ?? 0);
+    const count = Math.max(runs.length, ...runs.map((run) => run.failureCount));
     return { last, count };
   });
   if (jobs.length === 1) {
@@ -230,12 +237,18 @@ export function cronFailureDigestText(
     if (count <= 1) return singleRunText(last.jobName, last.category);
     return `O agendamento “${last.jobName}” falhou ${count} vezes; a última: ${FAILURE_COPY[last.category]}. O trabalho ficou pendente; revise a execução antes de repetir.`;
   }
-  const lines = jobs
-    .sort((a, b) => b.count - a.count || a.last.jobName.localeCompare(b.last.jobName))
+  const sorted = jobs.sort((a, b) => b.count - a.count || a.last.jobName.localeCompare(b.last.jobName));
+  const lines = sorted
+    .slice(0, CRON_FAILURE_DIGEST_MAX_LINES)
     .map(
       ({ last, count }) =>
         `- “${last.jobName}”: ${count} ${count === 1 ? "falha" : "falhas"}, a última em ${formatFailedAt(last.failedAt)} (${FAILURE_COPY[last.category]})`,
     );
+  const rest = sorted.slice(CRON_FAILURE_DIGEST_MAX_LINES);
+  if (rest.length > 0) {
+    const restFailures = rest.reduce((total, job) => total + job.count, 0);
+    lines.push(`- e mais ${rest.length} agendamentos (${restFailures} ${restFailures === 1 ? "falha" : "falhas"})`);
+  }
   return `${jobs.length} agendamentos falharam. O trabalho ficou pendente; revise as execuções antes de repetir.\n${lines.join("\n")}`;
 }
 
@@ -274,7 +287,7 @@ async function reachableTargets(
  */
 export async function deliverCronFailureReports(
   reports: CronFailureReport[],
-  deps: CronFailureNoticeDeps & { extraFailures?: Map<string, number> } = {},
+  deps: CronFailureNoticeDeps = {},
 ): Promise<Set<string>> {
   const settled = new Set<string>();
   const byOwner = new Map<string, CronFailureReport[]>();
@@ -282,7 +295,7 @@ export async function deliverCronFailureReports(
   const deliver = deps.deliver ?? ((owner, message) => deliverToChat(owner, { text: message }));
   for (const group of byOwner.values()) {
     const { ordered, down } = await reachableTargets(group[0]!.targets, deps.reachable ?? defaultReachable);
-    const text = cronFailureDigestText(group, deps.extraFailures);
+    const text = cronFailureDigestText(group);
     const reasons: string[] = [];
     let sentTo: OwnerDirectTarget | null = null;
     for (const target of ordered) {
@@ -355,11 +368,7 @@ export async function notifyCronFailure(
   try {
     const report = prepareCronFailureReport(job, error, deps);
     if (!report) return true;
-    const pending = Math.max(1, (deps.pendingFailures ?? countPendingCronFailures)(job.id));
-    const settled = await deliverCronFailureReports([report], {
-      ...deps,
-      extraFailures: new Map([[job.id, pending]]),
-    });
+    const settled = await deliverCronFailureReports([report], deps);
     return settled.has(report.itemId);
   } catch (error) {
     log.error("Cron failure notification failed; run remains failed and inbox stays open", { jobId: job.id, error });

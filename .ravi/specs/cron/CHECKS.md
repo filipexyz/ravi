@@ -122,7 +122,14 @@ RAVI_CONTEXT_KEY=<viewer-ctx> ravi cron disable <other-agent-job-id> --json
   (`owner_chats_offline`) at once; no owner chat → undeliverable (`no_owner_chat`); an erroring
   delivery settles after 3 attempts and is not tried again; a second live failure of a job
   inside the window sends nothing and one after it sends; a failure older than the window
-  settles as stale without a message.
+  settles as stale without a message. The window MUST hold with 60 newer items of other jobs and
+  after the owner marks the notice done; the next notice MUST count failures since the last one;
+  a connected chat MUST be tried before one whose state is unknown; a digest MUST cap at 20 lines.
+- `bun test src/cron/runner.test.ts` MUST prove a report acknowledged while the start gathers the
+  backlog is not sent.
+- `bun test src/cli/commands/cron-commands.test.ts` MUST prove `cron ack-failures` rejects a blank
+  `--job` (exit 2), is a dry-run without `--execute` (exit 3), and settles only jobs the caller can
+  both see and modify.
 - `bun test src/cron/runner.test.ts` MUST prove failed runs drained at start go out as one
   digest ("falhou 2 vezes" for one job), online and offline, and that a run whose report was
   delivered but cannot be marked stays pending while the others settle.

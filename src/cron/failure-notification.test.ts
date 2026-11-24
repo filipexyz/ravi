@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { listLocalInboxEvents, listLocalInboxItems } from "../inbox/local-db.js";
+import { listLocalInboxEvents, listLocalInboxItems, markLocalInboxItem } from "../inbox/local-db.js";
 import { dbCreateCronJob } from "./cron-db.js";
 import {
+  CRON_FAILURE_DIGEST_MAX_LINES,
   CRON_FAILURE_MAX_DELIVERY_ATTEMPTS,
+  cronFailureDigestText,
   deliverCronFailureReports,
   prepareCronFailureReport,
   CRON_FAILURE_NOTICE_WINDOW_MS,
@@ -81,7 +83,7 @@ describe("cron failure notification", () => {
     const deps = {
       owner: () => target,
       deliver: async (_target: typeof target, text: string) => void sent.push(text),
-      pendingFailures: () => 31,
+      failuresSince: () => 31,
     };
     for (let run = 0; run < 31; run++) {
       expect(await notifyCronFailure({ ...current, runId: `run-${run}` }, "timeout", deps)).toBe(true);
@@ -241,6 +243,105 @@ describe("cron failure notification", () => {
     );
     expect(undeliverable?.payload).toMatchObject({ reason: "owner_chats_offline" });
     expect(item.status).toBe("open");
+  });
+
+  it("keeps a job's 24 h window when many other jobs' items are newer (the inbox is not paged)", async () => {
+    const target2 = { ...target };
+    const sent: string[] = [];
+    const deps = { owner: () => target2, deliver: async (_t: typeof target, text: string) => void sent.push(text) };
+    const x = job();
+    await notifyCronFailure({ ...x, runId: "x-1" }, "timeout", deps);
+    const other = { ...job(), name: "Other" };
+    for (let run = 0; run < 60; run++) {
+      await notifyCronFailure({ ...other, runId: `o-${run}` }, "timeout", deps);
+    }
+    const before = sent.length;
+    await notifyCronFailure({ ...x, runId: "x-2" }, "timeout", deps);
+    expect(sent.length).toBe(before);
+  });
+
+  it("keeps a job's 24 h window after the owner marks the notice done", async () => {
+    const sent: string[] = [];
+    const deps = { owner: () => target, deliver: async (_t: typeof target, text: string) => void sent.push(text) };
+    const x = job();
+    await notifyCronFailure({ ...x, runId: "x-1" }, "timeout", deps);
+    const item = listLocalInboxItems({ sourceDomain: "cron" })[0]!;
+    markLocalInboxItem(item.id, "done", { eventType: "done", actorType: "contact" });
+    await notifyCronFailure({ ...x, runId: "x-2" }, "timeout", deps);
+    expect(sent).toHaveLength(1);
+  });
+
+  it("counts the failures joined since the last notice in the next one", async () => {
+    const sent: string[] = [];
+    const since: number[] = [];
+    const x = job();
+    const deps = {
+      owner: () => target,
+      deliver: async (_t: typeof target, text: string) => void sent.push(text),
+      lastNoticeAt: () => 1_000,
+      now: () => 1_000 + CRON_FAILURE_NOTICE_WINDOW_MS + 1,
+      failuresSince: (_jobId: string, at: number) => {
+        since.push(at);
+        return 23;
+      },
+    };
+    await notifyCronFailure({ ...x, lastRunAt: 1_000 + CRON_FAILURE_NOTICE_WINDOW_MS }, "timeout", deps);
+    expect(since).toEqual([1_000]);
+    expect(sent[0]).toContain("falhou 23 vezes");
+  });
+
+  it("joins a failure just inside the window and sends one at the window's edge", async () => {
+    const sent: string[] = [];
+    const base = Date.now();
+    const deps = (now: number) => ({
+      owner: () => target,
+      deliver: async (_t: typeof target, text: string) => void sent.push(text),
+      lastNoticeAt: () => base,
+      now: () => now,
+      failuresSince: () => 1,
+    });
+    const x = job();
+    await notifyCronFailure(
+      { ...x, runId: "inside", lastRunAt: base + 1 },
+      "timeout",
+      deps(base + CRON_FAILURE_NOTICE_WINDOW_MS - 1),
+    );
+    expect(sent).toHaveLength(0);
+    await notifyCronFailure(
+      { ...x, runId: "edge", lastRunAt: base + 1 },
+      "timeout",
+      deps(base + CRON_FAILURE_NOTICE_WINDOW_MS),
+    );
+    expect(sent).toHaveLength(1);
+  });
+
+  it("tries a chat known to be connected before one whose state is unknown", async () => {
+    const whatsapp = { channel: "whatsapp", accountId: "main", to: "5511@s", chatId: "5511@s", contactId: "owner" };
+    const tried: string[] = [];
+    await notifyCronFailure(job(), "timeout", {
+      owners: () => [target, whatsapp],
+      reachable: async (to) => (to.channel === "whatsapp" ? true : null),
+      deliver: async (to) => void tried.push(to.channel),
+    });
+    expect(tried).toEqual(["whatsapp"]);
+  });
+
+  it("caps the digest and sums up the rest in one line", () => {
+    const reports = Array.from({ length: CRON_FAILURE_DIGEST_MAX_LINES + 5 }, (_, index) => ({
+      itemId: `i${index}`,
+      jobId: `j${index}`,
+      jobName: `Job ${String(index).padStart(2, "0")}`,
+      category: "timeout" as const,
+      failedAt: 1_000,
+      ownerKey: "operator",
+      targets: [target],
+      priorAttempts: 0,
+      failureCount: 2,
+    }));
+    const text = cronFailureDigestText(reports);
+    const lines = text.split("\n").slice(1);
+    expect(lines).toHaveLength(CRON_FAILURE_DIGEST_MAX_LINES + 1);
+    expect(lines.at(-1)).toBe("- e mais 5 agendamentos (10 falhas)");
   });
 
   it("records a run whose notice cannot be read once, as a high-priority inbox item with its own event", () => {

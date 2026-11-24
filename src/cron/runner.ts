@@ -152,16 +152,12 @@ export class CronRunner {
     // Settle locally what needs no message, and gather the rest: the backlog goes out as one digest
     // per owner (a line per job with its count), never one message per failed run.
     const owed: Array<{ runId: string; report: CronFailureReport }> = [];
-    const failuresByJob = new Map<string, number>();
     for (const run of pendingCronFailureReports()) {
       // A later start owns the backlog once this generation has been superseded.
       if (!this.running || generation !== this.failureReportGeneration) return;
       try {
         const report = this.prepareFailureReport(run);
-        if (report) {
-          owed.push({ runId: run.id, report });
-          failuresByJob.set(report.jobId, (failuresByJob.get(report.jobId) ?? 0) + 1);
-        }
+        if (report) owed.push({ runId: run.id, report });
       } catch (cause) {
         recordFailure(run.id, cause);
       }
@@ -173,10 +169,7 @@ export class CronRunner {
     if (stillOwed.length === 0 || !this.running || generation !== this.failureReportGeneration) return;
     let settled: Set<string>;
     try {
-      settled = await deliverCronFailureReports(
-        stillOwed.map(({ report }) => report),
-        { extraFailures: failuresByJob },
-      );
+      settled = await deliverCronFailureReports(stillOwed.map(({ report }) => report));
     } catch (cause) {
       recordFailure(stillOwed[0]!.runId, cause);
       return;

@@ -81,13 +81,13 @@ export function isCronFailureReportPending(id: string): boolean {
   );
 }
 
-/** Failed runs of one job whose report is still unsettled, this one included. */
-export function countPendingCronFailures(jobId: string): number {
+/** Failed runs of one job admitted after a moment (the last notice), settled or not. */
+export function countCronFailuresSince(jobId: string, since: number): number {
   const row = getDb()
-    .query<{ n: number }, [string]>(
-      "SELECT COUNT(*) AS n FROM cron_runs WHERE job_id = ? AND status = 'error' AND reported = 0",
+    .query<{ n: number }, [string, number]>(
+      "SELECT COUNT(*) AS n FROM cron_runs WHERE job_id = ? AND status = 'error' AND admitted_at > ?",
     )
-    .get(jobId);
+    .get(jobId, since);
   return row?.n ?? 0;
 }
 

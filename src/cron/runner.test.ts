@@ -1447,6 +1447,30 @@ describe("durable cron run correlation", () => {
     expect((failure as AggregateError).errors).toHaveLength(1);
   });
 
+  it("does not send a report that was acknowledged while the start was still gathering the backlog", async () => {
+    operatorChat = OPERATOR_CHAT;
+    const { settleCronRun, pendingCronFailureReports, markCronRunReported } = await import("./run-db.js");
+    const runIds: string[] = [];
+    for (let i = 0; i < 2; i++) {
+      const job = createAgentJob({ ownerPrincipal: "operator" });
+      await new CronRunner().triggerJob(job.id);
+      const dispatched = publishCalls.at(-1)!;
+      runIds.push(String(dispatched.payload._cronRunId));
+      settleCronRun(runIds[i]!, dispatched.sessionName, { lastStatus: "error", lastError: "failed before report" });
+    }
+    const runner = new CronRunner();
+    try {
+      await runner.start();
+      // `cron ack-failures` settles both while the start is between reports.
+      for (const runId of runIds) markCronRunReported(runId);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(pendingCronFailureReports()).toHaveLength(0);
+      expect(directAttempts).toHaveLength(0);
+    } finally {
+      await runner.stop();
+    }
+  });
+
   it("yields the event loop between reports that settle locally", async () => {
     const { settleCronRun, pendingCronFailureReports } = await import("./run-db.js");
     for (let i = 0; i < 6; i++) {
