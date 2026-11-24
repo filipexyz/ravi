@@ -3028,7 +3028,7 @@ describe("SessionCommands attach hints", () => {
     for (const [args, label] of [
       [["review", undefined, "filipexyz/ravi#938"], "no ref"],
       [["review", sha.slice(0, 8), "filipexyz/ravi#938"], "short sha"],
-      [["merge", sha, "filipexyz/ravi#938"], "not a review"],
+      [["decision", sha, "filipexyz/ravi#938"], "not a review or merge"],
       [["review", sha, "ravi#938"], "bad pr"],
     ] as const) {
       await expect(
@@ -3037,10 +3037,13 @@ describe("SessionCommands attach hints", () => {
       ).rejects.toMatchObject({ code: "USAGE_ERROR" });
     }
 
+    const { dbCreateTrigger, dbDeleteTrigger } = await import("../../triggers/triggers-db.js");
+    let followId: string | null = null;
     let gate: { status: string; conclusion: string | null } = { status: "in_progress", conclusion: null };
+    let pull = { state: "open", head: { sha } };
     setReviewGithubReadForTest(async (endpoint) =>
       endpoint.endsWith("/pulls/938")
-        ? { state: "open", head: { sha } }
+        ? pull
         : {
             check_runs: [
               {
@@ -3055,6 +3058,26 @@ describe("SessionCommands attach hints", () => {
           },
     );
     try {
+      // Only a PR this thread follows (the follow `pr publish` arms) can be reviewed by the runtime.
+      const stranger = (await new SessionCommands().report(
+        "PR alheia",
+        undefined,
+        true,
+        "review",
+        sha,
+        "filipexyz/ravi#938",
+      )) as Record<string, any>;
+      expect(stranger.reviewDispatch).toEqual({
+        status: "skipped",
+        reason: "this thread does not follow filipexyz/ravi#938 (publish it from here with ravi pr publish)",
+      });
+      const follow = dbCreateTrigger({
+        name: "gh-follow:filipexyz/ravi#938",
+        topic: "ravi.watch.github.>",
+        message: "follow",
+        replySession: "dev-slack-t-1713000000000100",
+      });
+      followId = follow.id;
       const pending = (await new SessionCommands().report(
         "PR 2 pronta",
         undefined,
@@ -3064,8 +3087,12 @@ describe("SessionCommands attach hints", () => {
         "filipexyz/ravi#938",
       )) as Record<string, any>;
       expectReturnShape(sessionReportReturnSchema, pending);
-      expect(pending.reviewDispatch).toEqual({ status: "skipped", reason: "quality gate still running" });
-      expect(pending.handoff).toMatchObject({ kind: "review", status: "open" });
+      expect(pending.reviewDispatch).toEqual({
+        status: "skipped",
+        reason: "quality gate still running; report again with the same flags when it passes",
+      });
+      // With --pr the wait names the PR, so it closes by itself when the PR does.
+      expect(pending.handoff).toMatchObject({ kind: "review", status: "open", ref: `filipexyz/ravi#938@${sha}` });
       expect(reportedSlackThreads.at(-1)?.message).toContain("Revisão não despachada pelo runtime: quality gate");
 
       gate = { status: "completed", conclusion: "success" };
@@ -3106,6 +3133,51 @@ describe("SessionCommands attach hints", () => {
         instances: {},
         instanceToAccount: {},
       };
+      // Without the author's model, "another model" cannot be kept: no dispatch.
+      const unknownModel = (await new SessionCommands().report(
+        "PR 2 pronta",
+        undefined,
+        true,
+        "review",
+        sha,
+        "filipexyz/ravi#938",
+      )) as Record<string, any>;
+      expect(unknownModel.reviewDispatch).toEqual({
+        status: "skipped",
+        reason: "the author's model is unknown, so another model cannot be chosen",
+      });
+      routerConfig.agents = { dev: { id: "dev", provider: "claude", model: "opus" } };
+
+      // Every guard leaves the wait on the parent and says why, without opening anything.
+      const lifecyclesAtGuards = createdSlackThreadLifecycles.length;
+      const guarded = async () =>
+        (
+          (await new SessionCommands().report(
+            "PR 2 pronta",
+            undefined,
+            true,
+            "review",
+            sha,
+            "filipexyz/ravi#938",
+          )) as Record<string, any>
+        ).reviewDispatch;
+      pull = { state: "closed", head: { sha } };
+      expect(await guarded()).toEqual({ status: "skipped", reason: "PR #938 is not open" });
+      pull = { state: "open", head: { sha: "b".repeat(40) } };
+      expect(await guarded()).toEqual({ status: "skipped", reason: "PR head is bbbbbbbb, not 135fbbc7" });
+      pull = { state: "open", head: { sha } };
+      gate = { status: "completed", conclusion: "failure" };
+      expect(await guarded()).toEqual({ status: "skipped", reason: "quality gate concluded failure" });
+      gate = { status: "completed", conclusion: "success" };
+      const { dbSetSetting, dbDeleteSetting } = await import("../../router/router-db.js");
+      dbSetSetting("handoffs.review.autoDispatch", "off");
+      try {
+        expect(await guarded()).toEqual({ status: "skipped", reason: "auto-dispatch is off" });
+      } finally {
+        dbDeleteSetting("handoffs.review.autoDispatch");
+      }
+      expect(createdSlackThreadLifecycles.length).toBe(lifecyclesAtGuards);
+
       const lifecyclesBefore = createdSlackThreadLifecycles.length;
       const green = (await new SessionCommands().report(
         "PR 2 pronta",
@@ -3120,6 +3192,8 @@ describe("SessionCommands attach hints", () => {
         status: "dispatched",
         replayed: false,
         provider: "claude",
+        model: "sonnet",
+        publishPending: false,
         gate: { name: "Quality Gate", checkRunId: 7 },
       });
       // Nothing is left for the parent to dispatch: the wait closes, with the reviewer's request as the reason.
@@ -3147,7 +3221,21 @@ describe("SessionCommands attach hints", () => {
       expect(again.handoff).toMatchObject({ kind: "review", status: "acknowledged" });
       expect(createdSlackThreadLifecycles.length).toBe(lifecyclesBefore + 1);
       expect(again.reviewDispatch.requestId).toBe(green.reviewDispatch.requestId);
+
+      // A review whose thread closed is not "dispatched" any more: the wait goes back to the parent.
+      storedSlackThreadRequests.get(green.reviewDispatch.requestId)!.status = "closed";
+      const closed = (await new SessionCommands().report(
+        "PR 2 pronta",
+        undefined,
+        true,
+        "review",
+        sha,
+        "filipexyz/ravi#938",
+      )) as Record<string, any>;
+      expect(closed.reviewDispatch).toMatchObject({ status: "skipped", reason: expect.stringContaining("is closed") });
+      expect(closed.handoff).toMatchObject({ kind: "review", status: "open" });
     } finally {
+      if (followId) dbDeleteTrigger(followId);
       setReviewGithubReadForTest(null);
     }
   });

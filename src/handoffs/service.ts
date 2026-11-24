@@ -30,12 +30,14 @@ export async function declareHandoff(input: {
   ref?: string | null;
   note?: string | null;
   callerContextId?: string | null;
+  closedReason?: string | null;
   now?: number;
 }): Promise<Handoff> {
   const now = input.now ?? Date.now();
   const { handoff, superseded } = openHandoff({ ...input, now });
   for (const old of superseded) await publishHandoffEvent("acknowledged", { ...old, ackReason: "superseded" }, now);
-  await publishHandoffEvent("pending", handoff, now);
+  // A wait recorded already closed never was pending: one event, not a pending that vanishes.
+  await publishHandoffEvent(handoff.status === "open" ? "pending" : "acknowledged", handoff, now);
   return handoff;
 }
 

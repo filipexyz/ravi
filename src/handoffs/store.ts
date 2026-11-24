@@ -89,6 +89,8 @@ export function openHandoff(input: {
   ref?: string | null;
   note?: string | null;
   callerContextId?: string | null;
+  /** Record the wait already handled (for example a review the runtime dispatched itself). */
+  closedReason?: string | null;
   now: number;
 }): { handoff: Handoff; superseded: Handoff[] } {
   const id = input.id ?? newHandoffId();
@@ -108,8 +110,9 @@ export function openHandoff(input: {
       ).run(input.now, input.now, input.childSessionKey);
       db.prepare(
         `INSERT INTO session_handoffs
-          (id, child_session_key, parent_session_key, kind, ref, note, caller_context_id, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)`,
+          (id, child_session_key, parent_session_key, kind, ref, note, caller_context_id, status, created_at,
+           acknowledged_at, ack_reason, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         id,
         input.childSessionKey,
@@ -118,7 +121,10 @@ export function openHandoff(input: {
         ref,
         note,
         input.callerContextId ?? null,
+        input.closedReason ? "acknowledged" : "open",
         input.now,
+        input.closedReason ? input.now : null,
+        input.closedReason ?? null,
         input.now,
       );
       const row = db.prepare("SELECT * FROM session_handoffs WHERE id = ?").get(id) as HandoffRow;

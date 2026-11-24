@@ -8,10 +8,12 @@ import {
   HANDOFF_EXPIRY_MS,
   HANDOFF_OWNER_ESCALATION_MS,
   HANDOFF_PARENT_NUDGE_MS,
+  HANDOFF_PR_CHECK_MS,
   HANDOFF_REMINDER_WINDOW_MS,
   handoffsForReminder,
   planHandoffActions,
   reconcileHandoffs,
+  resetHandoffPrChecksForTest,
   type HandoffDeliveryPorts,
 } from "./reconcile.js";
 import {
@@ -144,12 +146,14 @@ describe("handoffs store and reconciler", () => {
       nudged: 0,
       escalated: 0,
       expired: 0,
+      closedByPr: 0,
       failures: 0,
     });
     expect(await reconcileHandoffs({ now: T0 + HANDOFF_PARENT_NUDGE_MS, ports })).toEqual({
       nudged: 2,
       escalated: 0,
       expired: 0,
+      closedByPr: 0,
       failures: 0,
     });
     // One reminder turn for the parent, naming both waits.
@@ -161,6 +165,7 @@ describe("handoffs store and reconciler", () => {
       nudged: 0,
       escalated: 2,
       expired: 0,
+      closedByPr: 0,
       failures: 0,
     });
     expect(ownerCalls).toEqual([[CHILD_A, CHILD_B]]);
@@ -177,7 +182,7 @@ describe("handoffs store and reconciler", () => {
       },
     };
     const result = await reconcileHandoffs({ now: T0 + HANDOFF_OWNER_ESCALATION_MS, ports });
-    expect(result).toEqual({ nudged: 0, escalated: 0, expired: 0, failures: 1 });
+    expect(result).toEqual({ nudged: 0, escalated: 0, expired: 0, closedByPr: 0, failures: 1 });
     expect(getHandoff(h.id)?.parentNudgedAt).toBeNull();
     expect(getHandoff(h.id)?.ownerEscalatedAt).toBeNull();
   });
@@ -283,6 +288,43 @@ describe("handoffs store and reconciler", () => {
     release();
     expect(await first).toMatchObject({ escalated: 1 });
     expect(calls).toBe(1);
+  });
+
+  it("closes a review or merge wait on a PR when the PR is merged or closed, checking at most every 5 min", async () => {
+    resetHandoffPrChecksForTest();
+    const sha = "a".repeat(40);
+    const merge = await declareHandoff({
+      childSessionKey: CHILD_A,
+      parentSessionKey: PARENT,
+      kind: "merge",
+      ref: `filipexyz/ravi#942@${sha}`,
+      now: T0,
+    });
+    const plain = await declareHandoff({
+      childSessionKey: CHILD_B,
+      parentSessionKey: PARENT,
+      kind: "merge",
+      ref: sha,
+      now: T0,
+    });
+    let state: "open" | "closed" = "open";
+    const reads: string[] = [];
+    const readPull = async (target: { repo: string; pr: number }) => {
+      reads.push(`${target.repo}#${target.pr}`);
+      return { state, merged: state === "closed" };
+    };
+    expect(await reconcileHandoffs({ now: T0 + 60_000, ports: {}, readPull })).toMatchObject({ closedByPr: 0 });
+    state = "closed";
+    // Inside the 5-min window GitHub is not asked again.
+    expect(await reconcileHandoffs({ now: T0 + 120_000, ports: {}, readPull })).toMatchObject({ closedByPr: 0 });
+    expect(reads).toEqual(["filipexyz/ravi#942"]);
+    expect(await reconcileHandoffs({ now: T0 + 60_000 + HANDOFF_PR_CHECK_MS, ports: {}, readPull })).toMatchObject({
+      closedByPr: 1,
+    });
+    expect(getHandoff(merge.id)).toMatchObject({ status: "acknowledged", ackReason: "PR merged" });
+    // A ref that names no PR is left to the parent.
+    expect(getHandoff(plain.id)?.status).toBe("open");
+    expect(handoffEventPayload("acknowledged", getHandoff(merge.id)!, T0)).toMatchObject({ sha, pr: 942 });
   });
 
   it("expires a wait nobody acted on for 7 days and lists only recent or due waits in a reminder", async () => {

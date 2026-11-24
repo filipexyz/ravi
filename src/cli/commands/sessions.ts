@@ -239,9 +239,13 @@ import {
   sessionDisplayName,
 } from "../../handoffs/service.js";
 import { HANDOFF_KINDS, type Handoff, isHandoffKind, listHandoffs } from "../../handoffs/store.js";
+import { dbListTriggers } from "../../triggers/triggers-db.js";
 import {
   buildReviewerBrief,
   decideReviewDispatch,
+  followsPullRequest,
+  formatPullRequestHandoffRef,
+  replayedReviewDecision,
   isFullSha,
   parsePullRequestRef,
   pickReviewerRuntime,
@@ -652,6 +656,8 @@ export const sessionReportReturnSchema = z
             replayed: z.boolean(),
             provider: z.string(),
             model: z.string(),
+            // The reviewer's root message is not in Slack yet; the outbox retries it.
+            publishPending: z.boolean(),
             gate: z
               .object({ name: z.string(), checkRunId: z.number().nullable(), completedAt: z.string().nullable() })
               .strict(),
@@ -7799,9 +7805,14 @@ export class SessionCommands {
     let reviewTarget: ReviewTarget | null = null;
     if (pr?.trim()) {
       const parsed = parsePullRequestRef(pr);
-      if (awaitingKind !== "review" || !parsed || !ref?.trim() || !isFullSha(ref.trim().toLowerCase())) {
+      if (
+        (awaitingKind !== "review" && awaitingKind !== "merge") ||
+        !parsed ||
+        !ref?.trim() ||
+        !isFullSha(ref.trim().toLowerCase())
+      ) {
         throw new CliExpectedError(
-          "--pr <owner/repo#number> needs --awaiting review and --ref <full 40-character SHA>",
+          "--pr <owner/repo#number> needs --awaiting review|merge and --ref <full 40-character SHA>",
           "USAGE_ERROR",
           2,
         );
@@ -7842,7 +7853,8 @@ export class SessionCommands {
         childSessionKey: session.sessionKey,
         parentSessionKey: parentSessionKey!,
         kind: awaitingKind,
-        ref: ref?.trim() || null,
+        // With --pr the ref names the PR too, so the wait closes when the PR is merged or closed.
+        ref: reviewTarget ? formatPullRequestHandoffRef(reviewTarget) : ref?.trim() || null,
         note: reportText.split("\n")[0]?.trim() || null,
         callerContextId: getContext({ localOnly: true })?.contextId ?? null,
         now,
@@ -7867,7 +7879,8 @@ export class SessionCommands {
     // A review of a PR whose head is this SHA, with its gate green, is opened by the runtime itself. It runs
     // before the report so the parent reads that it was dispatched and does not dispatch a second one. It never
     // fails the report: a review it could not open stays an ordinary wait on the parent.
-    const reviewDispatch = reviewTarget ? await this.dispatchReview(session, reviewTarget, message) : undefined;
+    const reviewDispatch =
+      reviewTarget && awaitingKind === "review" ? await this.dispatchReview(session, reviewTarget, message) : undefined;
     if (reviewDispatch?.status === "dispatched") {
       reportText = `${reportText}\nRevisão despachada pelo runtime: ${reviewDispatch.requestId} (${reviewDispatch.provider}/${reviewDispatch.model}), ${reviewDispatch.gate.name} ${reviewDispatch.gate.checkRunId} success.`;
     } else if (reviewDispatch) {
@@ -7883,11 +7896,14 @@ export class SessionCommands {
     let handoffError: string | undefined;
     if (pendingHandoff) {
       try {
-        handoff = await declareHandoff(pendingHandoff);
-        if (reviewDispatch?.status === "dispatched") {
-          handoff =
-            (await acknowledgeHandoffById(handoff.id, `review dispatched: ${reviewDispatch.requestId}`)) ?? handoff;
-        }
+        // A dispatched review leaves nothing for the parent: the wait is recorded already closed, so observers
+        // never see a wait that did not exist.
+        handoff = await declareHandoff({
+          ...pendingHandoff,
+          ...(reviewDispatch?.status === "dispatched"
+            ? { closedReason: `review dispatched: ${reviewDispatch.requestId}` }
+            : {}),
+        });
       } catch (error) {
         handoffError = error instanceof Error ? error.message : String(error);
       }
@@ -7925,6 +7941,7 @@ export class SessionCommands {
         replayed: boolean;
         provider: string;
         model: string;
+        publishPending: boolean;
         gate: { name: string; checkRunId: number | null; completedAt: string | null };
       }
     | { status: "skipped"; reason: string }
@@ -7944,17 +7961,27 @@ export class SessionCommands {
     try {
       // One review per PR head: a repeat (another note, a gate rerun) returns the review already opened
       // instead of comparing a rebuilt brief against the first one.
+      // Only a PR this thread published (and so follows) can be reviewed by the runtime's GitHub credential.
+      if (!followsPullRequest(dbListTriggers(), target, { sessionKey: session.sessionKey, name: session.name })) {
+        return {
+          status: "skipped",
+          reason: `this thread does not follow ${target.repo}#${target.pr} (publish it from here with ravi pr publish)`,
+        };
+      }
       const key = reviewThreadKey(target);
       const existing = getSlackThreadLifecycle(
         slackThreadRequestIdForKey(slackThreadParentSessionKey(session.sessionKey), key),
       );
       if (existing) {
+        const replay = replayedReviewDecision(existing.status);
+        if (!replay.usable) return { status: "skipped", reason: replay.reason };
         return {
           status: "dispatched",
           requestId: existing.requestId,
           replayed: true,
           provider: existing.providerOverride ?? "claude",
-          model: existing.modelOverride ?? "",
+          model: existing.modelOverride ?? "unknown",
+          publishPending: existing.status === "queued",
           gate: { name: reviewGateCheckName(), checkRunId: null, completedAt: null },
         };
       }
@@ -7963,13 +7990,17 @@ export class SessionCommands {
       if (!decision.dispatch) return { status: "skipped", reason: decision.reason };
       const gate = evidence.gate!;
       const author = resolveSessionRuntimeOptions(session);
-      const reviewer = pickReviewerRuntime({ provider: author.provider.value, model: author.model.value });
+      // A runtime default is not the author's model: nothing says which model actually wrote the change.
+      const authorModel = author.model.source === "runtime_default" ? null : author.model.value;
+      const reviewer = pickReviewerRuntime({ provider: author.provider.value, model: authorModel });
+      if (!reviewer)
+        return { status: "skipped", reason: "the author's model is unknown, so another model cannot be chosen" };
       const queued = await this.queueThread({
         message: buildReviewerBrief({
           target,
           gate,
           authorSessionName: sessionDisplayName(session.sessionKey),
-          authorModel: author.model.value,
+          authorModel,
           note: decodeLiteralLineBreaks(note).split("\n")[0]?.trim() || null,
         }),
         model: reviewer.model,
@@ -7986,6 +8017,7 @@ export class SessionCommands {
         replayed: queued.payload.replayed,
         provider: reviewer.provider,
         model: reviewer.model,
+        publishPending: queued.payload.publishPending,
         gate: { name: gate.name, checkRunId: gate.checkRunId, completedAt: gate.completedAt },
       };
     } catch (error) {

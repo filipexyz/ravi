@@ -20764,6 +20764,7 @@ export type SessionsReportReturn = {
     };
     model: string;
     provider: string;
+    publishPending: boolean;
     replayed: boolean;
     requestId: string;
     status: "dispatched";
