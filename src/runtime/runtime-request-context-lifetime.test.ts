@@ -190,6 +190,82 @@ describe("active runtime context lifetime", () => {
     expect(canWithCapabilities(resolved!.capabilities, "admin", "system", "*")).toBe(false);
   });
 
+  it("revokes a turn whose person lost break-glass mid-turn (new deny over issued power)", () => {
+    setCapabilities(["admin:system:*", "execute:executable:*", READ]);
+    const owner = createContact({
+      phone: "5511900000778",
+      name: "Owner",
+      tags: ["permission-owner"],
+      status: "allowed",
+    });
+    const { runtimeContext: context } = start(
+      options({
+        prompt: "do something",
+        source: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatId: "120363400000000778@g.us",
+          canonicalChatId: "chat_lease_group_2",
+          actorType: "contact",
+          contactId: owner.id,
+        },
+      } as RuntimeRequestContextOptions["prompt"]),
+    );
+    const issued = structuredClone(context);
+    expect(issued.capabilities.some((capability) => capability.permission.startsWith("deny_"))).toBe(false);
+    updateContact(owner.id, { tags: [] });
+    advance(30 * 60 * 1000);
+    expect(resolveRuntimeContext(issued.contextKey, { touch: false })).toBeNull();
+  });
+
+  it("does not revoke when the agent is promoted mid-turn (the new deny covers power the turn never had)", () => {
+    setCapabilities([READ]);
+    const stranger = createContact({ phone: "5511900000779", name: "Stranger" });
+    const { runtimeContext: context } = start(
+      options({
+        prompt: "do something",
+        source: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatId: "120363400000000779@g.us",
+          canonicalChatId: "chat_lease_group_3",
+          actorType: "contact",
+          contactId: stranger.id,
+        },
+      } as RuntimeRequestContextOptions["prompt"]),
+    );
+    const issued = structuredClone(context);
+    setCapabilities(["admin:system:*", "execute:executable:*", READ]);
+    advance(30 * 60 * 1000);
+    const resolved = resolveRuntimeContext(issued.contextKey, { touch: false });
+    expect(resolved?.contextId).toBe(issued.contextId);
+    expect(canWithCapabilities(resolved!.capabilities, "admin", "system", "*")).toBe(false);
+  });
+
+  it("keeps the turn restricted when a person gains break-glass mid-turn (grants apply next turn)", () => {
+    setCapabilities(["admin:system:*", "execute:executable:*", READ]);
+    const stranger = createContact({ phone: "5511900000780", name: "Later owner", status: "allowed" });
+    const { runtimeContext: context } = start(
+      options({
+        prompt: "do something",
+        source: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatId: "120363400000000780@g.us",
+          canonicalChatId: "chat_lease_group_4",
+          actorType: "contact",
+          contactId: stranger.id,
+        },
+      } as RuntimeRequestContextOptions["prompt"]),
+    );
+    const issued = structuredClone(context);
+    updateContact(stranger.id, { tags: ["permission-owner"] });
+    advance(30 * 60 * 1000);
+    const resolved = resolveRuntimeContext(issued.contextKey, { touch: false });
+    expect(resolved?.contextId).toBe(issued.contextId);
+    expect(canWithCapabilities(resolved!.capabilities, "admin", "system", "*")).toBe(false);
+  });
+
   it("never adds a newly granted capability to an active turn", () => {
     const { runtimeContext: context } = start();
     const issued = structuredClone(context.capabilities);

@@ -32,6 +32,7 @@ import {
   USER_OVERLAY_AUTHORIZATION_MODE,
   type ContactChatOverlay,
 } from "../permissions/contact-policy-permissions-provider.js";
+import { canWithCapabilities } from "../permissions/capability-snapshot.js";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 import {
   breakGlassDeniesForContact,
@@ -165,7 +166,7 @@ export function startActiveRuntimeRequestContextLease(
       // `deny_*` (a person held below break-glass) is never fed to the
       // intersection: a deny of the admin shortcut would erase every key.
       const positive = (capabilities: ContextCapability[]) =>
-        capabilities.filter((capability) => !capability.permission.startsWith("deny_"));
+        capabilities.filter((capability) => !isActorBreakGlassDeny(capability));
       const retained = buildEffectiveCapabilities({
         agentCapabilities: positive(issued.capabilities),
         actorCapabilities: positive(current.capabilities),
@@ -180,10 +181,18 @@ export function startActiveRuntimeRequestContextLease(
       // `deny_*` entries (a person held below break-glass) are not positive
       // authority: compare positive keys only. A deny the current authority
       // has and the issued one lacks is a reduction, so it revokes.
-      const isDeny = (capability: ContextCapability) => capability.permission.startsWith("deny_");
       const issuedPositive = positive(issued.capabilities);
-      const issuedDenyKeys = new Set(capabilityKeys(issued.capabilities.filter(isDeny)));
-      const newDeny = capabilityKeys(current.capabilities.filter(isDeny)).some((key) => !issuedDenyKeys.has(key));
+      const issuedDenyKeys = new Set(capabilityKeys(issued.capabilities.filter(isActorBreakGlassDeny)));
+      // A withheld break-glass the issued turn lacked revokes only when the
+      // issued turn actually held that power (the person lost it mid-turn);
+      // the agent being promoted mid-turn adds a deny over power the turn
+      // never had, which is not a reduction.
+      const newDeny = current.capabilities.filter(isActorBreakGlassDeny).some((deny) => {
+        const [key] = capabilityKeys([deny]);
+        if (!key || issuedDenyKeys.has(key)) return false;
+        const target = deny.permission.slice("deny_".length);
+        return canWithCapabilities(issuedPositive, target, deny.objectType, deny.objectId);
+      });
       if (!sameIdentity || newDeny || !capabilityKeys(issuedPositive).every((key) => retainedKeys.has(key))) {
         stop(true, "turn_authority_reduced");
         return;
