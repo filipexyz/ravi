@@ -22,8 +22,8 @@ import {
   startSlackThreadControls,
   stopSlackThreadControls,
 } from "./thread-controls.js";
-import { findSlackThreadForParent } from "./thread-lifecycle.js";
-import { registerInboundSlackThread } from "./thread-lifecycle-store.js";
+import { findSlackThreadForParent, findSlackThreadForParentInChat } from "./thread-lifecycle.js";
+import { getSlackThreadLifecycle, registerInboundSlackThread } from "./thread-lifecycle-store.js";
 
 const NOW = 1_800_000_000_000;
 const ACCOUNT = "ravi-slack";
@@ -282,6 +282,135 @@ describe("a click becomes the same command, with the authority of the person who
     expect(h.calls.close).toEqual([]);
     expect(h.calls.interrupted).toEqual([]);
     expect(text(h.replies[0])).toContain("You are not allowed to change session `main`");
+  });
+
+  describe("a click names the thread of its own chat, not another chat's of the same session (review N2 of #941)", () => {
+    const OTHER_CHAT_CHILD_KEY = "agent:main:main:thread:1795189835.360089#other";
+
+    function registerInOtherChat(seenAt: number) {
+      // The same root ts in another channel of the same parent session, and the newer of the two.
+      return registerInboundSlackThread({
+        requestId: "req-other-chat",
+        parentSessionKey: PARENT_KEY,
+        parentSessionName: "main",
+        childSessionKey: OTHER_CHAT_CHILD_KEY,
+        childSessionName: "main-t-other-chat",
+        accountId: ACCOUNT,
+        instanceId: INSTANCE,
+        platformChatId: "C0OTHER",
+        threadCanonicalChatId: "chat-other",
+        providerThreadId: CARD_TS,
+        seenAt,
+      });
+    }
+
+    it("stops the thread of the clicked chat, whichever of the two was updated last", async () => {
+      registerCard();
+      registerInOtherChat(NOW - 60_000);
+      const own = getOrCreateSession(CHILD_KEY, "main", "/tmp/main", { name: "main-t-card" });
+      getOrCreateSession(OTHER_CHAT_CHILD_KEY, "main", "/tmp/main", { name: "main-t-other-chat" });
+      const h = harness();
+
+      const outcome = await handleSlackThreadControlClick(click({ actionId: SLACK_THREAD_STOP_ACTION_ID }), h.deps);
+
+      expect(outcome).toEqual({ decision: "allowed", code: "ok" });
+      expect(h.calls.interrupted).toEqual([own.sessionKey]);
+    });
+
+    it("picks the clicked chat's record when both threads share one child session, as the real derivation makes them", () => {
+      // The child session key is the parent's and the root ts, with no channel in it: two threads of one parent
+      // with the same root share one child session, so `stop` reaches it either way and the record is what differs.
+      registerCard();
+      registerInboundSlackThread({
+        requestId: "req-other-chat",
+        parentSessionKey: PARENT_KEY,
+        parentSessionName: "main",
+        childSessionKey: CHILD_KEY,
+        childSessionName: "main-t-card",
+        accountId: ACCOUNT,
+        instanceId: INSTANCE,
+        platformChatId: "C0OTHER",
+        threadCanonicalChatId: "chat-other",
+        providerThreadId: CARD_TS,
+        seenAt: NOW - 60_000,
+      });
+
+      expect(findSlackThreadForParentInChat(PARENT_KEY, "C0CHAN", CARD_TS)?.requestId).toBe("req-card");
+      expect(findSlackThreadForParentInChat(PARENT_KEY, "C0OTHER", CARD_TS)?.requestId).toBe("req-other-chat");
+      expect(findSlackThreadForParentInChat(PARENT_KEY, "C0THIRD", CARD_TS)).toBeNull();
+      // What a typed command gets: the lookup by any name takes the one updated last, whichever chat typed it.
+      expect(findSlackThreadForParent(PARENT_KEY, CARD_TS)?.requestId).toBe("req-other-chat");
+    });
+
+    it("finds nothing for a chat that has no thread with that root, though another chat of the session has", async () => {
+      registerInOtherChat(NOW - 60_000);
+      getOrCreateSession(OTHER_CHAT_CHILD_KEY, "main", "/tmp/main", { name: "main-t-other-chat" });
+      const h = harness();
+
+      expect(await handleSlackThreadControlClick(click({ actionId: SLACK_THREAD_STOP_ACTION_ID }), h.deps)).toEqual({
+        decision: "info",
+        code: "thread_not_found",
+      });
+      expect(h.calls.interrupted).toEqual([]);
+    });
+
+    it("closes the thread of the clicked chat through the real close, and leaves the other chat's open (review N2 of #945)", async () => {
+      registerCard();
+      registerInOtherChat(NOW - 60_000);
+      const h = harness();
+
+      const outcome = await handleSlackThreadControlClick(click(), { ...h.deps, closeThread: undefined });
+
+      expect(outcome).toEqual({ decision: "allowed", code: "ok" });
+      expect(getSlackThreadLifecycle("req-card")?.status).toBe("closed");
+      expect(getSlackThreadLifecycle("req-other-chat")?.status).not.toBe("closed");
+    });
+
+    it("closes under the clicked chat too: the lookup is asked for that chat", async () => {
+      const asked: Array<[string, string, string | undefined]> = [];
+      const h = harness();
+      const deps: SlackCommandDeps = {
+        ...h.deps,
+        closeThread: async (parent, ref, chatId) => {
+          asked.push([parent, ref, chatId]);
+          return { kind: "closed", name: "main-t-card", changed: true };
+        },
+      };
+
+      await handleSlackThreadControlClick(click(), deps);
+
+      expect(asked).toEqual([[PARENT_KEY, CARD_TS, "C0CHAN"]]);
+    });
+
+    it("keeps a typed command free to name any thread of the session: no chat is asked for", async () => {
+      const asked: Array<[string, string, string | undefined]> = [];
+      const h = harness();
+      const deps: SlackCommandDeps = {
+        ...h.deps,
+        closeThread: async (parent, ref, chatId) => {
+          asked.push([parent, ref, chatId]);
+          return { kind: "closed", name: "main-t-card", changed: true };
+        },
+      };
+      const channel = slackCommandChannel(
+        {
+          accountId: ACCOUNT,
+          instanceId: INSTANCE,
+          routeAccountId: ACCOUNT,
+          channelId: "C0CHAN",
+          userId: "U0PERSON",
+          text: "close main-t-card",
+          receivedAt: NOW,
+          command: "/ravi",
+          surface: "command",
+        },
+        deps,
+      );
+
+      await runChatCommand(channel, slackChatCommandDeps(deps));
+
+      expect(asked).toEqual([[PARENT_KEY, "main-t-card", undefined]]);
+    });
   });
 
   it("does not let a card name a thread of another chat's session", async () => {

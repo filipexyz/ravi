@@ -83,7 +83,11 @@ import {
   type SlackInstanceAliasResolution,
   type SlackScopedIdentityResolution,
 } from "./instance-alias.js";
-import { respondToSlackInteraction, storeSlackInteractionResponseUrl } from "./interactions.js";
+import {
+  describeSlackResponseUrlFailure,
+  respondToSlackInteraction,
+  storeSlackInteractionResponseUrl,
+} from "./interactions.js";
 import {
   buildSlackCommandEvent,
   readSlackCommandPayload,
@@ -1762,11 +1766,18 @@ export class SlackSocketModeService {
         // only a fallback. A handle of a shape Ravi does not recognise must not take the shortcut away, so
         // it goes without one. Every other interaction still refuses: a click that cannot be answered is not run.
         if (interactionType !== "message_action" && interactionType !== "shortcut") throw error;
-        log.warn("Slack shortcut carries a response handle Ravi does not trust; publishing it without one", {
-          interactionType,
-          shape: slackResponseUrlShape(responseUrl),
-          error: error instanceof Error ? error.message : String(error),
-        });
+        const reason = describeSlackResponseUrlFailure(responseUrl);
+        log.warn(
+          reason === "untrusted_shape"
+            ? "Slack shortcut carries a response handle Ravi does not trust; publishing it without one"
+            : "Slack shortcut's response handle could not be stored; publishing it without one",
+          {
+            interactionType,
+            reason,
+            shape: slackResponseUrlShape(responseUrl),
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
       }
     }
 

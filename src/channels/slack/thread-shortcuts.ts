@@ -167,6 +167,9 @@ export function parseSlackThreadShortcutEvent(data: unknown): SlackThreadShortcu
     ) {
       return null;
     }
+    // The card is private to the person, in the chat it was asked in or, when Slack would not show it
+    // there, in their DM with the app (a `D` conversation). A click from anywhere else is not this card's.
+    if (base.channelId !== channelId && !base.channelId.startsWith("D")) return null;
     // The chat of the card, not of the click: the person is still the click's own user.
     return { kind: "confirm", action, threadTs, askedAt: askedSeconds * 1000, ...base, channelId };
   }

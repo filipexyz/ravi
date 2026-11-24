@@ -43,6 +43,9 @@
 - A tap Slack delivers twice MUST be answered once, per consumer, from a memory bounded to 1000 envelope ids (`src/channels/slack/envelope-dedupe.test.ts`).
 - The access the Slack adapter declares for closing a thread MUST equal, field for field, what the CLI declares for `sessions close-thread`.
 - A chat that resolves to a thread's own session (its key carries `:thread:`) MUST still look threads up, and ask the close, under the parent session (`src/channels/slack/thread-controls.test.ts`).
+- A shortcut or a button MUST name the thread by the channel it was used in and its root `ts`: a thread of another channel of the same session with the same root MUST NOT answer, and the answer MUST be the clicked chat's thread whichever of the two was updated last. A typed command MUST NOT be scoped to a chat (`src/channels/slack/thread-controls.test.ts`).
+- A confirmation click MUST be read only from the chat of its card or from a DM with the app (`D…`), and a cancellation has no chat to hold (`src/channels/slack/thread-shortcuts.test.ts`).
+- The log line for a shortcut that goes without its response handle MUST say whether the shape is untrusted or the store failed (`describeSlackResponseUrlFailure`, `src/channels/slack/interactions.test.ts`).
 - `bun test src/chat-commands/ src/channels/slack/slash-commands.test.ts src/channels/slack/slash-command-handler.test.ts src/channels/slack/interactions.test.ts src/channels/slack/thread-card.test.ts src/channels/slack/thread-controls.test.ts src/channels/slack/thread-shortcuts.test.ts src/channels/slack/private-card.test.ts src/channels/slack/envelope-dedupe.test.ts src/cli/command-access.test.ts` MUST pass.
 - `bun test src/channels/slack/socket-mode.test.ts -t "slash commands"` and `-t "message shortcut"` MUST pass.
 - `bun run typecheck` MUST pass.

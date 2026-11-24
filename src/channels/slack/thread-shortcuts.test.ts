@@ -8,7 +8,7 @@ import type { RuntimeControlResult } from "../../runtime/types.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import type { SlackPrivateCard, SlackPrivateCardTarget } from "./private-card.js";
 import type { SlackCommandAudit, SlackCommandDeps } from "./slash-command-handler.js";
-import { registerInboundSlackThread } from "./thread-lifecycle-store.js";
+import { getSlackThreadLifecycle, registerInboundSlackThread } from "./thread-lifecycle-store.js";
 import {
   buildSlackThreadConfirmCard,
   handleSlackThreadShortcut,
@@ -193,6 +193,65 @@ function registerThread(overrides: { parent?: string } = {}) {
   return child;
 }
 
+describe("a shortcut names the thread of the chat it was used in, not another chat's with the same root (review N1 and N2 of #945)", () => {
+  const OTHER_CHILD_KEY = `${CHILD_KEY}#other`;
+
+  /** The same root ts in another channel of the same parent session, and the newer of the two: what an unscoped lookup would pick. */
+  function registerBoth() {
+    const own = registerThread();
+    getOrCreateSession(OTHER_CHILD_KEY, "main", "/tmp/main", { name: "main-t-other-chat" });
+    registerInboundSlackThread({
+      requestId: "req-other-chat",
+      parentSessionKey: PARENT_KEY,
+      parentSessionName: "main",
+      childSessionKey: OTHER_CHILD_KEY,
+      childSessionName: "main-t-other-chat",
+      accountId: ACCOUNT,
+      instanceId: INSTANCE,
+      platformChatId: "C0OTHER",
+      threadCanonicalChatId: "chat-other",
+      providerThreadId: ROOT_TS,
+      seenAt: NOW - 60_000,
+    });
+    return own;
+  }
+
+  it("status answers with the thread of the chat the shortcut was picked in", async () => {
+    registerBoth();
+    const h = harness({ capabilities: READER });
+
+    await handleSlackThreadShortcut(shortcut(), h.deps);
+
+    expect(text(h.cards[0]?.card)).toContain("*Thread* `main-t-card`");
+    expect(text(h.cards[0]?.card)).not.toContain("main-t-other-chat");
+  });
+
+  it("a confirmed stop interrupts the thread of that chat and not the other one", async () => {
+    const own = registerBoth();
+    const h = harness();
+
+    const result = await handleSlackThreadShortcut(
+      confirmation({ actionId: SLACK_THREAD_CONFIRM_STOP_ACTION_ID }),
+      h.deps,
+    );
+
+    expect(result).toEqual({ kind: "ran", outcome: { decision: "allowed", code: "ok" } });
+    expect(h.calls.interrupted).toEqual([own.sessionKey]);
+  });
+
+  it("a confirmed close, through the real close, closes the thread of that chat and leaves the other open", async () => {
+    registerBoth();
+    const h = harness();
+
+    const result = await handleSlackThreadShortcut(confirmation(), { ...h.deps, closeThread: undefined });
+
+    expect(result).toEqual({ kind: "ran", outcome: { decision: "allowed", code: "ok" } });
+    expect(getSlackThreadLifecycle("req-card")?.status).toBe("closed");
+    expect(getSlackThreadLifecycle("req-other-chat")?.status).not.toBe("closed");
+    expect(text(h.replies[0])).toContain("Closed thread `main-t-card`");
+  });
+});
+
 describe("which interactions are a thread shortcut, a confirmation or a cancellation", () => {
   it("reads the three shortcuts and names the thread by its root, wherever in it the message is", () => {
     const status = parseSlackThreadShortcutEvent(shortcut());
@@ -264,6 +323,24 @@ describe("which interactions are a thread shortcut, a confirmation or a cancella
     expect(
       parseSlackThreadShortcutEvent(confirmation({ actionId: SLACK_THREAD_CANCEL_ACTION_ID, value: "cancel" })),
     ).toMatchObject({ kind: "cancel", userId: "U0PERSON" });
+  });
+
+  it("reads a confirmation only from the chat of its card or from a DM with the app (review N4 of #941)", () => {
+    // Same chat as the card: read. A DM with the app, where Slack puts the card when it will not show it in the chat: read.
+    expect(parseSlackThreadShortcutEvent(confirmation({ channelId: "C0CHAN" }))).toMatchObject({ kind: "confirm" });
+    expect(parseSlackThreadShortcutEvent(confirmation({ channelId: "D0DMAPP" }))).toMatchObject({
+      kind: "confirm",
+      channelId: "C0CHAN",
+    });
+    // Any other conversation is not where this card was sent.
+    expect(parseSlackThreadShortcutEvent(confirmation({ channelId: "C0OTHER" }))).toBeNull();
+    expect(parseSlackThreadShortcutEvent(confirmation({ channelId: "G0GROUPDM" }))).toBeNull();
+    // A cancellation changes nothing, so it has no chat to hold.
+    expect(
+      parseSlackThreadShortcutEvent(
+        confirmation({ channelId: "C0OTHER", actionId: SLACK_THREAD_CANCEL_ACTION_ID, value: "cancel" }),
+      ),
+    ).toMatchObject({ kind: "cancel" });
   });
 
   it("does not read a confirmation whose value is not a thread and a time, whoever sent it", () => {

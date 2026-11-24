@@ -52,6 +52,7 @@ import {
   findSlackThreadLifecycleByChildRef,
   findSlackThreadLifecycleByChildSession,
   findSlackThreadLifecycleByParentAndProviderThread,
+  findSlackThreadLifecycleByParentChatAndProviderThread,
   getSlackThreadLifecycle,
   listPendingSlackThreadCreations,
   listPendingSlackThreadParentReturns,
@@ -991,6 +992,20 @@ export function findSlackThreadForParent(parentSessionKey: string, ref: string):
         record.providerThreadId === normalized,
     ) ?? null
   );
+}
+
+/**
+ * One of a parent's threads by the channel it was opened in and its root `ts`, and no other. This is how
+ * a shortcut or a button names a thread: by the message it was used on, in the chat it was used in.
+ */
+export function findSlackThreadForParentInChat(
+  parentSessionKey: string,
+  platformChatId: string,
+  rootTs: string,
+): SlackThreadLifecycleRecord | null {
+  const ts = rootTs.trim();
+  if (!ts) return null;
+  return findSlackThreadLifecycleByParentChatAndProviderThread(parentSessionKey, platformChatId, ts);
 }
 
 /** A thread child tells its parent session about progress without closing the thread. */
