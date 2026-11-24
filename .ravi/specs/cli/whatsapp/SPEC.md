@@ -98,7 +98,9 @@ immediate authority reduction.
     account" is whichever sorts first, which can be one nobody uses or one that is disconnected, and a
     send through the wrong account reaches real people. Channel names MUST be compared through `canonicalChannelId`: instances are stored as
     `whatsapp` while the Omni consumer publishes turns as `whatsapp-baileys`. "No omni instance mapped"
-    errors MUST list the WhatsApp accounts.
+    errors MUST list the WhatsApp accounts. Each refusal MUST reach the command envelope with its own
+    code (`AMBIGUOUS_WHATSAPP_ACCOUNT`, `ACCOUNT_NOT_WHATSAPP`, `NO_WHATSAPP_ACCOUNT`), exit 1 and a
+    `--account <id>` advice, not as a generic `COMMAND_FAILED`.
 13. `group send here|current|.` means the chat of the current turn and MUST only resolve in a WhatsApp
     turn. From any other channel it MUST fail before the plan with a message asking for a group ID or
     JID, never plan a send to a non-WhatsApp chat id.
@@ -114,7 +116,9 @@ immediate authority reduction.
     written as `@lid` and as a phone (text and `--mention`, or two `--mention` targets) whenever the group
     metadata links the two forms (`platformUserId` plus a phone alias, which may be stored with
     formatting); a `<phone>@s.whatsapp.net` reference MUST also match a member carried as a bare number,
-    and that member MUST be mentioned by the native id. Without metadata that links the forms nothing can
+    and that member MUST be mentioned by the native id. When the member is a bare number and nothing
+    proves its suffix (no distinct phone alias), the JID the caller supplied (`<lid>@lid` from the live
+    roster) MUST be kept instead of a guessed `@s.whatsapp.net`. Without metadata that links the forms nothing can
     tell they are one person and two mentions go out; the skill tells the agent to use one form.
 
 ## Write classification (brake decision per op)

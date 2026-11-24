@@ -7,7 +7,8 @@
  * WhatsApp account to use when the turn itself comes from WhatsApp.
  */
 import { canonicalChannelId } from "../channels/capabilities.js";
-import { fail, getContext } from "./context.js";
+import { fail, getContext, hasContext } from "./context.js";
+import { CliExpectedError } from "./expected-error.js";
 import { dbListInstances } from "../router/router-db.js";
 
 /**
@@ -103,8 +104,17 @@ export function resolveWhatsAppAccount(account?: string): string {
     source: getContext()?.source,
     instances: dbListInstances(),
   });
-  if (!result.ok) fail(result.message);
-  return result.accountId;
+  if (result.ok) return result.accountId;
+  // Keep the refusal's own code in the command envelope. `fail()` reports every refusal as COMMAND_FAILED, so a JSON
+  // caller would have to parse prose to tell "pass --account" from a real failure.
+  if (hasContext()) {
+    const suggestedAction =
+      result.code === "NO_WHATSAPP_ACCOUNT"
+        ? "Create or enable a WhatsApp instance (ravi instances list)"
+        : "Pass --account <id> with one of the WhatsApp accounts";
+    throw new CliExpectedError(result.message, result.code, 1, suggestedAction);
+  }
+  return fail(result.message);
 }
 
 /** Hint for "No omni instance mapped for account ..." style errors, from the instances registered now. */

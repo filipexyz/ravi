@@ -475,6 +475,25 @@ function isVisiblePlaceholderAt(text: string, offset: number, placeholder: strin
   return normalizeLookup(text.slice(offset, offset + placeholder.length)) === normalizeLookup(placeholder);
 }
 
+/**
+ * Mention id for an explicit target that matched a member.
+ *
+ * `participantNativeMentionId` has to guess `@s.whatsapp.net` for a member carried as a bare number with no distinct
+ * phone alias. A JID the caller supplied for that same number beats the guess (the live roster gives `<lid>@lid`), so it
+ * is kept. When the native id is proven (the id already has a suffix, or a phone alias makes the number a LID) it wins.
+ */
+function explicitMentionId(ref: string, participant: OmniMentionParticipant): string {
+  const native = participantMentionId(participant);
+  const supplied = cleanMentionRef(ref);
+  if (!/^\d+@(?:s\.whatsapp\.net|lid)$/i.test(supplied)) return native;
+  const platformUserId = cleanMentionRef(participant.platformUserId);
+  const bareNumber =
+    platformUserId !== "" && !platformUserId.includes("@") && digitsOnly(platformUserId) === platformUserId;
+  const phoneAlias = participantPhoneAliasBase(participant);
+  const nativeIsGuess = bareNumber && !(phoneAlias && phoneAlias !== platformUserId);
+  return nativeIsGuess && baseIdentity(supplied) === platformUserId ? supplied : native;
+}
+
 function resolveMention(
   ref: string,
   participants: readonly OmniMentionParticipant[] = [],
@@ -483,7 +502,7 @@ function resolveMention(
   if (participant?.ambiguous) return { id: participantMentionId(participant.participant), ambiguous: true };
   if (participant) {
     return {
-      id: participantMentionId(participant.participant),
+      id: explicitMentionId(ref, participant.participant),
       ...(participant.participant.displayName?.trim()
         ? { displayName: participant.participant.displayName.trim() }
         : {}),

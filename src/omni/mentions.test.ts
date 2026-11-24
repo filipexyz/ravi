@@ -459,6 +459,42 @@ describe("the same person written as @lid and as a phone", () => {
     expect(prepared.mentions.map((mention) => mention.id).sort()).toEqual(["100000000000002@lid", `${LID}@lid`]);
   });
 
+  // Review of #978 (Devin): the bare-number lookup now finds the member for an explicit `@lid` target, and the native id
+  // of a bare number with no phone alias is a guess (`@s.whatsapp.net`). The `@lid` the caller gave must survive.
+  it("keeps an explicit @lid when the member is a bare number with no phone alias to prove another id", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: "oi",
+      explicitTargets: [`${LID}@lid`],
+      participants: [{ platformUserId: LID, displayName: "Gus Kurozawa" }],
+      ...send,
+    });
+
+    expect(prepared.mentions).toEqual([{ id: `${LID}@lid`, type: "user" }]);
+    expect(prepared.text).toBe(`@${LID} oi`);
+  });
+
+  it("uses the proven native @lid id when the member has a phone alias, whatever suffix the target carries", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: "oi",
+      explicitTargets: [`${LID}@s.whatsapp.net`],
+      participants: [bareLidMember],
+      ...send,
+    });
+
+    expect(prepared.mentions).toEqual([{ id: `${LID}@lid`, type: "user" }]);
+  });
+
+  it("keeps an explicit phone JID for a bare number with no phone alias", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: "oi",
+      explicitTargets: [`${PHONE}@s.whatsapp.net`],
+      participants: [{ platformUserId: PHONE, displayName: "Gus Kurozawa" }],
+      ...send,
+    });
+
+    expect(prepared.mentions).toEqual([{ id: `${PHONE}@s.whatsapp.net`, type: "user" }]);
+  });
+
   // Known limit, documented in the skill: without metadata that links the two forms nothing can tell they are one person.
   it("cannot unite a @lid and a phone when no metadata links them", () => {
     const prepared = prepareOmniMentionMessage({
