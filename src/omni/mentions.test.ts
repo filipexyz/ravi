@@ -352,3 +352,121 @@ describe("explicit mention targets already written in the text", () => {
     expect(prepared.mentions).toHaveLength(2);
   });
 });
+
+describe("the same person written as @lid and as a phone", () => {
+  // Review of #975 (N2). Omni's chat model gives the LID as bare digits (`platformUserId`) and the phone as an alias
+  // (`normalizedPlatformUserId`). A `<phone>@s.whatsapp.net` target did not match that bare-digit identity, so the same
+  // person was mentioned twice, once per form.
+  const LID = "91015272759397";
+  const PHONE = "5511987860700";
+  const send = { autoResolvePhoneNumbers: true, placeholderMode: "native" } as const;
+  const bareLidMember = { platformUserId: LID, normalizedPlatformUserId: PHONE, displayName: "Gus Kurozawa" };
+
+  it("unites a @lid in the text with the same person's phone JID in --mention (bare-digit LID, phone alias)", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: `@${LID} oi`,
+      explicitTargets: [`${PHONE}@s.whatsapp.net`],
+      participants: [bareLidMember],
+      ...send,
+    });
+
+    expect(prepared.text).toBe(`@${LID} oi`);
+    expect(prepared.mentions).toEqual([{ id: `${LID}@lid`, type: "user" }]);
+  });
+
+  it("unites a phone in the text with the same person's @lid in --mention", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: `@${PHONE} oi`,
+      explicitTargets: [`${LID}@lid`],
+      participants: [bareLidMember],
+      ...send,
+    });
+
+    expect(prepared.mentions).toEqual([{ id: `${LID}@lid`, type: "user" }]);
+    expect(prepared.text.match(new RegExp(`@${LID}`, "g"))).toHaveLength(1);
+  });
+
+  it("unites two --mention targets that are the same person as @lid and as phone JID", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: "oi",
+      explicitTargets: [`${LID}@lid`, `${PHONE}@s.whatsapp.net`],
+      participants: [bareLidMember],
+      ...send,
+    });
+
+    expect(prepared.mentions).toEqual([{ id: `${LID}@lid`, type: "user" }]);
+    expect(prepared.text).toBe(`@${LID} oi`);
+  });
+
+  it("unites them when the member's phone is stored with formatting, and mentions the member by the @lid", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: `@${PHONE} oi`,
+      explicitTargets: [`${LID}@lid`],
+      participants: [{ platformUserId: `${LID}@lid`, phoneNumber: "+55 11 98786-0700", displayName: "Gus Kurozawa" }],
+      ...send,
+    });
+
+    expect(prepared.mentions).toEqual([{ id: `${LID}@lid`, type: "user" }]);
+    expect(prepared.text).toBe(`@${LID} oi`);
+  });
+
+  it("does not take a bare-digit LID for a phone when the member's phone is stored with formatting", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: `@${LID} oi`,
+      participants: [{ platformUserId: LID, phoneNumber: "+55 11 98786-0700", displayName: "Gus Kurozawa" }],
+      ...send,
+    });
+
+    expect(prepared.mentions).toEqual([{ id: `${LID}@lid`, type: "user" }]);
+  });
+
+  it("mentions a member by the native @lid id when only the phone JID is given", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: "oi",
+      explicitTargets: [`${PHONE}@s.whatsapp.net`],
+      participants: [bareLidMember],
+      ...send,
+    });
+
+    expect(prepared.mentions).toEqual([{ id: `${LID}@lid`, type: "user" }]);
+    expect(prepared.text).toBe(`@${LID} oi`);
+  });
+
+  it("unites ids that two passes resolved differently (display mode, member without a safe name)", () => {
+    // The inline pass skips a member with no usable display name in display mode, so `@<phone>` falls to the phone
+    // fallback while the explicit `@lid` target resolves through the metadata. They are still one person.
+    const prepared = prepareOmniMentionMessage({
+      text: `@${PHONE} oi`,
+      explicitTargets: [`${LID}@lid`],
+      participants: [{ platformUserId: `${LID}@lid`, phoneJid: `${PHONE}@s.whatsapp.net` }],
+      autoResolvePhoneNumbers: true,
+    });
+
+    expect(prepared.mentions).toHaveLength(1);
+  });
+
+  it("keeps two different members as two mentions", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: `@${LID} e @5511911112222 oi`,
+      explicitTargets: [`${PHONE}@s.whatsapp.net`, "5511911112222"],
+      participants: [
+        bareLidMember,
+        { platformUserId: "100000000000002", normalizedPlatformUserId: "5511911112222", displayName: "Outro Membro" },
+      ],
+      ...send,
+    });
+
+    expect(prepared.mentions.map((mention) => mention.id).sort()).toEqual(["100000000000002@lid", `${LID}@lid`]);
+  });
+
+  // Known limit, documented in the skill: without metadata that links the two forms nothing can tell they are one person.
+  it("cannot unite a @lid and a phone when no metadata links them", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: `@${LID}@lid oi`,
+      explicitTargets: [PHONE],
+      ...send,
+    });
+
+    expect(prepared.mentions).toHaveLength(2);
+  });
+});

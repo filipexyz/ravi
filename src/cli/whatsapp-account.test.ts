@@ -101,11 +101,31 @@ describe("pickWhatsAppAccount", () => {
     expect(result.message).toContain("Pass --account <id>");
   });
 
-  it("keeps taking the first WhatsApp account when there is no turn at all (terminal, cron, script)", () => {
-    expect(pickWhatsAppAccount({ instances: [slack, main, luis] })).toEqual({
+  // Review of #975 (N1): the first account by name can be one nobody uses (here `luis`, which is not reconnected), so
+  // taking it silently sends through the wrong account. Without a turn and with several accounts the caller must say.
+  it("fails naming the accounts when there is no turn and several WhatsApp accounts, never taking the first by name", () => {
+    const result = pickWhatsAppAccount({ instances: [slack, luis, main] });
+
+    expect(result).toMatchObject({ ok: false, code: "AMBIGUOUS_WHATSAPP_ACCOUNT", candidates: ["luis", "main"] });
+    if (result.ok) throw new Error("expected a failure");
+    expect(result.message).toContain("no turn");
+    expect(result.message).toContain("luis, main");
+    expect(result.message).toContain("Pass --account <id>");
+  });
+
+  it("still infers the single WhatsApp account when there is no turn at all (terminal, cron, script)", () => {
+    expect(pickWhatsAppAccount({ instances: [slack, main] })).toEqual({
       ok: true,
       accountId: "main",
-      via: "first-account",
+      via: "single-account",
+    });
+  });
+
+  it("still lets --account decide when there is no turn and several WhatsApp accounts", () => {
+    expect(pickWhatsAppAccount({ account: "main", instances: [slack, luis, main] })).toEqual({
+      ok: true,
+      accountId: "main",
+      via: "flag",
     });
   });
 

@@ -37,7 +37,7 @@ export interface PickWhatsAppAccountInput {
 export type WhatsAppAccountFailureCode = "NO_WHATSAPP_ACCOUNT" | "ACCOUNT_NOT_WHATSAPP" | "AMBIGUOUS_WHATSAPP_ACCOUNT";
 
 export type PickWhatsAppAccountResult =
-  | { ok: true; accountId: string; via: "flag" | "turn" | "single-account" | "first-account" }
+  | { ok: true; accountId: string; via: "flag" | "turn" | "single-account" }
   | { ok: false; code: WhatsAppAccountFailureCode; message: string; candidates: string[] };
 
 function whatsappCandidates(instances: readonly WhatsAppAccountInstance[]): string[] {
@@ -82,17 +82,16 @@ export function pickWhatsAppAccount(input: PickWhatsAppAccountInput): PickWhatsA
     return { ok: false, code: "NO_WHATSAPP_ACCOUNT", message: "No WhatsApp account configured.", candidates };
   }
 
+  // Several WhatsApp accounts and nothing that says which one. Never take the first by name: instances are listed by
+  // name, so that is whichever account sorts first, which may be one nobody uses or one that is disconnected. A send to
+  // real people through the wrong account is worse than an error that names the accounts.
   const turnChannel = input.source?.channel?.trim();
-  if (!turnChannel) {
-    // No turn to learn the account from (terminal, cron, script). Keep the historical behaviour of taking the
-    // first enabled account so existing automation does not start failing.
-    return { ok: true, accountId: candidates[0], via: "first-account" };
-  }
-
   return {
     ok: false,
     code: "AMBIGUOUS_WHATSAPP_ACCOUNT",
-    message: `This turn comes from ${turnChannel}, which does not say which WhatsApp account to use.${hint}`,
+    message: turnChannel
+      ? `This turn comes from ${turnChannel}, which does not say which WhatsApp account to use.${hint}`
+      : `There is no turn to say which WhatsApp account to use and several are enabled.${hint}`,
     candidates,
   };
 }

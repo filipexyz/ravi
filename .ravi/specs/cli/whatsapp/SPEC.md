@@ -93,9 +93,10 @@ immediate authority reduction.
     account name of the turn alone: `--account` wins (and one naming a non-WhatsApp account MUST be
     refused, listing the WhatsApp accounts); a turn whose channel is WhatsApp uses its own account;
     otherwise the single enabled WhatsApp account is used; with several WhatsApp accounts a turn from
-    another channel MUST fail naming them (`Pass --account <id>`) instead of guessing; with no turn at
-    all (terminal, cron, script) the first enabled WhatsApp account is kept so existing automation does
-    not break. Channel names MUST be compared through `canonicalChannelId`: instances are stored as
+    another channel MUST fail naming them (`Pass --account <id>`) instead of guessing, and so MUST a
+    command with no turn at all (terminal, cron, script): instances are listed by name, so "the first
+    account" is whichever sorts first, which can be one nobody uses or one that is disconnected, and a
+    send through the wrong account reaches real people. Channel names MUST be compared through `canonicalChannelId`: instances are stored as
     `whatsapp` while the Omni consumer publishes turns as `whatsapp-baileys`. "No omni instance mapped"
     errors MUST list the WhatsApp accounts.
 13. `group send here|current|.` means the chat of the current turn and MUST only resolve in a WhatsApp
@@ -109,7 +110,12 @@ immediate authority reduction.
     not prove the same members) and MUST explain why in `participantsNote`.
 15. An explicit `--mention` target whose placeholder is already written in the message text MUST NOT be
     prefixed again, and one person MUST produce exactly one mention entry, whether the id came from the
-    text (`<phone>@s.whatsapp.net`) or from `--mention` (bare digits).
+    text (`<phone>@s.whatsapp.net`) or from `--mention` (bare digits). The same holds for one member
+    written as `@lid` and as a phone (text and `--mention`, or two `--mention` targets) whenever the group
+    metadata links the two forms (`platformUserId` plus a phone alias, which may be stored with
+    formatting); a `<phone>@s.whatsapp.net` reference MUST also match a member carried as a bare number,
+    and that member MUST be mentioned by the native id. Without metadata that links the forms nothing can
+    tell they are one person and two mentions go out; the skill tells the agent to use one form.
 
 ## Write classification (brake decision per op)
 
