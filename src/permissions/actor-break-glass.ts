@@ -1,15 +1,13 @@
 import type { ContextCapability } from "../router/router-db.js";
+import { BREAK_GLASS_CAPABILITIES } from "./break-glass.js";
 import { canWithCapabilities, materializeSubjectCapabilities } from "./provider-runtime.js";
 
-/**
- * Break-glass = power that can change who has power or run anything: any admin
- * over the system or the whole executable wildcard. Mirrors the definition in
- * permissions/break-glass (#950).
- */
-const BREAK_GLASS_TARGETS: ReadonlyArray<Pick<ContextCapability, "permission" | "objectType" | "objectId">> = [
-  { permission: "admin", objectType: "system", objectId: "*" },
-  { permission: "execute", objectType: "executable", objectId: "*" },
-];
+/** The break-glass set of permissions/break-glass, as targets to withhold. */
+const BREAK_GLASS_TARGETS: ReadonlyArray<Pick<ContextCapability, "permission" | "objectType" | "objectId">> =
+  BREAK_GLASS_CAPABILITIES.map((value) => {
+    const [permission = "", objectType = "", objectId = ""] = value.split(":");
+    return { permission, objectType, objectId };
+  });
 
 /**
  * A turn a person triggered in a chat with no contact grants acts through the
