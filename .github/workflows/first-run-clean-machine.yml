@@ -1,0 +1,203 @@
+name: First run on a clean machine (temporary)
+
+# Temporary validation for the first-run fix. It is removed before this PR merges and the evidence stays in the PR
+# description. `published` runs the npm `next` release and must show the bug. `built` packs this branch the way the
+# publish workflow does, installs it like a user and must show the fix. Both start from a runner with no ~/.ravi, a
+# NATS server with JetStream on 127.0.0.1:4222 and no Omni (a stub `omni` that exits 0).
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/first-run-clean-machine.yml"
+
+concurrency:
+  group: first-run-clean-machine-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+
+env:
+  NATS_IMAGE: nats:2.12-alpine
+
+jobs:
+  published:
+    name: Published next, clean machine (the bug)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+
+      - name: Install ravi.bot@next and PM2 like a user
+        run: |
+          test ! -e "$HOME/.ravi"
+          bun add -g ravi.bot@next pm2
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.bun/bin:$PATH"
+          ravi --version
+          pm2 --version
+
+      - name: NATS with JetStream
+        run: |
+          docker run -d --name nats -p 127.0.0.1:4222:4222 "$NATS_IMAGE" -js
+          for i in $(seq 1 30); do (echo > /dev/tcp/127.0.0.1/4222) 2>/dev/null && break; sleep 1; done
+          (echo > /dev/tcp/127.0.0.1/4222)
+
+      - name: "Install guide order: ravi settings set before ravi daemon start fails with STATE_SCHEMA_NOT_READY"
+        run: |
+          set +e
+          ravi settings set defaultTimezone America/Sao_Paulo > settings.out 2>&1
+          code=$?
+          cat settings.out
+          echo "exit=$code"
+          [ "$code" -ne 0 ] && grep -q "STATE_SCHEMA_NOT_READY" settings.out
+
+      - name: "Setup wizard stops on STATE_SCHEMA_NOT_READY and never starts the daemon"
+        run: |
+          mkdir -p "$HOME/.ravi" "$HOME/.local/bin"
+          printf '%s\n' 'ANTHROPIC_API_KEY=ci-not-a-real-key' 'OPENAI_API_KEY=ci-not-a-real-key' 'RAVI_MODEL=sonnet' > "$HOME/.ravi/.env"
+          chmod 600 "$HOME/.ravi/.env"
+          printf '#!/bin/sh\nexit 0\n' > "$HOME/.local/bin/omni"
+          chmod +x "$HOME/.local/bin/omni"
+          export PATH="$HOME/.local/bin:$PATH"
+          set +e
+          yes '' | timeout 240 ravi setup > wizard.out 2>&1
+          code="${PIPESTATUS[1]}"
+          sed 's/\x1b\[[0-9;]*m//g' wizard.out
+          echo "wizard exit=$code"
+          daemons="$(pm2 jlist 2>/dev/null | tail -n 1 | jq '[.[] | select(.name=="ravi")] | length')"
+          echo "ravi processes in PM2: $daemons"
+          [ "$code" -ne 0 ] && grep -q "STATE_SCHEMA_NOT_READY" wizard.out && [ "$daemons" = "0" ]
+
+      - name: "Informational: ravi daemon start, then ravi settings set at once"
+        run: |
+          set +e
+          ravi daemon start > start.out 2>&1
+          echo "daemon start exit=$?"
+          ravi settings set defaultTimezone America/Sao_Paulo > settings2.out 2>&1
+          echo "settings set exit=$?"
+          cat start.out settings2.out
+          exit 0
+
+      - name: Diagnostics
+        if: always()
+        run: |
+          export PATH="$HOME/.bun/bin:$PATH"
+          pm2 jlist 2>/dev/null | tail -n 1 | jq -r '.[] | "\(.name) \(.pm2_env.status) pid=\(.pid)"' || true
+          ls -la "$HOME/.ravi" "$HOME/.ravi/runtime-processes" 2>&1 | head -40 || true
+          pm2 logs --nostream --lines 60 2>&1 | tail -80 || true
+
+  built:
+    name: Build of this branch, clean machine (the fix)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+
+      - name: Build the package the way the publish workflow does
+        env:
+          RAVI_STATE_DIR: ${{ runner.temp }}/ravi-build-state
+        run: |
+          bun install --frozen-lockfile
+          mkdir -p "$RUNNER_TEMP/pack"
+          npm pack --pack-destination "$RUNNER_TEMP/pack"
+          ls -la "$RUNNER_TEMP/pack"
+
+      - name: Install the package like a user, away from the checkout
+        run: |
+          cd "$RUNNER_TEMP"
+          test ! -e "$HOME/.ravi"
+          bun add -g "$RUNNER_TEMP"/pack/ravi.bot-*.tgz pm2
+          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.bun/bin:$PATH"
+          ravi --version
+          pm2 --version
+
+      - name: NATS with JetStream
+        run: |
+          docker run -d --name nats -p 127.0.0.1:4222:4222 "$NATS_IMAGE" -js
+          for i in $(seq 1 30); do (echo > /dev/tcp/127.0.0.1/4222) 2>/dev/null && break; sleep 1; done
+          (echo > /dev/tcp/127.0.0.1/4222)
+
+      - name: "ravi daemon start returns ready, and ravi settings set works at once"
+        run: |
+          cd "$RUNNER_TEMP"
+          started="$(date +%s)"
+          ravi daemon start > start.out 2>&1 || { cat start.out; exit 1; }
+          cat start.out
+          echo "daemon start took $(( $(date +%s) - started ))s"
+          grep -q "Daemon ready" start.out
+          ravi settings set defaultTimezone America/Sao_Paulo
+          ravi settings get defaultTimezone | tee tz.out
+          grep -q "America/Sao_Paulo" tz.out
+
+      - name: Back to a clean machine
+        run: |
+          cd "$RUNNER_TEMP"
+          ravi daemon stop || true
+          pm2 kill || true
+          docker rm -f nats
+          rm -rf "$HOME/.ravi" "$HOME/ravi" "$HOME/.pm2" "$HOME/.omni"
+          docker run -d --name nats -p 127.0.0.1:4222:4222 "$NATS_IMAGE" -js
+          for i in $(seq 1 30); do (echo > /dev/tcp/127.0.0.1/4222) 2>/dev/null && break; sleep 1; done
+          (echo > /dev/tcp/127.0.0.1/4222)
+          test ! -e "$HOME/.ravi"
+
+      - name: "Setup wizard completes on a clean machine"
+        run: |
+          cd "$RUNNER_TEMP"
+          mkdir -p "$HOME/.ravi" "$HOME/.local/bin"
+          printf '%s\n' 'ANTHROPIC_API_KEY=ci-not-a-real-key' 'OPENAI_API_KEY=ci-not-a-real-key' 'RAVI_MODEL=sonnet' > "$HOME/.ravi/.env"
+          chmod 600 "$HOME/.ravi/.env"
+          printf '#!/bin/sh\nexit 0\n' > "$HOME/.local/bin/omni"
+          chmod +x "$HOME/.local/bin/omni"
+          export PATH="$HOME/.local/bin:$PATH"
+          set +e
+          yes '' | timeout 240 ravi setup > wizard.out 2>&1
+          code="${PIPESTATUS[1]}"
+          set -e
+          sed 's/\x1b\[[0-9;]*m//g' wizard.out
+          echo "wizard exit=$code"
+          [ "$code" -eq 0 ]
+          grep -q "Configuração completa!" wizard.out
+          if grep -q "STATE_SCHEMA_NOT_READY" wizard.out; then echo "the wizard still hit STATE_SCHEMA_NOT_READY"; exit 1; fi
+          ravi settings get defaultTimezone | tee tz.out
+          test -s tz.out
+          [ "$(pm2 jlist 2>/dev/null | tail -n 1 | jq '[.[] | select(.name=="ravi" and .pm2_env.status=="online")] | length')" = "1" ]
+
+      - name: "NATS down: the wait ends at its bound, warns on stderr and still exits 0"
+        run: |
+          cd "$RUNNER_TEMP"
+          ravi daemon stop || true
+          pm2 kill || true
+          docker stop nats
+          rm -rf "$HOME/.ravi" "$HOME/.pm2"
+          started="$(date +%s)"
+          set +e
+          RAVI_DAEMON_START_READY_TIMEOUT_MS=20000 ravi daemon start > start2.out 2> start2.err
+          code=$?
+          set -e
+          elapsed=$(( $(date +%s) - started ))
+          echo "exit=$code elapsed=${elapsed}s"
+          cat start2.out start2.err
+          [ "$code" -eq 0 ]
+          [ "$elapsed" -le 40 ]
+          grep -q "finished preparing its state" start2.err
+
+      - name: Diagnostics
+        if: always()
+        run: |
+          export PATH="$HOME/.bun/bin:$PATH"
+          pm2 jlist 2>/dev/null | tail -n 1 | jq -r '.[] | "\(.name) \(.pm2_env.status) pid=\(.pid)"' || true
+          ls -la "$HOME/.ravi" "$HOME/.ravi/runtime-processes" 2>&1 | head -40 || true
+          pm2 logs --nostream --lines 60 2>&1 | tail -80 || true
