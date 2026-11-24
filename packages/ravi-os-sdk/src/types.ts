@@ -26517,8 +26517,10 @@ export type TriggersAddInput = {
   name: string;
   onError?: string;
   replySession?: string;
+  reportTo?: string;
   session?: string;
   shell?: string;
+  thread?: boolean;
   timeout?: string;
   topic?: string;
 };
