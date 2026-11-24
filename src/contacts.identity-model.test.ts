@@ -114,6 +114,25 @@ describe("contacts identity graph schema", () => {
     expect(getAllContacts()).toHaveLength(2);
   });
 
+  it("does not phone-normalize a nonexistent free-form ref into an unrelated contact", () => {
+    upsertContact("1", "Legacy short id", "allowed", "manual");
+    upsertContact("5511999990001", "Phone contact", "allowed", "manual");
+
+    expect(getContact("missing-ref-1")).toBeNull();
+    expect(getContactDetails("missing-ref-1")).toBeNull();
+    expect(getCrmContactProfile("missing-ref-1")).toBeNull();
+    expect(getContact("no-such-contact-5511999990001")).toBeNull();
+    expect(getContactDetails("no-such-contact-5511999990001")).toBeNull();
+
+    // Phone-shaped refs still resolve through normalization.
+    expect(getContact("+55 (11) 99999-0001")?.name).toBe("Phone contact");
+    expect(getContactDetails("+55 11 99999-0001")?.contact.displayName).toBe("Phone contact");
+    expect(getContact("5511999990001@s.whatsapp.net")?.name).toBe("Phone contact");
+    expect(getContact("1")?.name).toBe("Legacy short id");
+    upsertContact("4930123456", "Slash formatted", "allowed", "manual");
+    expect(getContactDetails("+49 30/123456")?.contact.displayName).toBe("Slash formatted");
+  });
+
   it("writes canonical contacts, policies, and platform identities directly", () => {
     upsertContact("5511999999999", "Alice", "allowed", "manual");
     const contact = getContact("5511999999999");
