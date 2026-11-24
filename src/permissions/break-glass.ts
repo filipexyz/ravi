@@ -19,12 +19,11 @@
  * confers it by any command. The local operator terminal keeps one bootstrap
  * path: tagging a contact `permission-owner|admin|superadmin`.
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import { CliExpectedError } from "../cli/expected-error.js";
 import { currentConsoleInvocation } from "../sdk/gateway/console-context.js";
 import type { TagDefinition } from "../tags/types.js";
-import { readPermissionTagCapabilities } from "./authorization-guidance.js";
 import { normalizePermissionTag } from "./permission-tags.js";
-import { getScopeContext } from "./scope.js";
 
 export interface CapabilityLike {
   permission: string;
@@ -36,6 +35,45 @@ export interface CapabilityLike {
 export const ADMIN_PROFILE_SLUGS: readonly string[] = ["permission-admin", "permission-owner", "permission-superadmin"];
 
 export const BREAK_GLASS_CAPABILITIES: readonly string[] = ["admin:system:*", "execute:executable:*"];
+
+// The storage layers (tag-db, contacts, router-db, contact-chat-grants) import
+// this module, so it must not import them back at load time: scope.js reaches
+// the provider registry and router-db. It is required lazily, on first call.
+function scopeAgentId(): string | undefined {
+  const { getScopeContext } = require("./scope.js") as typeof import("./scope.js");
+  return getScopeContext()?.agentId ?? undefined;
+}
+
+/** Capabilities a permission profile definition carries (same shapes as readPermissionTagCapabilities). */
+function definitionCapabilities(definition: TagDefinition): CapabilityLike[] {
+  const metadata = definition.metadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return [];
+  const record = metadata as Record<string, unknown>;
+  const permissions =
+    record.permissions && typeof record.permissions === "object" && !Array.isArray(record.permissions)
+      ? (record.permissions as Record<string, unknown>)
+      : record;
+  const values = Array.isArray(permissions.capabilities)
+    ? permissions.capabilities
+    : Array.isArray(record.permissionCapabilities)
+      ? record.permissionCapabilities
+      : [];
+  return values.flatMap((value: unknown): CapabilityLike[] => {
+    if (typeof value === "string") {
+      const [permission, objectType, objectId] = value.trim().split(":");
+      return permission && objectType && objectId ? [{ permission, objectType, objectId }] : [];
+    }
+    if (value && typeof value === "object") {
+      const entry = value as Partial<CapabilityLike>;
+      return entry.permission && entry.objectType && entry.objectId
+        ? [{ permission: entry.permission, objectType: entry.objectType, objectId: entry.objectId }]
+        : [];
+    }
+    return [];
+  });
+}
+
+const approvedBreakGlassGrant = new AsyncLocalStorage<string>();
 
 export const BREAK_GLASS_REQUEST_COMMAND =
   "ravi permissions request full-access --to contact:<id> --chat <chat-id> --agent <executor> --execute";
@@ -79,10 +117,7 @@ export function profileBreakGlassReasons(slug: string, capabilities: readonly Ca
 /** Break-glass power a stored permission tag confers (admin name or its capabilities). */
 export function tagDefinitionBreakGlassReasons(slug: string, definition: TagDefinition | null | undefined): string[] {
   const isPermissionDefinition = isPermissionProfileDefinition(definition);
-  return profileBreakGlassReasons(
-    slug,
-    isPermissionDefinition && definition ? readPermissionTagCapabilities(definition) : [],
-  );
+  return profileBreakGlassReasons(slug, isPermissionDefinition && definition ? definitionCapabilities(definition) : []);
 }
 
 /** A permission profile definition, judged after the casing the tag store applies. */
@@ -101,7 +136,7 @@ export function isPermissionProfileDefinition(
  */
 export function callerIsAgentOrRemote(): boolean {
   if (currentConsoleInvocation()) return true;
-  return Boolean(getScopeContext()?.agentId);
+  return Boolean(scopeAgentId());
 }
 
 interface AgentPermissionsConfigLike {
@@ -112,7 +147,12 @@ interface AgentPermissionsConfigLike {
 /** Break-glass an agent runtime config carries: the full-access profile or break-glass capabilities. */
 export function agentConfigBreakGlassReasons(config: AgentPermissionsConfigLike | null | undefined): string[] {
   if (!config) return [];
-  const reasons = config.profile === "full-access" ? ["full-access"] : [];
+  const reasons =
+    String(config.profile ?? "")
+      .trim()
+      .toLowerCase() === "full-access"
+      ? ["full-access"]
+      : [];
   const capabilities = (config.capabilities ?? []).flatMap((value): CapabilityLike[] => {
     if (typeof value === "string") {
       const [permission, objectType, objectId] = value.split(":");
@@ -140,12 +180,41 @@ export function assertAgentBreakGlassRaiseAllowed(
 ): void {
   const raised = agentConfigBreakGlassReasons(after);
   if (raised.length === 0 || agentConfigBreakGlassReasons(before).length > 0) return;
+  if (approvedBreakGlassGrant.getStore()) return;
   if (!callerIsAgentOrRemote()) return;
-  if (getScopeContext()?.agentId === targetAgentId) return;
+  if (scopeAgentId() === targetAgentId) return;
   throw new CliExpectedError(
     `${action}: raising agent ${targetAgentId} to break-glass (${raised.join(", ")}) is for the operator terminal; an agent never raises another agent.`,
     "FULL_ACCESS_APPROVAL_REQUIRED",
     3,
     `Ask the operator to run, from a terminal: ravi agents permissions ${targetAgentId} full-access --execute`,
+  );
+}
+
+/**
+ * Run writes that an operator approval authorized (an approved
+ * `permissions request`, a denial approval card). Inside it, the storage sinks
+ * accept a break-glass tag or grant; nothing else opens them for an agent.
+ */
+export function runApprovedBreakGlassGrant<T>(approval: string, fn: () => T): T {
+  return approvedBreakGlassGrant.run(approval, fn);
+}
+
+/**
+ * The storage-level guard (spec permissions/break-glass, "sinks"). Every new
+ * contact tag binding and every new contact chat grant passes here, whatever
+ * command or code path wrote it. Break-glass power is refused from an agent
+ * turn or a Console invocation unless the write runs inside an approved grant.
+ * Command guards give the good error first; this one is what holds.
+ */
+export function assertBreakGlassStoreWrite(action: string, reasons: readonly string[]): void {
+  if (reasons.length === 0) return;
+  if (approvedBreakGlassGrant.getStore()) return;
+  if (!callerIsAgentOrRemote()) return;
+  throw new CliExpectedError(
+    `${action}: writing ${[...new Set(reasons)].join(", ")} confers break-glass power; only an approved request or the operator terminal writes it.`,
+    "FULL_ACCESS_APPROVAL_REQUIRED",
+    3,
+    `Break-glass reaches a contact only through operator approval: ${BREAK_GLASS_REQUEST_COMMAND}`,
   );
 }

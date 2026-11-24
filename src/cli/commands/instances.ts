@@ -1,5 +1,6 @@
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
-import { assertNoBreakGlassContactChange } from "../../permissions/privileged-contact-writes.js";
+import { assertNoBreakGlassContactChange, isPermissionPolicyTag } from "../../permissions/privileged-contact-writes.js";
+import { CliExpectedError } from "../expected-error.js";
 /**
  * Instances Commands - Central config entity for all channels/accounts
  *
@@ -1146,6 +1147,17 @@ export class InstancesCommands {
         dbUpdateInstance(name, { defaultContactTags: null });
       } else {
         const tags = parseDefaultContactTagsInput(value);
+        // Spec permissions/break-glass: a default tag reaches every new sender;
+        // permission tags are dropped on read, so they are refused here too.
+        const permissionTags = tags.filter((tag) => isPermissionPolicyTag(tag));
+        if (permissionTags.length > 0) {
+          throw new CliExpectedError(
+            `instances set defaultContactTags: ${permissionTags.join(", ")} is a permission tag; default tags never carry permissions.`,
+            "FULL_ACCESS_APPROVAL_REQUIRED",
+            3,
+            "Grant permissions per contact: ravi permissions allow (narrow) or ravi permissions request full-access.",
+          );
+        }
         jsonValue = tags;
         dbUpdateInstance(name, { defaultContactTags: tags });
       }

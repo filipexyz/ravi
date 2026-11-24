@@ -19,6 +19,13 @@ applies_to:
   - src/cli/commands/tags.ts
   - src/cli/commands/contacts.ts
   - src/cli/commands/agents.ts
+  - src/cli/commands/instances.ts
+  - src/library/agent-definitions.ts
+  - src/tags/tag-db.ts
+  - src/contacts.ts
+  - src/permissions/contact-chat-grants.ts
+  - src/permissions/apply-grant.ts
+  - src/router/router-db.ts
 owners:
   - ravi-dev
 status: active
@@ -88,6 +95,29 @@ carries it.
   `full-access` is built in.
 - Grants that already exist are not revoked by this rule; it blocks new grants.
 - The guard is core: it MUST NOT name any channel.
+
+## Sinks (what holds)
+
+Command guards give the good error first; the storage sinks are what hold,
+whatever code path writes. From an agent turn or a Console invocation, outside
+an operator approval, each sink refuses a new write that confers break-glass:
+
+- `dbUpsertTagBinding` (`src/tags/tag-db.ts`): a new contact tag binding.
+- `upsertCanonicalContactPolicy` (`src/contacts.ts`): new tags in
+  `contact_policies.tags_json`, judged before the write.
+- `dbEnsureContactChatGrant` (`src/permissions/contact-chat-grants.ts`): a new
+  contact chat grant.
+- `dbUpdateAgent` (`src/router/router-db.ts`): agent defaults that raise
+  another agent to break-glass (either stored form of `runtimePermissions`).
+
+The approved paths (`applyPermissionGrant`, used by an approved
+`permissions request` and by the denial approval card) run inside
+`runApprovedBreakGlassGrant`, the only thing that opens the sinks for an agent
+turn. The operator terminal is not refused (owner bootstrap).
+
+- Instance default tags never carry permission tags: `instances set
+  defaultContactTags` refuses them from any caller, and the inbound intake
+  drops them on read, so a new sender never arrives with power.
 
 ## Out of scope
 

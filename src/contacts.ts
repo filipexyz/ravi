@@ -12,7 +12,9 @@ import {
   canonicalTagSlugsForAsset,
   replaceMirroredTagSlugsForAsset,
 } from "./tags/helpers.js";
-import { dbFindTagBindings } from "./tags/tag-db.js";
+import { dbFindTagBindings, dbGetTagDefinition } from "./tags/tag-db.js";
+import { assertBreakGlassStoreWrite, tagDefinitionBreakGlassReasons } from "./permissions/break-glass.js";
+import { isPermissionPolicyTag } from "./permissions/permission-tags.js";
 import { detachTagFromSelector, searchTagBindingsForSelector } from "./tags/service.js";
 import { buildSqlWhereClause, countRows, normalizeLimitOffsetPage, type ListPage } from "./utils/pagination.js";
 import { nats } from "./nats.js";
@@ -1256,6 +1258,13 @@ function moveCanonicalContactTagBindings(sourceContactId: string, targetContactI
       actor: "contacts",
     });
   }
+}
+
+function currentContactPolicyTags(database: Database, contactId: string): string[] {
+  const row = database.prepare("SELECT tags_json FROM contact_policies WHERE contact_id = ?").get(contactId) as
+    | { tags_json: string | null }
+    | undefined;
+  return contactTags(contactId, row?.tags_json ?? null);
 }
 
 function contactTags(contactId: string, tagsJson: string | null): string[] {
@@ -3122,6 +3131,18 @@ function upsertCanonicalContactPolicy(
     source?: ContactSource | null;
   },
 ): void {
+  if (input.tags) {
+    // Sink guard (spec permissions/break-glass): tags_json is read as contact
+    // policy too, so a new break-glass tag is judged here, before any write.
+    const current = new Set(currentContactPolicyTags(database, input.contactId));
+    assertBreakGlassStoreWrite(
+      `contact policy tags on contact:${input.contactId}`,
+      input.tags
+        .map((tag) => normalizeCanonicalTagSlug(tag))
+        .filter((tag): tag is string => tag !== null && !current.has(tag))
+        .flatMap((tag) => tagDefinitionBreakGlassReasons(tag, dbGetTagDefinition(tag))),
+    );
+  }
   database
     .prepare(
       `
@@ -8038,7 +8059,9 @@ export function ensureContactFromInbound(input: EnsureContactFromInboundInput): 
         const refreshedContact = getCanonicalCompatContactById(database, contact.id);
         const existingTags = refreshedContact?.tags ?? contact.tags;
         const appliedSlugs: string[] = [];
-        for (const tag of input.defaultTags) {
+        // Instance default tags never carry permission tags (same rule as tag
+        // rules' withoutPermissionTags): a new sender never arrives with power.
+        for (const tag of input.defaultTags.filter((value) => !isPermissionPolicyTag(value))) {
           const slug = attachCanonicalContactTag(contact.id, tag, "inbound_contact_intake_default_tag");
           if (slug) appliedSlugs.push(slug);
         }

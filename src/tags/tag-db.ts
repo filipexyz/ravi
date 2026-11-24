@@ -3,6 +3,7 @@ import {
   CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS,
   migratePermissionTagMetadata,
 } from "../permissions/command-access-kind-migration.js";
+import { assertBreakGlassStoreWrite, tagDefinitionBreakGlassReasons } from "../permissions/break-glass.js";
 import { getDb, getRaviDbPath } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
 import {
@@ -628,6 +629,14 @@ export function dbUpsertTagBinding(input: UpsertTagBindingInput): TagBinding {
   const updatedBy = normalizeOptionalText(input.updatedBy) ?? createdBy;
   const existing = getExistingBindingRow(tag.id, assetType, assetId);
   const previous = existing ? rowToTagBinding(existing) : null;
+  if (!existing && assetType === "contact") {
+    // Sink guard (spec permissions/break-glass): a new contact binding that
+    // confers break-glass is refused for an agent turn, whatever wrote it.
+    assertBreakGlassStoreWrite(
+      `tag binding ${slug} on contact:${assetId}`,
+      tagDefinitionBreakGlassReasons(slug, dbGetTagDefinition(slug)),
+    );
+  }
   const source = input.source === undefined && previous ? previous.source : normalizeTagSource(input.source);
   if (previous && slug.startsWith("policy.") && source !== previous.source) {
     throw new Error(

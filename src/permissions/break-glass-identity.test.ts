@@ -4,12 +4,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgentsCommands } from "../cli/commands/agents.js";
 import { ContactsCommands } from "../cli/commands/contacts.js";
-import { InstancesPendingCommands } from "../cli/commands/instances.js";
+import { InstancesCommands, InstancesPendingCommands } from "../cli/commands/instances.js";
 import { executeLibraryAgentInstall, executeLibraryAgentUpdate } from "../library/agent-definitions.js";
 import { runWithContext, type ToolContext } from "../cli/context.js";
-import { addContactTag, allowContact, closeContacts, getContact, setOptOut, upsertContact } from "../contacts.js";
+import {
+  addContactTag,
+  allowContact,
+  closeContacts,
+  ensureContactFromInbound,
+  getContact,
+  setOptOut,
+  updateContact,
+  upsertContact,
+} from "../contacts.js";
+import { runApprovedBreakGlassGrant } from "./break-glass.js";
 import type { ContextCapability } from "../router/router-db.js";
-import { dbCreateAgent, dbGetAgent, dbUpsertChat, dbUpsertInstance } from "../router/router-db.js";
+import { dbCreateAgent, dbGetAgent, dbUpdateAgent, dbUpsertChat, dbUpsertInstance } from "../router/router-db.js";
 import { dbCreateTagDefinition } from "../tags/index.js";
 import { dbEnsureContactChatGrant } from "./contact-chat-grants.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
@@ -285,5 +295,97 @@ describe("every writer of agent runtime permissions keeps the rule", () => {
       expectBreakGlassDenied(() => new InstancesPendingCommands().approve("wa-test", "5511900007008", undefined, true));
     });
     expect(materializeContactPolicyCapabilities(dormant.id)).toEqual([]);
+  });
+});
+
+describe("instance default tags never carry permissions", () => {
+  it("refuses permission tags in defaultContactTags from any caller, and drops them on read", () => {
+    dbUpsertInstance({ name: "wa-defaults", channel: "whatsapp" });
+    const instances = new InstancesCommands();
+    runWithContext(ADMIN_AGENT, () =>
+      expectBreakGlassDenied(() => instances.set("wa-defaults", "defaultContactTags", '["permission-owner"]', true)),
+    );
+    expectBreakGlassDenied(() => instances.set("wa-defaults", "defaultContactTags", "vip,Permission.Admin", true));
+
+    // A value that reached storage another way (config import, older build) is dropped on read.
+    const created = ensureContactFromInbound({
+      channel: "whatsapp",
+      instanceId: "wa-defaults",
+      platformSenderId: "5511977770001",
+      intakeMode: "pending",
+      defaultTags: ["permission-owner", "vip"],
+    });
+    const contactId = created.contact!.id;
+    expect(getContact(contactId)?.tags).toContain("vip");
+    expect(getContact(contactId)?.tags ?? []).not.toContain("permission-owner");
+    allowContact("5511977770001");
+    expect(materializeContactPolicyCapabilities(contactId)).toEqual([]);
+  });
+});
+
+// The storage sinks are what hold: a new code path that writes a contact tag,
+// a contact chat grant or agent defaults straight to storage, from an agent
+// turn, is refused unless an operator approval is running.
+describe("storage sinks refuse break-glass from any new writer", () => {
+  it("refuses a hypothetical writer calling the contact tag, policy and grant sinks directly", () => {
+    upsertContact("5511900007010", "Target");
+    allowContact("5511900007010");
+    const target = getContact("5511900007010")!;
+    dbCreateTagDefinition({
+      slug: "permission-sink-root",
+      label: "Root",
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["execute:executable:*"] } },
+    });
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "break-glass-sink-chat",
+      chatType: "group",
+      title: "sink",
+    });
+    runWithContext(ADMIN_AGENT, () => {
+      expectBreakGlassDenied(() => addContactTag("5511900007010", "permission-owner"));
+      expectBreakGlassDenied(() => updateContact("5511900007010", { tags: ["vip", "permission-admin"] }));
+      expectBreakGlassDenied(() =>
+        dbEnsureContactChatGrant({
+          contactId: target.id,
+          profileSlug: "permission-sink-root",
+          scopeType: "chat",
+          scopeId: chat.id,
+        }),
+      );
+      addContactTag("5511900007010", "vip");
+    });
+    expect(materializeContactPolicyCapabilities(target.id)).toEqual([]);
+  });
+
+  it("refuses a hypothetical writer raising another agent through the defaults sink", () => {
+    dbCreateAgent({ id: "sink-victim", cwd: "/tmp" });
+    runWithContext(ADMIN_AGENT, () => {
+      expectBreakGlassDenied(() =>
+        dbUpdateAgent("sink-victim", { defaults: { runtimePermissions: { profile: "Full-Access" } } }),
+      );
+      expectBreakGlassDenied(() => dbUpdateAgent("sink-victim", { defaults: { runtimePermissions: "full-access" } }));
+    });
+    expect(JSON.stringify(dbGetAgent("sink-victim")?.defaults ?? {})).not.toContain("ull-");
+  });
+
+  it("opens the sinks only for the operator terminal and an approved grant", () => {
+    upsertContact("5511900007011", "Approved");
+    allowContact("5511900007011");
+    const approved = getContact("5511900007011")!;
+    runWithContext(ADMIN_AGENT, () =>
+      runApprovedBreakGlassGrant("request-test", () => addContactTag("5511900007011", "permission-admin")),
+    );
+    expect(materializeContactPolicyCapabilities(approved.id).map((cap) => cap.permission)).toEqual(["admin"]);
+
+    upsertContact("5511900007012", "Terminal owner");
+    allowContact("5511900007012");
+    addContactTag("5511900007012", "permission-owner");
+    expect(materializeContactPolicyCapabilities(getContact("5511900007012")!.id).map((cap) => cap.permission)).toEqual([
+      "admin",
+    ]);
   });
 });
