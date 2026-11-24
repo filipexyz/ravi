@@ -119425,7 +119425,7 @@ export const SkillsListInputSchema = {
       "type": "boolean"
     },
     "limit": {
-      "description": "Page size (default and max: 500, so every skill is listed)",
+      "description": "Page size (default and max: 500; past that, follow the next page)",
       "type": "string"
     },
     "offset": {

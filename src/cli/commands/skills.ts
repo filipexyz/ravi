@@ -633,8 +633,8 @@ function failInstallSelection(
 
 const SKILLS_LIST_HELP_AFTER = `
 LEITURA — descobre skills. Três universos: catálogo (default), instaladas (--installed)
-e uma fonte externa (--source GitHub/git/path). Lista tudo por padrão (até 500);
---limit/--offset paginam.
+e uma fonte externa (--source GitHub/git/path). Página padrão de 500 (o máximo), então
+o catálogo inteiro aparece; --limit/--offset paginam e, passando de 500, siga a próxima página.
 
 USE
   ✓ descobrir o nome canônico de uma skill antes de grant/show/install
@@ -645,7 +645,7 @@ NÃO USE
   ✗ ver quem tem um grant → \`ravi skills who <skill>\`
 
 EXAMPLES
-  ravi skills list                              # catálogo inteiro
+  ravi skills list                              # catálogo inteiro (até 500)
   ravi skills list --installed --json           # instaladas, JSON
   ravi skills list --tag da/gtm --limit 100     # filtra por tag canônica
   ravi skills list --source org/repo            # skills de uma fonte externa
@@ -1278,7 +1278,7 @@ export class SkillsCommands {
     @Option({ flags: "--codex", description: "Include materialized Codex skills" }) includeCodex?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical skill tag" }) tagSlug?: string,
-    @Option({ flags: "--limit <n>", description: "Page size (default and max: 500, so every skill is listed)" })
+    @Option({ flags: "--limit <n>", description: "Page size (default and max: 500; past that, follow the next page)" })
     limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching skills to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
