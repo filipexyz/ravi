@@ -245,3 +245,110 @@ describe("Omni mention preparation", () => {
     ]);
   });
 });
+
+describe("explicit mention targets already written in the text", () => {
+  // Incident 2026-11-24: `ravi whatsapp group send <grupo> "@5511987860700 oi" --mention 5511987860700`
+  // went out as "@5511987860700 @5511987860700 oi" with two mention entries for the same person.
+  const groupSendOptions = { autoResolvePhoneNumbers: true, placeholderMode: "native" } as const;
+
+  it("does not repeat a phone placeholder the text already has (group send with --mention <phone>)", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: "@5511987860700 oi, tudo bem?",
+      explicitTargets: ["5511987860700"],
+      ...groupSendOptions,
+    });
+
+    expect(prepared.text).toBe("@5511987860700 oi, tudo bem?");
+    expect(prepared.mentions).toEqual([{ id: "5511987860700@s.whatsapp.net", type: "user" }]);
+    expect(prepared.resolved).toHaveLength(1);
+  });
+
+  it("treats a phone JID target and the same phone written in the text as one mention", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: "oi @5511987860700, confere?",
+      explicitTargets: ["5511987860700@s.whatsapp.net"],
+      ...groupSendOptions,
+    });
+
+    expect(prepared.text).toBe("oi @5511987860700, confere?");
+    expect(prepared.mentions).toEqual([{ id: "5511987860700@s.whatsapp.net", type: "user" }]);
+  });
+
+  it("treats a formatted phone target and the same phone written in the text as one mention", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: "@5511987860700 oi",
+      explicitTargets: ["+55 11 98786-0700"],
+      ...groupSendOptions,
+    });
+
+    expect(prepared.text).toBe("@5511987860700 oi");
+    expect(prepared.mentions).toHaveLength(1);
+  });
+
+  it("does not repeat the placeholder even when inline phone auto-resolution is off", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: "@5511987860700 oi",
+      explicitTargets: ["5511987860700"],
+    });
+
+    expect(prepared.text).toBe("@5511987860700 oi");
+    expect(prepared.mentions).toHaveLength(1);
+  });
+
+  it("does not repeat the placeholder for a formatted phone target when inline auto-resolution is off", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: "@5511987860700 oi",
+      explicitTargets: ["+55 11 98786-0700"],
+    });
+
+    expect(prepared.text).toBe("@5511987860700 oi");
+    expect(prepared.mentions).toHaveLength(1);
+  });
+
+  it("does not repeat a placeholder for a target written as a name that the text already has", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: "@Israel Nunes olha isso",
+      explicitTargets: ["Israel"],
+      participants,
+    });
+
+    expect(prepared.text).toBe("@Israel Nunes olha isso");
+    expect(prepared.mentions).toEqual([{ id: "5511999999999@s.whatsapp.net", type: "user" }]);
+  });
+
+  it("still prefixes the placeholder when the text does not mention the target", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: "oi, tudo bem?",
+      explicitTargets: ["5511987860700"],
+      ...groupSendOptions,
+    });
+
+    expect(prepared.text).toBe("@5511987860700 oi, tudo bem?");
+    expect(prepared.mentions).toHaveLength(1);
+  });
+
+  it("keeps two different people as two mentions", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: "@5511987860700 e @5511911112222 oi",
+      explicitTargets: ["5511987860700", "5511911112222"],
+      ...groupSendOptions,
+    });
+
+    expect(prepared.text).toBe("@5511987860700 e @5511911112222 oi");
+    expect(prepared.mentions.map((mention) => mention.id).sort()).toEqual([
+      "5511911112222@s.whatsapp.net",
+      "5511987860700@s.whatsapp.net",
+    ]);
+  });
+
+  it("adds a second explicit person that the text does not mention, without repeating the first", () => {
+    const prepared = prepareOmniMentionMessage({
+      text: "@5511987860700 oi",
+      explicitTargets: ["5511987860700", "5511911112222"],
+      ...groupSendOptions,
+    });
+
+    expect(prepared.text).toBe("@5511911112222 @5511987860700 oi");
+    expect(prepared.mentions).toHaveLength(2);
+  });
+});

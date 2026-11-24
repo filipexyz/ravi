@@ -63,6 +63,13 @@ type OmniChatParticipantRecord = {
 
 type OmniGroupParticipantAction = "remove" | "promote" | "demote";
 
+/** Live WhatsApp member of a group, as WhatsApp reports it (ids are usually `<digits>@lid`). */
+export type OmniGroupMemberRecord = {
+  id: string;
+  /** `member`, `admin` or `superadmin`. */
+  role: string | null;
+};
+
 type OmniGroupInviteRecord = {
   groupJid?: string;
   chatId?: string;
@@ -246,6 +253,23 @@ export function createOmniClient(config: { baseUrl: string; apiKey: string; cliV
           items: payload.items ?? payload.data ?? [],
           meta: payload.meta,
         };
+      },
+      /**
+       * Members of the group as WhatsApp reports them right now. Unlike `/chats/:id/participants`, which only knows
+       * the people Omni has seen in the chat, this is the full member list.
+       */
+      async listGroupMembers(id: string, groupJid: string): Promise<OmniGroupMemberRecord[]> {
+        const payload = await request<unknown>(
+          `/instances/${encodeURIComponent(id)}/groups/${encodeURIComponent(groupJid)}/members`,
+        );
+        const raw = (payload as { members?: unknown }).members ?? payload.data ?? payload.items;
+        if (!Array.isArray(raw)) return [];
+        return raw.flatMap((item): OmniGroupMemberRecord[] => {
+          if (!item || typeof item !== "object") return [];
+          const record = item as { id?: unknown; role?: unknown };
+          if (typeof record.id !== "string" || !record.id.trim()) return [];
+          return [{ id: record.id.trim(), role: typeof record.role === "string" ? record.role : null }];
+        });
       },
       async createGroup(id: string, body: { subject: string; participants: string[] }): Promise<OmniGroupRecord> {
         const payload = await request<OmniGroupRecord>(`/instances/${encodeURIComponent(id)}/groups`, {
