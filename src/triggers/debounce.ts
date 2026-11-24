@@ -135,9 +135,10 @@ export const WATCH_TOPIC_DEFAULT_DEBOUNCE_MS = 30_000;
 export const DEFAULT_TRIGGER_DEBOUNCE_MS = 5_000;
 
 /**
- * Delivery defaults for a new trigger that sets neither `--cooldown` nor
+ * Delivery defaults for a new agent trigger that sets neither `--cooldown` nor
  * `--debounce`. Cooldown is off because it drops every event inside its window;
- * debounce keeps them all and fires once with the batch.
+ * debounce batches them (up to DEBOUNCE_MAX_EVENTS, in memory) and fires once.
+ * Shell triggers take no default debounce (the CLI decides that).
  */
 export function defaultTriggerDelivery(topic: string): { cooldownMs: number; debounceMs: number } {
   const watchTopic = topic.trim().startsWith("ravi.watch.");

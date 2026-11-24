@@ -91,14 +91,15 @@ export function compactEventLines(data: unknown): string[] {
   const lines: string[] = [];
   if (isWatchEnvelope(data)) {
     const watchName = typeof data.watchName === "string" ? data.watchName : undefined;
-    lines.push(`subject: ${watchName ? `${data.subject} (${watchName})` : data.subject}`);
+    lines.push(`subject: ${compactScalar(watchName ? `${data.subject} (${watchName})` : data.subject)}`);
     const when = typeof data.occurredAt === "string" ? data.occurredAt : undefined;
-    if (when) lines.push(`at: ${when}`);
+    if (when) lines.push(`at: ${compactScalar(when)}`);
     flattenLines(data.payload, "", 0, lines);
     if (Array.isArray(data.links)) {
       for (const link of data.links) {
         if (isPlainObject(link) && typeof link.url === "string" && link.url) {
-          lines.push(`link: ${typeof link.label === "string" && link.label ? `${link.label} ` : ""}${link.url}`);
+          const label = typeof link.label === "string" && link.label ? `${link.label} ` : "";
+          lines.push(`link: ${compactScalar(`${label}${link.url}`)}`);
         }
       }
     }
@@ -132,16 +133,15 @@ export function buildTriggerPrompt(
   event: TriggerPromptEvent,
   batch?: TriggerPromptBatch,
 ): string {
-  const wantsFullEvent = FULL_EVENT_PLACEHOLDER.test(trigger.message);
-  FULL_EVENT_PLACEHOLDER.lastIndex = 0;
-  const templateData = getTemplateData(event.data);
-  const withFullEvent = wantsFullEvent
-    ? trigger.message.replace(FULL_EVENT_PLACEHOLDER, () => JSON.stringify(event.data, null, 2))
-    : trigger.message;
-  const resolvedMessage = resolveTemplate(withFullEvent, {
-    topic: event.topic,
-    data: templateData,
-  });
+  const context = { topic: event.topic, data: getTemplateData(event.data) };
+  // Resolve each piece of the message around `{{data}}`, then join them with the
+  // event JSON: text inside the event (a comment that writes `{{topic}}`) is never
+  // read as a placeholder.
+  const pieces = trigger.message.split(FULL_EVENT_PLACEHOLDER);
+  const wantsFullEvent = pieces.length > 1;
+  const resolvedMessage = pieces
+    .map((piece) => resolveTemplate(piece, context))
+    .join(wantsFullEvent ? JSON.stringify(event.data, null, 2) : "");
 
   const header = [`[Trigger: ${trigger.name}]`, `Event: ${event.topic}`];
   const batched = batch && batch.events.length + batch.omitted > 1;
@@ -163,10 +163,13 @@ export function buildTriggerPrompt(
   const data = batched
     ? [
         "Events:",
-        ...batch.events.flatMap((item, index) => [
-          `- ${index + 1}. ${item.topic}`,
-          ...indent(compactEventLines(item.data)),
-        ]),
+        ...batch.events.flatMap((item, index) => {
+          const entry = `- ${index + 1}. ${item.topic}`;
+          // With `{{data}}` the last event is in the message as JSON: list it once.
+          if (wantsFullEvent && index === batch.events.length - 1)
+            return [`${entry} (full event below, in the message)`];
+          return [entry, ...indent(compactEventLines(item.data))];
+        }),
       ]
     : ["Data:", ...indent(compactEventLines(event.data))];
   return [...header, ...data, "", resolvedMessage].join("\n");

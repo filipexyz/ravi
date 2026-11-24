@@ -814,7 +814,7 @@ export class TriggersCommands {
     @Option({
       flags: "--cooldown <duration>",
       description:
-        "Minimum gap between fires; events inside it are dropped (e.g., 30s, 1m; off to disable). Default: off (prefer --debounce, which keeps every event)",
+        "Minimum gap between fires; events inside it are dropped (e.g., 30s, 1m; off to disable). Default: off (prefer --debounce, which batches them instead)",
     })
     cooldown?: string,
     @Option({
@@ -847,7 +847,7 @@ export class TriggersCommands {
     @Option({
       flags: "--debounce <duration>",
       description:
-        "Batch a burst of events into one fire, this long after the last event, carrying every event (e.g., 2s, 1m; off to disable). Default: 30s on ravi.watch.* topics, 5s elsewhere (off when --cooldown is given)",
+        "Batch a burst of events into one fire, this long after the last event, carrying the burst (up to its last 200 events; a burst pending when the daemon stops is lost) (e.g., 2s, 1m; off to disable). Default for agent triggers: 30s on ravi.watch.* topics, 5s elsewhere; off with --cooldown or --shell",
     })
     debounce?: string,
     @Option({
@@ -955,8 +955,10 @@ export class TriggersCommands {
         fail(`Invalid cooldown: ${err instanceof Error ? err.message : err}`);
       }
     }
-    // An explicit cooldown keeps its old meaning alone: no debounce added behind it.
-    let debounceMs = cooldown ? 0 : deliveryDefaults.debounceMs;
+    // An explicit cooldown keeps its old meaning alone: no debounce added behind it. A shell
+    // trigger gets no default debounce either: a script that reads one event
+    // ($RAVI_TRIGGER_DATA_FILE) would act on the last event of a batch only.
+    let debounceMs = cooldown || isShellTrigger ? 0 : deliveryDefaults.debounceMs;
     if (debounce) {
       try {
         debounceMs = parseOptionalDurationMs(debounce, parseDurationMs);

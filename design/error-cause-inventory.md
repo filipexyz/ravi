@@ -911,13 +911,13 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | transcription | src/cli/commands/transcribe.ts | 82 | fixed | binding retained / no recognized error surface | src/cli/commands/transcribe.ts:41b5a4da5f06e871f38715e8 |
 | cli | src/cli/commands/triggers.ts | 573 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:e68c5b3d4bddc89d5bc957b0 |
 | cli | src/cli/commands/triggers.ts | 954 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:c18580878ea50cac91acd6fc |
-| cli | src/cli/commands/triggers.ts | 963 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:f639b4ea593dffb1f7546781 |
-| cli | src/cli/commands/triggers.ts | 1119 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:78108f66cba5148f81d7a228 |
-| cli | src/cli/commands/triggers.ts | 1160 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:57833e751b92db2057cf6212 |
-| cli | src/cli/commands/triggers.ts | 1192 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:123958521b195f02ca075b66 |
-| cli | src/cli/commands/triggers.ts | 1473 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:f45789305da03b5f801eb2b5 |
-| cli | src/cli/commands/triggers.ts | 1536 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:6afdd45893577312faf8ac24 |
-| cli | src/cli/commands/triggers.ts | 1597 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:7a08226adeb271f19ef0aac9 |
+| cli | src/cli/commands/triggers.ts | 965 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:f639b4ea593dffb1f7546781 |
+| cli | src/cli/commands/triggers.ts | 1121 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:78108f66cba5148f81d7a228 |
+| cli | src/cli/commands/triggers.ts | 1162 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:57833e751b92db2057cf6212 |
+| cli | src/cli/commands/triggers.ts | 1194 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:123958521b195f02ca075b66 |
+| cli | src/cli/commands/triggers.ts | 1475 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:f45789305da03b5f801eb2b5 |
+| cli | src/cli/commands/triggers.ts | 1538 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:6afdd45893577312faf8ac24 |
+| cli | src/cli/commands/triggers.ts | 1599 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:7a08226adeb271f19ef0aac9 |
 | cli | src/cli/commands/update.ts | 261 | triaged-follow-up | catch-without-binding | src/cli/commands/update.ts:35bb94b5f65dda0c3dc10610 |
 | cli | src/cli/commands/update.ts | 275 | triaged-follow-up | catch-without-binding | src/cli/commands/update.ts:5595b1c0101d56d7095f155e |
 | cli | src/cli/commands/update.ts | 320 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/update.ts:c3087cc8cd175cfa03f6a954 |

@@ -444,6 +444,29 @@ describe("TriggersCommands topic guidance", () => {
     });
   });
 
+  it("gives a shell trigger no default debounce: a script that reads one event would lose the rest of a batch", async () => {
+    const commands = new TriggersCommands();
+    mockToolContext = { transport: "gateway" };
+    await captureJson(() =>
+      commands.add(
+        "shell default",
+        "ravi.inbound.interaction",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        "printf ok",
+      ),
+    );
+    expect(createdTriggers).toContainEqual(
+      expect.objectContaining({ name: "shell default", executionType: "shell", cooldownMs: 0, debounceMs: 0 }),
+    );
+  });
+
   it("refuses a shell trigger from a turn that does not act as the operator", async () => {
     const commands = new TriggersCommands();
     mockToolContext = { transport: "gateway" };

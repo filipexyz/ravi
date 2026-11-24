@@ -169,4 +169,42 @@ describe("buildTriggerPrompt with a watch event", () => {
     expect(prompt).not.toContain("  k40: 40");
     expect(prompt).toContain("(20 more lines; use {{data}} in the message for the full event)");
   });
+
+  it("never reads placeholder-like text inside the event as a placeholder", () => {
+    const comment = { ...watchEvent, payload: { body: "use {{topic}} and {{data.payload.body}} in the template" } };
+    const prompt = buildTriggerPrompt(
+      { ...follow, message: "Raw: {{data}} topic={{topic}}" },
+      { topic: watchEvent.subject, data: comment },
+    );
+    expect(prompt).toContain('"body": "use {{topic}} and {{data.payload.body}} in the template"');
+    expect(prompt).toContain(`topic=${watchEvent.subject}`);
+  });
+
+  it("lists each event of a {{data}} batch once: the last one only as JSON in the message", () => {
+    const first = { ...watchEvent, eventId: "evt_A", payload: { conclusion: "failure", runId: 1 } };
+    const last = { ...watchEvent, eventId: "evt_B", payload: { conclusion: "success", runId: 2 } };
+    const events = [first, last].map((data) => ({ topic: watchEvent.subject, data }));
+    const prompt = buildTriggerPrompt({ ...follow, message: "Inspect {{data}}" }, events[1], {
+      events,
+      omitted: 0,
+    });
+    expect(prompt).toContain("- 1. ravi.watch.github.workflow_run.failed\n  subject:");
+    expect(prompt).toContain("  runId: 1");
+    expect(prompt).toContain("- 2. ravi.watch.github.workflow_run.failed (full event below, in the message)");
+    expect(prompt).not.toContain("  runId: 2");
+    expect(prompt.split('"eventId": "evt_B"')).toHaveLength(2);
+  });
+
+  it("cuts and folds the watch metadata it adds, like any value", () => {
+    const longLink = {
+      ...watchEvent,
+      watchName: "a\nb",
+      links: [{ label: "run", url: `https://x/${"y".repeat(900)}` }],
+    };
+    const prompt = buildTriggerPrompt(follow, { topic: watchEvent.subject, data: longLink });
+    const linkLine = prompt.split("\n").find((line) => line.startsWith("  link: "));
+    expect(linkLine!.length).toBeLessThan(520);
+    expect(linkLine?.endsWith("…")).toBe(true);
+    expect(prompt).toContain("(a ⏎ b)");
+  });
 });
