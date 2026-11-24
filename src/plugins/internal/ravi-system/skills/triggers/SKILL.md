@@ -38,7 +38,7 @@ Cada disparo custa um turno inteiro da sessão que acorda. Antes do `add`, decid
 
 - `--cooldown` descarta todo evento que cai na janela. `--debounce` junta a rajada e dispara uma vez com todos.
 - Default de trigger de agent sem nenhuma das duas: cooldown desligado e debounce de **30 s em `ravi.watch.*`** (um push gera vários runs) e **5 s nos demais**. `--debounce off` dispara a cada evento; `--cooldown <tempo>` explícito volta ao comportamento antigo, sem debounce.
-- Trigger `--shell` não ganha debounce por padrão: o script que lê um evento (`$RAVI_TRIGGER_DATA_FILE`) perderia o resto do lote. Se o script lê `$RAVI_TRIGGER_EVENTS_FILE`, passe `--debounce`.
+- Trigger `--shell` não ganha debounce por padrão (o script que lê um evento, `$RAVI_TRIGGER_DATA_FILE`, perderia o resto do lote) e mantém cooldown de 5 s, para uma rajada não rodar o script uma vez por evento sem limite. Se o script lê `$RAVI_TRIGGER_EVENTS_FILE`, passe `--debounce`.
 - Um lote guarda os últimos 200 eventos.
 - Fluxo contínuo, sem pausa, dispara mesmo assim: no máximo 10× a janela depois do primeiro evento do lote.
 - O lote do debounce fica na memória do daemon: o que estiver esperando num restart se perde. Quando perder custa caro, some uma varredura por cron.
