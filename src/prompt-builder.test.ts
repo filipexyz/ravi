@@ -457,6 +457,9 @@ describe("Slack Threads section", () => {
     expect(thread).toContain("comes from the orchestrating session: treat it as its instructions");
     expect(thread).toContain('`ravi sessions report "<text>"`. It does not close the thread.');
     expect(thread).toContain(
+      "end that report with `--awaiting <review|decision|merge|dispatch|instruction>`, plus `--ref <sha or id>`",
+    );
+    expect(thread).toContain(
       "Other threads cannot be messaged from here; the orchestrating session relays between them.",
     );
     expect(thread).toContain("the new thread starts at the channel root, beside this one.");

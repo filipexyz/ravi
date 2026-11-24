@@ -138,6 +138,40 @@ describe("channel thread identity", () => {
   });
 });
 
+describe("session handoffs schema", () => {
+  it("stores handoffs in ravi.db and rejects unknown kinds and statuses", () => {
+    const db = getDb();
+    const columns = (db.prepare("PRAGMA table_info(session_handoffs)").all() as Array<{ name: string }>).map(
+      (column) => column.name,
+    );
+    expect(columns).toEqual([
+      "id",
+      "child_session_key",
+      "parent_session_key",
+      "kind",
+      "ref",
+      "note",
+      "caller_context_id",
+      "status",
+      "created_at",
+      "parent_nudged_at",
+      "owner_escalated_at",
+      "acknowledged_at",
+      "ack_reason",
+      "updated_at",
+    ]);
+    const insert = (kind: string, status: string) =>
+      db
+        .prepare(
+          "INSERT INTO session_handoffs (id, child_session_key, parent_session_key, kind, status, created_at, updated_at) VALUES (?, 'c', 'p', ?, ?, 1, 1)",
+        )
+        .run(`hof_${kind}_${status}`, kind, status);
+    expect(() => insert("review", "open")).not.toThrow();
+    expect(() => insert("lunch", "open")).toThrow();
+    expect(() => insert("review", "done")).toThrow();
+  });
+});
+
 describe("thread parent return watch schema", () => {
   it("keeps one return-watch row per thread in ravi.db and rejects unknown stages", () => {
     const record = registerThread();

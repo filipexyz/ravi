@@ -1,0 +1,3 @@
+# Why handoffs
+
+Study of 23/11/2026 (outputs/orchestrator-stall in the main workspace): from 17 to 23/11 the orchestrating session `main` received 173 thread reports asking it to act; most were acted on in minutes, but the longest waits lasted 53 min, 6.5 h and 2.5 days, and in the three episodes of 23/11 the human found the stall by asking. The watchers that replaced `vigia-frentes` (turn health, return follow-up, daily digest) all look at the thread; a thread that finished and waits is healthy for them, and the wait existed only as text. Making the wait a row lets the runtime remind the parent and tell the owner without reading prose.

@@ -1,0 +1,223 @@
+import { randomUUID } from "node:crypto";
+import { executeWrite } from "../db/write-retry.js";
+import { getDb } from "../router/router-db.js";
+
+/**
+ * Handoffs: the structured "this child session waits for its parent to act".
+ *
+ * Before this table the wait lived only in the text of a report, so nothing
+ * could tell that the parent (the orchestrating session) had stopped while its
+ * threads waited on it: a thread that finished its turn and waits is healthy
+ * for every turn-health check. The reconciler (`reconcile.ts`) reads the open
+ * rows, reminds the parent once and tells the owner once. Channel-free: rows
+ * are keyed by session keys; a channel adapter only delivers the reminder.
+ */
+
+export const HANDOFF_KINDS = ["review", "decision", "merge", "dispatch", "instruction"] as const;
+export type HandoffKind = (typeof HANDOFF_KINDS)[number];
+export type HandoffStatus = "open" | "acknowledged" | "superseded";
+
+export interface Handoff {
+  id: string;
+  childSessionKey: string;
+  parentSessionKey: string;
+  kind: HandoffKind;
+  ref: string | null;
+  note: string | null;
+  callerContextId: string | null;
+  status: HandoffStatus;
+  createdAt: number;
+  parentNudgedAt: number | null;
+  ownerEscalatedAt: number | null;
+  acknowledgedAt: number | null;
+  ackReason: string | null;
+}
+
+interface HandoffRow {
+  id: string;
+  child_session_key: string;
+  parent_session_key: string;
+  kind: HandoffKind;
+  ref: string | null;
+  note: string | null;
+  caller_context_id: string | null;
+  status: HandoffStatus;
+  created_at: number;
+  parent_nudged_at: number | null;
+  owner_escalated_at: number | null;
+  acknowledged_at: number | null;
+  ack_reason: string | null;
+}
+
+function fromRow(row: HandoffRow): Handoff {
+  return {
+    id: row.id,
+    childSessionKey: row.child_session_key,
+    parentSessionKey: row.parent_session_key,
+    kind: row.kind,
+    ref: row.ref,
+    note: row.note,
+    callerContextId: row.caller_context_id,
+    status: row.status,
+    createdAt: row.created_at,
+    parentNudgedAt: row.parent_nudged_at,
+    ownerEscalatedAt: row.owner_escalated_at,
+    acknowledgedAt: row.acknowledged_at,
+    ackReason: row.ack_reason,
+  };
+}
+
+export function isHandoffKind(value: string): value is HandoffKind {
+  return (HANDOFF_KINDS as readonly string[]).includes(value);
+}
+
+const NOTE_MAX = 280;
+
+/**
+ * Open a handoff. A child waits on one thing at a time: a new handoff from the
+ * same child supersedes the open one (the newer report describes the current wait).
+ */
+export function newHandoffId(): string {
+  return `hof_${randomUUID()}`;
+}
+
+export function openHandoff(input: {
+  id?: string;
+  childSessionKey: string;
+  parentSessionKey: string;
+  kind: HandoffKind;
+  ref?: string | null;
+  note?: string | null;
+  callerContextId?: string | null;
+  now: number;
+}): { handoff: Handoff; superseded: Handoff[] } {
+  const id = input.id ?? newHandoffId();
+  const ref = input.ref?.trim() || null;
+  const note = input.note?.trim() ? input.note.trim().slice(0, NOTE_MAX) : null;
+  return executeWrite(
+    getDb(),
+    (db) => {
+      const previous = (
+        db
+          .prepare("SELECT * FROM session_handoffs WHERE child_session_key = ? AND status = 'open'")
+          .all(input.childSessionKey) as HandoffRow[]
+      ).map(fromRow);
+      db.prepare(
+        `UPDATE session_handoffs SET status = 'superseded', acknowledged_at = ?, ack_reason = 'superseded', updated_at = ?
+         WHERE child_session_key = ? AND status = 'open'`,
+      ).run(input.now, input.now, input.childSessionKey);
+      db.prepare(
+        `INSERT INTO session_handoffs
+          (id, child_session_key, parent_session_key, kind, ref, note, caller_context_id, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)`,
+      ).run(
+        id,
+        input.childSessionKey,
+        input.parentSessionKey,
+        input.kind,
+        ref,
+        note,
+        input.callerContextId ?? null,
+        input.now,
+        input.now,
+      );
+      const row = db.prepare("SELECT * FROM session_handoffs WHERE id = ?").get(id) as HandoffRow;
+      return { handoff: fromRow(row), superseded: previous };
+    },
+    { label: "handoff-open" },
+  );
+}
+
+/** Acknowledge every open handoff of a child (the parent acted on that child). */
+export function acknowledgeHandoffsForChild(childSessionKey: string, reason: string, now: number): Handoff[] {
+  return executeWrite(
+    getDb(),
+    (db) => {
+      const open = (
+        db
+          .prepare("SELECT * FROM session_handoffs WHERE child_session_key = ? AND status = 'open'")
+          .all(childSessionKey) as HandoffRow[]
+      ).map(fromRow);
+      if (open.length === 0) return [];
+      db.prepare(
+        `UPDATE session_handoffs SET status = 'acknowledged', acknowledged_at = ?, ack_reason = ?, updated_at = ?
+         WHERE child_session_key = ? AND status = 'open'`,
+      ).run(now, reason, now, childSessionKey);
+      return open.map((h) => ({ ...h, status: "acknowledged" as const, acknowledgedAt: now, ackReason: reason }));
+    },
+    { label: "handoff-ack-child" },
+  );
+}
+
+/** Acknowledge one open handoff by id. Null when it does not exist or is no longer open. */
+export function acknowledgeHandoff(id: string, reason: string, now: number): Handoff | null {
+  return executeWrite(
+    getDb(),
+    (db) => {
+      const row = db.prepare("SELECT * FROM session_handoffs WHERE id = ? AND status = 'open'").get(id) as
+        | HandoffRow
+        | undefined;
+      if (!row) return null;
+      db.prepare(
+        `UPDATE session_handoffs SET status = 'acknowledged', acknowledged_at = ?, ack_reason = ?, updated_at = ?
+         WHERE id = ? AND status = 'open'`,
+      ).run(now, reason, now, id);
+      return { ...fromRow(row), status: "acknowledged" as const, acknowledgedAt: now, ackReason: reason };
+    },
+    { label: "handoff-ack" },
+  );
+}
+
+export function getHandoff(id: string): Handoff | null {
+  const row = getDb().prepare("SELECT * FROM session_handoffs WHERE id = ?").get(id) as HandoffRow | undefined;
+  return row ? fromRow(row) : null;
+}
+
+export function listHandoffs(filter: { parentSessionKey?: string; includeClosed?: boolean } = {}): Handoff[] {
+  const clauses: string[] = [];
+  const args: string[] = [];
+  if (!filter.includeClosed) clauses.push("status = 'open'");
+  if (filter.parentSessionKey) {
+    clauses.push("parent_session_key = ?");
+    args.push(filter.parentSessionKey);
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  return (
+    getDb()
+      .prepare(`SELECT * FROM session_handoffs ${where} ORDER BY created_at ASC`)
+      .all(...args) as HandoffRow[]
+  ).map(fromRow);
+}
+
+/** Claim the single parent reminder. False when it was already sent or the handoff closed. */
+export function claimParentNudge(id: string, now: number): boolean {
+  return executeWrite(
+    getDb(),
+    (db) =>
+      db
+        .prepare(
+          `UPDATE session_handoffs SET parent_nudged_at = ?, updated_at = ?
+           WHERE id = ? AND status = 'open' AND parent_nudged_at IS NULL`,
+        )
+        .run(now, now, id).changes === 1,
+    { label: "handoff-nudge" },
+  );
+}
+
+/** Claim the owner escalation for the ids still open and not escalated; returns the claimed ids. */
+export function claimOwnerEscalation(ids: readonly string[], now: number): string[] {
+  if (ids.length === 0) return [];
+  return executeWrite(
+    getDb(),
+    (db) => {
+      const claimed: string[] = [];
+      const stmt = db.prepare(
+        `UPDATE session_handoffs SET owner_escalated_at = ?, updated_at = ?
+         WHERE id = ? AND status = 'open' AND owner_escalated_at IS NULL`,
+      );
+      for (const id of ids) if (stmt.run(now, now, id).changes === 1) claimed.push(id);
+      return claimed;
+    },
+    { label: "handoff-escalate" },
+  );
+}

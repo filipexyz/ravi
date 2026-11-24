@@ -24671,6 +24671,70 @@ class SessionsGoalReturn {
 
 SessionsGoalReturn sessionsGoalReturnFromJson(Object? json) => SessionsGoalReturn.fromJsonValue(json);
 
+class SessionsHandoffAckOptions {
+  const SessionsHandoffAckOptions({this.reason});
+
+  final String? reason;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (reason != null) {
+      into["reason"] = RaviJson.from(reason);
+    }
+  }
+}
+
+class SessionsHandoffAckReturn {
+  const SessionsHandoffAckReturn({required this.changed, required this.id, required this.status});
+
+  final bool changed;
+  final String id;
+  final String status;
+
+  factory SessionsHandoffAckReturn.fromJson(Map<String, Object?> json) {
+    return SessionsHandoffAckReturn(
+      changed: raviJsonAsBool(json["changed"]),
+      id: raviJsonAsString(json["id"]),
+      status: raviJsonAsString(json["status"]),
+    );
+  }
+
+  static SessionsHandoffAckReturn fromJsonValue(Object? json) {
+    return SessionsHandoffAckReturn.fromJson(raviJsonObject(json, "SessionsHandoffAckReturn"));
+  }
+}
+
+SessionsHandoffAckReturn sessionsHandoffAckReturnFromJson(Object? json) => SessionsHandoffAckReturn.fromJsonValue(json);
+
+class SessionsHandoffsOptions {
+  const SessionsHandoffsOptions({this.session});
+
+  final String? session;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (session != null) {
+      into["session"] = RaviJson.from(session);
+    }
+  }
+}
+
+class SessionsHandoffsReturn {
+  const SessionsHandoffsReturn({required this.handoffs});
+
+  final List<RaviJson> handoffs;
+
+  factory SessionsHandoffsReturn.fromJson(Map<String, Object?> json) {
+    return SessionsHandoffsReturn(
+      handoffs: raviJsonAsList(json["handoffs"], RaviJson.from),
+    );
+  }
+
+  static SessionsHandoffsReturn fromJsonValue(Object? json) {
+    return SessionsHandoffsReturn.fromJson(raviJsonObject(json, "SessionsHandoffsReturn"));
+  }
+}
+
+SessionsHandoffsReturn sessionsHandoffsReturnFromJson(Object? json) => SessionsHandoffsReturn.fromJsonValue(json);
+
 typedef SessionsInfoReturn = Map<String, RaviJson>;
 
 SessionsInfoReturn sessionsInfoReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
@@ -24884,11 +24948,19 @@ typedef SessionsRenameReturn = Map<String, RaviJson>;
 SessionsRenameReturn sessionsRenameReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
 
 class SessionsReportOptions {
-  const SessionsReportOptions({this.session});
+  const SessionsReportOptions({this.awaiting, this.ref, this.session});
 
+  final String? awaiting;
+  final String? ref;
   final String? session;
 
   void encodeBody(Map<String, RaviJson> into) {
+    if (awaiting != null) {
+      into["awaiting"] = RaviJson.from(awaiting);
+    }
+    if (ref != null) {
+      into["ref"] = RaviJson.from(ref);
+    }
     if (session != null) {
       into["session"] = RaviJson.from(session);
     }
@@ -24896,9 +24968,10 @@ class SessionsReportOptions {
 }
 
 class SessionsReportReturn {
-  const SessionsReportReturn({required this.actionId, required this.messageId, required this.parentSession, required this.requestId, required this.status});
+  const SessionsReportReturn({required this.actionId, this.handoff, required this.messageId, required this.parentSession, required this.requestId, required this.status});
 
   final String actionId;
+  final RaviJson? handoff;
   final String messageId;
   final RaviJson parentSession;
   final String requestId;
@@ -24907,6 +24980,7 @@ class SessionsReportReturn {
   factory SessionsReportReturn.fromJson(Map<String, Object?> json) {
     return SessionsReportReturn(
       actionId: raviJsonAsString(json["actionId"]),
+      handoff: json["handoff"] == null ? null : RaviJson.from(json["handoff"]),
       messageId: raviJsonAsString(json["messageId"]),
       parentSession: RaviJson.from(json["parentSession"]),
       requestId: raviJsonAsString(json["requestId"]),

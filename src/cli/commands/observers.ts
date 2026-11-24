@@ -30,6 +30,7 @@ import {
   dbListObserverBindings,
   dbListObserverRules,
   dbSetObserverRuleEnabled,
+  setObserverRuleEnabled,
   dbUpsertObserverRule,
   explainObserverRulesForSession,
   reconcileObserverBindingsForSession,
@@ -747,7 +748,14 @@ export class ObserverRuleCommands {
     const rule = dbSetObserverRuleEnabled(id, true);
     const payload = { success: true, rule: serializeRule(rule) };
     if (asJson) printJson(payload);
-    else console.log(`Enabled observer rule: ${id}`);
+    else {
+      console.log(`Enabled observer rule: ${id}`);
+      // Enabling does not touch bindings: each one returns when its source session next launches.
+      console.log(
+        "Bindings come back when each source session next launches; to resume a running session now: " +
+          "ravi observers refresh <session> --reconcile attach-missing",
+      );
+    }
     return payload;
   }
 
@@ -759,10 +767,12 @@ export class ObserverRuleCommands {
     asJson?: boolean,
   ) {
     if (!dbGetObserverRule(id)) failObserverRuleNotFound("observers rules disable", id, asJson);
-    const rule = dbSetObserverRuleEnabled(id, false);
+    // Disabling a rule also stops the bindings it created (see setObserverRuleEnabled).
+    const { rule, bindingsDisabled } = setObserverRuleEnabled(id, false);
+    // The JSON shape stays the declared rule-mutation shape; the count is for the human line.
     const payload = { success: true, rule: serializeRule(rule) };
     if (asJson) printJson(payload);
-    else console.log(`Disabled observer rule: ${id}`);
+    else console.log(`Disabled observer rule: ${id} (${bindingsDisabled} binding(s) disabled)`);
     return payload;
   }
 

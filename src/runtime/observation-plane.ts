@@ -376,8 +376,64 @@ export function ensureObservationSchema(): void {
   ensureObservationColumn("observer_rules", "selector", "TEXT");
   ensureObservationColumn("observer_bindings", "selector", "TEXT");
   ensureObservationCommandAccessGrantMigration();
+  ensureBindingsFollowRuleMigration();
   schemaReady = true;
   schemaDbPath = dbPath;
+}
+
+// Runtime lines the source prompt starts with (session surface hint, knowledge audience). They tell
+// the source agent how to answer; an observer reading what the person said only pays for them.
+const OBSERVATION_PREAMBLE_LINE = /^\[(?:session surface|knowledge)\] [^\n]*(?:\n|$)/;
+
+/** The `message.user` preview observers get: the prompt without its runtime lines, truncated. */
+export function observedUserPreview(text: string, maxLength = 500): string {
+  const value = stripObservationPreamble(text);
+  return value.length > maxLength ? `${value.slice(0, maxLength - 15)}... [truncated]` : value;
+}
+
+/** The source prompt without its leading runtime lines, as observers should read it. */
+export function stripObservationPreamble(text: string): string {
+  let out = text;
+  for (let match = OBSERVATION_PREAMBLE_LINE.exec(out); match; match = OBSERVATION_PREAMBLE_LINE.exec(out)) {
+    out = out.slice(match[0].length);
+  }
+  return out;
+}
+
+const BINDINGS_FOLLOW_RULE_MIGRATION_KEY = "observation.bindings-follow-rule.v1";
+
+/**
+ * One-time repair for bindings left delivering by the old disable/rm path, which only refused new
+ * bindings: every enabled binding whose rule is disabled or gone is disabled. Runs once per
+ * database; from then on disable and rm keep bindings in step with their rule.
+ */
+export function ensureBindingsFollowRuleMigration(): { bindingsDisabled: number } {
+  const db = getDb();
+  const done = db.prepare("SELECT value FROM router_meta WHERE key = ?").get(BINDINGS_FOLLOW_RULE_MIGRATION_KEY) as
+    | { value: string }
+    | undefined;
+  if (done?.value === "done") return { bindingsDisabled: 0 };
+  const bindingsDisabled = db.transaction(() => {
+    const changes = db
+      .prepare(
+        `UPDATE observer_bindings SET enabled = 0, updated_at = ?
+         WHERE enabled = 1
+           AND NOT EXISTS (
+             SELECT 1 FROM observer_rules r WHERE r.id = observer_bindings.rule_id AND r.enabled = 1
+           )`,
+      )
+      .run(Date.now()).changes;
+    db.prepare("INSERT OR REPLACE INTO router_meta (key, value, updated_at) VALUES (?, ?, ?)").run(
+      BINDINGS_FOLLOW_RULE_MIGRATION_KEY,
+      "done",
+      Date.now(),
+    );
+    return changes;
+  })();
+  if (bindingsDisabled > 0) {
+    log.info("Disabled observer bindings whose rule is disabled or deleted", { bindingsDisabled });
+  }
+  return { bindingsDisabled };
 }
 
 export interface ObservationCommandAccessGrantMigrationSummary {
@@ -837,8 +893,10 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
 
   const now = Date.now();
   const enabled = input.enabled ?? existing?.enabled ?? true;
-  getDb()
-    .prepare(
+  const db = getDb();
+  // The rule row and the cascade commit together, like `rules disable` and `rules rm`.
+  db.transaction(() => {
+    db.prepare(
       `
         INSERT INTO observer_rules (
           id, enabled, scope, priority, observer_role, observer_agent_id,
@@ -874,8 +932,7 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
           metadata_json = excluded.metadata_json,
           updated_at = excluded.updated_at
       `,
-    )
-    .run(
+    ).run(
       id,
       enabled ? 1 : 0,
       scope,
@@ -904,23 +961,54 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
       now,
     );
 
+    // A rule saved disabled (`rules set --disabled`) stops its bindings too, like `rules disable`.
+    if (!enabled) disableBindingsForRule(id);
+  })();
   return dbGetObserverRule(id)!;
 }
 
+/** Delete a rule and stop every binding it created: a binding never outlives its rule. */
 export function dbDeleteObserverRule(id: string): boolean {
   ensureObservationSchema();
-  const result = getDb().prepare("DELETE FROM observer_rules WHERE id = ?").run(id.trim());
-  return result.changes > 0;
+  const db = getDb();
+  const ruleId = id.trim();
+  return db.transaction(() => {
+    const result = db.prepare("DELETE FROM observer_rules WHERE id = ?").run(ruleId);
+    if (result.changes > 0) disableBindingsForRule(ruleId);
+    return result.changes > 0;
+  })();
 }
 
 export function dbSetObserverRuleEnabled(id: string, enabled: boolean): ObserverRule {
+  return setObserverRuleEnabled(id, enabled).rule;
+}
+
+/**
+ * Enable or disable a rule. Disabling also disables every binding the rule created, so a
+ * disabled rule stops delivering at once instead of only refusing new bindings. Enabling does
+ * not touch bindings: each one comes back when its source session next launches and the rule
+ * matches it again (the binding upsert copies the rule's state).
+ */
+export function setObserverRuleEnabled(id: string, enabled: boolean): { rule: ObserverRule; bindingsDisabled: number } {
   ensureObservationSchema();
   const rule = dbGetObserverRule(id);
   if (!rule) throw new Error(`Observer rule not found: ${id}`);
-  getDb()
-    .prepare("UPDATE observer_rules SET enabled = ?, updated_at = ? WHERE id = ?")
-    .run(enabled ? 1 : 0, Date.now(), id);
-  return dbGetObserverRule(id)!;
+  const db = getDb();
+  const bindingsDisabled = db.transaction(() => {
+    db.prepare("UPDATE observer_rules SET enabled = ?, updated_at = ? WHERE id = ?").run(
+      enabled ? 1 : 0,
+      Date.now(),
+      id,
+    );
+    return enabled ? 0 : disableBindingsForRule(id);
+  })();
+  return { rule: dbGetObserverRule(id)!, bindingsDisabled };
+}
+
+function disableBindingsForRule(ruleId: string): number {
+  return getDb()
+    .prepare("UPDATE observer_bindings SET enabled = 0, updated_at = ? WHERE rule_id = ? AND enabled = 1")
+    .run(Date.now(), ruleId).changes;
 }
 
 export function dbListObserverBindings(
@@ -1351,9 +1439,7 @@ export function ensureObserverBindingsForSession(input: {
 /** Disable every binding a rule created, e.g. when an observed task reaches a terminal state. */
 export function dbDisableObserverBindingsForRule(ruleId: string): number {
   ensureObservationSchema();
-  return getDb()
-    .prepare("UPDATE observer_bindings SET enabled = 0, updated_at = ? WHERE rule_id = ? AND enabled = 1")
-    .run(Date.now(), ruleId.trim()).changes;
+  return disableBindingsForRule(ruleId.trim());
 }
 
 /** Reconcile durable bindings against the current rule/profile desired state. */
