@@ -573,21 +573,21 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/contacts.ts | 21 | triaged-follow-up | rejection-without-binding | src/cli/commands/contacts.ts:7f4a51c2ae6cb3a6ad3ca91b |
 | cli | src/cli/commands/contacts.ts | 292 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:b58cccc7efc96221247f6edb |
 | cli | src/cli/commands/contacts.ts | 799 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:0800f1df84fd38dcc0e74f0a |
-| cli | src/cli/commands/contacts.ts | 1053 | triaged-follow-up | catch-without-binding | src/cli/commands/contacts.ts:f182a24f0270b8eba7ddd078 |
-| cli | src/cli/commands/contacts.ts | 1072 | triaged-follow-up | catch-without-binding | src/cli/commands/contacts.ts:e6150fcf5b0597bb98fd305f |
-| cli | src/cli/commands/contacts.ts | 1104 | triaged-follow-up | catch-without-binding | src/cli/commands/contacts.ts:4006b70fdf499a3b84d2f335 |
-| cli | src/cli/commands/contacts.ts | 1307 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:f1a0d044ca9ad5f0a66db401 |
-| cli | src/cli/commands/contacts.ts | 1362 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:d5032da60f885debdd11b6aa |
-| cli | src/cli/commands/contacts.ts | 1421 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:163e415f8f41825cfaa2862a |
-| cli | src/cli/commands/contacts.ts | 1479 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:fc55aea6351f545ee72c02b1 |
-| cli | src/cli/commands/contacts.ts | 1607 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:578c29df9738b798dfddc1c4 |
-| cli | src/cli/commands/contacts.ts | 1642 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:84c60f7b8f3408ec21f0c04a |
-| cli | src/cli/commands/contacts.ts | 1792 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:6920261fe957bd1c905d7f21 |
-| cli | src/cli/commands/contacts.ts | 1872 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:9589c801cf7286a073e35075 |
-| cli | src/cli/commands/contacts.ts | 2002 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:ee5db11759794b0984bfc94b |
-| cli | src/cli/commands/contacts.ts | 2062 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:a8d708ea9f925a316e4f6923 |
-| cli | src/cli/commands/contacts.ts | 2100 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:e7d8b7490bd9c839ff0fc2b6 |
-| cli | src/cli/commands/contacts.ts | 2139 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:c47fc2f7c999bb41ca5fa531 |
+| cli | src/cli/commands/contacts.ts | 1054 | triaged-follow-up | catch-without-binding | src/cli/commands/contacts.ts:f182a24f0270b8eba7ddd078 |
+| cli | src/cli/commands/contacts.ts | 1073 | triaged-follow-up | catch-without-binding | src/cli/commands/contacts.ts:e6150fcf5b0597bb98fd305f |
+| cli | src/cli/commands/contacts.ts | 1105 | triaged-follow-up | catch-without-binding | src/cli/commands/contacts.ts:4006b70fdf499a3b84d2f335 |
+| cli | src/cli/commands/contacts.ts | 1308 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:f1a0d044ca9ad5f0a66db401 |
+| cli | src/cli/commands/contacts.ts | 1363 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:d5032da60f885debdd11b6aa |
+| cli | src/cli/commands/contacts.ts | 1422 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:163e415f8f41825cfaa2862a |
+| cli | src/cli/commands/contacts.ts | 1480 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:fc55aea6351f545ee72c02b1 |
+| cli | src/cli/commands/contacts.ts | 1608 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:578c29df9738b798dfddc1c4 |
+| cli | src/cli/commands/contacts.ts | 1643 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:84c60f7b8f3408ec21f0c04a |
+| cli | src/cli/commands/contacts.ts | 1793 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:6920261fe957bd1c905d7f21 |
+| cli | src/cli/commands/contacts.ts | 1873 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:9589c801cf7286a073e35075 |
+| cli | src/cli/commands/contacts.ts | 2003 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:ee5db11759794b0984bfc94b |
+| cli | src/cli/commands/contacts.ts | 2063 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:a8d708ea9f925a316e4f6923 |
+| cli | src/cli/commands/contacts.ts | 2101 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:e7d8b7490bd9c839ff0fc2b6 |
+| cli | src/cli/commands/contacts.ts | 2140 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:c47fc2f7c999bb41ca5fa531 |
 | cli | src/cli/commands/context.ts | 456 | fixed | binding retained / no recognized error surface | src/cli/commands/context.ts:6de0e69887316ed0b8bfdf22 |
 | cli | src/cli/commands/context.ts | 716 | fixed | binding retained / no recognized error surface | src/cli/commands/context.ts:ba2c2c58277aeb25eb28a850 |
 | cli | src/cli/commands/context.ts | 738 | fixed | binding retained / no recognized error surface | src/cli/commands/context.ts:59fbe5b5250b9fbf7b7287ee |
@@ -1082,14 +1082,14 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | console-scope | src/console-scope/resolver.ts | 651 | triaged-follow-up | catch-without-binding | src/console-scope/resolver.ts:7d505a740f494987192eac71 |
 | console-scope | src/console-scope/resolver.ts | 660 | triaged-follow-up | catch-without-binding | src/console-scope/resolver.ts:9ba9fe26cc184461a244ed67 |
 | console-scope | src/console-scope/store.ts | 336 | triaged-follow-up | catch-without-binding | src/console-scope/store.ts:dd82a6eab9a7e31ea3ac4859 |
-| contacts.ts | src/contacts.ts | 131 | fixed | binding retained / no recognized error surface | src/contacts.ts:950c70fb9a288d9c71024728 |
-| contacts.ts | src/contacts.ts | 1141 | triaged-follow-up | catch-without-binding | src/contacts.ts:bc40ffa467953d2c90f39f07 |
-| contacts.ts | src/contacts.ts | 1153 | triaged-follow-up | catch-without-binding | src/contacts.ts:b6278988ca184d6ae82bbb14 |
-| contacts.ts | src/contacts.ts | 1162 | triaged-follow-up | catch-without-binding | src/contacts.ts:402303927ca64a8e633e3c46 |
-| contacts.ts | src/contacts.ts | 3075 | triaged-follow-up | catch-without-binding | src/contacts.ts:c567a6d3c533a136996009c0 |
-| contacts.ts | src/contacts.ts | 3899 | triaged-follow-up | rejection-without-binding | src/contacts.ts:d4f8d1b6c70156e1ac59e37f |
-| contacts.ts | src/contacts.ts | 3900 | triaged-follow-up | rejection-without-binding | src/contacts.ts:d4f8d1b6c70156e1ac59e37f |
-| contacts.ts | src/contacts.ts | 8261 | triaged-follow-up | catch-without-binding | src/contacts.ts:5b9c872cdee5fe8960c2260f |
+| contacts.ts | src/contacts.ts | 132 | fixed | binding retained / no recognized error surface | src/contacts.ts:950c70fb9a288d9c71024728 |
+| contacts.ts | src/contacts.ts | 1142 | triaged-follow-up | catch-without-binding | src/contacts.ts:bc40ffa467953d2c90f39f07 |
+| contacts.ts | src/contacts.ts | 1154 | triaged-follow-up | catch-without-binding | src/contacts.ts:b6278988ca184d6ae82bbb14 |
+| contacts.ts | src/contacts.ts | 1163 | triaged-follow-up | catch-without-binding | src/contacts.ts:402303927ca64a8e633e3c46 |
+| contacts.ts | src/contacts.ts | 3129 | triaged-follow-up | catch-without-binding | src/contacts.ts:c567a6d3c533a136996009c0 |
+| contacts.ts | src/contacts.ts | 3946 | triaged-follow-up | rejection-without-binding | src/contacts.ts:d4f8d1b6c70156e1ac59e37f |
+| contacts.ts | src/contacts.ts | 3947 | triaged-follow-up | rejection-without-binding | src/contacts.ts:d4f8d1b6c70156e1ac59e37f |
+| contacts.ts | src/contacts.ts | 8308 | triaged-follow-up | catch-without-binding | src/contacts.ts:5b9c872cdee5fe8960c2260f |
 | costs | src/costs/pricing-catalog.ts | 255 | triaged-follow-up | catch-without-binding | src/costs/pricing-catalog.ts:6313c80f0e29a2794c3fc323 |
 | costs | src/costs/pricing-catalog.ts | 306 | triaged-follow-up | catch-without-binding | src/costs/pricing-catalog.ts:e2413b21d59a5ab0b644dddc |
 | credentials | src/credentials/backends.ts | 108 | no-cause | Process errors may echo secret stdin or arguments; only the fixed Keychain failure may escape. | src/credentials/backends.ts:167696ef3f8aa5396bfd9bae |
