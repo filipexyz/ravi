@@ -163,6 +163,33 @@ describe("active runtime context lifetime", () => {
     expect(resolved?.metadata?.actorPrincipal).toBe(issued.metadata?.actorPrincipal);
   });
 
+  it("renews a person's turn held below break-glass (its deny_* entries are not lost authority)", () => {
+    setCapabilities(["admin:system:*", "execute:executable:*", READ]);
+    const stranger = createContact({ phone: "5511900000777", name: "Stranger" });
+    const { runtimeContext: context } = start(
+      options({
+        prompt: "do something",
+        source: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatId: "120363400000000777@g.us",
+          canonicalChatId: "chat_lease_group",
+          actorType: "contact",
+          contactId: stranger.id,
+        },
+      } as RuntimeRequestContextOptions["prompt"]),
+    );
+    const issued = structuredClone(context);
+    expect(issued.capabilities.some((capability) => capability.permission.startsWith("deny_"))).toBe(true);
+    advance(30 * 60 * 1000);
+    advance(30 * 60 * 1000);
+    advance(30 * 60 * 1000);
+    const resolved = resolveRuntimeContext(issued.contextKey, { touch: false });
+    expect(resolved?.contextId).toBe(issued.contextId);
+    expect(isRuntimeContextLive(context)).toBe(true);
+    expect(canWithCapabilities(resolved!.capabilities, "admin", "system", "*")).toBe(false);
+  });
+
   it("never adds a newly granted capability to an active turn", () => {
     const { runtimeContext: context } = start();
     const issued = structuredClone(context.capabilities);

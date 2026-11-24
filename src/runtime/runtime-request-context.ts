@@ -162,9 +162,13 @@ export function startActiveRuntimeRequestContextLease(
       });
       const identityFields = ["actorPrincipal", "actorResolution", "actorAuthorizationMode", "agentIdentityPrincipal"];
       const sameIdentity = identityFields.every((field) => current.metadata[field] === issued.metadata?.[field]);
+      // `deny_*` (a person held below break-glass) is never fed to the
+      // intersection: a deny of the admin shortcut would erase every key.
+      const positive = (capabilities: ContextCapability[]) =>
+        capabilities.filter((capability) => !capability.permission.startsWith("deny_"));
       const retained = buildEffectiveCapabilities({
-        agentCapabilities: issued.capabilities,
-        actorCapabilities: current.capabilities,
+        agentCapabilities: positive(issued.capabilities),
+        actorCapabilities: positive(current.capabilities),
       });
       const capabilityKeys = (capabilities: ContextCapability[]) =>
         [
@@ -173,7 +177,14 @@ export function startActiveRuntimeRequestContextLease(
           ),
         ].sort();
       const retainedKeys = new Set(capabilityKeys(retained));
-      if (!sameIdentity || !capabilityKeys(issued.capabilities).every((key) => retainedKeys.has(key))) {
+      // `deny_*` entries (a person held below break-glass) are not positive
+      // authority: compare positive keys only. A deny the current authority
+      // has and the issued one lacks is a reduction, so it revokes.
+      const isDeny = (capability: ContextCapability) => capability.permission.startsWith("deny_");
+      const issuedPositive = positive(issued.capabilities);
+      const issuedDenyKeys = new Set(capabilityKeys(issued.capabilities.filter(isDeny)));
+      const newDeny = capabilityKeys(current.capabilities.filter(isDeny)).some((key) => !issuedDenyKeys.has(key));
+      if (!sameIdentity || newDeny || !capabilityKeys(issuedPositive).every((key) => retainedKeys.has(key))) {
         stop(true, "turn_authority_reduced");
         return;
       }
