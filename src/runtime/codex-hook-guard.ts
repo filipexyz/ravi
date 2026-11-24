@@ -121,6 +121,7 @@ function safeRealpath(path: string): string | null {
   try {
     return realpathSync(path);
   } catch {
+    // no-cause: an unreadable path only means "not the generated gate file", which the caller refuses.
     return null;
   }
 }
