@@ -3270,6 +3270,7 @@ describe("SessionCommands attach hints", () => {
         reads.push(endpoint);
         return { state: "closed", merged: true, head: { sha } };
       });
+      const reportsBeforeAlien = reportedSlackThreads.length;
       const alien = (await new SessionCommands().report(
         "PR alheia",
         undefined,
@@ -3280,6 +3281,7 @@ describe("SessionCommands attach hints", () => {
       )) as Record<string, any>;
       expect(reads).toEqual([]);
       expect(alien.handoff).toMatchObject({ kind: "merge", status: "open", ref: `other/repo#9@${sha}` });
+      expect(reportedSlackThreads.length).toBe(reportsBeforeAlien + 1);
       expect(reportedSlackThreads.at(-1)?.message).not.toContain("já está");
 
       // A followed PR whose state cannot be read (gh down, 404, odd payload) leaves the wait open and the
@@ -3291,9 +3293,12 @@ describe("SessionCommands attach hints", () => {
         replySession: "dev-slack-t-1713000000000100",
       });
       try {
-        setReviewGithubReadForTest(async () => {
+        const failedReads: string[] = [];
+        setReviewGithubReadForTest(async (endpoint) => {
+          failedReads.push(endpoint);
           throw new Error("gh api: 502");
         });
+        const reportsBeforeUnread = reportedSlackThreads.length;
         const unread = (await new SessionCommands().report(
           "MERGEÁVEL",
           undefined,
@@ -3302,7 +3307,11 @@ describe("SessionCommands attach hints", () => {
           sha,
           "filipexyz/ravi#939",
         )) as Record<string, any>;
+        // The read really was attempted (a guard that skipped it would also leave the wait open), and it is the
+        // report of this call, not the previous one, that went out.
+        expect(failedReads).toEqual([expect.stringContaining("/pulls/939")]);
         expect(unread.handoff).toMatchObject({ kind: "merge", status: "open", ref: `filipexyz/ravi#939@${sha}` });
+        expect(reportedSlackThreads.length).toBe(reportsBeforeUnread + 1);
         expect(reportedSlackThreads.at(-1)?.message).not.toContain("já está");
       } finally {
         dbDeleteTrigger(followed.id);
