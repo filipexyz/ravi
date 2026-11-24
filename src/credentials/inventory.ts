@@ -45,7 +45,10 @@ export async function buildCredentialInventory(
   const describe = input.describe === false ? null : (input.describeSecret ?? ((ref: string) => describeSecret(ref)));
   const descriptions = describe
     ? await mapLimited(page.items, DESCRIBE_CONCURRENCY, (record) =>
-        describe(record.secretRef).catch((): CredentialSecretDescription => ({ available: false, reason: "error" })),
+        describe(record.secretRef).catch(
+          // no-cause: A backend error can echo the secret ref or a token; the snapshot keeps only the fixed reason.
+          (): CredentialSecretDescription => ({ available: false, reason: "error" }),
+        ),
       )
     : null;
 

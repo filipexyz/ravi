@@ -70,6 +70,7 @@ export async function describeSecret(
   try {
     parsed = parseVaultRef(secretRef);
   } catch {
+    // no-cause: The parser error quotes the ref; the description carries only the fixed reason.
     return { available: false, reason: "invalid_ref" };
   }
   const env = deps.env ?? process.env;
@@ -85,6 +86,7 @@ export async function describeSecret(
       signal: AbortSignal.timeout(deps.timeoutMs ?? 5_000),
     });
   } catch {
+    // no-cause: Transport errors can carry the Vault URL and path; degrade to the fixed reason, never retry a data read.
     return { available: false, reason: "unreachable" };
   }
   if (response.status === 404) {
@@ -97,6 +99,7 @@ export async function describeSecret(
   try {
     payload = await response.json();
   } catch {
+    // no-cause: A malformed metadata body is a backend fault with no secret to report; the item degrades to "error".
     return { available: false, reason: "error" };
   }
   const data = asRecord(asRecord(payload).data);
