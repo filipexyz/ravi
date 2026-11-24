@@ -35,7 +35,11 @@ import { isWithheldByDeny } from "../permissions/capability-snapshot.js";
 import { emitPermissionDeniedAudit, recordAndEmitPermissionDenial } from "../permissions/denials.js";
 import { buildAuditContextProvenance, type AuditContextProvenance } from "../permissions/audit-provenance.js";
 import { SDK_TOOLS } from "../cli/tool-registry.js";
-import { fileWriteToolTargets, providerConfigWriteDenial } from "../permissions/provider-config-paths.js";
+import {
+  fileWriteToolTargets,
+  providerConfigWriteDenial,
+  isActorBreakGlassLimited,
+} from "../permissions/provider-config-paths.js";
 import type { ContextCapability, ContextRecord, ContextSource } from "../router/router-db.js";
 
 const log = logger.child("bash:hook");
@@ -772,6 +776,7 @@ function checkExecutablePermissionsForContext(command: string, ctx: BashPermissi
           agentId: ctx.agentId,
           targets: [write.target],
           cwd,
+          restrictToWorkspace: isActorBreakGlassLimited(ctx.metadata),
         }),
       ),
     )
@@ -1147,6 +1152,7 @@ export function createToolPermissionHook(options: BashHookOptions): HookCallback
       agentId,
       targets: fileWriteToolTargets(toolName, input.tool_input),
       cwd: input.cwd,
+      restrictToWorkspace: isActorBreakGlassLimited(bashContext.metadata),
     });
     if (configWriteDenial) {
       log.warn("Tool blocked: provider settings write", { agentId, tool: toolName });

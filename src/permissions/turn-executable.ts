@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import { which } from "bun";
 import { getContext } from "../cli/context.js";
 import { CliExpectedError } from "../cli/expected-error.js";
 import { isWithheldByDeny } from "./capability-snapshot.js";
@@ -14,9 +15,16 @@ import { isWithheldByDeny } from "./capability-snapshot.js";
 export function assertTurnMayExecute(executable: string, op: string): void {
   const context = getContext()?.context;
   if (!context || !Array.isArray(context.capabilities)) return;
-  const name = basename(executable.trim());
+  const trimmed = executable.trim();
+  const name = basename(trimmed);
   if (!name) return;
-  if (!isWithheldByDeny(context.capabilities, "execute", "executable", name)) return;
+  // An explicit grant names a command, not a file: a path is the granted
+  // command only when it is where PATH resolves that name.
+  const pathMatchesName = !trimmed.includes("/") || which(name) === trimmed;
+  const withheld = pathMatchesName
+    ? isWithheldByDeny(context.capabilities, "execute", "executable", name)
+    : isWithheldByDeny(context.capabilities, "execute", "executable", "*");
+  if (!withheld) return;
   throw new CliExpectedError(
     `${op} cannot run '${name}' in this turn: running executables is not granted to the person who asked.`,
     "PERMISSION_DENIED",

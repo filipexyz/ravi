@@ -52,5 +52,9 @@ describe("app commands spawn only what the turn may execute", () => {
       { permission: "deny_execute", objectType: "executable", objectId: "*" },
     ]);
     expect(() => runWithContext(withExplicit, () => resolveRaviAppCommand("omie orders list"))).not.toThrow();
+    // A file elsewhere that only shares the granted name is not the granted command.
+    expect(() => runWithContext(withExplicit, () => resolveRaviAppCommand("/tmp/elsewhere/omie orders list"))).toThrow(
+      expect.objectContaining({ code: "PERMISSION_DENIED" }),
+    );
   });
 });

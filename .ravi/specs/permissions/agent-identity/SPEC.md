@@ -125,9 +125,14 @@ Ungoverned chats keep `agent_identity ∩ turn_caps`, with one exception:
   `execute:executable:*` cannot spawn anything but Ravi itself. Observer rules
   and task automation updates are guarded at the store too; pausing a session
   followup stays allowed, re-enabling it is guarded.
-- Known residual risk: file tools (`use:tool:Write|Edit|Read`) stay open
-  through the shortcut, so a person without grants can edit files in the
-  agent's workspace (AGENTS.md, MEMORY.md, skills) that later autonomous turns
+- File writes for that person are an allowlist: the session workspace and
+  the temp directory, symlinks resolved; the workspace never counts when it is
+  the filesystem root or the home directory. Operator config the daemon turns
+  into code at boot (`~/.ravi/.env`, the installed bundle, shell rc, launch
+  agents) is refused without `execute:executable:*` or `admin:system:*`
+  (`providerConfigWriteDenial` with `restrictToWorkspace`).
+- Known residual risk: inside the workspace, file tools stay open, so a
+  person without grants can edit files in the agent's workspace (AGENTS.md, MEMORY.md, skills) that later autonomous turns
   read as instructions. Follow-up of design, not closed here.
 - Consequence: revoking the last grant of a chat can never widen a participant
   to the agent's break-glass.

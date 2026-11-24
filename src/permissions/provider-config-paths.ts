@@ -1,5 +1,5 @@
 import { lstatSync, readlinkSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, parse, resolve, sep } from "node:path";
 import { normalizeRuntimeBuiltinToolName } from "../cli/tool-registry.js";
 import type { CapabilityContextLike } from "./capability-context.js";
@@ -115,9 +115,54 @@ export function providerConfigWriteDenial(input: {
   agentId?: string | null;
   targets: string[];
   cwd?: string;
+  /**
+   * A person's turn held below the agent's break-glass: file writes become an
+   * allowlist (the session workspace and the temp directory). Operator config
+   * (`~/.ravi/.env`, the installed bundle, shell rc, launch agents) turns into
+   * code at the next boot, which is what `execute:executable:*` guards.
+   */
+  restrictToWorkspace?: boolean;
 }): string | undefined {
+  const breakGlass = input.can("admin", "system", "*") || input.can("execute", "executable", "*");
+  if (input.restrictToWorkspace && !breakGlass) {
+    const outside = input.targets.filter((target) => !isWorkspaceOrTempPath(target, input.cwd));
+    if (outside.length > 0) {
+      return `Permission denied: agent:${input.agentId ?? "unknown"} cannot write outside the session workspace for the person who asked (${outside.join(", ")}); writing there needs execute:executable:* or admin:system:*`;
+    }
+  }
   const protectedTargets = input.targets.filter((target) => isProviderConfigPath(target, input.cwd));
   if (protectedTargets.length === 0) return undefined;
-  if (input.can("admin", "system", "*") || input.can("execute", "executable", "*")) return undefined;
+  if (breakGlass) return undefined;
   return `Permission denied: agent:${input.agentId ?? "unknown"} cannot write runtime provider settings (${protectedTargets.join(", ")}); they can run host commands and need execute:executable:* or admin:system:*`;
+}
+
+/** Whether a turn's metadata marks a person held below the agent's break-glass. */
+export function isActorBreakGlassLimited(metadata: Record<string, unknown> | undefined | null): boolean {
+  const withheld = metadata?.actorBreakGlassWithheld;
+  return Array.isArray(withheld) && withheld.length > 0;
+}
+
+function tempRoots(): string[] {
+  const roots = [tmpdir(), "/tmp", "/private/tmp"];
+  return roots.flatMap((root) => {
+    const physical = physicalPathForPermissionCheck(root);
+    return physical ? [physical] : [];
+  });
+}
+
+function isUnder(path: string, root: string): boolean {
+  return path === root || path.startsWith(root.endsWith(sep) ? root : `${root}${sep}`);
+}
+
+/** The physical target is inside the session workspace or a temp directory (symlinks followed). */
+function isWorkspaceOrTempPath(target: string, cwd?: string): boolean {
+  if (!target) return false;
+  const expanded = target.replace(/^~(?=\/|$)/, homedir());
+  const physical = physicalPathForPermissionCheck(expanded, cwd);
+  if (!physical) return false;
+  const workspace = physicalPathForPermissionCheck(cwd ?? process.cwd());
+  if (workspace && workspace !== parse(workspace).root && workspace !== homedir() && isUnder(physical, workspace)) {
+    return true;
+  }
+  return tempRoots().some((root) => isUnder(physical, root));
 }

@@ -48,7 +48,12 @@ import {
 import { formatSkillNotAuthorizedReason, isSkillAuthorizedForAgent } from "./skill-authorization.js";
 import { isLibraryPluginSkillAllowedForTurn } from "../library/session-plugins.js";
 import { isOperatorOwnTurn } from "../library/turn.js";
-import { contextCan, fileWriteToolTargets, providerConfigWriteDenial } from "../permissions/provider-config-paths.js";
+import {
+  contextCan,
+  fileWriteToolTargets,
+  providerConfigWriteDenial,
+  isActorBreakGlassLimited,
+} from "../permissions/provider-config-paths.js";
 import {
   commandLineRunsSkillRemediation,
   extractRequestedSkillsFromCommandLine,
@@ -728,6 +733,7 @@ async function authorizeRuntimeToolUse(
     agentId: options.agentId,
     targets: fileWriteToolTargets(request.toolName, request.input),
     cwd: options.cwd,
+    restrictToWorkspace: isActorBreakGlassLimited(options.context?.metadata),
   });
   if (configWriteDenial) {
     emitRuntimePolicyDenied(options, {

@@ -39,3 +39,6 @@
 - An app command resolving to anything but Ravi MUST be refused in a turn
   that withholds `execute:executable:*` (`turn-executable.test.ts`); observer
   rules written from such a turn MUST be refused (`automation-store-guard.test.ts`).
+- A limited person's file write outside the session workspace and temp
+  (`~/.ravi/.env`, installed bundle, `~/.zshrc`, LaunchAgents, a symlink
+  escaping the workspace) MUST be refused (`provider-config-writes.test.ts`).

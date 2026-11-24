@@ -195,7 +195,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | bash | src/bash/executable-path.ts | 238 | no-cause | an unreadable file cannot be compared; the caller treats it as unidentified, not as trusted | src/bash/executable-path.ts:307506ff22dc226e7a23ea4a |
 | bash | src/bash/hook.ts | 285 | no-cause | unanalyzable text is checked whole, here-doc data included, which only refuses more | src/bash/hook.ts:b654ee92365f4c706a1fd69b |
 | bash | src/bash/hook.ts | 752 | fixed | binding retained / no recognized error surface | src/bash/hook.ts:b21c9ce8dfe00bd7169b9c1a |
-| bash | src/bash/hook.ts | 941 | fixed | binding retained / no recognized error surface | src/bash/hook.ts:7e03a7087d67033e4dc89c20 |
+| bash | src/bash/hook.ts | 942 | fixed | binding retained / no recognized error surface | src/bash/hook.ts:7e03a7087d67033e4dc89c20 |
 | bash | src/bash/parser.ts | 124 | fixed | binding retained / no recognized error surface | src/bash/parser.ts:e337326684f08167ed5c281d |
 | bash | src/bash/parser.ts | 160 | fixed | binding retained / no recognized error surface | src/bash/parser.ts:f7fddc1ded126c0cda52b2f6 |
 | bash | src/bash/parser.ts | 833 | fixed | binding retained / no recognized error surface | src/bash/parser.ts:6dcaeabe2d97e908cf41481b |
@@ -1987,8 +1987,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/host-hooks.ts | 446 | fixed | binding retained / no recognized error surface | src/runtime/host-hooks.ts:40939d36cb61945b928e347e |
 | runtime-chat | src/runtime/host-hooks.ts | 463 | triaged-follow-up | rejection-without-binding | src/runtime/host-hooks.ts:b03b3ddb89cfa3783292cbb7 |
 | runtime-chat | src/runtime/host-hooks.ts | 505 | fixed | binding retained / no recognized error surface | src/runtime/host-hooks.ts:1294281309897e6d88b6c17c |
-| runtime-chat | src/runtime/host-services.ts | 839 | triaged-follow-up | rejection-without-binding | src/runtime/host-services.ts:5360deba0585f6db9ae0489e |
-| runtime-chat | src/runtime/host-services.ts | 872 | triaged-follow-up | rejection-without-binding | src/runtime/host-services.ts:5360deba0585f6db9ae0489e |
+| runtime-chat | src/runtime/host-services.ts | 840 | triaged-follow-up | rejection-without-binding | src/runtime/host-services.ts:5360deba0585f6db9ae0489e |
+| runtime-chat | src/runtime/host-services.ts | 873 | triaged-follow-up | rejection-without-binding | src/runtime/host-services.ts:5360deba0585f6db9ae0489e |
 | sessions | src/runtime/host-session.ts | 594 | triaged-follow-up | rejection-without-binding | src/runtime/host-session.ts:dbc4363ca5a44e3e1bc6811e |
 | runtime-chat | src/runtime/host-subscriptions.ts | 193 | fixed | binding retained / no recognized error surface | src/runtime/host-subscriptions.ts:e3b606d88f7de30df1125e01 |
 | runtime-chat | src/runtime/host-subscriptions.ts | 198 | fixed | binding retained / no recognized error surface | src/runtime/host-subscriptions.ts:7b51dde255a3e70c4aef4f10 |

@@ -19,7 +19,7 @@
  */
 
 import { isAbsolute, resolve } from "node:path";
-import { providerConfigWriteDenial } from "../permissions/provider-config-paths.js";
+import { providerConfigWriteDenial, isActorBreakGlassLimited } from "../permissions/provider-config-paths.js";
 import { canWithCapabilityContext } from "../permissions/provider-runtime.js";
 import { getContext } from "./context.js";
 import { CliExpectedError } from "./expected-error.js";
@@ -71,7 +71,12 @@ export function assertCallerFileAccess(path: string, mode: CallerPathMode): void
   const denial = !allowed
     ? `Permission denied: this context cannot ${mode} local files (${path}); it needs use:tool:${tool}`
     : mode === "write"
-      ? providerConfigWriteDenial({ can, agentId: ctx?.agentId ?? context.agentId, targets: [path] })
+      ? providerConfigWriteDenial({
+          can,
+          agentId: ctx?.agentId ?? context.agentId,
+          targets: [path],
+          restrictToWorkspace: isActorBreakGlassLimited(context.metadata),
+        })
       : undefined;
   if (denial) {
     throw new CliExpectedError(denial, "PERMISSION_DENIED", 1, "Ask the operator for file access, or use stdout");
