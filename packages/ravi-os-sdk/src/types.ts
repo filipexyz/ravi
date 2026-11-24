@@ -20517,12 +20517,15 @@ export type SessionsHandoffAckReturn = {
 
 /** Input shape for `sessions.handoffs`. */
 export type SessionsHandoffsInput = {
+  all?: boolean;
   session?: string;
 };
 
 /** Return shape for `sessions.handoffs`. */
 export type SessionsHandoffsReturn = {
   handoffs: Array<{
+    ackReason: string | null;
+    acknowledgedAt: number | null;
     ageMin: number;
     id: string;
     kind: "review" | "decision" | "merge" | "dispatch" | "instruction";
@@ -20535,6 +20538,7 @@ export type SessionsHandoffsReturn = {
     };
     ref: string | null;
     since: number;
+    status: "open" | "acknowledged" | "superseded";
     thread: {
       sessionKey: string;
       sessionName: string;
@@ -20731,6 +20735,7 @@ export type SessionsRenameReturn = Record<string, unknown>;
 export type SessionsReportInput = {
   awaiting?: string;
   message: string;
+  pr?: string;
   ref?: string;
   session?: string;
 };
@@ -20742,13 +20747,30 @@ export type SessionsReportReturn = {
     id: string;
     kind: "review" | "decision" | "merge" | "dispatch" | "instruction";
     ref: string | null;
+    status: "open" | "acknowledged" | "superseded";
   };
+  handoffError?: string;
   messageId: string;
   parentSession: {
     sessionKey: string;
     sessionName: string;
   };
   requestId: string;
+  reviewDispatch?: ({
+    gate: {
+      checkRunId: number | null;
+      completedAt: string | null;
+      name: string;
+    };
+    model: string;
+    provider: string;
+    replayed: boolean;
+    requestId: string;
+    status: "dispatched";
+  }) | ({
+    reason: string;
+    status: "skipped";
+  });
   status: "published";
 };
 

@@ -28927,17 +28927,23 @@ public struct SessionsHandoffAckReturn: Codable, Sendable {
 }
 
 public struct SessionsHandoffsOptions: Codable, Sendable {
+  public var all: Bool?
   public var session: String?
 
-  public init(session: String? = nil) {
+  public init(all: Bool? = nil, session: String? = nil) {
+    self.all = all
     self.session = session
   }
 
   enum CodingKeys: String, CodingKey {
+    case all = "all"
     case session = "session"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.all {
+      body["all"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.session {
       body["session"] = try RaviJSON.fromEncodable(value)
     }
@@ -29222,17 +29228,20 @@ public typealias SessionsRenameReturn = [String: RaviJSON]
 
 public struct SessionsReportOptions: Codable, Sendable {
   public var awaiting: String?
+  public var pr: String?
   public var ref: String?
   public var session: String?
 
-  public init(awaiting: String? = nil, ref: String? = nil, session: String? = nil) {
+  public init(awaiting: String? = nil, pr: String? = nil, ref: String? = nil, session: String? = nil) {
     self.awaiting = awaiting
+    self.pr = pr
     self.ref = ref
     self.session = session
   }
 
   enum CodingKeys: String, CodingKey {
     case awaiting = "awaiting"
+    case pr = "pr"
     case ref = "ref"
     case session = "session"
   }
@@ -29240,6 +29249,9 @@ public struct SessionsReportOptions: Codable, Sendable {
   func encodeBody(into body: inout [String: RaviJSON]) throws {
     if let value = self.awaiting {
       body["awaiting"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.pr {
+      body["pr"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.ref {
       body["ref"] = try RaviJSON.fromEncodable(value)
@@ -29253,26 +29265,32 @@ public struct SessionsReportOptions: Codable, Sendable {
 public struct SessionsReportReturn: Codable, Sendable {
   public var actionId: String
   public var handoff: RaviJSON?
+  public var handoffError: String?
   public var messageId: String
   public var parentSession: RaviJSON
   public var requestId: String
+  public var reviewDispatch: RaviJSON?
   public var status: String
 
-  public init(actionId: String, handoff: RaviJSON? = nil, messageId: String, parentSession: RaviJSON, requestId: String, status: String) {
+  public init(actionId: String, handoff: RaviJSON? = nil, handoffError: String? = nil, messageId: String, parentSession: RaviJSON, requestId: String, reviewDispatch: RaviJSON? = nil, status: String) {
     self.actionId = actionId
     self.handoff = handoff
+    self.handoffError = handoffError
     self.messageId = messageId
     self.parentSession = parentSession
     self.requestId = requestId
+    self.reviewDispatch = reviewDispatch
     self.status = status
   }
 
   enum CodingKeys: String, CodingKey {
     case actionId = "actionId"
     case handoff = "handoff"
+    case handoffError = "handoffError"
     case messageId = "messageId"
     case parentSession = "parentSession"
     case requestId = "requestId"
+    case reviewDispatch = "reviewDispatch"
     case status = "status"
   }
 }

@@ -5,8 +5,11 @@ import { closeSessionStore, getOrCreateSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { handoffEventPayload } from "./events.js";
 import {
+  HANDOFF_EXPIRY_MS,
   HANDOFF_OWNER_ESCALATION_MS,
   HANDOFF_PARENT_NUDGE_MS,
+  HANDOFF_REMINDER_WINDOW_MS,
+  handoffsForReminder,
   planHandoffActions,
   reconcileHandoffs,
   type HandoffDeliveryPorts,
@@ -15,6 +18,7 @@ import {
   acknowledgeChildHandoffs,
   acknowledgeHandoffById,
   declareHandoff,
+  HANDOFF_KINDS_ANSWERED_BY_MESSAGE,
   listOpenHandoffs,
   ownerHandoffNoticeText,
 } from "./service.js";
@@ -136,10 +140,16 @@ describe("handoffs store and reconciler", () => {
         return true;
       },
     };
-    expect(await reconcileHandoffs({ now: T0 + 5 * 60_000, ports })).toEqual({ nudged: 0, escalated: 0, failures: 0 });
+    expect(await reconcileHandoffs({ now: T0 + 5 * 60_000, ports })).toEqual({
+      nudged: 0,
+      escalated: 0,
+      expired: 0,
+      failures: 0,
+    });
     expect(await reconcileHandoffs({ now: T0 + HANDOFF_PARENT_NUDGE_MS, ports })).toEqual({
       nudged: 2,
       escalated: 0,
+      expired: 0,
       failures: 0,
     });
     // One reminder turn for the parent, naming both waits.
@@ -150,6 +160,7 @@ describe("handoffs store and reconciler", () => {
     expect(await reconcileHandoffs({ now: T0 + HANDOFF_OWNER_ESCALATION_MS, ports })).toEqual({
       nudged: 0,
       escalated: 2,
+      expired: 0,
       failures: 0,
     });
     expect(ownerCalls).toEqual([[CHILD_A, CHILD_B]]);
@@ -166,7 +177,7 @@ describe("handoffs store and reconciler", () => {
       },
     };
     const result = await reconcileHandoffs({ now: T0 + HANDOFF_OWNER_ESCALATION_MS, ports });
-    expect(result).toEqual({ nudged: 0, escalated: 0, failures: 1 });
+    expect(result).toEqual({ nudged: 0, escalated: 0, expired: 0, failures: 1 });
     expect(getHandoff(h.id)?.parentNudgedAt).toBeNull();
     expect(getHandoff(h.id)?.ownerEscalatedAt).toBeNull();
   });
@@ -199,6 +210,91 @@ describe("handoffs store and reconciler", () => {
     expect(text).toContain("2 threads esperam a sessão main há mais de 45 min");
     expect(text).toContain("thread-a espera revisão (sha1) há 45 min");
     expect(text).toContain("thread-b espera decisão há 45 min");
+    // The parent was never reminded in these rows: the notice must not claim it was.
+    expect(text).toContain("O lembrete à sessão main não saiu");
+    const reminded = ownerHandoffNoticeText(
+      PARENT,
+      [handoff({ parentNudgedAt: T0 + 1 })],
+      T0 + HANDOFF_OWNER_ESCALATION_MS,
+    );
+    expect(reminded).toContain("A sessão main já foi lembrada");
+  });
+
+  it("a message to the thread closes only instruction and decision waits", async () => {
+    const review = await declareHandoff({
+      childSessionKey: CHILD_A,
+      parentSessionKey: PARENT,
+      kind: "review",
+      now: T0,
+    });
+    await acknowledgeChildHandoffs(CHILD_A, "parent sent instructions", T0 + 1, HANDOFF_KINDS_ANSWERED_BY_MESSAGE);
+    expect(getHandoff(review.id)?.status).toBe("open");
+    const decision = await declareHandoff({
+      childSessionKey: CHILD_B,
+      parentSessionKey: PARENT,
+      kind: "decision",
+      now: T0,
+    });
+    await acknowledgeChildHandoffs(CHILD_B, "parent sent instructions", T0 + 1, HANDOFF_KINDS_ANSWERED_BY_MESSAGE);
+    expect(getHandoff(decision.id)?.status).toBe("acknowledged");
+  });
+
+  it("claims the owner notice before delivering and releases it when delivery fails", async () => {
+    const h = await declareHandoff({ childSessionKey: CHILD_A, parentSessionKey: PARENT, kind: "merge", now: T0 });
+    let seenClaimed: number | null | undefined;
+    const failing: HandoffDeliveryPorts = {
+      notifyOwner: async () => {
+        seenClaimed = getHandoff(h.id)?.ownerEscalatedAt;
+        return false;
+      },
+    };
+    const now = T0 + HANDOFF_OWNER_ESCALATION_MS;
+    expect(await reconcileHandoffs({ now, ports: failing })).toMatchObject({ escalated: 0 });
+    expect(seenClaimed).toBe(now);
+    expect(getHandoff(h.id)?.ownerEscalatedAt).toBeNull();
+    let calls = 0;
+    const ok: HandoffDeliveryPorts = {
+      notifyOwner: async () => {
+        calls++;
+        return true;
+      },
+    };
+    expect(await reconcileHandoffs({ now: now + 30_000, ports: ok })).toMatchObject({ escalated: 1 });
+    await reconcileHandoffs({ now: now + 60_000, ports: ok });
+    expect(calls).toBe(1);
+  });
+
+  it("an overlapping tick does nothing while one is delivering", async () => {
+    await declareHandoff({ childSessionKey: CHILD_A, parentSessionKey: PARENT, kind: "merge", now: T0 });
+    let release: () => void = () => {};
+    let calls = 0;
+    const slow: HandoffDeliveryPorts = {
+      notifyOwner: () => {
+        calls++;
+        return new Promise<boolean>((resolve) => {
+          release = () => resolve(true);
+        });
+      },
+    };
+    const now = T0 + HANDOFF_OWNER_ESCALATION_MS;
+    const first = reconcileHandoffs({ now, ports: slow });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(await reconcileHandoffs({ now: now + 30_000, ports: slow })).toMatchObject({ skipped: true });
+    release();
+    expect(await first).toMatchObject({ escalated: 1 });
+    expect(calls).toBe(1);
+  });
+
+  it("expires a wait nobody acted on for 7 days and lists only recent or due waits in a reminder", async () => {
+    const old = await declareHandoff({ childSessionKey: CHILD_A, parentSessionKey: PARENT, kind: "review", now: T0 });
+    const now = T0 + HANDOFF_EXPIRY_MS;
+    expect(await reconcileHandoffs({ now, ports: {} })).toMatchObject({ expired: 1 });
+    expect(getHandoff(old.id)?.ackReason).toBe("expired: no action for 7 days");
+
+    const stale = handoff({ id: "old", createdAt: T0 - 2 * HANDOFF_REMINDER_WINDOW_MS, parentNudgedAt: T0 });
+    const fresh = handoff({ id: "fresh", createdAt: T0 - 60_000 });
+    const due = handoff({ id: "due", createdAt: T0 - HANDOFF_PARENT_NUDGE_MS });
+    expect(handoffsForReminder([stale, fresh, due], PARENT, [due], T0).map((h) => h.id)).toEqual(["fresh", "due"]);
   });
 });
 

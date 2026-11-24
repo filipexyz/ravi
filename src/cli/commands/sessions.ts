@@ -233,11 +233,25 @@ import {
   acknowledgeChildHandoffs,
   acknowledgeHandoffById,
   declareHandoff,
+  HANDOFF_KINDS_ANSWERED_BY_MESSAGE,
   listOpenHandoffs,
   newHandoffId,
   sessionDisplayName,
 } from "../../handoffs/service.js";
-import { HANDOFF_KINDS, type Handoff, isHandoffKind } from "../../handoffs/store.js";
+import { HANDOFF_KINDS, type Handoff, isHandoffKind, listHandoffs } from "../../handoffs/store.js";
+import {
+  buildReviewerBrief,
+  decideReviewDispatch,
+  isFullSha,
+  parsePullRequestRef,
+  pickReviewerRuntime,
+  readReviewEvidence,
+  reviewAutoDispatchEnabled,
+  reviewGateCheckName,
+  reviewGithubRead,
+  reviewThreadKey,
+  type ReviewTarget,
+} from "../../handoffs/review-dispatch.js";
 import { describeHandoff } from "../../handoffs/reconcile.js";
 import {
   buildThreadHandoffPrompt,
@@ -623,8 +637,28 @@ export const sessionReportReturnSchema = z
         id: z.string(),
         kind: z.enum(HANDOFF_KINDS),
         ref: z.string().nullable(),
+        status: z.enum(["open", "acknowledged", "superseded"]),
       })
       .strict()
+      .optional(),
+    // The report was delivered but its wait could not be written: do not send the report again.
+    handoffError: z.string().optional(),
+    reviewDispatch: z
+      .discriminatedUnion("status", [
+        z
+          .object({
+            status: z.literal("dispatched"),
+            requestId: z.string(),
+            replayed: z.boolean(),
+            provider: z.string(),
+            model: z.string(),
+            gate: z
+              .object({ name: z.string(), checkRunId: z.number().nullable(), completedAt: z.string().nullable() })
+              .strict(),
+          })
+          .strict(),
+        z.object({ status: z.literal("skipped"), reason: z.string() }).strict(),
+      ])
       .optional(),
   })
   .strict();
@@ -643,6 +677,9 @@ export const sessionHandoffsReturnSchema = z
           ageMin: z.number(),
           parentNudgedAt: z.number().nullable(),
           ownerEscalatedAt: z.number().nullable(),
+          status: z.enum(["open", "acknowledged", "superseded"]),
+          acknowledgedAt: z.number().nullable(),
+          ackReason: z.string().nullable(),
         })
         .strict(),
     ),
@@ -7302,6 +7339,42 @@ export class SessionCommands {
     })
     idempotencyKey?: string,
   ) {
+    const queued = await this.queueThread({
+      message,
+      model,
+      provider,
+      effort,
+      thinking,
+      sessionOverride,
+      idempotencyKey,
+    });
+    if (!queued) return;
+    const { payload } = queued;
+    if (asJson) printJson(payload);
+    else if (payload.replayed) {
+      console.log(`Slack thread already requested in ${queued.chatId} (${queued.status}): ${payload.requestId}`);
+    } else console.log(`Queued Slack thread creation in ${queued.chatId}`);
+    return payload;
+  }
+
+  /** The body of create-thread without printing: also used to open the reviewer's thread from a report. */
+  private async queueThread({
+    message,
+    model,
+    provider,
+    effort,
+    thinking,
+    sessionOverride,
+    idempotencyKey,
+  }: {
+    message: string;
+    model?: string;
+    provider?: string;
+    effort?: string;
+    thinking?: string;
+    sessionOverride?: string;
+    idempotencyKey?: string;
+  }) {
     const initialMessage = decodeLiteralLineBreaks(message).trim();
     if (!initialMessage) {
       fail("Initial thread message is required");
@@ -7509,13 +7582,7 @@ export class SessionCommands {
         thinkingLevel: lifecycle.thinkingLevel ?? null,
       },
     } satisfies z.input<typeof sessionCreateThreadReturnSchema>;
-    if (asJson) printJson(payload);
-    else if (replayed) {
-      console.log(
-        `Slack thread already requested in ${lifecycle.platformChatId} (${lifecycle.status}): ${lifecycle.requestId}`,
-      );
-    } else console.log(`Queued Slack thread creation in ${creationTarget.platformChatId}`);
-    return payload;
+    return { payload, status: lifecycle.status, chatId: creationTarget.platformChatId };
   }
 
   @Command({
@@ -7708,6 +7775,12 @@ export class SessionCommands {
       description: "What the parent should act on (commit SHA, PR number). Only with --awaiting",
     })
     ref?: string,
+    @Option({
+      flags: "--pr <owner/repo#number>",
+      description:
+        "With --awaiting review and --ref <full SHA>: the PR to review. When that SHA is the PR head and its quality gate passed, the runtime opens the independent review itself (reviewer on another model)",
+    })
+    pr?: string,
   ) {
     if (!message.trim()) {
       throw new CliExpectedError("Report message is required", "USAGE_ERROR", 2);
@@ -7722,6 +7795,18 @@ export class SessionCommands {
     }
     if (ref?.trim() && awaitingKind === undefined) {
       throw new CliExpectedError("--ref only applies with --awaiting", "USAGE_ERROR", 2);
+    }
+    let reviewTarget: ReviewTarget | null = null;
+    if (pr?.trim()) {
+      const parsed = parsePullRequestRef(pr);
+      if (awaitingKind !== "review" || !parsed || !ref?.trim() || !isFullSha(ref.trim().toLowerCase())) {
+        throw new CliExpectedError(
+          "--pr <owner/repo#number> needs --awaiting review and --ref <full 40-character SHA>",
+          "USAGE_ERROR",
+          2,
+        );
+      }
+      reviewTarget = { ...parsed, sha: ref.trim().toLowerCase() };
     }
     const target = sessionOverride?.trim() || resolveCurrentSessionRef();
     if (!target) {
@@ -7779,12 +7864,34 @@ export class SessionCommands {
       };
       reportText = `${reportText}\nAguarda o pai: ${describeHandoff(preview, sessionDisplayName(session.sessionKey), now).replace(/^- /, "")}`;
     }
+    // A review of a PR whose head is this SHA, with its gate green, is opened by the runtime itself. It runs
+    // before the report so the parent reads that it was dispatched and does not dispatch a second one. It never
+    // fails the report: a review it could not open stays an ordinary wait on the parent.
+    const reviewDispatch = reviewTarget ? await this.dispatchReview(session, reviewTarget, message) : undefined;
+    if (reviewDispatch?.status === "dispatched") {
+      reportText = `${reportText}\nRevisão despachada pelo runtime: ${reviewDispatch.requestId} (${reviewDispatch.provider}/${reviewDispatch.model}), ${reviewDispatch.gate.name} ${reviewDispatch.gate.checkRunId} success.`;
+    } else if (reviewDispatch) {
+      reportText = `${reportText}\nRevisão não despachada pelo runtime: ${reviewDispatch.reason}.`;
+    }
     try {
       result = await reportSlackThreadProgress(session, reportText);
     } catch (error) {
       rethrowSlackThreadError(error);
     }
-    if (pendingHandoff) handoff = await declareHandoff(pendingHandoff);
+    // The report is out: a failed write of the wait must not turn into an error that makes the caller send it
+    // again. It is returned instead, and the parent still has the report text.
+    let handoffError: string | undefined;
+    if (pendingHandoff) {
+      try {
+        handoff = await declareHandoff(pendingHandoff);
+        if (reviewDispatch?.status === "dispatched") {
+          handoff =
+            (await acknowledgeHandoffById(handoff.id, `review dispatched: ${reviewDispatch.requestId}`)) ?? handoff;
+        }
+      } catch (error) {
+        handoffError = error instanceof Error ? error.message : String(error);
+      }
+    }
     const payload = {
       status: "published" as const,
       actionId: "thread.report" as const,
@@ -7794,11 +7901,96 @@ export class SessionCommands {
         sessionKey: result.record.parentSessionKey,
         sessionName: result.record.parentSessionName,
       },
-      ...(handoff ? { handoff: { id: handoff.id, kind: handoff.kind, ref: handoff.ref } } : {}),
+      ...(handoff ? { handoff: { id: handoff.id, kind: handoff.kind, ref: handoff.ref, status: handoff.status } } : {}),
+      ...(handoffError ? { handoffError } : {}),
+      ...(reviewDispatch ? { reviewDispatch } : {}),
     };
     if (asJson) printJson(payload);
-    else console.log(`Reported to ${result.record.parentSessionName}`);
+    else {
+      console.log(`Reported to ${result.record.parentSessionName}`);
+      if (handoffError) console.log(`The wait was not recorded: ${handoffError}`);
+    }
     return payload;
+  }
+
+  /** Opens the independent review of `target` when the guards hold; returns what happened, never throws. */
+  private async dispatchReview(
+    session: SessionEntry,
+    target: ReviewTarget,
+    note: string,
+  ): Promise<
+    | {
+        status: "dispatched";
+        requestId: string;
+        replayed: boolean;
+        provider: string;
+        model: string;
+        gate: { name: string; checkRunId: number | null; completedAt: string | null };
+      }
+    | { status: "skipped"; reason: string }
+  > {
+    if (!reviewAutoDispatchEnabled()) return { status: "skipped", reason: "auto-dispatch is off" };
+    // Opening the reviewer is a thread creation: the caller needs that authority, not only the right to report.
+    if (getContext()?.context) {
+      const access = enforceCliCommandAccess({
+        group: "sessions",
+        command: "create-thread",
+        access: { kind: "mutate", resource: "sessions", action: "create-thread", risk: "medium" },
+        input: {},
+        source: "tool",
+      });
+      if (!access.allowed) return { status: "skipped", reason: "this session may not create threads" };
+    }
+    try {
+      // One review per PR head: a repeat (another note, a gate rerun) returns the review already opened
+      // instead of comparing a rebuilt brief against the first one.
+      const key = reviewThreadKey(target);
+      const existing = getSlackThreadLifecycle(
+        slackThreadRequestIdForKey(slackThreadParentSessionKey(session.sessionKey), key),
+      );
+      if (existing) {
+        return {
+          status: "dispatched",
+          requestId: existing.requestId,
+          replayed: true,
+          provider: existing.providerOverride ?? "claude",
+          model: existing.modelOverride ?? "",
+          gate: { name: reviewGateCheckName(), checkRunId: null, completedAt: null },
+        };
+      }
+      const evidence = await readReviewEvidence(target, reviewGithubRead());
+      const decision = decideReviewDispatch(target, evidence);
+      if (!decision.dispatch) return { status: "skipped", reason: decision.reason };
+      const gate = evidence.gate!;
+      const author = resolveSessionRuntimeOptions(session);
+      const reviewer = pickReviewerRuntime({ provider: author.provider.value, model: author.model.value });
+      const queued = await this.queueThread({
+        message: buildReviewerBrief({
+          target,
+          gate,
+          authorSessionName: sessionDisplayName(session.sessionKey),
+          authorModel: author.model.value,
+          note: decodeLiteralLineBreaks(note).split("\n")[0]?.trim() || null,
+        }),
+        model: reviewer.model,
+        provider: reviewer.provider,
+        effort: reviewer.effort,
+        // From the author's session, whatever session runs this command (`report --session`).
+        sessionOverride: session.sessionKey,
+        idempotencyKey: key,
+      });
+      if (!queued) return { status: "skipped", reason: "the review thread could not be queued" };
+      return {
+        status: "dispatched",
+        requestId: queued.payload.requestId,
+        replayed: queued.payload.replayed,
+        provider: reviewer.provider,
+        model: reviewer.model,
+        gate: { name: gate.name, checkRunId: gate.checkRunId, completedAt: gate.completedAt },
+      };
+    } catch (error) {
+      return { status: "skipped", reason: error instanceof Error ? error.message : String(error) };
+    }
   }
 
   @Command({
@@ -7819,6 +8011,12 @@ export class SessionCommands {
     sessionOverride?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--all",
+      description:
+        "Also list closed handoffs (acknowledged, superseded, expired), newest 100, to audit how each wait ended",
+    })
+    includeClosed?: boolean,
   ) {
     let parentSessionKey: string | undefined;
     if (sessionOverride?.trim()) {
@@ -7828,11 +8026,15 @@ export class SessionCommands {
     }
     const scopeCtx = getScopeContext();
     const now = Date.now();
-    const handoffs = listOpenHandoffs(parentSessionKey).filter((handoff) => {
+    // Scope first, then the cap: rows the caller cannot see must not use up its history.
+    const visible = (
+      includeClosed ? listHandoffs({ parentSessionKey, includeClosed: true }) : listOpenHandoffs(parentSessionKey)
+    ).filter((handoff) => {
       if (!isScopeEnforced(scopeCtx)) return true;
       const parent = getSession(handoff.parentSessionKey);
       return parent ? canAccessSession(scopeCtx, sessionActionRef(parent)) : false;
     });
+    const handoffs = includeClosed ? visible.slice(-100) : visible;
     const payload = {
       handoffs: handoffs.map((handoff) => ({
         id: handoff.id,
@@ -7848,13 +8050,18 @@ export class SessionCommands {
         ageMin: Math.max(0, Math.floor((now - handoff.createdAt) / 60_000)),
         parentNudgedAt: handoff.parentNudgedAt,
         ownerEscalatedAt: handoff.ownerEscalatedAt,
+        status: handoff.status,
+        acknowledgedAt: handoff.acknowledgedAt,
+        ackReason: handoff.ackReason,
       })),
     };
     if (asJson) printJson(payload);
-    else if (handoffs.length === 0) console.log("No open handoffs");
+    else if (handoffs.length === 0) console.log(includeClosed ? "No handoffs" : "No open handoffs");
     else
-      for (const handoff of handoffs)
-        console.log(describeHandoff(handoff, sessionDisplayName(handoff.childSessionKey), now));
+      for (const handoff of handoffs) {
+        const line = describeHandoff(handoff, sessionDisplayName(handoff.childSessionKey), now);
+        console.log(handoff.status === "open" ? line : `${line} — ${handoff.status}: ${handoff.ackReason ?? ""}`);
+      }
     return payload;
   }
 
@@ -7887,6 +8094,17 @@ export class SessionCommands {
       (isScopeEnforced(scopeCtx) && (!parent || !canModifySession(scopeCtx, sessionActionRef(parent))))
     ) {
       throw new CliExpectedError(`Handoff not found: ${id}`, "NOT_FOUND", 1);
+    }
+    // The wait is closed by the one it waits on: a thread cannot mark its own wait as handled.
+    const callerCtx = getContext();
+    const callerRef = callerCtx?.sessionKey?.trim() || callerCtx?.sessionName?.trim();
+    const callerSession = callerRef ? resolveSession(callerRef) : null;
+    if (callerSession && callerSession.sessionKey === existing.childSessionKey) {
+      throw new CliExpectedError(
+        "A thread cannot acknowledge its own handoff; the parent does, or the thread reports a new one",
+        "HANDOFF_SELF_ACK",
+        1,
+      );
     }
     const acked = await acknowledgeHandoffById(id, reason?.trim() || "acknowledged by parent");
     const payload = {
@@ -7976,7 +8194,12 @@ export class SessionCommands {
       rethrowSlackThreadError(error);
     }
     if (result.record.childSessionKey) {
-      await acknowledgeChildHandoffs(result.record.childSessionKey, "parent sent instructions");
+      await acknowledgeChildHandoffs(
+        result.record.childSessionKey,
+        "parent sent instructions",
+        Date.now(),
+        HANDOFF_KINDS_ANSWERED_BY_MESSAGE,
+      );
     }
     const payload = {
       status: "published" as const,

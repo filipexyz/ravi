@@ -7843,6 +7843,7 @@ export class RaviClient {
     },
     /** List what threads are waiting for their parent session to do (open handoffs) */
     handoffs: async (options?: {
+      all?: boolean;
       session?: string;
     }): Promise<SessionsHandoffsReturn> => {
       return this.transport.call({
@@ -7945,6 +7946,7 @@ export class RaviClient {
     /** Report progress from a Slack thread to its parent session without closing the thread */
     report: async (message: string, options?: {
       awaiting?: string;
+      pr?: string;
       ref?: string;
       session?: string;
     }): Promise<SessionsReportReturn> => {
