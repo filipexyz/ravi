@@ -36,7 +36,8 @@ import { resolveSession } from "../../router/sessions.js";
 import { getAgent } from "../../router/config.js";
 import { getAccountForAgent, getDefaultAgentId } from "../../router/router-db.js";
 import { parseDurationMs, formatDurationMs } from "../../cron/schedule.js";
-import { parseOptionalDurationMs } from "../../triggers/debounce.js";
+import { defaultTriggerDelivery, parseOptionalDurationMs } from "../../triggers/debounce.js";
+import { isTriggerDormant, triggerDefaultsToConversationalSession } from "../../triggers/advice.js";
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS } from "../../cron/shell-executor.js";
 import { assertShellAutomationAuthorized } from "../../permissions/shell-automation.js";
 import {
@@ -378,6 +379,7 @@ function serializeTrigger(trigger: Trigger) {
     filterRejectCount: trigger.filterRejectCount ?? 0,
     effectiveAgentId: trigger.agentId ?? getDefaultAgentId(),
     debounceMs: trigger.debounceMs ?? 0,
+    dormant: isTriggerDormant(trigger),
     cooldownDescription: formatOptionalDurationMs(trigger.cooldownMs),
     debounceDescription: formatOptionalDurationMs(trigger.debounceMs ?? 0),
     shellTimeoutDescription:
@@ -643,6 +645,12 @@ export class TriggersCommands {
     // Compact mode (Manual v2 7.9): --fields narrows each serialized item.
     const serializedTriggers = pickFields(pageTriggers.map(serializeTrigger), fields);
     const warnings = triggers.map(invalidFilterWarning).filter((warning): warning is string => Boolean(warning));
+    const dormantCount = triggers.filter((trigger) => isTriggerDormant(trigger)).length;
+    if (dormantCount > 0) {
+      warnings.push(
+        `${dormantCount} enabled trigger(s) have not fired in over 30 days (dormant: true): disable the ones nobody needs with ravi triggers disable <id>.`,
+      );
+    }
     const payload = {
       total: page.total,
       pagination,
@@ -679,7 +687,7 @@ export class TriggersCommands {
         const enabled = (t.enabled ? "yes" : "no").padEnd(7);
         const state = resolveTriggerActivation(t).state.padEnd(14);
         const topic = t.topic.slice(0, 30).padEnd(30);
-        const fires = String(t.fireCount);
+        const fires = `${t.fireCount}${isTriggerDormant(t) ? " (dormant)" : ""}`;
 
         console.log(`  ${id}  ${name}  ${enabled}  ${state}  ${topic}  ${fires}`);
       }
@@ -806,7 +814,7 @@ export class TriggersCommands {
     @Option({
       flags: "--cooldown <duration>",
       description:
-        "Minimum gap between fires; events inside it are dropped (e.g., 30s, 1m; off to disable). Default: 5s",
+        "Minimum gap between fires; events inside it are dropped (e.g., 30s, 1m; off to disable). Default: off (prefer --debounce, which keeps every event)",
     })
     cooldown?: string,
     @Option({
@@ -839,7 +847,7 @@ export class TriggersCommands {
     @Option({
       flags: "--debounce <duration>",
       description:
-        "Batch a burst of events into one fire, this long after the last event, carrying every event (e.g., 2s, 1m). Default: off",
+        "Batch a burst of events into one fire, this long after the last event, carrying every event (e.g., 2s, 1m; off to disable). Default: 30s on ravi.watch.* topics, 5s elsewhere (off when --cooldown is given)",
     })
     debounce?: string,
     @Option({
@@ -936,8 +944,10 @@ export class TriggersCommands {
       }
     }
 
-    // Parse cooldown and debounce (`off` disables either)
-    let cooldownMs = 5000;
+    // Parse cooldown and debounce (`off` disables either). Neither given: cooldown off
+    // (it drops events) and a debounce that batches them; watch topics get a longer one.
+    const deliveryDefaults = defaultTriggerDelivery(topic);
+    let cooldownMs = deliveryDefaults.cooldownMs;
     if (cooldown) {
       try {
         cooldownMs = parseOptionalDurationMs(cooldown, parseDurationMs);
@@ -945,7 +955,8 @@ export class TriggersCommands {
         fail(`Invalid cooldown: ${err instanceof Error ? err.message : err}`);
       }
     }
-    let debounceMs = 0;
+    // An explicit cooldown keeps its old meaning alone: no debounce added behind it.
+    let debounceMs = cooldown ? 0 : deliveryDefaults.debounceMs;
     if (debounce) {
       try {
         debounceMs = parseOptionalDurationMs(debounce, parseDurationMs);
@@ -975,6 +986,19 @@ export class TriggersCommands {
     const sessionTarget: SessionTarget = thread ? "thread" : session?.trim() || currentSession || "main";
     const resolvedAgent = agent ?? ctx?.agentId;
     const addWarningsBefore: string[] = [];
+    if (
+      triggerDefaultsToConversationalSession({
+        session,
+        thread,
+        isShellTrigger,
+        currentSession,
+        callerChatId: ctx?.source?.chatId,
+      })
+    ) {
+      addWarningsBefore.push(
+        `This trigger wakes the current session (${currentSession}) on every fire: it is a conversation, so each fire costs a full turn of it and lands in its chat. Prefer --thread (a session per fire that reports back once) or --session <name>.`,
+      );
+    }
     if (session?.trim() === "isolated") {
       addWarningsBefore.push(
         "--session isolated is deprecated: use --thread (each fire gets a session of its own and returns its result). Keep isolated only for a trigger that reads Bases as its owner: thread runs do not lend the owner's access.",

@@ -137540,11 +137540,11 @@ class RaviSchemas {
       "type": "string"
     },
     "cooldown": {
-      "description": "Minimum gap between fires; events inside it are dropped (e.g., 30s, 1m; off to disable). Default: 5s",
+      "description": "Minimum gap between fires; events inside it are dropped (e.g., 30s, 1m; off to disable). Default: off (prefer --debounce, which keeps every event)",
       "type": "string"
     },
     "debounce": {
-      "description": "Batch a burst of events into one fire, this long after the last event, carrying every event (e.g., 2s, 1m). Default: off",
+      "description": "Batch a burst of events into one fire, this long after the last event, carrying every event (e.g., 2s, 1m; off to disable). Default: 30s on ravi.watch.* topics, 5s elsewhere (off when --cooldown is given)",
       "type": "string"
     },
     "envFile": {

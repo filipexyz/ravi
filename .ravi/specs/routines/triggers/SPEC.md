@@ -50,7 +50,8 @@ Trigger filters are the deterministic pre-agent predicate for event payloads. Th
 - The standardized catalog-template prompt header MUST identify both that the prompt came from a trigger and which event fired it:
   - `[Trigger: <trigger name>]`
   - `Event: <event topic>`
-- Manual/custom trigger prompts MAY continue to include raw event data for debugging and legacy automations.
+- Manual/custom trigger prompts MUST carry the event as compact `key: value` lines under `Data:` (a debounced batch: `Events:`, one numbered entry per event), nested objects flattened with dotted keys, multi-line values folded onto one line, each value cut at 500 characters and at most 40 lines per event (the rest summarized in one line that points at `{{data}}`). A watch event (`ravi.watch.*`, the `WatchNatsPayload` envelope) MUST show its `subject` (with the watch name), `at` (when it happened), its `payload` and its `links`, and MUST NOT carry `eventId`, `dedupeKey`, `source`, `delivery` or `createdAt`: they repeat the payload or matter to nobody reading the turn.
+- A trigger message that writes `{{data}}` (alone, not `{{data.<path>}}`) MUST get the full event as indented JSON in that place, and the prompt MUST then carry no other copy of the event. That is the only way to ask for the raw envelope.
 - Native local inbox events MUST be distinct from Console delivery mirror events. Email automations SHOULD listen to `ravi.inbox.mail.received`; `ravi.console.inbox.item` is a technical mirror and MUST NOT be documented as the durable local email subject.
 - The catalog SHOULD include payload schema, default message template when available, example command, common filters, and operational notes for each subject.
 - Trigger filters MUST support the comparison operators `==`, `!=`, `startsWith`, `endsWith`, and `includes`.
@@ -129,7 +130,16 @@ A trigger is owned by the turn that created it. The owner decides who the trigge
 - A generated `gh-follow` MUST NOT wake its owner twice for a run the local derivation reports: the outcome event (`workflow_run.succeeded`, `failed`, `cancelled`) is delivered and the `workflow_run.completed` the local derivation (`placement == "local"`) emits beside it is not. A `workflow_run.completed` that is the only event of its run (`action_required`, `neutral`, `skipped`, `stale`, no conclusion) MUST still be delivered.
 - A `workflow_run.completed` the Console delivers MUST be delivered whatever its conclusion. The Console sends no outcome event, so it is the only CI signal of a follow whose local poller produces nothing (the repo watch was deactivated by someone else, `gh` cannot read the repo, the watch could not be created). When the Console and the local poller both report a run, the owner hears it twice; that is the price of never going deaf.
 - A generated `gh-follow` MUST NOT deliver any run of the `PR Description` workflow, and MUST deliver every PR lifecycle event and PR comment of its PR.
+- A generated `gh-follow` MUST NOT deliver a run that has not concluded (`workflow_run.requested`, `workflow_run.in_progress`): its conclusion arrives as its own event.
+- A generated `gh-follow` MUST deliver a comment written by a bot: Devin's and CodeRabbit's review findings arrive as bot comments, and the author answers them before the independent review. The follow message tells the owner to stay silent on a bot comment that asks nothing.
+- A workflow run event of the local derivation MUST carry the run's `url` and `headSha` in its payload, so the follow can link the CI result it reports.
 - A change to the generated filter MUST reach follows that already exist. Maintenance MUST rewrite a follow's filter when it equals, exactly, one an earlier release generated for that PR, and MUST leave any other valid filter alone.
+
+## Delivery defaults and advice
+
+- `ravi triggers add` with neither `--cooldown` nor `--debounce` MUST store cooldown off and a debounce: 30 s on a `ravi.watch.*` topic (one push yields several workflow runs), 5 s on any other. Cooldown drops every event inside its window; debounce keeps them and fires once with the batch. An explicit `--cooldown` MUST keep its meaning alone, with no debounce added behind it. A trigger that already exists keeps its stored values. Generated follows that set their own delivery (`gh-follow`: cooldown and debounce 0) are not affected.
+- `ravi triggers add` that leaves the session to the default while the creating turn is a conversation (a session with a chat), for an agent trigger with no `--thread`, MUST warn that every fire wakes that conversation and suggest `--thread` or `--session <name>`.
+- `ravi triggers list` MUST mark an enabled trigger that has not fired for more than 30 days (counting from creation when it never fired) as dormant: `dormant: true` in JSON, `(dormant)` beside the fire count in text, and one warning with the count. A disabled trigger is never dormant.
 
 ## Reply account and channel
 

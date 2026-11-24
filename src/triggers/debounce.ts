@@ -128,3 +128,18 @@ export function parseOptionalDurationMs(value: string, parseDuration: (value: st
   if (["off", "none", "0", "0s", "0m", "0h", "0d"].includes(normalized)) return 0;
   return parseDuration(normalized);
 }
+
+/** Watch topics come in bursts (one push yields several workflow runs): batch them. */
+export const WATCH_TOPIC_DEFAULT_DEBOUNCE_MS = 30_000;
+/** Any other topic: the old 5 s burst window, now batching instead of dropping. */
+export const DEFAULT_TRIGGER_DEBOUNCE_MS = 5_000;
+
+/**
+ * Delivery defaults for a new trigger that sets neither `--cooldown` nor
+ * `--debounce`. Cooldown is off because it drops every event inside its window;
+ * debounce keeps them all and fires once with the batch.
+ */
+export function defaultTriggerDelivery(topic: string): { cooldownMs: number; debounceMs: number } {
+  const watchTopic = topic.trim().startsWith("ravi.watch.");
+  return { cooldownMs: 0, debounceMs: watchTopic ? WATCH_TOPIC_DEFAULT_DEBOUNCE_MS : DEFAULT_TRIGGER_DEBOUNCE_MS };
+}

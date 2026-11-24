@@ -99,6 +99,19 @@ A trigger with a valid filter, or with no filter, MUST behave exactly as before.
 - The `gh-follow` maintenance sweep MUST rewrite invalid filters and superseded canonical filters (the exact text an earlier release generated for that PR) on triggers for open PRs, MUST leave the current canonical filter and any other valid filter untouched, and MUST delete triggers whose PR is no longer open instead of repairing them. A second pass over repaired triggers MUST change nothing and MUST NOT emit a refresh.
 - The same sweep MUST ensure a watch for every repo that still has a follow trigger or a pending follow, MUST NOT ensure a watch for a repo whose last trigger it just removed, and MUST keep the trigger when ensuring its watch fails.
 
+- `ghFollowFilter` MUST NOT let `workflow_run.requested` or `workflow_run.in_progress` through, and MUST let a bot comment through from any producer shape (`payload.author`, `payload.sender.login`). `supersededGhFollowFilters` MUST list the exact filter the previous release wrote (generation 2), pinned as a literal in the test, so maintenance moves existing follows to the current filter.
+- A completed run of the local derivation MUST carry `url` and `headSha`, and `gh run list` MUST be asked for both fields.
+
+- [ ] `bun test src/hooks/gh-watch.test.ts src/watch/local-events.test.ts src/watch/connector-contract.test.ts` covers the two items above.
+
+## Prompt And Defaults
+
+- A manual trigger prompt MUST render event data as `key: value` lines (no JSON braces), a watch event MUST show subject, time, payload and links without envelope ids, `{{data}}` MUST put the full JSON in place with no second copy, and the line and value caps MUST hold.
+- `defaultTriggerDelivery` MUST return cooldown 0 and debounce 30 s for `ravi.watch.*`, 5 s otherwise; `triggers add` with `--cooldown` MUST add no debounce.
+- The conversational-session warning MUST fire only for a default session with a chat, never with `--session`, `--thread` or a shell trigger; `isTriggerDormant` MUST ignore disabled triggers and use a 30-day window.
+
+- [ ] `bun test src/triggers/__tests__/prompt.test.ts src/triggers/__tests__/advice.test.ts src/triggers/__tests__/runner-debounce.test.ts src/cli/commands/triggers.test.ts` covers the three items above.
+
 ## Task Automations
 
 - A task automation with an invalid filter MUST record a `skipped` run whose message starts with `Filter is invalid:`, and MUST NOT create a follow-up task.
