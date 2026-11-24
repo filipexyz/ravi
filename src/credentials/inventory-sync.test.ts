@@ -4,11 +4,13 @@ import { listPendingOutboxBatch } from "../sync/db.js";
 import { sanitizeSyncPayload } from "../sync/redaction.js";
 import {
   CREDENTIAL_INVENTORY_HEARTBEAT_MS,
+  CREDENTIAL_INVENTORY_PAGE_MAX_BYTES,
   CREDENTIAL_INVENTORY_MIN_INTERVAL_MS,
   CREDENTIAL_INVENTORY_SYNC_DOMAIN,
   FREE_TEXT_MAX_CHARS,
   credentialInventorySyncPayload,
   enqueueCredentialInventorySnapshot,
+  paginateCredentialInventoryPayload,
 } from "./inventory-sync.js";
 import { buildCredentialInventory } from "./inventory.js";
 import { closeCredentialsDb, recordCredentialAuditEvent, upsertCredentialConnection } from "./store.js";
@@ -197,5 +199,84 @@ describe("credential inventory over the Console sync bridge", () => {
     });
     expect(result.status).toBe("enqueued");
     expect(outbox()).toHaveLength(1);
+  });
+});
+
+describe("credential inventory pages stay under the Console payload limit", () => {
+  const CONSOLE_MAX_JSON_FIELD_BYTES = 64 * 1024;
+
+  it("splits a large snapshot into pages under 64 KiB, with every item once and the audit on page 1", async () => {
+    for (let i = 0; i < 400; i += 1) {
+      upsertCredentialConnection({
+        provider: "slack",
+        connection: `conn-${String(i).padStart(3, "0")}`,
+        backend: "vault",
+        secretRef: `vault:secret/ravi/credentials/slack/conn-${i}#token`,
+        status: "active",
+        label: `Workspace ${i} `.repeat(15),
+        purpose: "Posts the daily report to the operations channel",
+        owner: "operations team",
+      });
+    }
+    recordCredentialAuditEvent({
+      provider: "slack",
+      connection: "conn-000",
+      action: "chat.postMessage",
+      decision: "allow",
+      resultStatus: "secret_resolved",
+      createdAt: T0 - 1_000,
+    });
+
+    const result = await enqueueCredentialInventorySnapshot({ env: ENABLED, now: T0, inventory: { describeSecret } });
+    const rows = listPendingOutboxBatch({
+      domain: CREDENTIAL_INVENTORY_SYNC_DOMAIN,
+      limit: 100,
+      maxBytes: 10_000_000,
+    }).items;
+    expect(result.pages).toBe(rows.length);
+    expect(rows.length).toBeGreaterThan(1);
+
+    const pages = rows.map(
+      (row) =>
+        row.payload as {
+          snapshotId: string;
+          page: number;
+          pages: number;
+          total: number;
+          items: Array<{ connection: string }>;
+          audit: unknown[];
+        },
+    );
+    for (const page of pages) {
+      expect(Buffer.byteLength(JSON.stringify(page), "utf8")).toBeLessThanOrEqual(CREDENTIAL_INVENTORY_PAGE_MAX_BYTES);
+      expect(Buffer.byteLength(JSON.stringify(page), "utf8")).toBeLessThan(CONSOLE_MAX_JSON_FIELD_BYTES);
+      expect(page.snapshotId).toBe(result.hash!);
+      expect(page.pages).toBe(pages.length);
+      expect(page.total).toBe(400);
+      expect(sanitizeSyncPayload(page)).toEqual(page);
+    }
+    expect(pages.map((page) => page.page).sort((a, b) => a - b)).toEqual(pages.map((_, index) => index + 1));
+    const connections = pages.flatMap((page) => page.items.map((item) => item.connection));
+    expect(connections).toHaveLength(400);
+    expect(new Set(connections).size).toBe(400);
+    expect(pages.find((page) => page.page === 1)?.audit).toHaveLength(1);
+    expect(pages.filter((page) => page.page !== 1).every((page) => page.audit.length === 0)).toBe(true);
+  });
+
+  it("a small snapshot is a single page 1 of 1", () => {
+    const pages = paginateCredentialInventoryPayload(
+      {
+        schema: "credentials.inventory/v1",
+        generatedAt: T0,
+        degraded: false,
+        degradedReasons: [],
+        total: 0,
+        items: [],
+        audit: [],
+      },
+      "abc",
+    );
+    expect(pages).toHaveLength(1);
+    expect(pages[0]).toMatchObject({ snapshotId: "abc", page: 1, pages: 1, items: [] });
   });
 });

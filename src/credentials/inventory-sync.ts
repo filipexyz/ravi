@@ -87,6 +87,58 @@ export interface EnqueueCredentialInventoryResult {
   status: "disabled" | "unchanged" | "throttled" | "enqueued";
   hash: string | null;
   outboxId: string | null;
+  outboxIds?: string[];
+  pages?: number;
+}
+
+/**
+ * The Console rejects a sync payload over 64 KiB (`MAX_JSON_FIELD_BYTES`, 413).
+ * Each page stays under this, with room for the envelope.
+ */
+export const CREDENTIAL_INVENTORY_PAGE_MAX_BYTES = 48 * 1024;
+
+/** One page of a snapshot: the Console shows a snapshot only when it has all `pages` of the same `snapshotId`. */
+export interface CredentialInventorySyncPage extends CredentialInventorySyncPayload {
+  snapshotId: string;
+  page: number;
+  pages: number;
+}
+
+/**
+ * Split a snapshot into pages of at most CREDENTIAL_INVENTORY_PAGE_MAX_BYTES
+ * (UTF-8 JSON). Page 1 carries the audit; every page repeats the header.
+ */
+export function paginateCredentialInventoryPayload(
+  payload: CredentialInventorySyncPayload,
+  snapshotId: string,
+  maxBytes = CREDENTIAL_INVENTORY_PAGE_MAX_BYTES,
+): CredentialInventorySyncPage[] {
+  const build = (items: CredentialInventorySyncPayload["items"], page: number): CredentialInventorySyncPage => ({
+    ...payload,
+    items,
+    audit: page === 1 ? payload.audit : [],
+    snapshotId,
+    page,
+    pages: 0,
+  });
+  const size = (value: unknown) => Buffer.byteLength(JSON.stringify(value), "utf8");
+  // Conservative header: the page-1 audit and the widest page numbers.
+  const header = size({ ...build([], 1), page: 99_999, pages: 99_999 });
+  const groups: CredentialInventorySyncPayload["items"][] = [];
+  let current: CredentialInventorySyncPayload["items"] = [];
+  let bytes = header;
+  for (const item of payload.items) {
+    const itemBytes = size(item) + 1; // + the separating comma
+    if (current.length > 0 && bytes + itemBytes > maxBytes) {
+      groups.push(current);
+      current = [];
+      bytes = header;
+    }
+    current.push(item);
+    bytes += itemBytes;
+  }
+  groups.push(current);
+  return groups.map((items, index) => ({ ...build(items, index + 1), pages: groups.length }));
 }
 
 /**
@@ -120,19 +172,24 @@ export async function enqueueCredentialInventorySnapshot(
   if (!input.force && previous?.cursorValue === hash && now - lastEnqueue < CREDENTIAL_INVENTORY_HEARTBEAT_MS) {
     return { status: "unchanged", hash, outboxId: null };
   }
-  const outbox = enqueueSyncEvent({
-    domain: CREDENTIAL_INVENTORY_SYNC_DOMAIN,
-    eventType: CREDENTIAL_INVENTORY_EVENT_TYPE,
-    entityType: "credential_inventory",
-    entityId: "installation",
-    idempotencyKey: `credentials.inventory:${hash}:${now}`,
-    payload,
-    schemaVersion: 1,
-    occurredAt: now,
-    now,
-  });
+  const pages = paginateCredentialInventoryPayload(payload, hash);
+  const outboxIds: string[] = [];
+  for (const page of pages) {
+    const outbox = enqueueSyncEvent({
+      domain: CREDENTIAL_INVENTORY_SYNC_DOMAIN,
+      eventType: CREDENTIAL_INVENTORY_EVENT_TYPE,
+      entityType: "credential_inventory",
+      entityId: "installation",
+      idempotencyKey: `credentials.inventory:${hash}:${now}:${page.page}/${page.pages}`,
+      payload: page,
+      schemaVersion: 1,
+      occurredAt: now,
+      now,
+    });
+    if (outbox) outboxIds.push(outbox.id);
+  }
   setSyncCursor(CREDENTIAL_INVENTORY_SYNC_DOMAIN, CURSOR_KEY, hash, { enqueuedAt: now }, now);
-  return { status: "enqueued", hash, outboxId: outbox?.id ?? null };
+  return { status: "enqueued", hash, outboxId: outboxIds[0] ?? null, outboxIds, pages: pages.length };
 }
 
 /** Hash of what the Console would show, without the snapshot time. */
