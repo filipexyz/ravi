@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { CredentialBrokerError } from "./errors.js";
-import type { CredentialBackend } from "./types.js";
+import type { CredentialBackend, CredentialSecretDescription } from "./types.js";
 import { deleteFileSecret, readFileSecret, writeFileSecret } from "./file-backend.js";
 
 export interface SecretWriteInput {
@@ -52,6 +52,76 @@ export async function deleteSecret(secretRef: string): Promise<boolean> {
   if (secretRef.startsWith("keychain:")) return deleteKeychainSecret(secretRef);
   if (secretRef.startsWith("vault:")) return deleteVaultSecret(secretRef);
   throw new Error(`Unsupported secret ref: ${redactSecretRef(secretRef)}`);
+}
+
+/**
+ * Describe a secret WITHOUT reading its value. Vault: KV v2 metadata endpoint
+ * (`GET <mount>/metadata/<path>`), which returns versions and times only.
+ * Any refusal (no permission, sealed, unreachable) degrades to
+ * `available: false` with a fixed reason; it never throws and never falls
+ * back to a data read.
+ */
+export async function describeSecret(
+  secretRef: string,
+  deps: { fetch?: typeof fetch; env?: NodeJS.ProcessEnv; timeoutMs?: number } = {},
+): Promise<CredentialSecretDescription> {
+  if (!secretRef.startsWith("vault:")) return { available: false, reason: "unsupported" };
+  let parsed: { mount: string; path: string; key: string };
+  try {
+    parsed = parseVaultRef(secretRef);
+  } catch {
+    return { available: false, reason: "invalid_ref" };
+  }
+  const env = deps.env ?? process.env;
+  const addr = env.VAULT_ADDR?.replace(/\/+$/, "");
+  const token = env.VAULT_TOKEN;
+  if (!addr || !token) return { available: false, reason: "not_configured" };
+  const url = `${addr}/v1/${encodeURIComponent(parsed.mount)}/metadata/${vaultPathSegments(parsed.path)}`;
+  let response: Response;
+  try {
+    response = await (deps.fetch ?? fetch)(url, {
+      method: "GET",
+      headers: { "x-vault-token": token },
+      signal: AbortSignal.timeout(deps.timeoutMs ?? 5_000),
+    });
+  } catch {
+    return { available: false, reason: "unreachable" };
+  }
+  if (response.status === 404) {
+    return { available: true, exists: false, version: null, createdAt: null, updatedAt: null, deleted: false };
+  }
+  if (response.status === 403) return { available: false, reason: "forbidden" };
+  if (response.status === 503) return { available: false, reason: "sealed" };
+  if (!response.ok) return { available: false, reason: "error" };
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    return { available: false, reason: "error" };
+  }
+  const data = asRecord(asRecord(payload).data);
+  const version = typeof data.current_version === "number" ? data.current_version : null;
+  const versions = asRecord(data.versions);
+  const current = version === null ? {} : asRecord(versions[String(version)]);
+  const deletionTime = typeof current.deletion_time === "string" ? current.deletion_time : "";
+  return {
+    available: true,
+    exists: true,
+    version,
+    createdAt: parseVaultTime(data.created_time),
+    updatedAt: parseVaultTime(data.updated_time),
+    deleted: current.destroyed === true || deletionTime !== "",
+  };
+}
+
+function parseVaultTime(value: unknown): number | null {
+  if (typeof value !== "string" || !value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function vaultPathSegments(path: string): string {
+  return path.split("/").map(encodeURIComponent).join("/");
 }
 
 export function redactSecretRef(secretRef: string): string {
