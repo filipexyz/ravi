@@ -114,6 +114,15 @@ export function contactHoldsAdmin(contactId: string): boolean {
  * turn of theirs gets: in a chat governed by contact grants, their overlay (chat
  * grants and global permission tags such as an admin tag); in a chat with no
  * grants, their own capabilities, which decide whether break-glass is withheld.
+ *
+ * The executor is not an input on purpose: a turn is the executor's ceiling
+ * intersected with the contact's side, and a full-access grant only adds
+ * `admin:system:*` to the contact's side. When that side already covers it, the
+ * grant adds nothing whatever the executor holds (`permissions request` also
+ * refuses an executor without admin first, `FULL_ACCESS_EXECUTOR_CEILING`).
+ * "Nothing to add" is about capabilities only: in a governed chat their turn is
+ * still narrowed to those grants, so automation from it (triggers, followups,
+ * hooks, signals, tasks) stays refused; a cron job bound to that chat is allowed.
  */
 export function contactHoldsFullAccessInChat(contactId: string, chatId: string): boolean {
   const overlay = resolveContactChatOverlay({ contactId, chatId });
@@ -177,10 +186,12 @@ export function previewGrantRequest(
   };
 }
 
-function alreadyHeldError(plan: GrantRequestPlan): GrantRequestError {
+function alreadyHeldError(plan: GrantRequestPlan, closedOpenRequest = false): GrantRequestError {
+  // Only a real request closes anything: the plan writes nothing, so it never says it closed a request.
+  const closed = closedOpenRequest ? " An open identical request was closed." : "";
   return new GrantRequestError(
     "already_held",
-    `Contact ${plan.contactId} already holds full access in chat ${plan.chatId}: their own turns there run with the agent's whole authority, so there is nothing to approve, nobody was asked and an open identical request was closed.`,
+    `Contact ${plan.contactId} already holds full access in chat ${plan.chatId}: a full-access grant there would add nothing to what their own turns hold, so there is nothing to approve and nobody was asked.${closed}`,
   );
 }
 
@@ -222,7 +233,7 @@ export async function requestGrant(
     // can no longer write a grant (approving it would turn the chat governed for nothing).
     const open = findOpenGrantRequest(input.plan, now);
     if (open) failGrantRequest(open.id, "the contact already holds full access in that chat", now);
-    throw alreadyHeldError(input.plan);
+    throw alreadyHeldError(input.plan, open !== null);
   }
 
   const open = findOpenGrantRequest(input.plan, now);

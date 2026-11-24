@@ -168,7 +168,7 @@ The dedicated number creates the group, adds you, routes it to `main` and opens 
 </Tab>
 </Tabs>
 
-Always pass `--account wa-main` to `ravi whatsapp group`. Without it, the command uses the first enabled instance in alphabetical order, which is `slack-main` if you also connected Slack.
+Pass `--account wa-main` to `ravi whatsapp group` whenever you have more than one WhatsApp instance. Without it the command uses the account of the current WhatsApp chat, or the only enabled WhatsApp instance if there is just one. With several WhatsApp instances and no WhatsApp chat to learn it from (your terminal, a cron job, a Slack thread) it stops and lists the instances instead of guessing. Instances of other channels, such as `slack-main`, never count.
 
 </Step>
 </Steps>

@@ -196,12 +196,23 @@ describe("grant requests (core, no channel)", () => {
       // 24/11: the operator (admin tag) in a chat with no grants already runs with the whole agent;
       // the request went to the only other admin.
       const forAdmin = { ...plan, contactId: admin.id };
-      expect(() => previewGrantRequest(forAdmin, deps([adapter]))).toThrow(
-        expect.objectContaining({ code: "already_held" }),
-      );
+      const planned = (() => {
+        try {
+          previewGrantRequest(forAdmin, deps([adapter]));
+        } catch (error) {
+          return error;
+        }
+        return null;
+      })();
+      expect(planned).toMatchObject({ code: "already_held" });
+      // The plan writes nothing, so it never says it closed a request.
+      expect((planned as Error).message).toContain("would add nothing to what their own turns hold");
+      expect((planned as Error).message).not.toContain("whole authority");
+      expect((planned as Error).message).not.toContain("was closed");
       const refused = await requestGrant({ plan: forAdmin, requester }, deps([adapter])).catch((e: unknown) => e);
       expect(refused).toBeInstanceOf(GrantRequestError);
       expect(refused).toMatchObject({ code: "already_held" });
+      expect((refused as Error).message).not.toContain("was closed");
       expect(adapter.delivered).toEqual([]);
       expect(findOpenGrantRequest(forAdmin, nowMs)).toBeNull();
 
@@ -210,7 +221,10 @@ describe("grant requests (core, no channel)", () => {
       const open = await requestGrant({ plan, requester }, deps([adapter]));
       expect(adapter.delivered).toHaveLength(2);
       seedApprovalContact({ phone: APPROVAL_TEST_STRANGER_PHONE, name: "Breno", tags: ["permission.admin"] });
-      await expect(requestGrant({ plan, requester }, deps([adapter]))).rejects.toMatchObject({ code: "already_held" });
+      const closing = await requestGrant({ plan, requester }, deps([adapter])).catch((e: unknown) => e);
+      expect(closing).toMatchObject({ code: "already_held" });
+      // Only here was an open request closed, and only here does the message say so.
+      expect((closing as Error).message).toContain("An open identical request was closed.");
       expect(adapter.delivered).toHaveLength(2);
       expect(getGrantRequest(open.request.id)?.status).toBe("failed");
       expect(findOpenGrantRequest(plan, nowMs)).toBeNull();

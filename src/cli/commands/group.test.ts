@@ -1267,3 +1267,63 @@ describe("whatsapp group send from the current chat (here)", () => {
     expect(payload).toMatchObject({ status: "sent", accountId: "luis", to: groupJid });
   });
 });
+
+describe("whatsapp account refusals keep their own error code in the command envelope", () => {
+  // Review of #978 (Devin): `fail()` reports every refusal as COMMAND_FAILED, so a JSON caller had to parse the prose to
+  // tell "pass --account" from a real failure.
+  const mainInstance = { name: "main", channel: "whatsapp", instanceId: "inst-1", enabled: true };
+  const luisInstance = { name: "luis", channel: "whatsapp", instanceId: "inst-2", enabled: true };
+  const slackInstance = { name: "ravi-slack", channel: "slack", enabled: true };
+
+  async function envelopeOf(run: () => Promise<unknown>) {
+    let caught: unknown;
+    await silenced(async () => {
+      try {
+        await run();
+      } catch (error) {
+        caught = error;
+      }
+    });
+    const { CliExpectedError } = await import("../expected-error.js");
+    const { expectedErrorToContractError } = await import("../agent-contract.js");
+    expect(caught).toBeInstanceOf(CliExpectedError);
+    return expectedErrorToContractError("whatsapp group send", caught);
+  }
+
+  it("several accounts and no turn: AMBIGUOUS_WHATSAPP_ACCOUNT, exit 1, with the --account advice", async () => {
+    mockInstances = [slackInstance, luisInstance, mainInstance];
+    const commands = new GroupCommands();
+
+    const contract = await envelopeOf(() =>
+      commands.send("120363000000000001", "oi", undefined, undefined, true, true),
+    );
+
+    expect(contract?.code).toBe("AMBIGUOUS_WHATSAPP_ACCOUNT");
+    expect(contract?.exitCode).toBe(1);
+    expect(contract?.message).toContain("luis, main");
+    expect(String(contract?.details.suggestedAction)).toContain("--account");
+    expect(senderSendCalls).toHaveLength(0);
+  });
+
+  it("--account naming a Slack account: ACCOUNT_NOT_WHATSAPP", async () => {
+    mockInstances = [slackInstance, mainInstance];
+    const commands = new GroupCommands();
+
+    const contract = await envelopeOf(() =>
+      commands.send("120363000000000001", "oi", "ravi-slack", undefined, true, true),
+    );
+
+    expect(contract?.code).toBe("ACCOUNT_NOT_WHATSAPP");
+  });
+
+  it("no WhatsApp account at all: NO_WHATSAPP_ACCOUNT", async () => {
+    mockInstances = [slackInstance];
+    const commands = new GroupCommands();
+
+    const contract = await envelopeOf(() =>
+      commands.send("120363000000000001", "oi", undefined, undefined, true, true),
+    );
+
+    expect(contract?.code).toBe("NO_WHATSAPP_ACCOUNT");
+  });
+});
