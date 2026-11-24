@@ -15,6 +15,7 @@ import {
 } from "../router/router-db.js";
 import {
   buildEffectiveCapabilities,
+  capabilitySetCovers,
   hasAnyCapability,
   TURN_SCOPED_AUTHORITY_KIND,
   type AuthorityPrincipal,
@@ -628,11 +629,14 @@ function buildAgentIdentityRuntimeContextInput(options: {
   // target agent's own authority (a plain contact relaying to a full-access agent) reduces it: held.
   const relayReducesAgent =
     Boolean(relayNarrowing) &&
-    buildEffectiveCapabilities({
-      agentCapabilities: agentIdentityCapabilities,
-      actorCapabilities: userOverlay ? userOverlay.capabilities : agentIdentityCapabilities,
-      ...(userOverlay ? { actorOverrideCapabilities: options.capabilities.filter(isTaskSelfCapability) } : {}),
-    }).length > effectiveCapabilities.length;
+    !capabilitySetCovers(
+      effectiveCapabilities,
+      buildEffectiveCapabilities({
+        agentCapabilities: agentIdentityCapabilities,
+        actorCapabilities: userOverlay ? userOverlay.capabilities : agentIdentityCapabilities,
+        ...(userOverlay ? { actorOverrideCapabilities: options.capabilities.filter(isTaskSelfCapability) } : {}),
+      }),
+    );
 
   // A person's turn in a chat with no contact grants: everything of the agent
   // except break-glass the person does not hold. Autonomous turns are unchanged.

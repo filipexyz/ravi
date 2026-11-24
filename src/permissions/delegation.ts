@@ -174,6 +174,11 @@ export function hasAnyCapability(capabilities: ContextCapability[] | undefined):
   return Boolean(capabilities && capabilities.length > 0);
 }
 
+/** Whether `capabilities` cover every one of `required`, by the core permission matcher (wildcards included). */
+export function capabilitySetCovers(capabilities: ContextCapability[], required: ContextCapability[]): boolean {
+  return required.every((candidate) => capabilitySetAllows(capabilities, candidate));
+}
+
 function capabilitySetAllows(capabilities: ContextCapability[], candidate: ContextCapability): boolean {
   if (canWithCapabilities(capabilities, candidate.permission, candidate.objectType, candidate.objectId)) {
     return true;

@@ -120,7 +120,7 @@ Ungoverned chats keep `agent_identity ∩ turn_caps`, with one exception:
   human work handoff, the operator's included. `resolveRelayCaller` stamps the
   relay `relayCallerUnrestricted` when its caller was none of: narrowed to a
   contact's chat grants, held below break-glass (`deny_*`), revoked, or itself a
-  held relay, and its ceiling covers the target agent's own authority (a plain
+  held relay, and its ceiling covers the target agent's own authority, by the core matcher and never by count (a plain
   contact relaying to a full-access agent is held: the relay would otherwise let
   automation run later as the worker's full authority). The automation guards (command and store) read
   `isRelayHeldBelowAgent` (`permissions/actor-limit.ts`), not the bare flag, so

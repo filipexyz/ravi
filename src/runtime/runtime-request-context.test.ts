@@ -2712,6 +2712,26 @@ describe("verified human work handoffs", () => {
     }
   });
 
+  it.each([3, 4, 10])(
+    "a ceiling with %i specific grants inside the target's wildcards still does not stamp the relay",
+    (extra) => {
+      // Size is not coverage: the caller's specific grants land in the target's effective set as
+      // items of their own, so a count comparison would let `default + N` equal the target's count.
+      dbUpdateAgent(workerAgent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+      const { caller } = humanTurn();
+      const specifics = ["Bash", "Read", "Write", "Edit", "Grep", "Glob", "WebFetch", "WebSearch", "Task", "Skill"]
+        .slice(0, extra)
+        .map((tool) => ({ permission: "use", objectType: "tool", objectId: tool, source: "test" }));
+      const widened = dbUpdateContextCapabilities(caller.contextId, [...(caller.capabilities ?? []), ...specifics]);
+      for (const action of ["execute", "session.bootstrap"] as const) {
+        const toStronger = handoff(widened, action);
+        expect(toStronger.metadata?.relayNarrowing).toBe(true);
+        expect(toStronger.metadata?.relayCallerUnrestricted).toBeUndefined();
+        expect(isRelayHeldBelowAgent(toStronger.metadata)).toBe(true);
+      }
+    },
+  );
+
   it.each(["inform", "answer", "session.return"] as const)(
     "%s never turns a notification into a human request",
     (action) => {
