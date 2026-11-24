@@ -183,10 +183,12 @@ export function startActiveRuntimeRequestContextLease(
       // has and the issued one lacks is a reduction, so it revokes.
       const issuedPositive = positive(issued.capabilities);
       const issuedDenyKeys = new Set(capabilityKeys(issued.capabilities.filter(isActorBreakGlassDeny)));
-      // A withheld break-glass the issued turn lacked revokes only when the
-      // issued turn actually held that power (the person lost it mid-turn);
-      // the agent being promoted mid-turn adds a deny over power the turn
-      // never had, which is not a reduction.
+      // A break-glass deny present now but absent from the issued context
+      // revokes only if the issued positive capabilities allowed its target
+      // (e.g. an owner losing the owner tag mid-turn). A new deny over a
+      // target the issued turn could not reach (e.g. the agent promoted to
+      // full-access mid-turn) is not a reduction and does not revoke; the
+      // stored capabilities are never widened by renewal either way.
       const newDeny = current.capabilities.filter(isActorBreakGlassDeny).some((deny) => {
         const [key] = capabilityKeys([deny]);
         if (!key || issuedDenyKeys.has(key)) return false;
@@ -723,8 +725,12 @@ function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
   // relay is a narrowed work handoff.
   const breakGlassDenies = caller.capabilities.filter(isActorBreakGlassDeny);
   const positiveCapabilities = caller.capabilities.filter((capability) => !isActorBreakGlassDeny(capability));
+  // A caller held below break-glass also caps the relay at its own positive
+  // authority (even for inform/answer), so the target agent's own admin does
+  // not reopen what the caller's denies withheld.
+  const narrowedByCaller = narrowed || breakGlassDenies.length > 0;
   return {
-    ...(profileRevoked || humanHandoffRefused || narrowed
+    ...(profileRevoked || humanHandoffRefused || narrowedByCaller
       ? { narrowing: profileRevoked || humanHandoffRefused ? [] : positiveCapabilities }
       : {}),
     ...(breakGlassDenies.length > 0 ? { breakGlassDenies } : {}),

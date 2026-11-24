@@ -1,4 +1,4 @@
-import { lstatSync, readlinkSync } from "node:fs";
+import { lstatSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, parse, resolve, sep } from "node:path";
 import { normalizeRuntimeBuiltinToolName } from "../cli/tool-registry.js";
@@ -80,6 +80,11 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+/** Whether a tool call writes files (Write, Edit, MultiEdit, NotebookEdit, by native name). */
+export function isFileWriteTool(toolName: string): boolean {
+  return FILE_WRITE_TOOLS.has(normalizeRuntimeBuiltinToolName(toolName) ?? toolName);
+}
+
 /** The paths a file-writing tool call would change, by the input shapes the providers use. */
 export function fileWriteToolTargets(toolName: string, input: unknown): string[] {
   const nativeName = normalizeRuntimeBuiltinToolName(toolName) ?? toolName;
@@ -147,7 +152,7 @@ function tempRoots(): string[] {
   const roots = [tmpdir(), "/tmp", "/private/tmp"];
   return roots.flatMap((root) => {
     const physical = physicalPathForPermissionCheck(root);
-    return physical ? [physical] : [];
+    return physical ? [canonicalCase(physical)] : [];
   });
 }
 
@@ -186,18 +191,56 @@ function alwaysDeniedRoots(): string[] {
   ];
   return roots.flatMap((root) => {
     const physical = physicalPathForPermissionCheck(root);
-    return physical ? [physical] : [];
+    return physical ? [canonicalCase(physical)] : [];
   });
+}
+
+/**
+ * The filesystem's own spelling of a path: the longest existing prefix goes
+ * through `realpath` (which returns the on-disk casing on case-insensitive
+ * volumes), the not-yet-existing suffix is kept as given.
+ */
+function canonicalCase(path: string): string {
+  let prefix = path;
+  const suffix: string[] = [];
+  while (prefix && prefix !== parse(prefix).root) {
+    try {
+      const real = realpathSync.native(prefix);
+      return suffix.length > 0 ? join(real, ...suffix.reverse()) : real;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      // Only a missing component walks up; anything else keeps the given spelling.
+      if (code !== "ENOENT" && code !== "ENOTDIR") return path;
+      suffix.push(basename(prefix));
+      prefix = dirname(prefix);
+    }
+  }
+  return path;
+}
+
+/** A regular file with more than one name can be the protected file under another name. */
+function isHardlinkedFile(path: string): boolean {
+  try {
+    const stat = statSync(path);
+    return stat.isFile() && stat.nlink > 1;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    // A file that does not exist yet has no other name; an unreadable one fails closed.
+    return code !== "ENOENT" && code !== "ENOTDIR";
+  }
 }
 
 /** The physical target is inside the session workspace or a temp directory (symlinks followed). */
 function isWorkspaceOrTempPath(target: string, cwd?: string): boolean {
   if (!target) return false;
   const expanded = target.replace(/^~(?=\/|$)/, homedir());
-  const physical = physicalPathForPermissionCheck(expanded, cwd);
-  if (!physical) return false;
+  const resolved = physicalPathForPermissionCheck(expanded, cwd);
+  if (!resolved) return false;
+  const physical = canonicalCase(resolved);
+  if (isHardlinkedFile(physical)) return false;
   if (alwaysDeniedRoots().some((root) => isUnder(physical, root))) return false;
-  const workspace = physicalPathForPermissionCheck(cwd ?? process.cwd());
+  const workspaceResolved = physicalPathForPermissionCheck(cwd ?? process.cwd());
+  const workspace = workspaceResolved ? canonicalCase(workspaceResolved) : null;
   if (workspace && workspace !== parse(workspace).root && workspace !== homedir() && isUnder(physical, workspace)) {
     return true;
   }

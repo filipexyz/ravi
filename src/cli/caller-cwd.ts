@@ -75,6 +75,8 @@ export function assertCallerFileAccess(path: string, mode: CallerPathMode): void
           can,
           agentId: ctx?.agentId ?? context.agentId,
           targets: [path],
+          // The limited person's workspace is the caller's (session) cwd, not the daemon's.
+          cwd: getCallerCwd(),
           restrictToWorkspace: isActorBreakGlassLimited(context),
         })
       : undefined;

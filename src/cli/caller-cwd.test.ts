@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseCallerCwd, resolveCallerPath } from "./caller-cwd.js";
 import { WidgetsCommands } from "./commands/widgets.js";
@@ -65,6 +65,18 @@ describe("resolveCallerPath file authority", () => {
     const writer = agentContext("use:tool:Write");
     expect(runWithContext(writer, () => resolveCallerPath("out.csv", "write"))).toBe("/tmp/reporter/out.csv");
     expect(() => runWithContext(writer, () => resolveCallerPath(".claude/settings.json", "write"))).toThrow(denied);
+  });
+
+  it("bounds a person held below break-glass to the caller's workspace, not the daemon's cwd", () => {
+    const workspace = join(homedir(), "ravi-limited-caller-workspace-test");
+    const limited: ToolContext = {
+      ...agentContext("use:tool:Write", "deny_execute:executable:*"),
+      cwd: workspace,
+    };
+    expect(runWithContext(limited, () => resolveCallerPath("notes.md", "write"))).toBe(join(workspace, "notes.md"));
+    expect(() =>
+      runWithContext(limited, () => resolveCallerPath(join(process.cwd(), "daemon-side.txt"), "write")),
+    ).toThrow(denied);
   });
 
   it("refuses widgets init into a folder before writing anything", () => {
