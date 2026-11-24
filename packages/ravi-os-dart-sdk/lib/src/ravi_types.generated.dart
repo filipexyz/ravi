@@ -23927,41 +23927,9 @@ class SessionsCloseThreadOptions {
   }
 }
 
-class SessionsCloseThreadReturn {
-  const SessionsCloseThreadReturn({required this.actionId, required this.changed, required this.childSession, required this.closeSequence, required this.closed, required this.parentReturn, required this.parentSession, required this.requestId, required this.slack, required this.status});
+typedef SessionsCloseThreadReturn = RaviJson;
 
-  final String actionId;
-  final bool changed;
-  final RaviJson childSession;
-  final int closeSequence;
-  final bool closed;
-  final RaviJson parentReturn;
-  final RaviJson parentSession;
-  final String requestId;
-  final RaviJson slack;
-  final String status;
-
-  factory SessionsCloseThreadReturn.fromJson(Map<String, Object?> json) {
-    return SessionsCloseThreadReturn(
-      actionId: raviJsonAsString(json["actionId"]),
-      changed: raviJsonAsBool(json["changed"]),
-      childSession: RaviJson.from(json["childSession"]),
-      closeSequence: raviJsonAsInt(json["closeSequence"]),
-      closed: raviJsonAsBool(json["closed"]),
-      parentReturn: RaviJson.from(json["parentReturn"]),
-      parentSession: RaviJson.from(json["parentSession"]),
-      requestId: raviJsonAsString(json["requestId"]),
-      slack: RaviJson.from(json["slack"]),
-      status: raviJsonAsString(json["status"]),
-    );
-  }
-
-  static SessionsCloseThreadReturn fromJsonValue(Object? json) {
-    return SessionsCloseThreadReturn.fromJson(raviJsonObject(json, "SessionsCloseThreadReturn"));
-  }
-}
-
-SessionsCloseThreadReturn sessionsCloseThreadReturnFromJson(Object? json) => SessionsCloseThreadReturn.fromJsonValue(json);
+SessionsCloseThreadReturn sessionsCloseThreadReturnFromJson(Object? json) => RaviJson.from(json);
 
 typedef SessionsConversationsAgentsReturn = List<RaviJson>;
 
@@ -24983,37 +24951,9 @@ class SessionsReportOptions {
   }
 }
 
-class SessionsReportReturn {
-  const SessionsReportReturn({required this.actionId, this.handoff, this.handoffError, required this.messageId, required this.parentSession, required this.requestId, this.reviewDispatch, required this.status});
+typedef SessionsReportReturn = RaviJson;
 
-  final String actionId;
-  final RaviJson? handoff;
-  final String? handoffError;
-  final String messageId;
-  final RaviJson parentSession;
-  final String requestId;
-  final RaviJson? reviewDispatch;
-  final String status;
-
-  factory SessionsReportReturn.fromJson(Map<String, Object?> json) {
-    return SessionsReportReturn(
-      actionId: raviJsonAsString(json["actionId"]),
-      handoff: json["handoff"] == null ? null : RaviJson.from(json["handoff"]),
-      handoffError: json["handoffError"] == null ? null : raviJsonAsString(json["handoffError"]),
-      messageId: raviJsonAsString(json["messageId"]),
-      parentSession: RaviJson.from(json["parentSession"]),
-      requestId: raviJsonAsString(json["requestId"]),
-      reviewDispatch: json["reviewDispatch"] == null ? null : RaviJson.from(json["reviewDispatch"]),
-      status: raviJsonAsString(json["status"]),
-    );
-  }
-
-  static SessionsReportReturn fromJsonValue(Object? json) {
-    return SessionsReportReturn.fromJson(raviJsonObject(json, "SessionsReportReturn"));
-  }
-}
-
-SessionsReportReturn sessionsReportReturnFromJson(Object? json) => SessionsReportReturn.fromJsonValue(json);
+SessionsReportReturn sessionsReportReturnFromJson(Object? json) => RaviJson.from(json);
 
 class SessionsResetOptions {
   const SessionsResetOptions({this.execute});

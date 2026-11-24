@@ -613,14 +613,14 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/crm.ts | 2754 | fixed | binding retained / no recognized error surface | src/cli/commands/crm.ts:407e90df9c7a840dd0de89eb |
 | cli | src/cli/commands/cron.ts | 72 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:02e8ddab66adf503f54297f1 |
 | cli | src/cli/commands/cron.ts | 112 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:d006d9f3a12597bf174620eb |
-| cli | src/cli/commands/cron.ts | 833 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:b529774125801ecee3a7cfad |
-| cli | src/cli/commands/cron.ts | 941 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:24888fc922bd2f71e6b1c336 |
-| cli | src/cli/commands/cron.ts | 984 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:e0db278d36dfc386af0f7691 |
-| cli | src/cli/commands/cron.ts | 1016 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:912597df63282d8eee95b7b3 |
-| cli | src/cli/commands/cron.ts | 1178 | triaged-follow-up | catch-without-binding | src/cli/commands/cron.ts:497034230d0a93cb39f7ca5c |
-| cli | src/cli/commands/cron.ts | 1289 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:10725bbda2d8d00ddfc406e9 |
-| cli | src/cli/commands/cron.ts | 1363 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:c60fd754bccf5a1a48321971 |
-| cli | src/cli/commands/cron.ts | 1415 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:004cb83b0ddf423fe9af5476 |
+| cli | src/cli/commands/cron.ts | 834 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:b529774125801ecee3a7cfad |
+| cli | src/cli/commands/cron.ts | 942 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:24888fc922bd2f71e6b1c336 |
+| cli | src/cli/commands/cron.ts | 985 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:e0db278d36dfc386af0f7691 |
+| cli | src/cli/commands/cron.ts | 1017 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:912597df63282d8eee95b7b3 |
+| cli | src/cli/commands/cron.ts | 1179 | triaged-follow-up | catch-without-binding | src/cli/commands/cron.ts:497034230d0a93cb39f7ca5c |
+| cli | src/cli/commands/cron.ts | 1290 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:10725bbda2d8d00ddfc406e9 |
+| cli | src/cli/commands/cron.ts | 1364 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:c60fd754bccf5a1a48321971 |
+| cli | src/cli/commands/cron.ts | 1416 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:004cb83b0ddf423fe9af5476 |
 | cli | src/cli/commands/daemon.ts | 111 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:83e88e29b98541a715ba95c9 |
 | cli | src/cli/commands/daemon.ts | 114 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:5c67dde5c37f215d912cdf0d |
 | cli | src/cli/commands/daemon.ts | 149 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:3252e4a28013452b12c3c4af |
@@ -789,44 +789,44 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/self.ts | 591 | triaged-follow-up | catch-without-binding | src/cli/commands/self.ts:baedabaf40aa5665fd263637 |
 | sessions | src/cli/commands/session-conversations.ts | 60 | fixed | binding retained / no recognized error surface | src/cli/commands/session-conversations.ts:896fc8b69d9bbf921f401c35 |
 | sessions | src/cli/commands/sessions-runtime.ts | 179 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions-runtime.ts:4395a23d4078be55a557c2bf |
-| sessions | src/cli/commands/sessions.ts | 1898 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:944b8d05da2c45f2902502be |
-| sessions | src/cli/commands/sessions.ts | 1967 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:9dc7e9fc81738f9628adf86d |
-| sessions | src/cli/commands/sessions.ts | 2209 | triaged-follow-up | rejection-without-binding | src/cli/commands/sessions.ts:bb33fd9f96a52411ee3d735f |
-| sessions | src/cli/commands/sessions.ts | 2603 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:f343a742bb44614542f84ca1 |
-| sessions | src/cli/commands/sessions.ts | 2815 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:c7638ec53a5c9a8ad225e727 |
-| sessions | src/cli/commands/sessions.ts | 4003 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:3bfa3728d97be3491c0172b7 |
-| sessions | src/cli/commands/sessions.ts | 4104 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:95b05645e384bb96dc3bd4e2 |
-| sessions | src/cli/commands/sessions.ts | 4213 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:f48c41cd7b9a23c02d724fe4 |
-| sessions | src/cli/commands/sessions.ts | 4404 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d5a5efa4664214cbad54803c |
-| sessions | src/cli/commands/sessions.ts | 4647 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:c8b2e26f2fd6043b99b88199 |
-| sessions | src/cli/commands/sessions.ts | 4684 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:c8b2e26f2fd6043b99b88199 |
-| sessions | src/cli/commands/sessions.ts | 4771 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:7cbb8863ac4b02b21e00dc0b |
-| sessions | src/cli/commands/sessions.ts | 4879 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:d63c46469103c28624519dca |
-| sessions | src/cli/commands/sessions.ts | 4974 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:538560357ab207bdd65b1b5f |
-| sessions | src/cli/commands/sessions.ts | 5147 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:eeaab4efe83b93bf9e263261 |
-| sessions | src/cli/commands/sessions.ts | 5622 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d27d338c459f4e729b585416 |
-| sessions | src/cli/commands/sessions.ts | 5670 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d27d338c459f4e729b585416 |
-| sessions | src/cli/commands/sessions.ts | 5697 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d27d338c459f4e729b585416 |
-| sessions | src/cli/commands/sessions.ts | 6536 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:52a0c574f7b7344469c6a183 |
-| sessions | src/cli/commands/sessions.ts | 6717 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:d8e2f06f3f8858398d8ab837 |
-| sessions | src/cli/commands/sessions.ts | 6760 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:a51b74cdb16e7eb2a1e16296 |
-| sessions | src/cli/commands/sessions.ts | 6811 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:8a239e4836d6ce42cbc48d7b |
-| sessions | src/cli/commands/sessions.ts | 6898 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:4e8213d901784dd4628928f7 |
-| sessions | src/cli/commands/sessions.ts | 6911 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:4e8213d901784dd4628928f7 |
-| sessions | src/cli/commands/sessions.ts | 6936 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:4e8213d901784dd4628928f7 |
-| sessions | src/cli/commands/sessions.ts | 6955 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:e295b972934a27cbc6026898 |
-| sessions | src/cli/commands/sessions.ts | 7075 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:403eb918999b13c4d738cbad |
-| sessions | src/cli/commands/sessions.ts | 7166 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d21b2d11d3d254c02b35c1c5 |
-| sessions | src/cli/commands/sessions.ts | 7655 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:fdf35d6359ee1a68febf9e0b |
-| sessions | src/cli/commands/sessions.ts | 7970 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:1c71d4065f41e507ecb7475b |
-| sessions | src/cli/commands/sessions.ts | 7987 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:3ff0843b67b1cc10bb3733d5 |
-| sessions | src/cli/commands/sessions.ts | 8005 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d39b5a6a64c049bf86520720 |
-| sessions | src/cli/commands/sessions.ts | 8123 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:c4489c514f75951ee588591e |
-| sessions | src/cli/commands/sessions.ts | 8325 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:9abb1fd8ad15058eab3e60b1 |
-| sessions | src/cli/commands/sessions.ts | 8403 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:fd080b4571635a55133ac393 |
-| sessions | src/cli/commands/sessions.ts | 8884 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:e74ef6f25c50455ddaa2c778 |
-| sessions | src/cli/commands/sessions.ts | 9132 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:af6b2d0d05a12aa7fc99bc15 |
-| sessions | src/cli/commands/sessions.ts | 9177 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:a7884c195162ae8d081804b5 |
+| sessions | src/cli/commands/sessions.ts | 1930 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:944b8d05da2c45f2902502be |
+| sessions | src/cli/commands/sessions.ts | 1999 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:9dc7e9fc81738f9628adf86d |
+| sessions | src/cli/commands/sessions.ts | 2241 | triaged-follow-up | rejection-without-binding | src/cli/commands/sessions.ts:bb33fd9f96a52411ee3d735f |
+| sessions | src/cli/commands/sessions.ts | 2635 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:f343a742bb44614542f84ca1 |
+| sessions | src/cli/commands/sessions.ts | 2847 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:c7638ec53a5c9a8ad225e727 |
+| sessions | src/cli/commands/sessions.ts | 4035 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:3bfa3728d97be3491c0172b7 |
+| sessions | src/cli/commands/sessions.ts | 4136 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:95b05645e384bb96dc3bd4e2 |
+| sessions | src/cli/commands/sessions.ts | 4245 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:f48c41cd7b9a23c02d724fe4 |
+| sessions | src/cli/commands/sessions.ts | 4436 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d5a5efa4664214cbad54803c |
+| sessions | src/cli/commands/sessions.ts | 4679 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:c8b2e26f2fd6043b99b88199 |
+| sessions | src/cli/commands/sessions.ts | 4716 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:c8b2e26f2fd6043b99b88199 |
+| sessions | src/cli/commands/sessions.ts | 4803 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:7cbb8863ac4b02b21e00dc0b |
+| sessions | src/cli/commands/sessions.ts | 4911 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:d63c46469103c28624519dca |
+| sessions | src/cli/commands/sessions.ts | 5006 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:538560357ab207bdd65b1b5f |
+| sessions | src/cli/commands/sessions.ts | 5179 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:eeaab4efe83b93bf9e263261 |
+| sessions | src/cli/commands/sessions.ts | 5654 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d27d338c459f4e729b585416 |
+| sessions | src/cli/commands/sessions.ts | 5702 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d27d338c459f4e729b585416 |
+| sessions | src/cli/commands/sessions.ts | 5729 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d27d338c459f4e729b585416 |
+| sessions | src/cli/commands/sessions.ts | 6568 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:52a0c574f7b7344469c6a183 |
+| sessions | src/cli/commands/sessions.ts | 6749 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:d8e2f06f3f8858398d8ab837 |
+| sessions | src/cli/commands/sessions.ts | 6792 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:a51b74cdb16e7eb2a1e16296 |
+| sessions | src/cli/commands/sessions.ts | 6843 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:8a239e4836d6ce42cbc48d7b |
+| sessions | src/cli/commands/sessions.ts | 6930 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:4e8213d901784dd4628928f7 |
+| sessions | src/cli/commands/sessions.ts | 6943 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:4e8213d901784dd4628928f7 |
+| sessions | src/cli/commands/sessions.ts | 6968 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:4e8213d901784dd4628928f7 |
+| sessions | src/cli/commands/sessions.ts | 6987 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:e295b972934a27cbc6026898 |
+| sessions | src/cli/commands/sessions.ts | 7107 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:403eb918999b13c4d738cbad |
+| sessions | src/cli/commands/sessions.ts | 7198 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d21b2d11d3d254c02b35c1c5 |
+| sessions | src/cli/commands/sessions.ts | 7687 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:fdf35d6359ee1a68febf9e0b |
+| sessions | src/cli/commands/sessions.ts | 8012 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:1c71d4065f41e507ecb7475b |
+| sessions | src/cli/commands/sessions.ts | 8029 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:3ff0843b67b1cc10bb3733d5 |
+| sessions | src/cli/commands/sessions.ts | 8047 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:d39b5a6a64c049bf86520720 |
+| sessions | src/cli/commands/sessions.ts | 8165 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:c4489c514f75951ee588591e |
+| sessions | src/cli/commands/sessions.ts | 8367 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:9abb1fd8ad15058eab3e60b1 |
+| sessions | src/cli/commands/sessions.ts | 8445 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:fd080b4571635a55133ac393 |
+| sessions | src/cli/commands/sessions.ts | 8926 | fixed | binding retained / no recognized error surface | src/cli/commands/sessions.ts:e74ef6f25c50455ddaa2c778 |
+| sessions | src/cli/commands/sessions.ts | 9174 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:af6b2d0d05a12aa7fc99bc15 |
+| sessions | src/cli/commands/sessions.ts | 9219 | triaged-follow-up | catch-without-binding | src/cli/commands/sessions.ts:a7884c195162ae8d081804b5 |
 | cli | src/cli/commands/settings.ts | 87 | triaged-follow-up | rejection-without-binding | src/cli/commands/settings.ts:97fc7d03957d443943127257 |
 | cli | src/cli/commands/settings.ts | 144 | triaged-follow-up | catch-without-binding | src/cli/commands/settings.ts:40d8a2afa100fcde48567ace |
 | cli | src/cli/commands/settings.ts | 572 | fixed | binding retained / no recognized error surface | src/cli/commands/settings.ts:66966335acd020bf544ec079 |

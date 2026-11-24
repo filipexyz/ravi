@@ -156,6 +156,7 @@ import {
 } from "../../channels/slack/thread-lifecycle.js";
 import { resolveSlackThreadRequester } from "../../channels/slack/thread-requester.js";
 import {
+  clipChildRunReturn,
   closeChildRun,
   findChildRunByChildSession,
   reportChildRunProgress,
@@ -634,7 +635,7 @@ export const sessionThreadsReturnSchema = z
     threads: z.array(slackThreadSummarySchema),
   })
   .strict();
-export const sessionReportReturnSchema = z
+const slackThreadReportReturnSchema = z
   .object({
     status: z.literal("published"),
     actionId: z.literal("thread.report"),
@@ -750,7 +751,7 @@ const THREAD_CONFIGURE_COMMAND_ACCESS = {
   action: "thread-configure",
   risk: "medium",
 } as const;
-export const sessionCloseThreadReturnSchema = z
+const slackThreadCloseReturnSchema = z
   .object({
     status: z.literal("closed"),
     actionId: z.literal("thread.close"),
@@ -777,6 +778,37 @@ export const sessionCloseThreadReturnSchema = z
     }),
   })
   .strict();
+
+const childSessionRefSchema = z.object({ sessionKey: z.string(), sessionName: z.string() });
+
+/** `close-thread` inside an automation run's own session (any channel). */
+const automationRunCloseReturnSchema = z
+  .object({
+    status: z.literal("closed"),
+    actionId: z.literal("thread.close"),
+    closed: z.literal(true),
+    changed: z.boolean(),
+    runId: z.string(),
+    surface: z.literal("headless"),
+    parentReturn: z.object({ requested: z.boolean(), delivered: z.boolean(), pending: z.boolean() }),
+    parentSession: childSessionRefSchema,
+    childSession: childSessionRefSchema,
+  })
+  .strict();
+
+/** `report` inside an automation run's own session (any channel). */
+const automationRunReportReturnSchema = z
+  .object({
+    status: z.literal("published"),
+    actionId: z.literal("thread.report"),
+    runId: z.string(),
+    messageId: z.string(),
+    parentSession: childSessionRefSchema,
+  })
+  .strict();
+
+export const sessionCloseThreadReturnSchema = z.union([slackThreadCloseReturnSchema, automationRunCloseReturnSchema]);
+export const sessionReportReturnSchema = z.union([slackThreadReportReturnSchema, automationRunReportReturnSchema]);
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -7696,17 +7728,27 @@ export class SessionCommands {
 
   /** `close-thread` inside an automation run's child session: close it, returning once when asked. */
   private async closeAutomationRun(run: AutomationChildRun, returnText: string | undefined, asJson?: boolean) {
-    if (run.status === "closed" && returnText && run.returnState !== "pending") {
-      // Never report a return as sent when it was dropped.
+    // Never report a return as sent when it was dropped: a closed run takes no new return,
+    // only a retry of the very return still pending.
+    const refuse = (): never => {
       throw new CliExpectedError(
         `Run ${run.childSessionName} is already closed; this return was not delivered to ${run.parentSessionName}`,
         "THREAD_CLOSED",
         1,
       );
+    };
+    if (
+      run.status === "closed" &&
+      returnText &&
+      !(run.returnState === "pending" && run.returnText === clipChildRunReturn(returnText))
+    ) {
+      refuse();
     }
     const result = await closeChildRun(run, returnText ? { kind: "result", text: returnText } : null, {
       callerContextId: getContext({ localOnly: true })?.contextId,
     });
+    // The runner may have closed the run between the read above and this close.
+    if (returnText && !result.changed && !result.parentReturnDelivered) refuse();
     const pending = result.run.returnState === "pending";
     const payload = {
       status: result.run.status,

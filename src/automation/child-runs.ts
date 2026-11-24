@@ -194,10 +194,14 @@ export function childRunError(code: string, message: string, exitCode = 1): CliE
   return new CliExpectedError(message, code, exitCode);
 }
 
-function clip(text: string): string {
-  if (text.length <= CHILD_RUN_RETURN_MAX_CHARS) return text;
-  return `${text.slice(0, CHILD_RUN_RETURN_MAX_CHARS)}\n...[truncated]`;
+/** A return as stored and delivered: trimmed, and cut at `CHILD_RUN_RETURN_MAX_CHARS`. */
+export function clipChildRunReturn(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= CHILD_RUN_RETURN_MAX_CHARS) return trimmed;
+  return `${trimmed.slice(0, CHILD_RUN_RETURN_MAX_CHARS)}\n...[truncated]`;
 }
+
+const clip = clipChildRunReturn;
 
 function runLabel(run: AutomationChildRun): string {
   return `${run.originKind} "${run.originName}" (${run.childSessionName})`;

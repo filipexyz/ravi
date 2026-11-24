@@ -28048,44 +28048,7 @@ public struct SessionsCloseThreadOptions: Codable, Sendable {
   }
 }
 
-public struct SessionsCloseThreadReturn: Codable, Sendable {
-  public var actionId: String
-  public var changed: Bool
-  public var childSession: RaviJSON
-  public var closeSequence: Int
-  public var closed: Bool
-  public var parentReturn: RaviJSON
-  public var parentSession: RaviJSON
-  public var requestId: String
-  public var slack: RaviJSON
-  public var status: String
-
-  public init(actionId: String, changed: Bool, childSession: RaviJSON, closeSequence: Int, closed: Bool, parentReturn: RaviJSON, parentSession: RaviJSON, requestId: String, slack: RaviJSON, status: String) {
-    self.actionId = actionId
-    self.changed = changed
-    self.childSession = childSession
-    self.closeSequence = closeSequence
-    self.closed = closed
-    self.parentReturn = parentReturn
-    self.parentSession = parentSession
-    self.requestId = requestId
-    self.slack = slack
-    self.status = status
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case actionId = "actionId"
-    case changed = "changed"
-    case childSession = "childSession"
-    case closeSequence = "closeSequence"
-    case closed = "closed"
-    case parentReturn = "parentReturn"
-    case parentSession = "parentSession"
-    case requestId = "requestId"
-    case slack = "slack"
-    case status = "status"
-  }
-}
+public typealias SessionsCloseThreadReturn = RaviJSON
 
 public typealias SessionsConversationsAgentsReturn = [RaviJSON]
 
@@ -29274,38 +29237,7 @@ public struct SessionsReportOptions: Codable, Sendable {
   }
 }
 
-public struct SessionsReportReturn: Codable, Sendable {
-  public var actionId: String
-  public var handoff: RaviJSON?
-  public var handoffError: String?
-  public var messageId: String
-  public var parentSession: RaviJSON
-  public var requestId: String
-  public var reviewDispatch: RaviJSON?
-  public var status: String
-
-  public init(actionId: String, handoff: RaviJSON? = nil, handoffError: String? = nil, messageId: String, parentSession: RaviJSON, requestId: String, reviewDispatch: RaviJSON? = nil, status: String) {
-    self.actionId = actionId
-    self.handoff = handoff
-    self.handoffError = handoffError
-    self.messageId = messageId
-    self.parentSession = parentSession
-    self.requestId = requestId
-    self.reviewDispatch = reviewDispatch
-    self.status = status
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case actionId = "actionId"
-    case handoff = "handoff"
-    case handoffError = "handoffError"
-    case messageId = "messageId"
-    case parentSession = "parentSession"
-    case requestId = "requestId"
-    case reviewDispatch = "reviewDispatch"
-    case status = "status"
-  }
-}
+public typealias SessionsReportReturn = RaviJSON
 
 public struct SessionsResetOptions: Codable, Sendable {
   public var execute: Bool?

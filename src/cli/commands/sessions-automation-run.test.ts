@@ -12,8 +12,9 @@ mock.module("../../omni/session-stream.js", () => ({
   }),
 }));
 
-const { SessionCommands } = await import("./sessions.js");
-const { getChildRun, openChildRun } = await import("../../automation/child-runs.js");
+const { SessionCommands, sessionCloseThreadReturnSchema, sessionReportReturnSchema } = await import("./sessions.js");
+const { closeChildRun, getChildRun, openChildRun } = await import("../../automation/child-runs.js");
+const { getDb } = await import("../../router/router-db.js");
 
 let stateDir: string | null = null;
 
@@ -76,6 +77,8 @@ describe("sessions report / close-thread inside an automation run", () => {
     expect(publishCalls[0]!.sessionName).toBe("grupo-updates");
     expect(String(publishCalls[0]!.payload.prompt)).toContain("Resultado: Post novo: release saiu");
     expect(getChildRun("run-1")).toMatchObject({ status: "closed", returnState: "returned", returnKind: "result" });
+    // The gateway validates the declared return shape.
+    expect(sessionCloseThreadReturnSchema.safeParse(payload).success).toBe(true);
 
     // A second return on the closed run fails loudly instead of being dropped.
     await expect(
@@ -102,9 +105,41 @@ describe("sessions report / close-thread inside an automation run", () => {
     );
 
     expect(payload).toMatchObject({ status: "published", actionId: "thread.report", runId: "run-1" });
+    expect(sessionReportReturnSchema.safeParse(payload).success).toBe(true);
     expect(publishCalls).toHaveLength(1);
     expect(String(publishCalls[0]!.payload.prompt)).toContain("Progresso: li 3 posts, nenhum novo");
     expect(getChildRun("run-1")).toMatchObject({ status: "open", returnState: "none" });
+  });
+
+  it("retries only the very return still pending, never a different one", async () => {
+    openRun();
+    // Closed with return A whose delivery failed: A is pending.
+    getDb()
+      .query(
+        "UPDATE automation_child_runs SET status = 'closed', return_state = 'pending', return_kind = 'result', return_text = 'A' WHERE id = 'run-1'",
+      )
+      .run();
+
+    await expect(
+      quietly(() => new SessionCommands().closeThread("B", "test-agent-cron-updates-run1", true)),
+    ).rejects.toThrow(/already closed; this return was not delivered/);
+    expect(publishCalls).toHaveLength(0);
+
+    const payload = await quietly(() => new SessionCommands().closeThread("A", "test-agent-cron-updates-run1", true));
+    expect(payload).toMatchObject({ changed: false, parentReturn: { delivered: true, pending: false } });
+    expect(String(publishCalls[0]!.payload.prompt)).toContain("Resultado: A");
+    expect(getChildRun("run-1")).toMatchObject({ returnState: "returned" });
+  });
+
+  it("refuses a return when the runner closed the run silently in between", async () => {
+    const run = openRun();
+    // The runner's end-of-turn close lands after the command read the run as open.
+    await closeChildRun(getChildRun("run-1")!, null);
+
+    await expect(quietly(() => new SessionCommands()["closeAutomationRun"](run, "tarde demais", true))).rejects.toThrow(
+      /already closed; this return was not delivered/,
+    );
+    expect(publishCalls).toHaveLength(0);
   });
 
   it("refuses the Slack-only wait flags inside a run", async () => {

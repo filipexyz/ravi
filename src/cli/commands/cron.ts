@@ -728,7 +728,8 @@ export class CronCommands {
     thread?: boolean,
     @Option({
       flags: "--report-to <session>",
-      description: "With --thread: the session each run reports to, of the job's agent (default: the creating session)",
+      description:
+        "With --thread: the session each run reports to, of the job's agent (default: the creating session, else the agent's main session)",
     })
     reportTo?: string,
   ) {
