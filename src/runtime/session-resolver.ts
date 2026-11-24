@@ -64,6 +64,7 @@ export interface RuntimeResumeDecision {
     | "provider_mismatch"
     | "provider_resume_unsupported"
     | "session_state_invalid"
+    | "stateless_observation"
     | "unknown";
   staleCleared: boolean;
 }
@@ -115,7 +116,11 @@ export function resolveRuntimeSession(options: {
     storedRuntimeSessionParams,
     sessionCwd,
   });
+  // A stateless observer delivery (`memory: none`) never resumes. The publisher clears the stored
+  // conversation, but a live observer turn that ends while the delivery waits writes its id back.
+  const statelessObservation = options.prompt._observation?.memory === "none";
   const canResumeStoredSession =
+    !statelessObservation &&
     !!storedProviderSessionId &&
     providerMatches &&
     runtimeCapabilities.supportsSessionResume &&
@@ -135,6 +140,7 @@ export function resolveRuntimeSession(options: {
       providerMatches,
       supportsSessionResume: runtimeCapabilities.supportsSessionResume,
       sessionStateValid: sessionStateValidation.valid,
+      statelessObservation,
       canResume: canResumeStoredSession,
     }),
     staleCleared: false,
@@ -248,10 +254,12 @@ function resolveResumeDecisionReason(input: {
   providerMatches: boolean;
   supportsSessionResume: boolean;
   sessionStateValid: boolean;
+  statelessObservation: boolean;
   canResume: boolean;
 }): RuntimeResumeDecision["reason"] {
   if (input.canResume) return "resuming";
   if (!input.hasStoredProviderSessionId) return "missing_provider_session";
+  if (input.statelessObservation) return "stateless_observation";
   if (!input.providerMatches) return "provider_mismatch";
   if (!input.supportsSessionResume) return "provider_resume_unsupported";
   if (!input.sessionStateValid) return "session_state_invalid";

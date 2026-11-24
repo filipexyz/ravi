@@ -5,7 +5,8 @@ import { runWithContext, type ToolContext } from "../cli/context.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { dbCreateAgent, dbUpsertSessionParticipant, getDb } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/index.js";
-import { markSessionTriggerOwnerLent } from "../router/sessions.js";
+import { getSession as getSessionByKey } from "../router/index.js";
+import { markSessionTriggerOwnerLent, updateRuntimeProviderState } from "../router/sessions.js";
 import { dbCreateTagDefinition, dbUpsertTagBinding } from "../tags/index.js";
 import {
   createObservationEvent,
@@ -1526,6 +1527,54 @@ describe("Condition-gated observer bindings", () => {
         metadata: { when: ["turn.failed"] },
       }),
     ).toThrow(/end of turn/);
+  });
+});
+
+describe("Stateless observers (metadata.memory)", () => {
+  async function deliverWithMemory(name: string, memory?: string) {
+    const session = getOrCreateSession(name, "worker", "/tmp/worker", { name });
+    dbUpsertObserverRule({
+      id: `${name}-rule`,
+      scope: "session",
+      sourceSession: name,
+      observerAgentId: "observer",
+      observerRole: "mem",
+      eventTypes: ["turn.complete"],
+      ...(memory ? { metadata: { memory } } : {}),
+    });
+    const [binding] = ensureObserverBindingsForSession({ sessionName: name, session }).bindings;
+    const observer = getOrCreateSession(binding!.observerSessionName, "observer", "/tmp/observer", {
+      name: binding!.observerSessionName,
+    });
+    updateRuntimeProviderState(observer.sessionKey, "claude", {
+      providerSessionId: "prov-earlier-deliveries",
+      runtimeSessionParams: { sessionId: "prov-earlier-deliveries" },
+    });
+    await deliverObservationEvents({
+      sourceSessionName: name,
+      sourceSession: session,
+      agentId: "worker",
+      events: [createObservationEvent({ runId: `r-${name}`, sequence: 1, type: "turn.complete", turnId: "t" })],
+    });
+    expect(publishedPrompts).toHaveLength(1);
+    return getSessionByKey(observer.sessionKey)?.providerSessionId;
+  }
+
+  it("starts every delivery without earlier deliveries when memory is none", async () => {
+    expect(await deliverWithMemory("mem-none", "none")).toBeUndefined();
+  });
+
+  it("keeps the observer conversation by default", async () => {
+    expect(await deliverWithMemory("mem-default")).toBe("prov-earlier-deliveries");
+  });
+
+  it("rejects an unknown memory mode", () => {
+    expect(() =>
+      dbUpsertObserverRule({ id: "mem-bad", observerAgentId: "observer", metadata: { memory: "forever" } }),
+    ).toThrow(/metadata.memory/);
+    expect(() =>
+      dbUpsertObserverRule({ id: "mem-null", observerAgentId: "observer", metadata: { memory: null } }),
+    ).toThrow(/metadata.memory/);
   });
 });
 

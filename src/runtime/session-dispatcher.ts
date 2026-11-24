@@ -215,6 +215,21 @@ export interface RuntimeAbortProvenance {
   request?: unknown;
 }
 
+const STATELESS_OBSERVATION_POLL_MS = 500;
+const STATELESS_OBSERVATION_MAX_WAIT_MS = 10 * 60_000;
+
+/** A runtime still serving work: starting, in a turn, compacting, running a tool or holding input. */
+function runtimeSessionIsServing(session: RuntimeHostStreamingSession): boolean {
+  return (
+    session.starting ||
+    session.turnActive ||
+    session.compacting ||
+    session.toolRunning ||
+    session.pendingMessages.length > 0 ||
+    Boolean(session.pendingWake)
+  );
+}
+
 /**
  * Prompts whose turn runs their own text only: a trigger fire that lends its owner's authority, and
  * an observation notice (its turn is observer-originated, so a person's text riding along would go
@@ -236,6 +251,8 @@ export class RuntimeSessionDispatcher {
   readonly startingSessions = new Set<string>();
   readonly deferredBootstraps = new Map<string, RuntimeLaunchPrompt>();
   readonly heldSkipTurnMessages = new Map<string, string[]>();
+  /** Stateless observer deliveries waiting for the observer's live turn to end, per session. */
+  readonly statelessObservationWaits = new Map<string, { prompts: RuntimeLaunchPrompt[]; since: number }>();
   private readonly runtimeRecoveryRestartAttempts = new Map<string, Readonly<Partial<Record<string, number>>>>();
   private readonly barrierStuckTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly barrierStuckAlerted = new Set<string>();
@@ -1183,6 +1200,30 @@ export class RuntimeSessionDispatcher {
           (barrier === "after_tool" && !sessionEntry?.runtimeProviderOverride?.trim()))
       );
     };
+    let statelessRetired = false;
+    // A delivery already waiting for this observer goes first: a later one queues behind it, even if
+    // the observer turn just ended and the waiting one has not been released yet.
+    if (prompt._observation?.memory === "none" && this.statelessObservationWaits.has(sessionName)) {
+      this.deferStatelessObservation(sessionName, prompt, canonicalSessionKey);
+      return;
+    }
+    // A stateless observer delivery never joins a live conversation: an idle observer runtime is
+    // retired first; a busy one finishes its turn (the delivery's after_response barrier) and the
+    // delivery waits for it, then retires it.
+    if (existing && !existing.done && prompt._observation?.memory === "none") {
+      if (runtimeSessionIsServing(existing)) {
+        this.deferStatelessObservation(sessionName, prompt, canonicalSessionKey);
+        return;
+      }
+      log.info("Streaming: retiring observer runtime for a stateless delivery", { sessionName });
+      shutdownRuntimeStreamingSession(existing, "stateless_observation");
+      if (this.streamingSessions.get(sessionName) === existing) {
+        this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
+        statelessRetired = true;
+      }
+      existing = this.streamingSessions.get(sessionName);
+    }
+
     if (
       existing &&
       (shouldDeferSavedProviderChange(existing) ||
@@ -1212,7 +1253,7 @@ export class RuntimeSessionDispatcher {
     // The broker lease and observation override retain their higher priority.
     refreshProviderSelection();
     existing = this.streamingSessions.get(sessionName);
-    let retainReleasedSlot = false;
+    let retainReleasedSlot = statelessRetired;
 
     if (existing && !existing.done) {
       if (shouldDeferSavedProviderChange(existing)) {
@@ -2560,18 +2601,56 @@ export class RuntimeSessionDispatcher {
     });
   }
 
+  /**
+   * Hold a stateless observer delivery until the observer's live runtime finishes its turn, then
+   * dispatch it again (which retires that runtime). One queue per session keeps delivery order.
+   */
+  private deferStatelessObservation(
+    sessionName: string,
+    prompt: RuntimeLaunchPrompt,
+    canonicalSessionKey?: string,
+  ): void {
+    const queued = this.statelessObservationWaits.get(sessionName);
+    if (queued) {
+      queued.prompts.push(prompt);
+      return;
+    }
+    const wait = { prompts: [prompt], since: Date.now() };
+    this.statelessObservationWaits.set(sessionName, wait);
+    log.info("Holding a stateless observer delivery until the observer turn ends", { sessionName });
+    const tick = () => {
+      const live = this.streamingSessions.get(sessionName);
+      const timedOut = Date.now() - wait.since > STATELESS_OBSERVATION_MAX_WAIT_MS;
+      if (live && !live.done && runtimeSessionIsServing(live) && !timedOut) {
+        setTimeout(tick, STATELESS_OBSERVATION_POLL_MS).unref?.();
+        return;
+      }
+      // Release the queue before dispatching: anything still waiting is re-queued behind this one.
+      this.statelessObservationWaits.delete(sessionName);
+      const [next, ...rest] = wait.prompts;
+      if (!next) return;
+      if (timedOut) {
+        log.warn("Stateless observer delivery waited too long; delivering into the live conversation", {
+          sessionName,
+          waitedMs: Date.now() - wait.since,
+        });
+      }
+      const delivery: RuntimeLaunchPrompt =
+        timedOut && next._observation ? { ...next, _observation: { ...next._observation, memory: undefined } } : next;
+      void this.handlePromptImmediate(sessionName, delivery, canonicalSessionKey)
+        .catch((error) => log.error("Stateless observer delivery failed", { sessionName, error }))
+        .finally(() => {
+          for (const other of rest) void this.handlePromptImmediate(sessionName, other, canonicalSessionKey);
+        });
+    };
+    setTimeout(tick, STATELESS_OBSERVATION_POLL_MS).unref?.();
+  }
+
   reclaimIdleObserverSessions(now = Date.now(), options: { drainPendingStarts?: boolean } = {}): string[] {
     const reclaimed: string[] = [];
     for (const [sessionName, session] of this.streamingSessions) {
       if (!isObserverRuntimeSessionName(sessionName)) continue;
-      const servingWork =
-        session.starting ||
-        session.turnActive ||
-        session.compacting ||
-        session.toolRunning ||
-        session.pendingMessages.length > 0 ||
-        Boolean(session.pendingWake);
-      if (servingWork) continue;
+      if (runtimeSessionIsServing(session)) continue;
       const idleMs = session.lastActivity ? now - session.lastActivity : now;
       log.info("Reclaiming idle observer runtime session", { sessionName, idleMs });
       shutdownRuntimeStreamingSession(session, "idle_observer_reclaim");
