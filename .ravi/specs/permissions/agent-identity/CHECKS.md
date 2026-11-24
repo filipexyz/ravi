@@ -42,3 +42,8 @@
 - A limited person's file write outside the session workspace and temp
   (`~/.ravi/.env`, installed bundle, `~/.zshrc`, LaunchAgents, a symlink
   escaping the workspace) MUST be refused (`provider-config-writes.test.ts`).
+- With the session workspace set to the Ravi state dir or `~/.ravi`, a limited
+  person's write to `.env` MUST still be refused (`provider-config-writes.test.ts`);
+  moving an agent's `cwd` or creating an agent in a limited turn MUST be refused,
+  and a derived context with only inherited `deny_*` MUST be held
+  (`automation-store-guard.test.ts`).

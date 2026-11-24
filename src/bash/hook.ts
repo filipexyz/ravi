@@ -776,7 +776,7 @@ function checkExecutablePermissionsForContext(command: string, ctx: BashPermissi
           agentId: ctx.agentId,
           targets: [write.target],
           cwd,
-          restrictToWorkspace: isActorBreakGlassLimited(ctx.metadata),
+          restrictToWorkspace: isActorBreakGlassLimited(ctx),
         }),
       ),
     )
@@ -1152,7 +1152,7 @@ export function createToolPermissionHook(options: BashHookOptions): HookCallback
       agentId,
       targets: fileWriteToolTargets(toolName, input.tool_input),
       cwd: input.cwd,
-      restrictToWorkspace: isActorBreakGlassLimited(bashContext.metadata),
+      restrictToWorkspace: isActorBreakGlassLimited(bashContext),
     });
     if (configWriteDenial) {
       log.warn("Tool blocked: provider settings write", { agentId, tool: toolName });

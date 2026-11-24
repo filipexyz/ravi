@@ -131,6 +131,14 @@ Ungoverned chats keep `agent_identity ∩ turn_caps`, with one exception:
   into code at boot (`~/.ravi/.env`, the installed bundle, shell rc, launch
   agents) is refused without `execute:executable:*` or `admin:system:*`
   (`providerConfigWriteDenial` with `restrictToWorkspace`).
+- The workspace is configuration an agent can change, so it is not the only
+  boundary: the Ravi state dir, `~/.bun`, launch agents, systemd and fish
+  config and shell startup files are always refused for the limited person,
+  and moving an agent's `cwd` or creating an agent is refused in a limited
+  turn (`dbUpdateAgent`, `dbCreateAgent`).
+- The limit is read from the capabilities as well as the metadata
+  (`isActorBreakGlassLimitedContext`), so derived contexts that inherit the
+  `deny_*` keep every guard.
 - Known residual risk: inside the workspace, file tools stay open, so a
   person without grants can edit files in the agent's workspace (AGENTS.md, MEMORY.md, skills) that later autonomous turns
   read as instructions. Follow-up of design, not closed here.

@@ -3,6 +3,8 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, parse, resolve, sep } from "node:path";
 import { normalizeRuntimeBuiltinToolName } from "../cli/tool-registry.js";
 import type { CapabilityContextLike } from "./capability-context.js";
+import { getRaviStateDir } from "../utils/paths.js";
+import { type ActorLimitContextLike, isActorBreakGlassLimitedContext } from "./actor-limit.js";
 import { canWithCapabilityContext } from "./provider-runtime.js";
 
 /**
@@ -136,10 +138,9 @@ export function providerConfigWriteDenial(input: {
   return `Permission denied: agent:${input.agentId ?? "unknown"} cannot write runtime provider settings (${protectedTargets.join(", ")}); they can run host commands and need execute:executable:* or admin:system:*`;
 }
 
-/** Whether a turn's metadata marks a person held below the agent's break-glass. */
-export function isActorBreakGlassLimited(metadata: Record<string, unknown> | undefined | null): boolean {
-  const withheld = metadata?.actorBreakGlassWithheld;
-  return Array.isArray(withheld) && withheld.length > 0;
+/** Whether a turn is a person held below the agent's break-glass (metadata or inherited `deny_*`). */
+export function isActorBreakGlassLimited(context: ActorLimitContextLike | null | undefined): boolean {
+  return isActorBreakGlassLimitedContext(context);
 }
 
 function tempRoots(): string[] {
@@ -154,12 +155,48 @@ function isUnder(path: string, root: string): boolean {
   return path === root || path.startsWith(root.endsWith(sep) ? root : `${root}${sep}`);
 }
 
+const SHELL_STARTUP_FILES = [
+  ".zshrc",
+  ".zprofile",
+  ".zshenv",
+  ".zlogin",
+  ".bashrc",
+  ".bash_profile",
+  ".bash_login",
+  ".profile",
+];
+
+/**
+ * Paths a limited person never writes, whatever the session workspace is:
+ * they turn into code or authority at the next boot or shell (Ravi state and
+ * `.env`, the Bun global install with the daemon bundle, launch agents and
+ * systemd units, shell startup files). The workspace itself is configuration
+ * an agent can change, so it cannot be the only boundary.
+ */
+function alwaysDeniedRoots(): string[] {
+  const home = homedir();
+  const roots = [
+    getRaviStateDir(),
+    join(home, ".ravi"),
+    join(home, ".bun"),
+    join(home, "Library", "LaunchAgents"),
+    join(home, ".config", "systemd"),
+    join(home, ".config", "fish"),
+    ...SHELL_STARTUP_FILES.map((name) => join(home, name)),
+  ];
+  return roots.flatMap((root) => {
+    const physical = physicalPathForPermissionCheck(root);
+    return physical ? [physical] : [];
+  });
+}
+
 /** The physical target is inside the session workspace or a temp directory (symlinks followed). */
 function isWorkspaceOrTempPath(target: string, cwd?: string): boolean {
   if (!target) return false;
   const expanded = target.replace(/^~(?=\/|$)/, homedir());
   const physical = physicalPathForPermissionCheck(expanded, cwd);
   if (!physical) return false;
+  if (alwaysDeniedRoots().some((root) => isUnder(physical, root))) return false;
   const workspace = physicalPathForPermissionCheck(cwd ?? process.cwd());
   if (workspace && workspace !== parse(workspace).root && workspace !== homedir() && isUnder(physical, workspace)) {
     return true;

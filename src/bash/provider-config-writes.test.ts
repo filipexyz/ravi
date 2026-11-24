@@ -13,6 +13,7 @@ import { dbCreateAgent } from "../router/router-db.js";
 import { createRuntimeContext } from "../runtime/context-registry.js";
 import { createRuntimeHostServices } from "../runtime/host-services.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { getRaviStateDir } from "../utils/paths.js";
 import { createToolPermissionHook, evaluateBashPermission } from "./hook.js";
 
 const agentId = "writer";
@@ -261,6 +262,12 @@ describe("file writes for a person held below the agent's break-glass", () => {
     ]) {
       expect(deniedFor(target)).toContain("outside the session workspace");
     }
+  });
+
+  it("keeps operator config denied even when the session workspace is the Ravi state dir or ~/.ravi", () => {
+    expect(deniedFor(".env", getRaviStateDir())).toContain("outside the session workspace");
+    expect(deniedFor(join(home, ".ravi", ".env"), join(home, ".ravi"))).toContain("outside the session workspace");
+    expect(deniedFor(".zshrc", home)).toContain("outside the session workspace");
   });
 
   it("refuses a symlink inside the workspace that points outside", () => {

@@ -733,7 +733,7 @@ async function authorizeRuntimeToolUse(
     agentId: options.agentId,
     targets: fileWriteToolTargets(request.toolName, request.input),
     cwd: options.cwd,
-    restrictToWorkspace: isActorBreakGlassLimited(options.context?.metadata),
+    restrictToWorkspace: isActorBreakGlassLimited(options.context),
   });
   if (configWriteDenial) {
     emitRuntimePolicyDenied(options, {

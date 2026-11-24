@@ -75,7 +75,7 @@ export function assertCallerFileAccess(path: string, mode: CallerPathMode): void
           can,
           agentId: ctx?.agentId ?? context.agentId,
           targets: [path],
-          restrictToWorkspace: isActorBreakGlassLimited(context.metadata),
+          restrictToWorkspace: isActorBreakGlassLimited(context),
         })
       : undefined;
   if (denial) {

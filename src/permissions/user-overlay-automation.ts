@@ -1,5 +1,6 @@
 import { getContext } from "../cli/context.js";
 import { CliExpectedError } from "../cli/expected-error.js";
+import { isActorBreakGlassLimitedContext } from "./actor-limit.js";
 
 /**
  * A turn narrowed to a contact's chat grants (`actorAuthorizationMode:
@@ -16,9 +17,9 @@ export function isUserOverlayAutomationTurn(): boolean {
   return (
     metadata?.actorAuthorizationMode === "user-overlay" ||
     metadata?.relayNarrowing === true ||
-    // A person's turn (or a relay of it) held to "agent minus break-glass":
-    // automation written here would run later as the whole agent.
-    (Array.isArray(metadata?.actorBreakGlassWithheld) && metadata.actorBreakGlassWithheld.length > 0)
+    // A person's turn (or a relay or derived context of it) held to "agent
+    // minus break-glass": automation written here would run later as the whole agent.
+    isActorBreakGlassLimitedContext(getContext()?.context)
   );
 }
 
@@ -51,13 +52,30 @@ export function assertAutomationStoreWrite(
   options: { disablesOnly?: boolean; bindableToOverlayChat?: boolean } = {},
 ): void {
   if (options.disablesOnly) return;
-  const metadata = getContext()?.context?.metadata;
-  if (!metadata) return;
-  const withheld = Array.isArray(metadata.actorBreakGlassWithheld) && metadata.actorBreakGlassWithheld.length > 0;
+  const context = getContext()?.context;
+  if (!context) return;
+  const metadata = context.metadata ?? {};
+  const withheld = isActorBreakGlassLimitedContext(context);
   const narrowed = metadata.actorAuthorizationMode === "user-overlay" || metadata.relayNarrowing === true;
   if (!withheld && (!narrowed || options.bindableToOverlayChat)) return;
   throw new CliExpectedError(
     `${store} cannot be written in a turn limited below the agent's authority: it would run later with the agent's full authority.`,
+    "PERMISSION_DENIED",
+    1,
+    "Ask the operator to set it up.",
+  );
+}
+
+/**
+ * A person held below the agent's break-glass cannot move an agent's
+ * workspace or create an agent: the workspace is where that person's file
+ * writes are allowed, so moving it (e.g. to the Ravi state dir) would reopen
+ * operator config. Code outside a turn is unaffected.
+ */
+export function assertNotActorBreakGlassLimited(op: string): void {
+  if (!isActorBreakGlassLimitedContext(getContext()?.context)) return;
+  throw new CliExpectedError(
+    `${op} is not available in a turn limited below the agent's authority.`,
     "PERMISSION_DENIED",
     1,
     "Ask the operator to set it up.",
