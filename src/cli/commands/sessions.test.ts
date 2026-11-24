@@ -3134,16 +3134,18 @@ describe("SessionCommands attach hints", () => {
       expect(reportedSlackThreads.at(-1)?.message).toContain("Revisão despachada pelo runtime:");
       expect(listOpenHandoffs(parentKey)).toHaveLength(0);
 
-      // The same report again does not open a second review: the key returns the first request.
+      // The same review again, with another note and the repo spelled differently, returns the first request.
       const again = (await new SessionCommands().report(
-        "PR 2 pronta",
+        "PR 2 pronta; notas de teste manual acrescentadas",
         undefined,
         true,
         "review",
         sha,
-        "filipexyz/ravi#938",
+        "FilipeXYZ/Ravi#938",
       )) as Record<string, any>;
       expect(again.reviewDispatch).toMatchObject({ status: "dispatched", replayed: true });
+      expect(again.handoff).toMatchObject({ kind: "review", status: "acknowledged" });
+      expect(createdSlackThreadLifecycles.length).toBe(lifecyclesBefore + 1);
       expect(again.reviewDispatch.requestId).toBe(green.reviewDispatch.requestId);
     } finally {
       setReviewGithubReadForTest(null);

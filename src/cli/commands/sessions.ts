@@ -247,6 +247,7 @@ import {
   pickReviewerRuntime,
   readReviewEvidence,
   reviewAutoDispatchEnabled,
+  reviewGateCheckName,
   reviewGithubRead,
   reviewThreadKey,
   type ReviewTarget,
@@ -7929,7 +7930,34 @@ export class SessionCommands {
     | { status: "skipped"; reason: string }
   > {
     if (!reviewAutoDispatchEnabled()) return { status: "skipped", reason: "auto-dispatch is off" };
+    // Opening the reviewer is a thread creation: the caller needs that authority, not only the right to report.
+    if (getContext()?.context) {
+      const access = enforceCliCommandAccess({
+        group: "sessions",
+        command: "create-thread",
+        access: { kind: "mutate", resource: "sessions", action: "create-thread", risk: "medium" },
+        input: {},
+        source: "tool",
+      });
+      if (!access.allowed) return { status: "skipped", reason: "this session may not create threads" };
+    }
     try {
+      // One review per PR head: a repeat (another note, a gate rerun) returns the review already opened
+      // instead of comparing a rebuilt brief against the first one.
+      const key = reviewThreadKey(target);
+      const existing = getSlackThreadLifecycle(
+        slackThreadRequestIdForKey(slackThreadParentSessionKey(session.sessionKey), key),
+      );
+      if (existing) {
+        return {
+          status: "dispatched",
+          requestId: existing.requestId,
+          replayed: true,
+          provider: existing.providerOverride ?? "claude",
+          model: existing.modelOverride ?? "",
+          gate: { name: reviewGateCheckName(), checkRunId: null, completedAt: null },
+        };
+      }
       const evidence = await readReviewEvidence(target, reviewGithubRead());
       const decision = decideReviewDispatch(target, evidence);
       if (!decision.dispatch) return { status: "skipped", reason: decision.reason };
@@ -7947,7 +7975,9 @@ export class SessionCommands {
         model: reviewer.model,
         provider: reviewer.provider,
         effort: reviewer.effort,
-        idempotencyKey: reviewThreadKey(target),
+        // From the author's session, whatever session runs this command (`report --session`).
+        sessionOverride: session.sessionKey,
+        idempotencyKey: key,
       });
       if (!queued) return { status: "skipped", reason: "the review thread could not be queued" };
       return {
@@ -7996,15 +8026,15 @@ export class SessionCommands {
     }
     const scopeCtx = getScopeContext();
     const now = Date.now();
-    const handoffs = (
-      includeClosed
-        ? listHandoffs({ parentSessionKey, includeClosed: true, limit: 100 })
-        : listOpenHandoffs(parentSessionKey)
+    // Scope first, then the cap: rows the caller cannot see must not use up its history.
+    const visible = (
+      includeClosed ? listHandoffs({ parentSessionKey, includeClosed: true }) : listOpenHandoffs(parentSessionKey)
     ).filter((handoff) => {
       if (!isScopeEnforced(scopeCtx)) return true;
       const parent = getSession(handoff.parentSessionKey);
       return parent ? canAccessSession(scopeCtx, sessionActionRef(parent)) : false;
     });
+    const handoffs = includeClosed ? visible.slice(-100) : visible;
     const payload = {
       handoffs: handoffs.map((handoff) => ({
         id: handoff.id,

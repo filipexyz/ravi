@@ -23,6 +23,8 @@ const GREEN: ReviewEvidence = {
 describe("review dispatch", () => {
   it("parses owner/repo#number and full SHAs only", () => {
     expect(parsePullRequestRef("filipexyz/ravi#938")).toEqual({ repo: "filipexyz/ravi", pr: 938 });
+    // One spelling per repository, so one PR head has one review key.
+    expect(parsePullRequestRef("FilipeXYZ/Ravi#938")).toEqual({ repo: "filipexyz/ravi", pr: 938 });
     expect(parsePullRequestRef("#938")).toBeNull();
     expect(parsePullRequestRef("filipexyz/ravi#0")).toBeNull();
     expect(parsePullRequestRef("ravi#938")).toBeNull();
@@ -81,6 +83,8 @@ describe("review dispatch", () => {
     expect(pickReviewerRuntime({ provider: "claude", model: "opus" }).model).toBe("sonnet");
     expect(pickReviewerRuntime({ provider: "claude", model: "claude-opus-5-5" }).model).toBe("sonnet");
     expect(pickReviewerRuntime({ provider: "claude", model: "sonnet" }).model).toBe("opus");
+    // Opus through another runtime is still Opus.
+    expect(pickReviewerRuntime({ provider: "pi", model: "anthropic/claude-opus-4-6" }).model).toBe("sonnet");
     expect(pickReviewerRuntime({ provider: "codex", model: "gpt-6-astra" })).toEqual({
       provider: "claude",
       model: "opus",

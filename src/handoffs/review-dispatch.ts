@@ -29,7 +29,8 @@ export function parsePullRequestRef(value: string): { repo: string; pr: number }
   const match = /^([^#\s]+)#(\d+)$/.exec(value.trim());
   if (!match || !REPO.test(match[1]!)) return null;
   const pr = Number(match[2]);
-  return Number.isSafeInteger(pr) && pr > 0 ? { repo: match[1]!, pr } : null;
+  // GitHub names are case-insensitive: one spelling, so one PR head has one review key.
+  return Number.isSafeInteger(pr) && pr > 0 ? { repo: match[1]!.toLowerCase(), pr } : null;
 }
 
 export function isFullSha(value: string): boolean {
@@ -145,8 +146,8 @@ export function pickReviewerRuntime(author: { provider?: string | null; model?: 
   model: "opus" | "sonnet";
   effort: "high";
 } {
-  const model = (author.model ?? "").toLowerCase();
-  const authorIsOpus = (author.provider ?? "claude") === "claude" && model.includes("opus");
+  // The model identity decides, not the runtime: Pi can run Anthropic Opus (`anthropic/claude-opus-…`).
+  const authorIsOpus = (author.model ?? "").toLowerCase().includes("opus");
   return { provider: "claude", model: authorIsOpus ? "sonnet" : "opus", effort: "high" };
 }
 
