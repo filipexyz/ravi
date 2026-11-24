@@ -466,9 +466,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels-slack | src/channels/slack/thread-shortcuts.ts | 261 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-shortcuts.ts:ebefa46601d9c8dccc1362b9 |
 | channels-slack | src/channels/slack/thread-shortcuts.ts | 289 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-shortcuts.ts:47007c670e9ac083cb72cb91 |
 | channels-slack | src/channels/slack/thread-shortcuts.ts | 302 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-shortcuts.ts:bbb997cb56af10bc68f63172 |
-| channels-slack | src/channels/slack/thread-shortcuts.ts | 358 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-shortcuts.ts:ec8296ac8db0a0e0c08e96c8 |
-| channels-slack | src/channels/slack/thread-shortcuts.ts | 364 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-shortcuts.ts:7a24f735e5af3913702466ad |
-| channels-slack | src/channels/slack/thread-shortcuts.ts | 375 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-shortcuts.ts:517f9dbfe1ab8218c75ba7b6 |
+| channels-slack | src/channels/slack/thread-shortcuts.ts | 366 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-shortcuts.ts:ec8296ac8db0a0e0c08e96c8 |
+| channels-slack | src/channels/slack/thread-shortcuts.ts | 372 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-shortcuts.ts:7a24f735e5af3913702466ad |
+| channels-slack | src/channels/slack/thread-shortcuts.ts | 383 | fixed | binding retained / no recognized error surface | src/channels/slack/thread-shortcuts.ts:517f9dbfe1ab8218c75ba7b6 |
 | channels-slack | src/channels/slack/thread-turn-health.ts | 92 | no-cause | Historical tool input without valid JSON cannot supply a timeout; retain the observation's default budget. | src/channels/slack/thread-turn-health.ts:9e7f066e7de50642bd5b6ea8 |
 | channels | src/channels/terminal-output-handoff.ts | 80 | fixed | binding retained / no recognized error surface | src/channels/terminal-output-handoff.ts:653a9f18ac7740501085b044 |
 | channels | src/channels/terminal-output-handoff.ts | 89 | fixed | binding retained / no recognized error surface | src/channels/terminal-output-handoff.ts:1ee12dff2d1394071b7418c9 |

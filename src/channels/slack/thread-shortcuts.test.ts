@@ -615,6 +615,22 @@ describe("a confirmation runs the command, and the card becomes its answer", () 
     expect(h.calls.close).toEqual([[PARENT_KEY, ROOT_TS]]);
   });
 
+  it("holds the card's age again when the command is about to run, not only when the tap arrived", async () => {
+    // The tap arrived inside the window, and the daemon got to it half a minute later: the card is now past ten minutes.
+    const h = harness();
+    const late: SlackCommandDeps = { ...h.deps, now: () => NOW + 30_000 };
+    const askedSecondsAgo = (SLACK_THREAD_CONFIRM_MAX_AGE_MS - 5_000) / 1000;
+
+    expect(
+      await handleSlackThreadShortcut(
+        confirmation({ value: `C0CHAN|${ROOT_TS}|${Math.floor(NOW / 1000) - askedSecondsAgo}` }),
+        late,
+      ),
+    ).toEqual({ kind: "expired" });
+    expect(h.calls.close).toEqual([]);
+    expect(text(h.replies[0])).toContain("expirou");
+  });
+
   it("does not trust a card asked in the future either", async () => {
     const h = harness();
 

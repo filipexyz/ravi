@@ -308,8 +308,16 @@ export async function handleSlackThreadShortcut(
     }
 
     case "confirm": {
-      const age = event.receivedAt - event.askedAt;
-      if (age > SLACK_THREAD_CONFIRM_MAX_AGE_MS || age < -CLOCK_SKEW_MS) {
+      // The card's age is held twice: when the tap arrived (which also catches a card stamped in the
+      // future by a clock too far off), and now, right before it runs, because the daemon can take up
+      // to the freshness window to get to a tap that has already arrived.
+      const arrivedAge = event.receivedAt - event.askedAt;
+      const runningAge = now - event.askedAt;
+      if (
+        arrivedAge > SLACK_THREAD_CONFIRM_MAX_AGE_MS ||
+        arrivedAge < -CLOCK_SKEW_MS ||
+        runningAge > SLACK_THREAD_CONFIRM_MAX_AGE_MS
+      ) {
         await replaceCard("Essa confirmação expirou. Use o atalho de novo.");
         return { kind: "expired" };
       }
