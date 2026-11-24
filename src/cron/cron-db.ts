@@ -4,6 +4,7 @@
  * CRUD operations for cron jobs stored in SQLite.
  */
 
+import { assertAutomationStoreWrite } from "../permissions/user-overlay-automation.js";
 import { randomUUID } from "node:crypto";
 import { getDb, getDbChanges } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
@@ -120,6 +121,7 @@ function rowToJob(row: CronJobRow): CronJob {
  * Create a new cron job.
  */
 export function dbCreateCronJob(input: CronJobInput): CronJob {
+  assertAutomationStoreWrite("cron job", { bindableToOverlayChat: Boolean(input.creatorChat) });
   const db = getDb();
   const id = randomUUID().slice(0, 8);
   const now = Date.now();
@@ -206,6 +208,13 @@ export function dbDisableShellJobForOwner(job: CronJob): boolean {
 export function dbUpdateCronJob(id: string, updates: Partial<CronJob>): CronJob {
   const db = getDb();
   const existing = dbGetCronJob(id);
+  const disablesOnly = Object.entries(updates as Record<string, unknown>).every(
+    ([key, value]) => value === undefined || (key === "enabled" && value === false),
+  );
+  assertAutomationStoreWrite("cron job", {
+    disablesOnly,
+    bindableToOverlayChat: Boolean(updates.creatorChat ?? existing?.creatorChat),
+  });
 
   if (!existing) {
     throw new Error(`Cron job not found: ${id}`);

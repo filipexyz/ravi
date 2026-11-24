@@ -9813,6 +9813,7 @@ export function dbPlantLegacySessionChatBindingForTests(input: {
  * Create a new agent
  */
 export function dbCreateAgent(input: z.input<typeof AgentInputSchema>): AgentConfig {
+  assertAgentWorkspaceChangeAllowed(`agent create ${String(input.id ?? "")}`.trim());
   const validated = AgentInputSchema.parse(input);
   const now = Date.now();
   const s = getStatements();
@@ -9896,6 +9897,10 @@ export function dbUpdateAgent(id: string, updates: AgentUpdateInput): AgentConfi
 
   if (!row) {
     throw new Error(`Agent not found: ${id}`);
+  }
+
+  if (updates.cwd !== undefined && updates.cwd !== row.cwd) {
+    assertAgentWorkspaceChangeAllowed(`agent cwd of ${id}`);
   }
 
   if (updates.defaults !== undefined) {
@@ -12099,4 +12104,14 @@ export function migrateTriggerSessionCheck(database: Database): void {
     }
     throw error;
   }
+}
+
+/**
+ * Lazily required: the permissions module reaches the CLI context, which
+ * imports this module back at load time.
+ */
+function assertAgentWorkspaceChangeAllowed(op: string): void {
+  const { assertNotActorBreakGlassLimited } =
+    require("../permissions/user-overlay-automation.js") as typeof import("../permissions/user-overlay-automation.js");
+  assertNotActorBreakGlassLimited(op);
 }

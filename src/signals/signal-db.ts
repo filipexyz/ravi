@@ -1,4 +1,5 @@
 import { dbGetSetting, dbSetSetting, getDb, getRaviDbPath } from "../router/router-db.js";
+import { assertAutomationStoreWrite } from "../permissions/user-overlay-automation.js";
 import type {
   ClearWhen,
   ListSignalsOptions,
@@ -334,6 +335,7 @@ export function dbInsertRaisedSignal(signal: SignalRecord, audit: SignalAudit, n
 }
 
 export function dbInsertSignal(signal: SignalRecord): void {
+  assertAutomationStoreWrite("signal");
   ensureSignalSchema();
   getDb()
     .prepare(

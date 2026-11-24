@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { evaluateBashPermission } from "../bash/hook.js";
 import { runWithContext, type ToolContext } from "../cli/context.js";
+import { createContact } from "../contacts.js";
 import { agentCan } from "../permissions/provider-runtime.js";
 import { enforceScopeCheck } from "../permissions/scope.js";
 import type { AgentConfig } from "../router/index.js";
@@ -189,7 +190,7 @@ describe("delegated turn enforcement (end-to-end)", () => {
     expect(evaluateBashPermission("printf '%s' $(date)", bashCtx).allowed).toBe(true);
   });
 
-  it("lets a WhatsApp group turn execute ssh from explicit execute:executable:*", () => {
+  it("keeps a group member without grants off the agent's explicit execute:executable:*", () => {
     dbUpdateAgent(agent.id, {
       defaults: { runtimePermissions: { capabilities: ["execute:executable:*"] } },
     });
@@ -202,6 +203,49 @@ describe("delegated turn enforcement (end-to-end)", () => {
         capabilities: ctx.context?.capabilities,
         metadata: ctx.context?.metadata,
       }).allowed,
+    ).toBe(false);
+  });
+
+  it("gives a person in an ungoverned group full-access minus break-glass", () => {
+    dbUpdateAgent(agent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+    const stranger = createContact({ phone: "5511900000201", name: "Stranger" });
+    const ctx = turnContext(contactPrompt(stranger.id));
+    const bashCtx = {
+      agentId: agent.id,
+      kind: ctx.context?.kind,
+      capabilities: ctx.context?.capabilities,
+      metadata: ctx.context?.metadata,
+    };
+
+    // Ordinary capabilities that came from the admin shortcut stay.
+    expect(runWithContext(ctx, () => agentCan(agent.id, "mutate", "image", "generate"))).toBe(true);
+    expect(runWithContext(ctx, () => agentCan(agent.id, "use", "tool", "WebFetch"))).toBe(true);
+    // Break-glass does not reach the person, not even through the live ceiling of the shell hook.
+    expect(runWithContext(ctx, () => agentCan(agent.id, "admin", "system", "*"))).toBe(false);
+    expect(evaluateBashPermission("ssh host uptime", bashCtx).allowed).toBe(false);
+    expect(evaluateBashPermission("rm -rf /tmp/x", bashCtx).allowed).toBe(false);
+    expect(ctx.context?.metadata?.actorBreakGlassWithheld).toEqual(["admin:system:*", "execute:executable:*"]);
+  });
+
+  it("keeps the owner's break-glass in the same chat", () => {
+    dbUpdateAgent(agent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+    const owner = createContact({
+      phone: "5511900000202",
+      name: "Owner",
+      tags: ["permission-owner"],
+      status: "allowed",
+    });
+    const ctx = turnContext(contactPrompt(owner.id));
+
+    expect(runWithContext(ctx, () => agentCan(agent.id, "admin", "system", "*"))).toBe(true);
+    expect(
+      evaluateBashPermission("ssh host uptime", {
+        agentId: agent.id,
+        kind: ctx.context?.kind,
+        capabilities: ctx.context?.capabilities,
+        metadata: ctx.context?.metadata,
+      }).allowed,
     ).toBe(true);
+    expect(ctx.context?.metadata?.actorBreakGlassWithheld).toBeUndefined();
   });
 });

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { runWithContext, type ToolContext } from "../../cli/context.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { getDb } from "../../router/router-db.js";
 import {
@@ -271,5 +272,40 @@ describe("triggers-db owner", () => {
     const legacy = dbGetTrigger("legacy01");
     expect(legacy).toMatchObject({ id: "legacy01", enabled: true });
     expect(legacy?.ownerPrincipal).toBeUndefined();
+  });
+});
+
+describe("triggers-db automation store guard", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-triggers-db-guard-");
+  });
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  const limitedTurn = {
+    contextId: "ctx_person",
+    agentId: "full-agent",
+    context: {
+      contextId: "ctx_person",
+      contextKey: "rctx_person",
+      kind: "turn-runtime",
+      agentId: "full-agent",
+      capabilities: [],
+      metadata: { actorBreakGlassWithheld: ["admin:system:*", "execute:executable:*"] },
+      createdAt: 0,
+    },
+  } as ToolContext;
+
+  it("refuses creating or editing a trigger from a turn held below break-glass, but lets it disable", () => {
+    const trigger = dbCreateTrigger({ name: "operator", topic: "ravi.watch.github.>", message: "ok" });
+    expect(() =>
+      runWithContext(limitedTurn, () => dbCreateTrigger({ name: "person", topic: "ravi.x", message: "do anything" })),
+    ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
+    expect(() => runWithContext(limitedTurn, () => dbUpdateTrigger(trigger.id, { message: "do anything" }))).toThrow(
+      expect.objectContaining({ code: "PERMISSION_DENIED" }),
+    );
+    expect(runWithContext(limitedTurn, () => dbUpdateTrigger(trigger.id, { enabled: false })).enabled).toBe(false);
   });
 });

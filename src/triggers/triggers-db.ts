@@ -4,6 +4,7 @@
  * CRUD operations for event triggers stored in SQLite.
  */
 
+import { assertAutomationStoreWrite } from "../permissions/user-overlay-automation.js";
 import { randomUUID } from "node:crypto";
 import { getDb, getDbChanges } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
@@ -132,6 +133,7 @@ function rowToTrigger(row: TriggerRow): Trigger {
  * Create a new trigger.
  */
 export function dbCreateTrigger(input: TriggerInput): Trigger {
+  assertAutomationStoreWrite("trigger");
   const db = getDb();
   const id = randomUUID().slice(0, 8);
   const now = Date.now();
@@ -272,6 +274,10 @@ export function dbDisableShellTriggerForOwner(trigger: Pick<Trigger, "id" | "own
 }
 
 export function dbUpdateTrigger(id: string, updates: TriggerUpdate, options: TriggerUpdateOptions = {}): Trigger {
+  const disablesOnly = Object.entries(updates as Record<string, unknown>).every(
+    ([key, value]) => value === undefined || (key === "enabled" && value === false),
+  );
+  assertAutomationStoreWrite("trigger", { disablesOnly });
   const db = getDb();
   const existing = dbGetTrigger(id);
 
