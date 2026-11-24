@@ -28,7 +28,11 @@ import {
   dbUpdateTagDefinition,
 } from "../../tags/index.js";
 import { attachTagToSelector, detachTagFromSelector, resolveTagTarget } from "../../tags/service.js";
-import { assertProviderOwnedTagWriteAuthority } from "../../permissions/privileged-contact-writes.js";
+import {
+  assertBreakGlassTagWriteAllowed,
+  assertPermissionDefinitionWithoutBreakGlass,
+  assertProviderOwnedTagWriteAuthority,
+} from "../../permissions/privileged-contact-writes.js";
 import { hasTagTargetSelector, type TagTargetSelectorInput } from "../../tags/targets.js";
 import type {
   TagAssetType,
@@ -405,6 +409,11 @@ export class TagCommands {
       normalizeSlug(slug),
       isPermissionDefinition(requestedKind, source?.trim()),
     );
+    assertPermissionDefinitionWithoutBreakGlass("tags create", normalizeSlug(slug), {
+      kind: requestedKind,
+      source: source?.trim(),
+      metadata: parseMetadata(metadataJson),
+    } as Parameters<typeof assertPermissionDefinitionWithoutBreakGlass>[2]);
     const tag = dbCreateTagDefinition({
       slug: normalizeSlug(slug),
       label: label?.trim() || normalizeSlug(slug),
@@ -562,6 +571,14 @@ export class TagCommands {
           normalizedKey === "source" ? value.trim() : existing?.source,
         ),
     );
+    if (existing && ["kind", "source", "metadata", "meta"].includes(normalizedKey)) {
+      assertPermissionDefinitionWithoutBreakGlass("tags set", normalizedSlug, {
+        kind: normalizedKey === "kind" ? (value.trim().toLowerCase() as typeof existing.kind) : existing.kind,
+        source: normalizedKey === "source" ? value.trim() : existing.source,
+        metadata:
+          normalizedKey === "metadata" || normalizedKey === "meta" ? (parseMetadata(value) ?? {}) : existing.metadata,
+      });
+    }
     const base = { slug: normalizedSlug, updatedBy: resolveTagActor() };
     const tag = (() => {
       try {
@@ -717,6 +734,7 @@ export class TagCommands {
       normalizedSlug,
       isPermissionDefinition(attachedDefinition?.kind, attachedDefinition?.source),
     );
+    assertBreakGlassTagWriteAllowed("tags attach", [normalizedSlug]);
     const { binding } = (() => {
       try {
         return attachTagToSelector({

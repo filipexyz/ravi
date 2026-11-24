@@ -81,6 +81,7 @@ import {
 import { safeLabel } from "../../permissions/grant-requests/labels.js";
 import type { GrantRequestPlan } from "../../permissions/grant-requests/types.js";
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
+import { BREAK_GLASS_REQUEST_COMMAND, profileBreakGlassReasons } from "../../permissions/break-glass.js";
 import { authorizePermission, materializeSubjectCapabilities } from "../../permissions/provider-runtime.js";
 
 function printJson(payload: unknown): void {
@@ -94,6 +95,13 @@ const FORCE_OPTION_DESCRIPTION =
   "Explicitly use the global (all chats) contact scope. Prefer --chat; ask the human before going global.";
 const FULL_ACCESS_APPROVAL_MESSAGE =
   "full-access requires verified operator approval. This command cannot consume an operator approval; --apply is blocked.";
+
+function breakGlassApprovalMessage(reasons: readonly string[]): string {
+  return (
+    `This profile confers break-glass power (${reasons.join(", ")}), the same as full-access. ` +
+    "It requires verified operator approval; this command cannot consume one, so --apply is blocked."
+  );
+}
 
 const providerSchema = z.object({
   id: z.string(),
@@ -934,17 +942,24 @@ function buildPermissionAllowPlan(input: PermissionAllowInput): PermissionAllowP
   const existingTag = dbGetTagDefinition(tagSlug);
   const explicitCapabilities = parseCapabilityList(input.capabilities);
   const capabilities = resolveProfileCapabilities(op, tagSlug, existingTag, explicitCapabilities, input.asJson);
-  // Command authority and --apply do not prove operator approval. Until this
-  // command can consume a verified approval, fail before any provider write.
-  if (input.apply && tagSlug === "permission-full-access") {
-    contractFail(op, "FULL_ACCESS_APPROVAL_REQUIRED", FULL_ACCESS_APPROVAL_MESSAGE, {
+  // Command authority and --apply do not prove operator approval. The guard is
+  // on the power the grant confers (spec permissions/break-glass), not on the
+  // profile name: any profile whose capabilities include admin:system:* or
+  // execute:executable:*, or that is an admin profile by name, fails here,
+  // before any provider write, for every caller.
+  const breakGlass = tagSlug === "permission-full-access" ? [tagSlug] : profileBreakGlassReasons(tagSlug, capabilities);
+  const breakGlassMessage =
+    tagSlug === "permission-full-access" ? FULL_ACCESS_APPROVAL_MESSAGE : breakGlassApprovalMessage(breakGlass);
+  if (input.apply && breakGlass.length > 0) {
+    contractFail(op, "FULL_ACCESS_APPROVAL_REQUIRED", breakGlassMessage, {
       asJson: input.asJson,
       exitCode: CONTRACT_EXIT_POLICY,
-      diagnostic: errorDiagnostic(FULL_ACCESS_APPROVAL_MESSAGE, { operation: op }),
+      diagnostic: errorDiagnostic(breakGlassMessage, { operation: op }),
       details: {
+        breakGlass,
         suggestedAction:
           "Preview without --apply. To get full access approved by the operator, run: " +
-          `ravi permissions request full-access --to contact:<id> --chat <chat-id> --agent <executor> --execute (from any turn).`,
+          `${BREAK_GLASS_REQUEST_COMMAND} (from any turn).`,
       },
     });
   }
@@ -1024,9 +1039,10 @@ function buildPermissionAllowPlan(input: PermissionAllowInput): PermissionAllowP
       agentCeilings,
       governedBefore,
       apply: input.apply,
+      breakGlassMessage: breakGlass.length > 0 ? breakGlassMessage : undefined,
     }),
   };
-  if (!input.apply && tagSlug !== "permission-full-access") {
+  if (!input.apply && breakGlass.length === 0) {
     payload.nextCommand = buildAllowApplyCommand(input);
   }
   return payload;
@@ -1761,10 +1777,11 @@ function buildAllowHints(input: {
   agentCeilings: string[];
   governedBefore: Map<string, boolean>;
   apply: boolean;
+  breakGlassMessage?: string;
 }): string[] {
   const hints: string[] = [];
-  if (input.tagSlug === "permission-full-access") {
-    hints.push(FULL_ACCESS_APPROVAL_MESSAGE);
+  if (input.breakGlassMessage) {
+    hints.push(input.breakGlassMessage);
   }
   if (input.contacts.length === 0) return hints;
   if (input.force) {

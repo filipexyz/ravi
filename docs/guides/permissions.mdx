@@ -143,6 +143,8 @@ As of 19 Nov 2026, app composition is in `@next` and not yet in `@latest`. Compo
 
 Three contact tags grant `admin:system:*`: `permission-admin`, `permission-owner` and `permission-superadmin`. They count only while the contact's status is `allowed` and the contact has not opted out.
 
+These tags, and any profile that carries `admin:system:*` or `execute:executable:*`, are break-glass. Only your terminal can add them to a contact; an agent turn is refused even at `full-access`. `ravi permissions allow --apply` refuses any break-glass profile, whatever its name, for everyone: a contact gets full access only through `ravi permissions request full-access` and your approval. A permission profile definition cannot carry break-glass capabilities.
+
 ```bash
 ravi contacts tag <contact-id> permission-owner     # applies immediately, no dry-run
 ravi permissions materialize --subject-type contact --subject-id <contact-id>

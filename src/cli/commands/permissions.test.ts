@@ -435,6 +435,117 @@ describe("PermissionsCommands provider-runtime surface", () => {
     });
   }
 
+  // Spec permissions/break-glass: the guard is on the power a grant confers,
+  // not on the profile name. Each case used to apply before this guard.
+  for (const [name, profile, capabilities, setup] of [
+    ["another name with admin:system:*", "chat-admin", "admin:system:*", undefined],
+    ["another name with execute:executable:*", "host-shell", "execute:executable:*", undefined],
+    ["admin among narrow capabilities", "ops-bundle", "read:skills:show,admin:system:*", undefined],
+    ["an admin profile by name", "admin", "read:skills:show", undefined],
+    ["an owner profile by name", "owner", "read:skills:show", undefined],
+    ["a stored profile that already carries admin", "legacy-admin", undefined, "admin:system:*"],
+  ] as const) {
+    it(`blocks apply of ${name} before any write`, () => {
+      const contact = createContact({ phone: "+15550000081", name: "Shortcut Grant User" });
+      const chat = groupChat(`break-glass-${profile}`);
+      dbCreateAgent({ id: "bg-target", cwd: "/tmp" });
+      if (setup) {
+        dbCreateTagDefinition({
+          slug: `permission-${profile}`,
+          label: "Stored",
+          kind: "system",
+          source: "permissions",
+          metadata: { permissions: { capabilities: [setup] } },
+        });
+      }
+      const tagBefore = dbGetTagDefinition(`permission-${profile}`);
+      const commands = new PermissionsCommands();
+      const preview = commands.allow(
+        profile,
+        `contact:${contact.id}`,
+        undefined,
+        capabilities,
+        undefined,
+        undefined,
+        false,
+        true,
+        chat.id,
+      );
+      expect(preview.nextCommand).toBeUndefined();
+      expect(preview.hints.some((hint: string) => hint.includes("break-glass power"))).toBe(true);
+      const error = captureContractError(() =>
+        commands.allow(
+          profile,
+          `contact:${contact.id},agent:bg-target`,
+          "bg-target",
+          capabilities,
+          undefined,
+          undefined,
+          true,
+          true,
+          chat.id,
+        ),
+      );
+      expect(error.code).toBe("FULL_ACCESS_APPROVAL_REQUIRED");
+      expect(error.exitCode).toBe(3);
+      expect(String(error.details?.suggestedAction)).toContain("ravi permissions request full-access");
+      expect(dbGetTagDefinition(`permission-${profile}`)).toEqual(tagBefore);
+      expect(dbListContactChatGrants({ contactId: contact.id })).toEqual([]);
+      expect(getContact(contact.id)?.tags ?? []).not.toContain(`permission-${profile}`);
+      expect(readAgentRuntimePermissionsConfig("bg-target")).toBeNull();
+    });
+  }
+
+  it("still applies a narrow profile, including a narrow executable pattern", () => {
+    const contact = createContact({ phone: "+15550000082", name: "Narrow Grant User" });
+    const chat = groupChat("break-glass-narrow");
+    const applied = new PermissionsCommands().allow(
+      "git-runner",
+      `contact:${contact.id}`,
+      undefined,
+      "execute:executable:git*,read:skills:show",
+      undefined,
+      undefined,
+      true,
+      true,
+      chat.id,
+    );
+    expect(applied.changedCount).toBeGreaterThan(0);
+    expect(dbListContactChatGrants({ contactId: contact.id })).toHaveLength(1);
+  });
+
+  it("does not revoke a grant that already carries break-glass power", () => {
+    const contact = createContact({ phone: "+15550000083", name: "Existing Grant User" });
+    const chat = groupChat("break-glass-existing");
+    dbCreateTagDefinition({
+      slug: "permission-legacy-root",
+      label: "Legacy",
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["admin:system:*"] } },
+    });
+    dbEnsureContactChatGrant({
+      contactId: contact.id,
+      profileSlug: "permission-legacy-root",
+      scopeType: "chat",
+      scopeId: chat.id,
+    });
+    captureContractError(() =>
+      new PermissionsCommands().allow(
+        "legacy-root",
+        `contact:${contact.id}`,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+        chat.id,
+      ),
+    );
+    expect(dbListContactChatGrants({ contactId: contact.id })).toHaveLength(1);
+  });
+
   it("keeps unknown-profile diagnostics within the remote message budget with many stored profiles", () => {
     for (let index = 0; index < 30; index++) {
       dbCreateTagDefinition({

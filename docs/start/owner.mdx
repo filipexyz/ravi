@@ -136,7 +136,7 @@ Without `--apply`, `ravi permissions allow` only prints the plan. To give other 
 - A contact's status does not limit what its messages can do. In a chat that is not governed, a contact that is `pending`, `discovered` or even `blocked` gets the agent's whole ceiling. Only the owner's `admin:system:*` requires `allowed`.
 - `ravi contacts block` is not a way to keep someone out. On Slack, entry depends only on policies and routes, so a blocked contact's messages still arrive. On WhatsApp it works only under `pairing`, `allowlist` or `closed`. Keep strangers out with policies and explicit routes.
 - An instance with contact intake turned on (`contactIntakeMode` set to `discovered` or `pending`) makes every new sender a contact, and so gives them the ceiling in chats that are not governed.
-- `ravi contacts tag <contact> permission-owner` grants `admin:system:*` at once, and an agent at `full-access` can run it too. Tag only yourself, and do not ask the agent to tag people on someone else's request.
+- `ravi contacts tag <contact> permission-owner` grants `admin:system:*` at once. Run it from your terminal: an agent, even at `full-access`, is refused (`FULL_ACCESS_APPROVAL_REQUIRED`). Tag only yourself; to give someone else full access, use `ravi permissions request full-access` and approve it.
 </Warning>
 
 ## Next

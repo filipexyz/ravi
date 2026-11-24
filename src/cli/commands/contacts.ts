@@ -91,6 +91,7 @@ import {
   filterVisibleAgents,
 } from "../../permissions/scope.js";
 import {
+  assertBreakGlassTagWriteAllowed,
   assertPermissionTagWriteAuthority,
   assertPrivilegedContactWriteAuthority,
   isPermissionPolicyTag,
@@ -1048,6 +1049,10 @@ export class ContactsCommands {
       }
       if (!Array.isArray(tags) || !tags.every((tag) => typeof tag === "string")) fail("Tags must be a JSON array");
       assertPermissionTagWriteAuthority("contacts set tags", changedPermissionTags(contact.tags, tags));
+      assertBreakGlassTagWriteAllowed(
+        "contacts set tags",
+        tags.filter((tag) => !contact.tags.includes(tag)),
+      );
       jsonValue = tags;
       updateContact(contact.id, { tags });
       if (!asJson) console.log(`✓ Tags set: ${contact.id} → ${value}`);
@@ -1689,6 +1694,7 @@ export class ContactsCommands {
     }
 
     assertPermissionTagWriteAuthority("contacts tag", [tag]);
+    assertBreakGlassTagWriteAllowed("contacts tag", [tag]);
     addContactTag(contact.phone, tag);
     const payload = {
       status: "tag_added" as const,
