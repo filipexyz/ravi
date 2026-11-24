@@ -39,7 +39,7 @@ const { getCronRun } = await import("./run-db.js");
 const { closeChildRun, getChildRun, listChildRunsForOrigin, pruneClosedChildRuns } = await import(
   "../automation/child-runs.js"
 );
-const { recordResponseEmittedTrace } = await import("../session-trace/channel-trace.js");
+const { saveMessage } = await import("../db.js");
 
 let stateDir: string | null = null;
 
@@ -119,6 +119,8 @@ describe("cron thread mode", () => {
     for (const run of [first, second]) {
       const child = resolveSession(run.sessionName)!;
       expect(child.sessionKey).toBe(`agent:test-agent:cron:${job.id}:run:${run.runId}`);
+      // Named after the whole run id: never the name (and history) of an earlier, pruned run.
+      expect(run.sessionName).toBe(`test-agent-run-${run.runId}`);
       expect(child.agentId).toBe("test-agent");
       // Headless: no source, so the run's own replies reach no chat.
       expect(run.payload.source).toBeUndefined();
@@ -160,10 +162,10 @@ describe("cron thread mode", () => {
     const runner = new CronRunner();
     await runner.triggerJob(job.id);
     const { sessionName } = runDispatch(job.id);
-    recordResponseEmittedTrace({
-      sessionName,
-      response: { response: "Post novo no blog: release 3.261124.1 saiu" },
-    } as Parameters<typeof recordResponseEmittedTrace>[0]);
+    // A headless run's reply reaches no chat; the runtime keeps it in the run's own history.
+    saveMessage(sessionName, "assistant", "Post novo no blog: release 3.261124.1 saiu", null, {
+      utteranceClass: "final",
+    });
     const run = await endTurn(runner, job.id, "turn.complete");
 
     const returns = parentReturns();
@@ -174,16 +176,27 @@ describe("cron thread mode", () => {
     expect(getChildRun(run.runId)).toMatchObject({ status: "closed", returnState: "returned", returnKind: "auto" });
   });
 
+  it("closes silently when the run's final reply is @@SILENT@@", async () => {
+    createParent();
+    const job = createThreadJob();
+    const runner = new CronRunner();
+    await runner.triggerJob(job.id);
+    saveMessage(runDispatch(job.id).sessionName, "assistant", "@@SILENT@@", null, { utteranceClass: "final" });
+    const run = await endTurn(runner, job.id, "turn.complete");
+
+    expect(parentReturns()).toHaveLength(0);
+    expect(getChildRun(run.runId)).toMatchObject({ status: "closed", returnState: "silent" });
+  });
+
   it("does not return twice when the run closed itself with a result", async () => {
     createParent();
     const job = createThreadJob();
     const runner = new CronRunner();
     await runner.triggerJob(job.id);
     const { runId, sessionName } = runDispatch(job.id);
-    recordResponseEmittedTrace({
-      sessionName,
-      response: { response: "texto final que não deve virar segundo retorno" },
-    } as Parameters<typeof recordResponseEmittedTrace>[0]);
+    saveMessage(sessionName, "assistant", "texto final que não deve virar segundo retorno", null, {
+      utteranceClass: "final",
+    });
     await closeChildRun(getChildRun(runId)!, { kind: "result", text: "resultado explícito" });
     await endTurn(runner, job.id, "turn.complete");
 
@@ -203,7 +216,9 @@ describe("cron thread mode", () => {
     const returns = parentReturns();
     expect(returns).toHaveLength(1);
     expect(String(returns[0]!.payload.prompt)).toContain("falhou.");
-    expect(String(returns[0]!.payload.prompt)).toContain("Erro: provider refused the model");
+    // The parent may relay it to a shared chat: a classified reason, never the provider's raw text.
+    expect(String(returns[0]!.payload.prompt)).toContain("Erro: erro de execução");
+    expect(String(returns[0]!.payload.prompt)).not.toContain("provider refused the model");
     expect(getChildRun(run.runId)).toMatchObject({ status: "closed", returnState: "error" });
     expect(dbGetCronJob(job.id)?.lastStatus).toBe("error");
   });

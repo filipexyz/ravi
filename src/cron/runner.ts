@@ -22,6 +22,7 @@ import {
   expandHome,
 } from "../router/index.js";
 import { getAgent } from "../router/config.js";
+import { slugify } from "../router/session-name.js";
 import { spawnedAutomationEnv } from "../runtime/turn-origin.js";
 import { RAVI_CONTEXT_KEY_ENV } from "../runtime/context-registry.js";
 import { cronOwnerActsAsOperator } from "../link/connector-turn.js";
@@ -60,7 +61,12 @@ import {
   type AutomationChildRun,
 } from "../automation/child-runs.js";
 import { notifyAutomationOff } from "./automation-notice.js";
-import { notifyCronFailure, recordUnreadableCronFailure, type CronFailureJob } from "./failure-notification.js";
+import {
+  describeCronFailure,
+  notifyCronFailure,
+  recordUnreadableCronFailure,
+  type CronFailureJob,
+} from "./failure-notification.js";
 import {
   admitCronRun,
   getCronRun,
@@ -395,10 +401,18 @@ export class CronRunner {
     const state = buildCronTurnOutcomeState(outcome, { dispatchedAt: pending.admitted_at });
     const settled = settleCronRun(pending.id, outcome.sessionName, state);
     if (!settled) return;
-    await this.finishThreadRun(settled.id, state);
     if (state.lastStatus === "error") {
       if (await notifyCronFailure(cronRunNotification(settled), state.lastError ?? "Agent turn failed"))
         markCronRunReported(settled.id);
+    }
+    // After the owner's notice: a parent that cannot be reached never delays it.
+    try {
+      await this.finishThreadRun(settled.id, state);
+    } catch (error) {
+      log.warn("Failed to close a thread run after its turn", {
+        runId: settled.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
     log[state.lastStatus === "ok" ? "info" : "warn"]("Job turn finished", {
       jobId: settled.job_id,
@@ -840,9 +854,9 @@ export class CronRunner {
     const agent = getAgent(agentId);
     const agentCwd = agent ? expandHome(agent.cwd) : `/tmp/ravi-${agentId}`;
     const childKey = `agent:${agentId}:cron:${job.id}:run:${runId}`;
-    const childName = ensureUniqueName(
-      generateSessionName(agentId, { suffix: `cron-${job.name}-${runId.slice(0, 8)}` }),
-    );
+    // Named after the whole run id, never truncated: a run never takes the name, and so the
+    // history, of an earlier run whose session was pruned.
+    const childName = ensureUniqueName(`${slugify(agentId).slice(0, 24)}-run-${runId}`);
     const session = getOrCreateSession(childKey, agentId, agentCwd, { name: childName });
     if (!session.name) updateSessionName(session.sessionKey, childName);
     const parentName = parent.name ?? parent.sessionKey;
@@ -944,7 +958,11 @@ export class CronRunner {
     try {
       if (run.status === "open") {
         if (state.lastStatus === "error") {
-          await closeChildRun(run, { kind: "error", text: state.lastError ?? "Agent turn failed" });
+          const reason = describeCronFailure(state.lastError ?? "Agent turn failed");
+          await closeChildRun(run, {
+            kind: "error",
+            text: `${reason}. Detalhes para o operador: ravi cron show ${run.originId}`,
+          });
         } else {
           const reply = readChildRunLastReply(run);
           await closeChildRun(run, reply ? { kind: "auto", text: reply } : null);

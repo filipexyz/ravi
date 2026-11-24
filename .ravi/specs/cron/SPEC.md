@@ -32,7 +32,7 @@ target resolution, and operational inspection.
 
 ## Invariants
 
-- Cron jobs MUST NOT mutate routing, sessions, agents, or channel state.
+- Cron jobs MUST NOT mutate routing, sessions, agents, or channel state, beyond the execution sessions a job owns (its isolated session, its thread-mode run sessions).
 - Cron timer delays MUST stay within the signed 32-bit millisecond limit.
   Jobs further in the future MUST be rechecked and re-armed without dispatching
   before their persisted due time.
@@ -127,3 +127,14 @@ Cron jobs follow `permissions/resource-visibility` for owned runtime resources:
 - Older outcomes MUST NOT overwrite the newest admitted job status. A one-shot MUST NOT be removed while any admitted run is pending; deletion requires the newest admitted run to have succeeded. Earlier failures remain in the run ledger and inbox even if a later successful retry removes the job.
 - Job edits, transfers and deletion MUST NOT change a run's notification recipient. Failure notices MUST deduplicate by run id, including admissions in the same millisecond. Unreported durable failures MUST be reconciled on runner startup.
 - Startup failure reconciliation MUST run in the background: a backlog or an unavailable delivery channel MUST NOT delay daemon readiness, and reports that settle locally MUST yield the event loop between them. A report whose stored notice cannot be parsed is bad data: it MUST be recorded once in the inbox (no message is sent, because its recipient lives only in that notice) and settled, so it is neither retried nor raised at shutdown. A report that fails unexpectedly (a refused write, say) MUST NOT stop the reports behind it: it stays pending. Stopping the runner MUST stop admitting further reports and wait for the report in flight for about a second at most, because the daemon stops its components one after another inside a single shutdown guard; unsuccessful, unattempted and unfinished reports stay pending for the next start (an unconfirmed send may be sent again). Reconciliation errors MUST remain observable to shutdown (a bounded number are kept for it; every one is logged). A stop that raised stays failed: a later stop of that runner raises again, and the module runner is kept for the same reason, because retrying cannot certify success after a failed shutdown (the latch in `quality/state-boundary`).
+
+## Thread mode
+
+- An agent job MAY run in thread mode (`cron add --thread [--report-to <session>]`, `cron set <id> session thread`). Each run MUST open a fresh child session `agent:<agent>:cron:<job>:run:<runId>`, named after the whole run id (never truncated), so no run takes the name or the history of an earlier one. Only that run enters it.
+- The run reports to the job's reply session, else the agent's main session. That parent MUST be a session of the job's agent and never a trigger's own session: `cron add` and `cron set agent|reply-session` refuse a pair that breaks this, and the runner fails the run (`THREAD_PARENT_MISSING`, `THREAD_PARENT_OTHER_AGENT`) without opening a child.
+- The run's prompt MUST carry the same authority envelope as the other modes (`_cronAuthority`, `_cronRunId`) and no source: its replies reach no chat. The core surface is headless; a channel adapter MAY add a visible surface (a Slack thread) without changing this contract.
+- The run reaches its parent only through `sessions report` (progress) and `sessions close-thread [--return]` (once). A return on a closed run MUST fail (`THREAD_CLOSED`), never be dropped as delivered. A return is a `session.return` prompt carrying text only.
+- When the run's turn ends and the run is still open, the runner MUST close it: the final reply, read from the run's own message history, reaches the parent once; `@@SILENT@@` or no reply closes silently; a failed or interrupted turn sends one error return with the classified reason, never raw provider text. The owner's failure notice comes first: a parent that cannot be reached never delays it.
+- One run at a time per job: while the previous run is open, a scheduled run is skipped (next run advanced, last outcome untouched); a manual run still goes. A run open longer than 2 h is closed as failed, with one error return, so the job is never stuck behind it.
+- After a run closes, the runner releases the child's runtime and keeps the job's 20 newest closed runs; older ones are deleted with their sessions. A run whose return is still pending is kept.
+- `--isolated` (`session isolated`) is deprecated: still accepted and executed as before, with a warning pointing at `--thread`.

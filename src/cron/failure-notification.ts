@@ -29,6 +29,11 @@ const FAILURE_COPY = {
   execution: "erro de execução",
 } as const;
 
+/** The classified reason, never the raw provider text: it may reach a shared chat. */
+export function describeCronFailure(error: string): string {
+  return FAILURE_COPY[classifyCronFailure(error)];
+}
+
 export function resolveCronFailureOwner(job: Pick<CronJob, "ownerPrincipal">): OwnerDirectTarget | null {
   const owner = job.ownerPrincipal;
   if (!owner || owner === "operator") return resolveOwnerDirectTarget();

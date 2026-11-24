@@ -26,6 +26,7 @@ import type { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
 import { publishChannelSessionPrompt, type ChannelPromptTransport } from "../channels/session-prompt.js";
 import { CliExpectedError } from "../cli/expected-error.js";
+import { getDb as getChatDb } from "../db.js";
 import { getDb } from "../router/router-db.js";
 import { deleteSession, getSession } from "../router/index.js";
 
@@ -90,38 +91,9 @@ interface ChildRunRow {
   updated_at: number;
 }
 
-const schemaReady = new WeakSet<Database>();
-
+/** The table is created by the router schema owner (`automation_child_runs` in router-db). */
 function db(): Database {
-  const database = getDb();
-  if (!schemaReady.has(database)) {
-    database.exec(`
-      CREATE TABLE IF NOT EXISTS automation_child_runs (
-        id TEXT PRIMARY KEY,
-        origin_kind TEXT NOT NULL CHECK(origin_kind IN ('cron', 'trigger')),
-        origin_id TEXT NOT NULL,
-        origin_name TEXT NOT NULL,
-        agent_id TEXT NOT NULL,
-        parent_session_key TEXT NOT NULL,
-        parent_session_name TEXT NOT NULL,
-        child_session_key TEXT NOT NULL UNIQUE,
-        child_session_name TEXT NOT NULL,
-        surface TEXT NOT NULL CHECK(surface IN ('headless')),
-        status TEXT NOT NULL CHECK(status IN ('open', 'closed')),
-        return_state TEXT NOT NULL CHECK(return_state IN ('none', 'pending', 'returned', 'silent', 'error')),
-        return_kind TEXT CHECK(return_kind IS NULL OR return_kind IN ('result', 'auto', 'error')),
-        return_text TEXT,
-        closed_at INTEGER,
-        parent_notified_at INTEGER,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_automation_child_runs_origin ON automation_child_runs(origin_kind, origin_id);
-      CREATE INDEX IF NOT EXISTS idx_automation_child_runs_open ON automation_child_runs(status) WHERE status = 'open';
-    `);
-    schemaReady.add(database);
-  }
-  return database;
+  return getDb();
 }
 
 function fromRow(row: ChildRunRow): AutomationChildRun {
@@ -358,22 +330,19 @@ export async function closeChildRun(
 }
 
 /**
- * The run's last reply since it started, as the thread reconciler reads it:
- * the final answer first, then the latest text. Null when the run replied
- * nothing or stayed silent.
+ * The run's final reply, from the run session's own history. The runtime keeps
+ * every visible assistant reply there whether or not it reaches a chat, and a
+ * headless run reaches none. Null when the run replied nothing or stayed silent.
  */
 export function readChildRunLastReply(run: AutomationChildRun): string | null {
-  const row = getDb()
-    .query<{ preview: string | null }, [string, number]>(`
-      SELECT preview FROM session_events
-      WHERE session_key = ? AND event_type = 'response.emitted' AND timestamp >= ? AND preview IS NOT NULL
-        AND COALESCE(json_extract(payload_json, '$.textLen'), 0) > 0
-        AND COALESCE(json_extract(payload_json, '$.hasError'), 0) = 0
-      ORDER BY (json_extract(payload_json, '$.responsePhase') = 'final_answer') DESC, seq DESC, id DESC
-      LIMIT 1
+  const row = getChatDb()
+    .query<{ content: string }, [string]>(`
+      SELECT content FROM messages
+      WHERE session_id = ? AND role = 'assistant' AND COALESCE(utterance_class, 'final') = 'final'
+      ORDER BY id DESC LIMIT 1
     `)
-    .get(run.childSessionKey, run.createdAt);
-  const text = row?.preview?.trim();
+    .get(run.childSessionName);
+  const text = row?.content?.trim();
   return text && text !== "@@SILENT@@" ? text : null;
 }
 

@@ -86,6 +86,16 @@ function assertValidCronShellTimeout(op: string, value: string, asJson?: boolean
   });
 }
 
+function failCronUsage(op: string, message: string, suggestedAction: string, asJson?: boolean): never {
+  contractFail(op, "USAGE_ERROR", message, {
+    asJson,
+    exitCode: CONTRACT_EXIT_USAGE,
+    details: { suggestedAction },
+    diagnostic: errorDiagnostic(message, { operation: op }),
+  });
+  throw new Error(message);
+}
+
 function parseCronShellTimeout(value: string | undefined): number | undefined {
   if (!value) return undefined;
   const trimmed = value.trim();
@@ -740,13 +750,23 @@ export class CronCommands {
       fail("--isolated is only valid for agent cron jobs");
     }
     if (isShellJob && (thread || reportTo)) {
-      fail("--thread and --report-to are only valid for agent cron jobs");
+      failCronUsage(
+        "cron add",
+        "--thread and --report-to are only valid for agent cron jobs",
+        "drop --thread/--report-to, or use --message instead of --shell",
+        asJson,
+      );
     }
     if (thread && isolated) {
-      fail("--thread and --isolated cannot be combined; --isolated is deprecated, use --thread");
+      failCronUsage(
+        "cron add",
+        "--thread and --isolated cannot be combined; --isolated is deprecated, use --thread",
+        "drop --isolated",
+        asJson,
+      );
     }
     if (reportTo !== undefined && !thread) {
-      fail("--report-to only applies with --thread");
+      failCronUsage("cron add", "--report-to only applies with --thread", "add --thread, or drop --report-to", asJson);
     }
     if (isolated) {
       const warning = `Warning: --isolated is deprecated: every run shares one session that keeps growing. Use --thread: each run gets a session of its own and returns its result to the session that creates the job.`;
@@ -1174,6 +1194,10 @@ export class CronCommands {
               fail(`Agent not found: ${agentId}`);
             }
           }
+          if (job.sessionTarget === "thread" && job.replySession) {
+            // A thread job's runs report to a session of its own agent: the pair stays valid.
+            resolveThreadReportTo(undefined, job.replySession, agentId ?? getDefaultAgentId(), asJson);
+          }
           update({ agentId });
           normalizedValue = agentId ?? null;
           logHuman(`✓ Agent set: ${id} -> ${agentId ?? "(default)"}`);
@@ -1215,7 +1239,11 @@ export class CronCommands {
         }
 
         case "reply-session": {
-          const replySession = value === "null" || value === "-" ? undefined : value;
+          let replySession = value === "null" || value === "-" ? undefined : value;
+          if (job.sessionTarget === "thread" && replySession) {
+            // Stored by key, and only a session of the job's own agent: its runs report there.
+            replySession = resolveThreadReportTo(undefined, replySession, job.agentId ?? getDefaultAgentId(), asJson);
+          }
           update({ replySession });
           normalizedValue = replySession ?? null;
           logHuman(`✓ Reply session set: ${id} -> ${replySession ?? "(auto)"}`);

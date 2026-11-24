@@ -89,9 +89,20 @@ function buildCronExecutionLines(job: CronJob, agentId: string, routing: CronRou
         );
       }
     }
+  } else if (job.sessionTarget === "thread") {
+    lines.push(
+      `\`sessionTarget=thread\` runs each execution in a fresh session of its own (\`agent:${agentId}:cron:${job.id}:run:<runId>\`), one at a time; its replies reach no chat.`,
+    );
+    lines.push(
+      routing.kind === "resolved-session"
+        ? `Each run returns its result once to \`${routing.sessionName}\` (\`sessions close-thread --return\`, or its final reply); \`@@SILENT@@\` returns nothing.`
+        : routing.kind === "none"
+          ? "Each run returns its result once to the agent's main session; `@@SILENT@@` returns nothing."
+          : "The report-to session does not resolve: runs fail until `reply-session` names a live session of this agent.",
+    );
   } else {
     lines.push(
-      `\`sessionTarget=isolated\` always runs in the dedicated cron session \`agent:${agentId}:cron:${job.id}\`.`,
+      `\`sessionTarget=isolated\` (deprecated) always runs in the dedicated cron session \`agent:${agentId}:cron:${job.id}\`.`,
     );
     if (routing.kind !== "none") {
       lines.push("`replySession` does not change the execution session in isolated mode; it only seeds reply routing.");

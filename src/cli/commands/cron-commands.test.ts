@@ -1779,6 +1779,32 @@ describe("CronCommands --thread", () => {
     await expect(addJob({ thread: true, isolated: true })).rejects.toThrow(/cannot be combined/);
   });
 
+  it("keeps a thread job's agent and report-to session paired on cron set", async () => {
+    cronJob = {
+      id: "cron-1",
+      name: "Updates",
+      agentId: "main",
+      enabled: true,
+      deleteAfterRun: false,
+      sessionTarget: "thread",
+      replySession: MAIN_DM.sessionKey,
+      executionType: "agent",
+      schedule: { type: "every", every: 1_800_000 },
+      message: "Read the blog",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    await expect(new CronCommands().set("cron-1", "agent", "ravi-updates", true)).rejects.toThrow(/belongs to main/);
+    await expect(new CronCommands().set("cron-1", "reply-session", "grupo", true)).rejects.toThrow(
+      /belongs to ravi-updates/,
+    );
+    expect(cronJob).toMatchObject({ agentId: "main", replySession: MAIN_DM.sessionKey });
+
+    await captureJson(() => new CronCommands().set("cron-1", "reply-session", "main-dm", true));
+    expect(cronJob).toMatchObject({ replySession: MAIN_DM.sessionKey });
+  });
+
   it("still creates an --isolated job, with a deprecation warning", async () => {
     const payload = await captureJson(() => addJob({ isolated: true }));
 
