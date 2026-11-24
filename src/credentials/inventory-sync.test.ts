@@ -6,6 +6,7 @@ import {
   CREDENTIAL_INVENTORY_HEARTBEAT_MS,
   CREDENTIAL_INVENTORY_MIN_INTERVAL_MS,
   CREDENTIAL_INVENTORY_SYNC_DOMAIN,
+  FREE_TEXT_MAX_CHARS,
   credentialInventorySyncPayload,
   enqueueCredentialInventorySnapshot,
 } from "./inventory-sync.js";
@@ -113,23 +114,77 @@ describe("credential inventory over the Console sync bridge", () => {
     expect(sanitizeSyncPayload(payload)).toEqual(payload);
   });
 
-  it("skips an unchanged inventory until the heartbeat, throttles changes, and force always sends", async () => {
+  it("asks the Vault at most once per interval, sends a change at the next check, heartbeats, and force always sends", async () => {
     seed();
+    let vaultCalls = 0;
+    const counting = async (ref: string) => {
+      vaultCalls += 1;
+      return describeSecret(ref);
+    };
     const run = (now: number, force = false) =>
-      enqueueCredentialInventorySnapshot({ env: ENABLED, now, force, inventory: { describeSecret } });
+      enqueueCredentialInventorySnapshot({ env: ENABLED, now, force, inventory: { describeSecret: counting } });
+    const HB = CREDENTIAL_INVENTORY_HEARTBEAT_MS;
+    const MIN = CREDENTIAL_INVENTORY_MIN_INTERVAL_MS;
 
     expect((await run(T0)).status).toBe("enqueued");
-    expect((await run(T0 + 60_000)).status).toBe("unchanged");
-    expect((await run(T0 + CREDENTIAL_INVENTORY_HEARTBEAT_MS - 1)).status).toBe("unchanged");
-    expect((await run(T0 + CREDENTIAL_INVENTORY_HEARTBEAT_MS)).status).toBe("enqueued");
-    const afterHeartbeat = T0 + CREDENTIAL_INVENTORY_HEARTBEAT_MS;
+    expect(vaultCalls).toBe(1);
+    // Inside the interval nothing is built: the Vault is not asked again (N1).
+    expect((await run(T0 + 60_000)).status).toBe("throttled");
+    expect((await run(T0 + MIN - 1)).status).toBe("throttled");
+    expect(vaultCalls).toBe(1);
+    expect((await run(T0 + MIN)).status).toBe("unchanged");
+    expect(vaultCalls).toBe(2);
+    expect((await run(T0 + HB - 1)).status).toBe("unchanged");
+    // Same content, heartbeat due at the next check.
+    expect((await run(T0 + HB - 1 + MIN)).status).toBe("enqueued");
+    const t = T0 + HB - 1 + MIN;
 
     seed("sales");
-    expect((await run(afterHeartbeat + 60_000)).status).toBe("throttled");
-    expect((await run(afterHeartbeat + CREDENTIAL_INVENTORY_MIN_INTERVAL_MS)).status).toBe("enqueued");
-
-    expect((await run(afterHeartbeat + CREDENTIAL_INVENTORY_MIN_INTERVAL_MS + 1, true)).status).toBe("enqueued");
+    expect((await run(t + 60_000)).status).toBe("throttled");
+    expect((await run(t + MIN)).status).toBe("enqueued");
+    expect((await run(t + MIN + 1, true)).status).toBe("enqueued");
     expect(outbox()).toHaveLength(4);
+  });
+
+  it("does not touch the Vault when the opt-in is off (N2)", async () => {
+    seed();
+    let vaultCalls = 0;
+    const spy = async (ref: string) => {
+      vaultCalls += 1;
+      return describeSecret(ref);
+    };
+    for (const env of [{}, { RAVI_SYNC_CREDENTIALS_INVENTORY: "0" }, { RAVI_SYNC_CREDENTIALS_INVENTORY: "true" }]) {
+      const result = await enqueueCredentialInventorySnapshot({ env, now: T0, inventory: { describeSecret: spy } });
+      expect(result.status).toBe("disabled");
+    }
+    expect(vaultCalls).toBe(0);
+    expect(outbox()).toHaveLength(0);
+  });
+
+  it("caps and scrubs person-typed text before it leaves (N4)", async () => {
+    upsertCredentialConnection({
+      provider: "slack",
+      connection: "rbbt",
+      backend: "vault",
+      secretRef: "vault:secret/ravi/credentials/slack/rbbt#token",
+      status: "active",
+      label: `pasted ${"x ".repeat(300)}`,
+      owner: "luis hvs.CAESIJ0123456789abcdefghijklmnopqrstuv",
+      purpose:
+        "bot xoxb-123456789012-abcdefghijkl and eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJlLXZhbHVl and ghp_abcdefghijklmnopqrstuvwxyz0123",
+      scopes: ["chat:write", `AKIA${"A".repeat(16)}`],
+    });
+    await enqueueCredentialInventorySnapshot({ env: ENABLED, now: T0, inventory: { describeSecret } });
+    const [row] = outbox();
+    const item = (row!.payload as { items: Array<Record<string, unknown>> }).items[0]!;
+    expect((item.label as string).length).toBeLessThanOrEqual(FREE_TEXT_MAX_CHARS);
+    expect(item.owner).toBe("luis [redacted]");
+    expect(item.purpose).toBe("bot [redacted] and [redacted] and [redacted]");
+    expect(item.scopes).toEqual(["[redacted]", "chat:write"]);
+    const serialized = JSON.stringify(row);
+    for (const leaked of ["hvs.CAESIJ", "xoxb-1234", "eyJhbGci", "ghp_abcd", "AKIAAAAA"]) {
+      expect(serialized).not.toContain(leaked);
+    }
   });
 
   it("force sends even when the opt-in is off", async () => {

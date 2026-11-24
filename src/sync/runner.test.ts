@@ -179,10 +179,21 @@ describe("SyncRunner credential inventory", () => {
     closeCredentialsDb();
   });
 
-  async function tickOnce(): Promise<void> {
-    const runner = new SyncRunner({ bridge: noopBridge as never, intervalMs: 60_000, enabled: true });
+  function makeRunner(options: { credentialInventory?: () => Promise<unknown>; bridge?: unknown } = {}) {
+    const runner = new SyncRunner({
+      bridge: (options.bridge ?? noopBridge) as never,
+      intervalMs: 60_000,
+      enabled: true,
+      ...(options.credentialInventory ? { credentialInventory: options.credentialInventory } : {}),
+    });
     (runner as unknown as { running: boolean }).running = true;
+    return runner;
+  }
+
+  async function tickOnce(): Promise<void> {
+    const runner = makeRunner();
     await runner.tick();
+    await runner.credentialInventoryInFlight;
   }
 
   it("enqueues the inventory on a linked tick only when RAVI_SYNC_CREDENTIALS_INVENTORY=1", async () => {
@@ -195,5 +206,91 @@ describe("SyncRunner credential inventory", () => {
     const rows = listPendingOutboxBatch({ domain: "credentials", limit: 10 }).items;
     expect(rows).toHaveLength(1);
     expect(rows[0]?.eventType).toBe("credentials.inventory");
+  });
+});
+
+describe("SyncRunner credential inventory never holds the tick", () => {
+  function pushCountingBridge() {
+    let pushes = 0;
+    return {
+      get pushes() {
+        return pushes;
+      },
+      isLinked: () => false,
+      push: async () => {
+        pushes += 1;
+        return { linked: true, status: "noop", attempted: 0, sent: 0, acked: 0, failed: 0 };
+      },
+      pull: async () => ({
+        linked: true,
+        status: "noop",
+        downloaded: 0,
+        enqueued: 0,
+        applied: 0,
+        skipped: 0,
+        failed: 0,
+        cursor: null,
+      }),
+    };
+  }
+
+  beforeEach(() => {
+    writeCloudCredentials({
+      version: 1,
+      consoleUrl: "https://console.example",
+      installationId: "ins_1",
+      accessToken: "access-test",
+      refreshToken: "refresh-test",
+      accessTokenExpiresAt: null,
+      refreshTokenExpiresAt: null,
+      scopes: ["console.sync.write"],
+      organization: { id: "org_1" },
+      user: { id: "user_1" },
+      createdAt: "2026-11-24T12:00:00.000Z",
+      updatedAt: "2026-11-24T12:00:00.000Z",
+    } as never);
+  });
+
+  function runnerWith(bridge: unknown, credentialInventory: () => Promise<unknown>) {
+    const runner = new SyncRunner({ bridge: bridge as never, intervalMs: 60_000, enabled: true, credentialInventory });
+    (runner as unknown as { running: boolean }).running = true;
+    return runner;
+  }
+
+  it("a Vault that never answers does not delay push, and only one snapshot runs at a time (N1)", async () => {
+    const bridge = pushCountingBridge();
+    let started = 0;
+    const hanging = () => {
+      started += 1;
+      return new Promise<never>(() => {});
+    };
+    const runner = runnerWith(bridge, hanging);
+    await runner.tick();
+    await runner.tick();
+    await runner.tick();
+    expect(bridge.pushes).toBe(3);
+    expect(started).toBe(1);
+  });
+
+  it("a snapshot that throws or rejects never stops the tick, and the next tick tries again (N3)", async () => {
+    for (const failing of [
+      () => {
+        throw new Error("sync throw with /home/ravi/.ravi path");
+      },
+      () => Promise.reject(new Error("db locked")),
+    ]) {
+      const bridge = pushCountingBridge();
+      let calls = 0;
+      const runner = runnerWith(bridge, () => {
+        calls += 1;
+        return (failing as () => Promise<unknown>)();
+      });
+      await runner.tick();
+      await runner.credentialInventoryInFlight;
+      await runner.tick();
+      await runner.credentialInventoryInFlight;
+      expect(bridge.pushes).toBe(2);
+      expect(calls).toBe(2);
+    }
   });
 });

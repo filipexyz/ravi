@@ -16,6 +16,8 @@ export interface SyncRunnerOptions {
   bridge?: ConsoleSyncBridge;
   enabled?: boolean;
   pullDomains?: string[];
+  /** Injected in tests; defaults to the opt-in credential inventory enqueue. */
+  credentialInventory?: () => Promise<unknown>;
 }
 
 export class SyncRunner {
@@ -28,6 +30,9 @@ export class SyncRunner {
   private pullDomains: string[];
   private traceEnqueueLimit: number;
   private tracePushLimit: number;
+  private credentialInventory: () => Promise<unknown>;
+  /** Exposed for tests: the in-flight background snapshot, if any. */
+  credentialInventoryInFlight: Promise<void> | null = null;
 
   constructor(options: SyncRunnerOptions = {}) {
     const config = getSyncRuntimeConfig();
@@ -37,6 +42,7 @@ export class SyncRunner {
     this.pullDomains = options.pullDomains ?? config.pullDomains;
     this.traceEnqueueLimit = numberEnv("RAVI_TRACE_EXPORT_ENQUEUE_LIMIT", DEFAULT_TRACE_ENQUEUE_LIMIT);
     this.tracePushLimit = numberEnv("RAVI_TRACE_EXPORT_PUSH_LIMIT", DEFAULT_TRACE_PUSH_LIMIT);
+    this.credentialInventory = options.credentialInventory ?? (() => enqueueCredentialInventorySnapshot());
   }
 
   configure(options: SyncRunnerOptions): void {
@@ -68,6 +74,34 @@ export class SyncRunner {
       this.timer = null;
     }
     log.info("Sync runner stopped");
+  }
+
+  /**
+   * Credential inventory in the background, one at a time: the tick (push and
+   * pull of every domain) never waits on the Vault. Opt-in is checked inside,
+   * before the inventory is built; the event goes up on a later tick.
+   */
+  private startCredentialInventory(): void {
+    if (this.credentialInventoryInFlight) return;
+    let run: Promise<unknown>;
+    try {
+      run = this.credentialInventory();
+    } catch (error) {
+      run = Promise.reject(error);
+    }
+    this.credentialInventoryInFlight = run
+      .then((result) => {
+        const status = (result as { status?: string; hash?: string } | undefined)?.status;
+        if (status === "enqueued")
+          log.info("Credential inventory enqueued", { hash: (result as { hash?: string }).hash });
+      })
+      .catch((error) => {
+        // The reason is fixed text without paths or values.
+        log.warn("Credential inventory snapshot failed", { error: sanitizeSyncError(error) });
+      })
+      .finally(() => {
+        this.credentialInventoryInFlight = null;
+      });
   }
 
   async tick(): Promise<void> {
@@ -111,14 +145,7 @@ export class SyncRunner {
             errorCode: tracePush.errorCode,
           });
         }
-        // Opt-in (RAVI_SYNC_CREDENTIALS_INVENTORY=1) is checked inside, before the inventory is built.
-        try {
-          const inventory = await enqueueCredentialInventorySnapshot();
-          if (inventory.status === "enqueued") log.info("Credential inventory enqueued", { hash: inventory.hash });
-        } catch (error) {
-          // The snapshot never blocks the rest of the tick; the reason is fixed text without paths or values.
-          log.warn("Credential inventory snapshot failed", { error: sanitizeSyncError(error) });
-        }
+        this.startCredentialInventory();
       }
       const push = await this.bridge.push();
       if (push.status === "uploaded" || push.status === "failed") {
