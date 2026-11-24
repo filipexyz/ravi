@@ -79,7 +79,19 @@ effective_capabilities =
 ```
 
 A chat is governed when at least one chat or chat-tag contact grant covers it.
-Ungoverned chats keep `agent_identity ∩ turn_caps` unchanged.
+Ungoverned chats keep `agent_identity ∩ turn_caps`, with one exception:
+
+- Break-glass never reaches a person through the agent. When the actor of a
+  turn is a contact and the chat is ungoverned, every break-glass capability
+  of the agent identity (any `admin:system:*`, `execute:executable:*`, or a
+  bare `*` permission) is withheld from the actor branch unless the contact
+  itself holds that capability. Absence of a grant means the least for
+  break-glass, not the agent's most. Non break-glass capabilities are
+  unchanged, and turns with no contact actor (cron, trigger, agent-to-agent)
+  keep the agent's full identity. The count of withheld capabilities is
+  recorded as `actorBreakGlassWithheld`.
+- Consequence: revoking the last grant of a chat can never widen a
+  participant to the agent's break-glass.
 
 ## Compartments
 

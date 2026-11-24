@@ -18,3 +18,8 @@
 - The default materializer chain MUST include `agent-identity-permissions`.
 - `bun test src/permissions/provider-runtime.test.ts src/runtime/runtime-request-context.test.ts`
   SHOULD pass after changing agent identity materialization.
+- A contact turn in an ungoverned chat MUST NOT hold `admin:system:*` or
+  `execute:executable:*` from the agent identity unless the contact holds it;
+  an owner contact keeps it; revoking the chat's last grant MUST NOT widen
+  (`runtime-request-context.test.ts`, "never lets a person's turn in an
+  ungoverned chat inherit the agent's break-glass").

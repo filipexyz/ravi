@@ -2210,6 +2210,48 @@ describe("runtime request context chat-scoped user overlay", () => {
     }
   });
 
+  it("never lets a person's turn in an ungoverned chat inherit the agent's break-glass", () => {
+    dbUpdateAgent(agent.id, {
+      defaults: {
+        runtimePermissions: {
+          capabilities: ["mutate:image:generate", "admin:system:*", "execute:executable:*"],
+        },
+      },
+    });
+    const chat = groupChat("120363400000000090@g.us");
+    const stranger = createContact({ phone: "5511900000090", name: "Stranger" });
+    const owner = createContact({
+      phone: "5511900000091",
+      name: "Owner",
+      tags: ["permission-owner"],
+      status: "allowed",
+    });
+
+    const strangerContext = contextFor(stranger.id, chat);
+    expect(canWithCapabilities(strangerContext.capabilities, "admin", "system", "*")).toBe(false);
+    expect(canWithCapabilities(strangerContext.capabilities, "execute", "executable", "rm")).toBe(false);
+    expect(canWithCapabilities(strangerContext.capabilities, "mutate", "image", "generate")).toBe(true);
+    expect(strangerContext.metadata?.actorBreakGlassWithheld).toBe(2);
+
+    const ownerContext = contextFor(owner.id, chat);
+    expect(canWithCapabilities(ownerContext.capabilities, "admin", "system", "*")).toBe(true);
+    expect(canWithCapabilities(ownerContext.capabilities, "execute", "executable", "rm")).toBe(true);
+    expect(ownerContext.metadata?.actorBreakGlassWithheld).toBeUndefined();
+
+    // Revoking the last grant of a chat must not widen the person to the agent.
+    grant(stranger.id, "chat", chat.id);
+    expect(canWithCapabilities(contextFor(stranger.id, chat).capabilities, "admin", "system", "*")).toBe(false);
+    dbDeleteContactChatGrant({
+      contactId: stranger.id,
+      profileSlug: "permission-image",
+      scopeType: "chat",
+      scopeId: chat.id,
+    });
+    const afterRevoke = contextFor(stranger.id, chat);
+    expect(canWithCapabilities(afterRevoke.capabilities, "admin", "system", "*")).toBe(false);
+    expect(canWithCapabilities(afterRevoke.capabilities, "execute", "executable", "rm")).toBe(false);
+  });
+
   it("intersects a chat-scoped contact grant with the executor agent ceiling", () => {
     const chat = groupChat("120363400000000001@g.us");
     const ana = createContact({ phone: "5511900000001", name: "Ana" });
