@@ -23,7 +23,7 @@ Cada disparo custa um turno inteiro da sessão que acorda. Antes do `add`, decid
 
 **1. Qual sessão acorda.**
 
-- `--thread`: cada disparo roda numa sessão própria e devolve o resultado uma vez (`--report-to <sessão>`, default a que criou; `--visible` mostra o run no Slack de quem recebe). É a escolha padrão para trabalho.
+- `--thread`: cada disparo roda numa sessão própria e devolve o resultado uma vez (`--report-to <sessão>`, default a que criou; `--visible` mostra o run no Slack de quem recebe). É a escolha padrão para trabalho. Com `--agent` de outro agente, passe `--report-to` com uma sessão duradoura desse agente: a sessão que criou não serve de destino.
 - `--session <nome>` ou template (`issue-{{data.payload.number}}`): uma sessão persistente por nome, quando o trigger precisa lembrar do disparo anterior.
 - `--session isolated`: só para o trigger que usa Bases pelo dono (é a única sessão onde o turno age por ele; detalhes em `references/bases-e-dono.md`).
 - Sem nenhuma dessas, o trigger acorda **a sessão atual**. Se ela é uma conversa (tem chat), o `add` avisa: cada disparo vira um turno dela, caro e visível no chat. Quase nunca é o que se quer.
@@ -40,6 +40,7 @@ Cada disparo custa um turno inteiro da sessão que acorda. Antes do `add`, decid
 - Default de trigger de agent sem nenhuma das duas: cooldown desligado e debounce de **30 s em `ravi.watch.*`** (um push gera vários runs) e **5 s nos demais**. `--debounce off` dispara a cada evento; `--cooldown <tempo>` explícito volta ao comportamento antigo, sem debounce.
 - Trigger `--shell` não ganha debounce por padrão: o script que lê um evento (`$RAVI_TRIGGER_DATA_FILE`) perderia o resto do lote. Se o script lê `$RAVI_TRIGGER_EVENTS_FILE`, passe `--debounce`.
 - Um lote guarda os últimos 200 eventos.
+- Fluxo contínuo, sem pausa, dispara mesmo assim: no máximo 10× a janela depois do primeiro evento do lote.
 - O lote do debounce fica na memória do daemon: o que estiver esperando num restart se perde. Quando perder custa caro, some uma varredura por cron.
 
 ## O que o turno recebe

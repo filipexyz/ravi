@@ -54,7 +54,7 @@ ravi observers rules set meu-vigia <observer-agent> --scope session --source-ses
   --profile compact --delivery end_of_turn --mode observe --meta '{"memory":"none"}'
 ```
 
-Desligar a rule desliga os bindings dela; religar religa.
+Desligar a rule desliga os bindings dela na hora. Religar não reata os bindings de uma sessão que já está rodando: rode `ravi observers refresh <sessão> --reconcile attach-missing` (sem isso, eles voltam só quando a fonte partir de novo).
 
 ## Antes de criar qualquer rule
 
