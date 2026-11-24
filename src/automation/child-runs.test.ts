@@ -33,6 +33,10 @@ mock.module("../omni/session-stream.js", () => ({
 }));
 
 const {
+  bindChildRunSession,
+  onChildRunBound,
+  pendingChildRunSession,
+  registerChildRunSurface,
   CHILD_RUN_RETURN_GIVE_UP_MS,
   CHILD_RUN_STALE_MS,
   buildChildRunParentNotice,
@@ -85,6 +89,73 @@ function age(id: string, field: "created_at" | "closed_at", byMs: number) {
     .query(`UPDATE automation_child_runs SET ${field} = ? WHERE id = ?`)
     .run(Date.now() - byMs, id);
 }
+
+describe("visible surfaces", () => {
+  function openSurfacedRun(id: string) {
+    getOrCreateSession(PARENT_KEY, "agent-a", stateDir!, { name: "grupo" });
+    return openChildRun({
+      id,
+      originKind: "cron",
+      originId: "job-s",
+      originName: "updates",
+      agentId: "agent-a",
+      parentSessionKey: PARENT_KEY,
+      parentSessionName: "grupo",
+      childSessionKey: pendingChildRunSession(id),
+      childSessionName: pendingChildRunSession(id),
+      surface: "slack-thread",
+      surfaceRef: `slack-thread:${id}`,
+      launch: { prompt: "[Cron: updates]", _cron: true, _cronRunId: id },
+    });
+  }
+
+  it("hands the launch back once, on the first bind, and tells the bind listeners", () => {
+    openSurfacedRun("s-bind");
+    const bound: string[] = [];
+    const stop = onChildRunBound((run) => bound.push(run.childSessionName));
+    try {
+      const first = bindChildRunSession("slack-thread", "slack-thread:s-bind", "agent:a:x:thread:1.2", "a-t-12");
+      expect(first?.launch).toEqual({ prompt: "[Cron: updates]", _cron: true, _cronRunId: "s-bind" });
+      expect(first?.run).toMatchObject({ childSessionKey: "agent:a:x:thread:1.2", childSessionName: "a-t-12" });
+      // A replayed materialization of the same session publishes nothing; another session gets nothing.
+      expect(
+        bindChildRunSession("slack-thread", "slack-thread:s-bind", "agent:a:x:thread:1.2", "a-t-12")?.launch,
+      ).toBeNull();
+      expect(bindChildRunSession("slack-thread", "slack-thread:s-bind", "agent:a:x:thread:9.9", "a-t-99")).toBeNull();
+      expect(bindChildRunSession("slack-thread", "slack-thread:nobody", "k", "n")).toBeNull();
+    } finally {
+      stop();
+    }
+    expect(bound).toEqual(["a-t-12"]);
+  });
+
+  it("closes the surface when the run closes, keeps the return the core's, and never prunes its session", async () => {
+    const closed: string[] = [];
+    const unregister = registerChildRunSurface({
+      id: "slack-thread",
+      canHost: () => true,
+      open: async () => {},
+      closeSurface: async (run) => {
+        closed.push(run.id);
+      },
+    });
+    try {
+      openSurfacedRun("s-close");
+      bindChildRunSession("slack-thread", "slack-thread:s-close", "agent:agent-a:x:thread:3.4", "agent-a-t-34");
+      getOrCreateSession("agent:agent-a:x:thread:3.4", "agent-a", stateDir!, { name: "agent-a-t-34" });
+      await closeChildRun(getChildRun("s-close")!, { kind: "result", text: "feito" });
+
+      expect(closed).toEqual(["s-close"]);
+      expect(publishCalls).toHaveLength(1);
+      expect(String(publishCalls[0]!.payload.prompt)).toContain("\n> feito");
+      expect(pruneClosedChildRuns("cron", "job-s", 0)).toEqual(["agent:agent-a:x:thread:3.4"]);
+      expect(getSession("agent:agent-a:x:thread:3.4")).not.toBeNull();
+      expect(getChildRun("s-close")).toBeNull();
+    } finally {
+      unregister();
+    }
+  });
+});
 
 describe("parent notice", () => {
   it("quotes the run's text line by line, so none of it passes for a [System] line", () => {

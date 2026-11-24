@@ -251,6 +251,41 @@ describe("router context queries", () => {
     expect(legacy.owner_principal).toBeNull();
   });
 
+  it("rebuilds a first automation run table (headless only) once, rows kept, so a run can be a Slack thread", () => {
+    const db = getDb();
+    db.exec("DROP TABLE automation_child_runs");
+    db.exec(`CREATE TABLE automation_child_runs (
+      id TEXT PRIMARY KEY,
+      origin_kind TEXT NOT NULL CHECK(origin_kind IN ('cron', 'trigger')),
+      origin_id TEXT NOT NULL, origin_name TEXT NOT NULL, agent_id TEXT NOT NULL,
+      parent_session_key TEXT NOT NULL, parent_session_name TEXT NOT NULL,
+      child_session_key TEXT NOT NULL UNIQUE, child_session_name TEXT NOT NULL,
+      surface TEXT NOT NULL CHECK(surface IN ('headless')),
+      status TEXT NOT NULL CHECK(status IN ('open', 'closed')),
+      return_state TEXT NOT NULL CHECK(return_state IN ('none', 'pending', 'returned', 'silent', 'error')),
+      return_kind TEXT CHECK(return_kind IS NULL OR return_kind IN ('result', 'auto', 'error')),
+      return_text TEXT, closed_at INTEGER, parent_notified_at INTEGER,
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+    )`);
+    db.query(`INSERT INTO automation_child_runs (id, origin_kind, origin_id, origin_name, agent_id, parent_session_key,
+      parent_session_name, child_session_key, child_session_name, surface, status, return_state, created_at, updated_at)
+      VALUES ('old-run', 'cron', 'job', 'job', 'main', 'agent:main:main', 'main', 'agent:main:cron:job:run:old',
+      'main-run-old', 'headless', 'closed', 'returned', 1, 1)`).run();
+    closeRouterDb();
+    const reopened = getDb();
+
+    expect(reopened.query("SELECT id, surface, surface_ref, launch_json FROM automation_child_runs").all()).toEqual([
+      { id: "old-run", surface: "headless", surface_ref: null, launch_json: null },
+    ]);
+    reopened
+      .query(`INSERT INTO automation_child_runs (id, origin_kind, origin_id, origin_name, agent_id, parent_session_key,
+        parent_session_name, child_session_key, child_session_name, surface, surface_ref, status, return_state,
+        created_at, updated_at) VALUES ('slack-run', 'cron', 'job', 'job', 'main', 'agent:main:main', 'main',
+        'pending:slack-run', 'pending:slack-run', 'slack-thread', 'slack-thread:slack-run', 'open', 'none', 1, 1)`)
+      .run();
+    expect(reopened.query("SELECT COUNT(*) AS n FROM automation_child_runs").get()).toEqual({ n: 2 });
+  });
+
   it("creates the automation child-run table on reopen, refusing unknown states", () => {
     const db = getDb();
     db.exec("DROP TABLE automation_child_runs");

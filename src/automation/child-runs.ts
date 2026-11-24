@@ -47,7 +47,8 @@ export type ChildRunStatus = "open" | "closed";
  *   (`parentNotifiedAt` unset).
  */
 export type ChildRunReturnState = "none" | "pending" | "returned" | "silent" | "error";
-export type ChildRunSurface = "headless";
+/** Where a run shows: `headless` (no chat) or a surface an adapter registered (a Slack thread). */
+export type ChildRunSurface = "headless" | "slack-thread";
 
 /** Closed runs kept per job (session and history); older ones are deleted when a run closes. */
 export const CHILD_RUNS_KEPT_PER_ORIGIN = 20;
@@ -69,6 +70,8 @@ export interface AutomationChildRun {
   childSessionKey: string;
   childSessionName: string;
   surface: ChildRunSurface;
+  /** The surface's own id for this run (the Slack thread request), for a non-headless run. */
+  surfaceRef?: string;
   status: ChildRunStatus;
   returnState: ChildRunReturnState;
   returnKind?: ChildRunReturnKind;
@@ -92,6 +95,8 @@ interface ChildRunRow {
   child_session_key: string;
   child_session_name: string;
   surface: ChildRunSurface;
+  surface_ref: string | null;
+  launch_json: string | null;
   status: ChildRunStatus;
   return_state: ChildRunReturnState;
   return_kind: ChildRunReturnKind | null;
@@ -119,6 +124,7 @@ function fromRow(row: ChildRunRow): AutomationChildRun {
     childSessionKey: row.child_session_key,
     childSessionName: row.child_session_name,
     surface: row.surface,
+    ...(row.surface_ref ? { surfaceRef: row.surface_ref } : {}),
     status: row.status,
     returnState: row.return_state,
     ...(row.return_kind ? { returnKind: row.return_kind } : {}),
@@ -140,7 +146,17 @@ export interface OpenChildRunInput {
   parentSessionName: string;
   childSessionKey: string;
   childSessionName: string;
+  /** A non-headless run starts with `pendingChildRunSession` as its child, bound when the surface makes it. */
+  surface?: ChildRunSurface;
+  surfaceRef?: string;
+  /** The prompt (with the authority envelope) published once a surface binds the run's session. */
+  launch?: Record<string, unknown>;
   now?: number;
+}
+
+/** The child of a run whose surface has not made its session yet: never a session's key or name. */
+export function pendingChildRunSession(runId: string): string {
+  return `pending:${runId}`;
 }
 
 export function openChildRun(input: OpenChildRunInput): AutomationChildRun {
@@ -148,8 +164,9 @@ export function openChildRun(input: OpenChildRunInput): AutomationChildRun {
   db()
     .query(`INSERT INTO automation_child_runs (
       id, origin_kind, origin_id, origin_name, agent_id, parent_session_key, parent_session_name,
-      child_session_key, child_session_name, surface, status, return_state, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'headless', 'open', 'none', ?, ?)`)
+      child_session_key, child_session_name, surface, surface_ref, launch_json, status, return_state,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', 'none', ?, ?)`)
     .run(
       input.id,
       input.originKind,
@@ -160,10 +177,95 @@ export function openChildRun(input: OpenChildRunInput): AutomationChildRun {
       input.parentSessionName,
       input.childSessionKey,
       input.childSessionName,
+      input.surface ?? "headless",
+      input.surfaceRef ?? null,
+      input.launch ? JSON.stringify(input.launch) : null,
       now,
       now,
     );
   return getChildRun(input.id)!;
+}
+
+/** A visible surface for runs, registered by a channel adapter; the core knows none of them. */
+export interface ChildRunSurfaceAdapter {
+  id: Exclude<ChildRunSurface, "headless">;
+  /** Whether this surface can show a run under that parent session (a Slack chat for slack-thread). */
+  canHost(parent: SessionEntry): boolean;
+  /** Start showing the run; the surface binds its session later (`bindChildRunSession`). */
+  open(input: { run: AutomationChildRun; parent: SessionEntry; title: string }): Promise<void>;
+  /** The run closed: close its surface without a word (the core sends the return). */
+  closeSurface(run: AutomationChildRun): Promise<void>;
+}
+
+const surfaces = new Map<string, ChildRunSurfaceAdapter>();
+
+export function registerChildRunSurface(adapter: ChildRunSurfaceAdapter): () => void {
+  surfaces.set(adapter.id, adapter);
+  return () => {
+    if (surfaces.get(adapter.id) === adapter) surfaces.delete(adapter.id);
+  };
+}
+
+/** The registered surface that can show a run under this parent, or null (the run is headless). */
+export function childRunSurfaceFor(parent: SessionEntry): ChildRunSurfaceAdapter | null {
+  for (const adapter of surfaces.values()) if (adapter.canHost(parent)) return adapter;
+  return null;
+}
+
+export function findChildRunBySurfaceRef(surface: ChildRunSurface, surfaceRef: string): AutomationChildRun | null {
+  const row = db()
+    .query<ChildRunRow, [string, string]>("SELECT * FROM automation_child_runs WHERE surface = ? AND surface_ref = ?")
+    .get(surface, surfaceRef);
+  return row ? fromRow(row) : null;
+}
+
+const bindListeners = new Set<(run: AutomationChildRun) => void>();
+
+/** Called when a surface binds a run's session, before its launch is published. */
+export function onChildRunBound(listener: (run: AutomationChildRun) => void): () => void {
+  bindListeners.add(listener);
+  return () => {
+    bindListeners.delete(listener);
+  };
+}
+
+/**
+ * The surface made the run's session: bind it and hand back the launch to publish there. Only the
+ * first bind hands it back; a replayed one (the same session) gets `launch: null` and publishes
+ * nothing. Null when no run waits for that surface reference, or another session is already bound.
+ */
+export function bindChildRunSession(
+  surface: ChildRunSurface,
+  surfaceRef: string,
+  childSessionKey: string,
+  childSessionName: string,
+): { run: AutomationChildRun; launch: Record<string, unknown> | null } | null {
+  const row = db()
+    .query<ChildRunRow, [string, string]>("SELECT * FROM automation_child_runs WHERE surface = ? AND surface_ref = ?")
+    .get(surface, surfaceRef);
+  if (!row) return null;
+  if (row.child_session_key !== pendingChildRunSession(row.id)) {
+    return row.child_session_key === childSessionKey ? { run: fromRow(row), launch: null } : null;
+  }
+  const changed =
+    db()
+      .query(
+        "UPDATE automation_child_runs SET child_session_key = ?, child_session_name = ?, updated_at = ? WHERE id = ? AND child_session_key = ?",
+      )
+      .run(childSessionKey, childSessionName, Date.now(), row.id, pendingChildRunSession(row.id)).changes > 0;
+  if (!changed) return null;
+  const bound = getChildRun(row.id)!;
+  for (const listener of bindListeners) {
+    try {
+      listener(bound);
+    } catch (error) {
+      log.warn("A run bind listener failed", {
+        runId: bound.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return { run: bound, launch: row.launch_json ? (JSON.parse(row.launch_json) as Record<string, unknown>) : null };
 }
 
 export function getChildRun(id: string): AutomationChildRun | null {
@@ -388,6 +490,19 @@ export async function closeChildRun(
   if (!changed && text !== undefined && current.returnText !== text) {
     return { run: current, changed, parentReturnDelivered: false, refused: true };
   }
+  if (changed && current.surface !== "headless") {
+    // The surface only shows the run; the return below is the core's, the same for every surface.
+    await surfaces
+      .get(current.surface)
+      ?.closeSurface(current)
+      .catch((error) =>
+        log.warn("Failed to close a run's surface", {
+          runId: current.id,
+          surface: current.surface,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+  }
   let parentReturnDelivered = false;
   if (current.returnState === "pending" && current.returnText && current.returnKind) {
     const messageId = `automation-run-return:${current.id}`;
@@ -440,6 +555,12 @@ export function pruneClosedChildRuns(
     .all(originKind, originId, keep);
   const pruned: string[] = [];
   for (const row of stale) {
+    if (row.surface !== "headless") {
+      // A visible run (a Slack thread) is part of its chat's history: only its row goes.
+      db().query("DELETE FROM automation_child_runs WHERE id = ?").run(row.id);
+      pruned.push(row.child_session_key);
+      continue;
+    }
     deleteSession(row.child_session_key);
     // The run's transcript goes with it, keyed by the name the run had. Never when a live session goes by
     // that name now (the run renamed, its old name taken): those messages are that session's.
