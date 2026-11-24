@@ -173,6 +173,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/crash-recovery-store.test.ts",
     "src/runtime/observation-plane.test.ts",
     "src/runtime/runtime-request-context.test.ts",
+    // Active-turn lease: renewal, revocation on reduced authority, limited (deny_*) turns.
+    "src/runtime/runtime-request-context-lifetime.test.ts",
     // Slack thread and task turns keep the verified requester for Bases.
     "src/runtime/delegated-requester.test.ts",
     "src/runtime/runtime-request-builder.context-key.test.ts",
