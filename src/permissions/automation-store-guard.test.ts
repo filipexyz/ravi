@@ -46,6 +46,45 @@ describe("automation store guard on the real stores", () => {
     expect(dbListTriggers()).toHaveLength(0);
   });
 
+  it("lets the operator's own relay (a thread they asked for) leave a trigger and a cron job behind", () => {
+    const operatorRelay = (): ToolContext => {
+      const context = personTurnHeldBelowBreakGlass();
+      return {
+        ...context,
+        context: {
+          ...context.context!,
+          capabilities: [],
+          metadata: { actorAuthorizationMode: "invoke-only", relayNarrowing: true, relayCallerUnrestricted: true },
+        },
+      };
+    };
+    runWithContext(operatorRelay(), () => {
+      dbCreateTrigger({ name: "gh-follow:o/r#7", topic: "ravi.watch.github.>", message: "ok" });
+      dbCreateCronJob({
+        name: "from the operator's thread",
+        schedule: { type: "every", everyMs: 60_000 },
+        message: "ok",
+      } as unknown as Parameters<typeof dbCreateCronJob>[0]);
+    });
+    expect(dbListTriggers().map((trigger) => trigger.name)).toEqual(["gh-follow:o/r#7"]);
+    expect(dbListCronJobs()).toHaveLength(1);
+  });
+
+  it("still refuses the same writes from a relay of a person held below the agent", () => {
+    const heldRelay: ToolContext = {
+      ...personTurnHeldBelowBreakGlass(),
+      context: {
+        ...personTurnHeldBelowBreakGlass().context!,
+        capabilities: [],
+        metadata: { actorAuthorizationMode: "invoke-only", relayNarrowing: true },
+      },
+    };
+    expect(() =>
+      runWithContext(heldRelay, () => dbCreateTrigger({ name: "gh-follow:o/r#7", topic: "x.y", message: "ok" })),
+    ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
+    expect(dbListTriggers()).toHaveLength(0);
+  });
+
   it("refuses a cron job written directly from that turn", () => {
     expect(() =>
       runWithContext(personTurnHeldBelowBreakGlass(), () =>

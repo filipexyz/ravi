@@ -144,6 +144,14 @@ a success claim.
 - A lost ref/PR creation response is reconciled by reading the exact remote
   resource. A 422 alone is not success. Ref success followed by PR/follow
   failure returns partial phase, SHA, PR number when known and uncertainty.
+- A failure that is not a contract error or a GitHub refusal MUST say which
+  phase stopped and why (`details.cause`, the message, the journal row) and the
+  exact command that completes it (`details.suggestedAction`:
+  `ravi pr publish --repo <repo> --base <base> --expect-sha <sha> --json --execute`).
+  A policy refusal (`PERMISSION_DENIED`) is reported as such and not
+  retryable: repeating the same publication gives the same refusal. A reason
+  hidden behind "rerun the same publication" is what hid, on 24/11, a
+  deterministic refusal of the follow in every thread turn.
 - Reconcile through `ensureGhWatchFollow`, with a local active CI producer,
   using its local-only path without requiring or creating a Console watch,
   enabled correctly routed trigger and live runner confirmation of the loaded

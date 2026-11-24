@@ -24,7 +24,8 @@ import type { WatchRecord } from "../watch/types.js";
 
 import { registerInboundSlackThread, closeSlackThreadLifecycle } from "../channels/slack/thread-lifecycle-store.js";
 import { getOrCreateSession, deleteSession } from "../router/sessions.js";
-import { dbCreateTrigger, dbGetTrigger } from "../triggers/triggers-db.js";
+import { dbCreateTrigger, dbGetTrigger, dbListTriggers } from "../triggers/triggers-db.js";
+import { runWithContext, type ToolContext } from "../cli/context.js";
 import { runGhFollowMaintenance } from "./gh-follow-sweep.js";
 import { createIsolatedRaviState, cleanupIsolatedRaviState } from "../test/ravi-state.js";
 import { dbCreateAgent } from "../router/router-db.js";
@@ -1463,5 +1464,60 @@ describe("durable PR follow owner", () => {
     expect(dbGetTrigger(unrelated.id)).toMatchObject({ cooldownMs: 30_000, debounceMs: 2_000 });
     expect((await runGhFollowMaintenance(maintenanceDeps)).triggersRepaired).toBe(0);
     expect(refreshes).toBe(1);
+  });
+});
+
+describe("the CI follow that `pr publish` leaves from a thread turn", () => {
+  /** A thread the main session starts for the operator is a relayed turn (relayNarrowing true). */
+  function threadTurn(metadata: Record<string, unknown>): ToolContext {
+    return {
+      contextId: "ctx_thread",
+      agentId: "main",
+      context: {
+        contextId: "ctx_thread",
+        contextKey: "rctx_thread",
+        kind: "turn-runtime",
+        agentId: "main",
+        capabilities: [],
+        metadata: { actorAuthorizationMode: "invoke-only", relayNarrowing: true, ...metadata },
+        createdAt: 0,
+      },
+    };
+  }
+  const followDeps = {
+    localOnly: true,
+    listWatches: () => ({ items: [], total: 0 }) as never,
+    createWatch: async () => ({
+      watch: watch({ id: "local_1", placement: "local", filters: { managedBy: "gh-follow" } }),
+      createdRemote: false,
+    }),
+    emitTriggersRefresh: async () => {},
+  };
+  const publisher = { sessionName: "dev-thread" };
+
+  it("is registered from the operator's thread, and registering again creates nothing twice", async () => {
+    const operatorThread = threadTurn({ relayCallerUnrestricted: true });
+    const first = await runWithContext(operatorThread, () =>
+      ensureGhWatchFollow({ repo: "o/r", prNumber: 7, context: publisher, reconcile: true }, followDeps),
+    );
+    expect(first.triggerReused).toBe(false);
+    const desired = buildGhFollowTriggerInput("o/r", 7, publisher);
+    expect(dbListTriggers().map((item) => [item.name, item.message, item.replySession])).toEqual([
+      [desired.name, desired.message, "dev-thread"],
+    ]);
+    const again = await runWithContext(operatorThread, () =>
+      ensureGhWatchFollow({ repo: "o/r", prNumber: 7, context: publisher, reconcile: true }, followDeps),
+    );
+    expect(again.triggerReused).toBe(true);
+    expect(dbListTriggers()).toHaveLength(1);
+  });
+
+  it("is still refused from a thread opened from a held turn", async () => {
+    await expect(
+      runWithContext(threadTurn({}), () =>
+        ensureGhWatchFollow({ repo: "o/r", prNumber: 7, context: publisher, reconcile: true }, followDeps),
+      ),
+    ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    expect(dbListTriggers()).toHaveLength(0);
   });
 });

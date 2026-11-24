@@ -38,6 +38,9 @@
   databases on both ends, binary/path/mode fidelity, deletions, merges and
   identity offsets; preview, authority, caller cwd, leases and interrupted
   upload/ref/PR/follow recovery. No production repo/ref is mutated by tests.
+- `bun test src/pr/service.test.ts` verifies that a follow failure reports its
+  phase, cause and the exact rerun command, journals the cause, and reports a
+  policy refusal as `PERMISSION_DENIED` that is not retryable.
 - `bun test src/hooks/gh-pr-publish.test.ts src/hooks/gh-watch.test.ts`
   verifies PR reuse/ready, conflicts and existing follow reconciliation.
 - `bun test --preload ./src/test/isolated-runtime-preload.ts src/hooks/gh-pr-publish.test.ts src/triggers/triggers.test.ts`
