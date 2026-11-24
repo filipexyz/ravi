@@ -11589,7 +11589,7 @@ export type CredentialsConnectionsInventoryReturn = {
     resultStatus: string | null;
   }>;
   degraded: boolean;
-  degradedReasons: Array<"unsupported" | "not_configured" | "forbidden" | "sealed" | "unreachable" | "invalid_ref" | "error">;
+  degradedReasons: Array<"unsupported" | "not_configured" | "forbidden" | "sealed" | "unreachable" | "invalid_ref" | "redirected" | "error">;
   generatedAt: number;
   items: Array<{
     backend: "file" | "keychain" | "vault";
@@ -11614,7 +11614,7 @@ export type CredentialsConnectionsInventoryReturn = {
       version: number | null;
     }) | ({
       available: false;
-      reason: "unsupported" | "not_configured" | "forbidden" | "sealed" | "unreachable" | "invalid_ref" | "error";
+      reason: "unsupported" | "not_configured" | "forbidden" | "sealed" | "unreachable" | "invalid_ref" | "redirected" | "error";
     })) | null;
     secretRefAlias: string;
     status: "active" | "disabled";

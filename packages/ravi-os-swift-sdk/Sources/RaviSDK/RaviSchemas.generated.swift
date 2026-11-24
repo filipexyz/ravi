@@ -63747,6 +63747,7 @@ public enum RaviSchemas {
             "sealed",
             "unreachable",
             "invalid_ref",
+            "redirected",
             "error"
           ],
           "type": "string"
@@ -63929,6 +63930,7 @@ public enum RaviSchemas {
                             "sealed",
                             "unreachable",
                             "invalid_ref",
+                            "redirected",
                             "error"
                           ],
                           "type": "string"

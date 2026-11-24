@@ -63747,6 +63747,7 @@ class RaviSchemas {
           "sealed",
           "unreachable",
           "invalid_ref",
+          "redirected",
           "error"
         ],
         "type": "string"
@@ -63929,6 +63930,7 @@ class RaviSchemas {
                           "sealed",
                           "unreachable",
                           "invalid_ref",
+                          "redirected",
                           "error"
                         ],
                         "type": "string"

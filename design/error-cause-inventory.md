@@ -1103,10 +1103,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | costs | src/costs/pricing-catalog.ts | 255 | triaged-follow-up | catch-without-binding | src/costs/pricing-catalog.ts:6313c80f0e29a2794c3fc323 |
 | costs | src/costs/pricing-catalog.ts | 306 | triaged-follow-up | catch-without-binding | src/costs/pricing-catalog.ts:e2413b21d59a5ab0b644dddc |
 | credentials | src/credentials/backends.ts | 72 | no-cause | The parser error quotes the ref; the description carries only the fixed reason. | src/credentials/backends.ts:ffe515c4e7e3b18b9b11988c |
-| credentials | src/credentials/backends.ts | 89 | no-cause | Transport errors can carry the Vault URL and path; degrade to the fixed reason, never retry a data read. | src/credentials/backends.ts:16a1d4458af13594a1b507a7 |
-| credentials | src/credentials/backends.ts | 102 | no-cause | A malformed metadata body is a backend fault with no secret to report; the item degrades to "error". | src/credentials/backends.ts:108e66bdf6c47b939f6f0b9e |
-| credentials | src/credentials/backends.ts | 155 | no-cause | An unparsable Vault address or URL only means "do not call"; the caller reports invalid_ref. | src/credentials/backends.ts:fc8c546c6cf2738525ab9516 |
-| credentials | src/credentials/backends.ts | 219 | no-cause | Process errors may echo secret stdin or arguments; only the fixed Keychain failure may escape. | src/credentials/backends.ts:167696ef3f8aa5396bfd9bae |
+| credentials | src/credentials/backends.ts | 91 | no-cause | Transport errors can carry the Vault URL and path; degrade to the fixed reason, never retry a data read. | src/credentials/backends.ts:16a1d4458af13594a1b507a7 |
+| credentials | src/credentials/backends.ts | 108 | no-cause | A malformed metadata body is a backend fault with no secret to report; the item degrades to "error". | src/credentials/backends.ts:108e66bdf6c47b939f6f0b9e |
+| credentials | src/credentials/backends.ts | 161 | no-cause | An unparsable Vault address or URL only means "do not call"; the caller reports invalid_ref. | src/credentials/backends.ts:fc8c546c6cf2738525ab9516 |
+| credentials | src/credentials/backends.ts | 225 | no-cause | Process errors may echo secret stdin or arguments; only the fixed Keychain failure may escape. | src/credentials/backends.ts:167696ef3f8aa5396bfd9bae |
 | credentials | src/credentials/broker.ts | 153 | fixed | binding retained / no recognized error surface | src/credentials/broker.ts:857b7d636b7b1bdeb546bcfe |
 | credentials | src/credentials/file-backend.ts | 35 | fixed | binding retained / no recognized error surface | src/credentials/file-backend.ts:62ce46c69e26d756b02048f0 |
 | credentials | src/credentials/file-backend.ts | 86 | fixed | binding retained / no recognized error surface | src/credentials/file-backend.ts:6e4dd7f9ffb136fa659cfacb |

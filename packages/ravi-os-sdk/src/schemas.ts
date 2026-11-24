@@ -63225,6 +63225,7 @@ export const CredentialsConnectionsInventoryReturnSchema = {
           "sealed",
           "unreachable",
           "invalid_ref",
+          "redirected",
           "error"
         ],
         "type": "string"
@@ -63407,6 +63408,7 @@ export const CredentialsConnectionsInventoryReturnSchema = {
                           "sealed",
                           "unreachable",
                           "invalid_ref",
+                          "redirected",
                           "error"
                         ],
                         "type": "string"

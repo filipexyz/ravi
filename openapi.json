@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "c0e59e9fefd04b17"
+    "version": "ccb44ebb9b1ecc58"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -68584,6 +68584,7 @@
                           "sealed",
                           "unreachable",
                           "invalid_ref",
+                          "redirected",
                           "error"
                         ],
                         "type": "string"
@@ -68766,6 +68767,7 @@
                                           "sealed",
                                           "unreachable",
                                           "invalid_ref",
+                                          "redirected",
                                           "error"
                                         ],
                                         "type": "string"
