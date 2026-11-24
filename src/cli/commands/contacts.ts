@@ -91,6 +91,8 @@ import {
   filterVisibleAgents,
 } from "../../permissions/scope.js";
 import {
+  assertBreakGlassTagWriteAllowed,
+  assertNoBreakGlassContactChange,
   assertPermissionTagWriteAuthority,
   assertPrivilegedContactWriteAuthority,
   isPermissionPolicyTag,
@@ -773,6 +775,9 @@ export class ContactsCommands {
 
     let contact = null as ReturnType<typeof getContact>;
     let normalized = identity.trim();
+    // add allows an existing contact too: never activate a dormant break-glass one.
+    const existingForAdd = getContact(identity.trim());
+    if (existingForAdd) assertNoBreakGlassContactChange("contacts add", [existingForAdd.id]);
     if (requestedChannel) {
       const resolvedInstanceId = resolveContactInstanceRef(instanceId);
       if (["slack", "telegram", "discord"].includes(requestedChannel) && !resolvedInstanceId) {
@@ -858,10 +863,12 @@ export class ContactsCommands {
       failContactNotFound("contacts approve", contactRef, asJson);
     }
     failIfChatContact(contactRef, contact);
+    assertNoBreakGlassContactChange("contacts approve", [contact.id]);
 
-    allowContact(contact.phone);
+    // Write to the contact that was checked, not whatever the phone resolves to.
+    allowContact(contact.id);
     if (replyMode) {
-      setContactReplyMode(contact.phone, replyMode as ReplyMode);
+      setContactReplyMode(contact.id, replyMode as ReplyMode);
     }
     if (agentIds) {
       const agents = parseAgentIds(agentIds) ?? [];
@@ -955,7 +962,8 @@ export class ContactsCommands {
       failContactNotFound("contacts allow", contactRef, asJson);
     }
     failIfChatContact(contactRef, contact);
-    allowContact(contact.phone);
+    assertNoBreakGlassContactChange("contacts allow", [contact.id]);
+    allowContact(contact.id);
     const updated = getUpdatedContact(contact);
     const payload = {
       status: "allowed" as const,
@@ -1048,6 +1056,10 @@ export class ContactsCommands {
       }
       if (!Array.isArray(tags) || !tags.every((tag) => typeof tag === "string")) fail("Tags must be a JSON array");
       assertPermissionTagWriteAuthority("contacts set tags", changedPermissionTags(contact.tags, tags));
+      assertBreakGlassTagWriteAllowed(
+        "contacts set tags",
+        tags.filter((tag) => !contact.tags.includes(tag)),
+      );
       jsonValue = tags;
       updateContact(contact.id, { tags });
       if (!asJson) console.log(`✓ Tags set: ${contact.id} → ${value}`);
@@ -1063,6 +1075,8 @@ export class ContactsCommands {
       }
     } else if (key === "opt-out" || key === "optout") {
       const boolValue = value === "true" || value === "yes" || value === "1";
+      // Clearing opt-out reactivates a dormant admin: same rule as allowing it.
+      if (!boolValue) assertNoBreakGlassContactChange("contacts set opt-out", [contact.id]);
       jsonValue = boolValue;
       setOptOut(contact.phone, boolValue);
       if (!asJson) console.log(`✓ Opt-out set: ${contact.id} → ${boolValue ? "yes" : "no"}`);
@@ -1689,6 +1703,7 @@ export class ContactsCommands {
     }
 
     assertPermissionTagWriteAuthority("contacts tag", [tag]);
+    assertBreakGlassTagWriteAllowed("contacts tag", [tag]);
     addContactTag(contact.phone, tag);
     const payload = {
       status: "tag_added" as const,

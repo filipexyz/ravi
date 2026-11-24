@@ -13,7 +13,10 @@ import {
   canonicalTagSlugsForAsset,
   replaceMirroredTagSlugsForAsset,
 } from "./tags/helpers.js";
-import { dbFindTagBindings } from "./tags/tag-db.js";
+import { dbFindTagBindings, dbGetTagDefinition } from "./tags/tag-db.js";
+import { assertBreakGlassStoreWrite, slugBreakGlassReasons } from "./permissions/break-glass.js";
+import { dbListContactChatGrants } from "./permissions/contact-chat-grants.js";
+import { isPermissionPolicyTag, normalizePermissionTag } from "./permissions/permission-tags.js";
 import { detachTagFromSelector, searchTagBindingsForSelector } from "./tags/service.js";
 import { buildSqlWhereClause, countRows, normalizeLimitOffsetPage, type ListPage } from "./utils/pagination.js";
 import { nats } from "./nats.js";
@@ -1257,6 +1260,66 @@ function moveCanonicalContactTagBindings(sourceContactId: string, targetContactI
       actor: "contacts",
     });
   }
+}
+
+/** Refuse new break-glass tags for a contact from an agent turn, before any write. */
+function assertContactPolicyTagsAllowed(database: Database, contactId: string | null, tags: readonly string[]): void {
+  if (tags.length === 0) return;
+  const spelling = (tag: string) => normalizePermissionTag(tag) ?? tag.trim().toLowerCase();
+  const current = new Set((contactId ? currentContactPolicyTags(database, contactId) : []).map(spelling));
+  assertBreakGlassStoreWrite(
+    `contact policy tags on ${contactId ? `contact:${contactId}` : "a new contact"}`,
+    tags.filter((tag) => !current.has(spelling(tag))).flatMap((tag) => slugBreakGlassReasons(tag, dbGetTagDefinition)),
+  );
+}
+
+/** Break-glass a contact holds or would hold once active: its tags (both stores) and chat grants. */
+function contactPolicyBreakGlassReasons(
+  database: Database,
+  contactId: string,
+  extraTags: readonly string[] = [],
+): string[] {
+  const tags = [...currentContactPolicyTags(database, contactId), ...extraTags];
+  return [
+    ...new Set([
+      ...tags.flatMap((tag) => slugBreakGlassReasons(tag, dbGetTagDefinition)),
+      ...dbListContactChatGrants({ contactId }).flatMap((grant) =>
+        slugBreakGlassReasons(grant.profileSlug, dbGetTagDefinition),
+      ),
+    ]),
+  ];
+}
+
+/**
+ * Refuse, from an agent turn, a policy write that activates a contact holding
+ * break-glass (status becomes allowed, or opt-out is cleared, while it was not
+ * active). Reaches every activation path: approve, allow, add, instances
+ * approve, platform-identity upserts, whichever contact the reference resolves to.
+ */
+function assertContactActivationAllowed(
+  database: Database,
+  input: { contactId: string; status?: ContactStatus | null; optOut?: boolean | null; tags?: string[] | null },
+): void {
+  if ((input.status === undefined || input.status === null) && (input.optOut === undefined || input.optOut === null))
+    return;
+  const previous = database
+    .prepare("SELECT status, opt_out FROM contact_policies WHERE contact_id = ?")
+    .get(input.contactId) as { status: string | null; opt_out: number | null } | undefined;
+  const wasActive = previous?.status === "allowed" && !previous?.opt_out;
+  const nextStatus = input.status ?? previous?.status ?? null;
+  const nextOptOut = input.optOut ?? Boolean(previous?.opt_out);
+  if (wasActive || nextStatus !== "allowed" || nextOptOut) return;
+  assertBreakGlassStoreWrite(
+    `activating contact:${input.contactId}`,
+    contactPolicyBreakGlassReasons(database, input.contactId, input.tags ?? []),
+  );
+}
+
+function currentContactPolicyTags(database: Database, contactId: string): string[] {
+  const row = database.prepare("SELECT tags_json FROM contact_policies WHERE contact_id = ?").get(contactId) as
+    | { tags_json: string | null }
+    | undefined;
+  return contactTags(contactId, row?.tags_json ?? null);
 }
 
 function contactTags(contactId: string, tagsJson: string | null): string[] {
@@ -3123,6 +3186,11 @@ function upsertCanonicalContactPolicy(
     source?: ContactSource | null;
   },
 ): void {
+  // Sink guards (spec permissions/break-glass): tags_json is read as contact
+  // policy, and status/opt-out decide whether its tags count. Both are judged
+  // here, before any write, whatever code path calls this.
+  assertContactPolicyTagsAllowed(database, input.contactId, input.tags ?? []);
+  assertContactActivationAllowed(database, input);
   database
     .prepare(
       `
@@ -8039,7 +8107,9 @@ export function ensureContactFromInbound(input: EnsureContactFromInboundInput): 
         const refreshedContact = getCanonicalCompatContactById(database, contact.id);
         const existingTags = refreshedContact?.tags ?? contact.tags;
         const appliedSlugs: string[] = [];
-        for (const tag of input.defaultTags) {
+        // Instance default tags never carry permission tags (same rule as tag
+        // rules' withoutPermissionTags): a new sender never arrives with power.
+        for (const tag of input.defaultTags.filter((value) => !isPermissionPolicyTag(value))) {
           const slug = attachCanonicalContactTag(contact.id, tag, "inbound_contact_intake_default_tag");
           if (slug) appliedSlugs.push(slug);
         }
@@ -9484,6 +9554,8 @@ export function createContact(input: {
   if (existing) {
     throw new Error(`Contact already exists: ${normalized}`);
   }
+  // Judged before the contact record is written, so a refusal leaves nothing behind.
+  assertContactPolicyTagsAllowed(database, null, input.tags ?? []);
 
   const contact = createCanonicalContactForIdentity(database, normalized, {
     name: input.name ?? null,
@@ -9531,6 +9603,8 @@ export function updateContact(
 ): Contact {
   const database = ensureDb();
   const contact = resolveContact(phone);
+  // Judged before any field is written, so a refused tag change leaves the contact untouched.
+  if (contact && updates.tags !== undefined) assertContactPolicyTagsAllowed(database, contact.id, updates.tags ?? []);
   if (!contact) {
     throw new Error(`Contact not found: ${phone}`);
   }

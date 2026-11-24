@@ -1,4 +1,5 @@
 import { configureStateJournalMode, initializeStateSchema } from "../db/schema-owner.js";
+import { assertAgentBreakGlassRaiseAllowed } from "../permissions/break-glass.js";
 import { assertDatabaseTargetAllowed, openStateDatabase, isSchemaConsumer } from "../db/state-boundary.js";
 import { migrateDecisions } from "../decisions/schema.js";
 import { assertThreadFenceReady } from "../threads/schema-fence.js";
@@ -4385,6 +4386,21 @@ function parseAgentDefaultsRecord(value: string | null): Record<string, unknown>
   } catch {
     return {};
   }
+}
+
+/** runtimePermissions in either stored form (a profile string or an object), for the break-glass sink. */
+function runtimePermissionsForBreakGlass(value: unknown): {
+  profile?: string;
+  capabilities?: Array<string | Record<string, string>>;
+} {
+  if (typeof value === "string") return { profile: value };
+  const record = parseAgentRuntimePermissionsRecord(value);
+  return {
+    ...(typeof record.profile === "string" ? { profile: record.profile } : {}),
+    ...(Array.isArray(record.capabilities)
+      ? { capabilities: record.capabilities as Array<string | Record<string, string>> }
+      : {}),
+  };
 }
 
 function parseAgentRuntimePermissionsRecord(value: unknown): Record<string, unknown> {
@@ -9819,6 +9835,18 @@ export function dbUpdateAgent(id: string, updates: AgentUpdateInput): AgentConfi
 
   if (!row) {
     throw new Error(`Agent not found: ${id}`);
+  }
+
+  if (updates.defaults !== undefined) {
+    // Sink guard (spec permissions/break-glass): every writer of agent runtime
+    // permissions lands here; raising another agent to break-glass from an
+    // agent turn is refused unless an operator approval is running.
+    assertAgentBreakGlassRaiseAllowed(
+      `agent defaults of ${id}`,
+      id,
+      runtimePermissionsForBreakGlass(parseAgentDefaultsRecord(row.defaults ?? null).runtimePermissions),
+      runtimePermissionsForBreakGlass((updates.defaults ?? {}).runtimePermissions),
+    );
   }
 
   // Validate dmScope if provided

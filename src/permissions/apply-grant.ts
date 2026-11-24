@@ -19,6 +19,7 @@ import { getDb } from "../router/router-db.js";
 import { revokeLiveRuntimeContextsForPermissionProfile } from "../runtime/context-registry.js";
 import { dbCreateTagDefinition, dbGetTagDefinition, dbUpdateTagDefinition, normalizeTagSlug } from "../tags/index.js";
 import { ensureAgentRuntimeCapability } from "./agent-default-capabilities-provider.js";
+import { runApprovedBreakGlassGrant } from "./break-glass.js";
 import {
   formatCanonicalCapability,
   normalizeAuthorizationCapabilityInput,
@@ -366,6 +367,14 @@ export interface ApplyPermissionGrantResult {
  * `changed: false`; the idempotency ledger makes an explicit replay cheap.
  */
 export function applyPermissionGrant(input: ApplyPermissionGrantInput): ApplyPermissionGrantResult {
+  // Callers are the approved paths (a granted `permissions request`, a denial
+  // approval card): the storage sinks accept break-glass only inside this.
+  return runApprovedBreakGlassGrant(String(input.requestId ?? input.denialId ?? "approved-grant"), () =>
+    applyPermissionGrantApproved(input),
+  );
+}
+
+function applyPermissionGrantApproved(input: ApplyPermissionGrantInput): ApplyPermissionGrantResult {
   const now = input.now ?? Date.now();
   const deniedCapability = normalizeGrantCapability(input.capability);
   const fullAccess = input.intent === "full-access";

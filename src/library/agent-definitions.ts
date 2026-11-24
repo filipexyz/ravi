@@ -32,6 +32,7 @@ import {
   readCloudBlockFromManifest,
   type CloudAgentBlock,
 } from "../cloud-agents/definition.js";
+import { assertAgentBreakGlassRaiseAllowed } from "../permissions/break-glass.js";
 import { createAgent, ensureAgentDirs, getAgent, loadRouterConfig, updateAgent } from "../router/config.js";
 import { dbListSkillGrantsForAgent, dbUpsertSkillGrant } from "../router/router-db.js";
 import type { AgentConfig } from "../router/types.js";
@@ -396,6 +397,8 @@ function applyProfile(agentId: string, profile: AgentRuntimePermissionProfile): 
   const agent = getAgent(agentId);
   const before = getAgentRuntimePermissionsConfigFromDefaults(agent?.defaults);
   const next = profile === "chat-only" ? { profile } : { ...(before ?? {}), profile };
+  // A Library profile is a writer of agent runtime permissions too (spec permissions/break-glass).
+  assertAgentBreakGlassRaiseAllowed("agents library", agentId, before, next);
   updateAgent(agentId, { defaults: buildAgentRuntimePermissionsDefaults(agent?.defaults, next) });
 }
 
@@ -536,6 +539,9 @@ export function executeLibraryAgentInstall(prepared: PreparedLibraryAgentInstall
       suggestedAction: "Install under another id with --id <id>",
     });
   }
+  // Before any write: a refused break-glass profile leaves no half-installed agent.
+  if (plan.profile.apply)
+    assertAgentBreakGlassRaiseAllowed("agents library install", agentId, null, { profile: plan.profile.apply });
   mkdirSync(plan.agent.cwd, { recursive: true });
   writeFileSync(join(plan.agent.cwd, AGENT_INSTRUCTIONS_FILE), definition.instructions);
   if (definition.heartbeat !== null) writeFileSync(join(plan.agent.cwd, AGENT_HEARTBEAT_FILE), definition.heartbeat);
@@ -762,6 +768,11 @@ export interface LibraryAgentUpdateResult {
 export function executeLibraryAgentUpdate(prepared: PreparedLibraryAgentUpdate): LibraryAgentUpdateResult {
   const { plan, definition, state, cwd } = prepared;
   const origin = state.origin!;
+  // Before any write: a refused break-glass profile leaves the agent untouched.
+  if (plan.profile.apply) {
+    const current = getAgentRuntimePermissionsConfigFromDefaults(getAgent(plan.agent)?.defaults);
+    assertAgentBreakGlassRaiseAllowed("agents library update", plan.agent, current, { profile: plan.profile.apply });
+  }
   const written: string[] = [];
   const kept: string[] = [];
   const contentOf = (file: string) =>

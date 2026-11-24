@@ -17,6 +17,7 @@ import { dbUpsertChat, dbUpsertChatParticipant } from "../router/router-db.js";
 import { applyContactRule } from "../tag-rules/engine.js";
 import { TagRuleSchema, type TagRule } from "../tag-rules/types.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { dbCreateTagDefinition } from "../tags/index.js";
 import { materializeContactPolicyCapabilities } from "./contact-policy-permissions-provider.js";
 
 setDefaultTimeout(20_000);
@@ -77,6 +78,159 @@ function expectDenied(fn: () => unknown): void {
   expect(error).toMatchObject({ code: "PERMISSION_DENIED" });
 }
 
+// Spec permissions/break-glass: an agent turn never confers admin:system:* or
+// execute:executable:* by tagging, even when it holds admin itself.
+describe("break-glass power is never conferred by an agent tag write", () => {
+  function expectBreakGlassDenied(fn: () => unknown): void {
+    let error: unknown;
+    try {
+      fn();
+    } catch (err) {
+      error = err;
+    }
+    expect(error).toMatchObject({ code: "FULL_ACCESS_APPROVAL_REQUIRED", exitCode: 3 });
+  }
+
+  it("refuses an admin agent tagging a contact with an admin profile, in any spelling", () => {
+    const target = seedContact("5511900001740", "Target");
+    const commands = new ContactsCommands();
+    runWithContext(ADMIN, () => {
+      expectBreakGlassDenied(() => commands.tag(target.id, "permission-admin", true));
+      expectBreakGlassDenied(() => commands.tag(target.id, "permission.owner", true));
+      expectBreakGlassDenied(() => commands.set(target.id, "tags", '["vip","Permission:Superadmin"]', true));
+    });
+    expect(materializeContactPolicyCapabilities(target.id)).toEqual([]);
+  });
+
+  it("refuses an admin agent tagging or attaching a stored profile that carries break-glass", () => {
+    const target = seedContact("5511900001741", "Target");
+    dbCreateTagDefinition({
+      slug: "permission-legacy-root",
+      label: "Legacy",
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["execute:executable:*"] } },
+    });
+    runWithContext(ADMIN, () => {
+      expectBreakGlassDenied(() => new ContactsCommands().tag(target.id, "permission-legacy-root", true));
+      expectBreakGlassDenied(() =>
+        new TagCommands().attach(
+          "permission-legacy-root",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          target.id,
+        ),
+      );
+    });
+    expect(getContact(target.id)?.tags ?? []).not.toContain("permission-legacy-root");
+  });
+
+  it("keeps the operator terminal owner bootstrap and lets an admin agent remove an admin tag", () => {
+    const target = seedContact("5511900001742", "Owner");
+    new ContactsCommands().tag(target.id, "permission-owner", true);
+    expect(materializeContactPolicyCapabilities(target.id).map((c) => c.permission)).toEqual(["admin"]);
+    runWithContext(ADMIN, () => new ContactsCommands().untag(target.id, "permission-owner", true));
+    expect(materializeContactPolicyCapabilities(target.id)).toEqual([]);
+  });
+
+  it("judges the profile source and kind after the casing the tag store applies", () => {
+    const tags = new TagCommands();
+    expectBreakGlassDenied(() =>
+      tags.create(
+        "permission-cased",
+        "Cased",
+        undefined,
+        "SYSTEM",
+        "Permissions",
+        JSON.stringify({ permissions: { capabilities: ["admin:system:*"] } }),
+        true,
+      ),
+    );
+    tags.create(
+      "permission-convert",
+      "Convert",
+      undefined,
+      "system",
+      "notes",
+      JSON.stringify({ permissions: { capabilities: ["execute:executable:*"] } }),
+      true,
+    );
+    expectBreakGlassDenied(() => tags.set("permission-convert", "source", "PERMISSIONS", true));
+  });
+
+  it("lets an admin agent attach a break-glass tag to a non-contact asset", () => {
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "break-glass-chat-binding",
+      chatType: "group",
+      title: "binding",
+    });
+    dbCreateTagDefinition({
+      slug: "permission-legacy-chat",
+      label: "Legacy",
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["admin:system:*"] } },
+    });
+    runWithContext(ADMIN, () =>
+      new TagCommands().attach(
+        "permission-legacy-chat",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        chat.id,
+      ),
+    );
+  });
+
+  it("refuses a permission profile definition that carries break-glass, from any caller", () => {
+    const tags = new TagCommands();
+    expectBreakGlassDenied(() =>
+      tags.create(
+        "permission-root",
+        "Root",
+        undefined,
+        "system",
+        "permissions",
+        JSON.stringify({ permissions: { capabilities: ["admin:system:*"] } }),
+        true,
+      ),
+    );
+    dbCreateTagDefinition({ slug: "permission-ops", label: "Ops", kind: "system", source: "permissions" });
+    expectBreakGlassDenied(() =>
+      tags.set(
+        "permission-ops",
+        "metadata",
+        JSON.stringify({ permissions: { capabilities: ["execute:executable:*"] } }),
+        true,
+      ),
+    );
+    tags.set(
+      "permission-ops",
+      "metadata",
+      JSON.stringify({ permissions: { capabilities: ["read:skills:show"] } }),
+      true,
+    );
+    // A plain tag carrying the same metadata is not a permission profile and confers nothing.
+    tags.create(
+      "notes-root",
+      "Notes",
+      undefined,
+      "user",
+      undefined,
+      JSON.stringify({ permissions: { capabilities: ["admin:system:*"] } }),
+      true,
+    );
+  });
+});
+
 describe("permission tags need admin authority", () => {
   it("refuses contacts tag/set/untag of permission tags for a contact-write context", () => {
     const target = seedContact("5511900001717", "Target");
@@ -105,10 +259,17 @@ describe("permission tags need admin authority", () => {
     expect(materializeContactPolicyCapabilities(owner.id).map((c) => c.permission)).toEqual(["admin"]);
   });
 
-  it("lets an admin principal tag a contact", () => {
+  it("lets an admin principal tag a contact with a narrow permission tag", () => {
     const target = seedContact("5511900001719", "Target");
-    runWithContext(ADMIN, () => new ContactsCommands().tag(target.id, "permission-admin", true));
-    expect(materializeContactPolicyCapabilities(target.id).map((c) => c.permission)).toEqual(["admin"]);
+    dbCreateTagDefinition({
+      slug: "permission-reader",
+      label: "Reader",
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["read:skills:show"] } },
+    });
+    runWithContext(ADMIN, () => new ContactsCommands().tag(target.id, "permission-reader", true));
+    expect(getContact(target.id)?.tags).toContain("permission-reader");
   });
 
   it("refuses linking identities to, or merging, a contact that holds permission authority", () => {

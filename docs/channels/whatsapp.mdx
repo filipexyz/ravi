@@ -195,13 +195,13 @@ In a group without per-chat grants, every member whose number resolves to a cont
 ravi chats list --type group --channel whatsapp --instance wa-main --json   # the group's "id"
 ravi contacts check 5511987654321 --json                                    # your contact id
 
-ravi permissions allow chat-admin --to contact:<contact-id> --chat <chat-id> --agent main --capabilities 'admin:system:*' --json          # plan
-ravi permissions allow chat-admin --to contact:<contact-id> --chat <chat-id> --agent main --capabilities 'admin:system:*' --apply --json
+ravi permissions allow chat-only --to contact:<contact-id> --chat <chat-id> --json          # plan
+ravi permissions allow chat-only --to contact:<contact-id> --chat <chat-id> --apply --json
 ravi permissions list --chat <chat-id> --json
 ```
 
 <Warning>
-Do not call this profile `owner`. `ravi permissions allow owner` maps to the tag `permission-owner`, which `ravi contacts tag` already created, and the command refuses to reuse it (`is not provider-owned by permissions`). Any other name, such as `chat-admin`, works.
+Do not use `owner` (or `admin`, `superadmin`) here: those names confer `admin:system:*` and `--apply` refuses them as break-glass. `chat-only` is enough, because your `permission-owner` tag keeps your full power inside the governed chat.
 </Warning>
 
 Governed chats are not in `ravi.bot@latest`. See [Permissions](/guides/permissions) for grants, denials and approvals.
