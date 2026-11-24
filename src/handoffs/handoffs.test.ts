@@ -1,8 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import * as chatTarget from "../cloud-agents/chat-target.js";
+import * as ownerTarget from "../knowledge/owner.js";
 import { closeSessionStore, getOrCreateSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { RequestReplyTimeoutError } from "../utils/request-reply.js";
 import { handoffEventPayload } from "./events.js";
 import { HANDOFF_PR_EVENT_TOPICS, handleHandoffPullRequestEvent } from "./pr-events.js";
 import {
@@ -14,6 +17,7 @@ import {
   HandoffDeliveryUncertain,
   planHandoffActions,
   reconcileHandoffs,
+  resetHandoffDeliveryPortsForTest,
   resetUncertainParentRemindersForTest,
   type HandoffDeliveryPorts,
 } from "./reconcile.js";
@@ -24,6 +28,7 @@ import {
   HANDOFF_KINDS_ANSWERED_BY_MESSAGE,
   listOpenHandoffs,
   ownerHandoffNoticeText,
+  registerDefaultHandoffOwnerPort,
 } from "./service.js";
 import { getHandoff, listHandoffs, type Handoff } from "./store.js";
 
@@ -397,6 +402,45 @@ describe("handoffs store and reconciler", () => {
     expect(parentCalls).toBe(1);
     expect(ownerSaw).toEqual([null]);
     expect(getHandoff(h.id)?.ownerEscalatedAt).toBe(T0 + HANDOFF_OWNER_ESCALATION_MS);
+  });
+
+  it("the default owner port treats a delivery that timed out as maybe sent, and any other failure as not sent", async () => {
+    const h = await declareHandoff({ childSessionKey: CHILD_A, parentSessionKey: PARENT, kind: "review", now: T0 });
+    const target = { channel: "slack", accountId: "ravi-slack", to: "U1", chatId: "D1", contactId: "c1" };
+    const target_ = spyOn(ownerTarget, "resolveOwnerDirectTarget").mockReturnValue(target);
+    let calls = 0;
+    let failure: Error = new RequestReplyTimeoutError("Request timeout (30000ms) on ravi.outbound.deliver");
+    const deliver = spyOn(chatTarget, "deliverToChat").mockImplementation(async () => {
+      calls++;
+      throw failure;
+    });
+    registerDefaultHandoffOwnerPort();
+    try {
+      const at = T0 + HANDOFF_OWNER_ESCALATION_MS;
+      // Timed out: the notice may have gone out. The claim stays and the next tick does not send it again.
+      expect(await reconcileHandoffs({ now: at })).toMatchObject({ escalated: 0, failures: 1 });
+      expect(getHandoff(h.id)?.ownerEscalatedAt).toBe(at);
+      await reconcileHandoffs({ now: at + 30_000 });
+      expect(calls).toBe(1);
+
+      // Any other failure is "not sent": the claim is released and the next tick tries again.
+      const other = await declareHandoff({
+        childSessionKey: CHILD_B,
+        parentSessionKey: PARENT,
+        kind: "review",
+        now: T0,
+      });
+      failure = new Error("gateway refused");
+      await reconcileHandoffs({ now: at + 60_000 });
+      expect(getHandoff(other.id)?.ownerEscalatedAt).toBeNull();
+      const callsAfterFailure = calls;
+      await reconcileHandoffs({ now: at + 90_000 });
+      expect(calls).toBe(callsAfterFailure + 1);
+    } finally {
+      deliver.mockRestore();
+      target_.mockRestore();
+      resetHandoffDeliveryPortsForTest();
+    }
   });
 
   it("expires a wait nobody acted on for 7 days and lists only recent or due waits in a reminder", async () => {

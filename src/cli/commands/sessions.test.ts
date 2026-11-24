@@ -3262,6 +3262,51 @@ describe("SessionCommands attach hints", () => {
       expect(late.handoff).toMatchObject({ kind: "merge", status: "acknowledged" });
       expect(reportedSlackThreads.at(-1)?.message).toContain("já está mergeada: a espera nasce fechada");
       expect(listOpenHandoffs(parentKey)).toHaveLength(0);
+
+      // A PR this thread does not follow is never read: its state is not exposed in the report and the wait
+      // stays open, even when the PR is long merged.
+      const reads: string[] = [];
+      setReviewGithubReadForTest(async (endpoint) => {
+        reads.push(endpoint);
+        return { state: "closed", merged: true, head: { sha } };
+      });
+      const alien = (await new SessionCommands().report(
+        "PR alheia",
+        undefined,
+        true,
+        "merge",
+        sha,
+        "other/repo#9",
+      )) as Record<string, any>;
+      expect(reads).toEqual([]);
+      expect(alien.handoff).toMatchObject({ kind: "merge", status: "open", ref: `other/repo#9@${sha}` });
+      expect(reportedSlackThreads.at(-1)?.message).not.toContain("já está");
+
+      // A followed PR whose state cannot be read (gh down, 404, odd payload) leaves the wait open and the
+      // report still goes out: a failed read must never turn into a failed report.
+      const followed = dbCreateTrigger({
+        name: "gh-follow:filipexyz/ravi#939",
+        topic: "ravi.watch.github.>",
+        message: "follow",
+        replySession: "dev-slack-t-1713000000000100",
+      });
+      try {
+        setReviewGithubReadForTest(async () => {
+          throw new Error("gh api: 502");
+        });
+        const unread = (await new SessionCommands().report(
+          "MERGEÁVEL",
+          undefined,
+          true,
+          "merge",
+          sha,
+          "filipexyz/ravi#939",
+        )) as Record<string, any>;
+        expect(unread.handoff).toMatchObject({ kind: "merge", status: "open", ref: `filipexyz/ravi#939@${sha}` });
+        expect(reportedSlackThreads.at(-1)?.message).not.toContain("já está");
+      } finally {
+        dbDeleteTrigger(followed.id);
+      }
     } finally {
       if (followId) dbDeleteTrigger(followId);
       setReviewGithubReadForTest(null);
