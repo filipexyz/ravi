@@ -10862,12 +10862,11 @@ export { ensureDb as ensureContactsDb };
  */
 export function resolveMergedContactId(contactId: string): string | null {
   const database = ensureDb();
-  const seen = new Set<string>();
+  const seen = new Set<string>([contactId]);
   let current = contactId;
-  for (let hop = 0; hop < 16; hop += 1) {
-    if (seen.has(current)) return null;
-    seen.add(current);
-    if (current !== contactId && getCanonicalContactById(database, current)) return current;
+  // No hop limit: merge events only point forward, and a repeated id (a cycle
+  // in corrupt data) ends the walk.
+  for (;;) {
     const row = database
       .prepare(
         `SELECT target_owner_id FROM identity_link_events
@@ -10876,10 +10875,11 @@ export function resolveMergedContactId(contactId: string): string | null {
           ORDER BY created_at DESC LIMIT 1`,
       )
       .get(current) as { target_owner_id: string } | undefined;
-    if (!row?.target_owner_id) return null;
+    if (!row?.target_owner_id || seen.has(row.target_owner_id)) return null;
     current = row.target_owner_id;
+    seen.add(current);
+    if (getCanonicalContactById(database, current)) return current;
   }
-  return null;
 }
 
 export function contactExists(contactId: string): boolean {
