@@ -2011,15 +2011,15 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/model-broker.ts | 348 | triaged-follow-up | catch-without-binding | src/runtime/model-broker.ts:c458c33af921185233b8c309 |
 | runtime-chat | src/runtime/model-catalog.ts | 370 | no-cause | An unreadable or malformed models cache means there is no authoritative codex list, so enforcement stays permissive instead of failing writes. | src/runtime/model-catalog.ts:1c7f0324e70c509a6e9a430f |
 | runtime-chat | src/runtime/model-catalog.ts | 394 | triaged-follow-up | catch-without-binding | src/runtime/model-catalog.ts:0adcd64c0cd06692bb6a46e6 |
-| runtime-chat | src/runtime/observation-plane.ts | 518 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:e11628eb1279fac1afdd8f38 |
-| runtime-chat | src/runtime/observation-plane.ts | 527 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:36058302af01275a6693381c |
-| runtime-chat | src/runtime/observation-plane.ts | 632 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:3fe0cc39ce1af907e7e2487e |
-| runtime-chat | src/runtime/observation-plane.ts | 1203 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:690f4485fca97753b92a891f |
-| runtime-chat | src/runtime/observation-plane.ts | 1361 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:c2e1a15e69233693dd5197e7 |
-| runtime-chat | src/runtime/observation-plane.ts | 1542 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:2430258265090179f2f0b4f8 |
-| runtime-chat | src/runtime/observation-plane.ts | 1716 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:b5c1a91072ca61082c76140e |
-| runtime-chat | src/runtime/observation-plane.ts | 1760 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:540d0526f217895b3167d71a |
-| runtime-chat | src/runtime/observation-plane.ts | 1803 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:5510399926eaeeaf9db57d52 |
+| runtime-chat | src/runtime/observation-plane.ts | 519 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:e11628eb1279fac1afdd8f38 |
+| runtime-chat | src/runtime/observation-plane.ts | 528 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:36058302af01275a6693381c |
+| runtime-chat | src/runtime/observation-plane.ts | 633 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:3fe0cc39ce1af907e7e2487e |
+| runtime-chat | src/runtime/observation-plane.ts | 1207 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:690f4485fca97753b92a891f |
+| runtime-chat | src/runtime/observation-plane.ts | 1365 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:c2e1a15e69233693dd5197e7 |
+| runtime-chat | src/runtime/observation-plane.ts | 1546 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:2430258265090179f2f0b4f8 |
+| runtime-chat | src/runtime/observation-plane.ts | 1720 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:b5c1a91072ca61082c76140e |
+| runtime-chat | src/runtime/observation-plane.ts | 1764 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:540d0526f217895b3167d71a |
+| runtime-chat | src/runtime/observation-plane.ts | 1807 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:5510399926eaeeaf9db57d52 |
 | runtime-chat | src/runtime/observation-profiles.ts | 403 | fixed | binding retained / no recognized error surface | src/runtime/observation-profiles.ts:a7b3c1ecbf0239f7ccee0b6c |
 | runtime-chat | src/runtime/observation-profiles.ts | 1276 | fixed | binding retained / no recognized error surface | src/runtime/observation-profiles.ts:2ecb316d9df440514ba0494c |
 | runtime-chat | src/runtime/observation-profiles.ts | 1288 | triaged-follow-up | surface-bypasses-constructor | src/runtime/observation-profiles.ts:05b3823fa50b92445eb38e95 |
@@ -2207,9 +2207,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | permissions | src/security/state-dir-permissions.ts | 125 | triaged-follow-up | surface-bypasses-constructor | src/security/state-dir-permissions.ts:872665d1f8faab0dde1ade9f |
 | permissions | src/security/state-dir-permissions.ts | 135 | triaged-follow-up | surface-bypasses-constructor | src/security/state-dir-permissions.ts:125e9bb4e62cd7d127008e1b |
 | permissions | src/security/state-dir-permissions.ts | 189 | triaged-follow-up | surface-bypasses-constructor | src/security/state-dir-permissions.ts:cd2d9b65bc84e03900e30b98 |
-| sessions | src/session-followups/db.ts | 742 | triaged-follow-up | catch-without-binding | src/session-followups/db.ts:17d64fc41b374281847855be |
-| sessions | src/session-followups/db.ts | 760 | fixed | binding retained / no recognized error surface | src/session-followups/db.ts:385b3989b925df351081ba77 |
-| sessions | src/session-followups/db.ts | 805 | triaged-follow-up | catch-without-binding | src/session-followups/db.ts:4ede2bfe32dd151d3fecfc99 |
+| sessions | src/session-followups/db.ts | 744 | triaged-follow-up | catch-without-binding | src/session-followups/db.ts:17d64fc41b374281847855be |
+| sessions | src/session-followups/db.ts | 762 | fixed | binding retained / no recognized error surface | src/session-followups/db.ts:385b3989b925df351081ba77 |
+| sessions | src/session-followups/db.ts | 807 | triaged-follow-up | catch-without-binding | src/session-followups/db.ts:4ede2bfe32dd151d3fecfc99 |
 | sessions | src/session-followups/runner.ts | 38 | fixed | binding retained / no recognized error surface | src/session-followups/runner.ts:efdeb4ee19ffb6ce6279efc1 |
 | sessions | src/session-followups/runner.ts | 51 | fixed | binding retained / no recognized error surface | src/session-followups/runner.ts:a34eac625a0a1e1da353f67c |
 | sessions | src/session-followups/service.ts | 387 | triaged-follow-up | surface-bypasses-constructor | src/session-followups/service.ts:38acd893e384577eea0a35c5 |

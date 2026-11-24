@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { runWithContext, type ToolContext } from "../cli/context.js";
 import { dbCreateCronJob, dbListCronJobs } from "../cron/cron-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { dbUpsertObserverRule } from "../runtime/observation-plane.js";
 import { dbCreateTrigger, dbListTriggers } from "../triggers/triggers-db.js";
 
 let stateDir: string | null = null;
@@ -54,6 +55,19 @@ describe("automation store guard on the real stores", () => {
       ),
     ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
     expect(dbListCronJobs()).toHaveLength(0);
+  });
+
+  it("refuses an observer rule written from that turn (the observer would take turns as the whole agent)", () => {
+    expect(() =>
+      runWithContext(personTurnHeldBelowBreakGlass(), () =>
+        dbUpsertObserverRule({
+          id: "from-person",
+          scopeType: "session",
+          scopeValue: "s",
+          observerAgentId: "full-agent",
+        } as unknown as Parameters<typeof dbUpsertObserverRule>[0]),
+      ),
+    ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
   });
 
   it("still lets code outside a turn write (daemon, terminal)", () => {

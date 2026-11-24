@@ -36,3 +36,6 @@
 - A writer that reaches the automation stores directly from a turn with
   `actorBreakGlassWithheld` MUST be refused (`automation-store-guard.test.ts`);
   `watch trigger` MUST refuse even as a dry-run (`watch.test.ts`).
+- An app command resolving to anything but Ravi MUST be refused in a turn
+  that withholds `execute:executable:*` (`turn-executable.test.ts`); observer
+  rules written from such a turn MUST be refused (`automation-store-guard.test.ts`).

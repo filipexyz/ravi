@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { assertAutomationStoreWrite } from "../permissions/user-overlay-automation.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import {
   CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS,
@@ -851,6 +852,9 @@ export function dbGetObserverRule(id: string): ObserverRule | null {
 }
 
 export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
+  // An observer rule makes the agent take turns later; a limited turn cannot
+  // write one (disabling is a reduction and stays allowed).
+  assertAutomationStoreWrite("observer rule", { disablesOnly: input.enabled === false });
   ensureObservationSchema();
   const id = normalizeId(input.id, "observer rule id");
   const existing = dbGetObserverRule(id);

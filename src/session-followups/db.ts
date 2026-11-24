@@ -250,6 +250,8 @@ export function updateSessionFollowupCadenceState(
     now?: number;
   },
 ): SessionFollowupCadence | null {
+  // Pausing is a reduction and always allowed; re-enabling resumes automation.
+  if (input.enabled === true) assertAutomationStoreWrite("session followup");
   ensureSessionFollowupTables();
   const current = getSessionFollowupCadence(id);
   if (!current) return null;

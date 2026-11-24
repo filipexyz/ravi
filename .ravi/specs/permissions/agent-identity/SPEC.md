@@ -118,6 +118,13 @@ Ungoverned chats keep `agent_identity ∩ turn_caps`, with one exception:
   `execute:group:*` CLI groups, `write_contacts:system:*` and `admin` on types
   other than `system`. Only `admin:system:*` and `execute:executable:*` are
   withheld.
+- Executables the core spawns from a name that came from a command or a
+  manifest (app commands: `apps import-cli`, `apps run`, app permission
+  providers) go through `assertTurnMayExecute`
+  (`permissions/turn-executable.ts`): a turn that withholds
+  `execute:executable:*` cannot spawn anything but Ravi itself. Observer rules
+  and task automation updates are guarded at the store too; pausing a session
+  followup stays allowed, re-enabling it is guarded.
 - Known residual risk: file tools (`use:tool:Write|Edit|Read`) stay open
   through the shortcut, so a person without grants can edit files in the
   agent's workspace (AGENTS.md, MEMORY.md, skills) that later autonomous turns
