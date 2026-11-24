@@ -2108,10 +2108,13 @@ export class Gateway {
   private async handleDirectSendEvent(data: DirectSendRequest): Promise<void> {
     // Voice calls are not chats: only approval requests for an open call reach them.
     if (data.channel === VOICE_CHANNEL) {
-      const result = await deliverVoiceApprovalRequest(data).catch((error) => ({
-        success: false as const,
-        error: error instanceof Error ? error.message : String(error),
-      }));
+      let result: { success: boolean; messageId?: string; error?: string };
+      try {
+        result = await deliverVoiceApprovalRequest(data);
+      } catch (error) {
+        log.warn("Voice approval delivery failed", { error });
+        result = { success: false, error: "Voice approval delivery failed." };
+      }
       if (data.replyTopic) await this.emitEvent(data.replyTopic, result);
       return;
     }

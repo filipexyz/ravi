@@ -357,6 +357,7 @@ export class VoiceDoorService {
       watch.abort();
       this.abort.signal.removeEventListener("abort", stopWatch);
     }
+    // no-cause: the watcher logs its own failure; the outcome below covers it.
     await watcher.catch(() => {});
     if (this.abort.signal.aborted) return;
 
@@ -582,7 +583,9 @@ export class VoiceDoorService {
           await (this.deps.closeLiveProviderSession ?? closeLiveSession)({
             apiKey,
             sessionId: runtime.providerSessionId,
-          }).catch(() => {});
+          }).catch((error) => {
+            log.warn("Live provider session close failed", { callId, error });
+          });
         }
       }
     }

@@ -153,6 +153,7 @@ function parseJson<T>(value: string | null | undefined, fallback: T): T {
   try {
     return JSON.parse(value) as T;
   } catch {
+    // no-cause: a corrupt stored JSON column falls back to its default.
     return fallback;
   }
 }

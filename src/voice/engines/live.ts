@@ -343,6 +343,7 @@ function safeJson(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch {
+    // no-cause: a non-JSON provider frame is ignored, not an error.
     return null;
   }
 }
