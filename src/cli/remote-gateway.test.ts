@@ -248,7 +248,7 @@ describe("automation hold refusals over the gateway", () => {
     // equivalent: these bodies get the malformed-response advice and never the cause's.
     const failedDeniedCode = body(1, "failed", "PERMISSION_DENIED");
     const blockedDeniedCode = body(3, "blocked", "PERMISSION_DENIED");
-    const deniedOtherCode = body(3, "denied", "POLICY_BLOCKED");
+    const deniedOtherCode = body(1, "denied", "POLICY_BLOCKED");
     for (const error of [failed, blocked, failedDeniedCode, blockedDeniedCode, deniedOtherCode]) {
       expect(error).not.toBeNull();
       expect(error?.details.automationHold).toBeUndefined();
