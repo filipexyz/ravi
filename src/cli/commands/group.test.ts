@@ -47,6 +47,8 @@ let mockContextSource: { channel: string; accountId: string; chatId: string } | 
 
 let listGroupsResult: Array<Record<string, unknown>> = [];
 let metadataResult: Record<string, unknown> | null = null;
+let liveMembersResult: Array<{ id: string; role: string | null }> = [];
+let liveMembersError: Error | undefined;
 let historyMock: Array<{ role: string; content: string; created_at: string }> = [];
 
 interface MockContact {
@@ -195,6 +197,10 @@ mock.module("../../omni/client.js", () => ({
         return { id: "999@g.us", subject: input.subject, participants: input.participants };
       },
       listGroups: async () => ({ items: listGroupsResult, meta: {} }),
+      listGroupMembers: async () => {
+        if (liveMembersError) throw liveMembersError;
+        return liveMembersResult;
+      },
       addGroupParticipants: async (instanceId: string, groupJid: string, input: Record<string, unknown>) => {
         addParticipantCalls.push({ instanceId, groupJid, ...input });
         return { ok: true };
@@ -360,6 +366,8 @@ beforeEach(() => {
   mockInstances = [{ name: "main", channel: "whatsapp", instanceId: "inst-1", enabled: true }];
   mockContextSource = undefined;
   listGroupsResult = [];
+  liveMembersResult = [];
+  liveMembersError = undefined;
   metadataResult = null;
   historyMock = [];
 });
@@ -1062,5 +1070,120 @@ describe("whatsapp commands run from a turn of another channel", () => {
 
     expect((error.details.plan as Record<string, unknown>).accountId).toBe("main");
     expect(natsEmits).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// whatsapp.group info — who is in the group
+// ---------------------------------------------------------------------------
+
+describe("whatsapp group info participants", () => {
+  // Incident 2026-11-24: a group with 7 members listed 1 participant, because the list came from the people Omni had
+  // seen in the chat and not from WhatsApp.
+  const groupJid = "120363000000000001@g.us";
+
+  function knownMetadata(participants: Array<Record<string, unknown>>) {
+    metadataResult = {
+      externalId: groupJid,
+      name: "NBA",
+      participantCount: participants.length,
+      participants,
+    };
+  }
+
+  it("lists the live WhatsApp members, not only the people Omni has seen", async () => {
+    listGroupsResult = [{ id: groupJid, subject: "NBA", size: 4 }];
+    knownMetadata([{ platformUserId: "100000000000001", displayName: "Luís Filipe", role: "member" }]);
+    liveMembersResult = [
+      { id: "100000000000001@lid", role: "member" },
+      { id: "100000000000002@lid", role: "admin" },
+      { id: "100000000000003@lid", role: "superadmin" },
+      { id: "100000000000004@lid", role: "member" },
+    ];
+    const commands = new GroupCommands();
+
+    const result = await silenced(() => commands.info(groupJid, undefined, true));
+
+    const group = result as Record<string, unknown> & { participants: Array<Record<string, unknown>> };
+    expect(group.size).toBe(4);
+    expect(group.participants).toHaveLength(4);
+    expect(group.participantsSource).toBe("omni.group-members");
+    expect(group.participantsComplete).toBe(true);
+    expect(group.participantsNote).toBeUndefined();
+    expect(group.participants.find((p) => p.id === "100000000000003@lid")).toMatchObject({ admin: "superadmin" });
+    expect(group.participants.find((p) => p.id === "100000000000004@lid")?.admin).toBeNull();
+  });
+
+  it("attaches the name Omni knows to the matching live member", async () => {
+    listGroupsResult = [{ id: groupJid, subject: "NBA", size: 2 }];
+    knownMetadata([{ platformUserId: "100000000000001", displayName: "Luís Filipe", role: "member" }]);
+    liveMembersResult = [
+      { id: "100000000000001@lid", role: "member" },
+      { id: "100000000000002@lid", role: "member" },
+    ];
+    const commands = new GroupCommands();
+
+    const result = (await silenced(() => commands.info(groupJid, undefined, true))) as {
+      participants: Array<Record<string, unknown>>;
+    };
+
+    expect(result.participants.find((p) => p.id === "100000000000001@lid")).toMatchObject({
+      displayName: "Luís Filipe",
+    });
+    expect(result.participants.find((p) => p.id === "100000000000002@lid")?.displayName).toBeUndefined();
+  });
+
+  it("falls back to the people Omni has seen and says the list is partial when the live list fails", async () => {
+    listGroupsResult = [{ id: groupJid, subject: "NBA", size: 7 }];
+    knownMetadata([{ platformUserId: "100000000000001", displayName: "Luís Filipe", role: "member" }]);
+    liveMembersError = new Error("members endpoint down");
+    const commands = new GroupCommands();
+
+    const result = (await silenced(() => commands.info(groupJid, undefined, true))) as Record<string, unknown> & {
+      participants: unknown[];
+    };
+
+    expect(result.participants).toHaveLength(1);
+    expect(result.participantsSource).toBe("omni.chat-model");
+    expect(result.participantsComplete).toBe(false);
+    expect(String(result.participantsNote)).toContain("Only the 1 of 7");
+    expect(String(result.participantsNote)).toContain("members endpoint down");
+  });
+
+  it("falls back and says so when the live list comes back empty", async () => {
+    listGroupsResult = [{ id: groupJid, subject: "NBA", size: 3 }];
+    knownMetadata([{ platformUserId: "100000000000001", role: "member" }]);
+    liveMembersResult = [];
+    const commands = new GroupCommands();
+
+    const result = (await silenced(() => commands.info(groupJid, undefined, true))) as Record<string, unknown>;
+
+    expect(result.participantsSource).toBe("omni.chat-model");
+    expect(result.participantsComplete).toBe(false);
+    expect(String(result.participantsNote)).toContain("came back empty");
+  });
+
+  it("does not call a fallback list partial when it already covers the whole group", async () => {
+    listGroupsResult = [{ id: groupJid, subject: "NBA", size: 1 }];
+    knownMetadata([{ platformUserId: "100000000000001", role: "member" }]);
+    liveMembersError = new Error("members endpoint down");
+    const commands = new GroupCommands();
+
+    const result = (await silenced(() => commands.info(groupJid, undefined, true))) as Record<string, unknown>;
+
+    expect(result.participantsComplete).toBe(true);
+    expect(result.participantsNote).toBeUndefined();
+  });
+
+  it("reports the live list as incomplete when WhatsApp itself returns fewer members than the group size", async () => {
+    listGroupsResult = [{ id: groupJid, subject: "NBA", size: 5 }];
+    knownMetadata([]);
+    liveMembersResult = [{ id: "100000000000001@lid", role: "member" }];
+    const commands = new GroupCommands();
+
+    const result = (await silenced(() => commands.info(groupJid, undefined, true))) as Record<string, unknown>;
+
+    expect(result.participantsSource).toBe("omni.group-members");
+    expect(result.participantsComplete).toBe(false);
   });
 });

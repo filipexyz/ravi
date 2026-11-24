@@ -448,13 +448,94 @@ async function listGroupsViaOmni(account?: string): Promise<{
   }
 }
 
+type GroupInfoParticipant = { id: string; admin: string | null; displayName?: string };
+
+function memberIdentityKey(value: string | null | undefined): string {
+  const base = (value ?? "").trim().replace(/^@+/, "").split("@")[0] ?? "";
+  return base.replace(/\D/g, "");
+}
+
+/**
+ * Participants of a group for `group info`.
+ *
+ * Omni's chat model (`/chats/:id/participants`) only knows the people it has seen in the chat, so a group that was
+ * just created or joined lists one or two names out of many. The live member list from WhatsApp is the source of
+ * truth for who is in the group; the chat model only adds display names.
+ */
+async function resolveGroupInfoParticipants(input: {
+  client: ReturnType<typeof createOmniClient>;
+  instanceId: string;
+  groupJid: string;
+  size: number;
+  known: Array<{ id: string; admin: string | null; displayName?: string; aliases: string[] }> | undefined;
+}): Promise<{
+  participants: GroupInfoParticipant[] | undefined;
+  source: "omni.group-members" | "omni.chat-model" | "none";
+  complete: boolean;
+  note?: string;
+}> {
+  const names = new Map<string, string>();
+  for (const participant of input.known ?? []) {
+    if (!participant.displayName) continue;
+    for (const alias of participant.aliases) {
+      const key = memberIdentityKey(alias);
+      if (key) names.set(key, participant.displayName);
+    }
+  }
+
+  let liveError: string | undefined;
+  try {
+    const members = await input.client.instances.listGroupMembers(input.instanceId, input.groupJid);
+    if (members.length > 0) {
+      const participants = members.map((member): GroupInfoParticipant => {
+        const displayName = names.get(memberIdentityKey(member.id));
+        return {
+          id: member.id,
+          admin:
+            member.role === "admin" || member.role === "superadmin" || member.role === "owner" ? member.role : null,
+          ...(displayName ? { displayName } : {}),
+        };
+      });
+      return {
+        participants,
+        source: "omni.group-members",
+        complete: input.size <= 0 || participants.length >= input.size,
+      };
+    }
+    liveError = "the live member list came back empty";
+  } catch (error) {
+    liveError = errorMessage(error);
+  }
+
+  const known = input.known?.map(({ id, admin, displayName }) => ({
+    id,
+    admin,
+    ...(displayName ? { displayName } : {}),
+  }));
+  if (!known) {
+    return {
+      participants: undefined,
+      source: "none",
+      complete: false,
+      note: `Live member list unavailable: ${liveError}`,
+    };
+  }
+  const complete = input.size <= 0 || known.length >= input.size;
+  return {
+    participants: known,
+    source: "omni.chat-model",
+    complete,
+    note: complete
+      ? undefined
+      : `Only the ${known.length} of ${input.size} members Omni has seen in this chat. Live member list unavailable: ${liveError}`,
+  };
+}
+
 async function getGroupInfoViaOmni(
   groupId: string,
   account: string | undefined,
   contract: { op: string; asJson?: boolean },
-): Promise<
-  Record<string, unknown> & { id: string; subject: string; participants?: Array<{ id: string; admin: string | null }> }
-> {
+): Promise<Record<string, unknown> & { id: string; subject: string; participants?: GroupInfoParticipant[] }> {
   const connection = resolveOmniConnection();
   if (!connection) fail("Omni API is not configured. Set OMNI_API_URL/OMNI_API_KEY or ~/.omni/config.json.");
 
@@ -496,18 +577,37 @@ async function getGroupInfoViaOmni(
     });
   }
 
-  const participants = metadata?.participants.map((participant) => ({
+  const known = metadata?.participants.map((participant) => ({
     id: participant.platformUserId,
     admin: participant.role === "admin" || participant.role === "owner" ? participant.role : null,
+    ...(participant.displayName ? { displayName: participant.displayName } : {}),
+    aliases: [
+      participant.platformUserId,
+      participant.normalizedPlatformUserId,
+      participant.mentionUserId,
+      participant.phoneJid,
+      participant.phoneNumber,
+    ].filter((value): value is string => Boolean(value)),
   }));
+  const size = group?.size ?? metadata?.participantCount ?? known?.length ?? 0;
+  const roster = await resolveGroupInfoParticipants({
+    client: createOmniClient({ baseUrl: connection.apiUrl, apiKey: connection.apiKey }),
+    instanceId,
+    groupJid,
+    size,
+    known,
+  });
   return {
     ...(group?.raw ?? {}),
     id: group?.id ?? metadata?.externalId ?? groupJid,
     subject: group?.subject ?? metadata?.name ?? groupJid,
     owner: (group?.raw.owner as unknown) ?? undefined,
-    size: group?.size ?? metadata?.participantCount ?? participants?.length ?? 0,
+    size,
     isCommunity: group?.isCommunity ?? false,
-    ...(participants ? { participants } : {}),
+    ...(roster.participants ? { participants: roster.participants } : {}),
+    participantsSource: roster.source,
+    participantsComplete: roster.complete,
+    ...(roster.note ? { participantsNote: roster.note } : {}),
     accountId,
     instanceId,
     source: "omni.rest",
@@ -880,21 +980,26 @@ export class GroupCommands {
       console.log(`  Ephemeral:    ${hours}h`);
     }
 
-    const participants = result.participants as { id: string; admin: string | null }[] | undefined;
+    const participants = result.participants as GroupInfoParticipant[] | undefined;
     if (participants) {
+      const label = (p: GroupInfoParticipant) => (p.displayName ? `${p.id} (${p.displayName})` : p.id);
       const admins = participants.filter((p) => p.admin);
       const members = participants.filter((p) => !p.admin);
+      console.log(`  Listed:       ${participants.length} of ${result.size} (${String(result.participantsSource)})`);
+      if (result.participantsNote) console.log(`  Note:         ${String(result.participantsNote)}`);
       console.log(`\n  Admins (${admins.length}):`);
       for (const a of admins) {
-        console.log(`    ${a.id} [${a.admin}]`);
+        console.log(`    ${label(a)} [${a.admin}]`);
       }
       console.log(`  Members (${members.length}):`);
       for (const m of members.slice(0, 20)) {
-        console.log(`    ${m.id}`);
+        console.log(`    ${label(m)}`);
       }
       if (members.length > 20) {
         console.log(`    ... and ${members.length - 20} more`);
       }
+    } else if (result.participantsNote) {
+      console.log(`  Note:         ${String(result.participantsNote)}`);
     }
 
     return result;
