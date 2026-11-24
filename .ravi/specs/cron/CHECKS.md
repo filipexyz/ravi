@@ -105,3 +105,10 @@ RAVI_CONTEXT_KEY=<viewer-ctx> ravi cron disable <other-agent-job-id> --json
 - `bun test src/cron/runner.test.ts` MUST show startup failure reconciliation off the readiness path: `start()` returns while failure delivery is held (channel online and offline); `stop()` admits no further report; `stop()` returns after about a second while a delivery is stalled, leaving the report pending for a fresh start to retry; the loop yields the event loop between reports that settle locally; a report whose stored notice does not parse is recorded once in the inbox and settled, neither retried nor raised by `stop()`; a report whose mark the database refuses (after the delivery) does not stop the reports behind it, its failure being raised by `stop()` up to the recorded bound; and a `stop()` that raised stays failed on later stops, as the shutdown latch requires (also pinned by `src/cron/runner-shutdown.test.ts`).
 - `bun test src/runtime/delivery-queue.test.ts src/runtime/turn-provenance.test.ts src/runtime/prompt-subscription.test.ts` verifies run separation, continuation identity and pre-turn failure provenance.
 - `bun test src/runtime/intake-failure.test.ts` MUST pass a persisted cron run through the real cold launcher with an incompatible model and with a missing agent, then recreate the runner and verify the terminal state and retained one-shot. A permanent intake drop MUST preserve the original run identity.
+
+## Failure Acknowledgement MUST Only Settle
+
+- `bun test src/cron/failure-ack.test.ts` MUST prove `cron ack-failures` groups pending
+  failed runs by job, never selects runs of jobs the caller may not modify (they are
+  counted as denied), narrows to one job with `--job`, and marks exactly the selected
+  runs reported without sending anything.

@@ -120,6 +120,8 @@ Cron jobs follow `permissions/resource-visibility` for owned runtime resources:
 - Agent one-shots MUST remain inspectable on failure; delete-after applies only after a successful terminal turn. The scheduler MUST NOT replay a partially executed job merely because it was interrupted.
 - Persisted failures predating this change MUST remain discoverable through cron list/show; deployment MUST NOT re-run them or change owners/providers automatically. Reconcile each pending run with its owner before repeating side effects.
 
+- The owner MAY settle unreported failures without receiving them (`ravi cron ack-failures`, dry-run by default, `--execute` to apply), for when the owner's direct channel is gone for good. Settling MUST only mark the run reported: nothing is sent, the run stays `error`, and its diagnostics and inbox item stay. The caller settles only runs of jobs it may modify (owner from the stored notice; unreadable notices count as the default agent's); the rest stay pending and are counted as denied.
+
 ### Durable execution correlation
 
 - Each admitted agent execution MUST have a unique run id, persisted with its target session, admission time and notification owner before publication. The runtime MUST preserve that identity through queued turns, continuations and failures before startup; adjacent cron runs MUST NOT coalesce into one physical turn.

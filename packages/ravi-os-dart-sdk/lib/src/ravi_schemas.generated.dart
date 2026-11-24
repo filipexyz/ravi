@@ -67042,6 +67042,114 @@ class RaviSchemas {
 }
 ''';
 
+  static const cronAckFailuresInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "execute": {
+      "description": "Actually mark the runs reported; default is a dry-run that lists them (exit 3)",
+      "type": "boolean"
+    },
+    "job": {
+      "description": "Only this job's failed runs",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const cronAckFailuresReturnSchema = r'''
+{
+  "additionalProperties": {},
+  "properties": {
+    "changedCount": {
+      "type": "number"
+    },
+    "denied": {
+      "type": "number"
+    },
+    "jobs": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "newestAt": {
+            "type": "string"
+          },
+          "oldestAt": {
+            "type": "string"
+          },
+          "ownerAgentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "runs": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "jobId",
+          "name",
+          "ownerAgentId",
+          "runs",
+          "oldestAt",
+          "newestAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pending": {
+      "type": "number"
+    },
+    "status": {
+      "const": "acknowledged",
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": {},
+      "properties": {
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "status",
+    "target",
+    "changedCount",
+    "pending",
+    "denied",
+    "jobs"
+  ],
+  "type": "object"
+}
+''';
+
   static const cronAddInputSchema = r'''
 {
   "additionalProperties": false,
