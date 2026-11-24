@@ -238,6 +238,40 @@ interface CredentialSecretBackend {
 The `read` method is internal only. It MUST NOT be exported as a public CLI
 command or SDK endpoint.
 
+Backends MAY also describe a secret without reading it
+(`describeSecret(ref)` in `src/credentials/backends.ts`):
+
+- Vault uses only the KV v2 metadata endpoint (`GET <mount>/metadata/<path>`)
+  and returns version, created/updated times and whether the current version
+  is deleted or destroyed. It MUST NOT call the data endpoint, and a refusal
+  (403 `forbidden`, 503 `sealed`, network `unreachable`, missing
+  `VAULT_ADDR`/`VAULT_TOKEN` `not_configured`, other `error`) MUST degrade to
+  `{ available: false, reason }` with a fixed reason. It never throws and never
+  falls back to a data read.
+- Backends without metadata (`file`, `keychain`) return
+  `{ available: false, reason: "unsupported" }`, which is not a degradation.
+
+## Inventory
+
+`ravi credentials connections inventory --json` (and
+`buildCredentialInventory()`) is the metadata-only snapshot that the Console
+shows. It MUST:
+
+- list every connection, active and disabled, up to 500;
+- carry lifecycle metadata (`owner`, `purpose`, `rotatedAt`, `expiresAt`,
+  `disabledAt`), `lastUsedAt` and the backend description;
+- name each secret by `secretRefAlias` = `<backend>:<provider>:<connection>`,
+  never by the backend coordinate (no Vault path, no key, no keychain account);
+- derive `lastUsedAt` from the audit trail (latest `secret_resolved`), so the
+  broker hot path writes nothing extra and cannot race the `updated_at` that
+  its host guard compares;
+- include at most 200 recent audit rows without `actorContextId` or `agentId`;
+- set `degraded: true` with sorted `degradedReasons` when a backend refuses
+  metadata, and still return every item.
+
+`expiresAt` is recorded and shown; the broker does not yet deny an expired
+connection (the SHOULD in the invariants above stays open).
+
 The default `file` backend MUST keep secret bytes in broker-owned private files
 (0700 directory, 0600 files) with atomic writes and strict opaque references.
 It is plaintext protected by the host account and works on headless Linux;
@@ -270,6 +304,7 @@ metadata, status, ids and redacted errors.
 ```text
 ravi credentials connections list
 ravi credentials connections show
+ravi credentials connections inventory
 ravi credentials connections add
 ravi credentials connections remove
 ravi credentials connections rotate
@@ -283,7 +318,7 @@ CLI commands MUST use:
 - `@Command`
 - `@CommandAccess`
 - `@Returns`
-- standard pagination with `nextCommand`
+- standard pagination with `nextCommand` (except `inventory`, a bounded snapshot of at most 500 items)
 
 `broker exec` MAY exist for testing and first integrations. It MUST behave as a
 brokered action entrypoint, not as a generic secret-read command.

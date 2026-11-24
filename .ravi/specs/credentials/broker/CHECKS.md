@@ -90,8 +90,30 @@ Tests SHOULD cover:
 
 - Disabled connection denies before backend read.
 - Expired connection denies before backend read.
-- Successful broker execution updates `lastUsedAt`.
-- Rotation updates `rotatedAt` and keeps output redacted.
+- Successful broker execution is visible as `lastUsedAt` in the inventory
+  (derived from the latest `secret_resolved` audit row; a failed attempt does
+  not count): `src/credentials/inventory.test.ts`.
+- Rotation (`connections add --secret-stdin` over an existing connection)
+  sets `rotatedAt`; creation and `--secret-ref` do not:
+  `src/cli/commands/credentials.test.ts`.
+- `disabledAt` is set on disable, kept on re-disable and cleared on enable;
+  lifecycle fields survive updates that do not mention them; a database from
+  before the lifecycle columns gains them and keeps its rows:
+  `src/credentials/inventory.test.ts`.
+
+## Inventory Checks
+
+`src/credentials/inventory.test.ts` MUST prove, each with a mutant that fails it:
+
+- `describeSecret` calls only `GET .../metadata/...` (mutant: data endpoint);
+- 403, 503, network failure and missing config degrade with fixed reasons
+  (mutant: 403 accepted);
+- the snapshot carries no secret value, Vault path, key or Vault token even when
+  the backend would return the value from the data endpoint (mutant: raw ref as
+  alias);
+- `unsupported` (file/keychain) is not a degradation (mutant: every
+  unavailable reason degrades);
+- `lastUsedAt` counts only `secret_resolved` (mutant: any audit row).
 - Removing a connection can optionally delete backend secret material.
 
 ## Secret Redaction Checks

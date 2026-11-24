@@ -63659,6 +63659,347 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let CredentialsConnectionsInventoryInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "auditLimit": {
+        "default": "20",
+        "description": "Recent audit rows to include (0-200)",
+        "type": "string"
+      },
+      "noDescribe": {
+        "default": false,
+        "description": "Skip backend metadata (versions, times); local data only",
+        "type": "boolean"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let CredentialsConnectionsInventoryReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "audit": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "type": "string"
+            },
+            "at": {
+              "type": "number"
+            },
+            "connection": {
+              "type": "string"
+            },
+            "decision": {
+              "type": "string"
+            },
+            "errorCode": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "provider": {
+              "type": "string"
+            },
+            "resultStatus": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "at",
+            "provider",
+            "connection",
+            "action",
+            "decision",
+            "resultStatus",
+            "errorCode"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "degraded": {
+        "type": "boolean"
+      },
+      "degradedReasons": {
+        "items": {
+          "enum": [
+            "unsupported",
+            "not_configured",
+            "forbidden",
+            "sealed",
+            "unreachable",
+            "invalid_ref",
+            "error"
+          ],
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "generatedAt": {
+        "type": "number"
+      },
+      "items": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "backend": {
+              "enum": [
+                "file",
+                "keychain",
+                "vault"
+              ],
+              "type": "string"
+            },
+            "connection": {
+              "type": "string"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "disabledAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "expiresAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "lastUsedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "owner": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "provider": {
+              "type": "string"
+            },
+            "purpose": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rotatedAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "scopes": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "secret": {
+              "anyOf": [
+                {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "available": {
+                          "const": true,
+                          "type": "boolean"
+                        },
+                        "createdAt": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "deleted": {
+                          "type": "boolean"
+                        },
+                        "exists": {
+                          "type": "boolean"
+                        },
+                        "updatedAt": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "version": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "available",
+                        "exists",
+                        "version",
+                        "createdAt",
+                        "updatedAt",
+                        "deleted"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "available": {
+                          "const": false,
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "enum": [
+                            "unsupported",
+                            "not_configured",
+                            "forbidden",
+                            "sealed",
+                            "unreachable",
+                            "invalid_ref",
+                            "error"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "available",
+                        "reason"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "secretRefAlias": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "active",
+                "disabled"
+              ],
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "provider",
+            "connection",
+            "label",
+            "backend",
+            "secretRefAlias",
+            "status",
+            "scopes",
+            "owner",
+            "purpose",
+            "createdAt",
+            "updatedAt",
+            "rotatedAt",
+            "expiresAt",
+            "disabledAt",
+            "lastUsedAt",
+            "secret"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "generatedAt",
+      "degraded",
+      "degradedReasons",
+      "total",
+      "items",
+      "audit"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let CredentialsConnectionsListInputSchema = #"""
   {
     "additionalProperties": false,
