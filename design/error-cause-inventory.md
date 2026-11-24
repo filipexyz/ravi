@@ -184,10 +184,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | audio | src/audio/tts.ts | 364 | fixed | binding retained / no recognized error surface | src/audio/tts.ts:9e3918019dc3a93e1ff1e4fd |
 | audio | src/audio/tts.ts | 390 | fixed | binding retained / no recognized error surface | src/audio/tts.ts:7608dd43bec079757a020b68 |
 | audio | src/audio/tts.ts | 567 | triaged-follow-up | catch-without-binding | src/audio/tts.ts:faf8f42aa213c2fee5e89253 |
-| automation | src/automation/child-runs.ts | 466 | fixed | binding retained / no recognized error surface | src/automation/child-runs.ts:caff15965563a7f504b2597c |
-| automation | src/automation/child-runs.ts | 550 | fixed | binding retained / no recognized error surface | src/automation/child-runs.ts:755bddab58b0703b928ae272 |
-| automation | src/automation/child-runs.ts | 566 | fixed | binding retained / no recognized error surface | src/automation/child-runs.ts:2b488fe6d2539bd985c06dc3 |
-| automation | src/automation/child-runs.ts | 585 | fixed | binding retained / no recognized error surface | src/automation/child-runs.ts:7e0b542f37a20aa655e428c5 |
+| automation | src/automation/child-runs.ts | 470 | fixed | binding retained / no recognized error surface | src/automation/child-runs.ts:caff15965563a7f504b2597c |
+| automation | src/automation/child-runs.ts | 554 | fixed | binding retained / no recognized error surface | src/automation/child-runs.ts:755bddab58b0703b928ae272 |
+| automation | src/automation/child-runs.ts | 570 | fixed | binding retained / no recognized error surface | src/automation/child-runs.ts:2b488fe6d2539bd985c06dc3 |
+| automation | src/automation/child-runs.ts | 589 | fixed | binding retained / no recognized error surface | src/automation/child-runs.ts:7e0b542f37a20aa655e428c5 |
 | bases | src/bases/client.ts | 486 | fixed | binding retained / no recognized error surface | src/bases/client.ts:6b95d1447e179c1e96dacf9e |
 | bases | src/bases/import.ts | 75 | fixed | binding retained / no recognized error surface | src/bases/import.ts:92597402f1ae35d4e149a26f |
 | bases | src/bases/input.ts | 30 | triaged-follow-up | catch-without-binding | src/bases/input.ts:ebe3ebed142463865ba4146c |
@@ -1134,10 +1134,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cron | src/cron/automation-notice.ts | 144 | fixed | binding retained / no recognized error surface | src/cron/automation-notice.ts:d154d5d261162fbd60b1fd73 |
 | cron | src/cron/automation-notice.ts | 154 | fixed | binding retained / no recognized error surface | src/cron/automation-notice.ts:a95b6dd11f31a709f9f4d9c0 |
 | cron | src/cron/failure-ack.ts | 41 | fixed | binding retained / no recognized error surface | src/cron/failure-ack.ts:b37b4f870b6889fac9a7567e |
-| cron | src/cron/failure-notification.ts | 269 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:9f4862c94ad1cdce954f6824 |
-| cron | src/cron/failure-notification.ts | 311 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:98c131f44f660ecbd2faaadd |
-| cron | src/cron/failure-notification.ts | 378 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:872eccb90cc73e208afc46cb |
-| cron | src/cron/failure-notification.ts | 444 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:cf7e5fa6a76d578e3ee226d1 |
+| cron | src/cron/failure-notification.ts | 270 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:9f4862c94ad1cdce954f6824 |
+| cron | src/cron/failure-notification.ts | 312 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:98c131f44f660ecbd2faaadd |
+| cron | src/cron/failure-notification.ts | 379 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:872eccb90cc73e208afc46cb |
+| cron | src/cron/failure-notification.ts | 481 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:cf7e5fa6a76d578e3ee226d1 |
 | cron | src/cron/runner.ts | 159 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:a67e22487d87b0d4e3fabe92 |
 | cron | src/cron/runner.ts | 207 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:e319db265d99dc0086b354de |
 | cron | src/cron/runner.ts | 231 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:d15c97abfdc45d2e8fa9a5ee |
@@ -1351,7 +1351,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | inbox | src/inbox/inbox-runner.ts | 772 | fixed | binding retained / no recognized error surface | src/inbox/inbox-runner.ts:4167c82862f2fd76a34d0dff |
 | inbox | src/inbox/inbox-runner.ts | 796 | fixed | binding retained / no recognized error surface | src/inbox/inbox-runner.ts:8b690d93412b255706dacedb |
 | inbox | src/inbox/inbox-runner.ts | 815 | fixed | binding retained / no recognized error surface | src/inbox/inbox-runner.ts:f8008a9ac80749ae267a7619 |
-| inbox | src/inbox/local-db.ts | 437 | triaged-follow-up | catch-without-binding | src/inbox/local-db.ts:f07c6dd0d753813085053dee |
+| inbox | src/inbox/local-db.ts | 458 | triaged-follow-up | catch-without-binding | src/inbox/local-db.ts:f07c6dd0d753813085053dee |
 | inbox | src/inbox/local-events.ts | 69 | fixed | binding retained / no recognized error surface | src/inbox/local-events.ts:351686dbaab5803abe98d7d7 |
 | inbox | src/inbox/mail-enrichment.ts | 175 | triaged-follow-up | catch-without-binding | src/inbox/mail-enrichment.ts:b6d0d49647fba552e5ab48a6 |
 | index.ts | src/index.ts | 34 | fixed | binding retained / no recognized error surface | src/index.ts:0bbc6928f13db49810d3186a |

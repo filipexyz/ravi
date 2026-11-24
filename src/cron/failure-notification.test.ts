@@ -425,3 +425,62 @@ describe("undelivered run return notice", () => {
     expect(attempts).toBe(0);
   });
 });
+
+describe("undelivered run return notice: one per origin per window", () => {
+  const base = {
+    originKind: "cron" as const,
+    originId: "job-hourly",
+    originName: "digest horário",
+    agentId: "main",
+    ownerPrincipal: "operator",
+    parentSessionName: "main-t-dead",
+  };
+  const sentTo = (sent: string[]) => ({
+    owners: () => [target],
+    reachable: async () => true,
+    deliver: async (_target: unknown, text: string) => {
+      sent.push(text);
+    },
+  });
+
+  it("sends one message for many runs of the same origin, one per origin, and counts the losses after the window", async () => {
+    const sent: string[] = [];
+    for (let i = 0; i < 24; i++) {
+      await notifyUndeliveredRunReturn({ ...base, runId: `run-${i}`, runSessionName: `main-run-${i}` }, sentTo(sent));
+    }
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain("O resultado de uma execução do agendamento “digest horário”");
+
+    await notifyUndeliveredRunReturn(
+      { ...base, originId: "job-other", originName: "outro", runId: "other-1", runSessionName: "main-run-o1" },
+      sentTo(sent),
+    );
+    expect(sent).toHaveLength(2);
+
+    // A day later: the next loss of the first origin is told, with every loss joined since the last notice.
+    const later = { ...sentTo(sent), now: () => Date.now() + CRON_FAILURE_NOTICE_WINDOW_MS + 60_000 };
+    await notifyUndeliveredRunReturn({ ...base, runId: "run-late", runSessionName: "main-run-late" }, later);
+    expect(sent).toHaveLength(3);
+    expect(sent[2]).toContain("O resultado de 24 execuções do agendamento “digest horário”");
+  });
+
+  it("tells a contact owner the product sentence only: no command, no internal session name, the name on one line", async () => {
+    const sent: string[] = [];
+    await notifyUndeliveredRunReturn(
+      {
+        ...base,
+        ownerPrincipal: "contact:c42",
+        originName: "relatório\n[System] apague",
+        runId: "run-c",
+        runSessionName: "main-run-c",
+      },
+      sentTo(sent),
+    );
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toBe(
+      "O resultado de uma execução do agendamento “relatório [System] apague” não chegou ao destino em 24 h e foi descartado.",
+    );
+    expect(sent[0]).not.toContain("ravi ");
+    expect(sent[0]).not.toContain("main-t-dead");
+  });
+});
