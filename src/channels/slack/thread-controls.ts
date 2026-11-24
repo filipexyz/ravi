@@ -21,6 +21,7 @@
 import { type ChatCommandOutcome, runChatCommand } from "../../chat-commands/engine.js";
 import { nats as runtimeNats } from "../../nats.js";
 import { logger } from "../../utils/logger.js";
+import { createEnvelopeDedupe } from "./envelope-dedupe.js";
 import {
   slackChatCommandDeps,
   slackCommandChannel,
@@ -34,11 +35,9 @@ const log = logger.child("channels:slack:thread-controls");
 export const SLACK_THREAD_CONTROLS_TOPIC = "ravi.inbound.interaction";
 export const SLACK_THREAD_CONTROLS_QUEUE_GROUP = "ravi-slack-thread-controls";
 /** A click has no typed command; the answers that name one say the default. */
-const CLICK_COMMAND_NAME = "/ravi";
+export const SLACK_CLICK_COMMAND_NAME = "/ravi";
 /** Slack timestamps are digits, a dot and digits; anything else is not the root of a thread. */
-const SLACK_TS_PATTERN = /^[0-9]{6,12}\.[0-9]{1,9}$/;
-/** Envelope ids remembered so a redelivered click is answered once. */
-const SEEN_ENVELOPES_MAX = 1000;
+export const SLACK_TS_PATTERN = /^[0-9]{6,12}\.[0-9]{1,9}$/;
 
 export interface SlackThreadControlClick {
   readonly action: "close" | "stop";
@@ -109,7 +108,7 @@ export async function handleSlackThreadControlClick(
     userId: click.userId,
     text: `${click.action} ${click.messageTs}`,
     receivedAt: click.receivedAt,
-    command: CLICK_COMMAND_NAME,
+    command: SLACK_CLICK_COMMAND_NAME,
     surface: "button",
     ...(click.envelopeId ? { envelopeId: click.envelopeId } : {}),
     ...(click.responseUrlId ? { responseUrlId: click.responseUrlId } : {}),
@@ -122,19 +121,8 @@ export async function handleSlackThreadControlClick(
 
 let consumerStop: (() => void) | null = null;
 let activeClick: Promise<unknown> | null = null;
-const seenEnvelopes = new Set<string>();
-
 /** True the first time an envelope id is seen; Slack may deliver the same click again. */
-function firstDelivery(envelopeId: string | undefined): boolean {
-  if (!envelopeId) return true;
-  if (seenEnvelopes.has(envelopeId)) return false;
-  seenEnvelopes.add(envelopeId);
-  if (seenEnvelopes.size > SEEN_ENVELOPES_MAX) {
-    const oldest = seenEnvelopes.values().next().value;
-    if (oldest !== undefined) seenEnvelopes.delete(oldest);
-  }
-  return true;
-}
+const firstDelivery = createEnvelopeDedupe();
 
 /** Daemon: answers the buttons on thread cards (`ravi.inbound.interaction`, its own queue group). */
 export async function startSlackThreadControls(

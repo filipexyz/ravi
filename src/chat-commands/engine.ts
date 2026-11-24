@@ -129,6 +129,8 @@ export interface ChatThreadSummary {
   readonly updatedAt: number;
   readonly turnHealth: { readonly state: string; readonly lastSignalAt: number | null } | null;
   readonly parentReturn: { readonly pending: boolean };
+  /** The thread's lifecycle state as the channel names it. `closed` is the only value the engine reads. */
+  readonly status?: string;
 }
 
 /**
@@ -170,6 +172,13 @@ export interface ChatThreadRow {
   readonly sessionGone: boolean;
 }
 
+/** One thread asked about by name (`status <thread>`): the row a listing shows, and what only this view needs. */
+export interface ChatThreadDetail extends ChatThreadRow {
+  readonly closed: boolean;
+  /** Answers given to a question of the thread that have not been delivered yet. */
+  readonly pendingAnswerCount: number;
+}
+
 /** What a command came to, as facts. The channel adapter words and formats them for its own platform. */
 export type ChatCommandResult =
   | { readonly kind: "stale" }
@@ -195,6 +204,7 @@ export type ChatCommandResult =
       /** Null when the channel has no threads. */
       readonly openThreads: number | null;
     }
+  | { readonly kind: "thread_status"; readonly sessionName: string; readonly thread: ChatThreadDetail }
   | { readonly kind: "threads_none"; readonly sessionName: string }
   | {
       readonly kind: "threads";
@@ -573,8 +583,46 @@ async function run(
     outcome: { decision: "info", code: "threads_unsupported" },
   };
 
+  const rowOf = (thread: ChatThreadSummary): ChatThreadRow => {
+    const activity = activityOf(thread);
+    return {
+      name: thread.childSessionName ?? thread.requestId,
+      title: thread.title,
+      ageMs: now() - activity.lastActivityAt,
+      busy: activity.busy,
+      health: thread.turnHealth?.state ?? null,
+      openDecisionCount: thread.openDecisionCount,
+      returnPending: thread.parentReturn.pending,
+      sessionGone: thread.childSessionMissing,
+    };
+  };
+
   switch (parse.kind) {
     case "status": {
+      // `status <thread>`: that thread's own state, found among the threads of the chat's session.
+      // The rights are those of a plain `status` (access to the session), asked before the lookup.
+      if (parse.threadRef !== undefined) {
+        if (!channel.findThread) return unsupported;
+        const thread = channel.findThread(session, parse.threadRef);
+        if (!thread) {
+          return {
+            result: { kind: "thread_not_found", ref: parse.threadRef, sessionName: name },
+            outcome: { decision: "info", code: "thread_not_found" },
+          };
+        }
+        return {
+          result: {
+            kind: "thread_status",
+            sessionName: name,
+            thread: {
+              ...rowOf(thread),
+              closed: thread.status === "closed",
+              pendingAnswerCount: thread.pendingAnswerCount,
+            },
+          },
+          outcome: { decision: "allowed", code: "ok" },
+        };
+      }
       const index = channel.threads?.(session);
       const turn = (deps.activeTurn ?? defaultActiveTurn(now))(session.sessionKey);
       const runtime = (deps.describeRuntime ?? defaultDescribeRuntime)(session, config);
@@ -599,19 +647,7 @@ async function run(
         return { result: { kind: "threads_none", sessionName: name }, outcome: { decision: "allowed", code: "ok" } };
       }
       const shown = index.newest(CHAT_COMMAND_MAX_LISTED_THREADS);
-      const rows = shown.map((thread): ChatThreadRow => {
-        const activity = activityOf(thread);
-        return {
-          name: thread.childSessionName ?? thread.requestId,
-          title: thread.title,
-          ageMs: now() - activity.lastActivityAt,
-          busy: activity.busy,
-          health: thread.turnHealth?.state ?? null,
-          openDecisionCount: thread.openDecisionCount,
-          returnPending: thread.parentReturn.pending,
-          sessionGone: thread.childSessionMissing,
-        };
-      });
+      const rows = shown.map(rowOf);
       return {
         result: {
           kind: "threads",

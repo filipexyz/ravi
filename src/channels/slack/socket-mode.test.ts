@@ -2490,6 +2490,163 @@ describe("Slack Socket Mode routing", () => {
     expect(JSON.stringify(interactions[0]?.payload)).not.toContain("hooks.slack.com");
   });
 
+  it("publishes a message shortcut with its callback id, the message and the thread it is in", async () => {
+    const order: string[] = [];
+    const prompts: unknown[] = [];
+    const interactions: Array<{ topic: string; payload: Record<string, unknown> }> = [];
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "ravi-rbbt-slack",
+      routeAccountId: "ravi-rbbt-slack",
+      instanceId: "slack-instance-1",
+      getRouterConfig: () => ({
+        agents: {},
+        routes: [],
+        defaultAgent: "ravi-hil",
+        defaultDmScope: "per-peer",
+        accountAgents: {},
+        instanceToAccount: {},
+        instances: {},
+      }),
+      publishPrompt: async (_sessionName, payload) => {
+        prompts.push(payload);
+      },
+      publishInteraction: async (topic, payload) => {
+        order.push("publish");
+        interactions.push({ topic, payload });
+      },
+      webClient: {} as never,
+    });
+
+    const result = await service.handleEnvelope(
+      {
+        envelope_id: "env-message-action-1",
+        payload: {
+          type: "message_action",
+          callback_id: "ravi_close_thread",
+          team: { id: "T1" },
+          user: { id: "U123" },
+          channel: { id: "C123" },
+          trigger_id: "trigger-2",
+          message_ts: "1713000050.000300",
+          message: {
+            // A reply: the thread it is in is named by `thread_ts`, the message by `ts`.
+            ts: "1713000050.000300",
+            thread_ts: "1713000000.000100",
+            text: "words that must not travel",
+          },
+          response_url: "https://hooks.slack.com/app-actions/T1/B1/secret",
+        },
+      },
+      async () => {
+        order.push("ack");
+      },
+    );
+
+    expect(result).toBe("processed");
+    expect(order).toEqual(["ack", "publish"]);
+    expect(prompts).toHaveLength(0);
+    expect(interactions).toEqual([
+      {
+        topic: "ravi.inbound.interaction",
+        payload: expect.objectContaining({
+          provider: "slack",
+          source: "slack.socket_mode",
+          accountId: "ravi-rbbt-slack",
+          routeAccountId: "ravi-rbbt-slack",
+          envelopeId: "env-message-action-1",
+          interactionType: "message_action",
+          callbackId: "ravi_close_thread",
+          userId: "U123",
+          channelId: "C123",
+          messageTs: "1713000050.000300",
+          threadTs: "1713000000.000100",
+          responseUrlId: expect.any(String),
+        }),
+      },
+    ]);
+    // The message's own words and the response handle stay in the runner.
+    const published = JSON.stringify(interactions[0]?.payload);
+    expect(published).not.toContain("words that must not travel");
+    expect(published).not.toContain("hooks.slack.com");
+  });
+
+  describe("the response handle of an interaction", () => {
+    function interactionService(interactions: Array<{ topic: string; payload: Record<string, unknown> }>) {
+      return new SlackSocketModeService({
+        appToken: "xapp-test",
+        botToken: "xoxb-test",
+        accountId: "ravi-rbbt-slack",
+        routeAccountId: "ravi-rbbt-slack",
+        instanceId: "slack-instance-1",
+        getRouterConfig: () => ({
+          agents: {},
+          routes: [],
+          defaultAgent: "ravi-hil",
+          defaultDmScope: "per-peer",
+          accountAgents: {},
+          instanceToAccount: {},
+          instances: {},
+        }),
+        publishPrompt: async () => {},
+        publishInteraction: async (topic, payload) => {
+          interactions.push({ topic, payload });
+        },
+        webClient: {} as never,
+      });
+    }
+
+    function envelope(type: string, responseUrl: string) {
+      return {
+        envelope_id: `env-${type}-untrusted`,
+        payload: {
+          type,
+          callback_id: "ravi_status_thread",
+          team: { id: "T1" },
+          user: { id: "U123" },
+          channel: { id: "C123" },
+          message: { ts: "1713000050.000300" },
+          response_url: responseUrl,
+          ...(type === "block_actions"
+            ? { actions: [{ type: "button", action_id: "x", block_id: "b", value: "v" }] }
+            : {}),
+        },
+      };
+    }
+
+    it("publishes a shortcut whose handle Ravi does not recognise, without the handle", async () => {
+      const interactions: Array<{ topic: string; payload: Record<string, unknown> }> = [];
+
+      const result = await interactionService(interactions).handleEnvelope(
+        envelope("message_action", "https://elsewhere.example/app-actions/T1/B1/secret"),
+        async () => {},
+      );
+
+      expect(result).toBe("processed");
+      expect(interactions).toHaveLength(1);
+      expect(interactions[0]?.payload).toMatchObject({
+        interactionType: "message_action",
+        callbackId: "ravi_status_thread",
+        responseUrlPresent: true,
+      });
+      expect(interactions[0]?.payload).not.toHaveProperty("responseUrlId");
+      expect(JSON.stringify(interactions[0]?.payload)).not.toContain("elsewhere.example");
+    });
+
+    it("still refuses any other interaction whose handle it does not trust", async () => {
+      const interactions: Array<{ topic: string; payload: Record<string, unknown> }> = [];
+
+      await expect(
+        interactionService(interactions).handleEnvelope(
+          envelope("block_actions", "https://elsewhere.example/actions/T1/B1/secret"),
+          async () => {},
+        ),
+      ).rejects.toThrow("Slack interaction response URL is not trusted.");
+      expect(interactions).toEqual([]);
+    });
+  });
+
   it("publishes Slack reaction_added as ravi.inbound.reaction without starting a turn", async () => {
     const prompts: unknown[] = [];
     const interactions: Array<{ topic: string; payload: Record<string, unknown> }> = [];

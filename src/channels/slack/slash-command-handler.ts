@@ -49,6 +49,7 @@ import { logger } from "../../utils/logger.js";
 import { resolveSubscriptionPrecedence } from "../subscription-precedence.js";
 import { resolveSlackInstanceAliases } from "./instance-alias.js";
 import { respondToSlackInteraction } from "./interactions.js";
+import { type DeliverSlackPrivateCard, deliverSlackPrivateCard } from "./private-card.js";
 import { formatSlackCommandAge, renderSlackCommandResult } from "./slash-command-render.js";
 import { parseSlackCommandEvent, SLACK_COMMAND_TOPIC, type SlackCommandEvent } from "./slash-commands.js";
 import {
@@ -87,6 +88,8 @@ export type SlackCommandLocation = Pick<SlackCommandEvent, "channelId" | "userId
 
 export interface SlackCommandDeps extends ChatCommandDeps {
   respond?: (input: { responseUrlId: string; payload: Record<string, unknown> }) => Promise<unknown>;
+  /** Sends a card only the person sees, in a thread: how a shortcut answers (tests replace it). */
+  deliverPrivate?: DeliverSlackPrivateCard;
   contactForSlackUser?: (userId: string, instanceId: string) => string | null;
   resolveSession?: (where: SlackCommandLocation, config: RouterConfig) => SlackCommandSessionResolution;
   threads?: (session: SessionEntry) => SlackThreadIndex;
@@ -237,10 +240,18 @@ export interface SlackCommandSource extends SlackCommandLocation {
   readonly responseUrlId?: string;
   /** The command as typed, with its slash, for the answers that name it. */
   readonly command: string;
-  /** How the person reached it, for the audit: `command` or `button`. */
-  readonly surface: "command" | "button";
+  /** How the person reached it, for the audit: `command`, `button` or `shortcut`. */
+  readonly surface: "command" | "button" | "shortcut";
   /** The runner already answered static text inside the ack. */
   readonly ackedWithHelp?: boolean;
+  /** The answer takes the place of the card that was clicked, instead of adding a message. */
+  readonly replaceOriginal?: boolean;
+  /**
+   * The answer is a private card in the thread with this root ts, and not a reply on a
+   * `response_url`: a shortcut's own response handle posts at channel level, where a person
+   * looking at a thread does not see it.
+   */
+  readonly privateThreadTs?: string;
 }
 
 /** What the engine needs from Slack for one command: who, where, the threads, and how to answer. */
@@ -269,6 +280,26 @@ export function slackCommandChannel(source: SlackCommandSource, deps: SlackComma
       // The runner answers static text inside the ack when Slack takes it there; only when Slack
       // would not does the daemon say it, so nobody gets it twice.
       if (result.kind === "static" && source.ackedWithHelp) return;
+      const message = renderSlackCommandResult(result, source.command);
+      if (source.privateThreadTs) {
+        try {
+          await (deps.deliverPrivate ?? deliverSlackPrivateCard)(
+            {
+              accountId: source.accountId,
+              chatId: source.channelId,
+              userId: source.userId,
+              threadTs: source.privateThreadTs,
+            },
+            { text: message.text, blocks: message.blocks },
+          );
+          return;
+        } catch (error) {
+          // The response handle still answers, at channel level and only to this person: better than silence.
+          log.warn("Slack command private card was not delivered; using the response handle", {
+            error: errorText(error),
+          });
+        }
+      }
       if (!source.responseUrlId) {
         log.warn("Slack command has no response handle; the answer is dropped", { envelopeId: source.envelopeId });
         return;
@@ -276,7 +307,10 @@ export function slackCommandChannel(source: SlackCommandSource, deps: SlackComma
       try {
         await (deps.respond ?? respondToSlackInteraction)({
           responseUrlId: source.responseUrlId,
-          payload: renderSlackCommandResult(result, source.command) as unknown as Record<string, unknown>,
+          payload: (source.replaceOriginal ? { ...message, replace_original: true } : message) as unknown as Record<
+            string,
+            unknown
+          >,
         });
       } catch (error) {
         log.warn("Slack command answer was not delivered", { error: errorText(error) });

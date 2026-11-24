@@ -16,6 +16,34 @@ Give each Slack app its own command name. Slash command names are not
 namespaced: with two apps registering `/ravi` in one workspace, Slack runs the one
 installed most recently.
 
+## Turn on the message shortcuts
+
+Once per Slack app, at api.slack.com/apps (the reference manifest in
+`docs/channels/slack.mdx` has them):
+
+1. **Interactivity & Shortcuts:** with Interactivity on, **Create New Shortcut**,
+   **On messages**, three times, with these callback IDs (the names are only what
+   people read in the "..." menu):
+   - `ravi_status_thread` ("Ravi: status da thread")
+   - `ravi_close_thread` ("Ravi: fechar a thread")
+   - `ravi_stop_thread` ("Ravi: parar a thread")
+2. Reinstall the app when Slack asks (a new shortcut may need it).
+3. `ravi channels restart`: from this release the runner publishes the callback id
+   of a shortcut, and the daemon answers it.
+
+Check: open the "..." menu of any message in a Ravi thread, pick **Ravi: status
+da thread**. A card only you see appears in the thread with its state. Then
+**Ravi: fechar a thread**: a card asks first; Cancelar changes nothing.
+
+### A shortcut shows nothing
+
+- The thread has no replies yet: Slack shows an ephemeral message in a thread only
+  once it has some. Use `/ravi status <thread>` or the buttons on the thread's card.
+- The shortcut is not in the app, or its callback ID is not one of the three: Slack
+  runs it and Ravi ignores it. `ravi channels logs` shows nothing for an id Ravi
+  does not read; check the ID at api.slack.com/apps.
+- "I don't recognize you": the same as for `/ravi`, link the Slack user to a contact.
+
 ## Check it works
 
 In a DM with the app, type `/ravi`. The help appears at once, only for you. Then
@@ -68,6 +96,7 @@ are not in it.
 bun test src/channels/slack/slash-commands.test.ts
 bun test src/channels/slack/slash-command-handler.test.ts
 bun test src/channels/slack/interactions.test.ts
+bun test src/channels/slack/thread-controls.test.ts src/channels/slack/thread-shortcuts.test.ts
 bun test src/cli/command-access.test.ts
 bun test src/channels/slack/socket-mode.test.ts -t "slash commands"
 ```

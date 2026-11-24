@@ -118,7 +118,7 @@ export function slackCommandHelpMessage(
   }
   lines.push(
     `*Ravi controls* (\`${name}\`)`,
-    `• \`${name} status\`: who answers in this chat, whether it is working, and how many threads are open`,
+    `• \`${name} status [thread]\`: who answers in this chat, whether it is working, and how many threads are open; or that thread's own state`,
     `• \`${name} threads\`: open threads of this session, with age and state`,
     `• \`${name} close <thread>\`: close a thread (the name \`${name} threads\` shows)`,
     `• \`${name} close idle [12h]\`: close threads with no activity for more than N hours, no turn running and no open question`,

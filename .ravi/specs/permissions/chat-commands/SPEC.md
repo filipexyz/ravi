@@ -40,7 +40,7 @@ only adapter is Slack (spec `channels/slack/commands`).
 
 ## The grammar
 
-`help | status | threads | close <thread> | close idle [Nh] | stop`, parsed by
+`help | status [thread] | threads | close <thread> | close idle [Nh] | stop [thread]`, parsed by
 `parseChatCommandText` (`src/chat-commands/parse.ts`), a pure function. Words are
 matched without accents or case; a thread ref keeps its case. Idle hours are 1 to
 720, default 12. `help`, an empty text, an unknown word and a malformed `close`
@@ -100,6 +100,12 @@ to the caller.
 
 - `status`: the agent and session, the model, whether a turn is running and for
   how long, and how many threads are open when the channel has threads.
+- `status <thread>`: that thread's own state as facts, found by the adapter's
+  `findThread` among the threads of the session of the chat: closed or not, busy,
+  health, time since its last activity, open questions, return pending, session
+  gone, answers not delivered. The rights are those of a plain `status` (access to
+  the session), asked before the lookup, and no capability of the CLI. A thread
+  not found, or a channel with no `findThread`, is said.
 - `threads`: the newest 12 open threads as facts (name, title, time since the
   last activity, busy, health, open questions, return pending, session gone)
   under an exact total, with no silent ceiling.
@@ -140,7 +146,7 @@ account, the instance, the chat, the person as the platform knows them
 (`actorId`), the contact, the session, the subcommand, the decision (`allowed`,
 `denied`, `info`, `error`), a result code, the platform's request id when it
 has one, and how the person reached the command (`surface`, a value the adapter
-supplies: a typed command, a button) when it says. It MUST NOT carry the text
+supplies: a typed command, a button, a shortcut) when it says. It MUST NOT carry the text
 typed, a thread name, a URL or any token. A failed audit publish MUST NOT fail
 the command, and a delivery failure of the answer MUST NOT stop the audit.
 
@@ -163,6 +169,6 @@ Recorded, with no change planned here:
 
 ## Out of scope
 
-Message shortcuts and modals, `status <thread>`, a second channel's adapter,
+A confirmation modal for the shortcuts, a second channel's adapter,
 per-person rate limits, and commands that change routes, agents, permissions,
 secrets, the daemon or the release.
