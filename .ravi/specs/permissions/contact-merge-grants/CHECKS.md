@@ -7,3 +7,5 @@
 - The boot repair MUST NOT move rows to the survivor and MUST leave live contacts alone; the test fails if the repair moves rows.
 - The merge chain MUST be followed past 16 hops; the test fails with a hop cap.
 - The boot repair MUST be idempotent: a second run returns no work.
+- A merge MUST revoke the source's live runtime contexts carrying a moved or dropped grant; the test fails if either revocation is removed.
+- `resolveMergedContactId` MUST stop on a cycle in merge links; without the guard the test hangs and is killed.

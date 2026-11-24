@@ -10709,15 +10709,20 @@ export function mergeContacts(targetId: string, sourceId: string): { merged: num
     { label: "contacts:mergeContacts" },
   );
   // Grants live in ravi.db, outside this chat.db transaction. A failure here
-  // leaves the grants on the deleted source id; the boot repair finishes it.
+  // leaves the grants on the deleted source id, where they authorize no one.
+  // The boot repair removes those rows (keeping the last one covering a
+  // scope); it does not move them to the target.
   try {
     reassignContactChatGrantsOnMerge(sourceId, targetId);
   } catch (error) {
-    console.warn("[contacts] grant reassignment after merge failed; boot repair will retry", {
-      sourceId,
-      targetId,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    console.warn(
+      "[contacts] grant reassignment after merge failed; leftover rows stay on the deleted id until the boot repair removes them",
+      {
+        sourceId,
+        targetId,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    );
   }
   return { merged: sourceIdentities.length };
 }

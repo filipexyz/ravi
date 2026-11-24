@@ -1,5 +1,9 @@
+import { Database } from "bun:sqlite";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { closeContacts, contactExists, createContact, mergeContacts, resolveMergedContactId } from "../contacts.js";
+import { dbGetContext } from "../router/router-db.js";
+import { createRuntimeContext } from "../runtime/context-registry.js";
 import { dbCreateTagDefinition } from "../tags/tag-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { dbEnsureContactChatGrant, dbListContactChatGrants } from "./contact-chat-grants.js";
@@ -53,6 +57,25 @@ afterEach(async () => {
 
 function grant(contactId: string, profileSlug: string, scopeId = "chat_room") {
   dbEnsureContactChatGrant({ contactId, profileSlug, scopeType: "chat", scopeId });
+}
+
+function insertMergeLink(sourceId: string, targetId: string) {
+  contactExists(sourceId); // opens chat.db and creates its schema
+  const db = new Database(join(stateDir!, "chat.db"));
+  db.prepare(
+    `INSERT INTO identity_link_events (id, event_type, source_owner_type, source_owner_id, target_owner_type, target_owner_id, confidence, reason, actor_type)
+     VALUES (?, 'merge', 'contact', ?, 'contact', ?, 1.0, 'contact_merge', 'system')`,
+  ).run(`ile_test_${sourceId}_${targetId}`, sourceId, targetId);
+  db.close();
+}
+
+function liveContextFor(contactId: string, grantRef: string) {
+  return createRuntimeContext({
+    agentId: "main",
+    cliName: "test",
+    kind: "turn-runtime",
+    metadata: { actorPrincipal: `contact:${contactId}`, userOverlayGrants: [grantRef] },
+  });
 }
 
 function grantsOf(contactId: string) {
@@ -117,6 +140,33 @@ describe("chat grants follow a contact merge", () => {
   });
 });
 
+describe("a turn in flight loses a grant the merge takes away", () => {
+  it("revokes the source's live context when its grant moves", () => {
+    const target = createContact({ phone: "5511900000021" });
+    const source = createContact({ phone: "5511900000022" });
+    grant(source.id, "permission-chat-reader", "chat_live");
+    const context = liveContextFor(source.id, "permission-chat-reader@chat:chat_live");
+
+    mergeContacts(target.id, source.id);
+
+    expect(dbGetContext(context.contextId)?.revokedAt).toBeDefined();
+  });
+
+  it("revokes the source's live context when a break-glass grant is dropped", () => {
+    const target = createContact({ phone: "5511900000023" });
+    const source = createContact({ phone: "5511900000024" });
+    const other = createContact({ phone: "5511900000025" });
+    grant(other.id, "permission-chat-reader", "chat_live2");
+    grant(source.id, "permission-sneaky-full", "chat_live2");
+    const context = liveContextFor(source.id, "permission-sneaky-full@chat:chat_live2");
+
+    mergeContacts(target.id, source.id);
+
+    expect(dbListContactChatGrants({ contactId: source.id })).toEqual([]);
+    expect(dbGetContext(context.contextId)?.revokedAt).toBeDefined();
+  });
+});
+
 describe("boot repair of grants left on merged contacts", () => {
   it("removes dead rows without moving them, and audits on the survivor", () => {
     const target = createContact({ phone: "5511900000005" });
@@ -169,6 +219,16 @@ describe("boot repair of grants left on merged contacts", () => {
     for (let i = 0; i < contacts.length - 1; i += 1) mergeContacts(contacts[i + 1]!.id, contacts[i]!.id);
 
     expect(resolveMergedContactId(contacts[0]!.id)).toBe(contacts[contacts.length - 1]!.id);
+  });
+
+  it("stops on a merge cycle instead of looping (a hang here would hold the daemon boot)", () => {
+    // corrupt link data between ids that no longer exist
+    insertMergeLink("ghostcycleA0", "ghostcycleB0");
+    insertMergeLink("ghostcycleB0", "ghostcycleA0");
+    insertMergeLink("ghostselfA00", "ghostselfA00");
+
+    expect(resolveMergedContactId("ghostcycleA0")).toBeNull();
+    expect(resolveMergedContactId("ghostselfA00")).toBeNull();
   });
 
   it("leaves grants of live contacts alone", () => {
