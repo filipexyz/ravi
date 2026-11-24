@@ -1888,31 +1888,31 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/claude-provider.ts | 561 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:69932255b8c315b086374bbe |
 | runtime-chat | src/runtime/claude-provider.ts | 590 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:c8db2d688d57db26d5cf0203 |
 | runtime-chat | src/runtime/claude-provider.ts | 634 | triaged-follow-up | catch-without-binding | src/runtime/claude-provider.ts:c052a49e78bea02b1938b8c1 |
-| runtime-chat | src/runtime/codex-hook-guard.ts | 58 | fixed | binding retained / no recognized error surface | src/runtime/codex-hook-guard.ts:952fefdacbf67b13e858ac08 |
-| runtime-chat | src/runtime/codex-hook-guard.ts | 112 | fixed | binding retained / no recognized error surface | src/runtime/codex-hook-guard.ts:c29d7053396fe99e793740e9 |
-| runtime-chat | src/runtime/codex-hook-guard.ts | 123 | no-cause | an unreadable path only means "not the generated gate file", which the caller refuses. | src/runtime/codex-hook-guard.ts:2ead593fad02c9f1690be72e |
+| runtime-chat | src/runtime/codex-hook-guard.ts | 65 | fixed | binding retained / no recognized error surface | src/runtime/codex-hook-guard.ts:5de697b70cf9e4ea973f164c |
+| runtime-chat | src/runtime/codex-hook-guard.ts | 115 | fixed | binding retained / no recognized error surface | src/runtime/codex-hook-guard.ts:23fa84b6be4bc4180c7748d4 |
+| runtime-chat | src/runtime/codex-hook-guard.ts | 126 | no-cause | an unreadable path only means "not the generated gate file", which the caller refuses. | src/runtime/codex-hook-guard.ts:2ead593fad02c9f1690be72e |
 | runtime-chat | src/runtime/codex-hooks.ts | 75 | triaged-follow-up | surface-bypasses-constructor | src/runtime/codex-hooks.ts:89a5335abd4cd41f644216f8 |
 | runtime-chat | src/runtime/codex-hooks.ts | 256 | triaged-follow-up | catch-without-binding | src/runtime/codex-hooks.ts:594f21aaeee7103da4806304 |
 | runtime-chat | src/runtime/codex-hooks.ts | 307 | triaged-follow-up | catch-without-binding | src/runtime/codex-hooks.ts:fce4d98698ce879e6feebbc4 |
-| runtime-chat | src/runtime/codex-provider.ts | 261 | triaged-follow-up | catch-without-binding | src/runtime/codex-provider.ts:136bd82780aed5983deeb497 |
-| runtime-chat | src/runtime/codex-provider.ts | 265 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:c6a17bef51f83db20b280405 |
-| runtime-chat | src/runtime/codex-provider.ts | 1119 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:97c88dce5051767d4501be54 |
-| runtime-chat | src/runtime/codex-provider.ts | 1402 | triaged-follow-up | catch-without-binding | src/runtime/codex-provider.ts:9009e78d120961cfe7fac044 |
-| runtime-chat | src/runtime/codex-provider.ts | 1442 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:d97f9a1d8a1a082d1247746b |
-| runtime-chat | src/runtime/codex-provider.ts | 1493 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:d93a3884120fb784a0c090e9 |
-| runtime-chat | src/runtime/codex-provider.ts | 1525 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:0582af36df07f6d7dcaefe8c |
-| runtime-chat | src/runtime/codex-provider.ts | 1573 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:6a108a5f4b867f32e4a416ca |
-| runtime-chat | src/runtime/codex-provider.ts | 1607 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:02917a8bdbdb279f1b6bbed4 |
-| runtime-chat | src/runtime/codex-provider.ts | 1651 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:03c7c01677a32a64e863ca02 |
-| runtime-chat | src/runtime/codex-provider.ts | 1700 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:d5017183da58dfe25da060da |
-| runtime-chat | src/runtime/codex-provider.ts | 1953 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:4f398d7bfa69b494b05bef4a |
-| runtime-chat | src/runtime/codex-provider.ts | 1984 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:16dd551a12874b9a36ed0288 |
-| runtime-chat | src/runtime/codex-provider.ts | 2006 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:e62f41bdaba0c7973a1c1ff3 |
-| runtime-chat | src/runtime/codex-provider.ts | 2318 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:a139093505d2216adc8223b3 |
-| runtime-chat | src/runtime/codex-provider.ts | 2417 | triaged-follow-up | catch-without-binding | src/runtime/codex-provider.ts:86e9a14dac9083d34117850a |
-| runtime-chat | src/runtime/codex-provider.ts | 2700 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:003ac36e802ea5850a841c8b |
-| runtime-chat | src/runtime/codex-provider.ts | 2723 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:2fad53d8be968a590e2bcd5e |
-| runtime-chat | src/runtime/codex-provider.ts | 2855 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:00be2cb462ea22c18490ef96 |
+| runtime-chat | src/runtime/codex-provider.ts | 265 | triaged-follow-up | catch-without-binding | src/runtime/codex-provider.ts:136bd82780aed5983deeb497 |
+| runtime-chat | src/runtime/codex-provider.ts | 269 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:c6a17bef51f83db20b280405 |
+| runtime-chat | src/runtime/codex-provider.ts | 1123 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:d5ae38f92ae49bec69418a2f |
+| runtime-chat | src/runtime/codex-provider.ts | 1420 | triaged-follow-up | catch-without-binding | src/runtime/codex-provider.ts:9009e78d120961cfe7fac044 |
+| runtime-chat | src/runtime/codex-provider.ts | 1460 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:d97f9a1d8a1a082d1247746b |
+| runtime-chat | src/runtime/codex-provider.ts | 1511 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:d93a3884120fb784a0c090e9 |
+| runtime-chat | src/runtime/codex-provider.ts | 1543 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:0582af36df07f6d7dcaefe8c |
+| runtime-chat | src/runtime/codex-provider.ts | 1591 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:6a108a5f4b867f32e4a416ca |
+| runtime-chat | src/runtime/codex-provider.ts | 1625 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:02917a8bdbdb279f1b6bbed4 |
+| runtime-chat | src/runtime/codex-provider.ts | 1669 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:03c7c01677a32a64e863ca02 |
+| runtime-chat | src/runtime/codex-provider.ts | 1718 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:d5017183da58dfe25da060da |
+| runtime-chat | src/runtime/codex-provider.ts | 1971 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:4f398d7bfa69b494b05bef4a |
+| runtime-chat | src/runtime/codex-provider.ts | 2002 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:16dd551a12874b9a36ed0288 |
+| runtime-chat | src/runtime/codex-provider.ts | 2024 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:e62f41bdaba0c7973a1c1ff3 |
+| runtime-chat | src/runtime/codex-provider.ts | 2336 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:a139093505d2216adc8223b3 |
+| runtime-chat | src/runtime/codex-provider.ts | 2435 | triaged-follow-up | catch-without-binding | src/runtime/codex-provider.ts:86e9a14dac9083d34117850a |
+| runtime-chat | src/runtime/codex-provider.ts | 2718 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:003ac36e802ea5850a841c8b |
+| runtime-chat | src/runtime/codex-provider.ts | 2741 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:2fad53d8be968a590e2bcd5e |
+| runtime-chat | src/runtime/codex-provider.ts | 2886 | fixed | binding retained / no recognized error surface | src/runtime/codex-provider.ts:00be2cb462ea22c18490ef96 |
 | runtime-chat | src/runtime/codex-transport.ts | 66 | fixed | binding retained / no recognized error surface | src/runtime/codex-transport.ts:b8ee64f214c096573f410e53 |
 | runtime-chat | src/runtime/codex-transport.ts | 75 | triaged-follow-up | catch-without-binding | src/runtime/codex-transport.ts:4930ce420f33d2ecd70704ea |
 | runtime-chat | src/runtime/codex-transport.ts | 137 | fixed | binding retained / no recognized error surface | src/runtime/codex-transport.ts:8caa560b4417cdab0ac8dd9a |

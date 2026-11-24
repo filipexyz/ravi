@@ -13,7 +13,11 @@ import { dbGetAgent } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
 import { errorDiagnostic, redactDiagnosticText } from "../utils/error-diagnostic.js";
 import { ensureCodexBashHookConfig } from "./codex-hooks.js";
-import { CodexBashGateUnverifiedError, ensureCodexHookGuard } from "./codex-hook-guard.js";
+import {
+  CODEX_BASH_GATE_UNVERIFIED_MESSAGE,
+  CodexBashGateUnverifiedError,
+  ensureCodexHookGuard,
+} from "./codex-hook-guard.js";
 import {
   CodexAppServerRequestError,
   isCodexCapacityError,
@@ -1139,6 +1143,20 @@ async function* normalizeCodexEvents(
           const terminal = terminalTracker.fail(
             buildCodexTransportFailure(error, { result, stderrTail, lastErrorMessage, lastErrorEvent, metadata }),
           );
+          if (terminal) {
+            yield terminal;
+          }
+          continue;
+        }
+
+        if (error instanceof CodexBashGateUnverifiedError && !state.interrupted) {
+          // A refused session, not a dropped transport: one terminal failure the
+          // host delivers like any other, and no automatic retry.
+          const metadata = buildCodexEventMetadata(
+            { type: "turn.failed", thread_id: turnSessionId, turn_id: activeTurnId },
+            { threadId: turnSessionId, turnId: activeTurnId },
+          );
+          const terminal = terminalTracker.fail(buildCodexGateRefusalFailure(error, metadata));
           if (terminal) {
             yield terminal;
           }
@@ -2775,6 +2793,19 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       };
     },
     close,
+  };
+}
+
+/** The turn failure for a session refused because its Bash gate is unverified: not retried. */
+function buildCodexGateRefusalFailure(
+  error: CodexBashGateUnverifiedError,
+  metadata: ReturnType<typeof buildCodexEventMetadata>,
+) {
+  return {
+    error: CODEX_BASH_GATE_UNVERIFIED_MESSAGE,
+    recoverable: false,
+    rawEvent: { type: "codex.bash_gate_unverified", reason: error.reason },
+    metadata,
   };
 }
 

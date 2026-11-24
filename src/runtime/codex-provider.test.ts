@@ -4407,6 +4407,26 @@ describe("Codex Bash permission gate verification", () => {
     expect(f.edits).toHaveLength(1);
   });
 
+  it("finds Ravi's gate beside the person's same-matcher group and hooks from the same file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-codex-gate-shared-"));
+    writeFileSync(
+      join(dir, "hooks.json"),
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [{ matcher: RAVI_CODEX_BASH_HOOK_MATCHER, hooks: [{ type: "command", command: "log-it" }] }],
+        },
+      }),
+    );
+    const f = guardFixture({ trustStatus: "trusted" });
+    const config = ensureCodexBashHookConfig(dir);
+    const groups = JSON.parse(config.signature).hooks.PreToolUse;
+    expect(groups[0].hooks[0].command).toBe("log-it");
+    const gate = { ...f.hook, sourcePath: config.path, command: groups[1].hooks[0].command };
+    const mine = { ...gate, command: "log-it", key: "user:log", currentHash: "other" };
+    const send = async () => ({ data: [{ cwd: dir, errors: [], hooks: [mine, gate] }] });
+    await expect(ensureCodexHookGuard(send, dir, dir)).resolves.toMatchObject({ key: "user:ravi" });
+  });
+
   it("refuses a missing, changed, disabled, async or untrusted gate", async () => {
     const missing = guardFixture();
     await expect(
@@ -4449,7 +4469,7 @@ describe("Codex Bash permission gate verification", () => {
     ).rejects.toThrow("gate is not trusted");
   });
 
-  function writeGateServer(cwd: string, mode: "trusted" | "missing"): string {
+  function writeGateServer(cwd: string, mode: "trusted" | "untrusted" | "missing"): string {
     const binDir = join(cwd, "bin");
     mkdirSync(binDir, { recursive: true });
     const command = join(binDir, "codex");
@@ -4465,6 +4485,7 @@ const methods = [];
 const rl = createInterface({ input: process.stdin });
 const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
 const hooksPath = join(process.env.CODEX_HOME, "hooks.json");
+let trustStatus = ${JSON.stringify(mode)} === "untrusted" ? "untrusted" : "trusted";
 
 rl.on("line", (line) => {
   const message = JSON.parse(line);
@@ -4475,11 +4496,16 @@ rl.on("line", (line) => {
   if (message.id && message.method === "hooks/list") {
     const groups = JSON.parse(readFileSync(hooksPath, "utf8")).hooks.PreToolUse;
     const group = groups.find((entry) => entry.matcher === ${JSON.stringify(RAVI_CODEX_BASH_HOOK_MATCHER)});
-    const hooks = ${JSON.stringify(mode)} === "trusted"
+    const hooks = ${JSON.stringify(mode)} !== "missing"
       ? [{ handlerType: "command", command: group.hooks[0].command, matcher: group.matcher, eventName: "preToolUse",
-           enabled: true, sourcePath: hooksPath, key: "user:ravi", currentHash: "h1", trustStatus: "trusted" }]
+           enabled: true, sourcePath: hooksPath, key: "user:ravi", currentHash: "h1", trustStatus }]
       : [];
     return send({ id: message.id, result: { data: [{ cwd: message.params.cwds[0], errors: [], hooks }] } });
+  }
+  if (message.id && message.method === "config/batchWrite") {
+    const edit = message.params.edits[0];
+    if (edit.keyPath === 'hooks.state."user:ravi".trusted_hash' && edit.value === "h1") trustStatus = "trusted";
+    return send({ id: message.id, result: {} });
   }
   if (message.id && message.method === "thread/start") {
     return send({ id: message.id, result: { thread: { id: "thread_gate" }, model: "gpt-5.4", modelProvider: "openai" } });
@@ -4496,7 +4522,7 @@ rl.on("line", (line) => {
     return command;
   }
 
-  async function runGateSession(mode: "trusted" | "missing") {
+  async function runGateSession(mode: "trusted" | "untrusted" | "missing") {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-gate-session-"));
     const codexHome = join(cwd, "codex-home");
     const command = writeGateServer(cwd, mode);
@@ -4526,13 +4552,29 @@ rl.on("line", (line) => {
     expect(findEventsByType(events, "turn.complete")).toHaveLength(1);
   }, 20_000);
 
-  it("refuses the session without starting a thread when the gate is not loaded", async () => {
+  it("trusts a first-seen gate through the app-server and reads the trust back before the thread", async () => {
+    const { events, thrown, methods } = await runGateSession("untrusted");
+    expect(thrown).toBeUndefined();
+    expect(methods.slice(0, methods.indexOf("thread/start"))).toEqual([
+      "initialize",
+      "initialized",
+      "hooks/list",
+      "config/batchWrite",
+      "hooks/list",
+    ]);
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(1);
+  }, 20_000);
+
+  it("refuses the session with one turn failure, without starting a thread, when the gate is not loaded", async () => {
     const { events, thrown, methods } = await runGateSession("missing");
+    expect(thrown).toBeUndefined();
     expect(methods).toContain("hooks/list");
     expect(methods).not.toContain("thread/start");
     expect(methods).not.toContain("turn/start");
     expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
-    const failure = JSON.stringify([thrown instanceof Error ? thrown.message : thrown, events]);
-    expect(failure).toContain("Refusing to run an ungoverned Codex session");
+    const failures = findEventsByType(events, "turn.failed");
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({ recoverable: false });
+    expect(JSON.stringify(failures[0])).toContain("Refusing to run an ungoverned Codex session");
   }, 20_000);
 });

@@ -18,6 +18,6 @@ function bridgeError(reason: string): string {
 export async function ensureBridgeCodexGuard(send: CodexHookGuardSend, cwd: string, configDir: string) {
   await ensureCodexHookGuard(send, cwd, configDir, {
     humanBridge: true,
-    fail: (reason) => new Error(bridgeError(reason)),
+    fail: (reason, cause) => new Error(bridgeError(reason), cause === undefined ? undefined : { cause }),
   });
 }

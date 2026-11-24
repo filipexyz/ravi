@@ -1,5 +1,7 @@
 import { realpathSync } from "node:fs";
-import { ensureCodexBashHookConfig, RAVI_CODEX_BASH_HOOK_MATCHER } from "./codex-hooks.js";
+import { ensureCodexBashHookConfig, isRaviCodexHookGroup, RAVI_CODEX_BASH_HOOK_MATCHER } from "./codex-hooks.js";
+
+type GeneratedGroup = { matcher?: string; hooks?: Array<{ command?: unknown }> };
 
 export type CodexHookGuardSend = (
   method: string,
@@ -13,8 +15,11 @@ export const CODEX_BASH_GATE_UNVERIFIED_MESSAGE =
 export class CodexBashGateUnverifiedError extends Error {
   readonly failureKind = "transport" as const;
 
-  constructor(readonly reason: string) {
-    super(`${CODEX_BASH_GATE_UNVERIFIED_MESSAGE} (${reason})`);
+  constructor(
+    readonly reason: string,
+    cause?: unknown,
+  ) {
+    super(`${CODEX_BASH_GATE_UNVERIFIED_MESSAGE} (${reason})`, cause === undefined ? undefined : { cause });
     this.name = "CodexBashGateUnverifiedError";
   }
 }
@@ -23,7 +28,7 @@ export interface CodexHookGuardOptions {
   /** Private human-bridge profile: `.*` matcher, and no other hook may exist. */
   humanBridge?: boolean;
   /** Error raised on any failed check; defaults to CodexBashGateUnverifiedError. */
-  fail?: (reason: string) => Error;
+  fail?: (reason: string, cause?: unknown) => Error;
 }
 
 type ListedHook = Record<string, unknown>;
@@ -42,12 +47,14 @@ export async function ensureCodexHookGuard(
   options: CodexHookGuardOptions = {},
 ): Promise<ListedHook> {
   const humanBridge = options.humanBridge === true;
-  const fail = options.fail ?? ((reason: string) => new CodexBashGateUnverifiedError(reason));
+  const fail = options.fail ?? ((reason: string, cause?: unknown) => new CodexBashGateUnverifiedError(reason, cause));
   const expected = ensureCodexBashHookConfig(configDir, humanBridge);
   const matcher = humanBridge ? ".*" : RAVI_CODEX_BASH_HOOK_MATCHER;
-  const command = JSON.parse(expected.signature).hooks.PreToolUse.find(
-    (group: { matcher: string }) => group.matcher === matcher,
-  )?.hooks?.[0]?.command;
+  // Ravi's own group, not the first one with the same matcher: the person's
+  // hooks file may hold other groups, and the upsert appends Ravi's last.
+  const raviGroups = (JSON.parse(expected.signature).hooks.PreToolUse as unknown[]).filter(isRaviCodexHookGroup);
+  const raviGroup = raviGroups.length === 1 ? (raviGroups[0] as GeneratedGroup) : undefined;
+  const command = raviGroup?.matcher === matcher ? raviGroup.hooks?.[0]?.command : undefined;
   if (typeof command !== "string") throw fail("missing guard");
   const expectedPath = safeRealpath(expected.path);
 
@@ -56,7 +63,7 @@ export async function ensureCodexHookGuard(
     try {
       response = await send("hooks/list", { cwds: [cwd] }, { timeoutMs: 10_000 });
     } catch (error) {
-      throw fail(`hooks/list failed: ${error instanceof Error ? error.message : String(error)}`);
+      throw fail(`hooks/list failed: ${error instanceof Error ? error.message : String(error)}`, error);
     }
     const entries = response.data as Array<{ cwd: string; errors: unknown[]; hooks: ListedHook[] }>;
     if (!Array.isArray(entries) || entries.length !== 1 || !Array.isArray(entries[0]!.hooks))
@@ -66,13 +73,9 @@ export async function ensureCodexHookGuard(
     const hooks = entries[0]!.hooks;
     // The private bridge profile must not introduce any other executable hook.
     if (humanBridge && hooks.length !== 1) throw fail("unexpected hooks");
-    const candidates = hooks.filter(
-      (hook) =>
-        hook.command === command ||
-        (typeof hook.sourcePath === "string" &&
-          expectedPath !== null &&
-          safeRealpath(hook.sourcePath) === expectedPath),
-    );
+    // The gate is identified by its exact generated command; other hooks in the
+    // same file are the person's and are not checked here.
+    const candidates = hooks.filter((hook) => hook.command === command);
     if (candidates.length === 0) throw fail("gate not loaded");
     if (candidates.length !== 1) throw fail("ambiguous gate");
     const hook = candidates[0]!;
@@ -110,7 +113,7 @@ export async function ensureCodexHookGuard(
       { timeoutMs: 10_000 },
     );
   } catch (error) {
-    throw fail(`cannot trust gate: ${error instanceof Error ? error.message : String(error)}`);
+    throw fail(`cannot trust gate: ${error instanceof Error ? error.message : String(error)}`, error);
   }
   const after = await list();
   if (after.trustStatus !== "trusted" || after.currentHash !== before.currentHash) throw fail("gate is not trusted");
