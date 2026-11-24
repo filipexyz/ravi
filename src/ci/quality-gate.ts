@@ -71,6 +71,9 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/thread-controls.test.ts",
     // Message shortcuts on a thread: the tap, the confirmation card and its click, and the private card they answer with.
     "src/channels/slack/thread-shortcuts.test.ts",
+    // `/ravi clone`: the Slack provisioner (private channel, route, invite) and the command's words and access.
+    "src/channels/slack/session-clone-provisioner.test.ts",
+    "src/channels/slack/slash-command-clone.test.ts",
     "src/channels/slack/private-card.test.ts",
     "src/channels/slack/envelope-dedupe.test.ts",
     // Slack thread lifecycle: create/close, parent returns, report and thread-send orchestration.
@@ -316,6 +319,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
   "src/chat-commands/": [
     // Chat commands: the channel-free engine every channel's adapter feeds, and the authority it asks.
     "src/chat-commands/engine.test.ts",
+    "src/sessions/clone.test.ts",
     "src/cli/command-access.test.ts",
     "src/channels/slack/slash-command-handler.test.ts",
   ],
