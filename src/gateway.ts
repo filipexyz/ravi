@@ -1087,29 +1087,32 @@ export class Gateway {
     this.schedulePostDeliveryPresenceRenewal(sessionName, outboundTarget, "native-delivery-renew");
   }
 
-  private async reconcileSlackThreads(): Promise<void> {
-    // Two jobs on the same tick: the channel-free handoff reconciler must run even when the Slack one throws.
-    const [slack] = await Promise.allSettled([
-      this.workDrain.run("slack-thread-reconciliation", async () => {
+  private reconcileSlackThreads(): Promise<void> {
+    return this.workDrain.run("slack-thread-reconciliation", async () => {
+      // The channel-free handoff reconciler runs even when the Slack one throws, and its failure never
+      // hides the Slack result: each is caught on its own.
+      let slackError: unknown;
+      try {
         const result = await reconcileSlackThreadLifecycle();
         if (result.failures > 0) this.workDrain.recordFailure("slack-thread-reconciliation-record");
         if (result.creations > 0 || result.parentReturns > 0 || result.failures > 0) {
           log.info("Reconciled Slack thread lifecycle", result);
         }
-      }),
-      this.workDrain
-        .run("handoff-reconciliation", async () => {
-          const handoffs = await reconcileHandoffs();
-          if (handoffs.failures > 0) this.workDrain.recordFailure("handoff-reconciliation-record");
-          if (handoffs.nudged > 0 || handoffs.escalated > 0 || handoffs.expired > 0 || handoffs.closedByPr > 0) {
-            log.info("Reconciled handoffs", handoffs);
-          }
-        })
-        .catch((error) => {
-          log.warn("Handoff reconciliation failed", { error: error instanceof Error ? error.message : String(error) });
-        }),
-    ]);
-    if (slack.status === "rejected") throw slack.reason;
+      } catch (error) {
+        slackError = error;
+      }
+      try {
+        const handoffs = await reconcileHandoffs();
+        if (handoffs.failures > 0) this.workDrain.recordFailure("handoff-reconciliation-record");
+        if (handoffs.nudged > 0 || handoffs.escalated > 0 || handoffs.expired > 0 || handoffs.closedByPr > 0) {
+          log.info("Reconciled handoffs", handoffs);
+        }
+      } catch (error) {
+        this.workDrain.recordFailure("handoff-reconciliation-record");
+        log.warn("Handoff reconciliation failed", { error: error instanceof Error ? error.message : String(error) });
+      }
+      if (slackError !== undefined) throw slackError;
+    });
   }
 
   private isTerminalRuntimeEvent(type: string | undefined, _status?: string, nativeEvent?: string): boolean {
