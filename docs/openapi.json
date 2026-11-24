@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "b165525bc3227672"
+    "version": "a344b26c368c3d1a"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -121676,6 +121676,195 @@
         ]
       }
     },
+    "/api/v1/sessions/observe": {
+      "post": {
+        "operationId": "sessions.observe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "follow": {
+                    "description": "Get a compact summary of every finished turn instead of only when a condition holds",
+                    "type": "boolean"
+                  },
+                  "source": {
+                    "description": "Session to observe",
+                    "type": "string"
+                  },
+                  "to": {
+                    "description": "Session that receives the notices (default: the current session)",
+                    "type": "string"
+                  },
+                  "when": {
+                    "description": "Comma-separated conditions (default: turn.no_final_reply,chat.narration,turn.failed,tool.idle); one of turn.no_final_reply, chat.narration, turn.failed, turn.interrupt, tool.idle",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "source"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "observing": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "mode": {
+                          "enum": [
+                            "alerts",
+                            "follow"
+                          ],
+                          "type": "string"
+                        },
+                        "ruleId": {
+                          "type": "string"
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "to": {
+                          "type": "string"
+                        },
+                        "when": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "ruleId",
+                        "source",
+                        "to",
+                        "mode",
+                        "when"
+                      ],
+                      "type": "object"
+                    },
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "observing"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Watch another session and get a short notice in this one when something is wrong (or on every turn)",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/observing": {
+      "post": {
+        "operationId": "sessions.observing",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "observing": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "mode": {
+                            "enum": [
+                              "alerts",
+                              "follow"
+                            ],
+                            "type": "string"
+                          },
+                          "ruleId": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string"
+                          },
+                          "to": {
+                            "type": "string"
+                          },
+                          "when": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "ruleId",
+                          "source",
+                          "to",
+                          "mode",
+                          "when"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "total": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "observing",
+                    "total"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "List the observations started with 'ravi sessions observe' that you can see",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
     "/api/v1/sessions/prune": {
       "post": {
         "operationId": "sessions.prune",
@@ -127417,6 +127606,84 @@
         },
         "security": [],
         "summary": "Read the SQLite session trace timeline",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/v1/sessions/unobserve": {
+      "post": {
+        "operationId": "sessions.unobserve",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "source": {
+                    "description": "Observed session",
+                    "type": "string"
+                  },
+                  "to": {
+                    "description": "Session that was receiving the notices (default: the current session)",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "source"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "removed": {
+                      "type": "boolean"
+                    },
+                    "ruleId": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "to": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "removed",
+                    "ruleId",
+                    "source",
+                    "to"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Stop watching a session started with 'ravi sessions observe'",
         "tags": [
           "sessions"
         ]

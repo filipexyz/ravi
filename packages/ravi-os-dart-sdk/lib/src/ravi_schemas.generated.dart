@@ -107625,6 +107625,155 @@ class RaviSchemas {
 }
 ''';
 
+  static const sessionsObserveInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "follow": {
+      "description": "Get a compact summary of every finished turn instead of only when a condition holds",
+      "type": "boolean"
+    },
+    "source": {
+      "description": "Session to observe",
+      "type": "string"
+    },
+    "to": {
+      "description": "Session that receives the notices (default: the current session)",
+      "type": "string"
+    },
+    "when": {
+      "description": "Comma-separated conditions (default: turn.no_final_reply,chat.narration,turn.failed,tool.idle); one of turn.no_final_reply, chat.narration, turn.failed, turn.interrupt, tool.idle",
+      "type": "string"
+    }
+  },
+  "required": [
+    "source"
+  ],
+  "type": "object"
+}
+''';
+
+  static const sessionsObserveReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "observing": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "alerts",
+            "follow"
+          ],
+          "type": "string"
+        },
+        "ruleId": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "when": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "ruleId",
+        "source",
+        "to",
+        "mode",
+        "when"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "observing"
+  ],
+  "type": "object"
+}
+''';
+
+  static const sessionsObservingInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+}
+''';
+
+  static const sessionsObservingReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "observing": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "alerts",
+              "follow"
+            ],
+            "type": "string"
+          },
+          "ruleId": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "when": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "ruleId",
+          "source",
+          "to",
+          "mode",
+          "when"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "total": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "success",
+    "observing",
+    "total"
+  ],
+  "type": "object"
+}
+''';
+
   static const sessionsPruneInputSchema = r'''
 {
   "additionalProperties": false,
@@ -112623,6 +112772,58 @@ class RaviSchemas {
 {
   "additionalProperties": {},
   "properties": {},
+  "type": "object"
+}
+''';
+
+  static const sessionsUnobserveInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "source": {
+      "description": "Observed session",
+      "type": "string"
+    },
+    "to": {
+      "description": "Session that was receiving the notices (default: the current session)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "source"
+  ],
+  "type": "object"
+}
+''';
+
+  static const sessionsUnobserveReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "removed": {
+      "type": "boolean"
+    },
+    "ruleId": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "to": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
+    "removed",
+    "ruleId",
+    "source",
+    "to"
+  ],
   "type": "object"
 }
 ''';

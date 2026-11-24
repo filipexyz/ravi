@@ -20653,6 +20653,42 @@ export type SessionsListReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `sessions.observe`. */
+export type SessionsObserveInput = {
+  follow?: boolean;
+  source: string;
+  to?: string;
+  when?: string;
+};
+
+/** Return shape for `sessions.observe`. */
+export type SessionsObserveReturn = {
+  observing: {
+    mode: "alerts" | "follow";
+    ruleId: string;
+    source: string;
+    to: string;
+    when: string[];
+  };
+  success: true;
+};
+
+/** Input shape for `sessions.observing`. */
+export type SessionsObservingInput = Record<string, never>;
+
+/** Return shape for `sessions.observing`. */
+export type SessionsObservingReturn = {
+  observing: Array<{
+    mode: "alerts" | "follow";
+    ruleId: string;
+    source: string;
+    to: string;
+    when: string[];
+  }>;
+  success: true;
+  total: number;
+};
+
 /** Input shape for `sessions.prune`. */
 export type SessionsPruneInput = {
   agent?: string;
@@ -21583,6 +21619,21 @@ export type SessionsTraceInput = {
 
 /** Return shape for `sessions.trace`. */
 export type SessionsTraceReturn = Record<string, unknown>;
+
+/** Input shape for `sessions.unobserve`. */
+export type SessionsUnobserveInput = {
+  source: string;
+  to?: string;
+};
+
+/** Return shape for `sessions.unobserve`. */
+export type SessionsUnobserveReturn = {
+  removed: boolean;
+  ruleId: string;
+  source: string;
+  success: true;
+  to: string;
+};
 
 /** Input shape for `sessions.update`. */
 export type SessionsUpdateInput = {

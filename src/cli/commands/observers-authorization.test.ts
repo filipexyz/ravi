@@ -72,4 +72,37 @@ describe("observer rules stay inside the caller's sessions", () => {
     });
     expect(dbListObserverRules()).toEqual([]);
   });
+
+  it("refuses a live receiver (metadata.deliverTo) the caller cannot reach", () => {
+    const setWithReceiver = (deliverTo: string) =>
+      new ObserverRuleCommands().set(
+        "notify",
+        "crm",
+        undefined,
+        "session",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "end_of_turn",
+        undefined,
+        undefined,
+        "agent:crm:main",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        JSON.stringify({ deliverTo }),
+      );
+    runWithContext(CRM, () => {
+      // Watching its own session is fine, but the notices may not be pushed into the operator's session.
+      expect(codeOf(() => setWithReceiver("agent:main:main"))).toBe("SESSION_NOT_FOUND");
+    });
+    expect(dbListObserverRules()).toEqual([]);
+  });
 });

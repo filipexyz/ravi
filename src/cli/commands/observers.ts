@@ -178,7 +178,12 @@ function callerCanReachSession(session: { name?: string; sessionKey: string }): 
  */
 function assertObserverRuleWithinCallerScope(
   op: string,
-  rule: { scope?: ObserverScope; sourceSession?: string; observerAgentId: string },
+  rule: {
+    scope?: ObserverScope;
+    sourceSession?: string;
+    observerAgentId: string;
+    metadata?: Record<string, unknown> | null;
+  },
   asJson?: boolean,
 ): void {
   const scopeCtx = getScopeContext();
@@ -201,6 +206,16 @@ function assertObserverRuleWithinCallerScope(
   }
   if (rule.observerAgentId !== scopeCtx.agentId && !canAccessResource(scopeCtx, rule.observerAgentId, "mutate")) {
     deny(`observer agent must be the calling agent, not ${rule.observerAgentId}`);
+  }
+  // A live receiver (`metadata.deliverTo`) gets the source's turns as a prompt: the caller must reach
+  // it too, and the turn it starts runs as the receiver's agent.
+  const deliverTo = rule.metadata?.deliverTo;
+  if (typeof deliverTo === "string" && deliverTo.trim()) {
+    const receiver = getSession(deliverTo.trim()) ?? getSessionByName(deliverTo.trim());
+    if (!receiver || !callerCanReachSession(receiver)) failObserverSessionNotFound(op, deliverTo.trim(), asJson);
+    if (receiver!.agentId !== scopeCtx.agentId && !canAccessResource(scopeCtx, receiver!.agentId, "mutate")) {
+      deny(`notices for ${deliverTo.trim()} would run as agent ${receiver!.agentId}`);
+    }
   }
 }
 
@@ -720,6 +735,7 @@ export class ObserverRuleCommands {
         scope: input.scope ?? existing?.scope,
         sourceSession: input.sourceSession ?? existing?.sourceSession,
         observerAgentId: input.observerAgentId,
+        metadata: input.metadata ?? existing?.metadata ?? null,
       },
       asJson,
     );
