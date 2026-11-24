@@ -47,6 +47,7 @@ import { revokeOrphanedShellCronContexts } from "./cron/shell-context.js";
 import { startLocalWatchRunner, stopLocalWatchRunner } from "./watch/local-runner.js";
 import { startGhFollowMaintenanceRunner, stopGhFollowMaintenanceRunner } from "./hooks/gh-follow-sweep.js";
 import { repairThreadBoundPageCommentFollows } from "./pages/comment-follow.js";
+import { repairOrphanContactChatGrants } from "./permissions/contact-merge-grants.js";
 import { startJobsRunner, stopJobsRunner } from "./jobs/index.js";
 import { startSessionFollowupRunner, stopSessionFollowupRunner } from "./session-followups/index.js";
 import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
@@ -458,6 +459,21 @@ function repairThreadBoundPageCommentFollowsAtBoot(): void {
   }
 }
 
+function repairOrphanContactChatGrantsAtBoot(): void {
+  try {
+    for (const result of repairOrphanContactChatGrants()) {
+      log.info("Repaired chat grants left on a merged contact", {
+        sourceContactId: result.sourceContactId,
+        targetContactId: result.targetContactId,
+        outcomes: result.grants.map((grant) => `${grant.grantId}:${grant.outcome}`),
+      });
+    }
+  } catch (error) {
+    // Boot continues: an orphan grant names a contact id nothing resolves to.
+    log.error("Failed to repair orphan contact chat grants at boot", { error });
+  }
+}
+
 export async function startDaemon() {
   assertRuntimeMaintenanceInactive();
   acquireDaemonSchemaOwnership();
@@ -471,6 +487,7 @@ export async function startDaemon() {
   revokeOrphanedShellCronKeysAtBoot();
   // Before the trigger runner loads: its subscriptions read the repaired owners.
   repairThreadBoundPageCommentFollowsAtBoot();
+  repairOrphanContactChatGrantsAtBoot();
 
   // Step 1: Connect to NATS (with retry for PM2 parallel startup)
   const natsUrl = process.env.NATS_URL || "nats://127.0.0.1:4222";

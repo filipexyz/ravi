@@ -1,3 +1,4 @@
+import { reassignContactChatGrantsOnMerge } from "./permissions/contact-merge-grants.js";
 import { configureStateJournalMode, initializeStateSchema } from "./db/schema-owner.js";
 import { assertDatabaseTargetAllowed, openStateDatabase } from "./db/state-boundary.js";
 import { type Database, type SQLQueryBindings } from "bun:sqlite";
@@ -10707,6 +10708,17 @@ export function mergeContacts(targetId: string, sourceId: string): { merged: num
     },
     { label: "contacts:mergeContacts" },
   );
+  // Grants live in ravi.db, outside this chat.db transaction. A failure here
+  // leaves the grants on the deleted source id; the boot repair finishes it.
+  try {
+    reassignContactChatGrantsOnMerge(sourceId, targetId);
+  } catch (error) {
+    console.warn("[contacts] grant reassignment after merge failed; boot repair will retry", {
+      sourceId,
+      targetId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   return { merged: sourceIdentities.length };
 }
 
@@ -10842,3 +10854,46 @@ export function closeContacts(): void {
 }
 
 export { ensureDb as ensureContactsDb };
+
+/**
+ * Follows `contact_merge` link events from a contact id that no longer exists
+ * to the contact it was merged into. Returns null when the id was never merged
+ * or the chain ends at a contact that is also gone.
+ */
+export function resolveMergedContactId(contactId: string): string | null {
+  const database = ensureDb();
+  const seen = new Set<string>();
+  let current = contactId;
+  for (let hop = 0; hop < 16; hop += 1) {
+    if (seen.has(current)) return null;
+    seen.add(current);
+    if (current !== contactId && getCanonicalContactById(database, current)) return current;
+    const row = database
+      .prepare(
+        `SELECT target_owner_id FROM identity_link_events
+          WHERE event_type = 'merge' AND source_owner_type = 'contact' AND source_owner_id = ?
+            AND target_owner_type = 'contact'
+          ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(current) as { target_owner_id: string } | undefined;
+    if (!row?.target_owner_id) return null;
+    current = row.target_owner_id;
+  }
+  return null;
+}
+
+export function contactExists(contactId: string): boolean {
+  return getCanonicalContactById(ensureDb(), contactId) !== null;
+}
+
+/** Audit trail for permission grants touched by a contact merge or its repair. */
+export function recordContactPermissionGrantEvent(contactId: string, payload: Record<string, unknown>): void {
+  insertContactEvent(ensureDb(), {
+    contactId,
+    eventType: "permission.grant.merged",
+    source: "permissions",
+    actorType: "system",
+    confidence: 1,
+    payload,
+  });
+}
