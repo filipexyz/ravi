@@ -8,7 +8,8 @@
  */
 
 export type ScheduleType = "at" | "every" | "cron";
-export type SessionTarget = "main" | "isolated";
+/** `isolated` is deprecated (one session reused by every run); `thread` opens a child session per run. */
+export type SessionTarget = "main" | "isolated" | "thread";
 export type JobStatus = "ok" | "error";
 export type CronExecutionType = "agent" | "shell";
 

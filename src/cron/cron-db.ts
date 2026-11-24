@@ -418,6 +418,13 @@ export function dbMarkJobDispatched(id: string, state: JobDispatchUpdate): void 
   log.debug("Marked job dispatched", { id });
 }
 
+/** Move a job to its next run without touching its last outcome (a run skipped on purpose). */
+export function dbSetJobNextRun(id: string, nextRunAt: number | undefined): void {
+  getDb()
+    .prepare("UPDATE cron_jobs SET next_run_at = ?, updated_at = ? WHERE id = ?")
+    .run(nextRunAt ?? null, Date.now(), id);
+}
+
 /**
  * Record the terminal outcome of a dispatched agent turn.
  * Returns false when the job no longer exists (e.g. deleted one-shot job).

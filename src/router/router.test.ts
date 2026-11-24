@@ -250,6 +250,25 @@ describe("router context queries", () => {
     expect(legacy.owner_principal).toBeNull();
   });
 
+  it("creates the automation child-run table on reopen, refusing unknown states", () => {
+    const db = getDb();
+    db.exec("DROP TABLE automation_child_runs");
+    closeRouterDb();
+    const reopened = getDb();
+    const insert = (status: string) =>
+      reopened
+        .query(`INSERT INTO automation_child_runs (id, origin_kind, origin_id, origin_name, agent_id,
+          parent_session_key, parent_session_name, child_session_key, child_session_name, surface,
+          status, return_state, created_at, updated_at)
+          VALUES (?, 'cron', 'job', 'job', 'main', 'agent:main:main', 'main', ?, ?, 'headless', ?, 'none', 1, 1)`)
+        .run(`run-${status}`, `agent:main:cron:job:run:${status}`, `main-run-${status}`, status);
+    insert("open");
+    expect(reopened.query("SELECT status, return_state FROM automation_child_runs").all()).toEqual([
+      { status: "open", return_state: "none" },
+    ]);
+    expect(() => insert("running")).toThrow();
+  });
+
   it("creates the durable cron run ledger on reopen without replaying legacy jobs and retains admitted owners after deletion", () => {
     const db = getDb();
     db.exec("DROP TABLE cron_runs");

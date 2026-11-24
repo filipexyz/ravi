@@ -4032,7 +4032,9 @@ export class RaviClient {
       isolated?: boolean;
       message?: string;
       onError?: string;
+      reportTo?: string;
       shell?: string;
+      thread?: boolean;
       timeout?: string;
       tz?: string;
     }): Promise<CronAddReturn> => {
