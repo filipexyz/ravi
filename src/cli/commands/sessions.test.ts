@@ -3217,7 +3217,7 @@ describe("SessionCommands attach hints", () => {
         sha,
         "FilipeXYZ/Ravi#938",
       )) as Record<string, any>;
-      expect(again.reviewDispatch).toMatchObject({ status: "dispatched", replayed: true });
+      expect(again.reviewDispatch).toMatchObject({ status: "dispatched", replayed: true, publishPending: false });
       expect(again.handoff).toMatchObject({ kind: "review", status: "acknowledged" });
       expect(createdSlackThreadLifecycles.length).toBe(lifecyclesBefore + 1);
       expect(again.reviewDispatch.requestId).toBe(green.reviewDispatch.requestId);

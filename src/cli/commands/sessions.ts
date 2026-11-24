@@ -656,7 +656,7 @@ export const sessionReportReturnSchema = z
             replayed: z.boolean(),
             provider: z.string(),
             model: z.string(),
-            // The reviewer's root message is not in Slack yet; the outbox retries it.
+            // The outbox did not accept the reviewer's root message on this call; it retries it.
             publishPending: z.boolean(),
             gate: z
               .object({ name: z.string(), checkRunId: z.number().nullable(), completedAt: z.string().nullable() })
@@ -7981,7 +7981,9 @@ export class SessionCommands {
           replayed: true,
           provider: existing.providerOverride ?? "claude",
           model: existing.modelOverride ?? "unknown",
-          publishPending: existing.status === "queued",
+          // One meaning for both answers: this call's root message was not accepted by the outbox. A replay
+          // publishes nothing, so nothing of it is pending.
+          publishPending: false,
           gate: { name: reviewGateCheckName(), checkRunId: null, completedAt: null },
         };
       }
