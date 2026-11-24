@@ -75,6 +75,7 @@ import { startCloudWorkerRunner, stopCloudWorkerRunner } from "./cloud-agents/wo
 import { startCloudApprovalClicks, stopCloudApprovalClicks } from "./cloud-agents/chat-routing.js";
 import { startSlackCommandConsumer, stopSlackCommandConsumer } from "./channels/slack/slash-command-handler.js";
 import { startSlackThreadControls, stopSlackThreadControls } from "./channels/slack/thread-controls.js";
+import { startSlackThreadShortcuts, stopSlackThreadShortcuts } from "./channels/slack/thread-shortcuts.js";
 import { startCloudDeliveryRunner, stopCloudDeliveryRunner } from "./cloud-agents/delivery-runner.js";
 import { startCalendarAssistantRunner, stopCalendarAssistantRunner } from "./calendar/assistant-runner.js";
 import { createSessionAdapterBus } from "./adapters/index.js";
@@ -326,6 +327,7 @@ async function shutdown(signal: string, exitCode = 0) {
       { name: "cloud-approval", stop: stopCloudApprovalClicks },
       { name: "slack-commands", stop: stopSlackCommandConsumer },
       { name: "slack-thread-controls", stop: stopSlackThreadControls },
+      { name: "slack-thread-shortcuts", stop: stopSlackThreadShortcuts },
       { name: "calendar-assistant", stop: stopCalendarAssistantRunner },
       { name: "ephemeral", stop: stopEphemeralRunner },
       { name: "hook", stop: stopHookRunner },
@@ -657,6 +659,8 @@ export async function startDaemon() {
   log.info("Slack command consumer started");
   await startSlackThreadControls();
   log.info("Slack thread controls started");
+  await startSlackThreadShortcuts();
+  log.info("Slack thread shortcuts started");
 
   sessionAdapterBus = createSessionAdapterBus();
   await sessionAdapterBus.start();

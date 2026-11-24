@@ -293,6 +293,56 @@ describe("a click becomes the same command, with the authority of the person who
     expect(h.calls.interrupted).toEqual([]);
   });
 
+  describe("a chat that resolves to a thread's own session (review N2 of #937)", () => {
+    const CHILD_CONTROLLER: ContextCapability[] = [
+      cap("access", "session", "main-t-card"),
+      cap("modify", "session", "main-t-card"),
+    ];
+
+    function withChildSession(h: Harness): SlackCommandDeps {
+      const child = getOrCreateSession(CHILD_KEY, "main", "/tmp/main", { name: "main-t-card" });
+      return {
+        ...h.deps,
+        // The chat is attached to the thread's own session, whose key carries the `:thread:` suffix.
+        resolveSession: () => ({ kind: "session", session: child, agentId: "main" }),
+      };
+    }
+
+    it("finds the thread under its parent with the real lookup, not under the session key it was handed", async () => {
+      registerCard();
+      const h = harness({ capabilities: CHILD_CONTROLLER });
+
+      const outcome = await handleSlackThreadControlClick(
+        click({ actionId: SLACK_THREAD_STOP_ACTION_ID }),
+        withChildSession(h),
+      );
+
+      expect(outcome).toEqual({ decision: "allowed", code: "ok" });
+      expect(h.calls.interrupted).toEqual([CHILD_KEY]);
+    });
+
+    it("closes under the parent, so the thread of the card is the one the close is asked of", async () => {
+      const h = harness({ capabilities: CHILD_CONTROLLER });
+
+      await handleSlackThreadControlClick(click(), withChildSession(h));
+
+      expect(h.calls.close).toEqual([[PARENT_KEY, CARD_TS]]);
+    });
+
+    it("still keeps another session's thread out, from that chat too", async () => {
+      registerCard({ parent: "agent:other:main" });
+      const h = harness({ capabilities: CHILD_CONTROLLER });
+
+      const outcome = await handleSlackThreadControlClick(
+        click({ actionId: SLACK_THREAD_STOP_ACTION_ID }),
+        withChildSession(h),
+      );
+
+      expect(outcome).toEqual({ decision: "info", code: "thread_not_found" });
+      expect(h.calls.interrupted).toEqual([]);
+    });
+  });
+
   it("does not run a click that arrived late, and says so", async () => {
     const h = harness();
 
