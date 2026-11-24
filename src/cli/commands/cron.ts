@@ -16,7 +16,13 @@ import {
 import { fail, getContext } from "../context.js";
 import { isTriggerOwnSessionKey } from "../../triggers/authority.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
-import { cronListReturnSchema, cronMutationReturnSchema, cronShowReturnSchema } from "./operational-return-schemas.js";
+import {
+  cronFailureAckReturnSchema,
+  cronListReturnSchema,
+  cronMutationReturnSchema,
+  cronShowReturnSchema,
+} from "./operational-return-schemas.js";
+import { applyCronFailureAck, planCronFailureAck } from "../../cron/failure-ack.js";
 import { nats } from "../../nats.js";
 import {
   getScopeContext,
@@ -1416,5 +1422,81 @@ export class CronCommands {
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
+  }
+
+  @Command({
+    name: "ack-failures",
+    description: "Mark failed runs as reported without notifying the owner (dry-run by default)",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "cron",
+    action: "ack-failures",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
+  @Returns(cronFailureAckReturnSchema)
+  async ackFailures(
+    @Option({ flags: "--job <id>", description: "Only this job's failed runs" }) jobId?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually mark the runs reported; default is a dry-run that lists them (exit 3)",
+    })
+    execute?: boolean,
+  ) {
+    if (jobId !== undefined && !jobId.trim()) {
+      // A blank filter must never widen into "every job".
+      contractFail("cron ack-failures", "USAGE_ERROR", "--job needs a job id", {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: { suggestedAction: "omit --job to settle every job you can modify, or pass one job id" },
+        diagnostic: errorDiagnostic("--job needs a job id", { operation: "cron ack-failures" }),
+      });
+    }
+    const scopeCtx = getScopeContext();
+    const plan = planCronFailureAck({
+      jobId: jobId?.trim() || undefined,
+      // Settling needs modify authority, and the caller must also be able to see the job:
+      // the plan lists job names and failure history.
+      canAck: (owner) => {
+        const ownerId = cronJobOwnerId({ agentId: owner ?? undefined });
+        return canAccessResource(scopeCtx, ownerId, "read") && canAccessResource(scopeCtx, ownerId, "mutate");
+      },
+    });
+    const jobs = plan.jobs.map((job) => ({
+      jobId: job.jobId,
+      name: job.name,
+      ownerAgentId: job.ownerAgentId,
+      runs: job.runIds.length,
+      oldestAt: new Date(job.oldestAt).toISOString(),
+      newestAt: new Date(job.newestAt).toISOString(),
+    }));
+
+    if (execute !== true) {
+      // Write brake: settling a report means the owner never hears about that failure.
+      contractDryRun(
+        "cron ack-failures",
+        { pending: plan.pending, selected: plan.selected, denied: plan.denied, jobs },
+        { asJson },
+      );
+    }
+
+    const settled = applyCronFailureAck(plan);
+    const payload = {
+      status: "acknowledged" as const,
+      target: { type: "cron" as const, id: jobId?.trim() || "*" },
+      changedCount: settled,
+      pending: plan.pending,
+      denied: plan.denied,
+      jobs,
+    };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ Marked ${settled} failed run(s) as reported; nothing was sent.`);
+      if (plan.denied > 0) console.log(`  ${plan.denied} run(s) of jobs you cannot modify were left pending.`);
+    }
+    return payload;
   }
 }

@@ -197,6 +197,38 @@ mock.module("../../cron/index.js", () => ({
   isValidCronExpression: () => true,
 }));
 
+// Only armed by the ack-failures tests; otherwise calls through, so other files sharing the process see the real module.
+const actualFailureAck = await import("../../cron/failure-ack.js");
+let ackOwners: string[] | null = null;
+let ackDecisions: Array<{ owner: string; allowed: boolean }> = [];
+let ackApplied = 0;
+mock.module("../../cron/failure-ack.js", () => ({
+  ...actualFailureAck,
+  planCronFailureAck: (filter: Parameters<typeof actualFailureAck.planCronFailureAck>[0]) => {
+    if (!ackOwners) return actualFailureAck.planCronFailureAck(filter);
+    ackDecisions = ackOwners.map((owner) => ({ owner, allowed: filter.canAck(owner) }));
+    const allowed = ackDecisions.filter((decision) => decision.allowed);
+    return {
+      pending: ackOwners.length,
+      selected: allowed.length,
+      denied: ackOwners.length - allowed.length,
+      jobs: allowed.map((decision) => ({
+        jobId: `job-${decision.owner}`,
+        name: `Job ${decision.owner}`,
+        ownerAgentId: decision.owner,
+        runIds: [`run-${decision.owner}`],
+        oldestAt: 1,
+        newestAt: 2,
+      })),
+    };
+  },
+  applyCronFailureAck: (plan: Parameters<typeof actualFailureAck.applyCronFailureAck>[0]) => {
+    if (!ackOwners) return actualFailureAck.applyCronFailureAck(plan);
+    ackApplied += plan.selected;
+    return plan.selected;
+  },
+}));
+
 const { CronCommands } = await import("./cron.js");
 const { ContractError } = await import("../agent-contract.js");
 
@@ -1810,5 +1842,71 @@ describe("CronCommands --thread", () => {
 
     expect(cronJob).toMatchObject({ sessionTarget: "isolated" });
     expect(payload.warnings).toEqual([expect.stringContaining("--isolated is deprecated")]);
+  });
+});
+
+describe("CronCommands ack-failures", () => {
+  beforeEach(() => {
+    ackOwners = ["agent-a", "agent-b"];
+    ackDecisions = [];
+    ackApplied = 0;
+    mockScopeEnforced = true;
+    mockScopeContext = { agentId: "agent-a" };
+    mockGrants = [];
+  });
+  afterEach(() => {
+    ackOwners = null;
+    mockScopeEnforced = false;
+    mockScopeContext = undefined;
+    mockGrants = [];
+  });
+
+  async function contractErrorOf(run: () => Promise<unknown>) {
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      await run();
+    } catch (error) {
+      return error as InstanceType<typeof ContractError>;
+    } finally {
+      console.log = originalLog;
+    }
+    throw new Error("expected a contract error");
+  }
+
+  it("rejects a blank --job with a usage error (exit 2) before planning", async () => {
+    const error = await contractErrorOf(() => new CronCommands().ackFailures("  ", true, true));
+    expect(error).toBeInstanceOf(ContractError);
+    expect(error.exitCode).toBe(2);
+    expect(error.envelope().error.code).toBe("USAGE_ERROR");
+    expect(ackDecisions).toEqual([]);
+    expect(ackApplied).toBe(0);
+  });
+
+  it("is a dry-run without --execute (exit 3) and settles nothing", async () => {
+    const error = await contractErrorOf(() => new CronCommands().ackFailures(undefined, true));
+    expect(error).toBeInstanceOf(ContractError);
+    expect(error.exitCode).toBe(3);
+    expect(error.envelope().error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(ackApplied).toBe(0);
+  });
+
+  it("settles only jobs the caller can both see and modify", async () => {
+    // Modify without view on agent-b is not enough: the plan would show its job names.
+    mockGrants = [{ permission: "modify", objectType: "agent", objectId: "agent-b" }];
+    const payload = await captureJson(() => new CronCommands().ackFailures(undefined, true, true));
+    expect(ackDecisions).toEqual([
+      { owner: "agent-a", allowed: true },
+      { owner: "agent-b", allowed: false },
+    ]);
+    expect(payload).toMatchObject({ status: "acknowledged", changedCount: 1, denied: 1 });
+    expect(JSON.stringify(payload)).not.toContain("Job agent-b");
+
+    mockGrants = [
+      { permission: "modify", objectType: "agent", objectId: "agent-b" },
+      { permission: "view", objectType: "agent", objectId: "agent-b" },
+    ];
+    await captureJson(() => new CronCommands().ackFailures(undefined, true, true));
+    expect(ackDecisions.every((decision) => decision.allowed)).toBe(true);
   });
 });

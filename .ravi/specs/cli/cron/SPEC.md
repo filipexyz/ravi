@@ -67,6 +67,7 @@ with real side effects — so it is braked together with the destructive
 | rm | destructive (schedule + config deleted) | dry-run + `--execute` |
 | run | fires the REAL job now, outside the schedule (agent execution / shell) | dry-run + `--execute` |
 | add / set / enable / disable | reversible config (inverse command exists) | not braked (declared) |
+| ack-failures | settles failed-run reports without notifying the owner (not reversible) | dry-run + `--execute`; blank `--job` is a usage error (exit 2); only jobs the caller can see and modify |
 
 ## Official error cases
 

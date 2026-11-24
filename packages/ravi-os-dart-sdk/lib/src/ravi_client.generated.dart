@@ -4267,6 +4267,17 @@ class CronNamespace {
 
   final RaviTransport _transport;
 
+  Future<CronAckFailuresReturn> ackFailures([CronAckFailuresOptions options = const CronAckFailuresOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["cron"],
+      command: "ack-failures",
+      body: requestBody,
+      decode: cronAckFailuresReturnFromJson,
+    );
+  }
+
   Future<CronAddReturn> add(String name, [CronAddOptions options = const CronAddOptions()]) async {
     final requestBody = <String, RaviJson>{};
     requestBody["name"] = RaviJson.from(name);

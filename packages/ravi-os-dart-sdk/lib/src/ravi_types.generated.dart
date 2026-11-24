@@ -13131,6 +13131,50 @@ class CrmTaskSnoozeReturn {
 
 CrmTaskSnoozeReturn crmTaskSnoozeReturnFromJson(Object? json) => CrmTaskSnoozeReturn.fromJsonValue(json);
 
+class CronAckFailuresOptions {
+  const CronAckFailuresOptions({this.execute, this.job});
+
+  final bool? execute;
+  final String? job;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (execute != null) {
+      into["execute"] = RaviJson.from(execute);
+    }
+    if (job != null) {
+      into["job"] = RaviJson.from(job);
+    }
+  }
+}
+
+class CronAckFailuresReturn {
+  const CronAckFailuresReturn({required this.changedCount, required this.denied, required this.jobs, required this.pending, required this.status, required this.target});
+
+  final double changedCount;
+  final double denied;
+  final List<RaviJson> jobs;
+  final double pending;
+  final String status;
+  final RaviJson target;
+
+  factory CronAckFailuresReturn.fromJson(Map<String, Object?> json) {
+    return CronAckFailuresReturn(
+      changedCount: raviJsonAsDouble(json["changedCount"]),
+      denied: raviJsonAsDouble(json["denied"]),
+      jobs: raviJsonAsList(json["jobs"], RaviJson.from),
+      pending: raviJsonAsDouble(json["pending"]),
+      status: raviJsonAsString(json["status"]),
+      target: RaviJson.from(json["target"]),
+    );
+  }
+
+  static CronAckFailuresReturn fromJsonValue(Object? json) {
+    return CronAckFailuresReturn.fromJson(raviJsonObject(json, "CronAckFailuresReturn"));
+  }
+}
+
+CronAckFailuresReturn cronAckFailuresReturnFromJson(Object? json) => CronAckFailuresReturn.fromJsonValue(json);
+
 class CronAddOptions {
   const CronAddOptions({this.account, this.agent, this.at, this.cron, this.deleteAfter, this.description, this.envFile, this.every, this.exec, this.idempotencyKey, this.isolated, this.message, this.onError, this.reportTo, this.shell, this.thread, this.timeout, this.tz});
 
