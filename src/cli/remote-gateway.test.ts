@@ -219,6 +219,50 @@ describe("automation hold refusals over the gateway", () => {
     expect(denial("held-relay")?.details.suggestedAction).toContain("does not lift it");
   });
 
+  it("never rewrites the advice of a failed or blocked body that carries a cause", () => {
+    // Only a PERMISSION_DENIED denial comes from the automation guard; any other body keeps its advice.
+    const body = (exitCode: number, outcome: string, code: string) =>
+      remoteGatewayErrorToContractError(
+        "cron add",
+        result({
+          status: exitCode === 3 ? 409 : 500,
+          body: JSON.stringify({
+            success: false,
+            op: "cron add",
+            exitCode,
+            outcome,
+            error: {
+              code,
+              message: "cron add could not be completed.",
+              retryable: false,
+              suggestedAction: "Retry after the scheduler is back.",
+              automationHold: "held-relay",
+            },
+          }),
+        }),
+      );
+    const failed = body(1, "failed", "COMMAND_FAILED");
+    const blocked = body(3, "blocked", "POLICY_BLOCKED");
+    // Each half of the gate on its own (the right code on the wrong outcome, the right outcome on the wrong
+    // code) is a body the client rejects before the gate (denied <=> PERMISSION_DENIED), so the halves are
+    // equivalent: these bodies get the malformed-response advice and never the cause's.
+    const failedDeniedCode = body(1, "failed", "PERMISSION_DENIED");
+    const blockedDeniedCode = body(3, "blocked", "PERMISSION_DENIED");
+    const deniedOtherCode = body(3, "denied", "POLICY_BLOCKED");
+    for (const error of [failed, blocked, failedDeniedCode, blockedDeniedCode, deniedOtherCode]) {
+      expect(error).not.toBeNull();
+      expect(error?.details.automationHold).toBeUndefined();
+      expect(error?.details.suggestedAction).not.toBe(AUTOMATION_HOLD_SUGGESTED_ACTION["held-relay"]);
+    }
+    expect(failed?.details.suggestedAction).toBe("Retry after the scheduler is back.");
+    expect(blocked?.details.suggestedAction).toBe("Review the remote policy block before retrying the command");
+    for (const error of [failedDeniedCode, blockedDeniedCode, deniedOtherCode]) {
+      expect(error?.details.suggestedAction).toBe(
+        "Check gateway availability and report this response; do not automatically retry a write",
+      );
+    }
+  });
+
   it("keeps the generic denial advice for an unknown cause or none", () => {
     for (const value of [undefined, "contact-full-access", 7]) {
       const error = denial(value);

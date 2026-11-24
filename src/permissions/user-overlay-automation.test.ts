@@ -132,11 +132,14 @@ describe("the refusal names its cause", () => {
   it("names a held relay as a relay, never as a contact's chat permissions", () => {
     // 24/11: a thread's return refused as "limited to a contact's chat permissions" led the main
     // session to ask full access for the operator, who already held it.
-    // Also a thread opened from a governed chat: narrowed to the contact's grants and a held relay.
+    // Also a thread opened from a governed chat (narrowed to the contact's grants and a held relay),
+    // and a stamped relay that still carries withheld break-glass: the stamp never makes it the
+    // person's own turn.
     for (const ctx of [
       turn("invoke-only", { relayNarrowing: true }),
       turn("invoke-only", { relayNarrowing: true, ...withheld }),
       turn("user-overlay", { relayNarrowing: true }),
+      turn("invoke-only", { relayNarrowing: true, relayCallerUnrestricted: true, ...withheld }),
     ]) {
       expect(automationHoldCause(ctx.context)).toBe("held-relay");
       const command = refusal(ctx, () => assertNoUserOverlayAutomationWrite("cron add"));

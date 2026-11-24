@@ -324,7 +324,14 @@ Semantics:
   even with an identical request open, which is closed (`failed`) so its prompts
   can no longer write a grant: the grant would change nothing. It reads
   what a turn of theirs gets: in a chat with no grants, their own capabilities
-  (an admin tag keeps break-glass); in a governed chat, their overlay. On 24/11 a
+  (an admin tag keeps break-glass); in a governed chat, their overlay. The
+  executor is not an input: the grant only adds to the contact's side of
+  `executor ∩ contact`. "Nothing to add" is about capabilities: in a governed
+  chat their turn stays narrowed to those grants and automation from it
+  (triggers, followups, hooks, signals, tasks) stays refused, while a cron job
+  bound to that chat is allowed (see `agent-identity`); the refusal's advice says
+  so, along with the held relay. Only a real request closes an open identical one,
+  and only then does the message say so; the plan writes nothing. On 24/11 a
   relayed turn refused automation with a message about "a contact's chat
   permissions", the main session asked full access for the operator, who already
   held it, and the card went to the only other admin.
