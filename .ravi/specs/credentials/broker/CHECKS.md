@@ -241,3 +241,4 @@ built.
 - a runner tick never waits on the snapshot and starts at most one at a time (mutants: tick awaits; single-flight removed);
 - a snapshot that throws synchronously or rejects never stops push and is retried on the next tick (mutant: sync throw escapes);
 - person-typed text is capped and token-shaped values are replaced (mutants: purpose or scopes unscrubbed; cap removed).
+- a 400-connection snapshot is split into pages under 48 KiB (below the Console 64 KiB limit) with every item exactly once and the audit only on page 1 (mutants: no paging; audit on every page; same page number).

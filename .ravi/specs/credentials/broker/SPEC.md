@@ -282,6 +282,10 @@ The daemon publishes the inventory through the Console sync bridge
   is built or enqueued. Existing installations keep their egress unchanged.
 - Event: domain `credentials`, type `credentials.inventory`, entity
   `credential_inventory/installation`, payload schema `credentials.inventory/v1`.
+  A snapshot is split into pages of at most 48 KiB of UTF-8 JSON (the Console
+  rejects a sync payload over 64 KiB): every page carries `snapshotId` (the
+  content hash), `page`, `pages` and the header; page 1 carries the audit. The
+  Console shows a snapshot only when it holds all `pages` of one `snapshotId`.
 - The payload is the inventory with each item's `secret` renamed `storage`:
   the sync redactor blanks every key ending in "secret". The payload MUST be a
   fixed point of `sanitizeSyncPayload` (nothing for the redactor to remove) and
