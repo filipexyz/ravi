@@ -1761,8 +1761,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | permissions | src/permissions/grant-requests/store.ts | 290 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/store.ts:4d2c02c75762345efbd4df15 |
 | permissions | src/permissions/grant-requests/store.ts | 301 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/store.ts:0f6e90634e8a1fecf83e5e95 |
 | permissions | src/permissions/provider-config-paths.ts | 59 | fixed | binding retained / no recognized error surface | src/permissions/provider-config-paths.ts:478e4cc0b615ab3752dae1ed |
-| permissions | src/permissions/provider-config-paths.ts | 210 | fixed | binding retained / no recognized error surface | src/permissions/provider-config-paths.ts:e44c5de6b99a60464eebe4c5 |
-| permissions | src/permissions/provider-config-paths.ts | 226 | fixed | binding retained / no recognized error surface | src/permissions/provider-config-paths.ts:3442f99caf6715549761cb75 |
+| permissions | src/permissions/provider-config-paths.ts | 211 | fixed | binding retained / no recognized error surface | src/permissions/provider-config-paths.ts:e44c5de6b99a60464eebe4c5 |
+| permissions | src/permissions/provider-config-paths.ts | 228 | fixed | binding retained / no recognized error surface | src/permissions/provider-config-paths.ts:3442f99caf6715549761cb75 |
 | permissions | src/permissions/provider-registry.ts | 87 | triaged-follow-up | catch-without-binding | src/permissions/provider-registry.ts:889e0d30290d42d5f24cfbd0 |
 | permissions | src/permissions/provider-runtime.ts | 269 | fixed | binding retained / no recognized error surface | src/permissions/provider-runtime.ts:4188512b146e747da91b7fc8 |
 | plugins | src/plugins/codex-skills.ts | 153 | fixed | binding retained / no recognized error surface | src/plugins/codex-skills.ts:26b87a841fbac9cb8ba31bc0 |
