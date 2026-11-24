@@ -689,22 +689,22 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/inbox.ts | 392 | fixed | binding retained / no recognized error surface | src/cli/commands/inbox.ts:047a57713c9ea93753210fa3 |
 | cli | src/cli/commands/inbox.ts | 494 | fixed | binding retained / no recognized error surface | src/cli/commands/inbox.ts:3ff50fc924fd7cfd571db5af |
 | cli | src/cli/commands/insights.ts | 83 | triaged-follow-up | catch-without-binding | src/cli/commands/insights.ts:3effa54a1fa3c5b3cf2950fc |
-| cli | src/cli/commands/instances.ts | 114 | triaged-follow-up | rejection-without-binding | src/cli/commands/instances.ts:42b7b5f2bdfcf682d8dedbd8 |
-| cli | src/cli/commands/instances.ts | 779 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:e2b7e02f4388c982ecddbd2b |
-| cli | src/cli/commands/instances.ts | 837 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:11a36f37c5f28d060bb1acd7 |
-| cli | src/cli/commands/instances.ts | 928 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:753e4157220f5658018f89d9 |
-| cli | src/cli/commands/instances.ts | 1046 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:95d09c72a59288a9a865484b |
-| cli | src/cli/commands/instances.ts | 1138 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:dd712258a357b910f97d70f8 |
-| cli | src/cli/commands/instances.ts | 1425 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:c40e45fff16acadf351fd462 |
-| cli | src/cli/commands/instances.ts | 1437 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:063f31c94e968495b595a7e7 |
-| cli | src/cli/commands/instances.ts | 1477 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:c40e45fff16acadf351fd462 |
-| cli | src/cli/commands/instances.ts | 1485 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:6e15796f376eab49627a4cb1 |
-| cli | src/cli/commands/instances.ts | 1512 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:c09f95b9e9638cb7528eda26 |
-| cli | src/cli/commands/instances.ts | 1562 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:0e14e90d9d074040e0e6a069 |
-| cli | src/cli/commands/instances.ts | 1599 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:e6d5c50a88054f661840f6e2 |
-| cli | src/cli/commands/instances.ts | 1661 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:bb05931d2c5f0635fdb4d79a |
-| cli | src/cli/commands/instances.ts | 1914 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:0aca774bf6a97a6693e79d38 |
-| cli | src/cli/commands/instances.ts | 2142 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:2652a035c7ec48d9a7a238e3 |
+| cli | src/cli/commands/instances.ts | 115 | triaged-follow-up | rejection-without-binding | src/cli/commands/instances.ts:42b7b5f2bdfcf682d8dedbd8 |
+| cli | src/cli/commands/instances.ts | 780 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:e2b7e02f4388c982ecddbd2b |
+| cli | src/cli/commands/instances.ts | 838 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:11a36f37c5f28d060bb1acd7 |
+| cli | src/cli/commands/instances.ts | 929 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:753e4157220f5658018f89d9 |
+| cli | src/cli/commands/instances.ts | 1047 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:95d09c72a59288a9a865484b |
+| cli | src/cli/commands/instances.ts | 1139 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:dd712258a357b910f97d70f8 |
+| cli | src/cli/commands/instances.ts | 1437 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:c40e45fff16acadf351fd462 |
+| cli | src/cli/commands/instances.ts | 1449 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:063f31c94e968495b595a7e7 |
+| cli | src/cli/commands/instances.ts | 1489 | triaged-follow-up | catch-without-binding | src/cli/commands/instances.ts:c40e45fff16acadf351fd462 |
+| cli | src/cli/commands/instances.ts | 1497 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:6e15796f376eab49627a4cb1 |
+| cli | src/cli/commands/instances.ts | 1524 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:c09f95b9e9638cb7528eda26 |
+| cli | src/cli/commands/instances.ts | 1574 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:0e14e90d9d074040e0e6a069 |
+| cli | src/cli/commands/instances.ts | 1611 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:e6d5c50a88054f661840f6e2 |
+| cli | src/cli/commands/instances.ts | 1673 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:bb05931d2c5f0635fdb4d79a |
+| cli | src/cli/commands/instances.ts | 1926 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:0aca774bf6a97a6693e79d38 |
+| cli | src/cli/commands/instances.ts | 2154 | fixed | binding retained / no recognized error surface | src/cli/commands/instances.ts:2652a035c7ec48d9a7a238e3 |
 | cli | src/cli/commands/jobs.ts | 131 | triaged-follow-up | catch-without-binding | src/cli/commands/jobs.ts:fb034d271632712a039f206c |
 | cli | src/cli/commands/jobs.ts | 140 | triaged-follow-up | catch-without-binding | src/cli/commands/jobs.ts:26a5d1396be7b5010ce57560 |
 | cli | src/cli/commands/jobs.ts | 243 | fixed | binding retained / no recognized error surface | src/cli/commands/jobs.ts:170e76797d42878a66023419 |
@@ -1082,14 +1082,14 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | console-scope | src/console-scope/resolver.ts | 651 | triaged-follow-up | catch-without-binding | src/console-scope/resolver.ts:7d505a740f494987192eac71 |
 | console-scope | src/console-scope/resolver.ts | 660 | triaged-follow-up | catch-without-binding | src/console-scope/resolver.ts:9ba9fe26cc184461a244ed67 |
 | console-scope | src/console-scope/store.ts | 336 | triaged-follow-up | catch-without-binding | src/console-scope/store.ts:dd82a6eab9a7e31ea3ac4859 |
-| contacts.ts | src/contacts.ts | 129 | fixed | binding retained / no recognized error surface | src/contacts.ts:950c70fb9a288d9c71024728 |
-| contacts.ts | src/contacts.ts | 1139 | triaged-follow-up | catch-without-binding | src/contacts.ts:bc40ffa467953d2c90f39f07 |
-| contacts.ts | src/contacts.ts | 1151 | triaged-follow-up | catch-without-binding | src/contacts.ts:b6278988ca184d6ae82bbb14 |
-| contacts.ts | src/contacts.ts | 1160 | triaged-follow-up | catch-without-binding | src/contacts.ts:402303927ca64a8e633e3c46 |
-| contacts.ts | src/contacts.ts | 3066 | triaged-follow-up | catch-without-binding | src/contacts.ts:c567a6d3c533a136996009c0 |
-| contacts.ts | src/contacts.ts | 3878 | triaged-follow-up | rejection-without-binding | src/contacts.ts:d4f8d1b6c70156e1ac59e37f |
-| contacts.ts | src/contacts.ts | 3879 | triaged-follow-up | rejection-without-binding | src/contacts.ts:d4f8d1b6c70156e1ac59e37f |
-| contacts.ts | src/contacts.ts | 8238 | triaged-follow-up | catch-without-binding | src/contacts.ts:5b9c872cdee5fe8960c2260f |
+| contacts.ts | src/contacts.ts | 131 | fixed | binding retained / no recognized error surface | src/contacts.ts:950c70fb9a288d9c71024728 |
+| contacts.ts | src/contacts.ts | 1141 | triaged-follow-up | catch-without-binding | src/contacts.ts:bc40ffa467953d2c90f39f07 |
+| contacts.ts | src/contacts.ts | 1153 | triaged-follow-up | catch-without-binding | src/contacts.ts:b6278988ca184d6ae82bbb14 |
+| contacts.ts | src/contacts.ts | 1162 | triaged-follow-up | catch-without-binding | src/contacts.ts:402303927ca64a8e633e3c46 |
+| contacts.ts | src/contacts.ts | 3075 | triaged-follow-up | catch-without-binding | src/contacts.ts:c567a6d3c533a136996009c0 |
+| contacts.ts | src/contacts.ts | 3899 | triaged-follow-up | rejection-without-binding | src/contacts.ts:d4f8d1b6c70156e1ac59e37f |
+| contacts.ts | src/contacts.ts | 3900 | triaged-follow-up | rejection-without-binding | src/contacts.ts:d4f8d1b6c70156e1ac59e37f |
+| contacts.ts | src/contacts.ts | 8261 | triaged-follow-up | catch-without-binding | src/contacts.ts:5b9c872cdee5fe8960c2260f |
 | costs | src/costs/pricing-catalog.ts | 255 | triaged-follow-up | catch-without-binding | src/costs/pricing-catalog.ts:6313c80f0e29a2794c3fc323 |
 | costs | src/costs/pricing-catalog.ts | 306 | triaged-follow-up | catch-without-binding | src/costs/pricing-catalog.ts:e2413b21d59a5ab0b644dddc |
 | credentials | src/credentials/backends.ts | 108 | no-cause | Process errors may echo secret stdin or arguments; only the fixed Keychain failure may escape. | src/credentials/backends.ts:167696ef3f8aa5396bfd9bae |
@@ -1713,8 +1713,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | pages | src/pages/ship.ts | 362 | triaged-follow-up | cause-not-forwarded-at-surface | src/pages/ship.ts:131cc6f0f892cc59859ca8b5 |
 | pages | src/pages/ship.ts | 376 | triaged-follow-up | cause-not-forwarded-at-surface | src/pages/ship.ts:96963fea4700dbc3eec4d37a |
 | permissions | src/permissions/app-permission-provider-runtime.ts | 860 | triaged-follow-up | catch-without-binding | src/permissions/app-permission-provider-runtime.ts:4478b841cb301b890bbc21f3 |
-| permissions | src/permissions/apply-grant.ts | 550 | triaged-follow-up | catch-without-binding | src/permissions/apply-grant.ts:0eee170084f07ce787c3ecd8 |
-| permissions | src/permissions/apply-grant.ts | 558 | triaged-follow-up | catch-without-binding | src/permissions/apply-grant.ts:6ada072696100c42d659145f |
+| permissions | src/permissions/apply-grant.ts | 559 | triaged-follow-up | catch-without-binding | src/permissions/apply-grant.ts:0eee170084f07ce787c3ecd8 |
+| permissions | src/permissions/apply-grant.ts | 567 | triaged-follow-up | catch-without-binding | src/permissions/apply-grant.ts:6ada072696100c42d659145f |
 | permissions | src/permissions/authorization-guidance.ts | 186 | triaged-follow-up | catch-without-binding | src/permissions/authorization-guidance.ts:36025c6e1d9b9b58bf5f2cb4 |
 | permissions | src/permissions/codex-knowledge-parity.ts | 77 | triaged-follow-up | catch-without-binding | src/permissions/codex-knowledge-parity.ts:a5bc337ebaffcbf0ed2f1f58 |
 | permissions | src/permissions/command-access-kind-migration.ts | 207 | triaged-follow-up | catch-without-binding | src/permissions/command-access-kind-migration.ts:97984697b7c7d7e3f96e8a79 |
@@ -1797,42 +1797,42 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | remote-spawn-nats.ts | src/remote-spawn-nats.ts | 434 | fixed | binding retained / no recognized error surface | src/remote-spawn-nats.ts:fec2a33306a07217552e32a2 |
 | router | src/router/omni-ignore.ts | 26 | triaged-follow-up | catch-without-binding | src/router/omni-ignore.ts:191c630af8fd4faef6445a11 |
 | router | src/router/route-sticky-attach.ts | 151 | triaged-follow-up | catch-without-binding | src/router/route-sticky-attach.ts:50fa963b296b2b1ea3739b55 |
-| router | src/router/router-db.ts | 1297 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:1147e88bd94f408a57fef14d |
-| router | src/router/router-db.ts | 1464 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:e7e06ffcb6cc7ef063049037 |
-| router | src/router/router-db.ts | 1470 | no-cause | Cleanup must not replace the setup error rethrown below; the cache was already cleared. | src/router/router-db.ts:99b3e500a1e454bfa7a36c7f |
-| router | src/router/router-db.ts | 3047 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:c04a88f7cf8692aab710f158 |
-| router | src/router/router-db.ts | 3085 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:83bca2dc610585097a5f82d1 |
-| router | src/router/router-db.ts | 3159 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:ee8eab7d22adc7901cb851c9 |
-| router | src/router/router-db.ts | 3169 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:ee8eab7d22adc7901cb851c9 |
-| router | src/router/router-db.ts | 3180 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:59cd90395403f2b3e14975d7 |
-| router | src/router/router-db.ts | 3191 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:16d5b9f69d0fef4fdb1e6708 |
-| router | src/router/router-db.ts | 3448 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:ee8eab7d22adc7901cb851c9 |
-| router | src/router/router-db.ts | 3955 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:cd41aa23c165a2e1b34b8611 |
-| router | src/router/router-db.ts | 3958 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:9ede63713cc288420d24b976 |
-| router | src/router/router-db.ts | 4071 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:f6336465420edc5007f3ca84 |
-| router | src/router/router-db.ts | 4148 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:1c7a1563d1e6d1c4fa2c04af |
-| router | src/router/router-db.ts | 4176 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:bebd4e84cf21367ec67d4735 |
-| router | src/router/router-db.ts | 4361 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:d1fffee17f07a48de2c3b874 |
-| router | src/router/router-db.ts | 4684 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:9391d670114c9a3871e896d5 |
-| router | src/router/router-db.ts | 4694 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:e9217495330394f009456cea |
-| router | src/router/router-db.ts | 6466 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:43c23c5e241d9586cfa149b5 |
-| router | src/router/router-db.ts | 6895 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:4a7d7eed604431861685eee8 |
-| router | src/router/router-db.ts | 6919 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:4a7d7eed604431861685eee8 |
-| router | src/router/router-db.ts | 6933 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:4a7d7eed604431861685eee8 |
-| router | src/router/router-db.ts | 6993 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:35ca113d904e1c3360cd46d6 |
-| router | src/router/router-db.ts | 7006 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:35ca113d904e1c3360cd46d6 |
-| router | src/router/router-db.ts | 7026 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:c2c58dbb1c84b84aac859580 |
-| router | src/router/router-db.ts | 7054 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:a027472d886ff1c7e468a908 |
-| router | src/router/router-db.ts | 7062 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:a027472d886ff1c7e468a908 |
+| router | src/router/router-db.ts | 1298 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:1147e88bd94f408a57fef14d |
+| router | src/router/router-db.ts | 1465 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:e7e06ffcb6cc7ef063049037 |
+| router | src/router/router-db.ts | 1471 | no-cause | Cleanup must not replace the setup error rethrown below; the cache was already cleared. | src/router/router-db.ts:99b3e500a1e454bfa7a36c7f |
+| router | src/router/router-db.ts | 3048 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:c04a88f7cf8692aab710f158 |
+| router | src/router/router-db.ts | 3086 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:83bca2dc610585097a5f82d1 |
+| router | src/router/router-db.ts | 3160 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:ee8eab7d22adc7901cb851c9 |
+| router | src/router/router-db.ts | 3170 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:ee8eab7d22adc7901cb851c9 |
+| router | src/router/router-db.ts | 3181 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:59cd90395403f2b3e14975d7 |
+| router | src/router/router-db.ts | 3192 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:16d5b9f69d0fef4fdb1e6708 |
+| router | src/router/router-db.ts | 3449 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:ee8eab7d22adc7901cb851c9 |
+| router | src/router/router-db.ts | 3956 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:cd41aa23c165a2e1b34b8611 |
+| router | src/router/router-db.ts | 3959 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:9ede63713cc288420d24b976 |
+| router | src/router/router-db.ts | 4072 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:f6336465420edc5007f3ca84 |
+| router | src/router/router-db.ts | 4149 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:1c7a1563d1e6d1c4fa2c04af |
+| router | src/router/router-db.ts | 4177 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:bebd4e84cf21367ec67d4735 |
+| router | src/router/router-db.ts | 4362 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:d1fffee17f07a48de2c3b874 |
+| router | src/router/router-db.ts | 4700 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:9391d670114c9a3871e896d5 |
+| router | src/router/router-db.ts | 4710 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:e9217495330394f009456cea |
+| router | src/router/router-db.ts | 6482 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:43c23c5e241d9586cfa149b5 |
+| router | src/router/router-db.ts | 6911 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:4a7d7eed604431861685eee8 |
+| router | src/router/router-db.ts | 6935 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:4a7d7eed604431861685eee8 |
+| router | src/router/router-db.ts | 6949 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:4a7d7eed604431861685eee8 |
+| router | src/router/router-db.ts | 7009 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:35ca113d904e1c3360cd46d6 |
+| router | src/router/router-db.ts | 7022 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:35ca113d904e1c3360cd46d6 |
+| router | src/router/router-db.ts | 7042 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:c2c58dbb1c84b84aac859580 |
 | router | src/router/router-db.ts | 7070 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:a027472d886ff1c7e468a908 |
-| router | src/router/router-db.ts | 9379 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:b3899c33992830f470985efb |
-| router | src/router/router-db.ts | 9411 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:b3899c33992830f470985efb |
-| router | src/router/router-db.ts | 9763 | triaged-follow-up | cause-not-forwarded-at-surface | src/router/router-db.ts:6a1e1eedfc68e60affed72f0 |
-| router | src/router/router-db.ts | 9996 | triaged-follow-up | cause-not-forwarded-at-surface | src/router/router-db.ts:454c1d7739a0c56467723de6 |
-| router | src/router/router-db.ts | 10629 | triaged-follow-up | cause-not-forwarded-at-surface | src/router/router-db.ts:7d283c7fdec8206ee1c0ed64 |
-| router | src/router/router-db.ts | 10660 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:eb6c608285aac837be753ebb |
-| router | src/router/router-db.ts | 11981 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:f5c7494ddf693b7a4aa5bf9e |
-| router | src/router/router-db.ts | 11984 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:015f3a21ffe76e22671668bf |
+| router | src/router/router-db.ts | 7078 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:a027472d886ff1c7e468a908 |
+| router | src/router/router-db.ts | 7086 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:a027472d886ff1c7e468a908 |
+| router | src/router/router-db.ts | 9395 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:b3899c33992830f470985efb |
+| router | src/router/router-db.ts | 9427 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:b3899c33992830f470985efb |
+| router | src/router/router-db.ts | 9779 | triaged-follow-up | cause-not-forwarded-at-surface | src/router/router-db.ts:6a1e1eedfc68e60affed72f0 |
+| router | src/router/router-db.ts | 10024 | triaged-follow-up | cause-not-forwarded-at-surface | src/router/router-db.ts:454c1d7739a0c56467723de6 |
+| router | src/router/router-db.ts | 10657 | triaged-follow-up | cause-not-forwarded-at-surface | src/router/router-db.ts:7d283c7fdec8206ee1c0ed64 |
+| router | src/router/router-db.ts | 10688 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:eb6c608285aac837be753ebb |
+| router | src/router/router-db.ts | 12009 | fixed | binding retained / no recognized error surface | src/router/router-db.ts:f5c7494ddf693b7a4aa5bf9e |
+| router | src/router/router-db.ts | 12012 | triaged-follow-up | catch-without-binding | src/router/router-db.ts:015f3a21ffe76e22671668bf |
 | sessions | src/router/sessions.ts | 934 | fixed | binding retained / no recognized error surface | src/router/sessions.ts:7d1bb7744cf9f62680b55377 |
 | sessions | src/router/sessions.ts | 948 | triaged-follow-up | catch-without-binding | src/router/sessions.ts:4cea4fc40c424fe5e35e394b |
 | sessions | src/router/sessions.ts | 1570 | fixed | binding retained / no recognized error surface | src/router/sessions.ts:c6829bbd0def352b36c4b5d7 |
@@ -2251,9 +2251,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | tag-rules | src/tag-rules/engine.ts | 298 | triaged-follow-up | rejection-without-binding | src/tag-rules/engine.ts:c0d3f7c3b7f3ca2948f89ec1 |
 | tag-rules | src/tag-rules/engine.ts | 299 | triaged-follow-up | rejection-without-binding | src/tag-rules/engine.ts:c0d3f7c3b7f3ca2948f89ec1 |
 | tag-rules | src/tag-rules/loader.ts | 44 | fixed | binding retained / no recognized error surface | src/tag-rules/loader.ts:b31ec8d9d6022c4280bfba9c |
-| tags | src/tags/tag-db.ts | 98 | triaged-follow-up | catch-without-binding | src/tags/tag-db.ts:bdfc36d00350a067dad4f455 |
-| tags | src/tags/tag-db.ts | 140 | triaged-follow-up | catch-without-binding | src/tags/tag-db.ts:c802464188a2b6c5393fc332 |
-| tags | src/tags/tag-db.ts | 336 | fixed | binding retained / no recognized error surface | src/tags/tag-db.ts:5ea3476ec36f4d6747992eea |
+| tags | src/tags/tag-db.ts | 99 | triaged-follow-up | catch-without-binding | src/tags/tag-db.ts:bdfc36d00350a067dad4f455 |
+| tags | src/tags/tag-db.ts | 141 | triaged-follow-up | catch-without-binding | src/tags/tag-db.ts:c802464188a2b6c5393fc332 |
+| tags | src/tags/tag-db.ts | 337 | fixed | binding retained / no recognized error surface | src/tags/tag-db.ts:5ea3476ec36f4d6747992eea |
 | tags | src/tags/targets.ts | 53 | fixed | binding retained / no recognized error surface | src/tags/targets.ts:72e7400e8829045ff6f2c0ba |
 | tags | src/tags/targets.ts | 62 | fixed | binding retained / no recognized error surface | src/tags/targets.ts:cccbd92c8004c96c798ea55d |
 | tags | src/tags/targets.ts | 128 | triaged-follow-up | catch-without-binding | src/tags/targets.ts:0ee41ba823cb46c11f8646bf |
