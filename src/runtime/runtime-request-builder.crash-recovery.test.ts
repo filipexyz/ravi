@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { getOrCreateSession, type AgentConfig, type SessionEntry } from "../router/index.js";
 import { getSessionTurn } from "../session-trace/session-trace-db.js";
+import { saveMessage } from "../db.js";
 import { listSessionEventsForTest } from "../test/session-trace-events.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
@@ -769,4 +770,73 @@ describe("runtime request durable attempt preparation", () => {
     streamingSession.onTurnComplete?.();
     await runtimeRequest.prompt.return(undefined);
   });
+
+  it.each([
+    { label: "rolling", memory: undefined, recovers: true },
+    { label: "none", memory: "none" as const, recovers: false },
+  ])(
+    "a cold start of an observer delivery with memory $label recovers earlier deliveries: $recovers",
+    async ({ memory, recovers }) => {
+      const sessionCwd = stateDir!;
+      // An earlier delivery and the observer's answer, persisted like any prompt.
+      saveMessage(TRACE_SESSION_NAME, "user", "[observation] OBS-EARLIER-DELIVERY-MARKER");
+      saveMessage(TRACE_SESSION_NAME, "assistant", "noted the earlier delivery");
+      const streamingSession = traceStreamingSession();
+      const runtimeProvider: SessionRuntimeProvider = {
+        id: TRACE_PROVIDER_ID,
+        getCapabilities: () => traceCapabilities,
+        startSession: () => emptyRuntimeSession(),
+      };
+      const crashRecovery = {
+        startTurnAttempt: () => ({ attemptId: `attempt-memory-${memory ?? "rolling"}` }),
+        markTurnAttemptSafety: () => {},
+      } as unknown as RuntimeCrashRecoveryCoordinator;
+      const { runtimeRequest } = await buildRuntimeStartRequest({
+        runId: `run-memory-${memory ?? "rolling"}`,
+        sessionName: TRACE_SESSION_NAME,
+        prompt: {
+          prompt: "[observation] second delivery",
+          _observation: {
+            sourceSessionKey: "agent:worker:main",
+            sourceSessionName: "worker",
+            bindingId: "ob_mem",
+            ruleId: "mem",
+            role: "mem",
+            mode: "observe",
+            eventIds: [],
+            ...(memory ? { memory } : {}),
+          },
+        },
+        session: traceSession(sessionCwd),
+        agent: traceAgent(sessionCwd),
+        runtimeProviderId: TRACE_PROVIDER_ID,
+        runtimeProvider,
+        runtimeCapabilities: traceCapabilities,
+        sessionCwd,
+        dbSessionKey: TRACE_SESSION_KEY,
+        model: TRACE_MODEL,
+        runtimeResolution: {
+          options: { model: TRACE_MODEL },
+          sources: { model: "agent_default", effort: null, thinking: null },
+          hasTaskRuntimeContext: false,
+        },
+        storedRuntimeSessionParams: undefined,
+        canResumeStoredSession: false,
+        resolvedSource: traceSource,
+        streamingSession,
+        stashedMessages: new Map(),
+        defaultRuntimeProviderId: "claude",
+        crashRecovery,
+      });
+
+      // What the provider receives as the first input of the new conversation.
+      const first = await runtimeRequest.prompt.next();
+      const input = JSON.stringify(first.value);
+      expect(input).toContain("persist me"); // the pending input of this delivery (harness)
+      expect(input.includes("OBS-EARLIER-DELIVERY-MARKER")).toBe(recovers);
+      streamingSession.done = true;
+      streamingSession.onTurnComplete?.();
+      await runtimeRequest.prompt.return(undefined);
+    },
+  );
 });

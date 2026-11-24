@@ -666,7 +666,8 @@ function validateObserverInformTarget(
 
 function validateObserverMemory(metadata: Record<string, unknown> | undefined): void {
   const value = metadata?.memory;
-  if (value !== undefined && value !== null && value !== "none" && value !== "rolling") {
+  // Only the two modes or no value at all: `null` would silently keep the conversation.
+  if (value !== undefined && value !== "none" && value !== "rolling") {
     throw new Error('Observer metadata.memory must be "none" or "rolling".');
   }
 }
@@ -1885,6 +1886,7 @@ export async function deliverObservationEvents(input: {
             deliveryId,
             trigger,
             ...(conditionHits ? { conditions: conditionHits.map((hit) => hit.condition) } : {}),
+            ...(bindingIsStateless(binding) ? { memory: "none" as const } : {}),
           },
           deliveryBarrier: "after_response",
         });

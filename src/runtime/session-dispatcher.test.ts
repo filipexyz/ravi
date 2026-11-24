@@ -6485,3 +6485,113 @@ describe("RuntimeSessionDispatcher task-bound live sessions", () => {
     });
   });
 });
+
+describe("stateless observer deliveries (memory none)", () => {
+  function liveObserver(overrides: Partial<RuntimeHostStreamingSession> = {}) {
+    const counters = { pushed: 0 };
+    const live = {
+      sessionKey: "obs:abc123:mem",
+      agentId: "observer",
+      queryHandle: { provider: "codex", events: (async function* () {})(), interrupt: async () => {} },
+      abortController: new AbortController(),
+      pendingMessages: [] as unknown[],
+      currentModel: "test-model",
+      toolRunning: false,
+      lastActivity: Date.now() - 2_000,
+      done: false,
+      starting: false,
+      compacting: false,
+      interrupted: false,
+      turnActive: false,
+      // Shutdown wakes the generator with null; only a real message counts as joining the conversation.
+      pushMessage: (message: unknown) => {
+        if (message !== null) counters.pushed += 1;
+      },
+      pendingWake: false,
+      onTurnComplete: null,
+      currentToolSafety: null,
+      pendingAbort: false,
+      toolEffectFence: "provider_event_only",
+      ...overrides,
+    } as unknown as RuntimeHostStreamingSession;
+    return { live, counters };
+  }
+  const delivery = (memory?: "none") =>
+    ({
+      prompt: "[observation] turn.complete",
+      _agentId: "observer",
+      _observation: {
+        sourceSessionKey: "agent:worker:main",
+        sourceSessionName: "src",
+        bindingId: "b1",
+        ruleId: "r1",
+        role: "mem",
+        mode: "observe",
+        eventIds: [],
+        ...(memory ? { memory } : {}),
+      },
+      deliveryBarrier: "after_response",
+    }) as unknown as RuntimeLaunchPrompt;
+
+  async function setup(overrides: Partial<RuntimeHostStreamingSession> = {}) {
+    const stateDir = await createIsolatedRaviState("ravi-dispatcher-stateless-observer-");
+    dbCreateAgent({ id: "observer", cwd: stateDir });
+    const OBS = "obs:abc123:mem";
+    getOrCreateSession(OBS, "observer", stateDir, { name: OBS });
+    configStore.refresh();
+    const dispatcher = createDispatcher(4);
+    const { live, counters } = liveObserver(overrides);
+    dispatcher.streamingSessions.set(OBS, live);
+    const started: RuntimeLaunchPrompt[] = [];
+    (
+      dispatcher as unknown as { startStreamingSession: (n: string, p: RuntimeLaunchPrompt) => Promise<void> }
+    ).startStreamingSession = async (_name, prompt) => {
+      started.push(prompt);
+    };
+    return { stateDir, dispatcher, live, counters, started, OBS };
+  }
+
+  it("retires an idle observer runtime and starts a fresh one", async () => {
+    const { stateDir, dispatcher, live, counters, started, OBS } = await setup();
+    try {
+      await dispatcher.handlePromptImmediate(OBS, delivery("none"));
+      expect(counters.pushed).toBe(0);
+      expect(live.pendingMessages).toHaveLength(0);
+      expect(started).toHaveLength(1);
+      expect(live.done).toBe(true);
+      expect(dispatcher.streamingSessions.get(OBS)).not.toBe(live);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("waits for a busy observer to finish its turn, then retires it", async () => {
+    const { stateDir, dispatcher, live, counters, started, OBS } = await setup({ turnActive: true });
+    try {
+      await dispatcher.handlePromptImmediate(OBS, delivery("none"));
+      // Nothing joins the running conversation and nothing starts while the turn runs.
+      expect(counters.pushed).toBe(0);
+      expect(started).toHaveLength(0);
+      expect(dispatcher.statelessObservationWaits.get(OBS)?.prompts).toHaveLength(1);
+      live.turnActive = false;
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+      expect(counters.pushed).toBe(0);
+      expect(started).toHaveLength(1);
+      expect(dispatcher.statelessObservationWaits.has(OBS)).toBe(false);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("keeps the live conversation for a default (rolling) observer", async () => {
+    const { stateDir, dispatcher, live, counters, started, OBS } = await setup();
+    try {
+      await dispatcher.handlePromptImmediate(OBS, delivery());
+      expect(started).toHaveLength(0);
+      expect(counters.pushed + live.pendingMessages.length).toBeGreaterThan(0);
+      expect(dispatcher.streamingSessions.get(OBS)).toBe(live);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+});

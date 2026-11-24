@@ -102,6 +102,11 @@ export interface ObservationPromptMetadata {
   deliveryId?: string;
   /** Why the delivery was sent: a batch at turn end, or a pulse while the source turn still runs. */
   trigger?: "end_of_turn" | "pulse" | "realtime" | "debounce";
+  /**
+   * `"none"`: this delivery starts a fresh observer conversation. The dispatcher retires a live
+   * observer runtime first (after its current turn), and a cold start recovers no history.
+   */
+  memory?: "none";
 }
 
 /** Marks a prompt the task runtime itself published, so the trace shows its origin. */

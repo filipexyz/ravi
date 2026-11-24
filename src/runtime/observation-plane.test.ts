@@ -1510,6 +1510,9 @@ describe("Stateless observers (metadata.memory)", () => {
     expect(() =>
       dbUpsertObserverRule({ id: "mem-bad", observerAgentId: "observer", metadata: { memory: "forever" } }),
     ).toThrow(/metadata.memory/);
+    expect(() =>
+      dbUpsertObserverRule({ id: "mem-null", observerAgentId: "observer", metadata: { memory: null } }),
+    ).toThrow(/metadata.memory/);
   });
 });
 

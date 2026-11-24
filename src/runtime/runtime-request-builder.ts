@@ -635,9 +635,12 @@ async function buildRuntimeStartRequestInternal(
   const canResumeCredentialSession = canResumeStoredSession && canResumeSkillSession && credentialCompatible;
   // The launcher already persisted this input. Exclude that row from the
   // recovery snapshot; the generator delivers the current input unchanged.
-  const history = canResumeCredentialSession
-    ? []
-    : getRecentHistory(sessionName, 48).filter((message) => message.id > (session.historyResetAfterId ?? 0));
+  // A stateless observer delivery starts with no earlier deliveries: no recovered history either.
+  const statelessObservation = prompt._observation?.memory === "none";
+  const history =
+    canResumeCredentialSession || statelessObservation
+      ? []
+      : getRecentHistory(sessionName, 48).filter((message) => message.id > (session.historyResetAfterId ?? 0));
   const lastMessage = history.at(-1);
   if (lastMessage?.role === "user" && lastMessage.content === resolvePersistedUserText(prompt)) history.pop();
   const { forkFromProviderSessionId, resumeProviderSessionId } = resolveRuntimeSessionContinuity({

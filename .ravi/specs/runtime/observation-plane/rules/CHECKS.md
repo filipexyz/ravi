@@ -17,3 +17,5 @@
 - Enable a rule in text mode. The output MUST say bindings come back when each source session next launches and name `ravi observers refresh <session> --reconcile attach-missing`.
 - Save a rule disabled while its binding cascade fails. The rule row MUST roll back with it (one transaction): no disabled rule with a live binding.
 - A binding with `metadata.memory: "none"` MUST clear its observer session's provider state before delivering; the default MUST keep it; an unknown memory value MUST be rejected (`observation-plane.test.ts`, "Stateless observers").
+- A `memory: "none"` delivery to an idle live observer runtime MUST retire it and start a new one; to a busy one it MUST wait for the turn to end, then do the same; a rolling delivery MUST keep the live conversation (`session-dispatcher.test.ts`, "stateless observer deliveries").
+- A cold start for a `memory: "none"` delivery MUST NOT recover earlier deliveries from saved history; a rolling one MUST (`runtime-request-builder.crash-recovery.test.ts`).
