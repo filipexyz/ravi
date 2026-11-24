@@ -22,14 +22,17 @@ export const HANDOFF_EXPIRY_MS = 7 * 24 * 60 * 60_000;
 /** A delivery that takes longer is a failure: a hung port must not hold every later tick. */
 export const HANDOFF_PORT_TIMEOUT_MS = 60_000;
 
-function withTimeout<T>(work: Promise<T>, label: string): Promise<T> {
+/** A delivery that did not answer in time: it may still land, so it is treated as possibly delivered. */
+class HandoffPortTimeout extends Error {}
+
+function withTimeout<T>(work: Promise<T>, label: string, timeoutMs: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   return Promise.race([
     work,
     new Promise<T>((_, reject) => {
       timer = setTimeout(
-        () => reject(new Error(`${label} timed out after ${HANDOFF_PORT_TIMEOUT_MS / 1000} s`)),
-        HANDOFF_PORT_TIMEOUT_MS,
+        () => reject(new HandoffPortTimeout(`${label} timed out after ${timeoutMs / 1000} s`)),
+        timeoutMs,
       );
     }),
   ]).finally(() => clearTimeout(timer));
@@ -117,7 +120,7 @@ type ReconcileResult = {
 };
 
 export async function reconcileHandoffs(
-  options: { now?: number; ports?: HandoffDeliveryPorts } = {},
+  options: { now?: number; ports?: HandoffDeliveryPorts; portTimeoutMs?: number } = {},
 ): Promise<ReconcileResult> {
   // Ticks overlap when a delivery outlasts the interval: the late one would deliver the same notice again.
   if (ticking) return { nudged: 0, escalated: 0, expired: 0, failures: 0, skipped: true };
@@ -129,9 +132,14 @@ export async function reconcileHandoffs(
   }
 }
 
-async function reconcileOnce(options: { now?: number; ports?: HandoffDeliveryPorts }): Promise<ReconcileResult> {
+async function reconcileOnce(options: {
+  now?: number;
+  ports?: HandoffDeliveryPorts;
+  portTimeoutMs?: number;
+}): Promise<ReconcileResult> {
   const now = options.now ?? Date.now();
   const ports = options.ports ?? registered;
+  const timeoutMs = options.portTimeoutMs ?? HANDOFF_PORT_TIMEOUT_MS;
   let nudged = 0;
   let escalated = 0;
   let expired = 0;
@@ -160,10 +168,20 @@ async function reconcileOnce(options: { now?: number; ports?: HandoffDeliveryPor
     if (!ports.notifyParent) break;
     const siblings = handoffsForReminder(open, parentSessionKey, due, now);
     try {
-      const delivered = await withTimeout(
-        ports.notifyParent({ parentSessionKey, due, open: siblings, now }),
-        "Parent reminder",
-      );
+      let delivered: boolean;
+      try {
+        delivered = await withTimeout(
+          ports.notifyParent({ parentSessionKey, due, open: siblings, now }),
+          "Parent reminder",
+          timeoutMs,
+        );
+      } catch (error) {
+        // At most once: a reminder that timed out may still be delivered, so it is claimed, never resent.
+        if (!(error instanceof HandoffPortTimeout)) throw error;
+        failures++;
+        log.warn("Handoff parent reminder timed out; not resent", { parentSessionKey, error: errorMessage(error) });
+        delivered = true;
+      }
       if (!delivered) continue;
       for (const handoff of due) {
         if (!claimParentNudge(handoff.id, now)) continue;
@@ -194,14 +212,25 @@ async function reconcileOnce(options: { now?: number; ports?: HandoffDeliveryPor
       h.parentNudgedAt === null && nudgedNow.has(h.id) ? { ...h, parentNudgedAt: now } : h,
     );
     let delivered = false;
+    let maybeDelivered = false;
     try {
-      delivered = await withTimeout(ports.notifyOwner({ parentSessionKey, handoffs: reminded, now }), "Owner notice");
+      delivered = await withTimeout(
+        ports.notifyOwner({ parentSessionKey, handoffs: reminded, now }),
+        "Owner notice",
+        timeoutMs,
+      );
     } catch (error) {
       failures++;
-      log.warn("Handoff owner notice failed", { parentSessionKey, error: errorMessage(error) });
+      // At most once: the timeout does not cancel the delivery, so a timed-out notice keeps its claim and is
+      // never sent again. Only a delivery that answered "not delivered" or failed releases it for the next tick.
+      maybeDelivered = error instanceof HandoffPortTimeout;
+      log.warn(maybeDelivered ? "Handoff owner notice timed out; not resent" : "Handoff owner notice failed", {
+        parentSessionKey,
+        error: errorMessage(error),
+      });
     }
     if (delivered) escalated += handoffs.length;
-    else releaseOwnerEscalation([...claimed], now);
+    else if (!maybeDelivered) releaseOwnerEscalation([...claimed], now);
   }
   return { nudged, escalated, expired, failures };
 }

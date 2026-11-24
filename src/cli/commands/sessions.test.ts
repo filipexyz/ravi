@@ -3040,7 +3040,7 @@ describe("SessionCommands attach hints", () => {
     const { dbCreateTrigger, dbDeleteTrigger } = await import("../../triggers/triggers-db.js");
     let followId: string | null = null;
     let gate: { status: string; conclusion: string | null } = { status: "in_progress", conclusion: null };
-    let pull = { state: "open", head: { sha } };
+    let pull: Record<string, unknown> = { state: "open", head: { sha } };
     setReviewGithubReadForTest(async (endpoint) =>
       endpoint.endsWith("/pulls/938")
         ? pull
@@ -3234,6 +3234,34 @@ describe("SessionCommands attach hints", () => {
       )) as Record<string, any>;
       expect(closed.reviewDispatch).toMatchObject({ status: "skipped", reason: expect.stringContaining("is closed") });
       expect(closed.handoff).toMatchObject({ kind: "review", status: "open" });
+
+      // A merge wait never dispatches a review, even on a followed PR with a green gate.
+      const lifecyclesAtMerge = createdSlackThreadLifecycles.length;
+      const mergeWait = (await new SessionCommands().report(
+        "MERGEÁVEL",
+        undefined,
+        true,
+        "merge",
+        sha,
+        "filipexyz/ravi#938",
+      )) as Record<string, any>;
+      expect(mergeWait.reviewDispatch).toBeUndefined();
+      expect(mergeWait.handoff).toMatchObject({ kind: "merge", status: "open", ref: `filipexyz/ravi#938@${sha}` });
+      expect(createdSlackThreadLifecycles.length).toBe(lifecyclesAtMerge);
+
+      // A wait declared after the PR merged (its event went to nobody) is recorded already closed.
+      pull = { state: "closed", merged: true, head: { sha } };
+      const late = (await new SessionCommands().report(
+        "MERGEÁVEL",
+        undefined,
+        true,
+        "merge",
+        sha,
+        "filipexyz/ravi#938",
+      )) as Record<string, any>;
+      expect(late.handoff).toMatchObject({ kind: "merge", status: "acknowledged" });
+      expect(reportedSlackThreads.at(-1)?.message).toContain("já está mergeada: a espera nasce fechada");
+      expect(listOpenHandoffs(parentKey)).toHaveLength(0);
     } finally {
       if (followId) dbDeleteTrigger(followId);
       setReviewGithubReadForTest(null);

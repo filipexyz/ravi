@@ -10,6 +10,7 @@ import {
   isFullSha,
   parsePullRequestRef,
   pickReviewerRuntime,
+  readPullClosure,
   readReviewEvidence,
   reviewAutoDispatchEnabled,
   reviewThreadKey,
@@ -121,6 +122,18 @@ describe("review dispatch", () => {
     expect(replayedReviewDecision("queued")).toEqual({ usable: true });
     expect(replayedReviewDecision("closed")).toMatchObject({ usable: false });
     expect(replayedReviewDecision("failed")).toMatchObject({ usable: false });
+    expect(replayedReviewDecision("failed")).toMatchObject({
+      reason: expect.stringContaining("open a new one by hand (ravi sessions create-thread)"),
+    });
+  });
+
+  it("reads whether a PR already ended, merged or not", async () => {
+    expect(await readPullClosure(TARGET, async () => ({ state: "open" }))).toBeNull();
+    expect(await readPullClosure(TARGET, async () => ({ state: "closed", merged: true }))).toEqual({ merged: true });
+    expect(await readPullClosure(TARGET, async () => ({ state: "closed", merged_at: "2026-11-24T01:30:00Z" }))).toEqual(
+      { merged: true },
+    );
+    expect(await readPullClosure(TARGET, async () => ({ state: "closed", merged: false }))).toEqual({ merged: false });
   });
 
   it("is on unless the setting turns it off", () => {
