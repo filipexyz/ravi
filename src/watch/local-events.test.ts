@@ -229,6 +229,29 @@ describe("local github watch events", () => {
     ]);
   });
 
+  it("carries the run's url and head commit, so the follow can link the CI result", () => {
+    const run = {
+      id: 9,
+      name: "CI",
+      status: "in_progress",
+      conclusion: null,
+      url: "https://github.com/o/r/actions/runs/9",
+      headSha: "abc123",
+    };
+    const previous: LocalWatchSnapshot = { version: 1, pullRequests: {}, workflowRuns: { "9": run } };
+    const current: LocalWatchSnapshot = {
+      version: 1,
+      pullRequests: {},
+      workflowRuns: { "9": { ...run, status: "completed", conclusion: "success" } },
+    };
+    const events = deriveLocalGitHubEvents("o/r", { previous, current, departed: {} }).events;
+    expect(events.length).toBeGreaterThan(0);
+    for (const event of events) {
+      expect(event.payload.url).toBe("https://github.com/o/r/actions/runs/9");
+      expect(event.payload.headSha).toBe("abc123");
+    }
+  });
+
   it("ignores workflow runs that are still in flight", () => {
     const result = deriveLocalGitHubEvents("o/r", {
       previous: snapshotWith({ workflowRuns: [] }),

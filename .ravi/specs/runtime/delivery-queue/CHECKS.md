@@ -90,3 +90,6 @@
 - Unexpected provider interruption without a newer prompt retains the active prompt for recovery replay.
 - Intentional provider/model restart is not marked as ambiguous and retains normal batching behavior.
 - Edited-message rebase prompt can interrupt as a documented exception.
+- A system notice (`source.actorType=system`) published with a default `after_tool` or `immediate_interrupt` is queued as `after_response`: it neither cuts a long tool nor preempts text between tools (`delivery-queue.test.ts`, "never lets a default system notice interrupt a running turn"; mutant removing the guard fails it).
+- An explicit system `immediate_interrupt` and default human `after_tool` keep their barriers.
+- A restart after `recoverable_interrupt_failure` prefixes the delivered prompt with the runtime-interrupt notice; other restart reasons do not (`session-dispatcher.test.ts`, "tells the model the runtime, not a person, interrupted the previous tool"; mutant removing the call fails it).

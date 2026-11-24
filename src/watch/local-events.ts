@@ -27,6 +27,8 @@ export interface LocalWorkflowRunState {
   status: string;
   conclusion: string | null;
   branch?: string;
+  headSha?: string;
+  url?: string;
 }
 
 /**
@@ -171,6 +173,8 @@ function workflowRunPayload(
     status: run.status,
     conclusion: run.conclusion,
     ...(run.branch ? { branch: run.branch } : {}),
+    ...(run.headSha ? { headSha: run.headSha } : {}),
+    ...(run.url ? { url: run.url } : {}),
     // Sem o número, um filtro de trigger por PR nunca casaria com evento de CI.
     ...(pullRequestNumber !== undefined ? { number: pullRequestNumber } : {}),
   };

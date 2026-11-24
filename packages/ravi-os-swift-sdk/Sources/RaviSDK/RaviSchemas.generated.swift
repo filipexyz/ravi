@@ -137881,11 +137881,11 @@ public enum RaviSchemas {
         "type": "string"
       },
       "cooldown": {
-        "description": "Minimum gap between fires; events inside it are dropped (e.g., 30s, 1m; off to disable). Default: 5s",
+        "description": "Minimum gap between fires; events inside it are dropped (e.g., 30s, 1m; off to disable). Default: off for agent triggers (prefer --debounce, which batches them instead); 5s for --shell triggers without --debounce",
         "type": "string"
       },
       "debounce": {
-        "description": "Batch a burst of events into one fire, this long after the last event, carrying every event (e.g., 2s, 1m). Default: off",
+        "description": "Batch a burst of events into one fire, this long after the last event, carrying the burst (up to its last 200 events; a burst pending when the daemon stops is lost) (e.g., 2s, 1m; off to disable). Default for agent triggers: 30s on ravi.watch.* topics, 5s elsewhere; off with --cooldown or --shell",
         "type": "string"
       },
       "envFile": {

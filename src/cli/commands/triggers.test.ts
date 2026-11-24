@@ -444,6 +444,29 @@ describe("TriggersCommands topic guidance", () => {
     });
   });
 
+  it("gives a shell trigger no default debounce and keeps its 5s cooldown, so a burst is capped", async () => {
+    const commands = new TriggersCommands();
+    mockToolContext = { transport: "gateway" };
+    await captureJson(() =>
+      commands.add(
+        "shell default",
+        "ravi.inbound.interaction",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        "printf ok",
+      ),
+    );
+    expect(createdTriggers).toContainEqual(
+      expect.objectContaining({ name: "shell default", executionType: "shell", cooldownMs: 5000, debounceMs: 0 }),
+    );
+  });
+
   it("refuses a shell trigger from a turn that does not act as the operator", async () => {
     const commands = new TriggersCommands();
     mockToolContext = { transport: "gateway" };
@@ -764,7 +787,7 @@ describe("TriggersCommands topic guidance", () => {
         id: "trg_1",
         name: "json trigger",
         effectiveAgentId: "main",
-        cooldownDescription: "5s",
+        cooldownDescription: "off",
         // Created from the terminal: the operator owns it, with no runs-as warning.
         ownerPrincipal: "operator",
         runsAsOperator: true,
@@ -1387,8 +1410,18 @@ describe("triggers cooldown and debounce flags", () => {
       debounce,
     );
 
-  it("keeps the 5s cooldown default and no debounce", async () => {
+  it("defaults to no cooldown and a 5s debounce, which batches instead of dropping", async () => {
     await addWith();
+    expect(createdTriggers).toContainEqual(expect.objectContaining({ cooldownMs: 0, debounceMs: 5000 }));
+  });
+
+  it("defaults a watch topic to a 30s debounce", async () => {
+    await new TriggersCommands().add("watch", "ravi.watch.github.>", "hello");
+    expect(createdTriggers).toContainEqual(expect.objectContaining({ cooldownMs: 0, debounceMs: 30_000 }));
+  });
+
+  it("adds no debounce behind an explicit cooldown", async () => {
+    await addWith("1m");
     expect(createdTriggers).toContainEqual(expect.objectContaining({ cooldownMs: 5000, debounceMs: 0 }));
   });
 

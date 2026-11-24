@@ -228,6 +228,9 @@ describe("thread turn health reconciliation", () => {
     expect(getSessionTurn(turnId)?.completedAt).toBeNull();
     expect(publishPrompt.mock.calls[0]?.[1]).toMatchObject({
       _slackThreadLifecycle: { eventType: "thread.attention", turnId, reason: "no_signal" },
+      // A notice for the parent waits for its turn to end; it never cuts the parent's tool.
+      deliveryBarrier: "after_response",
+      source: { actorType: "system" },
     });
   });
 

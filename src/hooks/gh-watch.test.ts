@@ -703,6 +703,33 @@ describe("gh follow filter: which events wake the owner", () => {
     expect(filter).not.toContain("!=");
   });
 
+  it("keeps a comment written by a bot: review findings from Devin and CodeRabbit arrive that way", () => {
+    expect(hears(event("pull_request_comment.created", { author: "coderabbitai[bot]", body: "Potential issue" }))).toBe(
+      true,
+    );
+    expect(
+      hears(event("pull_request_comment.created", { sender: { login: "devin-ai-integration[bot]" } }, "console")),
+    ).toBe(true);
+  });
+
+  it("drops a run that has not concluded: its conclusion arrives as its own event", () => {
+    for (const eventType of ["workflow_run.requested", "workflow_run.in_progress"]) {
+      expect(hears(event(eventType, { runId: 1, name: "CI", status: "in_progress" }, "console"))).toBe(false);
+    }
+    expect(hears(run("workflow_run.completed", "success", "CI", "console"))).toBe(true);
+  });
+
+  it("moves a follow still on the generation 2 filter to the current one", () => {
+    const superseded = supersededGhFollowFilters("o/r", 7);
+    expect(superseded).toHaveLength(2);
+    expect(superseded).not.toContain(filter);
+    // Generation 2 heard a run that had not concluded; the current filter does not.
+    const started = event("workflow_run.in_progress", { runId: 1, name: "CI", status: "in_progress" }, "console");
+    expect(evaluateFilter(superseded[1], started)).toBe(true);
+    expect(hears(started)).toBe(false);
+    expect(validateFilter(superseded[1])).toEqual({ ok: true });
+  });
+
   describe("against what the watch derivation really emits", () => {
     function derive(name: string, conclusion: string | null) {
       const pullRequest = {
@@ -844,10 +871,13 @@ describe("gh follow filter: which events wake the owner", () => {
 describe("gh follow filter generations", () => {
   // The literal an earlier release wrote: it listened to the PR and nothing else.
   const GENERATION_1 = `data.payload.repository == "o/r" && (data.payload.number == "7" || data.payload.pull_request.number == "7")`;
+  // The literal the release before this one wrote: PR scope, the local `completed` duplicate and PR Description.
+  const GENERATION_2 = `data.payload.repository == "o/r" && (data.payload.number == "7" || data.payload.pull_request.number == "7") && !(data.placement == "local" && data.eventType == "workflow_run.completed" && (data.payload.conclusion == "success" || data.payload.conclusion == "failure" || data.payload.conclusion == "timed_out" || data.payload.conclusion == "startup_failure" || data.payload.conclusion == "cancelled")) && !(data.payload.name == "PR Description")`;
 
-  it("recognises the filter the previous release generated, and only that", () => {
-    expect(supersededGhFollowFilters("o/r", 7)).toEqual([GENERATION_1]);
+  it("recognises the filters earlier releases generated, and only those", () => {
+    expect(supersededGhFollowFilters("o/r", 7)).toEqual([GENERATION_1, GENERATION_2]);
     expect(isSupersededGhFollowFilter(GENERATION_1, "o/r", 7)).toBe(true);
+    expect(isSupersededGhFollowFilter(GENERATION_2, "o/r", 7)).toBe(true);
     expect(isSupersededGhFollowFilter(`  ${GENERATION_1}\n`, "o/r", 7)).toBe(true);
   });
 
@@ -860,8 +890,9 @@ describe("gh follow filter generations", () => {
     expect(isSupersededGhFollowFilter("", "o/r", 7)).toBe(false);
   });
 
-  it("keeps the previous filter a valid one, so a follow that still carries it keeps working until repaired", () => {
+  it("keeps the previous filters valid ones, so a follow that still carries one keeps working until repaired", () => {
     expect(validateFilter(GENERATION_1)).toEqual({ ok: true });
+    expect(validateFilter(GENERATION_2)).toEqual({ ok: true });
   });
 });
 

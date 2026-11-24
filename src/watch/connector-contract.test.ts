@@ -255,3 +255,30 @@ describe("github connector contract", () => {
     expect(push?.localSupport).toBe("roadmap");
   });
 });
+
+describe("gh run list fields the poller keeps", () => {
+  it("asks for the run url and head commit and keeps them in the snapshot", () => {
+    const source = createGhLocalWatchSource((args) => {
+      if (args[0] === "run" && args[1] === "list") {
+        const fields = (args[args.indexOf("--json") + 1] ?? "").split(",");
+        expect(fields).toContain("url");
+        expect(fields).toContain("headSha");
+        return JSON.stringify([
+          {
+            databaseId: 5,
+            name: "CI",
+            status: "completed",
+            conclusion: "success",
+            headBranch: "feat/x",
+            headSha: "abc123",
+            url: "https://github.com/o/r/actions/runs/5",
+          },
+        ]);
+      }
+      return "[]";
+    });
+    const run = source.readSnapshot(REPO).workflowRuns["5"];
+    expect(run?.url).toBe("https://github.com/o/r/actions/runs/5");
+    expect(run?.headSha).toBe("abc123");
+  });
+});
