@@ -47,7 +47,16 @@ import {
   parseCronTurnOutcome,
   type CronTurnOutcome,
 } from "./turn-outcome.js";
-import type { CronJob } from "./types.js";
+import type { CronJob, JobOutcomeUpdate } from "./types.js";
+import type { SessionEntry } from "../router/types.js";
+import {
+  closeChildRun,
+  getChildRun,
+  openChildRun,
+  pruneClosedChildRuns,
+  readChildRunLastReply,
+  type AutomationChildRun,
+} from "../automation/child-runs.js";
 import { notifyAutomationOff } from "./automation-notice.js";
 import { notifyCronFailure, recordUnreadableCronFailure, type CronFailureJob } from "./failure-notification.js";
 import {
@@ -322,9 +331,11 @@ export class CronRunner {
     const runId = randomUUID();
     try {
       const sessionName =
-        job.sessionTarget === "main"
-          ? await this.executeMainJob(job, startTime, authority, runId)
-          : await this.executeIsolatedJob(job, startTime, authority, runId);
+        job.sessionTarget === "thread"
+          ? await this.executeThreadJob(job, startTime, authority, runId)
+          : job.sessionTarget === "main"
+            ? await this.executeMainJob(job, startTime, authority, runId)
+            : await this.executeIsolatedJob(job, startTime, authority, runId);
 
       log.info("Job dispatched", { jobId: job.id, jobName: job.name, sessionName });
 
@@ -373,6 +384,7 @@ export class CronRunner {
     const state = buildCronTurnOutcomeState(outcome, { dispatchedAt: pending.admitted_at });
     const settled = settleCronRun(pending.id, outcome.sessionName, state);
     if (!settled) return;
+    await this.finishThreadRun(settled.id, state);
     if (state.lastStatus === "error") {
       if (await notifyCronFailure(cronRunNotification(settled), state.lastError ?? "Agent turn failed"))
         markCronRunReported(settled.id);
@@ -797,6 +809,131 @@ export class CronRunner {
       _cronRunId: runId,
     });
     return sessionName;
+  }
+
+  /**
+   * Execute a job in thread mode: a fresh child session that only this run
+   * enters, parented to the job's report-to session. The prompt carries the
+   * job's own authority, exactly as in the other modes; the run reaches its
+   * parent only through `sessions report` / `close-thread --return`, or the
+   * automatic return when its turn ends (`finishThreadRun`).
+   */
+  private async executeThreadJob(
+    job: CronJob,
+    startTime: number,
+    authority: CronRunAuthority,
+    runId: string,
+  ): Promise<string> {
+    const agentId = job.agentId ?? getDefaultAgentId();
+    const parent = this.resolveThreadParent(job, agentId);
+    const agent = getAgent(agentId);
+    const agentCwd = agent ? expandHome(agent.cwd) : `/tmp/ravi-${agentId}`;
+    const childKey = `agent:${agentId}:cron:${job.id}:run:${runId}`;
+    const childName = ensureUniqueName(
+      generateSessionName(agentId, { suffix: `cron-${job.name}-${runId.slice(0, 8)}` }),
+    );
+    const session = getOrCreateSession(childKey, agentId, agentCwd, { name: childName });
+    if (!session.name) updateSessionName(session.sessionKey, childName);
+    const parentName = parent.name ?? parent.sessionKey;
+    openChildRun({
+      id: runId,
+      originKind: "cron",
+      originId: job.id,
+      originName: job.name,
+      agentId,
+      parentSessionKey: parent.sessionKey,
+      parentSessionName: parentName,
+      childSessionKey: childKey,
+      childSessionName: childName,
+      now: startTime,
+    });
+
+    this.trackAgentDispatch(job, childName, startTime, runId);
+    // No source: a headless run's replies reach no chat, only its returns reach the parent.
+    await publishSessionPrompt(childName, {
+      prompt: this.buildThreadRunPrompt(job, parentName),
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
+      _cron: true,
+      _jobId: job.id,
+      _cronAuthority: authority,
+      _cronRunId: runId,
+    });
+    return childName;
+  }
+
+  /**
+   * The session a thread-mode run reports to: the job's reply session, else
+   * the agent's main session. It must be one of the job agent's own sessions;
+   * a trigger's own session never is one.
+   */
+  private resolveThreadParent(job: CronJob, agentId: string): SessionEntry {
+    const ref = job.replySession ?? this.resolveMainSessionName(agentId);
+    const parent = resolveSession(ref);
+    if (!parent || isTriggerOwnSessionKey(parent.sessionKey)) {
+      throw new Error(
+        `THREAD_PARENT_MISSING: the session this run reports to (${ref}) does not resolve. Set it with: ravi cron set ${job.id} reply-session <session>`,
+      );
+    }
+    if (parent.agentId !== agentId) {
+      throw new Error(
+        `THREAD_PARENT_OTHER_AGENT: the session this run reports to (${parent.name ?? parent.sessionKey}) belongs to agent ${parent.agentId}, not to the job's agent ${agentId}`,
+      );
+    }
+    return parent;
+  }
+
+  private buildThreadRunPrompt(job: CronJob, parentName: string): string {
+    return [
+      `[Cron: ${job.name} ${this.formatNow()}]`,
+      job.message,
+      "",
+      `[run surface] This run has a session of its own; nothing written here reaches a chat. Hand the result to ${parentName} once with \`ravi sessions close-thread --return "<result>"\`. When nothing is worth reporting, reply only @@SILENT@@ and nothing reaches it. A plain final reply also reaches ${parentName}, as a preview.`,
+    ].join("\n");
+  }
+
+  /**
+   * A thread-mode run closes when its turn ends, unless it already did: a
+   * reply that is not silent reaches the parent once, silence closes without
+   * a word, a failed turn sends one error. Then the child's runtime is
+   * released and the job's oldest closed runs are pruned.
+   */
+  private async finishThreadRun(runId: string, state: JobOutcomeUpdate): Promise<void> {
+    const run = getChildRun(runId);
+    if (!run) return;
+    try {
+      if (run.status === "open") {
+        if (state.lastStatus === "error") {
+          await closeChildRun(run, { kind: "error", text: state.lastError ?? "Agent turn failed" });
+        } else {
+          const reply = readChildRunLastReply(run);
+          await closeChildRun(run, reply ? { kind: "auto", text: reply } : null);
+        }
+      }
+    } finally {
+      await this.releaseChildRunRuntime(run);
+      pruneClosedChildRuns(run.originKind, run.originId);
+    }
+  }
+
+  /** The run's turn is over: stop its provider process like an expired session's. */
+  private async releaseChildRunRuntime(run: AutomationChildRun): Promise<void> {
+    try {
+      await nats.emit("ravi.session.abort", {
+        sessionKey: run.childSessionKey,
+        sessionName: run.childSessionName,
+        source: "cron-runner",
+        action: "close-run",
+        reason: "automation_child_run_closed",
+        actor: "system",
+      });
+    } catch (error) {
+      log.warn("Failed to release a closed run's runtime", {
+        runId: run.id,
+        sessionName: run.childSessionName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private trackAgentDispatch(job: CronJob, sessionName: string, startTime: number, runId: string): void {

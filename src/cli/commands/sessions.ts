@@ -155,6 +155,12 @@ import {
   summarizeSlackThread,
 } from "../../channels/slack/thread-lifecycle.js";
 import { resolveSlackThreadRequester } from "../../channels/slack/thread-requester.js";
+import {
+  closeChildRun,
+  findChildRunByChildSession,
+  reportChildRunProgress,
+  type AutomationChildRun,
+} from "../../automation/child-runs.js";
 import { configureSlackThreadRuntime } from "../../channels/slack/thread-runtime.js";
 import { decodeLiteralLineBreaks } from "../../channels/slack/thread-text.js";
 import { assessSessionThreadIdentity } from "../../router/thread-identity.js";
@@ -7636,8 +7642,11 @@ export class SessionCommands {
     if ((!session && !orphan) || !authorized) {
       failSessionNotFound("sessions close-thread", target, asJson);
     }
-    if (session) assertSlackThreadChildSession("thread.close", session);
     const normalizedReturn = returnResult ? decodeLiteralLineBreaks(returnResult).trim() || undefined : undefined;
+    // An automation run in its own child session closes through the same command, on any channel.
+    const childRun = session ? findChildRunByChildSession(session.sessionKey) : null;
+    if (childRun) return this.closeAutomationRun(childRun, normalizedReturn, asJson);
+    if (session) assertSlackThreadChildSession("thread.close", session);
     let result: Awaited<ReturnType<typeof closeSlackThread>>;
     try {
       result = session
@@ -7682,6 +7691,63 @@ export class SessionCommands {
           : `Slack thread ${result.record.providerThreadId ?? target} was already closed`,
       );
     }
+    return payload;
+  }
+
+  /** `close-thread` inside an automation run's child session: close it, returning once when asked. */
+  private async closeAutomationRun(run: AutomationChildRun, returnText: string | undefined, asJson?: boolean) {
+    if (run.status === "closed" && returnText && run.returnState !== "pending") {
+      // Never report a return as sent when it was dropped.
+      throw new CliExpectedError(
+        `Run ${run.childSessionName} is already closed; this return was not delivered to ${run.parentSessionName}`,
+        "THREAD_CLOSED",
+        1,
+      );
+    }
+    const result = await closeChildRun(run, returnText ? { kind: "result", text: returnText } : null, {
+      callerContextId: getContext({ localOnly: true })?.contextId,
+    });
+    const pending = result.run.returnState === "pending";
+    const payload = {
+      status: result.run.status,
+      actionId: "thread.close",
+      closed: true,
+      changed: result.changed,
+      runId: result.run.id,
+      surface: result.run.surface,
+      parentReturn: {
+        requested: result.run.returnKind !== undefined,
+        delivered: result.parentReturnDelivered || result.run.parentNotifiedAt !== undefined,
+        pending,
+      },
+      parentSession: { sessionKey: result.run.parentSessionKey, sessionName: result.run.parentSessionName },
+      childSession: { sessionKey: result.run.childSessionKey, sessionName: result.run.childSessionName },
+    };
+    if (asJson) printJson(payload);
+    else {
+      console.log(
+        result.changed
+          ? `Closed run ${result.run.childSessionName}${result.parentReturnDelivered ? ` and returned to ${result.run.parentSessionName}` : ""}`
+          : `Run ${result.run.childSessionName} was already closed`,
+      );
+    }
+    return payload;
+  }
+
+  /** `report` inside an automation run's child session: progress to the parent, the run stays open. */
+  private async reportAutomationRun(run: AutomationChildRun, message: string, asJson?: boolean) {
+    const { messageId } = await reportChildRunProgress(run, message, {
+      callerContextId: getContext({ localOnly: true })?.contextId,
+    });
+    const payload = {
+      status: "published",
+      actionId: "thread.report",
+      runId: run.id,
+      messageId,
+      parentSession: { sessionKey: run.parentSessionKey, sessionName: run.parentSessionName },
+    };
+    if (asJson) printJson(payload);
+    else console.log(`Reported to ${run.parentSessionName}`);
     return payload;
   }
 
@@ -7834,6 +7900,17 @@ export class SessionCommands {
     if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, sessionActionRef(session))) {
       fail(`Session not found: ${target}`);
       return;
+    }
+    const childRun = findChildRunByChildSession(session.sessionKey);
+    if (childRun) {
+      if (awaitingKind !== undefined || ref?.trim() || pr?.trim()) {
+        throw new CliExpectedError(
+          "--awaiting, --ref and --pr apply to Slack threads; an automation run reports progress or closes with --return",
+          "USAGE_ERROR",
+          2,
+        );
+      }
+      return this.reportAutomationRun(childRun, decodeLiteralLineBreaks(message), asJson);
     }
     assertSlackThreadChildSession("thread.report", session);
     let result: Awaited<ReturnType<typeof reportSlackThreadProgress>>;

@@ -67087,7 +67087,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "isolated": {
-        "description": "Run in isolated session",
+        "description": "Deprecated: use --thread. Runs every execution in one shared session that keeps growing",
         "type": "boolean"
       },
       "message": {
@@ -67102,9 +67102,17 @@ public enum RaviSchemas {
         "description": "Error action, e.g. notify-session:<session>",
         "type": "string"
       },
+      "reportTo": {
+        "description": "With --thread: the session each run reports to, of the job's agent (default: the creating session)",
+        "type": "string"
+      },
       "shell": {
         "description": "Run a shell command directly without invoking an agent",
         "type": "string"
+      },
+      "thread": {
+        "description": "Run each execution in a fresh session of its own that returns its result once to the report-to session (agent jobs)",
+        "type": "boolean"
       },
       "timeout": {
         "description": "Shell timeout, e.g. 60 or 5m",

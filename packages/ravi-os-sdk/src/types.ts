@@ -12500,7 +12500,9 @@ export type CronAddInput = {
   message?: string;
   name: string;
   onError?: string;
+  reportTo?: string;
   shell?: string;
+  thread?: boolean;
   timeout?: string;
   tz?: string;
 };

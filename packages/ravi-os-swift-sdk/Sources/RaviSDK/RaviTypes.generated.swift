@@ -15505,11 +15505,13 @@ public struct CronAddOptions: Codable, Sendable {
   public var isolated: Bool?
   public var message: String?
   public var onError: String?
+  public var reportTo: String?
   public var shell: String?
+  public var thread: Bool?
   public var timeout: String?
   public var tz: String?
 
-  public init(account: String? = nil, agent: String? = nil, at: String? = nil, cron: String? = nil, deleteAfter: Bool? = nil, description: String? = nil, envFile: String? = nil, every: String? = nil, exec: String? = nil, idempotencyKey: String? = nil, isolated: Bool? = nil, message: String? = nil, onError: String? = nil, shell: String? = nil, timeout: String? = nil, tz: String? = nil) {
+  public init(account: String? = nil, agent: String? = nil, at: String? = nil, cron: String? = nil, deleteAfter: Bool? = nil, description: String? = nil, envFile: String? = nil, every: String? = nil, exec: String? = nil, idempotencyKey: String? = nil, isolated: Bool? = nil, message: String? = nil, onError: String? = nil, reportTo: String? = nil, shell: String? = nil, thread: Bool? = nil, timeout: String? = nil, tz: String? = nil) {
     self.account = account
     self.agent = agent
     self.at = at
@@ -15523,7 +15525,9 @@ public struct CronAddOptions: Codable, Sendable {
     self.isolated = isolated
     self.message = message
     self.onError = onError
+    self.reportTo = reportTo
     self.shell = shell
+    self.thread = thread
     self.timeout = timeout
     self.tz = tz
   }
@@ -15542,7 +15546,9 @@ public struct CronAddOptions: Codable, Sendable {
     case isolated = "isolated"
     case message = "message"
     case onError = "onError"
+    case reportTo = "reportTo"
     case shell = "shell"
+    case thread = "thread"
     case timeout = "timeout"
     case tz = "tz"
   }
@@ -15587,8 +15593,14 @@ public struct CronAddOptions: Codable, Sendable {
     if let value = self.onError {
       body["onError"] = try RaviJSON.fromEncodable(value)
     }
+    if let value = self.reportTo {
+      body["reportTo"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.shell {
       body["shell"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.thread {
+      body["thread"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.timeout {
       body["timeout"] = try RaviJSON.fromEncodable(value)

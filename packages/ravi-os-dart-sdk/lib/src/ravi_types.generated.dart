@@ -13132,7 +13132,7 @@ class CrmTaskSnoozeReturn {
 CrmTaskSnoozeReturn crmTaskSnoozeReturnFromJson(Object? json) => CrmTaskSnoozeReturn.fromJsonValue(json);
 
 class CronAddOptions {
-  const CronAddOptions({this.account, this.agent, this.at, this.cron, this.deleteAfter, this.description, this.envFile, this.every, this.exec, this.idempotencyKey, this.isolated, this.message, this.onError, this.shell, this.timeout, this.tz});
+  const CronAddOptions({this.account, this.agent, this.at, this.cron, this.deleteAfter, this.description, this.envFile, this.every, this.exec, this.idempotencyKey, this.isolated, this.message, this.onError, this.reportTo, this.shell, this.thread, this.timeout, this.tz});
 
   final String? account;
   final String? agent;
@@ -13147,7 +13147,9 @@ class CronAddOptions {
   final bool? isolated;
   final String? message;
   final String? onError;
+  final String? reportTo;
   final String? shell;
+  final bool? thread;
   final String? timeout;
   final String? tz;
 
@@ -13191,8 +13193,14 @@ class CronAddOptions {
     if (onError != null) {
       into["onError"] = RaviJson.from(onError);
     }
+    if (reportTo != null) {
+      into["reportTo"] = RaviJson.from(reportTo);
+    }
     if (shell != null) {
       into["shell"] = RaviJson.from(shell);
+    }
+    if (thread != null) {
+      into["thread"] = RaviJson.from(thread);
     }
     if (timeout != null) {
       into["timeout"] = RaviJson.from(timeout);

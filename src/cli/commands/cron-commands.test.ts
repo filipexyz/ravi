@@ -128,9 +128,12 @@ mock.module("../../router/session-key.js", () => ({
   deriveSourceFromSessionKey: () => undefined,
 }));
 
+/** Sessions `resolveSession` finds, by name or key; empty unless a test fills it. */
+let mockSessions: Record<string, { sessionKey: string; name: string; agentId: string }> = {};
+
 mock.module("../../router/sessions.js", () => ({
   ...actualSessionsModule,
-  resolveSession: () => null,
+  resolveSession: (ref: string) => mockSessions[ref] ?? null,
 }));
 
 mock.module("../../router/router-db.js", () => ({
@@ -1692,5 +1695,94 @@ describe("CronCommands owner principal", () => {
     const payload = await captureJson(() => new CronCommands().set("cron-1", "message", "new text", true));
 
     expect(payload).toMatchObject({ warnings: [], job: { runsAsOperator: true } });
+  });
+});
+
+describe("CronCommands --thread", () => {
+  const MAIN_DM = { sessionKey: "agent:main:slack:ravi-slack:dm:d1", name: "main-dm", agentId: "main" };
+  const GROUP = { sessionKey: "agent:ravi-updates:whatsapp:main:group:120363", name: "grupo", agentId: "ravi-updates" };
+
+  function addJob(opts: { isolated?: boolean; thread?: boolean; reportTo?: string; agent?: string }) {
+    return new CronCommands().add(
+      "Updates",
+      undefined,
+      "30m",
+      undefined,
+      undefined,
+      "Read the blog and post what matters",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      opts.isolated,
+      undefined,
+      opts.agent,
+      undefined,
+      undefined,
+      true,
+      undefined,
+      opts.thread,
+      opts.reportTo,
+    );
+  }
+
+  beforeEach(() => {
+    mockSessions = {
+      [MAIN_DM.sessionKey]: MAIN_DM,
+      [MAIN_DM.name]: MAIN_DM,
+      [GROUP.sessionKey]: GROUP,
+      [GROUP.name]: GROUP,
+    };
+    mockCliContext = undefined;
+    mockScopeContext = undefined;
+    mockScopeEnforced = false;
+    cronJob = null;
+  });
+
+  afterEach(() => {
+    mockSessions = {};
+    mockCliContext = undefined;
+  });
+
+  it("runs in thread mode and reports to the creating session by default", async () => {
+    mockCliContext = { sessionKey: MAIN_DM.sessionKey, agentId: "main" };
+    const payload = await captureJson(() => addJob({ thread: true }));
+
+    expect(cronJob).toMatchObject({ sessionTarget: "thread", replySession: MAIN_DM.sessionKey, agentId: "main" });
+    expect(payload.warnings).toEqual([]);
+  });
+
+  it("reports to the --report-to session when it belongs to the job's agent", async () => {
+    mockCliContext = { sessionKey: MAIN_DM.sessionKey, agentId: "main" };
+    await captureJson(() => addJob({ thread: true, agent: "ravi-updates", reportTo: "grupo" }));
+
+    expect(cronJob).toMatchObject({ sessionTarget: "thread", replySession: GROUP.sessionKey, agentId: "ravi-updates" });
+  });
+
+  it("refuses a report-to session of another agent, including the creating one by default", async () => {
+    mockCliContext = { sessionKey: MAIN_DM.sessionKey, agentId: "main" };
+
+    await expect(addJob({ thread: true, agent: "ravi-updates", reportTo: "main-dm" })).rejects.toThrow(
+      /report to a session of its own agent \(ravi-updates\)/,
+    );
+    await expect(addJob({ thread: true, agent: "ravi-updates" })).rejects.toThrow(/belongs to main/);
+    expect(cronJob).toBeNull();
+  });
+
+  it("refuses a report-to session that does not exist", async () => {
+    await expect(addJob({ thread: true, reportTo: "nowhere" })).rejects.toThrow("Report-to session not found: nowhere");
+  });
+
+  it("refuses --report-to without --thread and --thread with --isolated", async () => {
+    await expect(addJob({ reportTo: "grupo" })).rejects.toThrow("--report-to only applies with --thread");
+    await expect(addJob({ thread: true, isolated: true })).rejects.toThrow(/cannot be combined/);
+  });
+
+  it("still creates an --isolated job, with a deprecation warning", async () => {
+    const payload = await captureJson(() => addJob({ isolated: true }));
+
+    expect(cronJob).toMatchObject({ sessionTarget: "isolated" });
+    expect(payload.warnings).toEqual([expect.stringContaining("--isolated is deprecated")]);
   });
 });
