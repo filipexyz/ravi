@@ -239,8 +239,13 @@ const clip = clipChildRunReturn;
 const LINE_BREAKS = /\r\n|[\r\n\u0085\u2028\u2029]/;
 
 function runLabel(run: AutomationChildRun): string {
-  // The name is free text: quoted as JSON on the notice's first line, so it can never break it.
-  return `${run.originKind} ${JSON.stringify(run.originName)} (${run.childSessionName})`;
+  // The name is free text: quoted as JSON on the notice's first line, with the separators JSON leaves
+  // raw (NEL, LS, PS) escaped too, so no reader can see it start a new line.
+  const quoted = JSON.stringify(run.originName).replace(
+    /[\u0085\u2028\u2029]/g,
+    (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+  return `${run.originKind} ${quoted} (${run.childSessionName})`;
 }
 
 /** The internal turn the parent receives; the same shape a Slack thread return has. */

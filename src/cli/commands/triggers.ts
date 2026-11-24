@@ -958,7 +958,7 @@ export class TriggersCommands {
     const currentSession = isTriggerOwnSessionKey(ctx?.sessionKey)
       ? undefined
       : creatingRun
-        ? creatingRun.parentSessionName
+        ? creatingRun.parentSessionKey
         : ctx?.sessionName || ctx?.sessionKey;
     const sessionTarget: SessionTarget = thread ? "thread" : session?.trim() || currentSession || "main";
     const resolvedAgent = agent ?? ctx?.agentId;
@@ -977,7 +977,11 @@ export class TriggersCommands {
     // getAccountForAgent: it picks the wrong account in multi-account setups
     // and causes outbound deliveries to fail with "chat not found".
     const resolvedAccount =
-      account ?? ctx?.source?.accountId ?? (resolvedAgent ? getAccountForAgent(resolvedAgent) : undefined);
+      account ??
+      ctx?.source?.accountId ??
+      // Inside a run, replies go to the parent's chat: through the parent's account.
+      (creatingRun ? resolveSession(creatingRun.parentSessionKey)?.lastAccountId : undefined) ??
+      (resolvedAgent ? getAccountForAgent(resolvedAgent) : undefined);
 
     // Capture reply session from caller context for source routing.
     // Prefer the friendly session name when available so `triggers show`
@@ -992,13 +996,14 @@ export class TriggersCommands {
           resolvedAgent ?? getDefaultAgentId(),
         )
       : replySessionOverride?.trim() ||
-        (creatingRun ? creatingRun.parentSessionName : (ctx?.sessionName ?? ctx?.sessionKey));
+        (creatingRun ? creatingRun.parentSessionKey : (ctx?.sessionName ?? ctx?.sessionKey));
     assertTriggerTargetAuthorized(
       "triggers add",
       {
         ...(agent ? { agentId: agent } : {}),
-        ...(session !== undefined ? { session: sessionTarget } : {}),
-        ...(replySessionOverride?.trim() || reportTo?.trim() ? { replySession } : {}),
+        // A run's parent standing in for the caller's own session is checked like an explicit target.
+        ...(session !== undefined || (creatingRun && !thread) ? { session: sessionTarget } : {}),
+        ...(replySessionOverride?.trim() || reportTo?.trim() || creatingRun ? { replySession } : {}),
       },
       asJson,
     );

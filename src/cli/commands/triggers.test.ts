@@ -1897,9 +1897,27 @@ describe("TriggersCommands --thread", () => {
 
     await add({});
 
+    // By key: a later rename of the parent cannot strand the trigger.
     expect(createdTriggers).toContainEqual(
-      expect.objectContaining({ session: "run-parent", replySession: "run-parent" }),
+      expect.objectContaining({
+        session: "agent:main:slack:dm:run-parent",
+        replySession: "agent:main:slack:dm:run-parent",
+      }),
     );
+
+    // The parent stands in for the caller's own session: a caller that may not modify it is refused.
+    createdTriggers.length = 0;
+    mockScopeEnforced = true;
+    mockScopeContext = { agentId: "main" };
+    mockCanModifySession = false;
+    try {
+      await expect(add({})).rejects.toThrow(/Permission denied for session target/);
+    } finally {
+      mockScopeEnforced = false;
+      mockScopeContext = undefined;
+      mockCanModifySession = true;
+    }
+    expect(createdTriggers).toHaveLength(0);
   });
 
   it("stores thread mode reporting to a lasting session of the trigger's agent", async () => {

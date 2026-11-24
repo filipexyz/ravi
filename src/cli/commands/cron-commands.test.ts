@@ -1858,6 +1858,8 @@ describe("CronCommands --thread", () => {
     const { openChildRun } = await import("../../automation/child-runs.js");
     const RUN = { sessionKey: "agent:main:cron:job-y:run:run-y", name: "main-run-run-y", agentId: "main" };
     mockSessions[RUN.sessionKey] = RUN;
+    // The parent talks through its own account: replies to it must use that one.
+    mockSessions[MAIN_DM.sessionKey] = { ...MAIN_DM, lastAccountId: "parent-account" } as typeof MAIN_DM;
     openChildRun({
       id: `run-y-${Math.random().toString(36).slice(2, 8)}`,
       originKind: "cron",
@@ -1873,7 +1875,25 @@ describe("CronCommands --thread", () => {
 
     await captureJson(() => addJob({}));
 
-    expect(cronJob).toMatchObject({ sessionTarget: "main", replySession: MAIN_DM.sessionKey });
+    expect(cronJob).toMatchObject({
+      sessionTarget: "main",
+      replySession: MAIN_DM.sessionKey,
+      accountId: "parent-account",
+    });
+
+    // The parent stands in for the caller's own session: a caller that may not modify it is refused.
+    cronJob = null;
+    mockScopeEnforced = true;
+    mockScopeContext = { agentId: "main" };
+    mockCanModifySession = false;
+    try {
+      await expect(addJob({})).rejects.toThrow(/Permission denied for session target/);
+    } finally {
+      mockScopeEnforced = false;
+      mockScopeContext = undefined;
+      mockCanModifySession = true;
+    }
+    expect(cronJob).toBeNull();
   });
 
   it("keeps a thread job's agent and report-to session paired on cron set", async () => {

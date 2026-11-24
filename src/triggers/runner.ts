@@ -350,6 +350,8 @@ export class TriggerRunner {
   private runTurnAbort: AbortController | null = null;
   private runTurnStream: ReturnType<typeof nats.subscribe> | null = null;
   private runTurnLoop: Promise<void> | null = null;
+  /** Delay before the run turn watch subscribes again. */
+  private runTurnRestartMs = 5000;
   private recentEventFires = new Map<string, number>();
   /** Last fire per resolved session of named-session triggers (per-session cooldown). */
   private keyedLastFiredAt = new Map<string, { at: number; cooldownMs: number }>();
@@ -1083,7 +1085,7 @@ export class TriggerRunner {
   private restartThreadRunWatch(controller: AbortController): void {
     setTimeout(() => {
       if (this.running && this.runTurnAbort === controller) this.runTurnLoop = this.watchThreadRunTurns();
-    }, 5000);
+    }, this.runTurnRestartMs);
   }
 
   /**

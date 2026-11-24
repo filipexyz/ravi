@@ -257,6 +257,24 @@ describe("trigger thread mode", () => {
     expect(isTriggerOriginatedEvent("ravi._cli.cli.bases.rows.update", fromChat)).toBe(false);
   });
 
+  it("watches run turns again when the subscription ends cleanly", async () => {
+    const trigger = createThreadTrigger();
+    runner = new TriggerRunner();
+    runner["runTurnRestartMs"] = 10;
+    await runner.start();
+    channels.get("ravi.session.*.runtime")!.close();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    emit({ id: 1 });
+    await waitFor(() => fires().length === 1);
+    saveMessage(fires()[0]!.sessionName, "assistant", "depois do reinício", null, { utteranceClass: "final" });
+    endTurn(fires()[0]!.sessionName, { type: "turn.complete" });
+    await waitFor(() => returns().length === 1);
+
+    expect(String(returns()[0]!.payload.prompt)).toContain("\n> depois do reinício");
+    expect(listChildRunsForOrigin("trigger", trigger.id)[0]).toMatchObject({ status: "closed" });
+  });
+
   it("leaves a cron run's turn to the cron runner", async () => {
     getOrCreateSession(`agent:${AGENT}:cron:job-1:run:cron-run-1`, AGENT, "/tmp/trigger-test-agent-real", {
       name: `${AGENT}-run-cron-run-1`,

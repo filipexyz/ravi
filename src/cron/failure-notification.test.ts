@@ -378,6 +378,7 @@ describe("undelivered run return notice", () => {
     agentId: "ravi-updates",
     ownerPrincipal: "operator",
     runId: "run-1",
+    runSessionName: "ravi-updates-run-run-1",
     parentSessionName: "grupo",
   };
 
@@ -397,6 +398,7 @@ describe("undelivered run return notice", () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]).toContain("trigger “blog-watch”");
     expect(sent[0]).toContain("não chegou a grupo em 24 h");
+    expect(sent[0]).toContain("ravi sessions read ravi-updates-run-run-1");
     expect(sent[0]).toContain("ravi triggers show trg-1");
     const [item] = listLocalInboxItems().filter((entry) => entry.sourceType === "run_return_undelivered");
     expect(item).toMatchObject({ sourceDomain: "triggers", sourceId: "trg-1" });

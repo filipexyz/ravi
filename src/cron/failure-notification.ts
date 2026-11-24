@@ -390,6 +390,8 @@ export interface UndeliveredRunReturn {
   /** Who the job or trigger acts as; `unknown` or an agent owes no direct message. */
   ownerPrincipal?: string;
   runId: string;
+  /** The run's own session, where its work can be read while it is kept. */
+  runSessionName: string;
   parentSessionName: string;
 }
 
@@ -405,7 +407,7 @@ export async function notifyUndeliveredRunReturn(
 ): Promise<boolean> {
   const label = run.originKind === "cron" ? `agendamento “${run.originName}”` : `trigger “${run.originName}”`;
   const show = run.originKind === "cron" ? "ravi cron show" : "ravi triggers show";
-  const text = `O resultado de uma execução do ${label} não chegou a ${run.parentSessionName} em 24 h e foi descartado. Veja com ${show} ${run.originId}.`;
+  const text = `O resultado de uma execução do ${label} não chegou a ${run.parentSessionName} em 24 h e foi descartado. A execução: ravi sessions read ${run.runSessionName}. A origem: ${show} ${run.originId}.`;
   const targets = deps.owners
     ? deps.owners({ ownerPrincipal: run.ownerPrincipal })
     : resolveCronFailureOwners({ ownerPrincipal: run.ownerPrincipal });

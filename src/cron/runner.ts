@@ -181,9 +181,9 @@ export class CronRunner {
         const admitted = run.originKind === "cron" ? getCronRun(run.id) : null;
         const ownerPrincipal = admitted
           ? cronRunNotification(admitted).ownerPrincipal
-          : run.originKind === "trigger"
-            ? dbGetTrigger(run.originId)?.ownerPrincipal
-            : undefined;
+          : // A trigger with no owner, or deleted since, owes nobody a message (an absent owner would
+            // read as the operator).
+            (dbGetTrigger(run.originId)?.ownerPrincipal ?? "unknown");
         await notifyUndeliveredRunReturn({
           originKind: run.originKind,
           originId: run.originId,
@@ -191,6 +191,7 @@ export class CronRunner {
           agentId: run.agentId,
           ownerPrincipal,
           runId: run.id,
+          runSessionName: run.childSessionName,
           parentSessionName: run.parentSessionName,
         });
       },
@@ -278,6 +279,20 @@ export class CronRunner {
   }
 
   /** Wait for the report in flight, but only a moment: the daemon stops its components in series. */
+  private async settleChildRunReconcile(): Promise<void> {
+    const pass = this.childRunReconcile;
+    if (!pass) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settled = await Promise.race([
+      pass.then(() => true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), this.failureReportStopGraceMs);
+      }),
+    ]);
+    clearTimeout(timer);
+    if (!settled) log.warn("Automation run reconciliation still in flight at shutdown; the next start resumes it");
+  }
+
   private async settleFailureReportLoop(): Promise<void> {
     const loop = this.failureReportLoop;
     if (!loop) return;
@@ -310,8 +325,10 @@ export class CronRunner {
       clearInterval(this.childRunTimer);
       this.childRunTimer = null;
     }
-    // A pass in flight stops between runs once `running` is false; wait for it, as for the reports.
-    await this.childRunReconcile;
+    // A pass in flight stops between runs once `running` is false. Waited for as briefly as the failure
+    // reports (a notice may hold a chat for 30 s; the daemon stops components inside one 15 s guard):
+    // an unfinished pass keeps its state persisted and the next start reconciles again.
+    await this.settleChildRunReconcile();
 
     this.runtimeEventAbort?.abort();
     if (this.runtimeEventStream) {
