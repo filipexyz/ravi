@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { assertAutomationStoreWrite } from "../permissions/user-overlay-automation.js";
 import type { Statement } from "bun:sqlite";
 import { getDb, getDbChanges } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
@@ -126,6 +127,7 @@ function rowToHook(row: HookRow): HookRecord {
 }
 
 export function dbCreateHook(input: HookInput): HookRecord {
+  assertAutomationStoreWrite("hook");
   const s = getStatements();
   const id = randomUUID().slice(0, 8);
   const now = Date.now();
@@ -178,6 +180,10 @@ type HookUpdateInput = Partial<
 >;
 
 export function dbUpdateHook(id: string, updates: HookUpdateInput): HookRecord {
+  const disablesOnly = Object.entries(updates as Record<string, unknown>).every(
+    ([key, value]) => value === undefined || (key === "enabled" && value === false),
+  );
+  assertAutomationStoreWrite("hook", { disablesOnly });
   const existing = dbGetHook(id);
   if (!existing) {
     throw new Error(`Hook not found: ${id}`);

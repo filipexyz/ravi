@@ -79,7 +79,71 @@ effective_capabilities =
 ```
 
 A chat is governed when at least one chat or chat-tag contact grant covers it.
-Ungoverned chats keep `agent_identity ∩ turn_caps` unchanged.
+Ungoverned chats keep `agent_identity ∩ turn_caps`, with one exception:
+
+- Break-glass never reaches a person through the agent ("full-access minus
+  break-glass" for the actor). When the actor of a turn is a contact and the
+  chat is ungoverned, the turn keeps everything of the agent identity, including
+  what the `admin:system:*` shortcut grants (images, web, tools), but carries a
+  `deny_<permission>` entry for each break-glass power the agent holds and the
+  contact does not: `admin:system:*` and `execute:executable:*`. The snapshot
+  matcher honors `deny_*` before the admin shortcut and wildcards (an explicit,
+  non-wildcard capability for the exact object still allows it), and the Bash
+  PreToolUse hook honors it before the live executor ceiling, so the person gets
+  neither system admin nor arbitrary commands. The contact's own capabilities
+  count in full; turns with no contact actor (cron, trigger, agent-to-agent)
+  are unchanged. The withheld list is recorded as `actorBreakGlassWithheld`.
+- A denial born from that rule resolves to a chat-scoped grant for the contact
+  (`permissions resolve`), not to the executor agent.
+- The limit follows derived turns. A turn relayed from that person's turn
+  (inform, ask, execute, thread bootstrap) gets the caller's positive
+  capabilities and re-applies the same `deny_*`; a deny is never passed as a
+  positive narrowing (a deny of the admin shortcut would erase everything).
+- Automation cannot outlive the limit: a turn carrying
+  `actorBreakGlassWithheld` (or a relay of one) cannot write cron jobs,
+  triggers, session followups, hooks, signals or tasks; the write is refused
+  with `PERMISSION_DENIED` and the operator sets it up. The rule lives in the
+  stores, not only in commands: `assertAutomationStoreWrite`
+  (`permissions/user-overlay-automation.ts`) runs in `dbCreateTrigger`,
+  `dbUpdateTrigger`, `dbCreateCronJob`, `dbUpdateCronJob`, `dbCreateHook`,
+  `dbUpdateHook`, `createSessionFollowupCadence`,
+  `updateSessionFollowupCadence`, `dbInsertSignal` and
+  `dbCreateTaskAutomation`, so any writer (`watch trigger`, page comment
+  follow, bug follow, or a new one) is refused from such a turn. Disabling is
+  always allowed; code outside a turn is unaffected; an overlay turn may still
+  write a cron job bound to its chat (`creatorChat`). Command guards remain
+  for a good error. Binding the job to the creator's ceiling is deferred.
+- What "everything except break-glass" still includes (declared): the admin
+  shortcut still grants every other `(permission, objectType)`, e.g.
+  `execute:group:*` CLI groups, `write_contacts:system:*` and `admin` on types
+  other than `system`. Only `admin:system:*` and `execute:executable:*` are
+  withheld.
+- Executables the core spawns from a name that came from a command or a
+  manifest (app commands: `apps import-cli`, `apps run`, app permission
+  providers) go through `assertTurnMayExecute`
+  (`permissions/turn-executable.ts`): a turn that withholds
+  `execute:executable:*` cannot spawn anything but Ravi itself. Observer rules
+  and task automation updates are guarded at the store too; pausing a session
+  followup stays allowed, re-enabling it is guarded.
+- File writes for that person are an allowlist: the session workspace and
+  the temp directory, symlinks resolved; the workspace never counts when it is
+  the filesystem root or the home directory. Operator config the daemon turns
+  into code at boot (`~/.ravi/.env`, the installed bundle, shell rc, launch
+  agents) is refused without `execute:executable:*` or `admin:system:*`
+  (`providerConfigWriteDenial` with `restrictToWorkspace`).
+- The workspace is configuration an agent can change, so it is not the only
+  boundary: the Ravi state dir, `~/.bun`, launch agents, systemd and fish
+  config and shell startup files are always refused for the limited person,
+  and moving an agent's `cwd` or creating an agent is refused in a limited
+  turn (`dbUpdateAgent`, `dbCreateAgent`).
+- The limit is read from the capabilities as well as the metadata
+  (`isActorBreakGlassLimitedContext`), so derived contexts that inherit the
+  `deny_*` keep every guard.
+- Known residual risk: inside the workspace, file tools stay open, so a
+  person without grants can edit files in the agent's workspace (AGENTS.md, MEMORY.md, skills) that later autonomous turns
+  read as instructions. Follow-up of design, not closed here.
+- Consequence: revoking the last grant of a chat can never widen a participant
+  to the agent's break-glass.
 
 ## Compartments
 

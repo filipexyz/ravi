@@ -348,6 +348,21 @@ describe("CronCommands --json", () => {
     ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
   });
 
+  it("refuses a job from a person's turn held below the agent's break-glass (ungoverned chat)", async () => {
+    mockCliContext = {
+      agentId: "dev",
+      context: {
+        metadata: {
+          actorAuthorizationMode: "invoke-only",
+          actorBreakGlassWithheld: ["admin:system:*", "execute:executable:*"],
+        },
+      },
+    };
+    await expect(
+      new CronCommands().add("Ungoverned", undefined, "30m", undefined, undefined, "hello"),
+    ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+  });
+
   it("does not make a trigger's own session the reply session of a job created during its turn", async () => {
     const addJob = () =>
       captureJson(() =>

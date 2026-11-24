@@ -2500,6 +2500,22 @@ function inferResolutionTargets(denial: PermissionDenial): { subjects?: string; 
     };
   }
 
+  // A person's turn in an ungoverned chat was refused break-glass the agent
+  // holds: the fix is a grant for that person in that chat, not the agent.
+  const surfaceChat = parseSubjectRef(cleanString(context?.surfacePrincipal));
+  if (
+    Array.isArray(context?.actorBreakGlassWithheld) &&
+    context.actorBreakGlassWithheld.length > 0 &&
+    overlayActor?.type === "contact" &&
+    surfaceChat?.type === "chat"
+  ) {
+    return {
+      subjects: `contact:${overlayActor.id}`,
+      ...(executorAgentId ? { agentIds: executorAgentId } : {}),
+      chat: surfaceChat.id,
+    };
+  }
+
   if (executorAgentId && (isAgentIdentityContext || denial.subjectType === "agent")) {
     return {
       subjects: `agent:${executorAgentId}`,

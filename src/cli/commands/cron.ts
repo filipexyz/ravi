@@ -3,6 +3,7 @@ import { errorDiagnostic } from "../../utils/error-diagnostic.js";
  * Cron Commands - Manage scheduled jobs
  */
 
+import { isActorBreakGlassLimitedContext } from "../../permissions/actor-limit.js";
 import "reflect-metadata";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import {
@@ -500,7 +501,11 @@ function currentUserOverlayChat(): string | undefined {
  * job to, so it cannot write one that would later run with the agent's authority.
  */
 function assertCronCreatorBindable(op: string): void {
-  if (getContext()?.context?.metadata?.relayNarrowing === true && !currentUserOverlayChat()) {
+  const metadata = getContext()?.context?.metadata;
+  // A person held below the agent's break-glass in an ungoverned chat has no
+  // chat grant to bind the job to either: it would run as the whole agent.
+  const withheldBreakGlass = isActorBreakGlassLimitedContext(getContext()?.context);
+  if ((metadata?.relayNarrowing === true && !currentUserOverlayChat()) || withheldBreakGlass) {
     assertNoUserOverlayAutomationWrite(op);
   }
 }

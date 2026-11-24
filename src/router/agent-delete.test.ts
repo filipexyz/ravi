@@ -53,3 +53,33 @@ describe("deleting an agent", () => {
     expect(resolveRuntimeContext(child.contextKey, { touch: false })).toBeNull();
   });
 });
+
+describe("agent workspace in a turn held below the agent's break-glass", () => {
+  it("refuses moving an agent's cwd or creating an agent, but lets other agent updates through", async () => {
+    const { runWithContext } = await import("../cli/context.js");
+    const { dbUpdateAgent } = await import("./router-db.js");
+    dbCreateAgent({ id: "workspace-agent", cwd: "/tmp/workspace-agent" });
+    const limited = {
+      contextId: "ctx_person",
+      agentId: "workspace-agent",
+      context: {
+        contextId: "ctx_person",
+        contextKey: "rctx_person",
+        kind: "turn-runtime",
+        agentId: "workspace-agent",
+        capabilities: [{ permission: "deny_execute", objectType: "executable", objectId: "*" }],
+        metadata: {},
+        createdAt: 0,
+      },
+    };
+    expect(() =>
+      runWithContext(limited, () => dbUpdateAgent("workspace-agent", { cwd: "/Users/someone/.ravi" })),
+    ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
+    expect(() => runWithContext(limited, () => dbCreateAgent({ id: "other-agent", cwd: "/tmp/other" }))).toThrow(
+      expect.objectContaining({ code: "PERMISSION_DENIED" }),
+    );
+    expect(() =>
+      runWithContext(limited, () => dbUpdateAgent("workspace-agent", { cwd: "/tmp/workspace-agent" })),
+    ).not.toThrow();
+  });
+});

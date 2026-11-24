@@ -1323,6 +1323,41 @@ describe("PermissionsCommands provider-runtime surface", () => {
     ]);
   });
 
+  it("resolves a withheld break-glass denial into a chat-scoped grant for the person, not the agent", () => {
+    const contact = createContact({ phone: "+15550000021", name: "Ungoverned Group User" });
+    const chat = groupChat("120363400000000021@g.us");
+    dbCreateAgent({ id: "ungoverned-agent", cwd: "/tmp" });
+    const denial = recordPermissionDenial({
+      subjectType: "agent",
+      subjectId: "ungoverned-agent",
+      relation: "execute",
+      objectType: "executable",
+      objectId: "curl",
+      agentId: "ungoverned-agent",
+      sessionName: "ungoverned-session",
+      contextId: "ctx_permission_ungoverned_resolve",
+      detail: {
+        context: {
+          authorityMode: "agent-identity",
+          actorPrincipal: `contact:${contact.id}`,
+          actorAuthorizationMode: "invoke-only",
+          surfacePrincipal: `chat:${chat.id}`,
+          actorBreakGlassWithheld: ["admin:system:*", "execute:executable:*"],
+          executorAgentId: "ungoverned-agent",
+          agentIdentityPrincipal: `agent_identity:ungoverned-agent:chat:${chat.id}`,
+        },
+      },
+    });
+
+    const payload = new PermissionsCommands().resolve(String(denial!.id), "curl workflow", undefined, false, true);
+
+    expect(payload).toMatchObject({
+      targets: [{ type: "contact", id: contact.id }],
+      agentCeilings: ["ungoverned-agent"],
+      scopes: [{ type: "chat", chatId: chat.id }],
+    });
+  });
+
   it("blocks resolve --profile full-access before any provider write", () => {
     dbCreateAgent({ id: "blocked-resolve-agent", cwd: "/tmp" });
     const denial = recordPermissionDenial({

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { assertAutomationStoreWrite } from "../permissions/user-overlay-automation.js";
 import { getDb, getDbChanges, getRaviDbPath } from "../router/router-db.js";
 import {
   TASK_AUTOMATION_EVENTS,
@@ -245,6 +246,7 @@ function ensureTaskAutomationSchema(): void {
 }
 
 export function dbCreateTaskAutomation(input: TaskAutomationInput): TaskAutomation {
+  assertAutomationStoreWrite("task automation");
   ensureTaskAutomationSchema();
 
   const db = getDb();
@@ -309,6 +311,10 @@ export function dbUpdateTaskAutomation(
   id: string,
   updates: Partial<TaskAutomationInput> & { enabled?: boolean },
 ): TaskAutomation {
+  const disablesOnly = Object.entries(updates as Record<string, unknown>).every(
+    ([key, value]) => value === undefined || (key === "enabled" && value === false),
+  );
+  assertAutomationStoreWrite("task automation", { disablesOnly });
   ensureTaskAutomationSchema();
 
   const existing = dbGetTaskAutomation(id);

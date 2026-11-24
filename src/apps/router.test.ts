@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { resolveRaviAppCommand } from "./command.js";
 import { spawn } from "bun";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { CONTRACT_EXIT_ERROR, CONTRACT_EXIT_USAGE, ContractError } from "../cli/agent-contract.js";
-import { runWithContext } from "../cli/context.js";
+import { runWithContext, type ToolContext } from "../cli/context.js";
 import {
   createRuntimeContext,
   getContextLineage,
@@ -2981,4 +2982,28 @@ it("a trusted builtin's own usage error keeps exit 2; a failed app process never
   expect(usage.error.code).toBe("OMIE_PAGINATION_INVALID");
   expect(usage.error.exitCode).toBe(CONTRACT_EXIT_USAGE);
   expect(raiseContractFailure(base, true).error.exitCode).toBe(CONTRACT_EXIT_ERROR);
+});
+
+describe("app run spawns only what the turn may execute", () => {
+  it("refuses an operation command that is not Ravi in a turn that withholds execute:executable:*", () => {
+    const limited = {
+      contextId: "ctx_person",
+      agentId: "full-agent",
+      context: {
+        contextId: "ctx_person",
+        contextKey: "rctx_person",
+        kind: "turn-runtime",
+        agentId: "full-agent",
+        capabilities: [
+          { permission: "admin", objectType: "system", objectId: "*" },
+          { permission: "deny_execute", objectType: "executable", objectId: "*" },
+        ],
+        metadata: { actorBreakGlassWithheld: ["execute:executable:*"] },
+        createdAt: 0,
+      },
+    } as ToolContext;
+    expect(() => runWithContext(limited, () => resolveRaviAppCommand("sh ./op.sh", ["--json"]))).toThrow(
+      expect.objectContaining({ code: "PERMISSION_DENIED" }),
+    );
+  });
 });
