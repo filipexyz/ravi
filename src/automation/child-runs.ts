@@ -209,6 +209,15 @@ export function listChildRunsForOrigin(
     .map(fromRow);
 }
 
+export function listOpenChildRuns(originKind: ChildRunOriginKind, originId: string): AutomationChildRun[] {
+  return db()
+    .query<ChildRunRow, [string, string]>(
+      "SELECT * FROM automation_child_runs WHERE origin_kind = ? AND origin_id = ? AND status = 'open' ORDER BY created_at, rowid",
+    )
+    .all(originKind, originId)
+    .map(fromRow);
+}
+
 export function childRunError(code: string, message: string, exitCode = 1): CliExpectedError {
   return new CliExpectedError(message, code, exitCode);
 }

@@ -35,6 +35,7 @@ import {
   dbGetCronJob,
   dbListCronJobs,
   dbDisableShellJobForOwner,
+  dbSetJobNextRun,
 } from "./cron-db.js";
 import { classifyDiskPressureHint } from "./disk-pressure.js";
 import { issueShellCronContext, redactContextKey } from "./shell-context.js";
@@ -52,6 +53,7 @@ import type { SessionEntry } from "../router/types.js";
 import {
   closeChildRun,
   getChildRun,
+  listOpenChildRuns,
   openChildRun,
   pruneClosedChildRuns,
   readChildRunLastReply,
@@ -80,6 +82,8 @@ const MAX_NOTIFY_OUTPUT_CHARS = 4000;
 const FAILURE_REPORT_STOP_GRACE_MS = 1_000;
 /** Failures one reconciliation pass keeps for `stop()` to raise; every failure is logged. */
 const MAX_RECORDED_REPORT_FAILURES = 10;
+/** A thread-mode run open longer than this is closed as failed, so its job can run again. */
+export const THREAD_RUN_STALE_MS = 2 * 60 * 60_000;
 
 function captureRunAuthority(job: CronJob): CronRunAuthority {
   return {
@@ -325,6 +329,13 @@ export class CronRunner {
 
     if (job.executionType === "shell") {
       await this.executeShellJob(job, startTime, authority);
+      return;
+    }
+
+    if (scheduled && job.sessionTarget === "thread" && (await this.threadRunStillOpen(job, startTime))) {
+      // One run at a time: a slow run never piles up open children. A manual run still goes.
+      dbSetJobNextRun(job.id, this.calculateFollowupRun(job, startTime));
+      log.info("Thread run skipped; the previous run is still open", { jobId: job.id, jobName: job.name });
       return;
     }
 
@@ -835,6 +846,8 @@ export class CronRunner {
     const session = getOrCreateSession(childKey, agentId, agentCwd, { name: childName });
     if (!session.name) updateSessionName(session.sessionKey, childName);
     const parentName = parent.name ?? parent.sessionKey;
+    // Admitted first: a failure from here on settles the run, which closes its child.
+    this.trackAgentDispatch(job, childName, startTime, runId);
     openChildRun({
       id: runId,
       originKind: "cron",
@@ -848,7 +861,6 @@ export class CronRunner {
       now: startTime,
     });
 
-    this.trackAgentDispatch(job, childName, startTime, runId);
     // No source: a headless run's replies reach no chat, only its returns reach the parent.
     await publishSessionPrompt(childName, {
       prompt: this.buildThreadRunPrompt(job, parentName),
@@ -860,6 +872,34 @@ export class CronRunner {
       _cronRunId: runId,
     });
     return childName;
+  }
+
+  /**
+   * Whether the job's previous run is still open. A run open longer than
+   * `THREAD_RUN_STALE_MS` (its turn's end was never seen) is closed as failed
+   * first, its parent told once, so the job is never stuck behind it.
+   */
+  private async threadRunStillOpen(job: CronJob, now: number): Promise<boolean> {
+    let stillOpen = false;
+    for (const run of listOpenChildRuns("cron", job.id)) {
+      if (now - run.createdAt < THREAD_RUN_STALE_MS) {
+        stillOpen = true;
+        continue;
+      }
+      try {
+        await closeChildRun(run, {
+          kind: "error",
+          text: `The run did not end within ${THREAD_RUN_STALE_MS / 60_000} min; it was closed so the job can run again.`,
+        });
+      } catch (error) {
+        log.warn("Failed to return a stale run's error to its parent", {
+          runId: run.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      await this.releaseChildRunRuntime(run);
+    }
+    return stillOpen;
   }
 
   /**

@@ -32,7 +32,8 @@ mock.module("../omni/session-stream.js", () => ({
   }),
 }));
 
-const { CronRunner } = await import("./runner.js");
+const { CronRunner, THREAD_RUN_STALE_MS } = await import("./runner.js");
+const { getDb } = await import("../router/router-db.js");
 const { dbCreateCronJob, dbGetCronJob } = await import("./cron-db.js");
 const { getCronRun } = await import("./run-db.js");
 const { closeChildRun, getChildRun, listChildRunsForOrigin, pruneClosedChildRuns } = await import(
@@ -228,6 +229,41 @@ describe("cron thread mode", () => {
     const run = getChildRun(runId)!;
     expect(run.parentSessionKey).toBe("agent:test-agent:main");
     expect(getSession(run.parentSessionKey)?.agentId).toBe("test-agent");
+  });
+
+  it("skips a scheduled run while the previous one is open; a manual run still goes", async () => {
+    createParent();
+    const job = createThreadJob();
+    const runner = new CronRunner();
+    await runner.triggerJob(job.id);
+    const dispatched = publishCalls.length;
+
+    await runner["executeJob"](dbGetCronJob(job.id)!, true);
+
+    expect(publishCalls).toHaveLength(dispatched);
+    expect(listChildRunsForOrigin("cron", job.id)).toHaveLength(1);
+    expect(dbGetCronJob(job.id)!.nextRunAt).toBeGreaterThan(Date.now());
+
+    await runner.triggerJob(job.id);
+    expect(listChildRunsForOrigin("cron", job.id)).toHaveLength(2);
+  });
+
+  it("closes a run left open past the stale limit as failed, then runs again", async () => {
+    createParent();
+    const job = createThreadJob();
+    const runner = new CronRunner();
+    await runner.triggerJob(job.id);
+    const stale = runDispatch(job.id);
+    getDb()
+      .query("UPDATE automation_child_runs SET created_at = ? WHERE id = ?")
+      .run(Date.now() - THREAD_RUN_STALE_MS - 1, stale.runId);
+
+    await runner["executeJob"](dbGetCronJob(job.id)!, true);
+
+    expect(getChildRun(stale.runId)).toMatchObject({ status: "closed", returnState: "error" });
+    expect(parentReturns()).toHaveLength(1);
+    expect(String(parentReturns()[0]!.payload.prompt)).toContain("did not end within 120 min");
+    expect(runDispatch(job.id).runId).not.toBe(stale.runId);
   });
 
   it("prunes a job's oldest closed runs, sessions included", async () => {
