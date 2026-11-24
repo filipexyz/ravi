@@ -18,3 +18,18 @@ The schema surface includes lazy router-backed schemas beyond bootstrap, so a lo
 Per-database locks cover the entire read/check/migrate/marker interval. They are reentrant within a process for composed initializers and remain exclusive across processes. A database override shared by different state roots must use the same canonical lock. Readiness cannot be used to skip exclusion.
 
 Sources: [SQLite transaction nesting](https://www.sqlite.org/lang_transaction.html), [foreign_keys PRAGMA](https://www.sqlite.org/pragma.html#pragma_foreign_keys), [kernel flock lifecycle](https://man7.org/linux/man-pages/man2/flock.2.html).
+
+## First start on a new installation
+
+On `dev` at 4d53d0ec the state boundary already refuses the operator's CLI on a state database that does not exist: the daemon creates the stores it serves, and the CLI never does (`openStateDatabase`). The flows written before that rule were not reconciled with it. `docs/start/install.mdx` ("Run without Omni") ran `ravi settings set` before `ravi daemon start`, and the `ravi setup` wizard read the agent (step 3) and wrote the time zone (step 4) before it started the daemon (step 5), so on a new machine both ended with `STATE_SCHEMA_NOT_READY`; in the wizard the exception was uncaught and stopped it at step 3. Reported as bug `ca342cb5` from a clean Ubuntu 24.04 runner.
+
+Moving the daemon first is not enough. `pm2 start` returns when PM2 has launched the process, and the daemon needs seconds to create its stores and reach `ready`: the next command still refused, and during that window the refusal tells the operator to run `ravi daemon restart -m "prepare state"`, which replaces the daemon that was still booting.
+
+| Option | Cost / failure mode |
+| --- | --- |
+| The CLI creates the state, or retries until it exists | Contradicts the boundary: a CLI that creates the store competes with the daemon that owns its schema |
+| Only reorder the wizard and the guide | Racy: the first command after `ravi daemon start` still fails until the daemon is ready |
+| Only improve the error text | It already says `ravi daemon start`; the defect is the order of the flows, not the message |
+| `ravi daemon start` waits for the daemon's `ready` receipt on the first start | One bounded wait in the command the message names; the same evidence the restart supervisor requires |
+
+**Decision: the last row, plus the reorder.** `ravi daemon start` waits only when no state database exists (`runtimeStartReadiness() === "fresh"`), because that is the only start after which the next command cannot work. The wait never fails the start: a daemon that does not get ready (usually NATS not reachable, since `ready` comes after the connection) is reported on stderr and the exit code stays 0, so scripts and `--json` consumers keep their contract. The wizard starts the daemon before the agent and settings steps and, when the state is still not readable, skips them and says so instead of ending on an exception.

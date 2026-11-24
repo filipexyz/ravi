@@ -86,8 +86,14 @@ function statefulFakePm2Script(): string {
   ].join("\n");
 }
 
-function restartCliEnv(tempRoot: string, pm2LogPath: string, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  seedPreparedThreadState(join(tempRoot, "state"));
+/** `seed: false` leaves the state directory absent, as on a machine that never ran a daemon. */
+function restartCliEnv(
+  tempRoot: string,
+  pm2LogPath: string,
+  extra: Record<string, string> = {},
+  options: { seed?: boolean } = {},
+): NodeJS.ProcessEnv {
+  if (options.seed !== false) seedPreparedThreadState(join(tempRoot, "state"));
   return {
     ...withoutRaviRuntimeContextEnv(process.env),
     HOME: join(tempRoot, "home"),
@@ -475,7 +481,7 @@ describe("DaemonCommands --json", () => {
           'process.env.RAVI_GATEWAY_URL = "unix:///missing-stale-gateway";',
           'process.env.RAVI_SESSION_CALLBACK_URL = "https://invalid.example/callback";',
           "delete process.env.RAVI_PM2_EXECUTABLE;",
-          "new DaemonCommands().start(true);",
+          "await new DaemonCommands().start(true);",
         ].join("\n"),
       ],
       {
@@ -535,6 +541,109 @@ describe("DaemonCommands --json", () => {
     expect(payload.stdout).toBeUndefined();
     expect(payload.stderr).toBeUndefined();
   });
+});
+
+/**
+ * A fake PM2 for a first start. It lists the daemon only after `start`, and the toggles say how that
+ * daemon behaves: `DAEMON_TEST_STATUS` is the status PM2 reports, and `DAEMON_TEST_RECEIPT=1` makes the
+ * incarnation publish its `ready` phase receipt (what the real daemon writes right before `Daemon ready`)
+ * from the `DAEMON_TEST_RECEIPT_AFTER`-th `jlist` after `start`, as a daemon that takes a few polls to boot.
+ */
+function firstStartFakePm2Script(): string {
+  return [
+    "#!/bin/sh",
+    'printf "%s\\n" "$*" >> "$DAEMON_TEST_PM2_LOG"',
+    'if [ "$1" = "start" ]; then date +%s000 > "$DAEMON_TEST_STARTED"; exit 0; fi',
+    'if [ "$1" = "jlist" ]; then',
+    '  if [ ! -f "$DAEMON_TEST_STARTED" ]; then printf "[]\\n"; exit 0; fi',
+    '  started_at=$(cat "$DAEMON_TEST_STARTED")',
+    '  polls=$(cat "$DAEMON_TEST_STARTED.polls" 2>/dev/null || echo 0)',
+    "  polls=$((polls + 1))",
+    '  echo "$polls" > "$DAEMON_TEST_STARTED.polls"',
+    `  if [ "$DAEMON_TEST_RECEIPT" = "1" ] && [ "$polls" -ge "\${DAEMON_TEST_RECEIPT_AFTER:-1}" ]; then`,
+    '    mkdir -p "$RAVI_STATE_DIR/runtime-processes"',
+    `    printf '{"protocol":1,"pid":%s,"phase":"ready","observedAt":%s}' "$DAEMON_TEST_LIVE_PID" "$started_at" > "$RAVI_STATE_DIR/runtime-processes/schema-owner-$DAEMON_TEST_LIVE_PID.json"`,
+    "  fi",
+    `  printf '[{"name":"ravi","pm_id":0,"pid":%s,"pm2_env":{"status":"%s","pm_uptime":%s},"monit":{"cpu":0,"memory":0}}]\\n' "$DAEMON_TEST_LIVE_PID" "\${DAEMON_TEST_STATUS:-online}" "$started_at"`,
+    "fi",
+    "exit 0",
+  ].join("\n");
+}
+
+describe("DaemonCommands start on a new installation", () => {
+  function startWith(extra: Record<string, string>, options: { seed: boolean }) {
+    const tempRoot = makeTempDir("ravi-daemon-first-start-");
+    const fakeBinDir = join(tempRoot, "bin");
+    const bundlePath = join(tempRoot, "runtime", "index.js");
+    const pm2LogPath = join(tempRoot, "pm2.log");
+    mkdirSync(fakeBinDir, { recursive: true });
+    mkdirSync(join(bundlePath, ".."), { recursive: true });
+    writeFileSync(join(fakeBinDir, "pm2"), firstStartFakePm2Script(), "utf8");
+    chmodSync(join(fakeBinDir, "pm2"), 0o755);
+    writeFileSync(bundlePath, "export {};\n", "utf8");
+
+    const result = spawnSync("bun", ["src/cli/index.ts", "daemon", "start", "--json"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      timeout: 20_000,
+      env: restartCliEnv(tempRoot, pm2LogPath, extra, options),
+    });
+    const pm2Lines = existsSync(pm2LogPath) ? readFileSync(pm2LogPath, "utf8").split("\n").filter(Boolean) : [];
+    return { result, pm2Lines };
+  }
+
+  it("waits until the daemon has published its ready receipt, and says nothing else on stdout", () => {
+    // The receipt appears at the third `jlist` after `start`, as for a daemon that needs a few polls to boot.
+    const { result, pm2Lines } = startWith(
+      { DAEMON_TEST_RECEIPT: "1", DAEMON_TEST_RECEIPT_AFTER: "3" },
+      { seed: false },
+    );
+
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ action: "start", changed: true, pm2Status: 0 });
+    expect(result.stderr).not.toContain("has not finished");
+    // Without the wait, `start` asks PM2 once after launching it (for the status it prints). It asked at least
+    // three times: it kept looking for the receipt and did not take the launch for readiness.
+    const startAt = pm2Lines.findIndex((line) => line.startsWith("start "));
+    expect(startAt).toBeGreaterThanOrEqual(0);
+    expect(pm2Lines.slice(startAt + 1).filter((line) => line.startsWith("jlist")).length).toBeGreaterThanOrEqual(3);
+  }, 25_000);
+
+  it("does not take PM2 online for ready: no receipt means a bounded wait and a warning, not a failure", () => {
+    const { result } = startWith(
+      { DAEMON_TEST_RECEIPT: "0", RAVI_DAEMON_START_READY_TIMEOUT_MS: "400" },
+      { seed: false },
+    );
+
+    expect(result.status).toBe(0);
+    // Still one JSON document on stdout; the warning goes to stderr.
+    expect(JSON.parse(result.stdout)).toMatchObject({ action: "start", changed: true, pm2Status: 0 });
+    expect(result.stderr).toContain("The daemon has not finished preparing its state");
+    expect(result.stderr).toContain("ravi daemon logs");
+  }, 25_000);
+
+  it("stops waiting as soon as PM2 reports the daemon errored", () => {
+    const { result } = startWith(
+      { DAEMON_TEST_RECEIPT: "0", DAEMON_TEST_STATUS: "errored", RAVI_DAEMON_START_READY_TIMEOUT_MS: "60000" },
+      { seed: false },
+    );
+
+    // Well inside the 20 s process bound although the wait bound is 60 s.
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain("The daemon stopped before it finished preparing its state");
+  }, 25_000);
+
+  it("does not wait when the state already exists", () => {
+    // A prepared state is not a first start: with no receipt and a 60 s bound, a wait would outlive the process bound.
+    const { result } = startWith(
+      { DAEMON_TEST_RECEIPT: "0", RAVI_DAEMON_START_READY_TIMEOUT_MS: "60000" },
+      { seed: true },
+    );
+
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ action: "start", changed: true, pm2Status: 0 });
+    expect(result.stderr).not.toContain("has not finished");
+  }, 25_000);
 });
 
 describe("DaemonCommands log transport", () => {

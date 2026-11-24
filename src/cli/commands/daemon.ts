@@ -5,6 +5,7 @@ import {
   runtimeStartReadiness,
 } from "../../runtime-maintenance.js";
 import { performUpgradeRestart } from "../daemon-upgrade-restart.js";
+import { DEFAULT_DAEMON_START_READY_TIMEOUT_MS, waitForDaemonStateReady } from "../daemon-start-ready.js";
 import { isInsideDaemonProcessTree } from "../daemon-process-tree.js";
 import { settleThreadFenceLeftovers } from "../../threads/fence-adoption.js";
 import { getRaviStateDir } from "../../utils/paths.js";
@@ -414,6 +415,43 @@ function optionalDurationMs(name: string): number | undefined {
   return Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
+/**
+ * The first start on a new installation: the state the CLI reads does not exist until the daemon has
+ * created it, and every command that reads it refuses until then. This waits for the daemon's own
+ * `ready` evidence, within a bound (`RAVI_DAEMON_START_READY_TIMEOUT_MS` overrides it). The outcome
+ * never fails the start; a daemon that does not get ready says why on stderr, so `--json` keeps
+ * stdout a single document.
+ */
+async function awaitFirstStartState(asJson: boolean): Promise<void> {
+  const timeoutMs = optionalDurationMs("RAVI_DAEMON_START_READY_TIMEOUT_MS") ?? DEFAULT_DAEMON_START_READY_TIMEOUT_MS;
+  if (!asJson) console.log(`Waiting for the daemon to prepare its state (up to ${Math.ceil(timeoutMs / 1000)}s)...`);
+  const result = await waitForDaemonStateReady({
+    daemon: () => {
+      try {
+        return getPm2Processes({ strict: true }).find((entry) => entry.name === PM2_PROCESS_NAME);
+      } catch {
+        // no-cause: an unreadable PM2 snapshot is one missed poll; the wait is bounded and reports its own outcome.
+        return undefined;
+      }
+    },
+    phase: readDaemonSchemaPhase,
+    now: () => Date.now(),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    timeoutMs,
+  });
+  if (result.ready) {
+    if (!asJson) console.log("Daemon ready");
+    return;
+  }
+  const why =
+    result.reason === "stopped"
+      ? "The daemon stopped before it finished preparing its state."
+      : `The daemon has not finished preparing its state after ${Math.ceil(result.waitedMs / 1000)}s.`;
+  console.error(
+    `${why} Read 'ravi daemon logs' for the reason; until it is ready, commands that read state answer STATE_SCHEMA_NOT_READY.`,
+  );
+}
+
 @Group({
   name: "daemon",
   description: "Manage ravi via PM2",
@@ -423,7 +461,7 @@ export class DaemonCommands {
   @Command({ name: "start", description: "Start the daemon via PM2" })
   @CommandAccess({ kind: "mutate", resource: "daemon", action: "start", risk: "high" })
   @Returns(daemonMutationReturnSchema)
-  start(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+  async start(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     // Leftovers of an interrupted upgrade settle here too, so this start reaches the daemon entry.
     settleThreadFenceLeftovers(getRaviStateDir());
     assertRuntimeMaintenanceInactive();
@@ -459,6 +497,10 @@ export class DaemonCommands {
 
     const args = startDaemonPm2Args(target.bundlePath);
     const { status } = asJson ? runPm2Quiet(args, { cwd: target.cwd }) : runPm2(args, undefined, { cwd: target.cwd });
+
+    // On a new installation the daemon creates the state the CLI reads as it boots. Return once it has,
+    // so the command the STATE_SCHEMA_NOT_READY message names is the one after which the next one works.
+    if (status === 0 && readiness === "fresh") await awaitFirstStartState(Boolean(asJson));
 
     const payload = {
       action: "start" as const,
