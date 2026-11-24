@@ -2,6 +2,7 @@ import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { resolve } from "node:path";
 import { z } from "zod";
+import { assertCallerFileAccess, getCallerCwd } from "../caller-cwd.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { CONTRACT_EXIT_USAGE, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { looseObjectSchema } from "../return-schemas.js";
@@ -70,8 +71,9 @@ function parseProviderFilter(op: string, source?: string, asJson?: boolean): Rav
   });
 }
 
+// Relative to the caller's cwd: on the gateway, process.cwd() is the daemon's.
 function resolveWorkspaceCwd(cwd?: string): string {
-  return resolve(cwd?.trim() || process.cwd());
+  return resolve(getCallerCwd(), cwd?.trim() || ".");
 }
 
 function serializeCandidate(candidate: RaviRulesImportCandidate): SerializedImportCandidate {
@@ -177,6 +179,7 @@ export class RulesCommands {
       includeUser: includeUser === true,
       write: write === true,
       force: force === true,
+      authorizeWrite: (path) => assertCallerFileAccess(path, "write"),
     });
     const payload = serializeImportResult(result);
 

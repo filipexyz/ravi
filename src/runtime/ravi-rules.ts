@@ -42,6 +42,12 @@ export interface RaviRulesImportOptions {
   includeUser?: boolean;
   write?: boolean;
   force?: boolean;
+  /**
+   * Called for every file about to be written, all of them before the first
+   * write; throwing refuses the whole import. The CLI checks the caller's
+   * file-write boundary here (rules are loaded as authoritative instructions).
+   */
+  authorizeWrite?: (path: string) => void;
 }
 
 export interface RaviRulesImportResult {
@@ -155,8 +161,9 @@ export async function importRaviRules(options: RaviRulesImportOptions): Promise<
   }
 
   if (write) {
-    for (const candidate of candidates) {
-      if (candidate.action === "skip_exists") continue;
+    const toWrite = candidates.filter((candidate) => candidate.action !== "skip_exists");
+    for (const candidate of toWrite) options.authorizeWrite?.(candidate.destinationPath);
+    for (const candidate of toWrite) {
       await mkdir(dirname(candidate.destinationPath), { recursive: true });
       await writeFile(candidate.destinationPath, `${candidate.content}\n`, "utf8");
     }

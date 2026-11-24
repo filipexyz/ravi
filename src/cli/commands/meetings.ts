@@ -1,5 +1,5 @@
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
-import { assertCallerFileAccess, resolveCallerPath } from "../caller-cwd.js";
+import { resolveCallerPath } from "../caller-cwd.js";
 import "reflect-metadata";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -222,8 +222,10 @@ function buildGoogleMeetJoinArgs(input: {
   capture?: string;
   skipFinalize?: boolean;
 }): string[] {
-  if (input.out?.trim()) assertCallerFileAccess(resolveCallerPath(input.out, "write"), "write");
-  const args = ["--url", input.url, "--until-empty", "--out", input.out?.trim() || "~/.ravi/meetings/runs"];
+  // The recorder runs in another process (on the gateway, the daemon's cwd), so it gets the
+  // exact path the gate checked against the caller's cwd, never the raw relative value.
+  const out = input.out?.trim() ? resolveCallerPath(input.out, "write") : "~/.ravi/meetings/runs";
+  const args = ["--url", input.url, "--until-empty", "--out", out];
   pushOption(args, "--name", input.name);
   pushOption(args, "--profile-dir", input.profileDir);
   pushOption(args, "--duration", input.duration);
@@ -234,7 +236,8 @@ function buildGoogleMeetJoinArgs(input: {
   return args;
 }
 
-function buildGoogleMeetJoinWorkerArgs(input: {
+/** Exported for tests: the detached join worker's argv. */
+export function buildGoogleMeetJoinWorkerArgs(input: {
   provider: string;
   url: string;
   name?: string;
@@ -254,8 +257,8 @@ function buildGoogleMeetJoinWorkerArgs(input: {
 }): string[] {
   const args = ["meetings", "join", "--provider", input.provider, "--url", input.url];
   pushOption(args, "--name", input.name);
-  if (input.out?.trim()) assertCallerFileAccess(resolveCallerPath(input.out, "write"), "write");
-  pushOption(args, "--out", input.out);
+  // The worker resolves --out against its own cwd: hand it the path the gate checked.
+  pushOption(args, "--out", input.out?.trim() ? resolveCallerPath(input.out, "write") : undefined);
   pushOption(args, "--profile-dir", input.profileDir);
   pushOption(args, "--duration", input.duration);
   pushOption(args, "--max-duration", input.maxDuration);
@@ -1710,7 +1713,7 @@ export class MeetingsCommands {
     noNotify?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    if (out?.trim()) assertCallerFileAccess(resolveCallerPath(out, "write"), "write");
+    const outputDir = out?.trim() ? resolveCallerPath(out, "write") : undefined;
     const op = "meetings fetch";
     const client = await openCloudClient(op, project, asJson);
     const ctx = contextDefaults();
@@ -1718,7 +1721,7 @@ export class MeetingsCommands {
       fetchCloudMeeting({
         client,
         meetingId,
-        outputDir: out?.trim() || undefined,
+        outputDir,
         video: Boolean(video),
         actor: ctx.agentId ?? MEETINGS_CLOUD_SOURCE,
         notify: !noNotify,

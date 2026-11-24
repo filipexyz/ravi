@@ -189,6 +189,36 @@ describe("automation store guard on the real stores", () => {
     ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
   });
 
+  it("judges a disable on the stored values: repeated defaults still disable, any stored change is a write", () => {
+    dbCreateAgent({ id: "full-agent", cwd: "/tmp/full-agent" });
+    type Input = Parameters<typeof dbUpsertObserverRule>[0];
+    dbUpsertObserverRule({ id: "stored-rule", observerAgentId: "full-agent", sourceSession: "s" } as Input);
+    // `rules set --disabled` repeating what is stored, in a form the store normalizes.
+    expect(() =>
+      runWithContext(personTurnHeldBelowBreakGlass(), () =>
+        dbUpsertObserverRule({
+          id: "stored-rule",
+          observerAgentId: "full-agent",
+          sourceSession: " s ",
+          observerModel: null,
+          priority: 100,
+          enabled: false,
+        } as Input),
+      ),
+    ).not.toThrow();
+    // Same rule, but the write also changes a stored column.
+    expect(() =>
+      runWithContext(personTurnHeldBelowBreakGlass(), () =>
+        dbUpsertObserverRule({
+          id: "stored-rule",
+          observerAgentId: "full-agent",
+          priority: 1,
+          enabled: false,
+        } as Input),
+      ),
+    ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
+  });
+
   it("still lets code outside a turn write (daemon, terminal)", () => {
     expect(() => dbCreateTrigger({ name: "operator", topic: "ravi.watch.github.>", message: "ok" })).not.toThrow();
   });

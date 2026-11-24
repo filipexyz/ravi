@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { runWithContext, type ToolContext } from "../cli/context.js";
 import {
+  canonicalCase,
   fileWriteToolTargets,
+  isHardlinkedFile,
   isProviderConfigPath,
   providerConfigWriteDenial,
 } from "../permissions/provider-config-paths.js";
@@ -302,6 +304,40 @@ describe("file writes for a person held below the agent's break-glass", () => {
     writeFileSync(outsideFile, "X=1\n");
     linkSync(outsideFile, join(workspace, "linked.env"));
     expect(deniedFor(join(workspace, "linked.env"))).toContain("outside the session workspace");
+  });
+
+  // A root user reads through chmod 000, so the unreadable cases only mean something otherwise.
+  const unreadableMeaningful = process.getuid?.() !== 0;
+
+  it("refuses a file under an unreadable directory, and treats a file it cannot stat as hardlinked", () => {
+    if (!unreadableMeaningful) return;
+    const locked = join(workspace, "locked");
+    mkdirSync(locked);
+    chmodSync(locked, 0o000);
+    try {
+      expect(deniedFor(join(locked, "notes.md"))).toContain("outside the session workspace");
+      // Defensive: resolution already refuses this path; the hardlink check must fail closed on its own.
+      expect(isHardlinkedFile(join(locked, "notes.md"))).toBe(true);
+      expect(isHardlinkedFile(join(workspace, "missing.md"))).toBe(false);
+    } finally {
+      chmodSync(locked, 0o755);
+    }
+  });
+
+  it("keeps the given spelling when a component cannot be resolved for another reason than missing", () => {
+    if (!unreadableMeaningful) return;
+    const real = join(workspace, "real");
+    const locked = join(real, "locked");
+    mkdirSync(locked, { recursive: true });
+    symlinkSync(real, join(workspace, "alias"));
+    chmodSync(locked, 0o000);
+    try {
+      const given = join(workspace, "alias", "locked", "notes.md");
+      // Walking up past an unreadable component would silently rewrite the path.
+      expect(canonicalCase(given)).toBe(given);
+    } finally {
+      chmodSync(locked, 0o755);
+    }
   });
 
   it("refuses another spelling of a protected directory on a case-insensitive volume", () => {
