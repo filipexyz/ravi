@@ -208,12 +208,15 @@ export function dbDisableShellJobForOwner(job: CronJob): boolean {
 export function dbUpdateCronJob(id: string, updates: Partial<CronJob>): CronJob {
   const db = getDb();
   const existing = dbGetCronJob(id);
+  // Classify by SQL effect: a present `creatorChat` key rewrites the binding
+  // (undefined writes NULL), so it is never a no-op and never disable-only.
+  const touchesCreatorChat = Object.prototype.hasOwnProperty.call(updates, "creatorChat");
   const disablesOnly = Object.entries(updates as Record<string, unknown>).every(
-    ([key, value]) => value === undefined || (key === "enabled" && value === false),
+    ([key, value]) => (key !== "creatorChat" && value === undefined) || (key === "enabled" && value === false),
   );
   assertAutomationStoreWrite("cron job", {
     disablesOnly,
-    bindableToOverlayChat: Boolean(updates.creatorChat ?? existing?.creatorChat),
+    bindableToOverlayChat: Boolean(touchesCreatorChat ? updates.creatorChat : existing?.creatorChat),
   });
 
   if (!existing) {
