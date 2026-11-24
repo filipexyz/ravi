@@ -3262,6 +3262,60 @@ describe("SessionCommands attach hints", () => {
       expect(late.handoff).toMatchObject({ kind: "merge", status: "acknowledged" });
       expect(reportedSlackThreads.at(-1)?.message).toContain("já está mergeada: a espera nasce fechada");
       expect(listOpenHandoffs(parentKey)).toHaveLength(0);
+
+      // A PR this thread does not follow is never read: its state is not exposed in the report and the wait
+      // stays open, even when the PR is long merged.
+      const reads: string[] = [];
+      setReviewGithubReadForTest(async (endpoint) => {
+        reads.push(endpoint);
+        return { state: "closed", merged: true, head: { sha } };
+      });
+      const reportsBeforeAlien = reportedSlackThreads.length;
+      const alien = (await new SessionCommands().report(
+        "PR alheia",
+        undefined,
+        true,
+        "merge",
+        sha,
+        "other/repo#9",
+      )) as Record<string, any>;
+      expect(reads).toEqual([]);
+      expect(alien.handoff).toMatchObject({ kind: "merge", status: "open", ref: `other/repo#9@${sha}` });
+      expect(reportedSlackThreads.length).toBe(reportsBeforeAlien + 1);
+      expect(reportedSlackThreads.at(-1)?.message).not.toContain("já está");
+
+      // A followed PR whose state cannot be read (gh down, 404, odd payload) leaves the wait open and the
+      // report still goes out: a failed read must never turn into a failed report.
+      const followed = dbCreateTrigger({
+        name: "gh-follow:filipexyz/ravi#939",
+        topic: "ravi.watch.github.>",
+        message: "follow",
+        replySession: "dev-slack-t-1713000000000100",
+      });
+      try {
+        const failedReads: string[] = [];
+        setReviewGithubReadForTest(async (endpoint) => {
+          failedReads.push(endpoint);
+          throw new Error("gh api: 502");
+        });
+        const reportsBeforeUnread = reportedSlackThreads.length;
+        const unread = (await new SessionCommands().report(
+          "MERGEÁVEL",
+          undefined,
+          true,
+          "merge",
+          sha,
+          "filipexyz/ravi#939",
+        )) as Record<string, any>;
+        // The read really was attempted (a guard that skipped it would also leave the wait open), and it is the
+        // report of this call, not the previous one, that went out.
+        expect(failedReads).toEqual([expect.stringContaining("/pulls/939")]);
+        expect(unread.handoff).toMatchObject({ kind: "merge", status: "open", ref: `filipexyz/ravi#939@${sha}` });
+        expect(reportedSlackThreads.length).toBe(reportsBeforeUnread + 1);
+        expect(reportedSlackThreads.at(-1)?.message).not.toContain("já está");
+      } finally {
+        dbDeleteTrigger(followed.id);
+      }
     } finally {
       if (followId) dbDeleteTrigger(followId);
       setReviewGithubReadForTest(null);
