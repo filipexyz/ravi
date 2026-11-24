@@ -16,3 +16,4 @@
 - Sort rules with identical priority by stable id. Matching output MUST be deterministic.
 - Enable a rule in text mode. The output MUST say bindings come back when each source session next launches and name `ravi observers refresh <session> --reconcile attach-missing`.
 - Save a rule disabled while its binding cascade fails. The rule row MUST roll back with it (one transaction): no disabled rule with a live binding.
+- A binding with `metadata.memory: "none"` MUST clear its observer session's provider state before delivering; the default MUST keep it; an unknown memory value MUST be rejected (`observation-plane.test.ts`, "Stateless observers").

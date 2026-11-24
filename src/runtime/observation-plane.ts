@@ -1,4 +1,4 @@
-import { sessionHoldsTriggerOwnerHistory } from "../router/sessions.js";
+import { clearProviderSession, sessionHoldsTriggerOwnerHistory } from "../router/sessions.js";
 import { isTriggerOwnSessionKey } from "../triggers/authority.js";
 import {
   evaluateObservationConditions,
@@ -664,6 +664,13 @@ function validateObserverInformTarget(
   if (refusal) throw new Error(`A live receiver cannot observe this source: ${refusal}.`);
 }
 
+function validateObserverMemory(metadata: Record<string, unknown> | undefined): void {
+  const value = metadata?.memory;
+  if (value !== undefined && value !== null && value !== "none" && value !== "rolling") {
+    throw new Error('Observer metadata.memory must be "none" or "rolling".');
+  }
+}
+
 function validateObserverConditions(
   metadata: Record<string, unknown> | undefined,
   deliveryPolicy: ObservationDeliveryPolicy,
@@ -955,6 +962,7 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
   const metadata = input.metadata ?? existing?.metadata;
   validateObserverSourceExclusions(metadata);
   validateObserverConditions(metadata, deliveryPolicy);
+  validateObserverMemory(metadata);
   validateObserverInformTarget(metadata, scope, input.sourceSession ?? existing?.sourceSession);
 
   validateRuleSafety({
@@ -1653,6 +1661,16 @@ function composeObservationPrompt(input: {
   return conditionsText && !template.includes("delivery.conditions") ? `${conditionsText}\n\n${rendered}` : rendered;
 }
 
+/**
+ * `metadata.memory: "none"`: every delivery starts the observer without its earlier deliveries. An
+ * observer session otherwise resumes one provider conversation that re-reads every delivery it ever
+ * got (measured at ~556k cache tokens per delivery for a long-lived observer, against a ~400-token
+ * delivery). The rule's own instructions carry what the observer must know.
+ */
+function bindingIsStateless(binding: ObserverBinding): boolean {
+  return binding.metadata?.memory === "none";
+}
+
 /** Full text and tool input ride on events as `payload.detail`; only bindings that ask for them read them. */
 function bindingReadsDetail(binding: ObserverBinding): boolean {
   return binding.metadata?.observationDetail === true;
@@ -1840,6 +1858,12 @@ export async function deliverObservationEvents(input: {
           _observationNotice: { bindingId: binding.id, sourceSessionKey: source.sessionKey },
         });
       } else {
+        if (bindingIsStateless(binding)) {
+          // An observation prompt never reuses a live runtime (session-dispatcher), so dropping the
+          // provider state here makes this delivery's runtime start a fresh conversation.
+          const observerSession = getSessionByName(binding.observerSessionName);
+          if (observerSession) clearProviderSession(observerSession.sessionKey);
+        }
         await observationPromptPublisher(binding.observerSessionName, {
           prompt,
           _agentId: binding.observerAgentId,
