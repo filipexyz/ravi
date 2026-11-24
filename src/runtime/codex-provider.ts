@@ -13,6 +13,7 @@ import { dbGetAgent } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
 import { errorDiagnostic, redactDiagnosticText } from "../utils/error-diagnostic.js";
 import { ensureCodexBashHookConfig } from "./codex-hooks.js";
+import { CodexBashGateUnverifiedError, ensureCodexHookGuard } from "./codex-hook-guard.js";
 import {
   CodexAppServerRequestError,
   isCodexCapacityError,
@@ -2308,6 +2309,19 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       const { ensureBridgeCodexGuard } = await import("../bridge/codex-trust.js");
       if (!input.env.CODEX_HOME) throw new Error("Missing private bridge profile");
       await ensureBridgeCodexGuard(sendRequest, input.cwd, input.env.CODEX_HOME);
+    } else if (shouldMaterializeCodexHookForCommand(command)) {
+      // Writing hooks.json is not enough: an untrusted hash, a feature key the
+      // installed Codex ignores or a changed matcher would skip the gate with no
+      // denial and no audit. Ask the app-server, and refuse when it can't confirm.
+      try {
+        await ensureCodexHookGuard(sendRequest, input.cwd, input.env?.CODEX_HOME);
+      } catch (error) {
+        log.warn("codex bash permission gate unverified; refusing the session", {
+          cwd: input.cwd,
+          reason: error instanceof CodexBashGateUnverifiedError ? error.reason : String(error),
+        });
+        throw error;
+      }
     }
     const effort = toCodexRuntimeEffort(input.effort);
     const security = input.security ?? UNRESTRICTED_CODEX_THREAD_SECURITY;
@@ -2767,7 +2781,10 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
 function buildCodexAppServerBaseArgs(humanBridge = false): string[] {
   return [
     "-c",
-    humanBridge ? "features.hooks=true" : "features.codex_hooks=true",
+    // The bridge profile already runs on `features.hooks`; ordinary sessions send it
+    // too and keep the legacy `features.codex_hooks` key. Neither is trusted on its
+    // own: bootstrap confirms the gate through hooks/list (codex-hook-guard.ts).
+    ...(humanBridge ? ["features.hooks=true"] : ["features.hooks=true", "-c", "features.codex_hooks=true"]),
     "-c",
     "shell_environment_policy.inherit=all",
     "-c",

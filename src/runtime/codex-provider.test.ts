@@ -15,6 +15,8 @@ import {
   resolveCodexThreadSecurity,
 } from "./codex-provider.js";
 import type { RuntimeEvent, RuntimeHostServices, RuntimePromptMessage, RuntimeStartRequest } from "./types.js";
+import { CodexBashGateUnverifiedError, ensureCodexHookGuard } from "./codex-hook-guard.js";
+import { ensureCodexBashHookConfig, RAVI_CODEX_BASH_HOOK_MATCHER } from "./codex-hooks.js";
 
 type TransportRequest = {
   cwd: string;
@@ -1460,7 +1462,7 @@ rl.on("line", (line) => {
     });
     const args = JSON.parse(readFileSync(argsPath, "utf8")) as string[];
     expect(args).toContain("features.codex_hooks=true");
-    expect(args).not.toContain("features.hooks=true");
+    expect(args).toContain("features.hooks=true");
     expect(args).toContain("shell_environment_policy.inherit=all");
     expect(args).toContain("shell_environment_policy.ignore_default_excludes=true");
     expect(args).toContain(
@@ -4362,4 +4364,175 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     },
     20_000,
   );
+});
+
+describe("Codex Bash permission gate verification", () => {
+  function guardFixture(overrides: Record<string, unknown> = {}, extraHooks: Record<string, unknown>[] = []) {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-codex-gate-"));
+    const config = ensureCodexBashHookConfig(dir);
+    const group = JSON.parse(config.signature).hooks.PreToolUse.find(
+      (entry: { matcher: string }) => entry.matcher === RAVI_CODEX_BASH_HOOK_MATCHER,
+    );
+    const hook: Record<string, unknown> = {
+      handlerType: "command",
+      command: group.hooks[0].command,
+      matcher: RAVI_CODEX_BASH_HOOK_MATCHER,
+      eventName: "preToolUse",
+      enabled: true,
+      sourcePath: config.path,
+      key: "user:ravi",
+      currentHash: "exact-hash",
+      trustStatus: "untrusted",
+      ...overrides,
+    };
+    const edits: unknown[] = [];
+    const send = async (method: string, params: Record<string, unknown>) => {
+      if (method === "hooks/list") return { data: [{ cwd: dir, errors: [], hooks: [...extraHooks, hook] }] };
+      edits.push(params);
+      hook.trustStatus = "trusted";
+      return {};
+    };
+    return { dir, hook, edits, send };
+  }
+
+  it("trusts the exact gate hash once, beside the person's own hooks", async () => {
+    const f = guardFixture({}, [
+      { handlerType: "command", command: "echo mine", matcher: "Edit", eventName: "postToolUse", enabled: true },
+    ]);
+    await ensureCodexHookGuard(f.send, f.dir, f.dir);
+    expect(f.edits).toEqual([
+      { edits: [{ keyPath: 'hooks.state."user:ravi".trusted_hash', value: "exact-hash", mergeStrategy: "replace" }] },
+    ]);
+    await ensureCodexHookGuard(f.send, f.dir, f.dir);
+    expect(f.edits).toHaveLength(1);
+  });
+
+  it("refuses a missing, changed, disabled, async or untrusted gate", async () => {
+    const missing = guardFixture();
+    await expect(
+      ensureCodexHookGuard(
+        async () => ({ data: [{ cwd: missing.dir, errors: [], hooks: [] }] }),
+        missing.dir,
+        missing.dir,
+      ),
+    ).rejects.toThrow(CodexBashGateUnverifiedError);
+    for (const change of [
+      { command: "echo allowed" },
+      { enabled: false },
+      { async: true },
+      { matcher: "Bash" },
+      { matcher: ".*" },
+      { eventName: "postToolUse" },
+      { sourcePath: "/etc/hosts" },
+    ]) {
+      const f = guardFixture(change);
+      await expect(ensureCodexHookGuard(f.send, f.dir, f.dir)).rejects.toThrow("Refusing to run an ungoverned Codex");
+      expect(f.edits).toHaveLength(0);
+    }
+    const unsupported = guardFixture();
+    await expect(
+      ensureCodexHookGuard(
+        async () => {
+          throw new Error("method not found");
+        },
+        unsupported.dir,
+        unsupported.dir,
+      ),
+    ).rejects.toThrow("hooks/list failed: method not found");
+    const stuck = guardFixture();
+    await expect(
+      ensureCodexHookGuard(
+        async (method, params) => (method === "config/batchWrite" ? {} : stuck.send(method, params)),
+        stuck.dir,
+        stuck.dir,
+      ),
+    ).rejects.toThrow("gate is not trusted");
+  });
+
+  function writeGateServer(cwd: string, mode: "trusted" | "missing"): string {
+    const binDir = join(cwd, "bin");
+    mkdirSync(binDir, { recursive: true });
+    const command = join(binDir, "codex");
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { createInterface } from "node:readline";
+
+const methodsPath = ${JSON.stringify(join(cwd, "methods.json"))};
+const methods = [];
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+const hooksPath = join(process.env.CODEX_HOME, "hooks.json");
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.method) methods.push(message.method);
+  writeFileSync(methodsPath, JSON.stringify(methods));
+  if (message.id && message.method === "initialize") return send({ id: message.id, result: {} });
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "hooks/list") {
+    const groups = JSON.parse(readFileSync(hooksPath, "utf8")).hooks.PreToolUse;
+    const group = groups.find((entry) => entry.matcher === ${JSON.stringify(RAVI_CODEX_BASH_HOOK_MATCHER)});
+    const hooks = ${JSON.stringify(mode)} === "trusted"
+      ? [{ handlerType: "command", command: group.hooks[0].command, matcher: group.matcher, eventName: "preToolUse",
+           enabled: true, sourcePath: hooksPath, key: "user:ravi", currentHash: "h1", trustStatus: "trusted" }]
+      : [];
+    return send({ id: message.id, result: { data: [{ cwd: message.params.cwds[0], errors: [], hooks }] } });
+  }
+  if (message.id && message.method === "thread/start") {
+    return send({ id: message.id, result: { thread: { id: "thread_gate" }, model: "gpt-5.4", modelProvider: "openai" } });
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({ jsonrpc: "2.0", method: "turn/started", params: { threadId: "thread_gate", turn: { id: "turn_gate", status: "inProgress" } } });
+    send({ jsonrpc: "2.0", method: "turn/completed", params: { threadId: "thread_gate", turn: { id: "turn_gate", status: "completed" } } });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+    return command;
+  }
+
+  async function runGateSession(mode: "trusted" | "missing") {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-gate-session-"));
+    const codexHome = join(cwd, "codex-home");
+    const command = writeGateServer(cwd, mode);
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest(["run"], {
+        cwd,
+        env: { PATH: process.env.PATH ?? "", RAVI_CODEX_TRANSPORT: "stdio", CODEX_HOME: codexHome },
+      }),
+    );
+    const events: RuntimeEvent[] = [];
+    let thrown: unknown;
+    try {
+      for await (const event of session.events) events.push(event);
+    } catch (error) {
+      thrown = error;
+    }
+    const methods = JSON.parse(readFileSync(join(cwd, "methods.json"), "utf8")) as string[];
+    return { events, thrown, methods };
+  }
+
+  it("checks hooks/list before the thread starts and runs when the gate is confirmed", async () => {
+    const { events, thrown, methods } = await runGateSession("trusted");
+    expect(thrown).toBeUndefined();
+    expect(methods.indexOf("hooks/list")).toBeGreaterThan(-1);
+    expect(methods.indexOf("hooks/list")).toBeLessThan(methods.indexOf("thread/start"));
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(1);
+  }, 20_000);
+
+  it("refuses the session without starting a thread when the gate is not loaded", async () => {
+    const { events, thrown, methods } = await runGateSession("missing");
+    expect(methods).toContain("hooks/list");
+    expect(methods).not.toContain("thread/start");
+    expect(methods).not.toContain("turn/start");
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
+    const failure = JSON.stringify([thrown instanceof Error ? thrown.message : thrown, events]);
+    expect(failure).toContain("Refusing to run an ungoverned Codex session");
+  }, 20_000);
 });

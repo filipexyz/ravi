@@ -16,6 +16,7 @@ tags:
 applies_to:
   - src/runtime/codex-provider.ts
   - src/runtime/codex-hooks.ts
+  - src/runtime/codex-hook-guard.ts
   - src/plugins/codex-skills.ts
   - src/runtime/codex-provider.test.ts
   - src/runtime/codex-hooks.test.ts
@@ -99,6 +100,7 @@ Stored goal control initializes an experimental app-server connection without `t
 - The CLI MUST accept `ravi context codex-tool-hook` as a deprecated alias of `codex-bash-hook` with the same access and payload so stale `~/.codex/hooks.json` files and in-memory Codex workers cannot hard-block Bash, including `ravi pages list|published|publish`.
 - The global Codex Bash hook matcher MUST be exactly `^(Bash|shell)$`. It MUST cover both Codex tool names currently observed for shell execution: `Bash` and `shell`.
 - Rematerializing hooks MUST replace legacy Ravi groups (old status `ravi codex native tool permission gate`, old command `codex-tool-hook`, or a non-canonical matcher) instead of appending a second group beside them.
+- Writing `hooks.json` MUST NOT count as proof that the Bash gate runs. Before starting, resuming or forking a thread on a real `codex` app-server, Ravi MUST call `hooks/list` for the session cwd and require exactly one Ravi gate from the generated file: same command, matcher `^(Bash|shell)$`, event `preToolUse`, enabled, not async. An untrusted gate is trusted for its exact current hash only (`config/batchWrite` of `hooks.state.<key>.trusted_hash`) and listed again. When any of this cannot be confirmed (including a Codex without `hooks/list`), the session MUST fail closed before `thread/start` with an error that says the gate is unverified. Ordinary sessions send `features.hooks=true` and the legacy `features.codex_hooks=true`.
 - A reused Codex app-server process MUST be respawned before the next turn when `hooks.json` changes. Thread/resume MUST keep session history.
 - The global Codex Bash hook MUST enforce Ravi shell permissions and runtime skill gates only. It MUST NOT rely on `PreToolUse.updatedInput` to inject env because current Codex rejects unsupported updated input for this hook.
 - Ravi provider-owned grants such as `full-access` authorize Ravi's permission layer only. They MUST NOT be documented as a bypass for provider-native hooks, global Codex hooks, or external PreToolUse transforms that may still deny a shell command after Ravi allows it.
