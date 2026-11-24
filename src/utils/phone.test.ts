@@ -75,6 +75,7 @@ describe("isPhoneShapedRef", () => {
     expect(isPhoneShapedRef("lid:123456")).toBe(true);
     expect(isPhoneShapedRef("group:120363000000000000")).toBe(true);
     expect(isPhoneShapedRef("5511999990001@c.us")).toBe(true);
+    expect(isPhoneShapedRef("+49 30/123456")).toBe(true);
   });
 
   it("rejects free-form refs that would collapse to stray digits", () => {

@@ -129,6 +129,8 @@ describe("contacts identity graph schema", () => {
     expect(getContactDetails("+55 11 99999-0001")?.contact.displayName).toBe("Phone contact");
     expect(getContact("5511999990001@s.whatsapp.net")?.name).toBe("Phone contact");
     expect(getContact("1")?.name).toBe("Legacy short id");
+    upsertContact("4930123456", "Slash formatted", "allowed", "manual");
+    expect(getContactDetails("+49 30/123456")?.contact.displayName).toBe("Slash formatted");
   });
 
   it("writes canonical contacts, policies, and platform identities directly", () => {
