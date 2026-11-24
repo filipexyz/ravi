@@ -373,3 +373,74 @@ describe("describeSecret path containment (B1, #968)", () => {
     expect(isExactVaultMetadataUrl(`${addr}/v1/secret/metadata/a`, addr, "secret", ["a"])).toBe(true);
   });
 });
+
+describe("describeSecret never follows redirects (N1 → fix, #968)", () => {
+  /**
+   * Emulates fetch redirect semantics: with `redirect: "manual"` the 3xx comes
+   * back to the caller; otherwise the request is re-sent to Location carrying
+   * the same headers, and that second hop is recorded.
+   */
+  function redirectingVault(location: string) {
+    const hops: Array<{ url: string; path: string; token: string | null; redirect: string | undefined }> = [];
+    const fetchFn = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const headers = new Headers(init?.headers);
+      hops.push({ url, path: new URL(url).pathname, token: headers.get("x-vault-token"), redirect: init?.redirect });
+      if (hops.length === 1) {
+        if (init?.redirect === "manual") return new Response(null, { status: 307, headers: { location } });
+        const target = new URL(location, url).toString();
+        hops.push({
+          url: target,
+          path: new URL(target).pathname,
+          token: headers.get("x-vault-token"),
+          redirect: init?.redirect,
+        });
+        return Response.json({ data: { data: { token: SECRET_VALUE } } });
+      }
+      return Response.json(metadataPayload);
+    }) as typeof fetch;
+    return { hops, fetchFn };
+  }
+
+  for (const [label, location] of [
+    ["the data endpoint", "/v1/secret/data/ravi/credentials/slack/rbbt"],
+    ["another origin", "https://evil.test/collect"],
+  ] as const) {
+    it(`a 3xx to ${label} fails closed as redirected, with one request and the token sent nowhere else`, async () => {
+      const vault = redirectingVault(location);
+      const description = await describeSecret("vault:secret/ravi/credentials/slack/rbbt#token", {
+        fetch: vault.fetchFn,
+        env: VAULT_ENV,
+      });
+      expect(description).toEqual({ available: false, reason: "redirected" });
+      expect(vault.hops).toHaveLength(1);
+      expect(vault.hops[0]).toMatchObject({
+        path: "/v1/secret/metadata/ravi/credentials/slack/rbbt",
+        redirect: "manual",
+      });
+      expect(JSON.stringify(description)).not.toContain(SECRET_VALUE);
+    });
+  }
+
+  it("an opaque redirect response is also refused", async () => {
+    const opaque = { type: "opaqueredirect", status: 0, ok: false } as unknown as Response;
+    const description = await describeSecret("vault:secret/a/b#token", {
+      fetch: (async () => opaque) as unknown as typeof fetch,
+      env: VAULT_ENV,
+    });
+    expect(description).toEqual({ available: false, reason: "redirected" });
+  });
+
+  it("the inventory reports a redirecting Vault as degraded", async () => {
+    const options = tempOptions();
+    vaultConnection(options, "rbbt");
+    const vault = redirectingVault("https://evil.test/collect");
+    const inventory = await buildCredentialInventory({
+      options,
+      describeSecret: (ref) => describeSecret(ref, { fetch: vault.fetchFn, env: VAULT_ENV }),
+    });
+    expect(inventory.degradedReasons).toEqual(["redirected"]);
+    expect(vault.hops.map((hop) => new URL(hop.url).origin)).toEqual(["https://bao.test:8200"]);
+    expect(JSON.stringify(inventory)).not.toContain(SECRET_VALUE);
+  });
+});

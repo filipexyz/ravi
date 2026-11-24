@@ -105,7 +105,16 @@ const credentialSecretDescriptionSchema = z.union([
   z
     .object({
       available: z.literal(false),
-      reason: z.enum(["unsupported", "not_configured", "forbidden", "sealed", "unreachable", "invalid_ref", "error"]),
+      reason: z.enum([
+        "unsupported",
+        "not_configured",
+        "forbidden",
+        "sealed",
+        "unreachable",
+        "invalid_ref",
+        "redirected",
+        "error",
+      ]),
     })
     .strict(),
 ]);
@@ -114,7 +123,16 @@ const credentialInventoryReturnSchema = z
     generatedAt: z.number(),
     degraded: z.boolean(),
     degradedReasons: z.array(
-      z.enum(["unsupported", "not_configured", "forbidden", "sealed", "unreachable", "invalid_ref", "error"]),
+      z.enum([
+        "unsupported",
+        "not_configured",
+        "forbidden",
+        "sealed",
+        "unreachable",
+        "invalid_ref",
+        "redirected",
+        "error",
+      ]),
     ),
     total: z.number(),
     items: z.array(

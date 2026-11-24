@@ -84,11 +84,17 @@ export async function describeSecret(
     response = await (deps.fetch ?? fetch)(url, {
       method: "GET",
       headers: { "x-vault-token": token },
+      // Never follow: a 3xx could point at the data endpoint or another origin, carrying the token.
+      redirect: "manual",
       signal: AbortSignal.timeout(deps.timeoutMs ?? 5_000),
     });
   } catch {
     // no-cause: Transport errors can carry the Vault URL and path; degrade to the fixed reason, never retry a data read.
     return { available: false, reason: "unreachable" };
+  }
+  // Fail closed on any redirect (HA standby nodes answer 307): report it, never re-request elsewhere.
+  if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
+    return { available: false, reason: "redirected" };
   }
   if (response.status === 404) {
     return { available: true, exists: false, version: null, createdAt: null, updatedAt: null, deleted: false };

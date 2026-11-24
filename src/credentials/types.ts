@@ -108,6 +108,7 @@ export type CredentialSecretUnavailableReason =
   | "sealed"
   | "unreachable"
   | "invalid_ref"
+  | "redirected"
   | "error";
 
 export interface CredentialInventoryItem {
