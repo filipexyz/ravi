@@ -10,6 +10,7 @@ import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import { isTriggerOwnSessionKey } from "../triggers/authority.js";
+import { dbGetTrigger } from "../triggers/triggers-db.js";
 import { getDefaultAgentId } from "../router/router-db.js";
 import { deriveSourceFromSessionKey } from "../router/session-key.js";
 import {
@@ -52,19 +53,23 @@ import {
 import type { CronJob, JobOutcomeUpdate } from "./types.js";
 import type { SessionEntry } from "../router/types.js";
 import {
+  CHILD_RUN_STALE_MS,
+  childRunParentRefusal,
+  childRunPromptNote,
   closeChildRun,
+  closeChildRunAfterTurn,
   getChildRun,
   listOpenChildRuns,
   openChildRun,
-  pruneClosedChildRuns,
-  readChildRunLastReply,
-  type AutomationChildRun,
+  reconcileChildRuns,
+  releaseChildRunRuntime,
 } from "../automation/child-runs.js";
 import { notifyAutomationOff } from "./automation-notice.js";
 import {
   deliverCronFailureReports,
   describeCronFailure,
   notifyCronFailure,
+  notifyUndeliveredRunReturn,
   prepareCronFailureReport,
   recordUnreadableCronFailure,
   type CronFailureJob,
@@ -93,7 +98,9 @@ const FAILURE_REPORT_STOP_GRACE_MS = 1_000;
 /** Failures one reconciliation pass keeps for `stop()` to raise; every failure is logged. */
 const MAX_RECORDED_REPORT_FAILURES = 10;
 /** A thread-mode run open longer than this is closed as failed, so its job can run again. */
-export const THREAD_RUN_STALE_MS = 2 * 60 * 60_000;
+export const THREAD_RUN_STALE_MS = CHILD_RUN_STALE_MS;
+/** How often the leader reconciles automation runs: undelivered returns, runs left open. */
+const CHILD_RUN_RECONCILE_INTERVAL_MS = 5 * 60_000;
 
 function captureRunAuthority(job: CronJob): CronRunAuthority {
   return {
@@ -115,6 +122,8 @@ export class CronRunner {
   private runtimeEventAbort: AbortController | null = null;
   private runtimeEventLoop: Promise<void> | null = null;
   private failureReportLoop: Promise<void> | null = null;
+  private childRunTimer: ReturnType<typeof setInterval> | null = null;
+  private childRunReconcile: Promise<void> | null = null;
   private failureReportGeneration = 0;
   private readonly failureReportStopGraceMs: number;
   private readonly runtimeEventStopFailures: Error[] = [];
@@ -152,7 +161,53 @@ export class CronRunner {
       log.error("Cron failure report reconciliation failed", { error: cause });
     });
 
+    // Automation runs (cron and trigger): retry undelivered returns, close runs left open. In the
+    // background, never on the readiness path; one pass at a time.
+    this.scheduleChildRunReconcile();
+    this.childRunTimer = setInterval(() => this.scheduleChildRunReconcile(), CHILD_RUN_RECONCILE_INTERVAL_MS);
+    this.childRunTimer.unref?.();
+
     log.info("Cron runner started");
+  }
+
+  private scheduleChildRunReconcile(): void {
+    if (!this.running || this.childRunReconcile) return;
+    this.childRunReconcile = reconcileChildRuns({
+      isRunning: () => this.running,
+      releaseSource: "cron-runner",
+      onAbandoned: async (run) => {
+        // Cron: the run's admitted owner, even after the job changed hands or a one-shot was deleted.
+        // Trigger: its stored owner (a deleted trigger owes nobody a message; the inbox keeps the record).
+        const admitted = run.originKind === "cron" ? getCronRun(run.id) : null;
+        const ownerPrincipal = admitted
+          ? cronRunNotification(admitted).ownerPrincipal
+          : // A trigger with no owner, or deleted since, owes nobody a message (an absent owner would
+            // read as the operator).
+            (dbGetTrigger(run.originId)?.ownerPrincipal ?? "unknown");
+        await notifyUndeliveredRunReturn({
+          originKind: run.originKind,
+          originId: run.originId,
+          originName: run.originName,
+          agentId: run.agentId,
+          ownerPrincipal,
+          runId: run.id,
+          runSessionName: run.childSessionName,
+          parentSessionName: run.parentSessionName,
+        });
+      },
+    })
+      .then((result) => {
+        if (result.redelivered || result.abandoned.length || result.staleClosed.length)
+          log.info("Reconciled automation runs", {
+            redelivered: result.redelivered,
+            abandoned: result.abandoned.length,
+            staleClosed: result.staleClosed.length,
+          });
+      })
+      .catch((error) => log.error("Automation run reconciliation failed", { error }))
+      .finally(() => {
+        this.childRunReconcile = null;
+      });
   }
 
   private async reconcileFailureReports(generation: number): Promise<void> {
@@ -224,6 +279,20 @@ export class CronRunner {
   }
 
   /** Wait for the report in flight, but only a moment: the daemon stops its components in series. */
+  private async settleChildRunReconcile(): Promise<void> {
+    const pass = this.childRunReconcile;
+    if (!pass) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settled = await Promise.race([
+      pass.then(() => true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), this.failureReportStopGraceMs);
+      }),
+    ]);
+    clearTimeout(timer);
+    if (!settled) log.warn("Automation run reconciliation still in flight at shutdown; the next start resumes it");
+  }
+
   private async settleFailureReportLoop(): Promise<void> {
     const loop = this.failureReportLoop;
     if (!loop) return;
@@ -252,6 +321,14 @@ export class CronRunner {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    if (this.childRunTimer) {
+      clearInterval(this.childRunTimer);
+      this.childRunTimer = null;
+    }
+    // A pass in flight stops between runs once `running` is false. Waited for as briefly as the failure
+    // reports (a notice may hold a chat for 30 s; the daemon stops components inside one 15 s guard):
+    // an unfinished pass keeps its state persisted and the next start reconciles again.
+    await this.settleChildRunReconcile();
 
     this.runtimeEventAbort?.abort();
     if (this.runtimeEventStream) {
@@ -942,7 +1019,7 @@ export class CronRunner {
           error: error instanceof Error ? error.message : String(error),
         });
       }
-      await this.releaseChildRunRuntime(run);
+      await releaseChildRunRuntime(run, "cron-runner");
     }
     return stillOpen;
   }
@@ -965,16 +1042,17 @@ export class CronRunner {
         `THREAD_PARENT_OTHER_AGENT: the session this run reports to (${parent.name ?? parent.sessionKey}) belongs to agent ${parent.agentId}, not to the job's agent ${agentId}`,
       );
     }
+    const refusal = childRunParentRefusal(parent);
+    if (refusal) {
+      throw new Error(
+        `THREAD_PARENT_UNSTABLE: ${refusal}. Set the session runs report to with: ravi cron set ${job.id} reply-session <session>`,
+      );
+    }
     return parent;
   }
 
   private buildThreadRunPrompt(job: CronJob, parentName: string): string {
-    return [
-      `[Cron: ${job.name} ${this.formatNow()}]`,
-      job.message,
-      "",
-      `[run surface] This run has a session of its own; nothing written here reaches a chat. Hand the result to ${parentName} once with \`ravi sessions close-thread --return "<result>"\`. When nothing is worth reporting, reply only @@SILENT@@ and nothing reaches it. A plain final reply also reaches ${parentName}, as a preview.`,
-    ].join("\n");
+    return [`[Cron: ${job.name} ${this.formatNow()}]`, job.message, "", childRunPromptNote(parentName)].join("\n");
   }
 
   /**
@@ -986,43 +1064,15 @@ export class CronRunner {
   private async finishThreadRun(runId: string, state: JobOutcomeUpdate): Promise<void> {
     const run = getChildRun(runId);
     if (!run) return;
-    try {
-      if (run.status === "open") {
-        if (state.lastStatus === "error") {
-          const reason = describeCronFailure(state.lastError ?? "Agent turn failed");
-          await closeChildRun(run, {
-            kind: "error",
-            text: `${reason}. Detalhes para o operador: ravi cron show ${run.originId}`,
-          });
-        } else {
-          const reply = readChildRunLastReply(run);
-          await closeChildRun(run, reply ? { kind: "auto", text: reply } : null);
-        }
-      }
-    } finally {
-      await this.releaseChildRunRuntime(run);
-      pruneClosedChildRuns(run.originKind, run.originId);
-    }
-  }
-
-  /** The run's turn is over: stop its provider process like an expired session's. */
-  private async releaseChildRunRuntime(run: AutomationChildRun): Promise<void> {
-    try {
-      await nats.emit("ravi.session.abort", {
-        sessionKey: run.childSessionKey,
-        sessionName: run.childSessionName,
-        source: "cron-runner",
-        action: "close-run",
-        reason: "automation_child_run_closed",
-        actor: "system",
-      });
-    } catch (error) {
-      log.warn("Failed to release a closed run's runtime", {
-        runId: run.id,
-        sessionName: run.childSessionName,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+    await closeChildRunAfterTurn(
+      run,
+      { failed: state.lastStatus === "error", error: state.lastError },
+      {
+        describeFailure: describeCronFailure,
+        details: `Detalhes para o operador: ravi cron show ${run.originId}`,
+        releaseSource: "cron-runner",
+      },
+    );
   }
 
   private trackAgentDispatch(job: CronJob, sessionName: string, startTime: number, runId: string): void {

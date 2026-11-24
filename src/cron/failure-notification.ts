@@ -1,5 +1,6 @@
 import { deliverToChat } from "../cloud-agents/chat-target.js";
 import {
+  countLocalInboxEventsSince,
   latestLocalInboxEventAt,
   listLocalInboxEvents,
   markLocalInboxItem,
@@ -379,4 +380,117 @@ export async function notifyCronFailure(
     log.error("Cron failure notification failed; run remains failed and inbox stays open", { jobId: job.id, error });
     return false;
   }
+}
+
+/** A run of a cron job or trigger whose return to its parent was given up. */
+export interface UndeliveredRunReturn {
+  originKind: "cron" | "trigger";
+  originId: string;
+  originName: string;
+  agentId?: string;
+  /** Who the job or trigger acts as; `unknown` or an agent owes no direct message. */
+  ownerPrincipal?: string;
+  runId: string;
+  /** The run's own session, where its work can be read while it is kept. */
+  runSessionName: string;
+  parentSessionName: string;
+}
+
+/** A free-text name for a person's message: one line, no controls, bounded. */
+function plainName(name: string): string {
+  const flat = name
+    .replace(/[\p{Cc}\p{Zl}\p{Zp}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return flat.length > 80 ? `${flat.slice(0, 79)}…` : flat || "sem nome";
+}
+
+/**
+ * A run's result never reached the session it reports to and was given up (automation runs,
+ * `reconcileChildRuns`). The owner is told through the same owner chats as a failure notice
+ * (offline chats skipped), with the failure notice's rule: at most one message per cron or trigger
+ * every `CRON_FAILURE_NOTICE_WINDOW_MS`; a loss inside that window joins the last notice, and the
+ * next one counts every loss since. The inbox item is the record, one per run. An operator gets
+ * where to look (CLI); a contact gets the product sentence only, with no command or internal name.
+ * Returns true when settled (sent, joined, owed to nobody, or no chat reachable).
+ */
+export async function notifyUndeliveredRunReturn(
+  run: UndeliveredRunReturn,
+  deps: CronFailureNoticeDeps = {},
+): Promise<boolean> {
+  const sourceDomain = run.originKind === "cron" ? "cron" : "triggers";
+  const name = plainName(run.originName);
+  const kind = run.originKind === "cron" ? "agendamento" : "trigger";
+  const targets = deps.owners
+    ? deps.owners({ ownerPrincipal: run.ownerPrincipal })
+    : resolveCronFailureOwners({ ownerPrincipal: run.ownerPrincipal });
+  const { item } = upsertLocalInboxItem({
+    sourceDomain,
+    sourceType: "run_return_undelivered",
+    sourceId: run.originId,
+    dedupeKey: `run-return-undelivered:${run.runId}`,
+    title: `Resultado não entregue: ${name}`,
+    summary: `O resultado de uma execução do ${kind} “${name}” não chegou a ${run.parentSessionName} em 24 h e foi descartado. A execução: ravi sessions read ${run.runSessionName}.`,
+    priority: "normal",
+    assignedToAgentId: run.agentId,
+    assignedToContactId: targets[0]?.contactId,
+    occurredAt: (deps.now ?? Date.now)(),
+    metadata: { runId: run.runId, originKind: run.originKind, ownerPrincipal: run.ownerPrincipal ?? "unknown" },
+    actorType: "system",
+  });
+  if (listLocalInboxEvents(item.id).some((event) => event.eventType.startsWith("run_return.settled"))) return true;
+  if (!cronFailureOwesDirectMessage(run.ownerPrincipal)) {
+    markLocalInboxItem(item.id, item.status, { eventType: "run_return.settled.unowned", actorType: "system" });
+    return true;
+  }
+  const source = { sourceDomain, sourceType: "run_return_undelivered", sourceId: run.originId };
+  const now = (deps.now ?? Date.now)();
+  const lastNotice = latestLocalInboxEventAt({ ...source, eventType: "run_return.settled.notified" });
+  if (lastNotice !== null && now - lastNotice < CRON_FAILURE_NOTICE_WINDOW_MS) {
+    // The owner already heard about this cron or trigger recently: this loss joins that notice.
+    markLocalInboxItem(item.id, item.status, {
+      eventType: "run_return.settled.aggregated",
+      actorType: "system",
+      payload: { lastNoticeAt: lastNotice },
+    });
+    return true;
+  }
+  const lost =
+    1 +
+    countLocalInboxEventsSince({
+      ...source,
+      eventType: "run_return.settled.aggregated",
+      since: lastNotice ?? now - CRON_FAILURE_NOTICE_WINDOW_MS,
+    });
+  const what = lost === 1 ? "O resultado de uma execução" : `O resultado de ${lost} execuções`;
+  const forOperator = !run.ownerPrincipal || run.ownerPrincipal === "operator";
+  const text = forOperator
+    ? `${what} do ${kind} “${name}” não chegou a ${run.parentSessionName} em 24 h e foi descartado. A última execução: ravi sessions read ${run.runSessionName}. A origem: ${run.originKind === "cron" ? "ravi cron show" : "ravi triggers show"} ${run.originId}.`
+    : `${what} do ${kind} “${name}” não chegou ao destino em 24 h e foi descartado.`;
+  const deliver = deps.deliver ?? ((owner, message) => deliverToChat(owner, { text: message }));
+  const { ordered, down } = await reachableTargets(targets, deps.reachable ?? defaultReachable);
+  for (const target of ordered) {
+    try {
+      await deliver(target, text);
+      markLocalInboxItem(item.id, "open", {
+        eventType: "run_return.settled.notified",
+        actorType: "system",
+        payload: { channel: target.channel, accountId: target.accountId, lost },
+      });
+      return true;
+    } catch (cause) {
+      log.warn("Undelivered run return notice failed on one owner chat", {
+        runId: run.runId,
+        channel: target.channel,
+        error: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
+  }
+  // Once only: the run is already given up, so there is nothing to retry from; the inbox keeps it.
+  markLocalInboxItem(item.id, "open", {
+    eventType: "run_return.settled.undeliverable",
+    actorType: "system",
+    payload: { targets: targets.length, offline: down },
+  });
+  return true;
 }

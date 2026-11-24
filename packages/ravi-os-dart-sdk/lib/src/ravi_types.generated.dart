@@ -33266,7 +33266,7 @@ class TranscribeFileReturn {
 TranscribeFileReturn transcribeFileReturnFromJson(Object? json) => TranscribeFileReturn.fromJsonValue(json);
 
 class TriggersAddOptions {
-  const TriggersAddOptions({this.account, this.agent, this.cooldown, this.debounce, this.envFile, this.exec, this.filter, this.message, this.onError, this.replySession, this.session, this.shell, this.timeout, this.topic});
+  const TriggersAddOptions({this.account, this.agent, this.cooldown, this.debounce, this.envFile, this.exec, this.filter, this.message, this.onError, this.replySession, this.reportTo, this.session, this.shell, this.thread, this.timeout, this.topic});
 
   final String? account;
   final String? agent;
@@ -33278,8 +33278,10 @@ class TriggersAddOptions {
   final String? message;
   final String? onError;
   final String? replySession;
+  final String? reportTo;
   final String? session;
   final String? shell;
+  final bool? thread;
   final String? timeout;
   final String? topic;
 
@@ -33314,11 +33316,17 @@ class TriggersAddOptions {
     if (replySession != null) {
       into["replySession"] = RaviJson.from(replySession);
     }
+    if (reportTo != null) {
+      into["reportTo"] = RaviJson.from(reportTo);
+    }
     if (session != null) {
       into["session"] = RaviJson.from(session);
     }
     if (shell != null) {
       into["shell"] = RaviJson.from(shell);
+    }
+    if (thread != null) {
+      into["thread"] = RaviJson.from(thread);
     }
     if (timeout != null) {
       into["timeout"] = RaviJson.from(timeout);

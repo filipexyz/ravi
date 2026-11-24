@@ -398,7 +398,7 @@ function applyProfile(agentId: string, profile: AgentRuntimePermissionProfile): 
   const before = getAgentRuntimePermissionsConfigFromDefaults(agent?.defaults);
   const next = profile === "chat-only" ? { profile } : { ...(before ?? {}), profile };
   // A Library profile is a writer of agent runtime permissions too (spec permissions/break-glass).
-  assertAgentBreakGlassRaiseAllowed("agents library", agentId, before, next);
+  assertAgentBreakGlassRaiseAllowed("agents library", agentId, before, next, { warnOperator: false });
   updateAgent(agentId, { defaults: buildAgentRuntimePermissionsDefaults(agent?.defaults, next) });
 }
 
@@ -541,7 +541,13 @@ export function executeLibraryAgentInstall(prepared: PreparedLibraryAgentInstall
   }
   // Before any write: a refused break-glass profile leaves no half-installed agent.
   if (plan.profile.apply)
-    assertAgentBreakGlassRaiseAllowed("agents library install", agentId, null, { profile: plan.profile.apply });
+    assertAgentBreakGlassRaiseAllowed(
+      "agents library install",
+      agentId,
+      null,
+      { profile: plan.profile.apply },
+      { warnOperator: false },
+    );
   mkdirSync(plan.agent.cwd, { recursive: true });
   writeFileSync(join(plan.agent.cwd, AGENT_INSTRUCTIONS_FILE), definition.instructions);
   if (definition.heartbeat !== null) writeFileSync(join(plan.agent.cwd, AGENT_HEARTBEAT_FILE), definition.heartbeat);
@@ -771,7 +777,13 @@ export function executeLibraryAgentUpdate(prepared: PreparedLibraryAgentUpdate):
   // Before any write: a refused break-glass profile leaves the agent untouched.
   if (plan.profile.apply) {
     const current = getAgentRuntimePermissionsConfigFromDefaults(getAgent(plan.agent)?.defaults);
-    assertAgentBreakGlassRaiseAllowed("agents library update", plan.agent, current, { profile: plan.profile.apply });
+    assertAgentBreakGlassRaiseAllowed(
+      "agents library update",
+      plan.agent,
+      current,
+      { profile: plan.profile.apply },
+      { warnOperator: false },
+    );
   }
   const written: string[] = [];
   const kept: string[] = [];

@@ -75,7 +75,7 @@ describe("sessions report / close-thread inside an automation run", () => {
     });
     expect(publishCalls).toHaveLength(1);
     expect(publishCalls[0]!.sessionName).toBe("grupo-updates");
-    expect(String(publishCalls[0]!.payload.prompt)).toContain("Resultado: Post novo: release saiu");
+    expect(String(publishCalls[0]!.payload.prompt)).toContain("\n> Post novo: release saiu");
     expect(getChildRun("run-1")).toMatchObject({ status: "closed", returnState: "returned", returnKind: "result" });
     // The gateway validates the declared return shape.
     expect(sessionCloseThreadReturnSchema.safeParse(payload).success).toBe(true);
@@ -107,7 +107,7 @@ describe("sessions report / close-thread inside an automation run", () => {
     expect(payload).toMatchObject({ status: "published", actionId: "thread.report", runId: "run-1" });
     expect(sessionReportReturnSchema.safeParse(payload).success).toBe(true);
     expect(publishCalls).toHaveLength(1);
-    expect(String(publishCalls[0]!.payload.prompt)).toContain("Progresso: li 3 posts, nenhum novo");
+    expect(String(publishCalls[0]!.payload.prompt)).toContain("\n> li 3 posts, nenhum novo");
     expect(getChildRun("run-1")).toMatchObject({ status: "open", returnState: "none" });
   });
 
@@ -127,7 +127,7 @@ describe("sessions report / close-thread inside an automation run", () => {
 
     const payload = await quietly(() => new SessionCommands().closeThread("A", "test-agent-cron-updates-run1", true));
     expect(payload).toMatchObject({ changed: false, parentReturn: { delivered: true, pending: false } });
-    expect(String(publishCalls[0]!.payload.prompt)).toContain("Resultado: A");
+    expect(String(publishCalls[0]!.payload.prompt)).toContain("\n> A");
     expect(getChildRun("run-1")).toMatchObject({ returnState: "returned" });
   });
 
@@ -170,7 +170,7 @@ describe("sessions report / close-thread inside an automation run", () => {
     const retried = await quietly(() => new SessionCommands()["closeAutomationRun"](stale, "A", true));
     expect(retried).toMatchObject({ changed: false, parentReturn: { delivered: true, pending: false } });
     expect(publishCalls).toHaveLength(1);
-    expect(String(publishCalls[0]!.payload.prompt)).toContain("Resultado: A");
+    expect(String(publishCalls[0]!.payload.prompt)).toContain("\n> A");
   });
 
   it("refuses the Slack-only wait flags inside a run", async () => {

@@ -39110,12 +39110,14 @@ public struct TriggersAddOptions: Codable, Sendable {
   public var message: String?
   public var onError: String?
   public var replySession: String?
+  public var reportTo: String?
   public var session: String?
   public var shell: String?
+  public var thread: Bool?
   public var timeout: String?
   public var topic: String?
 
-  public init(account: String? = nil, agent: String? = nil, cooldown: String? = nil, debounce: String? = nil, envFile: String? = nil, exec: String? = nil, filter: String? = nil, message: String? = nil, onError: String? = nil, replySession: String? = nil, session: String? = nil, shell: String? = nil, timeout: String? = nil, topic: String? = nil) {
+  public init(account: String? = nil, agent: String? = nil, cooldown: String? = nil, debounce: String? = nil, envFile: String? = nil, exec: String? = nil, filter: String? = nil, message: String? = nil, onError: String? = nil, replySession: String? = nil, reportTo: String? = nil, session: String? = nil, shell: String? = nil, thread: Bool? = nil, timeout: String? = nil, topic: String? = nil) {
     self.account = account
     self.agent = agent
     self.cooldown = cooldown
@@ -39126,8 +39128,10 @@ public struct TriggersAddOptions: Codable, Sendable {
     self.message = message
     self.onError = onError
     self.replySession = replySession
+    self.reportTo = reportTo
     self.session = session
     self.shell = shell
+    self.thread = thread
     self.timeout = timeout
     self.topic = topic
   }
@@ -39143,8 +39147,10 @@ public struct TriggersAddOptions: Codable, Sendable {
     case message = "message"
     case onError = "onError"
     case replySession = "replySession"
+    case reportTo = "reportTo"
     case session = "session"
     case shell = "shell"
+    case thread = "thread"
     case timeout = "timeout"
     case topic = "topic"
   }
@@ -39180,11 +39186,17 @@ public struct TriggersAddOptions: Codable, Sendable {
     if let value = self.replySession {
       body["replySession"] = try RaviJSON.fromEncodable(value)
     }
+    if let value = self.reportTo {
+      body["reportTo"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.session {
       body["session"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.shell {
       body["shell"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.thread {
+      body["thread"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.timeout {
       body["timeout"] = try RaviJSON.fromEncodable(value)

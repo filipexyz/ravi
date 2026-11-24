@@ -36,6 +36,7 @@ import {
 import { getAgent } from "../../router/config.js";
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { resolveSession } from "../../router/sessions.js";
+import { childRunParentRefusal, findChildRunByChildSession } from "../../automation/child-runs.js";
 import { getDefaultTimezone, getAccountForAgent, getDefaultAgentId, dbGetAgent } from "../../router/router-db.js";
 import {
   createCronJobIdempotently,
@@ -311,9 +312,24 @@ function resolveThreadReportTo(
 ): string | undefined {
   const ref = reportTo?.trim() || creatingSession;
   if (!ref) return undefined;
-  const session = resolveSession(ref);
+  // Checked before anything about the session is said: one the caller may not touch reads as missing.
+  const scopeCtx = getScopeContext();
+  if (reportTo?.trim() && isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, ref)) {
+    fail(`Report-to session not found: ${ref}`);
+  }
+  let session = resolveSession(ref);
   if (!session || isTriggerOwnSessionKey(session.sessionKey)) {
     fail(`Report-to session not found: ${ref}`);
+  }
+  // A job created inside an automation run reports where that run reports: the run's own session is pruned.
+  const creatingRun = reportTo?.trim() ? null : findChildRunByChildSession(session!.sessionKey);
+  if (creatingRun) {
+    session = resolveSession(creatingRun.parentSessionKey);
+    if (!session) fail(`Report-to session not found: ${creatingRun.parentSessionName}`);
+  }
+  const refusal = childRunParentRefusal(session!);
+  if (refusal) {
+    fail(`${refusal}; runs could not report there. Pass --report-to <a lasting session of ${agentId}>`);
   }
   if (session!.agentId !== agentId) {
     fail(
@@ -858,14 +874,29 @@ export class CronCommands {
     // The third step no longer falls back to "first enabled instance" — that
     // silently picked the wrong account in multi-account setups and broke
     // outbound delivery from scheduled jobs.
+    // Inside an automation run, the session that lasts is the run's parent: the run's own is pruned.
+    // Its account goes with it, so replies reach the parent's chat through the parent's account.
+    const creatingRun =
+      !isShellJob && ctx?.sessionKey && !isTriggerOwnSessionKey(ctx.sessionKey)
+        ? findChildRunByChildSession(ctx.sessionKey)
+        : null;
+    const creatingParent = creatingRun ? resolveSession(creatingRun.parentSessionKey) : null;
     const resolvedAccount = isShellJob
       ? undefined
-      : (account ?? ctx?.source?.accountId ?? (resolvedAgent ? getAccountForAgent(resolvedAgent) : undefined));
+      : (account ??
+        ctx?.source?.accountId ??
+        creatingParent?.lastAccountId ??
+        (resolvedAgent ? getAccountForAgent(resolvedAgent) : undefined));
 
     // Capture reply session from caller context (e.g., agent:comm:whatsapp:main:group:123).
     // A trigger's own session runs that trigger's fires only, so a job created
     // during one of its turns has no reply session and runs in the main one.
     let replySession = isShellJob || isTriggerOwnSessionKey(ctx?.sessionKey) ? undefined : ctx?.sessionKey;
+    if (creatingRun) {
+      // The parent replaces the caller's own session: the caller must be allowed to target it.
+      replySession = creatingRun.parentSessionKey;
+      assertCronTargetAuthorized("cron add", { agentId: resolvedAgent ?? getDefaultAgentId(), replySession }, asJson);
+    }
     if (thread)
       replySession = resolveThreadReportTo(reportTo, replySession, resolvedAgent ?? getDefaultAgentId(), asJson);
 

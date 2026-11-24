@@ -4351,7 +4351,8 @@ function getDefaultAgentIdFromDatabase(database: Database): string {
   return row?.value?.trim() || "main";
 }
 
-function ensureAgentDefaultsCapability(
+/** Exported for the break-glass sink test only; the boot visibility migration is its caller. */
+export function ensureAgentDefaultsCapability(
   database: Database,
   agentId: string,
   capability: { permission: string; objectType: string; objectId: string },
@@ -4368,9 +4369,17 @@ function ensureAgentDefaultsCapability(
     return false;
   }
 
+  const beforeRuntimePermissions = runtimePermissionsForBreakGlass(defaults.runtimePermissions);
   capabilities.push({ ...capability });
   runtimePermissions.capabilities = capabilities;
   defaults.runtimePermissions = runtimePermissions;
+  // Sink guard (review N9): this writes agents.defaults by SQL, outside dbUpdateAgent.
+  assertAgentBreakGlassRaiseAllowed(
+    `agent defaults of ${agentId}`,
+    agentId,
+    beforeRuntimePermissions,
+    runtimePermissionsForBreakGlass(runtimePermissions),
+  );
   database
     .prepare("UPDATE agents SET defaults = ?, updated_at = ? WHERE id = ?")
     .run(JSON.stringify(defaults), Date.now(), agentId);

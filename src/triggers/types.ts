@@ -19,9 +19,9 @@
  */
 export type SessionTarget = string;
 
-export const LEGACY_SESSION_TARGETS = new Set(["main", "isolated"]);
+export const LEGACY_SESSION_TARGETS = new Set(["main", "isolated", "thread"]);
 
-export function isLegacySessionTarget(value: SessionTarget): value is "main" | "isolated" {
+export function isLegacySessionTarget(value: SessionTarget): value is "main" | "isolated" | "thread" {
   return LEGACY_SESSION_TARGETS.has(value);
 }
 
