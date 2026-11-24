@@ -60,20 +60,29 @@ function definitionCapabilities(definition: TagDefinition): CapabilityLike[] {
       : [];
   return values.flatMap((value: unknown): CapabilityLike[] => {
     if (typeof value === "string") {
-      const [permission, objectType, objectId] = value.trim().split(":");
+      const [permission, objectType, ...rest] = value.trim().split(":");
+      const objectId = rest.join(":");
       return permission && objectType && objectId ? [{ permission, objectType, objectId }] : [];
     }
     if (value && typeof value === "object") {
-      const entry = value as Partial<CapabilityLike>;
-      return entry.permission && entry.objectType && entry.objectId
-        ? [{ permission: entry.permission, objectType: entry.objectType, objectId: entry.objectId }]
-        : [];
+      // Malformed metadata (numbers, nested objects) is ignored, as the provider does (review N11).
+      const entry = value as Record<string, unknown>;
+      const permission = typeof entry.permission === "string" ? entry.permission.trim() : "";
+      const objectType = typeof entry.objectType === "string" ? entry.objectType.trim() : "";
+      const objectId = typeof entry.objectId === "string" ? entry.objectId.trim() : "";
+      return permission && objectType && objectId ? [{ permission, objectType, objectId }] : [];
     }
     return [];
   });
 }
 
-const approvedBreakGlassGrant = new AsyncLocalStorage<string>();
+// The scope holds a token that is switched off when the approved body returns,
+// so a continuation the body scheduled never sees an open approval.
+const approvedBreakGlassGrant = new AsyncLocalStorage<{ approval: string; active: boolean }>();
+
+function approvalOpen(): boolean {
+  return approvedBreakGlassGrant.getStore()?.active === true;
+}
 
 export const BREAK_GLASS_REQUEST_COMMAND =
   "ravi permissions request full-access --to contact:<id> --chat <chat-id> --agent <executor> --execute";
@@ -159,10 +168,16 @@ export function agentConfigBreakGlassReasons(
   const reasons = profile === "full-access" ? ["full-access"] : [];
   const capabilities = (config.capabilities ?? []).flatMap((value): CapabilityLike[] => {
     if (typeof value === "string") {
-      const [permission, objectType, objectId] = value.split(":");
+      const [permission, objectType, ...rest] = value.split(":");
+      const objectId = rest.join(":");
       return permission && objectType && objectId ? [{ permission, objectType, objectId }] : [];
     }
-    return value?.permission && value.objectType && value.objectId
+    return typeof value?.permission === "string" &&
+      typeof value.objectType === "string" &&
+      typeof value.objectId === "string" &&
+      value.permission &&
+      value.objectType &&
+      value.objectId
       ? [{ permission: value.permission, objectType: value.objectType, objectId: value.objectId }]
       : [];
   });
@@ -181,6 +196,7 @@ export function assertAgentBreakGlassRaiseAllowed(
   targetAgentId: string,
   before: AgentPermissionsConfigLike | null | undefined,
   after: AgentPermissionsConfigLike | null | undefined,
+  options: { warnOperator?: boolean } = {},
 ): void {
   // An agent that already holds break-glass effectively keeps it; nothing to judge.
   if (agentConfigBreakGlassReasons(before, "effective").length > 0) return;
@@ -190,10 +206,20 @@ export function assertAgentBreakGlassRaiseAllowed(
   // agent that already stores the same dormant break-glass is not refused.
   const storedBefore = new Set(agentConfigBreakGlassReasons(before, "stored"));
   const newlyStored = agentConfigBreakGlassReasons(after, "stored").filter((reason) => !storedBefore.has(reason));
-  const raised = [...new Set([...agentConfigBreakGlassReasons(after, "effective"), ...newlyStored])];
+  const effectiveAfter = agentConfigBreakGlassReasons(after, "effective");
+  const raised = [...new Set([...effectiveAfter, ...newlyStored])];
   if (raised.length === 0) return;
-  if (approvedBreakGlassGrant.getStore()) return;
-  if (!callerIsAgentOrRemote()) return;
+  if (approvalOpen()) return;
+  if (!callerIsAgentOrRemote()) {
+    // The operator may do it; say so when it wakes something that was dormant.
+    // Only the storage sink warns: command pre-checks and dry runs stay quiet.
+    if (options.warnOperator === false) return;
+    warnOperatorBreakGlass(
+      `waking dormant break-glass on agent ${targetAgentId}`,
+      effectiveAfter.filter((reason) => storedBefore.has(reason)),
+    );
+    return;
+  }
   if (scopeAgentId() === targetAgentId) return;
   throw new CliExpectedError(
     `${action}: raising agent ${targetAgentId} to break-glass (${raised.join(", ")}) is for the operator terminal; an agent never raises another agent.`,
@@ -208,8 +234,36 @@ export function assertAgentBreakGlassRaiseAllowed(
  * `permissions request`, a denial approval card). Inside it, the storage sinks
  * accept a break-glass tag or grant; nothing else opens them for an agent.
  */
-export function runApprovedBreakGlassGrant<T>(approval: string, fn: () => T): T {
-  return approvedBreakGlassGrant.run(approval, fn);
+export function runApprovedBreakGlassGrant<T>(
+  approval: string,
+  fn: () => T extends PromiseLike<unknown> ? never : T,
+): T {
+  // The scope must close when fn returns: an async body would let every
+  // continuation after an await inherit an open approval (review N7).
+  const token = { approval, active: true };
+  try {
+    return approvedBreakGlassGrant.run(token, () => {
+      const result = fn() as T;
+      if (result && typeof (result as { then?: unknown }).then === "function") {
+        throw new Error("runApprovedBreakGlassGrant: the approved body must be synchronous.");
+      }
+      return result;
+    });
+  } finally {
+    token.active = false;
+  }
+}
+
+/**
+ * Tell the operator, on stderr, when a write from the terminal wakes or grants
+ * break-glass that an agent would have been refused: a dormant agent config
+ * becoming effective, or a contact holding break-glass being activated.
+ */
+export function warnOperatorBreakGlass(action: string, reasons: readonly string[]): void {
+  if (reasons.length === 0 || approvalOpen() || callerIsAgentOrRemote()) return;
+  process.stderr.write(
+    `warning: ${action} gives break-glass power (${[...new Set(reasons)].join(", ")}). Undo it if that was not intended.\n`,
+  );
 }
 
 /**
@@ -221,7 +275,7 @@ export function runApprovedBreakGlassGrant<T>(approval: string, fn: () => T): T 
  */
 export function assertBreakGlassStoreWrite(action: string, reasons: readonly string[]): void {
   if (reasons.length === 0) return;
-  if (approvedBreakGlassGrant.getStore()) return;
+  if (approvalOpen()) return;
   if (!callerIsAgentOrRemote()) return;
   throw new CliExpectedError(
     `${action}: writing ${[...new Set(reasons)].join(", ")} confers break-glass power; only an approved request or the operator terminal writes it.`,
@@ -242,4 +296,21 @@ export function slugBreakGlassReasons(raw: string, lookup: (slug: string) => Tag
   const normalized = normalizePermissionTag(raw) ?? given;
   const slugs = [...new Set([normalized, given].filter(Boolean))];
   return [...new Set(slugs.flatMap((slug) => tagDefinitionBreakGlassReasons(slug, lookup(slug))))];
+}
+
+/**
+ * Break-glass a chat grant's profile confers, read the way the provider reads
+ * grants: the slug exactly as stored (admin names and the definition under that
+ * slug), with no spelling normalization. Tags are read normalized; grants are not.
+ */
+export function grantProfileBreakGlassReasons(
+  profileSlug: string,
+  lookup: (slug: string) => TagDefinition | null,
+): string[] {
+  const slug = profileSlug.trim();
+  const reasons = ADMIN_PROFILE_SLUGS.includes(slug) ? [`${slug} (admin profile)`] : [];
+  const definition = lookup(slug);
+  const capabilities =
+    isPermissionProfileDefinition(definition) && definition ? definitionCapabilities(definition) : [];
+  return [...new Set([...reasons, ...breakGlassCapabilities(capabilities)])];
 }

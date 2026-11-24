@@ -133,6 +133,21 @@ turn. The operator terminal is not refused (owner bootstrap).
   defaultContactTags` refuses them from any caller, and the inbound intake
   drops them on read, so a new sender never arrives with power.
 
+## Follow-up rules (#950 review N7, N9–N11; #952 review N3, N5, N6)
+
+- A contact merge never carries break-glass: the source's break-glass tags are
+  dropped (with a warning on stderr), not moved, as its break-glass chat grants
+  are dropped (#952). The merged `tags_json` never receives them either.
+- `ensureAgentDefaultsCapability`, which writes `agents.defaults` by SQL outside
+  `dbUpdateAgent`, runs the same agent rule.
+- `runApprovedBreakGlassGrant` refuses an asynchronous body, so the approved
+  scope never crosses an `await`.
+- Malformed capabilities in a definition are ignored, as the provider ignores
+  them; the sinks never throw on them.
+- One predicate: the merge grant reassignment uses `slugBreakGlassReasons`.
+- The operator is warned on stderr when a terminal write wakes dormant
+  break-glass on an agent or activates a contact that holds it.
+
 ## Out of scope
 
 - A second approved path exists besides `permissions request`: the approval card

@@ -3,6 +3,11 @@ import { readFileSync } from "node:fs";
 import { ADMIN_PERMISSION_PROFILES } from "./apply-grant.js";
 import {
   ADMIN_PROFILE_SLUGS,
+  agentConfigBreakGlassReasons,
+  assertBreakGlassStoreWrite,
+  grantProfileBreakGlassReasons,
+  assertAgentBreakGlassRaiseAllowed,
+  runApprovedBreakGlassGrant,
   isAdminProfileSlug,
   isBreakGlassCapability,
   profileBreakGlassReasons,
@@ -72,5 +77,109 @@ describe("break-glass power", () => {
     for (const channel of ["slack", "whatsapp", "telegram", "omni", "matrix", "discord"]) {
       expect(source).not.toContain(channel);
     }
+  });
+
+  it("refuses an asynchronous approved body, so the scope never crosses an await", () => {
+    expect(() => runApprovedBreakGlassGrant("test", (async () => 1) as never)).toThrow(/synchronous/);
+    expect(runApprovedBreakGlassGrant("test", () => 2)).toBe(2);
+  });
+
+  it("ignores malformed capabilities in a definition instead of throwing", () => {
+    const malformed = {
+      slug: "permission-bad",
+      label: "bad",
+      createdAt: 0,
+      updatedAt: 0,
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: [{ permission: 1, objectType: "system", objectId: "*" }, 42, null] } },
+    } as never;
+    expect(() => tagDefinitionBreakGlassReasons("permission-bad", malformed)).not.toThrow();
+    expect(tagDefinitionBreakGlassReasons("permission-bad", malformed)).toEqual([]);
+  });
+
+  it("warns the operator on stderr when a terminal write wakes dormant break-glass", () => {
+    const stderr: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      stderr.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      assertAgentBreakGlassRaiseAllowed(
+        "test",
+        "dormant-agent",
+        { profile: "chat-only", capabilities: ["admin:system:*"] },
+        { profile: "bootstrap", capabilities: ["admin:system:*"] },
+      );
+      assertAgentBreakGlassRaiseAllowed("test", "deliberate-agent", null, { profile: "full-access" });
+    } finally {
+      process.stderr.write = original;
+    }
+    const output = stderr.join("");
+    expect(output).toContain("waking dormant break-glass on agent dormant-agent");
+    expect(output).not.toContain("deliberate-agent");
+  });
+
+  it("keeps a narrow executable pattern narrow, whatever follows the wildcard", () => {
+    const definition = {
+      slug: "permission-report",
+      label: "report",
+      createdAt: 0,
+      updatedAt: 0,
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["execute:executable:*:report"] } },
+    } as never;
+    expect(tagDefinitionBreakGlassReasons("permission-report", definition)).toEqual([]);
+    expect(grantProfileBreakGlassReasons("permission-report", () => definition)).toEqual([]);
+    expect(
+      agentConfigBreakGlassReasons(
+        { profile: "explicit-only", capabilities: ["execute:executable:*:report"] },
+        "stored",
+      ),
+    ).toEqual([]);
+  });
+
+  it("reads a grant profile by the exact stored slug", () => {
+    const rootDefinition = {
+      slug: "permission-root",
+      label: "root",
+      createdAt: 0,
+      updatedAt: 0,
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["admin:system:*"] } },
+    } as never;
+    const lookup = (slug: string) => (slug === "permission-root" ? rootDefinition : null);
+    expect(grantProfileBreakGlassReasons("permission-root", lookup)).toEqual(["admin:system:*"]);
+    expect(grantProfileBreakGlassReasons("permission.root", lookup)).toEqual([]);
+    expect(grantProfileBreakGlassReasons("permission-admin", () => null)).toEqual(["permission-admin (admin profile)"]);
+  });
+
+  it("closes the approval when the body returns, even for continuations it scheduled", async () => {
+    const previous = process.env.RAVI_AGENT_ID;
+    process.env.RAVI_AGENT_ID = "scheduled-agent";
+    let later: unknown = "not-run";
+    try {
+      runApprovedBreakGlassGrant("test", () => {
+        assertBreakGlassStoreWrite("inside", ["admin:system:*"]);
+        void Promise.resolve().then(() => {
+          try {
+            assertBreakGlassStoreWrite("after return", ["admin:system:*"]);
+            later = null;
+          } catch (error) {
+            later = error;
+          }
+        });
+        return 1;
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    } finally {
+      if (previous === undefined) delete process.env.RAVI_AGENT_ID;
+      else process.env.RAVI_AGENT_ID = previous;
+    }
+    expect(later).toMatchObject({ code: "FULL_ACCESS_APPROVAL_REQUIRED" });
   });
 });
