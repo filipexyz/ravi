@@ -22,7 +22,7 @@ import {
   startSlackThreadControls,
   stopSlackThreadControls,
 } from "./thread-controls.js";
-import { findSlackThreadForParent } from "./thread-lifecycle.js";
+import { findSlackThreadForParent, findSlackThreadForParentInChat } from "./thread-lifecycle.js";
 import { registerInboundSlackThread } from "./thread-lifecycle-store.js";
 
 const NOW = 1_800_000_000_000;
@@ -315,6 +315,31 @@ describe("a click becomes the same command, with the authority of the person who
 
       expect(outcome).toEqual({ decision: "allowed", code: "ok" });
       expect(h.calls.interrupted).toEqual([own.sessionKey]);
+    });
+
+    it("picks the clicked chat's record when both threads share one child session, as the real derivation makes them", () => {
+      // The child session key is the parent's and the root ts, with no channel in it: two threads of one parent
+      // with the same root share one child session, so `stop` reaches it either way and the record is what differs.
+      registerCard();
+      registerInboundSlackThread({
+        requestId: "req-other-chat",
+        parentSessionKey: PARENT_KEY,
+        parentSessionName: "main",
+        childSessionKey: CHILD_KEY,
+        childSessionName: "main-t-card",
+        accountId: ACCOUNT,
+        instanceId: INSTANCE,
+        platformChatId: "C0OTHER",
+        threadCanonicalChatId: "chat-other",
+        providerThreadId: CARD_TS,
+        seenAt: NOW - 60_000,
+      });
+
+      expect(findSlackThreadForParentInChat(PARENT_KEY, "C0CHAN", CARD_TS)?.requestId).toBe("req-card");
+      expect(findSlackThreadForParentInChat(PARENT_KEY, "C0OTHER", CARD_TS)?.requestId).toBe("req-other-chat");
+      expect(findSlackThreadForParentInChat(PARENT_KEY, "C0THIRD", CARD_TS)).toBeNull();
+      // What a typed command gets: the lookup by any name takes the one updated last, whichever chat typed it.
+      expect(findSlackThreadForParent(PARENT_KEY, CARD_TS)?.requestId).toBe("req-other-chat");
     });
 
     it("finds nothing for a chat that has no thread with that root, though another chat of the session has", async () => {
