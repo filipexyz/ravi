@@ -27,7 +27,21 @@ interface CredentialConnectionRow {
   status: string;
   created_at: number;
   updated_at: number;
+  owner: string | null;
+  purpose: string | null;
+  rotated_at: number | null;
+  expires_at: number | null;
+  disabled_at: number | null;
 }
+
+/** Lifecycle columns added after the first schema; nullable, never a secret. */
+const LIFECYCLE_COLUMNS = [
+  ["owner", "TEXT"],
+  ["purpose", "TEXT"],
+  ["rotated_at", "INTEGER"],
+  ["expires_at", "INTEGER"],
+  ["disabled_at", "INTEGER"],
+] as const;
 
 interface CredentialDbHandle {
   db: Database;
@@ -50,6 +64,12 @@ export interface UpsertCredentialConnectionInput {
   scopes?: string[];
   status?: CredentialConnectionStatus;
   now?: number;
+  /** Lifecycle metadata. `undefined` keeps what is stored; `null` clears it. */
+  owner?: string | null;
+  purpose?: string | null;
+  expiresAt?: number | null;
+  /** Set when a new secret value was written for an existing connection. */
+  rotatedAt?: number | null;
 }
 
 export interface ListCredentialConnectionsInput {
@@ -135,23 +155,52 @@ export function upsertCredentialConnection(
   executeWrite(
     getCredentialDb(options),
     (db) => {
-      const existing = db.prepare("SELECT created_at FROM credential_connections WHERE id = ?").get(id) as
-        | { created_at: number }
+      const existing = db
+        .prepare(
+          "SELECT created_at, status, owner, purpose, rotated_at, expires_at, disabled_at FROM credential_connections WHERE id = ?",
+        )
+        .get(id) as
+        | Pick<
+            CredentialConnectionRow,
+            "created_at" | "status" | "owner" | "purpose" | "rotated_at" | "expires_at" | "disabled_at"
+          >
         | undefined;
+      const lifecycle = mergeLifecycle(existing, input, status, now);
       db.prepare(
         `
         INSERT INTO credential_connections (
-          id, provider, connection, label, backend, secret_ref, status, created_at, updated_at
+          id, provider, connection, label, backend, secret_ref, status, created_at, updated_at,
+          owner, purpose, rotated_at, expires_at, disabled_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(provider, connection) DO UPDATE SET
           label = excluded.label,
           backend = excluded.backend,
           secret_ref = excluded.secret_ref,
           status = excluded.status,
-          updated_at = excluded.updated_at
+          updated_at = excluded.updated_at,
+          owner = excluded.owner,
+          purpose = excluded.purpose,
+          rotated_at = excluded.rotated_at,
+          expires_at = excluded.expires_at,
+          disabled_at = excluded.disabled_at
         `,
-      ).run(id, provider, connection, label, backend, secretRef, status, existing?.created_at ?? now, now);
+      ).run(
+        id,
+        provider,
+        connection,
+        label,
+        backend,
+        secretRef,
+        status,
+        existing?.created_at ?? now,
+        now,
+        lifecycle.owner,
+        lifecycle.purpose,
+        lifecycle.rotatedAt,
+        lifecycle.expiresAt,
+        lifecycle.disabledAt,
+      );
       db.prepare("DELETE FROM credential_connection_scopes WHERE connection_id = ?").run(id);
       for (const scope of scopes) {
         db.prepare(
@@ -192,11 +241,27 @@ export function createCredentialConnectionIfAbsent(
       const result = db
         .prepare(`
         INSERT INTO credential_connections (
-          id, provider, connection, label, backend, secret_ref, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, provider, connection, label, backend, secret_ref, status, created_at, updated_at,
+          owner, purpose, rotated_at, expires_at, disabled_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(provider, connection) DO NOTHING
       `)
-        .run(id, provider, connection, input.label?.trim() || null, backend, secretRef, status, now, now);
+        .run(
+          id,
+          provider,
+          connection,
+          input.label?.trim() || null,
+          backend,
+          secretRef,
+          status,
+          now,
+          now,
+          normalizeText(input.owner),
+          normalizeText(input.purpose),
+          null,
+          input.expiresAt ?? null,
+          status === "disabled" ? now : null,
+        );
       created = result.changes === 1;
       if (!created) return;
       for (const scope of scopes) {
@@ -225,13 +290,16 @@ export function setCredentialConnectionStatus(
   executeWrite(
     getCredentialDb(options),
     (db) => {
+      const now = Date.now();
+      // disabled_at records when the connection went off; re-disabling keeps the first time.
       db.prepare(
         `
         UPDATE credential_connections
-        SET status = ?, updated_at = ?
+        SET status = ?, updated_at = ?,
+          disabled_at = CASE WHEN ? = 'disabled' THEN COALESCE(disabled_at, ?) ELSE NULL END
         WHERE provider = ? AND connection = ?
         `,
-      ).run(normalizedStatus, Date.now(), providerId, connectionId);
+      ).run(normalizedStatus, now, normalizedStatus, now, providerId, connectionId);
     },
     { label: "credentials.status" },
   );
@@ -309,6 +377,68 @@ export function recordCredentialAuditEvent(
     { label: "credentials.audit" },
   );
   return event;
+}
+
+/**
+ * Last time the broker resolved each connection's secret, from the audit
+ * trail (`result_status = 'secret_resolved'`). Derived, not stored: the broker
+ * hot path writes nothing extra and cannot race the connection `updated_at`
+ * that its host guard compares.
+ */
+export function listCredentialLastUsedAt(options: CredentialStoreOptions = {}): Map<string, number> {
+  ensureCredentialTables(options);
+  const rows = getCredentialDb(options)
+    .prepare(
+      `
+      SELECT provider, connection, MAX(created_at) AS last_used_at
+      FROM credential_audit_events
+      WHERE result_status = 'secret_resolved'
+      GROUP BY provider, connection
+      `,
+    )
+    .all() as Array<{ provider: string; connection: string; last_used_at: number }>;
+  return new Map(rows.map((row) => [`${row.provider}:${row.connection}`, row.last_used_at]));
+}
+
+export function listRecentCredentialAuditEvents(
+  limit: number,
+  options: CredentialStoreOptions = {},
+): CredentialAuditEvent[] {
+  ensureCredentialTables(options);
+  const bounded = Math.max(0, Math.min(Math.trunc(limit), 200));
+  if (bounded === 0) return [];
+  const rows = getCredentialDb(options)
+    .prepare("SELECT * FROM credential_audit_events ORDER BY created_at DESC, id DESC LIMIT ?")
+    .all(bounded) as Array<{
+    id: string;
+    connection_id: string | null;
+    provider: string;
+    connection: string;
+    action: string;
+    actor_context_id: string | null;
+    agent_id: string | null;
+    decision: string;
+    approval_required: number;
+    approval_status: string | null;
+    result_status: string | null;
+    error_code: string | null;
+    created_at: number;
+  }>;
+  return rows.map((row) => ({
+    id: row.id,
+    connectionId: row.connection_id,
+    provider: row.provider,
+    connection: row.connection,
+    action: row.action,
+    actorContextId: row.actor_context_id,
+    agentId: row.agent_id,
+    decision: row.decision,
+    approvalRequired: row.approval_required === 1,
+    approvalStatus: row.approval_status,
+    resultStatus: row.result_status,
+    errorCode: row.error_code,
+    createdAt: row.created_at,
+  }));
 }
 
 export function credentialConnectionId(provider: string, connection: string): string {
@@ -392,6 +522,17 @@ function migrateSchema(db: Database): void {
     CREATE INDEX IF NOT EXISTS idx_credential_audit_events_connection
       ON credential_audit_events(provider, connection, created_at);
   `);
+  addLifecycleColumns(db);
+}
+
+/** Additive, idempotent: old databases gain nullable lifecycle columns; rows keep their data. */
+function addLifecycleColumns(db: Database): void {
+  const present = new Set(
+    (db.prepare("PRAGMA table_info(credential_connections)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  for (const [name, type] of LIFECYCLE_COLUMNS) {
+    if (!present.has(name)) db.exec(`ALTER TABLE credential_connections ADD COLUMN ${name} ${type}`);
+  }
 }
 
 /** SQLite cannot alter a CHECK constraint; preserve rows and child references. */
@@ -445,7 +586,41 @@ function hydrateConnection(row: CredentialConnectionRow, options: CredentialStor
     status: requireConnectionStatus(row.status),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    owner: row.owner ?? null,
+    purpose: row.purpose ?? null,
+    rotatedAt: row.rotated_at ?? null,
+    expiresAt: row.expires_at ?? null,
+    disabledAt: row.disabled_at ?? null,
   };
+}
+
+function mergeLifecycle(
+  existing:
+    | Pick<CredentialConnectionRow, "status" | "owner" | "purpose" | "rotated_at" | "expires_at" | "disabled_at">
+    | undefined,
+  input: UpsertCredentialConnectionInput,
+  status: CredentialConnectionStatus,
+  now: number,
+): {
+  owner: string | null;
+  purpose: string | null;
+  rotatedAt: number | null;
+  expiresAt: number | null;
+  disabledAt: number | null;
+} {
+  const keep = <T>(next: T | undefined, current: T | null | undefined): T | null =>
+    next === undefined ? (current ?? null) : next;
+  return {
+    owner: input.owner === undefined ? (existing?.owner ?? null) : normalizeText(input.owner),
+    purpose: input.purpose === undefined ? (existing?.purpose ?? null) : normalizeText(input.purpose),
+    rotatedAt: keep(input.rotatedAt, existing?.rotated_at),
+    expiresAt: keep(input.expiresAt, existing?.expires_at),
+    disabledAt: status === "disabled" ? (existing?.status === "disabled" ? (existing.disabled_at ?? now) : now) : null,
+  };
+}
+
+function normalizeText(value: string | null | undefined): string | null {
+  return value?.trim() || null;
 }
 
 function normalizeScopes(scopes: string[]): string[] {

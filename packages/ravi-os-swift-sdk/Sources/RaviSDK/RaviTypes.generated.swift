@@ -13351,6 +13351,57 @@ public struct CredentialsConnectionsEnableReturn: Codable, Sendable {
   }
 }
 
+public struct CredentialsConnectionsInventoryOptions: Codable, Sendable {
+  public var auditLimit: String?
+  public var noDescribe: Bool?
+
+  public init(auditLimit: String? = nil, noDescribe: Bool? = nil) {
+    self.auditLimit = auditLimit
+    self.noDescribe = noDescribe
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case auditLimit = "auditLimit"
+    case noDescribe = "noDescribe"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.auditLimit {
+      body["auditLimit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.noDescribe {
+      body["noDescribe"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct CredentialsConnectionsInventoryReturn: Codable, Sendable {
+  public var audit: [RaviJSON]
+  public var degraded: Bool
+  public var degradedReasons: [String]
+  public var generatedAt: Double
+  public var items: [RaviJSON]
+  public var total: Double
+
+  public init(audit: [RaviJSON], degraded: Bool, degradedReasons: [String], generatedAt: Double, items: [RaviJSON], total: Double) {
+    self.audit = audit
+    self.degraded = degraded
+    self.degradedReasons = degradedReasons
+    self.generatedAt = generatedAt
+    self.items = items
+    self.total = total
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case audit = "audit"
+    case degraded = "degraded"
+    case degradedReasons = "degradedReasons"
+    case generatedAt = "generatedAt"
+    case items = "items"
+    case total = "total"
+  }
+}
+
 public struct CredentialsConnectionsListOptions: Codable, Sendable {
   public var all: Bool?
   public var fields: String?

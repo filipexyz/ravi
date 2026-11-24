@@ -32,6 +32,7 @@ const statusCalls: Array<{ provider: string; connection: string; status: string 
 const upsertCalls: Array<Record<string, unknown>> = [];
 const execCalls: Array<Record<string, unknown>> = [];
 const deleteSecretCalls: string[] = [];
+const inventoryCalls: Array<Record<string, unknown>> = [];
 
 function findConnection(provider: string, connection: string): MockConnection | null {
   return connections.find((item) => item.provider === provider && item.connection === connection) ?? null;
@@ -63,6 +64,10 @@ mock.module("../context.js", () => ({
 }));
 
 mock.module("../../credentials/index.js", () => ({
+  buildCredentialInventory: async (input: Record<string, unknown>) => {
+    inventoryCalls.push(input);
+    return { generatedAt: 1, degraded: false, degradedReasons: [], total: 0, items: [], audit: [] };
+  },
   deleteSecret: async (secretRef: string) => {
     deleteSecretCalls.push(secretRef);
     return true;
@@ -173,6 +178,7 @@ beforeEach(() => {
   removeCalls.length = 0;
   statusCalls.length = 0;
   upsertCalls.length = 0;
+  inventoryCalls.length = 0;
   execCalls.length = 0;
   deleteSecretCalls.length = 0;
 });
@@ -393,5 +399,101 @@ describe("credentials connections compact mode", () => {
     for (const item of payload.items as unknown as Array<Record<string, unknown>>) {
       expect(Object.keys(item).sort()).toEqual(["connection", "provider", "status"]);
     }
+  });
+});
+
+describe("credentials connections inventory and lifecycle flags", () => {
+  it("inventory describes backends by default and skips them with --no-describe", async () => {
+    const commands = new CredentialConnectionsCommands();
+    await silenced(() => commands.inventory(undefined, "5", true));
+    await silenced(() => commands.inventory(false, undefined, true));
+    expect(inventoryCalls).toEqual([
+      { describe: true, auditLimit: 5 },
+      { describe: false, auditLimit: 20 },
+    ]);
+  });
+
+  it("add records owner, purpose and expiry, and marks a rotation only when a new value replaces an existing one", async () => {
+    const commands = new CredentialConnectionsCommands();
+    // Existing connection + new value from stdin = rotation.
+    await silenced(() =>
+      commands.add(
+        "slack",
+        "main",
+        "keychain",
+        undefined,
+        undefined,
+        true,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        "luis",
+        "bot",
+        "2027-02-16",
+      ),
+    );
+    // New connection + new value = creation, not rotation.
+    await silenced(() =>
+      commands.add(
+        "slack",
+        "fresh",
+        "keychain",
+        undefined,
+        undefined,
+        true,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    );
+    // Existing connection pointed at an existing ref = no new value, not rotation.
+    await silenced(() =>
+      commands.add(
+        "slack",
+        "main",
+        "keychain",
+        undefined,
+        undefined,
+        undefined,
+        "keychain:ravi/slack/main",
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    );
+
+    expect(upsertCalls[0]).toMatchObject({ owner: "luis", purpose: "bot", expiresAt: Date.parse("2027-02-16") });
+    expect(upsertCalls[0]?.rotatedAt).toBeNumber();
+    expect("rotatedAt" in (upsertCalls[1] ?? {})).toBe(false);
+    expect("rotatedAt" in (upsertCalls[2] ?? {})).toBe(false);
+    expect(upsertCalls[1]).toMatchObject({ owner: undefined, purpose: undefined, expiresAt: undefined });
+  });
+
+  it("add refuses an expiry that is not a date", async () => {
+    const commands = new CredentialConnectionsCommands();
+    await expect(
+      commands.add(
+        "slack",
+        "main",
+        "keychain",
+        undefined,
+        undefined,
+        undefined,
+        "keychain:x",
+        undefined,
+        undefined,
+        undefined,
+        true,
+        undefined,
+        undefined,
+        "soon",
+      ),
+    ).rejects.toThrow("--expires-at must be an ISO date");
+    expect(upsertCalls).toHaveLength(0);
   });
 });

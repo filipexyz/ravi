@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "256e1c89ada59486"
+    "version": "ccb44ebb9b1ecc58"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -68481,6 +68481,385 @@
           }
         ],
         "summary": "Enable a credential connection",
+        "tags": [
+          "credentials"
+        ]
+      }
+    },
+    "/api/v1/credentials/connections/inventory": {
+      "post": {
+        "operationId": "credentials.connections.inventory",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "auditLimit": {
+                    "default": "20",
+                    "description": "Recent audit rows to include (0-200)",
+                    "type": "string"
+                  },
+                  "noDescribe": {
+                    "default": false,
+                    "description": "Skip backend metadata (versions, times); local data only",
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "audit": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "action": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "number"
+                          },
+                          "connection": {
+                            "type": "string"
+                          },
+                          "decision": {
+                            "type": "string"
+                          },
+                          "errorCode": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "provider": {
+                            "type": "string"
+                          },
+                          "resultStatus": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "at",
+                          "provider",
+                          "connection",
+                          "action",
+                          "decision",
+                          "resultStatus",
+                          "errorCode"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "degraded": {
+                      "type": "boolean"
+                    },
+                    "degradedReasons": {
+                      "items": {
+                        "enum": [
+                          "unsupported",
+                          "not_configured",
+                          "forbidden",
+                          "sealed",
+                          "unreachable",
+                          "invalid_ref",
+                          "redirected",
+                          "error"
+                        ],
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "generatedAt": {
+                      "type": "number"
+                    },
+                    "items": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "backend": {
+                            "enum": [
+                              "file",
+                              "keychain",
+                              "vault"
+                            ],
+                            "type": "string"
+                          },
+                          "connection": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "number"
+                          },
+                          "disabledAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "expiresAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "lastUsedAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "owner": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "provider": {
+                            "type": "string"
+                          },
+                          "purpose": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "rotatedAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "scopes": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "secret": {
+                            "anyOf": [
+                              {
+                                "anyOf": [
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "available": {
+                                        "const": true,
+                                        "type": "boolean"
+                                      },
+                                      "createdAt": {
+                                        "anyOf": [
+                                          {
+                                            "type": "number"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "deleted": {
+                                        "type": "boolean"
+                                      },
+                                      "exists": {
+                                        "type": "boolean"
+                                      },
+                                      "updatedAt": {
+                                        "anyOf": [
+                                          {
+                                            "type": "number"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "version": {
+                                        "anyOf": [
+                                          {
+                                            "type": "number"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "available",
+                                      "exists",
+                                      "version",
+                                      "createdAt",
+                                      "updatedAt",
+                                      "deleted"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "available": {
+                                        "const": false,
+                                        "type": "boolean"
+                                      },
+                                      "reason": {
+                                        "enum": [
+                                          "unsupported",
+                                          "not_configured",
+                                          "forbidden",
+                                          "sealed",
+                                          "unreachable",
+                                          "invalid_ref",
+                                          "redirected",
+                                          "error"
+                                        ],
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "available",
+                                      "reason"
+                                    ],
+                                    "type": "object"
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "secretRefAlias": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "enum": [
+                              "active",
+                              "disabled"
+                            ],
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "provider",
+                          "connection",
+                          "label",
+                          "backend",
+                          "secretRefAlias",
+                          "status",
+                          "scopes",
+                          "owner",
+                          "purpose",
+                          "createdAt",
+                          "updatedAt",
+                          "rotatedAt",
+                          "expiresAt",
+                          "disabledAt",
+                          "lastUsedAt",
+                          "secret"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "total": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "generatedAt",
+                    "degraded",
+                    "degradedReasons",
+                    "total",
+                    "items",
+                    "audit"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Metadata-only snapshot of every connection: lifecycle, last use, backend version/times and recent audit. Never reads a secret value",
         "tags": [
           "credentials"
         ]

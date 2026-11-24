@@ -2688,6 +2688,12 @@ public struct CredentialsConnectionsNamespace: Sendable {
     return try await transport.call(groupSegments: ["credentials","connections"], command: "enable", body: requestBody, as: CredentialsConnectionsEnableReturn.self)
   }
 
+  public func inventory(_ options: CredentialsConnectionsInventoryOptions = .init()) async throws -> CredentialsConnectionsInventoryReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["credentials","connections"], command: "inventory", body: requestBody, as: CredentialsConnectionsInventoryReturn.self)
+  }
+
   public func list(_ options: CredentialsConnectionsListOptions = .init()) async throws -> CredentialsConnectionsListReturn {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)

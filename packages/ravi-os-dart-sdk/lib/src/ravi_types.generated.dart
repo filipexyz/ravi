@@ -11239,6 +11239,50 @@ class CredentialsConnectionsEnableReturn {
 
 CredentialsConnectionsEnableReturn credentialsConnectionsEnableReturnFromJson(Object? json) => CredentialsConnectionsEnableReturn.fromJsonValue(json);
 
+class CredentialsConnectionsInventoryOptions {
+  const CredentialsConnectionsInventoryOptions({this.auditLimit, this.noDescribe});
+
+  final String? auditLimit;
+  final bool? noDescribe;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (auditLimit != null) {
+      into["auditLimit"] = RaviJson.from(auditLimit);
+    }
+    if (noDescribe != null) {
+      into["noDescribe"] = RaviJson.from(noDescribe);
+    }
+  }
+}
+
+class CredentialsConnectionsInventoryReturn {
+  const CredentialsConnectionsInventoryReturn({required this.audit, required this.degraded, required this.degradedReasons, required this.generatedAt, required this.items, required this.total});
+
+  final List<RaviJson> audit;
+  final bool degraded;
+  final List<String> degradedReasons;
+  final double generatedAt;
+  final List<RaviJson> items;
+  final double total;
+
+  factory CredentialsConnectionsInventoryReturn.fromJson(Map<String, Object?> json) {
+    return CredentialsConnectionsInventoryReturn(
+      audit: raviJsonAsList(json["audit"], RaviJson.from),
+      degraded: raviJsonAsBool(json["degraded"]),
+      degradedReasons: raviJsonAsList(json["degradedReasons"], raviJsonAsString),
+      generatedAt: raviJsonAsDouble(json["generatedAt"]),
+      items: raviJsonAsList(json["items"], RaviJson.from),
+      total: raviJsonAsDouble(json["total"]),
+    );
+  }
+
+  static CredentialsConnectionsInventoryReturn fromJsonValue(Object? json) {
+    return CredentialsConnectionsInventoryReturn.fromJson(raviJsonObject(json, "CredentialsConnectionsInventoryReturn"));
+  }
+}
+
+CredentialsConnectionsInventoryReturn credentialsConnectionsInventoryReturnFromJson(Object? json) => CredentialsConnectionsInventoryReturn.fromJsonValue(json);
+
 class CredentialsConnectionsListOptions {
   const CredentialsConnectionsListOptions({this.all, this.fields, this.limit, this.offset, this.provider, this.status});
 
