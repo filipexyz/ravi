@@ -105,3 +105,31 @@ RAVI_CONTEXT_KEY=<viewer-ctx> ravi cron disable <other-agent-job-id> --json
 - `bun test src/cron/runner.test.ts` MUST show startup failure reconciliation off the readiness path: `start()` returns while failure delivery is held (channel online and offline); `stop()` admits no further report; `stop()` returns after about a second while a delivery is stalled, leaving the report pending for a fresh start to retry; the loop yields the event loop between reports that settle locally; a report whose stored notice does not parse is recorded once in the inbox and settled, neither retried nor raised by `stop()`; a report whose mark the database refuses (after the delivery) does not stop the reports behind it, its failure being raised by `stop()` up to the recorded bound; and a `stop()` that raised stays failed on later stops, as the shutdown latch requires (also pinned by `src/cron/runner-shutdown.test.ts`).
 - `bun test src/runtime/delivery-queue.test.ts src/runtime/turn-provenance.test.ts src/runtime/prompt-subscription.test.ts` verifies run separation, continuation identity and pre-turn failure provenance.
 - `bun test src/runtime/intake-failure.test.ts` MUST pass a persisted cron run through the real cold launcher with an incompatible model and with a missing agent, then recreate the runner and verify the terminal state and retained one-shot. A permanent intake drop MUST preserve the original run identity.
+
+## Failure Acknowledgement MUST Only Settle
+
+- `bun test src/cron/failure-ack.test.ts` MUST prove `cron ack-failures` groups pending
+  failed runs by job, never selects runs of jobs the caller may not modify (they are
+  counted as denied), narrows to one job with `--job`, and marks exactly the selected
+  runs reported without sending anything.
+
+## Failure Notices MUST Aggregate And Stop Retrying
+
+- `bun test src/cron/failure-notification.test.ts` MUST reproduce the pile-up: 42 failed runs of
+  3 jobs with the owner's WhatsApp offline produce one digest on the owner's next chat with a
+  line per job ("31 falhas", "10 falhas", "1 falha"), the offline chat is never tried, and every
+  run settles. It MUST also prove: every owner chat offline → no send, settled undeliverable
+  (`owner_chats_offline`) at once; no owner chat → undeliverable (`no_owner_chat`); an erroring
+  delivery settles after 3 attempts and is not tried again; a second live failure of a job
+  inside the window sends nothing and one after it sends; a failure older than the window
+  settles as stale without a message. The window MUST hold with 60 newer items of other jobs and
+  after the owner marks the notice done; the next notice MUST count failures since the last one;
+  a connected chat MUST be tried before one whose state is unknown; a digest MUST cap at 20 lines.
+- `bun test src/cron/runner.test.ts` MUST prove a report acknowledged while the start gathers the
+  backlog is not sent.
+- `bun test src/cli/commands/cron-commands.test.ts` MUST prove `cron ack-failures` rejects a blank
+  `--job` (exit 2), is a dry-run without `--execute` (exit 3), and settles only jobs the caller can
+  both see and modify.
+- `bun test src/cron/runner.test.ts` MUST prove failed runs drained at start go out as one
+  digest ("falhou 2 vezes" for one job), online and offline, and that a run whose report was
+  delivered but cannot be marked stays pending while the others settle.

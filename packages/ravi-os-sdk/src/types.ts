@@ -12484,6 +12484,32 @@ export type CrmTaskSnoozeReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `cron.ack-failures`. */
+export type CronAckFailuresInput = {
+  execute?: boolean;
+  job?: string;
+};
+
+/** Return shape for `cron.ack-failures`. */
+export type CronAckFailuresReturn = {
+  changedCount: number;
+  denied: number;
+  jobs: Array<{
+    jobId: string;
+    name: string | null;
+    newestAt: string;
+    oldestAt: string;
+    ownerAgentId: string | null;
+    runs: number;
+  }>;
+  pending: number;
+  status: "acknowledged";
+  target: {
+    id: string;
+    type: "cron";
+  };
+};
+
 /** Input shape for `cron.add`. */
 export type CronAddInput = {
   account?: string;

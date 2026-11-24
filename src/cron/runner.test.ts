@@ -80,6 +80,7 @@ const actualChatTargetModule = await import("../cloud-agents/chat-target.js");
 // Only what a test armed is faked: with nothing armed these call through to the real ones, so the mocks
 // are harmless to other files that share this process.
 const actualResolveOwnerDirectTarget = actualOwnerModule.resolveOwnerDirectTarget;
+const actualResolveOwnerDirectTargets = actualOwnerModule.resolveOwnerDirectTargets;
 const actualDeliverToChat = actualChatTargetModule.deliverToChat;
 const directChatsArmed = () => operatorChat !== null || contactChats.size > 0;
 
@@ -90,6 +91,12 @@ mock.module("../knowledge/owner.js", () => ({
     if (!directChatsArmed()) return actualResolveOwnerDirectTarget(deps);
     const ids = deps?.listOwnerContactIds?.();
     return ids ? (contactChats.get(ids[0] ?? "") ?? null) : operatorChat;
+  },
+  resolveOwnerDirectTargets: (deps?: Parameters<typeof actualResolveOwnerDirectTarget>[0]) => {
+    if (!directChatsArmed()) return actualResolveOwnerDirectTargets(deps);
+    const ids = deps?.listOwnerContactIds?.();
+    const chat = ids ? (contactChats.get(ids[0] ?? "") ?? null) : operatorChat;
+    return chat ? [chat] : [];
   },
 }));
 
@@ -1266,7 +1273,8 @@ describe("durable cron run correlation", () => {
         release();
         await stopping;
         expect(directAttempts).toHaveLength(1);
-        expect(pendingCronFailureReports()).toHaveLength(offline ? 2 : 1);
+        // The backlog goes out as one digest: both runs settle together, or stay pending together.
+        expect(pendingCronFailureReports()).toHaveLength(offline ? 2 : 0);
       } finally {
         release();
         await starting;
@@ -1279,8 +1287,10 @@ describe("durable cron run correlation", () => {
       try {
         await recovered.start();
         await waitUntil(() => pendingCronFailureReports().length === 0);
-        expect(directMessages).toHaveLength(2);
-        expect(directAttempts).toHaveLength(offline ? 3 : 2);
+        // Both failed runs of the job settle with one message that carries the count.
+        expect(directMessages).toHaveLength(1);
+        expect(directMessages[0]!.text).toContain("falhou 2 vezes");
+        expect(directAttempts).toHaveLength(offline ? 2 : 1);
       } finally {
         await recovered.stop();
       }
@@ -1425,9 +1435,9 @@ describe("durable cron run correlation", () => {
 
     const runner = new CronRunner();
     await runner.start();
-    // Both reports are delivered; the second is still marked, the first stays pending.
+    // Both reports go out in one digest; the second is still marked, the first stays pending.
     await waitUntil(() => pendingCronFailureReports().length === 1);
-    expect(directMessages).toHaveLength(2);
+    expect(directMessages).toHaveLength(1);
     expect(pendingCronFailureReports()[0]!.id).toBe(runIds[0]);
     const failure = await runner.stop().then(
       () => null,
@@ -1435,6 +1445,30 @@ describe("durable cron run correlation", () => {
     );
     expect(failure).toBeInstanceOf(AggregateError);
     expect((failure as AggregateError).errors).toHaveLength(1);
+  });
+
+  it("does not send a report that was acknowledged while the start was still gathering the backlog", async () => {
+    operatorChat = OPERATOR_CHAT;
+    const { settleCronRun, pendingCronFailureReports, markCronRunReported } = await import("./run-db.js");
+    const runIds: string[] = [];
+    for (let i = 0; i < 2; i++) {
+      const job = createAgentJob({ ownerPrincipal: "operator" });
+      await new CronRunner().triggerJob(job.id);
+      const dispatched = publishCalls.at(-1)!;
+      runIds.push(String(dispatched.payload._cronRunId));
+      settleCronRun(runIds[i]!, dispatched.sessionName, { lastStatus: "error", lastError: "failed before report" });
+    }
+    const runner = new CronRunner();
+    try {
+      await runner.start();
+      // `cron ack-failures` settles both while the start is between reports.
+      for (const runId of runIds) markCronRunReported(runId);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(pendingCronFailureReports()).toHaveLength(0);
+      expect(directAttempts).toHaveLength(0);
+    } finally {
+      await runner.stop();
+    }
   });
 
   it("yields the event loop between reports that settle locally", async () => {

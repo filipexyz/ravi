@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "49ad64612460bb45"
+    "version": "d79694d6ae484eec"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -73317,6 +73317,155 @@
         "summary": "Snooze a CRM task to a new due_at",
         "tags": [
           "crm"
+        ]
+      }
+    },
+    "/api/v1/cron/ack-failures": {
+      "post": {
+        "operationId": "cron.ack-failures",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "execute": {
+                    "description": "Actually mark the runs reported; default is a dry-run that lists them (exit 3)",
+                    "type": "boolean"
+                  },
+                  "job": {
+                    "description": "Only this job's failed runs",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": false
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "changedCount": {
+                      "type": "number"
+                    },
+                    "denied": {
+                      "type": "number"
+                    },
+                    "jobs": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "jobId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "newestAt": {
+                            "type": "string"
+                          },
+                          "oldestAt": {
+                            "type": "string"
+                          },
+                          "ownerAgentId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "runs": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "jobId",
+                          "name",
+                          "ownerAgentId",
+                          "runs",
+                          "oldestAt",
+                          "newestAt"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "pending": {
+                      "type": "number"
+                    },
+                    "status": {
+                      "const": "acknowledged",
+                      "type": "string"
+                    },
+                    "target": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "const": "cron",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "id"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "target",
+                    "changedCount",
+                    "pending",
+                    "denied",
+                    "jobs"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — body conforms to the `@Returns` schema."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Mark failed runs as reported without notifying the owner (dry-run by default)",
+        "tags": [
+          "cron"
         ]
       }
     },

@@ -1,7 +1,16 @@
 import { deliverToChat } from "../cloud-agents/chat-target.js";
-import { listLocalInboxEvents, markLocalInboxItem, upsertLocalInboxItem } from "../inbox/local-db.js";
-import { resolveOwnerDirectTarget, type OwnerDirectTarget } from "../knowledge/owner.js";
+import {
+  latestLocalInboxEventAt,
+  listLocalInboxEvents,
+  markLocalInboxItem,
+  upsertLocalInboxItem,
+} from "../inbox/local-db.js";
+import { resolveOwnerDirectTarget, resolveOwnerDirectTargets, type OwnerDirectTarget } from "../knowledge/owner.js";
+import { createOmniClient } from "../omni/client.js";
+import { resolveOmniConnection } from "../omni-config.js";
+import { dbGetInstance } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
+import { countCronFailuresSince } from "./run-db.js";
 import type { CronJob } from "./types.js";
 
 const log = logger.child("cron:failure-notification");
@@ -36,7 +45,40 @@ export function resolveCronFailureOwner(job: Pick<CronJob, "ownerPrincipal">): O
   return resolveOwnerDirectTarget({ listOwnerContactIds: () => [owner.slice(8)], readTargetSetting: () => null });
 }
 
-/** The operator or a contact owns the run, so a direct message is owed (and retried until sent). */
+/** Every direct chat of the run's owner, best first; the next is tried when one cannot be reached. */
+export function resolveCronFailureOwners(job: Pick<CronJob, "ownerPrincipal">): OwnerDirectTarget[] {
+  const owner = job.ownerPrincipal;
+  if (!owner || owner === "operator") return resolveOwnerDirectTargets();
+  if (!owner.startsWith("contact:") || !owner.slice(8)) return [];
+  return resolveOwnerDirectTargets({ listOwnerContactIds: () => [owner.slice(8)], readTargetSetting: () => null });
+}
+
+/** One message per job in this window; later failures of the same job join it instead of sending again. */
+export const CRON_FAILURE_NOTICE_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** Delivery attempts (across starts) before a report is settled as undeliverable instead of retried. */
+export const CRON_FAILURE_MAX_DELIVERY_ATTEMPTS = 3;
+
+const SETTLED_EVENTS = new Set([
+  "cron.failure.notified",
+  "cron.failure.unowned",
+  "cron.failure.aggregated",
+  "cron.failure.undeliverable",
+  "cron.failure.stale",
+]);
+
+/** When this job last messaged its owner about a failure, from the inbox ledger; null if never. */
+function lastJobNoticeAt(jobId: string): number | null {
+  // Every item of the job, any status: a notice the owner marked done still counts, and other
+  // jobs' items never push it out of view.
+  return latestLocalInboxEventAt({
+    sourceDomain: "cron",
+    sourceType: "run_failed",
+    sourceId: jobId,
+    eventType: "cron.failure.notified",
+  });
+}
+
+/** The operator or a contact owns the run, so a direct message is owed (and retried, a bounded number of times). */
 export function cronFailureOwesDirectMessage(ownerPrincipal: string | null | undefined): boolean {
   if (!ownerPrincipal || ownerPrincipal === "operator") return true;
   return ownerPrincipal.startsWith("contact:") && ownerPrincipal.length > "contact:".length;
@@ -64,53 +106,270 @@ export function recordUnreadableCronFailure(run: { id: string; job_id: string; a
   markLocalInboxItem(item.id, item.status, { eventType: "cron.failure.unreadable", actorType: "system" });
 }
 
-/** Deterministic delivery: reporting a broken model must never need that model. */
+/** Whether a chat can be reached now: true, false, or null when it cannot be told (keep trying it). */
+export type CronFailureReachability = (target: OwnerDirectTarget) => Promise<boolean | null>;
+
+export interface CronFailureNoticeDeps {
+  owner?: typeof resolveCronFailureOwner;
+  owners?: typeof resolveCronFailureOwners;
+  deliver?: (target: OwnerDirectTarget, text: string) => Promise<unknown>;
+  reachable?: CronFailureReachability;
+  lastNoticeAt?: (jobId: string) => number | null;
+  failuresSince?: (jobId: string, since: number) => number;
+  now?: () => number;
+}
+
+/** A failure that is owed a message, waiting to be delivered alone or in a digest. */
+export interface CronFailureReport {
+  itemId: string;
+  jobId: string;
+  jobName: string;
+  category: ReturnType<typeof classifyCronFailure>;
+  failedAt: number | null;
+  ownerKey: string;
+  targets: OwnerDirectTarget[];
+  priorAttempts: number;
+  /** Failed runs of the job this notice covers: since its last notice, or within the window. */
+  failureCount: number;
+}
+
+/**
+ * Record the failure in the inbox and decide what it is owed. `null` means it is settled without a
+ * message: already reported, owed to nobody, older than the window (history, not news), or joined
+ * to a notice the owner got for the same job inside the window. Otherwise a report to deliver.
+ */
+export function prepareCronFailureReport(
+  job: CronFailureJob,
+  error: string,
+  deps: CronFailureNoticeDeps = {},
+): CronFailureReport | null {
+  const category = classifyCronFailure(error);
+  const targets = deps.owners
+    ? deps.owners(job)
+    : deps.owner
+      ? [deps.owner(job)].filter((target): target is OwnerDirectTarget => target !== null)
+      : resolveCronFailureOwners(job);
+  const { item } = upsertLocalInboxItem({
+    sourceDomain: "cron",
+    sourceType: "run_failed",
+    sourceId: job.id,
+    dedupeKey: `cron-failure:${job.id}:${job.runId ?? job.lastRunAt ?? job.updatedAt}`,
+    title: `Falha no agendamento: ${job.name}`,
+    summary: singleRunText(job.name, category),
+    priority: "high",
+    assignedToAgentId: job.agentId,
+    assignedToContactId: targets[0]?.contactId,
+    occurredAt: job.lastRunAt,
+    // Raw provider errors may contain tokens, paths or prompts. Keep them in
+    // the existing job diagnostics, never in the outbound message/inbox.
+    metadata: { jobId: job.id, category, ownerPrincipal: job.ownerPrincipal ?? "unknown" },
+    actorType: "system",
+  });
+  const events = listLocalInboxEvents(item.id);
+  if (events.some((event) => SETTLED_EVENTS.has(event.eventType))) return null;
+  // No person owns the run (`unknown`, an agent): no direct message is owed.
+  // The inbox item is the report; settle it so it is not resent every start.
+  if (!cronFailureOwesDirectMessage(job.ownerPrincipal)) {
+    markLocalInboxItem(item.id, item.status, { eventType: "cron.failure.unowned", actorType: "system" });
+    return null;
+  }
+  const now = (deps.now ?? Date.now)();
+  if (typeof job.lastRunAt === "number" && now - job.lastRunAt > CRON_FAILURE_NOTICE_WINDOW_MS) {
+    // A failure older than the window is history, not news: a backlog found at start (an owner chat
+    // that was offline for days) stays in the inbox and is settled without a message.
+    markLocalInboxItem(item.id, item.status, {
+      eventType: "cron.failure.stale",
+      actorType: "system",
+      payload: { failedAt: job.lastRunAt },
+    });
+    return null;
+  }
+  const lastNotice = (deps.lastNoticeAt ?? lastJobNoticeAt)(job.id);
+  if (lastNotice !== null && now - lastNotice < CRON_FAILURE_NOTICE_WINDOW_MS) {
+    // The owner already heard about this job recently: the run joins that notice.
+    markLocalInboxItem(item.id, item.status, {
+      eventType: "cron.failure.aggregated",
+      actorType: "system",
+      payload: { lastNoticeAt: lastNotice },
+    });
+    return null;
+  }
+  return {
+    itemId: item.id,
+    jobId: job.id,
+    jobName: job.name,
+    category,
+    failedAt: typeof job.lastRunAt === "number" ? job.lastRunAt : null,
+    ownerKey: job.ownerPrincipal && job.ownerPrincipal !== "operator" ? job.ownerPrincipal : "operator",
+    targets,
+    priorAttempts: events.filter((event) => event.eventType === "cron.failure.delivery_failed").length,
+    // Runs joined to the previous notice were settled without a message: count them here, so the
+    // owner learns how often the job failed since then.
+    failureCount: Math.max(
+      1,
+      (deps.failuresSince ?? countCronFailuresSince)(job.id, lastNotice ?? now - CRON_FAILURE_NOTICE_WINDOW_MS),
+    ),
+  };
+}
+
+function singleRunText(name: string, category: CronFailureReport["category"]): string {
+  return `O agendamento “${name}” falhou: ${FAILURE_COPY[category]}. O trabalho ficou pendente; revise a execução antes de repetir.`;
+}
+
+function formatFailedAt(at: number | null): string {
+  return at === null ? "hora desconhecida" : `${new Date(at).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+}
+
+/** Lines in a digest before the rest is summed up in one line. */
+export const CRON_FAILURE_DIGEST_MAX_LINES = 20;
+
+/** One message for an owner's reports: one line per job with how many runs failed and the last one. */
+export function cronFailureDigestText(reports: CronFailureReport[]): string {
+  const byJob = new Map<string, CronFailureReport[]>();
+  for (const report of reports) byJob.set(report.jobId, [...(byJob.get(report.jobId) ?? []), report]);
+  const jobs = [...byJob.values()].map((runs) => {
+    const last = runs.reduce((a, b) => ((b.failedAt ?? 0) > (a.failedAt ?? 0) ? b : a));
+    const count = Math.max(runs.length, ...runs.map((run) => run.failureCount));
+    return { last, count };
+  });
+  if (jobs.length === 1) {
+    const { last, count } = jobs[0]!;
+    if (count <= 1) return singleRunText(last.jobName, last.category);
+    return `O agendamento “${last.jobName}” falhou ${count} vezes; a última: ${FAILURE_COPY[last.category]}. O trabalho ficou pendente; revise a execução antes de repetir.`;
+  }
+  const sorted = jobs.sort((a, b) => b.count - a.count || a.last.jobName.localeCompare(b.last.jobName));
+  const lines = sorted
+    .slice(0, CRON_FAILURE_DIGEST_MAX_LINES)
+    .map(
+      ({ last, count }) =>
+        `- “${last.jobName}”: ${count} ${count === 1 ? "falha" : "falhas"}, a última em ${formatFailedAt(last.failedAt)} (${FAILURE_COPY[last.category]})`,
+    );
+  const rest = sorted.slice(CRON_FAILURE_DIGEST_MAX_LINES);
+  if (rest.length > 0) {
+    const restFailures = rest.reduce((total, job) => total + job.count, 0);
+    lines.push(`- e mais ${rest.length} agendamentos (${restFailures} ${restFailures === 1 ? "falha" : "falhas"})`);
+  }
+  return `${jobs.length} agendamentos falharam. O trabalho ficou pendente; revise as execuções antes de repetir.\n${lines.join("\n")}`;
+}
+
+/** Omni connection state of a WhatsApp instance; anything else cannot be told here. */
+async function defaultReachable(target: OwnerDirectTarget): Promise<boolean | null> {
+  if (target.channel !== "whatsapp") return null;
+  try {
+    const instance = dbGetInstance(target.accountId);
+    const connection = resolveOmniConnection();
+    if (!instance?.instanceId || !connection) return null;
+    const omni = createOmniClient({ baseUrl: connection.apiUrl, apiKey: connection.apiKey, timeoutMs: 3_000 });
+    return (await omni.instances.status(instance.instanceId)).isConnected === true;
+  } catch (cause) {
+    // Omni down or slow: the chat's state cannot be told, so it is still tried.
+    log.debug("Owner chat reachability unknown", { accountId: target.accountId, error: cause });
+    return null;
+  }
+}
+
+/** Connected chats first, then those whose state is unknown; chats known to be down are dropped. */
+async function reachableTargets(
+  targets: OwnerDirectTarget[],
+  reachable: CronFailureReachability,
+): Promise<{ ordered: OwnerDirectTarget[]; down: number }> {
+  const states = await Promise.all(targets.map((target) => reachable(target)));
+  const up = targets.filter((_, index) => states[index] === true);
+  const unknown = targets.filter((_, index) => states[index] === null);
+  return { ordered: [...up, ...unknown], down: states.filter((state) => state === false).length };
+}
+
+/**
+ * Deliver reports, one message per owner (a digest when it covers several jobs or runs). Returns
+ * the item ids that are settled: sent, or undeliverable after bounded attempts. The rest stay
+ * pending for a later start. Nothing is sent to a chat known to be offline, and with no reachable
+ * chat at all the reports settle as undeliverable at once, with the reason, instead of looping.
+ */
+export async function deliverCronFailureReports(
+  reports: CronFailureReport[],
+  deps: CronFailureNoticeDeps = {},
+): Promise<Set<string>> {
+  const settled = new Set<string>();
+  const byOwner = new Map<string, CronFailureReport[]>();
+  for (const report of reports) byOwner.set(report.ownerKey, [...(byOwner.get(report.ownerKey) ?? []), report]);
+  const deliver = deps.deliver ?? ((owner, message) => deliverToChat(owner, { text: message }));
+  for (const group of byOwner.values()) {
+    const { ordered, down } = await reachableTargets(group[0]!.targets, deps.reachable ?? defaultReachable);
+    const text = cronFailureDigestText(group);
+    const reasons: string[] = [];
+    let sentTo: OwnerDirectTarget | null = null;
+    for (const target of ordered) {
+      try {
+        await deliver(target, text);
+        sentTo = target;
+        break;
+      } catch (cause) {
+        reasons.push(
+          `${target.channel}:${target.accountId}: ${cause instanceof Error ? cause.message : String(cause)}`,
+        );
+      }
+    }
+    for (const report of group) {
+      if (sentTo) {
+        markLocalInboxItem(report.itemId, "open", {
+          eventType: "cron.failure.notified",
+          actorType: "system",
+          payload: { channel: sentTo.channel, accountId: sentTo.accountId, digest: group.length > 1 },
+        });
+        settled.add(report.itemId);
+        continue;
+      }
+      const attempts = report.priorAttempts + 1;
+      // No chat of the owner is reachable (all known offline, or none resolves): retrying at every
+      // start cannot help, so fail closed now. A delivery that errored may be transient: retry, bounded.
+      const hopeless = ordered.length === 0;
+      markLocalInboxItem(report.itemId, "open", {
+        eventType: "cron.failure.delivery_failed",
+        actorType: "system",
+        payload: { attempt: attempts, targets: report.targets.length, offline: down },
+      });
+      if (hopeless || attempts >= CRON_FAILURE_MAX_DELIVERY_ATTEMPTS) {
+        markLocalInboxItem(report.itemId, "open", {
+          eventType: "cron.failure.undeliverable",
+          actorType: "system",
+          payload: {
+            attempts,
+            reason:
+              report.targets.length === 0 ? "no_owner_chat" : hopeless ? "owner_chats_offline" : "delivery_failed",
+          },
+        });
+        settled.add(report.itemId);
+      }
+    }
+    if (!sentTo) {
+      const reason =
+        group[0]!.targets.length === 0
+          ? "no direct chat of the owner resolves"
+          : ordered.length === 0
+            ? `every chat of the owner is offline (${down})`
+            : reasons.join("; ");
+      log.warn("Cron failure notice not delivered", { owner: group[0]!.ownerKey, reports: group.length, reason });
+    }
+  }
+  return settled;
+}
+
+/**
+ * Deterministic delivery: reporting a broken model must never need that model.
+ *
+ * Returns true when the report is settled (sent, joined to a recent notice of the same job, owed
+ * to nobody, older than the window, or undeliverable) and false when a later start should retry.
+ */
 export async function notifyCronFailure(
   job: CronFailureJob,
   error: string,
-  deps: {
-    owner?: typeof resolveCronFailureOwner;
-    deliver?: (target: OwnerDirectTarget, text: string) => Promise<unknown>;
-  } = {},
+  deps: CronFailureNoticeDeps = {},
 ): Promise<boolean> {
   try {
-    const category = classifyCronFailure(error);
-    const target = (deps.owner ?? resolveCronFailureOwner)(job);
-    const summary = `O agendamento “${job.name}” falhou: ${FAILURE_COPY[category]}. O trabalho ficou pendente; revise a execução antes de repetir.`;
-    const { item } = upsertLocalInboxItem({
-      sourceDomain: "cron",
-      sourceType: "run_failed",
-      sourceId: job.id,
-      dedupeKey: `cron-failure:${job.id}:${job.runId ?? job.lastRunAt ?? job.updatedAt}`,
-      title: `Falha no agendamento: ${job.name}`,
-      summary,
-      priority: "high",
-      assignedToAgentId: job.agentId,
-      assignedToContactId: target?.contactId,
-      occurredAt: job.lastRunAt,
-      // Raw provider errors may contain tokens, paths or prompts. Keep them in
-      // the existing job diagnostics, never in the outbound message/inbox.
-      metadata: { jobId: job.id, category, ownerPrincipal: job.ownerPrincipal ?? "unknown" },
-      actorType: "system",
-    });
-    const events = listLocalInboxEvents(item.id);
-    if (
-      events.some((event) => event.eventType === "cron.failure.notified" || event.eventType === "cron.failure.unowned")
-    )
-      return true;
-    // No person owns the run (`unknown`, an agent): no direct message is owed.
-    // The inbox item is the report; settle it so it is not resent every start.
-    if (!cronFailureOwesDirectMessage(job.ownerPrincipal)) {
-      markLocalInboxItem(item.id, item.status, { eventType: "cron.failure.unowned", actorType: "system" });
-      return true;
-    }
-    if (!target) {
-      log.warn("Cron failure retained in inbox; owner has no direct delivery target", { jobId: job.id });
-      return false;
-    }
-    await (deps.deliver ?? ((owner, text) => deliverToChat(owner, { text })))(target, summary);
-    markLocalInboxItem(item.id, item.status, { eventType: "cron.failure.notified", actorType: "system" });
-    return true;
+    const report = prepareCronFailureReport(job, error, deps);
+    if (!report) return true;
+    const settled = await deliverCronFailureReports([report], deps);
+    return settled.has(report.itemId);
   } catch (error) {
     log.error("Cron failure notification failed; run remains failed and inbox stays open", { jobId: job.id, error });
     return false;

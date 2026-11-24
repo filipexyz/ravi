@@ -15491,6 +15491,57 @@ public struct CrmTaskSnoozeReturn: Codable, Sendable {
   }
 }
 
+public struct CronAckFailuresOptions: Codable, Sendable {
+  public var execute: Bool?
+  public var job: String?
+
+  public init(execute: Bool? = nil, job: String? = nil) {
+    self.execute = execute
+    self.job = job
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case execute = "execute"
+    case job = "job"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.job {
+      body["job"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct CronAckFailuresReturn: Codable, Sendable {
+  public var changedCount: Double
+  public var denied: Double
+  public var jobs: [RaviJSON]
+  public var pending: Double
+  public var status: String
+  public var target: RaviJSON
+
+  public init(changedCount: Double, denied: Double, jobs: [RaviJSON], pending: Double, status: String, target: RaviJSON) {
+    self.changedCount = changedCount
+    self.denied = denied
+    self.jobs = jobs
+    self.pending = pending
+    self.status = status
+    self.target = target
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case changedCount = "changedCount"
+    case denied = "denied"
+    case jobs = "jobs"
+    case pending = "pending"
+    case status = "status"
+    case target = "target"
+  }
+}
+
 public struct CronAddOptions: Codable, Sendable {
   public var account: String?
   public var agent: String?
