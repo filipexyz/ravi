@@ -3624,6 +3624,17 @@ class CredentialsConnectionsNamespace {
     );
   }
 
+  Future<CredentialsConnectionsInventoryReturn> inventory([CredentialsConnectionsInventoryOptions options = const CredentialsConnectionsInventoryOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["credentials", "connections"],
+      command: "inventory",
+      body: requestBody,
+      decode: credentialsConnectionsInventoryReturnFromJson,
+    );
+  }
+
   Future<CredentialsConnectionsListReturn> list([CredentialsConnectionsListOptions options = const CredentialsConnectionsListOptions()]) async {
     final requestBody = <String, RaviJson>{};
     options.encodeBody(requestBody);

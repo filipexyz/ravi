@@ -11571,6 +11571,58 @@ export type CredentialsConnectionsEnableReturn = {
   }) | null;
 };
 
+/** Input shape for `credentials.connections.inventory`. */
+export type CredentialsConnectionsInventoryInput = {
+  auditLimit?: string;
+  noDescribe?: boolean;
+};
+
+/** Return shape for `credentials.connections.inventory`. */
+export type CredentialsConnectionsInventoryReturn = {
+  audit: Array<{
+    action: string;
+    at: number;
+    connection: string;
+    decision: string;
+    errorCode: string | null;
+    provider: string;
+    resultStatus: string | null;
+  }>;
+  degraded: boolean;
+  degradedReasons: Array<"unsupported" | "not_configured" | "forbidden" | "sealed" | "unreachable" | "invalid_ref" | "redirected" | "error">;
+  generatedAt: number;
+  items: Array<{
+    backend: "file" | "keychain" | "vault";
+    connection: string;
+    createdAt: number;
+    disabledAt: number | null;
+    expiresAt: number | null;
+    id: string;
+    label: string | null;
+    lastUsedAt: number | null;
+    owner: string | null;
+    provider: string;
+    purpose: string | null;
+    rotatedAt: number | null;
+    scopes: string[];
+    secret: (({
+      available: true;
+      createdAt: number | null;
+      deleted: boolean;
+      exists: boolean;
+      updatedAt: number | null;
+      version: number | null;
+    }) | ({
+      available: false;
+      reason: "unsupported" | "not_configured" | "forbidden" | "sealed" | "unreachable" | "invalid_ref" | "redirected" | "error";
+    })) | null;
+    secretRefAlias: string;
+    status: "active" | "disabled";
+    updatedAt: number;
+  }>;
+  total: number;
+};
+
 /** Input shape for `credentials.connections.list`. */
 export type CredentialsConnectionsListInput = {
   all?: boolean;
