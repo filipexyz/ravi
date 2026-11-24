@@ -146,6 +146,23 @@ describe("Observation Plane", () => {
       }),
     );
     expect(dbGetObserverRule("limited-disable")).toMatchObject({ enabled: false, sourceAgentId: "worker" });
+
+    // A rule whose stored grants predate normalization (a migration appends, unsorted).
+    dbUpsertObserverRule({
+      id: "migrated-grants",
+      scope: "agent",
+      sourceAgentId: "worker",
+      observerAgentId: "observer",
+      observerMode: "report",
+      permissionGrants: ["read:agents:*", "read:agents:debounce"],
+    });
+    getDb()
+      .prepare("UPDATE observer_rules SET permission_grants_json = ? WHERE id = ?")
+      .run(JSON.stringify(["read:agents:debounce", "read:agents:*"]), "migrated-grants");
+    runWithContext(limited, () =>
+      dbUpsertObserverRule({ id: "migrated-grants", observerAgentId: "observer", enabled: false }),
+    );
+    expect(dbGetObserverRule("migrated-grants")?.enabled).toBe(false);
   });
 
   it("creates one idempotent observer binding for a matched agent rule", () => {

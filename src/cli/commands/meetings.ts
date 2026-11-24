@@ -236,7 +236,8 @@ function buildGoogleMeetJoinArgs(input: {
   return args;
 }
 
-function buildGoogleMeetJoinWorkerArgs(input: {
+/** Exported for tests: the detached join worker's argv. */
+export function buildGoogleMeetJoinWorkerArgs(input: {
   provider: string;
   url: string;
   name?: string;

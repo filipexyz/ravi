@@ -930,29 +930,21 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
   // Refused before any validation unless this could be disabling an existing
   // rule; that case is judged on the stored values further down.
   if (input.enabled !== false || !existing) assertAutomationStoreWrite("observer rule", { disablesOnly: false });
-  const scope = normalizeScope(input.scope ?? existing?.scope);
-  const observerRole = normalizeRole(input.observerRole ?? existing?.observerRole ?? id);
-  const observerAgentId = cleanOptionalText(input.observerAgentId ?? existing?.observerAgentId);
-  if (!observerAgentId) throw new Error("Observer agent id is required.");
-  const observerRuntimeProviderId = resolveOptionalTextOverride(
-    input.observerRuntimeProviderId,
-    existing?.observerRuntimeProviderId,
-  ) as RuntimeProviderId | undefined;
-  const observerModel = resolveOptionalTextOverride(input.observerModel, existing?.observerModel);
-  const observerProfileId = resolveOptionalTextOverride(input.observerProfileId, existing?.observerProfileId);
-  const observerProfile = resolveObserverProfile(observerProfileId);
-  const observerMode = normalizeMode(input.observerMode ?? existing?.observerMode ?? observerProfile.defaults.mode);
-  const eventTypes = normalizeEventTypes(
-    input.eventTypes ?? existing?.eventTypes ?? observerProfile.defaults.eventTypes,
-  );
-  const deliveryPolicy = normalizeDeliveryPolicy(
-    input.deliveryPolicy ?? existing?.deliveryPolicy ?? observerProfile.defaults.deliveryPolicy,
-  );
-  const permissionGrants = normalizePermissionGrants(input.permissionGrants ?? existing?.permissionGrants);
-  const tagTargetType = normalizeTagTargetType(input.tagTargetType ?? existing?.tagTargetType);
-  const tagSlug = normalizeTagSlug(input.tagSlug ?? existing?.tagSlug);
-  const selector = resolveSelectorOverride(input.selector, existing?.selector);
-  const metadata = input.metadata ?? existing?.metadata;
+  const content = observerRuleContent(id, input, existing);
+  const {
+    scope,
+    observerAgentId,
+    observerRuntimeProviderId,
+    observerModel,
+    observerProfileId,
+    observerMode,
+    deliveryPolicy,
+    permissionGrants,
+    tagTargetType,
+    tagSlug,
+    metadata,
+    stored,
+  } = content;
   validateObserverSourceExclusions(metadata);
   validateObserverConditions(metadata, deliveryPolicy);
   validateObserverInformTarget(metadata, scope, input.sourceSession ?? existing?.sourceSession);
@@ -971,39 +963,21 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
 
   const enabled = input.enabled ?? existing?.enabled ?? true;
   const db = getDb();
-  // Every stored column but id, enabled and the timestamps, exactly as written.
-  const stored: Record<(typeof OBSERVER_RULE_CONTENT_COLUMNS)[number], string | number | null> = {
-    scope,
-    priority: input.priority ?? existing?.priority ?? 100,
-    observer_role: observerRole,
-    observer_agent_id: observerAgentId,
-    observer_runtime_provider_id: observerRuntimeProviderId ?? null,
-    observer_model: observerModel ?? null,
-    observer_profile_id: observerProfileId ?? null,
-    observer_mode: observerMode,
-    event_types_json: stringifyJson(eventTypes),
-    delivery_policy: deliveryPolicy,
-    debounce_ms: input.debounceMs ?? existing?.debounceMs ?? null,
-    source_agent_id: cleanOptionalText(input.sourceAgentId ?? existing?.sourceAgentId) ?? null,
-    source_session: cleanOptionalText(input.sourceSession ?? existing?.sourceSession) ?? null,
-    source_task_id: cleanOptionalText(input.sourceTaskId ?? existing?.sourceTaskId) ?? null,
-    source_profile_id: cleanOptionalText(input.sourceProfileId ?? existing?.sourceProfileId) ?? null,
-    source_project_id: cleanOptionalText(input.sourceProjectId ?? existing?.sourceProjectId) ?? null,
-    tag_target_type: tagTargetType ?? null,
-    tag_slug: tagSlug ?? null,
-    tag_inherited: (input.tagInherited ?? existing?.tagInherited) ? 1 : 0,
-    permission_grants_json: stringifyJson(permissionGrants),
-    selector: selector ?? null,
-    metadata_json: metadata ? stringifyJson(metadata) : null,
-  };
   // An observer rule makes the agent take turns later; a limited turn cannot
   // write one. Disabling is a reduction only when the rule exists and this
-  // write leaves every other stored column as it is: creating a disabled rule,
-  // or changing observer, scope or grants while passing `enabled: false`, is a
-  // write like any other. Compared on the stored values, after normalization,
-  // so a `rules set --disabled` that repeats defaults still counts as disabling.
+  // write would store every other column exactly as the rule stores it with no
+  // change at all: creating a disabled rule, or changing observer, scope or
+  // grants while passing `enabled: false`, is a write like any other. Both sides
+  // go through the same normalization, so a `rules set --disabled` that repeats
+  // stored values, or a rule whose stored JSON predates normalization (grants
+  // appended by a migration), still counts as disabling.
+  const unchanged =
+    input.enabled === false && existing
+      ? observerRuleContent(id, { id, observerAgentId: existing.observerAgentId }, existing).stored
+      : null;
   assertAutomationStoreWrite("observer rule", {
-    disablesOnly: input.enabled === false && Boolean(existing) && storedRuleContentEquals(db, id, stored),
+    disablesOnly:
+      unchanged !== null && OBSERVER_RULE_CONTENT_COLUMNS.every((column) => unchanged[column] === stored[column]),
   });
 
   const now = Date.now();
@@ -2030,15 +2004,70 @@ const OBSERVER_RULE_CONTENT_COLUMNS = [
   "metadata_json",
 ] as const;
 
-/** True when the stored row already holds exactly these values in every content column. */
-function storedRuleContentEquals(
-  db: ReturnType<typeof getDb>,
-  id: string,
-  next: Record<(typeof OBSERVER_RULE_CONTENT_COLUMNS)[number], unknown>,
-): boolean {
-  const row = db
-    .prepare(`SELECT ${OBSERVER_RULE_CONTENT_COLUMNS.join(", ")} FROM observer_rules WHERE id = ?`)
-    .get(id) as Record<string, unknown> | null;
-  if (!row) return false;
-  return OBSERVER_RULE_CONTENT_COLUMNS.every((column) => (row[column] ?? null) === (next[column] ?? null));
+/** Every stored column of a rule but id, enabled and the timestamps, normalized as written. */
+type ObserverRuleStoredContent = Record<(typeof OBSERVER_RULE_CONTENT_COLUMNS)[number], string | number | null>;
+
+/** Normalize a rule write over the existing rule, exactly as `dbUpsertObserverRule` stores it. */
+function observerRuleContent(id: string, input: ObserverRuleInput, existing: ObserverRule | null) {
+  const scope = normalizeScope(input.scope ?? existing?.scope);
+  const observerRole = normalizeRole(input.observerRole ?? existing?.observerRole ?? id);
+  const observerAgentId = cleanOptionalText(input.observerAgentId ?? existing?.observerAgentId);
+  if (!observerAgentId) throw new Error("Observer agent id is required.");
+  const observerRuntimeProviderId = resolveOptionalTextOverride(
+    input.observerRuntimeProviderId,
+    existing?.observerRuntimeProviderId,
+  ) as RuntimeProviderId | undefined;
+  const observerModel = resolveOptionalTextOverride(input.observerModel, existing?.observerModel);
+  const observerProfileId = resolveOptionalTextOverride(input.observerProfileId, existing?.observerProfileId);
+  const observerProfile = resolveObserverProfile(observerProfileId);
+  const observerMode = normalizeMode(input.observerMode ?? existing?.observerMode ?? observerProfile.defaults.mode);
+  const eventTypes = normalizeEventTypes(
+    input.eventTypes ?? existing?.eventTypes ?? observerProfile.defaults.eventTypes,
+  );
+  const deliveryPolicy = normalizeDeliveryPolicy(
+    input.deliveryPolicy ?? existing?.deliveryPolicy ?? observerProfile.defaults.deliveryPolicy,
+  );
+  const permissionGrants = normalizePermissionGrants(input.permissionGrants ?? existing?.permissionGrants);
+  const tagTargetType = normalizeTagTargetType(input.tagTargetType ?? existing?.tagTargetType);
+  const tagSlug = normalizeTagSlug(input.tagSlug ?? existing?.tagSlug);
+  const selector = resolveSelectorOverride(input.selector, existing?.selector);
+  const metadata = input.metadata ?? existing?.metadata;
+  const stored: ObserverRuleStoredContent = {
+    scope,
+    priority: input.priority ?? existing?.priority ?? 100,
+    observer_role: observerRole,
+    observer_agent_id: observerAgentId,
+    observer_runtime_provider_id: observerRuntimeProviderId ?? null,
+    observer_model: observerModel ?? null,
+    observer_profile_id: observerProfileId ?? null,
+    observer_mode: observerMode,
+    event_types_json: stringifyJson(eventTypes),
+    delivery_policy: deliveryPolicy,
+    debounce_ms: input.debounceMs ?? existing?.debounceMs ?? null,
+    source_agent_id: cleanOptionalText(input.sourceAgentId ?? existing?.sourceAgentId) ?? null,
+    source_session: cleanOptionalText(input.sourceSession ?? existing?.sourceSession) ?? null,
+    source_task_id: cleanOptionalText(input.sourceTaskId ?? existing?.sourceTaskId) ?? null,
+    source_profile_id: cleanOptionalText(input.sourceProfileId ?? existing?.sourceProfileId) ?? null,
+    source_project_id: cleanOptionalText(input.sourceProjectId ?? existing?.sourceProjectId) ?? null,
+    tag_target_type: tagTargetType ?? null,
+    tag_slug: tagSlug ?? null,
+    tag_inherited: (input.tagInherited ?? existing?.tagInherited) ? 1 : 0,
+    permission_grants_json: stringifyJson(permissionGrants),
+    selector: selector ?? null,
+    metadata_json: metadata ? stringifyJson(metadata) : null,
+  };
+  return {
+    scope,
+    observerAgentId,
+    observerRuntimeProviderId,
+    observerModel,
+    observerProfileId,
+    observerMode,
+    deliveryPolicy,
+    permissionGrants,
+    tagTargetType,
+    tagSlug,
+    metadata,
+    stored,
+  };
 }

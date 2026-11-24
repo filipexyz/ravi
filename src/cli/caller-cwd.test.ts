@@ -3,6 +3,9 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseCallerCwd, resolveCallerPath } from "./caller-cwd.js";
+import { getOrCreateSession } from "../router/index.js";
+import { dbCreateAgent } from "../router/router-db.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { RulesCommands } from "./commands/rules.js";
 import { WidgetsCommands } from "./commands/widgets.js";
 import { runWithContext, type ToolContext } from "./context.js";
@@ -25,6 +28,15 @@ describe("resolveCallerPath", () => {
   it("resolves relative file arguments against the caller cwd", () => {
     const resolved = runWithContext({ cwd: "/tmp/agent-workspace" }, () => resolveCallerPath("./index.html"));
     expect(resolved).toBe(join("/tmp/agent-workspace", "index.html"));
+  });
+
+  it("reads a leading ~ as the home directory, as a shell would", () => {
+    expect(runWithContext({ cwd: "/tmp/agent-workspace" }, () => resolveCallerPath("~/recordings"))).toBe(
+      join(homedir(), "recordings"),
+    );
+    expect(runWithContext({ cwd: "/tmp/agent-workspace" }, () => resolveCallerPath("./~x"))).toBe(
+      join("/tmp/agent-workspace", "~x"),
+    );
   });
 
   it("leaves absolute paths unchanged", () => {
@@ -68,19 +80,34 @@ describe("resolveCallerPath file authority", () => {
     expect(() => runWithContext(writer, () => resolveCallerPath(".claude/settings.json", "write"))).toThrow(denied);
   });
 
-  it("bounds a person held below break-glass to the caller's workspace, not the daemon's cwd", () => {
-    const workspace = join(homedir(), "ravi-limited-caller-workspace-test");
-    const limited: ToolContext = {
-      ...agentContext("use:tool:Write", "deny_execute:executable:*"),
-      cwd: workspace,
-    };
-    expect(runWithContext(limited, () => resolveCallerPath("notes.md", "write"))).toBe(join(workspace, "notes.md"));
-    expect(() =>
-      // A path outside both the workspace and the temp roots, wherever the checkout lives.
-      runWithContext(limited, () =>
-        resolveCallerPath(join(homedir(), "ravi-daemon-side-test", "daemon-side.txt"), "write"),
-      ),
-    ).toThrow(denied);
+  it("bounds a person held below break-glass to the session's workspace, not a cwd the caller declares", async () => {
+    const stateDir = await createIsolatedRaviState("caller-cwd-limited-");
+    try {
+      // Outside the temp roots, so only the workspace rule can allow it.
+      const workspace = join(homedir(), `ravi-limited-session-workspace-${process.pid}`);
+      dbCreateAgent({ id: "reporter", cwd: workspace });
+      getOrCreateSession("agent:reporter:limited", "reporter", workspace, { name: "limited" });
+      const limited = (cwd: string): ToolContext => {
+        const base = agentContext("use:tool:Write", "deny_execute:executable:*");
+        return { ...base, cwd, context: { ...base.context!, sessionKey: "agent:reporter:limited" } };
+      };
+      expect(runWithContext(limited(workspace), () => resolveCallerPath("notes.md", "write"))).toBe(
+        join(workspace, "notes.md"),
+      );
+      // `cd` into another agent's workspace before calling: the boundary stays the session's.
+      const elsewhere = join(homedir(), `ravi-other-agent-workspace-${process.pid}`);
+      expect(() => runWithContext(limited(elsewhere), () => resolveCallerPath("AGENTS.md", "write"))).toThrow(denied);
+      expect(() =>
+        runWithContext(limited(workspace), () =>
+          resolveCallerPath(join(homedir(), "ravi-daemon-side-test", "daemon-side.txt"), "write"),
+        ),
+      ).toThrow(denied);
+      // No session on the context: only temp stays writable.
+      const sessionless = { ...agentContext("use:tool:Write", "deny_execute:executable:*"), cwd: workspace };
+      expect(() => runWithContext(sessionless, () => resolveCallerPath("notes.md", "write"))).toThrow(denied);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
   });
 
   it("imports rules into the caller's workspace and refuses a limited turn writing them anywhere else", async () => {

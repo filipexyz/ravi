@@ -8,7 +8,7 @@ import type { CloudCredentials } from "../../cloud-auth/types.js";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
 import { getCliOnlyMetadata } from "../decorators.js";
-import { MeetingProfileCommands, MeetingsCommands } from "./meetings.js";
+import { buildGoogleMeetJoinWorkerArgs, MeetingProfileCommands, MeetingsCommands } from "./meetings.js";
 import { meetingsReadReturnSchema } from "./operational-return-schemas.js";
 
 let tempDir: string | undefined;
@@ -48,6 +48,19 @@ describe("MeetingsCommands", () => {
     previousPath = undefined;
     previousOpenAiApiKey = undefined;
     previousRecorderBin = undefined;
+  });
+
+  it("hands the detached join worker the --out path resolved against the caller's cwd", () => {
+    const callerCwd = join(tempDir!, "caller-workspace");
+    const args = runWithContext({ cwd: callerCwd }, () =>
+      buildGoogleMeetJoinWorkerArgs({
+        provider: "google-meet",
+        url: "https://meet.google.com/abc-defg-hij",
+        out: "recordings",
+        artifactId: "art_test",
+      }),
+    );
+    expect(args[args.indexOf("--out") + 1]).toBe(join(callerCwd, "recordings"));
   });
 
   it("hands the recorder the --out path resolved against the caller's cwd, not the daemon's", async () => {

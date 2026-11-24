@@ -54,5 +54,13 @@
   rules outside the workspace MUST be refused before the cloud is contacted or
   any file is written.
 - Disabling an existing observer rule from a limited turn MUST be judged on the
-  stored columns after normalization: repeating what is stored still disables,
-  any other stored change is refused (`automation-store-guard.test.ts`).
+  stored columns, both sides normalized the same way: repeating what is stored
+  (also a rule whose stored JSON predates normalization) still disables, any
+  other stored change is refused (`automation-store-guard.test.ts`,
+  `observation-plane.test.ts`).
+- A limited person's CLI write boundary MUST be the authenticated session's
+  workspace (`expandHome(session.agentCwd)` from the context's `sessionKey`),
+  never the cwd the caller declares; a context with no session keeps only temp
+  writable (`caller-cwd.test.ts`). A leading `~` in a CLI path MUST be read as
+  the home directory before the check, so the path handed to a worker is the
+  one checked.
