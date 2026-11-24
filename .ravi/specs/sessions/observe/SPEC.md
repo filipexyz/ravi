@@ -37,6 +37,8 @@ Let a session watch another one cheaply. `ravi sessions observe <source>` makes 
 - `observe` MUST resolve both sessions with the same scope check as any session target: a session the caller cannot reach is reported as not found, on either end.
 - The notices run as a turn of the receiving session's agent, so that agent MUST be the caller's own or one the caller may mutate.
 - A session MUST NOT observe itself, and a trigger's own session MUST NOT be a receiver (it only takes its trigger's fires).
+- A trigger's own session, or any session whose history holds what a turn read with its trigger owner's authority (`sessionHoldsTriggerOwnerHistory`), MUST NOT be the source of a live receiver: such a session answers no chat, and forwarding its turns to a conversation would be that answer. `observe` refuses it, every rule write with `metadata.deliverTo` refuses it (operator included), and every delivery re-checks it, because the owner-read mark is written on the trigger's first fire, which can come after the rule exists.
+- Authority over the receiver is checked when the rule is written (by `observe` or `observers rules set`), as the caller at that moment; a delivery does not re-evaluate the creator's scope.
 - Both ends are stored by session key: a rename keeps the observation, and a name later reused by another session MUST NOT receive its notices.
 - Flag misuse (`--follow` with `--when`) and unknown condition names MUST fail as usage errors (exit 2).
 - `observe` creates or overwrites one rule per (receiver, source) pair, id `observe:<hash of both session keys>`, session-scoped, profile `compact`, delivery `end_of_turn`, mode `observe`, no permission grants. Running it again changes the mode in place; it never creates a second rule.

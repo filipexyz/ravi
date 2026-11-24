@@ -30,6 +30,7 @@ import {
   dbListObserverRules,
   dbUpsertObserverRule,
   ensureObserverBindingsForSession,
+  liveReceiverSourceRefusal,
 } from "../../runtime/observation-plane.js";
 import {
   DEFAULT_ALERT_CONDITIONS,
@@ -6253,6 +6254,12 @@ export class SessionCommands {
     if (!target) return { source, target: null };
     if (source.sessionKey === target.sessionKey) {
       fail("A session cannot observe itself.");
+      return { source: null, target: null };
+    }
+    const sourceRefusal = liveReceiverSourceRefusal(source.sessionKey);
+    if (sourceRefusal) {
+      // Its turns hold what was read for the trigger's owner; they may not reach a conversation.
+      fail(`${sessionLabel(source)} cannot be observed from a session: ${sourceRefusal}.`);
       return { source: null, target: null };
     }
     if (isTriggerOwnSessionKey(target.sessionKey)) {

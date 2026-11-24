@@ -11,7 +11,9 @@ import {
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { runWithContext } from "../context.js";
 import { CliExpectedError } from "../expected-error.js";
-import { renameSessionName } from "../../router/sessions.js";
+import { markSessionTriggerOwnerLent, renameSessionName } from "../../router/sessions.js";
+import { triggerOwnSessionName } from "../../triggers/authority.js";
+import { dbUpsertObserverRule } from "../../runtime/observation-plane.js";
 import { classifyTurnProvenance, isObserverOriginated } from "../../runtime/turn-provenance.js";
 
 const { SessionCommands } = await import("./sessions.js");
@@ -166,6 +168,54 @@ describe("ravi sessions observe", () => {
     renameSessionName(source.sessionKey, "client-group-renamed");
     expect(commands.unobserve("client-group-renamed", "lead-dm-renamed", true)).toMatchObject({ removed: true });
     expect(commands.observing(true)).toMatchObject({ total: 0 });
+  });
+
+  it("never forwards a session that holds its trigger owner's reads to a live receiver", () => {
+    sessions();
+    const triggerKey = "agent:client-agent:trigger:trg_probe:own";
+    const ownSession = getOrCreateSession(
+      triggerKey,
+      "client-agent",
+      "/tmp/client-agent",
+      { name: triggerOwnSessionName(triggerKey) },
+      { triggerRunner: true },
+    );
+    expect(markSessionTriggerOwnerLent(ownSession.sessionKey)).toBe(true);
+    const commands = new SessionCommands();
+    expect(() => runWithContext({}, () => commands.observe(triggerKey, "lead-dm", undefined, true, true))).toThrow(
+      /cannot be observed from a session/,
+    );
+    // The same rule written directly (observers rules set --metadata, operator included) is refused too.
+    expect(() =>
+      dbUpsertObserverRule({
+        id: "direct-owner-lent",
+        scope: "session",
+        sourceSession: triggerKey,
+        observerAgentId: "lead",
+        deliveryPolicy: "end_of_turn",
+        metadata: { deliverTo: "lead-dm" },
+      }),
+    ).toThrow(/A live receiver cannot observe this source/);
+    expect(dbListObserverBindings({ sourceSessionKey: ownSession.sessionKey, enabled: true })).toHaveLength(0);
+  });
+
+  it("stops forwarding once the source starts holding owner reads after the rule exists", async () => {
+    const { source } = sessions();
+    new SessionCommands().observe("client-group", "lead-dm", undefined, true, true);
+    markSessionTriggerOwnerLent(source.sessionKey);
+    const result = await deliverObservationEvents({
+      sourceSessionName: "client-group",
+      sourceSession: source,
+      agentId: "client-agent",
+      deliveryPolicies: ["end_of_turn"],
+      events: [
+        ev(1, "message.user", "o1", { preview: "fire" }),
+        ev(2, "message.assistant", "o1", { preview: "OWNER-PRIVATE: saldo 12.345,67 da conta do dono" }),
+        ev(3, "turn.complete", "o1"),
+      ],
+    });
+    expect(result.skipped.map((item) => item.reason)).toEqual(["source_holds_owner_reads"]);
+    expect(published).toHaveLength(0);
   });
 
   it("refuses a trigger's own session as the receiver", () => {

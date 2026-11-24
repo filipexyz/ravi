@@ -1,3 +1,5 @@
+import { sessionHoldsTriggerOwnerHistory } from "../router/sessions.js";
+import { isTriggerOwnSessionKey } from "../triggers/authority.js";
 import {
   evaluateObservationConditions,
   parseObservationConditions,
@@ -631,6 +633,17 @@ function bindingInformTarget(binding: { metadata?: Record<string, unknown> }): s
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+/**
+ * Why a source session may not feed a live receiver, or null. A trigger's own session, and any
+ * session whose history holds what a turn read with its trigger owner's authority, answer no chat
+ * (`sessionHoldsTriggerOwnerHistory`); forwarding their turns to a conversation would be that answer.
+ */
+export function liveReceiverSourceRefusal(sourceSessionKey: string): string | null {
+  if (isTriggerOwnSessionKey(sourceSessionKey)) return "source is a trigger's own session";
+  if (sessionHoldsTriggerOwnerHistory(sourceSessionKey)) return "source holds what a turn read for its trigger's owner";
+  return null;
+}
+
 function validateObserverInformTarget(
   metadata: Record<string, unknown> | undefined,
   scope: ObserverScope,
@@ -645,6 +658,10 @@ function validateObserverInformTarget(
   if (target === sourceSession.trim()) {
     throw new Error("A session cannot observe itself.");
   }
+  // For every writer, operator included: owner reads never reach a conversation.
+  const source = readSessionByNameOrKey(sourceSession.trim());
+  const refusal = liveReceiverSourceRefusal(source?.sessionKey ?? sourceSession.trim());
+  if (refusal) throw new Error(`A live receiver cannot observe this source: ${refusal}.`);
 }
 
 function validateObserverConditions(
@@ -1771,6 +1788,18 @@ export async function deliverObservationEvents(input: {
         continue;
       }
       informTarget = receiver.name ?? receiver.sessionKey;
+      // Checked at every delivery: the owner-read mark is written on a trigger's first fire, which
+      // can come after the rule was created.
+      const refusal = liveReceiverSourceRefusal(source.sessionKey);
+      if (refusal) {
+        log.warn("Refusing to forward a session that holds owner reads to a live receiver", {
+          bindingId: binding.id,
+          sourceSessionKey: source.sessionKey,
+          reason: refusal,
+        });
+        skipped.push({ bindingId: binding.id, reason: "source_holds_owner_reads" });
+        continue;
+      }
     }
     const selected = input.events.filter((event) => bindingAllowsEvent(binding, source, event, deliveryPolicies));
     if (selected.length === 0) {
