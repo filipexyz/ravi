@@ -5,6 +5,7 @@ import { CliExpectedError } from "../../cli/expected-error.js";
 import { nats } from "../../nats.js";
 import { publishSessionPrompt, type PublishSessionPromptOptions } from "../../omni/session-stream.js";
 import { publishChannelSessionPrompt } from "../session-prompt.js";
+import { bindChildRunSession, findChildRunBySurfaceRef } from "../../automation/child-runs.js";
 import { handOffClosingThreadFollows } from "../../triggers/follow-owner.js";
 import { clearTriggersRefreshPending, markTriggersRefreshPending } from "../../triggers/refresh-intent.js";
 import { prepareThreadAttentionNotice } from "./thread-attention-admission.js";
@@ -184,23 +185,46 @@ export async function finalizeSlackThreadCreation(
 
   try {
     const materialized = materializeSlackThreadChild(record);
-    await publishChannelSessionPrompt(
-      {
-        sessionName: materialized.childSessionName,
-        action: "session.bootstrap",
-        principal: resolveChannelLifecyclePrincipal(
-          "session.bootstrap",
-          record.initiatorSessionKey ?? record.parentSessionKey,
-          materialized.agentId,
-        ),
-        callerContextId: record.initiatorContextId,
-        payload: buildSlackThreadInitialPrompt(record, materialized),
-        options: {
-          messageId: `slack-thread-start:${record.requestId}`,
+    // An automation run's thread starts with the run's own launch (its job's or trigger's
+    // authority envelope), published once, never the agent's bootstrap turn.
+    const automationRun = findChildRunBySurfaceRef("slack-thread", record.requestId);
+    const bound = automationRun
+      ? bindChildRunSession(
+          "slack-thread",
+          record.requestId,
+          materialized.childSessionKey,
+          materialized.childSessionName,
+        )
+      : null;
+    if (bound?.launch) {
+      await dependencies.publishPrompt(
+        materialized.childSessionName,
+        {
+          ...bound.launch,
+          source: buildSlackThreadChildSource(record, materialized.threadCanonicalChatId, materialized.agentId),
+          context: buildSlackThreadMessageContext(record, materialized.threadCanonicalChatId, materialized.agentId),
         },
-      },
-      dependencies.publishPrompt,
-    );
+        { messageId: `slack-thread-start:${record.requestId}` },
+      );
+    }
+    if (!automationRun)
+      await publishChannelSessionPrompt(
+        {
+          sessionName: materialized.childSessionName,
+          action: "session.bootstrap",
+          principal: resolveChannelLifecyclePrincipal(
+            "session.bootstrap",
+            record.initiatorSessionKey ?? record.parentSessionKey,
+            materialized.agentId,
+          ),
+          callerContextId: record.initiatorContextId,
+          payload: buildSlackThreadInitialPrompt(record, materialized),
+          options: {
+            messageId: `slack-thread-start:${record.requestId}`,
+          },
+        },
+        dependencies.publishPrompt,
+      );
     const completed = completeSlackThreadCreation({
       requestId: record.requestId,
       claimId,
@@ -392,6 +416,8 @@ async function reconcileThreadParentReturn(
   budget: { nudges: number },
 ): Promise<void> {
   if (!record.childSessionKey || !record.providerThreadId) return;
+  // An automation run's thread ends silently by design (`@@SILENT@@`); its return is the core's.
+  if (findChildRunBySurfaceRef("slack-thread", record.requestId)) return;
   const childSessionKey = record.childSessionKey;
   const providerThreadId = record.providerThreadId;
   const turn = getLatestSessionTurn(childSessionKey);

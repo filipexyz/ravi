@@ -219,6 +219,15 @@ export function findChildRunBySurfaceRef(surface: ChildRunSurface, surfaceRef: s
   return row ? fromRow(row) : null;
 }
 
+/** Store the launch of a run whose surface has not bound its session yet (it is published then). */
+export function setChildRunLaunch(runId: string, launch: Record<string, unknown>): boolean {
+  return (
+    db()
+      .query("UPDATE automation_child_runs SET launch_json = ?, updated_at = ? WHERE id = ? AND child_session_key = ?")
+      .run(JSON.stringify(launch), Date.now(), runId, pendingChildRunSession(runId)).changes > 0
+  );
+}
+
 const bindListeners = new Set<(run: AutomationChildRun) => void>();
 
 /** Called when a surface binds a run's session, before its launch is published. */

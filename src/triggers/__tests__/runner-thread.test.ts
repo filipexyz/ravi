@@ -275,6 +275,43 @@ describe("trigger thread mode", () => {
     expect(listChildRunsForOrigin("trigger", trigger.id)[0]).toMatchObject({ status: "closed" });
   });
 
+  it("shows a fire on a registered surface: launch stored for it, closed when the bound turn ends", async () => {
+    const { bindChildRunSession, registerChildRunSurface } = await import("../../automation/child-runs.js");
+    const closedSurfaces: string[] = [];
+    const unregister = registerChildRunSurface({
+      id: "slack-thread",
+      canHost: () => true,
+      open: async () => {},
+      closeSurface: async (run) => {
+        closedSurfaces.push(run.id);
+      },
+    });
+    try {
+      const trigger = createThreadTrigger();
+      await startRunner();
+      emit({ id: 1 });
+      await waitFor(() => listChildRunsForOrigin("trigger", trigger.id).length === 1);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(fires()).toHaveLength(0);
+
+      const [run] = listChildRunsForOrigin("trigger", trigger.id);
+      const bound = bindChildRunSession("slack-thread", run!.surfaceRef!, `${PARENT_KEY}:thread:5.6`, "parent-dm-t-56");
+      // The trigger's snapshot, never lending its owner: what a run reads goes back to its parent.
+      expect(bound?.launch).toMatchObject({
+        _trigger: true,
+        _triggerId: trigger.id,
+        _triggerAuthority: { triggerId: trigger.id, ownSessionKey: null },
+      });
+      expect(String(bound?.launch?.prompt)).toContain("ravi sessions close-thread --return");
+
+      endTurn("parent-dm-t-56", { type: "turn.complete" });
+      await waitFor(() => closedSurfaces.length === 1);
+      expect(getChildRun(run!.id)).toMatchObject({ status: "closed" });
+    } finally {
+      unregister();
+    }
+  });
+
   it("leaves a cron run's turn to the cron runner", async () => {
     getOrCreateSession(`agent:${AGENT}:cron:job-1:run:cron-run-1`, AGENT, "/tmp/trigger-test-agent-real", {
       name: `${AGENT}-run-cron-run-1`,

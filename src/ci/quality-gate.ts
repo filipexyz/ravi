@@ -78,6 +78,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/slack/thread-turn-health.test.ts",
     // Thread → parent return rule: one follow-up per turn without a return, then an Inform; any provider.
     "src/channels/slack/thread-parent-return.test.ts",
+    // Automation runs shown as Slack threads: the run's own launch at materialization, never the bootstrap.
+    "src/channels/slack/automation-surface.test.ts",
     // Parent-owned thread runtime options: lifecycle authorization, validation and atomic configuration.
     "src/channels/slack/thread-runtime.test.ts",
     // `create-thread` repeats: the idempotency key's request id, and the recent identical request an asker repeats.

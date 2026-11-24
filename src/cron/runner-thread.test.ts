@@ -350,6 +350,63 @@ describe("cron thread mode", () => {
     expect(getChildRun("tr-1")).toMatchObject({ returnState: "error" });
   });
 
+  it("shows a run on a registered surface: launch kept for the surface, outcome settled once bound", async () => {
+    const { bindChildRunSession, registerChildRunSurface } = await import("../automation/child-runs.js");
+    const opened: string[] = [];
+    const closedSurfaces: string[] = [];
+    const unregister = registerChildRunSurface({
+      id: "slack-thread",
+      canHost: () => true,
+      open: async ({ run }) => {
+        opened.push(run.id);
+      },
+      closeSurface: async (run) => {
+        closedSurfaces.push(run.id);
+      },
+    });
+    try {
+      createParent();
+      const job = createThreadJob();
+      const runner = new CronRunner();
+      await runner.triggerJob(job.id);
+
+      // Nothing is published until the surface makes the run's session.
+      expect(publishCalls.filter((call) => call.payload._jobId === job.id)).toHaveLength(0);
+      const [run] = listChildRunsForOrigin("cron", job.id);
+      expect(opened).toEqual([run!.id]);
+      expect(run).toMatchObject({ surface: "slack-thread", surfaceRef: `slack-thread:${run!.id}` });
+
+      const bound = bindChildRunSession(
+        "slack-thread",
+        `slack-thread:${run!.id}`,
+        `${PARENT_KEY}:thread:1.2`,
+        "grupo-updates-t-12",
+      );
+      expect(bound?.launch).toMatchObject({ _cron: true, _jobId: job.id, _cronRunId: run!.id });
+
+      await runner.handleRuntimeEvent({
+        topic: "ravi.session.grupo-updates-t-12.runtime",
+        data: {
+          type: "turn.complete",
+          _turnProvenance: {
+            origin: "cron",
+            background: true,
+            automationOriginated: true,
+            automationId: `cron:${job.id}`,
+            cronRunId: run!.id,
+            reason: "prompt._cron",
+          },
+        },
+      });
+
+      expect(getCronRun(run!.id)?.status).toBe("ok");
+      expect(getChildRun(run!.id)).toMatchObject({ status: "closed", returnState: "silent" });
+      expect(closedSurfaces).toEqual([run!.id]);
+    } finally {
+      unregister();
+    }
+  });
+
   it("prunes a job's oldest closed runs, sessions included", async () => {
     createParent();
     const job = createThreadJob();

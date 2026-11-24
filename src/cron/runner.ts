@@ -55,6 +55,8 @@ import type { SessionEntry } from "../router/types.js";
 import {
   CHILD_RUN_STALE_MS,
   childRunParentRefusal,
+  childRunSurfaceFor,
+  pendingChildRunSession,
   childRunPromptNote,
   closeChildRun,
   closeChildRunAfterTurn,
@@ -82,6 +84,7 @@ import {
   cronRunNotification,
   pendingCronFailureReports,
   markCronRunReported,
+  rebindCronRunSession,
   isCronFailureReportPending,
   type CronRunRow,
 } from "./run-db.js";
@@ -505,7 +508,14 @@ export class CronRunner {
   private async recordTurnOutcome(outcome: CronTurnOutcome): Promise<void> {
     if (!outcome.runId) return;
     const pending = getCronRun(outcome.runId);
-    if (!pending || pending.job_id !== outcome.jobId || pending.session_name !== outcome.sessionName) return;
+    if (!pending || pending.job_id !== outcome.jobId) return;
+    if (pending.session_name !== outcome.sessionName) {
+      // A visible run was admitted under its placeholder; the core row knows the session its surface
+      // bound (on whichever daemon made the thread). Anything else is not this run's turn.
+      if (pending.session_name !== pendingChildRunSession(pending.id)) return;
+      if (getChildRun(pending.id)?.childSessionName !== outcome.sessionName) return;
+      if (!rebindCronRunSession(pending.id, pending.session_name, outcome.sessionName)) return;
+    }
     const state = buildCronTurnOutcomeState(outcome, { dispatchedAt: pending.admitted_at });
     const settled = settleCronRun(pending.id, outcome.sessionName, state);
     if (!settled) return;
@@ -959,6 +969,40 @@ export class CronRunner {
   ): Promise<string> {
     const agentId = job.agentId ?? getDefaultAgentId();
     const parent = this.resolveThreadParent(job, agentId);
+    const parentName = parent.name ?? parent.sessionKey;
+    const launch = {
+      prompt: this.buildThreadRunPrompt(job, parentName),
+      deliveryBarrier: "after_response",
+      deliveryBarrierSource: "default",
+      _cron: true,
+      _jobId: job.id,
+      _cronAuthority: authority,
+      _cronRunId: runId,
+    };
+    const surface = childRunSurfaceFor(parent);
+    if (surface) {
+      // A visible run (a Slack thread under the parent's chat): its session is made when the thread
+      // lands, and the launch above is published there then. Until bound, it goes by a placeholder.
+      const pending = pendingChildRunSession(runId);
+      this.trackAgentDispatch(job, pending, startTime, runId);
+      const run = openChildRun({
+        id: runId,
+        originKind: "cron",
+        originId: job.id,
+        originName: job.name,
+        agentId,
+        parentSessionKey: parent.sessionKey,
+        parentSessionName: parentName,
+        childSessionKey: pending,
+        childSessionName: pending,
+        surface: surface.id,
+        surfaceRef: `${surface.id}:${runId}`,
+        launch,
+        now: startTime,
+      });
+      await surface.open({ run, parent, title: `Execução do cron “${job.name}”` });
+      return pending;
+    }
     const agent = getAgent(agentId);
     const agentCwd = agent ? expandHome(agent.cwd) : `/tmp/ravi-${agentId}`;
     const childKey = `agent:${agentId}:cron:${job.id}:run:${runId}`;
@@ -967,7 +1011,6 @@ export class CronRunner {
     const childName = ensureUniqueName(`${slugify(agentId).slice(0, 24)}-run-${runId}`);
     const session = getOrCreateSession(childKey, agentId, agentCwd, { name: childName });
     if (!session.name) updateSessionName(session.sessionKey, childName);
-    const parentName = parent.name ?? parent.sessionKey;
     // Admitted first: a failure from here on settles the run, which closes its child.
     this.trackAgentDispatch(job, childName, startTime, runId);
     openChildRun({
@@ -984,15 +1027,7 @@ export class CronRunner {
     });
 
     // No source: a headless run's replies reach no chat, only its returns reach the parent.
-    await publishSessionPrompt(childName, {
-      prompt: this.buildThreadRunPrompt(job, parentName),
-      deliveryBarrier: "after_response",
-      deliveryBarrierSource: "default",
-      _cron: true,
-      _jobId: job.id,
-      _cronAuthority: authority,
-      _cronRunId: runId,
-    });
+    await publishSessionPrompt(childName, launch);
     return childName;
   }
 
