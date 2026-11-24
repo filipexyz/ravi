@@ -571,23 +571,23 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/connectors.ts | 120 | triaged-follow-up | catch-without-binding | src/cli/commands/connectors.ts:6bfb1a8b187361f1313b7384 |
 | cli | src/cli/commands/connectors.ts | 549 | fixed | binding retained / no recognized error surface | src/cli/commands/connectors.ts:df1dea9035832c79b344a4b4 |
 | cli | src/cli/commands/contacts.ts | 21 | triaged-follow-up | rejection-without-binding | src/cli/commands/contacts.ts:7f4a51c2ae6cb3a6ad3ca91b |
-| cli | src/cli/commands/contacts.ts | 290 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:b58cccc7efc96221247f6edb |
-| cli | src/cli/commands/contacts.ts | 794 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:0800f1df84fd38dcc0e74f0a |
-| cli | src/cli/commands/contacts.ts | 1046 | triaged-follow-up | catch-without-binding | src/cli/commands/contacts.ts:f182a24f0270b8eba7ddd078 |
-| cli | src/cli/commands/contacts.ts | 1061 | triaged-follow-up | catch-without-binding | src/cli/commands/contacts.ts:e6150fcf5b0597bb98fd305f |
-| cli | src/cli/commands/contacts.ts | 1091 | triaged-follow-up | catch-without-binding | src/cli/commands/contacts.ts:4006b70fdf499a3b84d2f335 |
-| cli | src/cli/commands/contacts.ts | 1294 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:f1a0d044ca9ad5f0a66db401 |
-| cli | src/cli/commands/contacts.ts | 1349 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:d5032da60f885debdd11b6aa |
-| cli | src/cli/commands/contacts.ts | 1408 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:163e415f8f41825cfaa2862a |
-| cli | src/cli/commands/contacts.ts | 1466 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:fc55aea6351f545ee72c02b1 |
-| cli | src/cli/commands/contacts.ts | 1594 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:578c29df9738b798dfddc1c4 |
-| cli | src/cli/commands/contacts.ts | 1629 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:84c60f7b8f3408ec21f0c04a |
-| cli | src/cli/commands/contacts.ts | 1778 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:6920261fe957bd1c905d7f21 |
-| cli | src/cli/commands/contacts.ts | 1858 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:9589c801cf7286a073e35075 |
-| cli | src/cli/commands/contacts.ts | 1988 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:ee5db11759794b0984bfc94b |
-| cli | src/cli/commands/contacts.ts | 2048 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:a8d708ea9f925a316e4f6923 |
-| cli | src/cli/commands/contacts.ts | 2086 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:e7d8b7490bd9c839ff0fc2b6 |
-| cli | src/cli/commands/contacts.ts | 2125 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:c47fc2f7c999bb41ca5fa531 |
+| cli | src/cli/commands/contacts.ts | 291 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:b58cccc7efc96221247f6edb |
+| cli | src/cli/commands/contacts.ts | 795 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:0800f1df84fd38dcc0e74f0a |
+| cli | src/cli/commands/contacts.ts | 1047 | triaged-follow-up | catch-without-binding | src/cli/commands/contacts.ts:f182a24f0270b8eba7ddd078 |
+| cli | src/cli/commands/contacts.ts | 1066 | triaged-follow-up | catch-without-binding | src/cli/commands/contacts.ts:e6150fcf5b0597bb98fd305f |
+| cli | src/cli/commands/contacts.ts | 1096 | triaged-follow-up | catch-without-binding | src/cli/commands/contacts.ts:4006b70fdf499a3b84d2f335 |
+| cli | src/cli/commands/contacts.ts | 1299 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:f1a0d044ca9ad5f0a66db401 |
+| cli | src/cli/commands/contacts.ts | 1354 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:d5032da60f885debdd11b6aa |
+| cli | src/cli/commands/contacts.ts | 1413 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:163e415f8f41825cfaa2862a |
+| cli | src/cli/commands/contacts.ts | 1471 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:fc55aea6351f545ee72c02b1 |
+| cli | src/cli/commands/contacts.ts | 1599 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:578c29df9738b798dfddc1c4 |
+| cli | src/cli/commands/contacts.ts | 1634 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:84c60f7b8f3408ec21f0c04a |
+| cli | src/cli/commands/contacts.ts | 1784 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:6920261fe957bd1c905d7f21 |
+| cli | src/cli/commands/contacts.ts | 1864 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:9589c801cf7286a073e35075 |
+| cli | src/cli/commands/contacts.ts | 1994 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:ee5db11759794b0984bfc94b |
+| cli | src/cli/commands/contacts.ts | 2054 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:a8d708ea9f925a316e4f6923 |
+| cli | src/cli/commands/contacts.ts | 2092 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:e7d8b7490bd9c839ff0fc2b6 |
+| cli | src/cli/commands/contacts.ts | 2131 | fixed | binding retained / no recognized error surface | src/cli/commands/contacts.ts:c47fc2f7c999bb41ca5fa531 |
 | cli | src/cli/commands/context.ts | 456 | fixed | binding retained / no recognized error surface | src/cli/commands/context.ts:6de0e69887316ed0b8bfdf22 |
 | cli | src/cli/commands/context.ts | 716 | fixed | binding retained / no recognized error surface | src/cli/commands/context.ts:ba2c2c58277aeb25eb28a850 |
 | cli | src/cli/commands/context.ts | 738 | fixed | binding retained / no recognized error surface | src/cli/commands/context.ts:59fbe5b5250b9fbf7b7287ee |
@@ -732,8 +732,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/pages.ts | 1533 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:23b402e772b919537c1430af |
 | cli | src/cli/commands/pages.ts | 2405 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:3782eede5f9231e775e0fc9c |
 | cli | src/cli/commands/pages.ts | 2835 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/pages.ts:e2474b6819dd57cf210efcfa |
-| permissions | src/cli/commands/permissions.ts | 1156 | fixed | binding retained / no recognized error surface | src/cli/commands/permissions.ts:50df5461a8d7f99878a3460b |
-| permissions | src/cli/commands/permissions.ts | 1193 | fixed | binding retained / no recognized error surface | src/cli/commands/permissions.ts:50df5461a8d7f99878a3460b |
+| permissions | src/cli/commands/permissions.ts | 1172 | fixed | binding retained / no recognized error surface | src/cli/commands/permissions.ts:50df5461a8d7f99878a3460b |
+| permissions | src/cli/commands/permissions.ts | 1209 | fixed | binding retained / no recognized error surface | src/cli/commands/permissions.ts:50df5461a8d7f99878a3460b |
 | cli | src/cli/commands/pr.ts | 124 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:6dc250c56e86cef1e8a12b0a |
 | cli | src/cli/commands/pr.ts | 191 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:f2cfbe4db8427d9da814ffde |
 | cli | src/cli/commands/pr.ts | 211 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:5542d2a05595df529681fc30 |
@@ -877,11 +877,11 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/tag-rules.ts | 260 | fixed | binding retained / no recognized error surface | src/cli/commands/tag-rules.ts:2c45b619b455ce9d7cb8d32f |
 | cli | src/cli/commands/tag-rules.ts | 348 | fixed | binding retained / no recognized error surface | src/cli/commands/tag-rules.ts:d329bd9938b3ecd0ddfca061 |
 | cli | src/cli/commands/tag-rules.ts | 376 | fixed | binding retained / no recognized error surface | src/cli/commands/tag-rules.ts:d8d7d8106e3aa4d6e4f3452e |
-| cli | src/cli/commands/tags.ts | 86 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:c2c2f86e21aa1c638a81631b |
-| cli | src/cli/commands/tags.ts | 579 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:801345fe6d3f37a500ff402f |
-| cli | src/cli/commands/tags.ts | 757 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:78cedc1c19b2ab730c104a5e |
-| cli | src/cli/commands/tags.ts | 898 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:28147ffb7304c1450dd98a2c |
-| cli | src/cli/commands/tags.ts | 1052 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:229582d3d997f2d38df16761 |
+| cli | src/cli/commands/tags.ts | 90 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:c2c2f86e21aa1c638a81631b |
+| cli | src/cli/commands/tags.ts | 596 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:801345fe6d3f37a500ff402f |
+| cli | src/cli/commands/tags.ts | 775 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:78cedc1c19b2ab730c104a5e |
+| cli | src/cli/commands/tags.ts | 916 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:28147ffb7304c1450dd98a2c |
+| cli | src/cli/commands/tags.ts | 1070 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:229582d3d997f2d38df16761 |
 | cli | src/cli/commands/tasks-automations.ts | 103 | fixed | binding retained / no recognized error surface | src/cli/commands/tasks-automations.ts:6a335c9738033cdffcb052e1 |
 | cli | src/cli/commands/tasks-automations.ts | 330 | fixed | binding retained / no recognized error surface | src/cli/commands/tasks-automations.ts:5579a2d508e744aa0948b224 |
 | cli | src/cli/commands/tasks-profiles.ts | 214 | fixed | binding retained / no recognized error surface | src/cli/commands/tasks-profiles.ts:da08d6b34d6512303bf96a14 |
