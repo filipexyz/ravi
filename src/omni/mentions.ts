@@ -469,6 +469,29 @@ function resolveMention(
   return null;
 }
 
+/**
+ * Identity used to decide whether two mention ids are the same person.
+ *
+ * Inline phone placeholders resolve to `<digits>@s.whatsapp.net` while an explicit `--mention <digits>` resolves to
+ * the bare digits. They are one person, so compare them in the same form. Non-phone ids (`@lid`, group JIDs) stay as is.
+ */
+function canonicalMentionId(id: string): string {
+  return asWhatsAppPhoneJid(id) ?? cleanMentionRef(id);
+}
+
+function findResolvedMention(
+  resolvedById: Map<string, ResolvedOmniMention>,
+  id: string,
+): ResolvedOmniMention | undefined {
+  const exact = resolvedById.get(id);
+  if (exact) return exact;
+  const canonical = canonicalMentionId(id);
+  for (const resolved of resolvedById.values()) {
+    if (canonicalMentionId(resolved.id) === canonical) return resolved;
+  }
+  return undefined;
+}
+
 function addResolvedMention(
   resolvedById: Map<string, ResolvedOmniMention>,
   input: { id: string; displayName?: string; matched: string; placeholder?: string; source: "explicit" | "inline" },
@@ -534,12 +557,17 @@ function replaceExplicitPlaceholder(text: string, target: string, placeholder: s
   const displayFirst = normalizeLookup(displayName ?? "").split(" ")[0];
   if (displayFirst.length >= 2) tokens.add(displayFirst);
   tokens.add(baseIdentity(cleaned));
+  // The placeholder we would insert may already be written in the text (`@5511987860700 oi` + `--mention
+  // +55 11 98786-0700`): that counts as the target being mentioned, so it must not be prefixed again.
+  tokens.add(placeholder.replace(/^@+/, ""));
 
   for (const token of tokens) {
     if (!token) continue;
     const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const next = text.replace(new RegExp(`(?<=^|\\s)@${escaped}(?=\\s|$|[,.!?;:])`, "iu"), placeholder);
-    if (next !== text) return next;
+    const pattern = new RegExp(`(?<=^|\\s)@${escaped}(?=\\s|$|[,.!?;:])`, "iu");
+    // A hit whose replacement equals the original text is still a hit. Comparing the strings treated it as a
+    // miss and prefixed the placeholder a second time.
+    if (pattern.test(text)) return text.replace(pattern, placeholder);
   }
 
   return `${placeholder} ${text}`.trim();
@@ -587,7 +615,9 @@ export function prepareOmniMentionMessage(input: {
       throw new Error(`Mention target "${target}" is ambiguous in this chat. Use an explicit JID/phone.`);
     }
 
-    const alreadyResolved = resolvedById.has(resolution.id);
+    // The same person may already be resolved from an inline `@<phone>` under a different id form.
+    if (findResolvedMention(resolvedById, resolution.id)) continue;
+
     const resolved = addResolvedMention(resolvedById, {
       id: resolution.id,
       displayName: resolution.displayName,
@@ -595,9 +625,7 @@ export function prepareOmniMentionMessage(input: {
       placeholder: mentionPlaceholderForMode(resolution.id, resolution.displayName, placeholderMode),
       source: "explicit",
     });
-    if (!alreadyResolved) {
-      text = replaceExplicitPlaceholder(text, target, resolved.placeholder, resolved.displayName);
-    }
+    text = replaceExplicitPlaceholder(text, target, resolved.placeholder, resolved.displayName);
   }
 
   const resolved = Array.from(resolvedById.values());
