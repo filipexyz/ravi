@@ -144,7 +144,8 @@ Prompt text regressions (`src/runtime/claude-provider.test.ts`,
   value of `0` or empty.
 - The SSH remote command exports the switch whatever the caller's env says;
   the NATS spawn payload carries it with and without the credential opt-in.
-- The memory agent is spawned with the switch.
+- The memory agent is spawned with the switch set to `1` while the daemon env
+  holds `0`: the fake Claude Code records the value it received.
 
 Provider settings regressions (`src/bash/provider-config-writes.test.ts`):
 
