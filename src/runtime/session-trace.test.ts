@@ -4666,6 +4666,55 @@ describe("runtime session trace instrumentation", () => {
     },
   );
 
+  it.each([
+    { label: "a chat", withChat: true, notices: 1 },
+    { label: "no chat", withChat: false, notices: 0 },
+  ])("counts narration only for replies that reach a chat ($label)", async ({ withChat, notices }) => {
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    setObservationPromptPublisherForTests(async (sessionName, payload) => {
+      published.push({ sessionName, payload });
+    });
+    dbCreateAgent({ id: "trace-narration-observer", cwd: stateDir ?? "/tmp" });
+    dbUpsertObserverRule({
+      id: "trace-narration",
+      scope: "session",
+      sourceSession: SESSION_NAME,
+      observerAgentId: "trace-narration-observer",
+      observerRole: "trace-narration",
+      observerProfileId: "compact",
+      deliveryPolicy: "end_of_turn",
+      metadata: { when: ["chat.narration"] },
+    });
+    ensureObserverBindingsForSession({ sessionName: SESSION_NAME, session: makeSession() });
+    // Without a chat: no source to fall back on and not a sentinel, so the reply target is unresolved.
+    const streaming = makeStreamingSession(
+      withChat
+        ? { agentMode: "active", currentReplyTarget: source }
+        : { currentSource: undefined, agentMode: "active" },
+    );
+    seedAdapterTrace(streaming, `turn-narration-${withChat ? "chat" : "none"}`);
+    try {
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          { type: "assistant.message", text: "Looking at it." },
+          { type: "assistant.message", text: "Done." },
+          {
+            type: "turn.complete",
+            providerSessionId: "native-narration",
+            session: { displayId: "native-narration", params: { sessionId: "native-narration" } },
+            usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 0, cacheCreationTokens: 0 },
+            execution: { model: MODEL },
+          },
+        ]),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    } finally {
+      setObservationPromptPublisherForTests();
+    }
+    expect(published).toHaveLength(notices);
+  });
+
   it("includes a task checkpoint on the incompatible-session fallback after tool use", async () => {
     const previousTimeout = process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS;
     process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS = "1000";

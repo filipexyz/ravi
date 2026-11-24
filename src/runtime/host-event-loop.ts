@@ -1807,6 +1807,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     return { kind: streaming.agentMode === "sentinel" ? "sentinel" : "unresolved" };
   };
 
+  /**
+   * Whether an agent reply of this turn lands in a chat: a resolved chat target, or a channel
+   * backend the turn answers through. Suppressed turns, sentinels and sessions with no chat at all
+   * (a headless worker, a cron or trigger run) do not.
+   */
+  const replyReachesChat = (): boolean => {
+    const emit = resolveChatEmitTarget();
+    return emit.kind === "target" || (emit.kind !== "suppressed" && streaming.currentChannelBackend !== undefined);
+  };
+
   const slowToolWatchConfig = resolveSlowToolWatchConfig();
   let slowToolTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -3952,6 +3962,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                   payload: {
                     chars: text.length,
                     commentary: commentaryResponse,
+                    // Whether this reply reaches a chat: narration only counts what a chat sees.
+                    chatEmitted: replyReachesChat(),
                     metadata: event.metadata ?? null,
                     detail: { text: truncateObservationPreview(text, OBSERVATION_DETAIL_TEXT_MAX) },
                   },

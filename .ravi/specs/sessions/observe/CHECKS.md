@@ -11,3 +11,5 @@
 - A trigger's own session MUST be refused as receiver; `--follow` with `--when` and an unknown condition MUST throw a `USAGE_ERROR` with exit code 2.
 - `observers rules set --metadata '{"deliverTo":…}'` from a scoped caller MUST fail with SESSION_NOT_FOUND for a receiver the caller cannot reach, and no rule may be created (`src/cli/commands/observers-authorization.test.ts`).
 - A trigger's own session holding owner reads MUST be refused as source by `observe` and by a direct rule write with `deliverTo`; a source marked after the rule exists MUST be skipped at delivery (`source_holds_owner_reads`) with nothing published.
+- An `_observationNotice` prompt MUST be an isolated envelope (`hasIsolatedRuntimeTurnEnvelope`, `src/runtime/delivery-queue.test.ts`).
+- A rule written by `rules set` or re-enabled by `rules enable` MUST skip delivery once its source holds owner reads; removing the delivery guard MUST fail both cases (`observation-plane.test.ts`, N5).
