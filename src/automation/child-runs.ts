@@ -235,8 +235,12 @@ export function clipChildRunReturn(text: string): string {
 
 const clip = clipChildRunReturn;
 
+/** Every line break a reader may honour: \r\n, \r, \n, NEL, LS and PS. */
+const LINE_BREAKS = /\r\n|[\r\n\u0085\u2028\u2029]/;
+
 function runLabel(run: AutomationChildRun): string {
-  return `${run.originKind} "${run.originName}" (${run.childSessionName})`;
+  // The name is free text: quoted as JSON on the notice's first line, so it can never break it.
+  return `${run.originKind} ${JSON.stringify(run.originName)} (${run.childSessionName})`;
 }
 
 /** The internal turn the parent receives; the same shape a Slack thread return has. */
@@ -269,7 +273,7 @@ export function buildChildRunParentNotice(
  */
 function quoteRunText(body: string): string {
   return clip(body)
-    .split("\n")
+    .split(LINE_BREAKS)
     .map((line) => `> ${line}`)
     .join("\n");
 }

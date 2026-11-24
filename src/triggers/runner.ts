@@ -1069,10 +1069,21 @@ export class TriggerRunner {
     } catch (error) {
       if (!this.running || controller.signal.aborted) return;
       log.error("Trigger run turn watch failed; retrying", { error });
-      setTimeout(() => {
-        if (this.running && this.runTurnAbort === controller) this.runTurnLoop = this.watchThreadRunTurns();
-      }, 5000);
+      this.restartThreadRunWatch(controller);
+      return;
     }
+    // The stream ended without an error while the runner still runs: watch again, or runs would
+    // only close through the leader's 2 h reconciliation.
+    if (this.running && !controller.signal.aborted) {
+      log.warn("Trigger run turn watch ended; restarting");
+      this.restartThreadRunWatch(controller);
+    }
+  }
+
+  private restartThreadRunWatch(controller: AbortController): void {
+    setTimeout(() => {
+      if (this.running && this.runTurnAbort === controller) this.runTurnLoop = this.watchThreadRunTurns();
+    }, 5000);
   }
 
   /**

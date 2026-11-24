@@ -10,6 +10,7 @@ import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import { isTriggerOwnSessionKey } from "../triggers/authority.js";
+import { dbGetTrigger } from "../triggers/triggers-db.js";
 import { getDefaultAgentId } from "../router/router-db.js";
 import { deriveSourceFromSessionKey } from "../router/session-key.js";
 import {
@@ -68,6 +69,7 @@ import {
   deliverCronFailureReports,
   describeCronFailure,
   notifyCronFailure,
+  notifyUndeliveredRunReturn,
   prepareCronFailureReport,
   recordUnreadableCronFailure,
   type CronFailureJob,
@@ -174,15 +176,23 @@ export class CronRunner {
       isRunning: () => this.running,
       releaseSource: "cron-runner",
       onAbandoned: async (run) => {
-        if (run.originKind !== "cron") return;
-        // The run's admitted notice: its owner even after the job changed hands or a one-shot was deleted.
-        // Dated now, when the return was given up, so the notice is not treated as a stale failure.
-        const admitted = getCronRun(run.id);
-        if (!admitted) return;
-        await notifyCronFailure(
-          { ...cronRunNotification(admitted), lastRunAt: Date.now() },
-          "The run's result never reached the session it reports to",
-        );
+        // Cron: the run's admitted owner, even after the job changed hands or a one-shot was deleted.
+        // Trigger: its stored owner (a deleted trigger owes nobody a message; the inbox keeps the record).
+        const admitted = run.originKind === "cron" ? getCronRun(run.id) : null;
+        const ownerPrincipal = admitted
+          ? cronRunNotification(admitted).ownerPrincipal
+          : run.originKind === "trigger"
+            ? dbGetTrigger(run.originId)?.ownerPrincipal
+            : undefined;
+        await notifyUndeliveredRunReturn({
+          originKind: run.originKind,
+          originId: run.originId,
+          originName: run.originName,
+          agentId: run.agentId,
+          ownerPrincipal,
+          runId: run.id,
+          parentSessionName: run.parentSessionName,
+        });
       },
     })
       .then((result) => {
@@ -300,6 +310,8 @@ export class CronRunner {
       clearInterval(this.childRunTimer);
       this.childRunTimer = null;
     }
+    // A pass in flight stops between runs once `running` is false; wait for it, as for the reports.
+    await this.childRunReconcile;
 
     this.runtimeEventAbort?.abort();
     if (this.runtimeEventStream) {

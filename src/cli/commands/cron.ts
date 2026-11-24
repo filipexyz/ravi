@@ -877,6 +877,9 @@ export class CronCommands {
     // A trigger's own session runs that trigger's fires only, so a job created
     // during one of its turns has no reply session and runs in the main one.
     let replySession = isShellJob || isTriggerOwnSessionKey(ctx?.sessionKey) ? undefined : ctx?.sessionKey;
+    // Inside an automation run, the session that lasts is the run's parent: the run's own is pruned.
+    const creatingRun = replySession ? findChildRunByChildSession(replySession) : null;
+    if (creatingRun) replySession = creatingRun.parentSessionKey;
     if (thread)
       replySession = resolveThreadReportTo(reportTo, replySession, resolvedAgent ?? getDefaultAgentId(), asJson);
 

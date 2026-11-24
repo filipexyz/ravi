@@ -380,3 +380,78 @@ export async function notifyCronFailure(
     return false;
   }
 }
+
+/** A run of a cron job or trigger whose return to its parent was given up. */
+export interface UndeliveredRunReturn {
+  originKind: "cron" | "trigger";
+  originId: string;
+  originName: string;
+  agentId?: string;
+  /** Who the job or trigger acts as; `unknown` or an agent owes no direct message. */
+  ownerPrincipal?: string;
+  runId: string;
+  parentSessionName: string;
+}
+
+/**
+ * A run's result never reached the session it reports to and was given up (automation runs,
+ * `reconcileChildRuns`). The owner is told once, by direct message, through the same owner chats
+ * as a failure notice (offline chats skipped); the inbox item is the record, deduplicated per run.
+ * Returns true when settled (sent, owed to nobody, or no chat reachable).
+ */
+export async function notifyUndeliveredRunReturn(
+  run: UndeliveredRunReturn,
+  deps: CronFailureNoticeDeps = {},
+): Promise<boolean> {
+  const label = run.originKind === "cron" ? `agendamento “${run.originName}”` : `trigger “${run.originName}”`;
+  const show = run.originKind === "cron" ? "ravi cron show" : "ravi triggers show";
+  const text = `O resultado de uma execução do ${label} não chegou a ${run.parentSessionName} em 24 h e foi descartado. Veja com ${show} ${run.originId}.`;
+  const targets = deps.owners
+    ? deps.owners({ ownerPrincipal: run.ownerPrincipal })
+    : resolveCronFailureOwners({ ownerPrincipal: run.ownerPrincipal });
+  const { item } = upsertLocalInboxItem({
+    sourceDomain: run.originKind === "cron" ? "cron" : "triggers",
+    sourceType: "run_return_undelivered",
+    sourceId: run.originId,
+    dedupeKey: `run-return-undelivered:${run.runId}`,
+    title: `Resultado não entregue: ${run.originName}`,
+    summary: text,
+    priority: "normal",
+    assignedToAgentId: run.agentId,
+    assignedToContactId: targets[0]?.contactId,
+    occurredAt: (deps.now ?? Date.now)(),
+    metadata: { runId: run.runId, originKind: run.originKind, ownerPrincipal: run.ownerPrincipal ?? "unknown" },
+    actorType: "system",
+  });
+  if (listLocalInboxEvents(item.id).some((event) => event.eventType.startsWith("run_return.settled"))) return true;
+  if (!cronFailureOwesDirectMessage(run.ownerPrincipal)) {
+    markLocalInboxItem(item.id, item.status, { eventType: "run_return.settled.unowned", actorType: "system" });
+    return true;
+  }
+  const deliver = deps.deliver ?? ((owner, message) => deliverToChat(owner, { text: message }));
+  const { ordered, down } = await reachableTargets(targets, deps.reachable ?? defaultReachable);
+  for (const target of ordered) {
+    try {
+      await deliver(target, text);
+      markLocalInboxItem(item.id, "open", {
+        eventType: "run_return.settled.notified",
+        actorType: "system",
+        payload: { channel: target.channel, accountId: target.accountId },
+      });
+      return true;
+    } catch (cause) {
+      log.warn("Undelivered run return notice failed on one owner chat", {
+        runId: run.runId,
+        channel: target.channel,
+        error: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
+  }
+  // Once only: the run is already given up, so there is nothing to retry from; the inbox keeps it.
+  markLocalInboxItem(item.id, "open", {
+    eventType: "run_return.settled.undeliverable",
+    actorType: "system",
+    payload: { targets: targets.length, offline: down },
+  });
+  return true;
+}

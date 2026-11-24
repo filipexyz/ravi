@@ -11,6 +11,7 @@ import {
   CRON_FAILURE_NOTICE_WINDOW_MS,
   classifyCronFailure,
   notifyCronFailure,
+  notifyUndeliveredRunReturn,
   recordUnreadableCronFailure,
 } from "./failure-notification.js";
 
@@ -366,5 +367,59 @@ describe("cron failure notification", () => {
     expect(listLocalInboxEvents(item.id).filter((event) => event.eventType === "cron.failure.unreadable")).toHaveLength(
       1,
     );
+  });
+});
+
+describe("undelivered run return notice", () => {
+  const run = {
+    originKind: "trigger" as const,
+    originId: "trg-1",
+    originName: "blog-watch",
+    agentId: "ravi-updates",
+    ownerPrincipal: "operator",
+    runId: "run-1",
+    parentSessionName: "grupo",
+  };
+
+  it("tells the owner once, with what was lost and where to look, and records it in the inbox", async () => {
+    const sent: string[] = [];
+    const deps = {
+      owners: () => [target],
+      reachable: async () => true,
+      deliver: async (_target: unknown, text: string) => {
+        sent.push(text);
+      },
+    };
+
+    expect(await notifyUndeliveredRunReturn(run, deps)).toBe(true);
+    expect(await notifyUndeliveredRunReturn(run, deps)).toBe(true);
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain("trigger “blog-watch”");
+    expect(sent[0]).toContain("não chegou a grupo em 24 h");
+    expect(sent[0]).toContain("ravi triggers show trg-1");
+    const [item] = listLocalInboxItems().filter((entry) => entry.sourceType === "run_return_undelivered");
+    expect(item).toMatchObject({ sourceDomain: "triggers", sourceId: "trg-1" });
+    expect(listLocalInboxEvents(item!.id).map((event) => event.eventType)).toContain("run_return.settled.notified");
+  });
+
+  it("sends nothing for a run nobody owns, and settles when no owner chat is reachable", async () => {
+    let attempts = 0;
+    const deliver = async () => {
+      attempts += 1;
+    };
+    expect(
+      await notifyUndeliveredRunReturn(
+        { ...run, runId: "run-2", ownerPrincipal: "unknown" },
+        { owners: () => [target], deliver },
+      ),
+    ).toBe(true);
+    expect(
+      await notifyUndeliveredRunReturn(
+        { ...run, runId: "run-3" },
+        { owners: () => [target], reachable: async () => false, deliver },
+      ),
+    ).toBe(true);
+    expect(attempts).toBe(0);
   });
 });

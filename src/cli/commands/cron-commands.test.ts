@@ -13,6 +13,8 @@ let cronJobs: Record<string, unknown>[] = [];
 let cronUpdatePatches: Record<string, unknown>[] = [];
 let mockScopeContext: Record<string, unknown> | undefined;
 let mockScopeEnforced = false;
+/** Whether the caller may modify a session (all of them, unless a test says otherwise). */
+let mockCanModifySession = true;
 // Cross-agent grants held by the mock caller, e.g. { permission: "view", objectType: "agent", objectId: "*" }.
 let mockGrants: Array<{ permission: string; objectType: string; objectId: string }> = [];
 let mockCliContext: Record<string, unknown> | undefined;
@@ -68,7 +70,7 @@ mock.module("../../permissions/scope.js", () => ({
   getScopeContext: () => mockScopeContext,
   isScopeEnforced: () => mockScopeEnforced,
   canAccessSession: () => true,
-  canModifySession: () => true,
+  canModifySession: () => mockCanModifySession,
   canAccessContact: () => true,
   // Mirrors the real check: operator/superadmin (scope not enforced) and own
   // resources always pass; other agents' resources need `view agent:<owner>`
@@ -1835,6 +1837,43 @@ describe("CronCommands --thread", () => {
     cronJob = null;
     await expect(addJob({ thread: true, reportTo: RUN.name })).rejects.toThrow(/session of an automation run/);
     expect(cronJob).toBeNull();
+  });
+
+  it("reads a --report-to the caller may not modify as not found, saying nothing else about it", async () => {
+    mockScopeEnforced = true;
+    mockScopeContext = { agentId: "ravi-updates" };
+    mockCanModifySession = false;
+    try {
+      await expect(addJob({ thread: true, agent: "ravi-updates", reportTo: "main-dm" })).rejects.toThrow(
+        /^Report-to session not found: main-dm$/,
+      );
+    } finally {
+      mockScopeEnforced = false;
+      mockScopeContext = undefined;
+      mockCanModifySession = true;
+    }
+  });
+
+  it("gives a job made inside an automation run, without --thread, the run's parent as its reply session", async () => {
+    const { openChildRun } = await import("../../automation/child-runs.js");
+    const RUN = { sessionKey: "agent:main:cron:job-y:run:run-y", name: "main-run-run-y", agentId: "main" };
+    mockSessions[RUN.sessionKey] = RUN;
+    openChildRun({
+      id: `run-y-${Math.random().toString(36).slice(2, 8)}`,
+      originKind: "cron",
+      originId: "job-y",
+      originName: "job-y",
+      agentId: "main",
+      parentSessionKey: MAIN_DM.sessionKey,
+      parentSessionName: MAIN_DM.name,
+      childSessionKey: RUN.sessionKey,
+      childSessionName: RUN.name,
+    });
+    mockCliContext = { sessionKey: RUN.sessionKey, agentId: "main" };
+
+    await captureJson(() => addJob({}));
+
+    expect(cronJob).toMatchObject({ sessionTarget: "main", replySession: MAIN_DM.sessionKey });
   });
 
   it("keeps a thread job's agent and report-to session paired on cron set", async () => {
