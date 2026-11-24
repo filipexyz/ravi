@@ -23,6 +23,8 @@ const LID_JID_RE = /^(\d+)@lid$/i;
 const GROUP_JID_RE = /^(\d+(?:-\d+)?)@g\.us$/i;
 /** Phone number with optional + prefix and formatting */
 const PHONE_RE = /^\+?[\d\s\-().]+$/;
+/** Phone number as typed for a contact ref: PHONE_RE plus `/` separators */
+const CONTACT_PHONE_RE = /^\+?[\d\s\-().\/]+$/;
 
 interface JidComponents {
   user: string;
@@ -82,6 +84,28 @@ export function normalizePhone(input: string): string {
   }
 
   return trimmed.replace(/\D/g, "");
+}
+
+/**
+ * True when `input` names a phone-like identity: a phone number (digits with
+ * optional `+` and formatting), a WhatsApp JID, or a `lid:`/`group:` ref.
+ *
+ * Callers that resolve free-form refs (contact names, ids, emails, Slack ids)
+ * must only phone-normalize refs for which this holds. `normalizePhone`
+ * strips every non-digit from anything else, so a ref such as
+ * `missing-ref-1` would otherwise collapse to `1` and match an unrelated
+ * contact.
+ */
+export function isPhoneShapedRef(input: string): boolean {
+  const trimmed = input.trim();
+  if (!trimmed) return false;
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith("lid:") || lower.startsWith("group:")) return /\d/.test(trimmed);
+  if (parseJid(trimmed)) return true;
+  if (/^\d+@c\.us$/i.test(trimmed)) return true;
+  // Contact refs also accept `/` between digit groups (`+49 30/123456`), a
+  // format `contacts add` stores as digits. Route matching keeps PHONE_RE.
+  return CONTACT_PHONE_RE.test(trimmed) && /\d/.test(trimmed);
 }
 
 /**
