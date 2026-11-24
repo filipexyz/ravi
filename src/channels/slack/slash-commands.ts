@@ -108,13 +108,16 @@ export function slackCommandMessage(
  */
 export function slackCommandHelpMessage(
   command: string,
-  note?: { readonly unknown?: string; readonly usage?: "close" },
+  note?: { readonly unknown?: string; readonly usage?: "close" | "clone" },
 ): SlackCommandMessage {
   const name = SLACK_COMMAND_NAME_PATTERN.test(command) ? command : "/ravi";
   const lines: string[] = [];
   if (note?.unknown) lines.push(`I don't know \`${escapeBackticks(note.unknown)}\`.`);
   if (note?.usage === "close") {
     lines.push(`Usage: \`${name} close <thread>\` or \`${name} close idle [12h]\`.`);
+  }
+  if (note?.usage === "clone") {
+    lines.push(`Usage: \`${name} clone <name>\` (lowercase letters, digits, \`-\` or \`_\`).`);
   }
   lines.push(
     `*Ravi controls* (\`${name}\`)`,
@@ -123,6 +126,7 @@ export function slackCommandHelpMessage(
     `• \`${name} close <thread>\`: close a thread (the name \`${name} threads\` shows)`,
     `• \`${name} close idle [12h]\`: close threads with no activity for more than N hours, no turn running and no open question`,
     `• \`${name} stop [thread]\`: interrupt the turn running in this session, or in that thread's own (the queue goes on)`,
+    `• \`${name} clone <name>\`: copy this session into a new private channel with that name: same agent, new session that starts from the recent messages`,
     "Only you see the replies. Slack does not accept commands inside a thread: use the channel or the DM, or the Fechar and Parar buttons on a thread's card.",
   );
   return slackCommandMessage(lines.join("\n"));

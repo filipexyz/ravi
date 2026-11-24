@@ -104387,6 +104387,143 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsCloneInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "execute": {
+        "description": "Create the chat and the session; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
+      "invite": {
+        "description": "Comma-separated platform user ids to invite to the new chat (operator terminal only; the channel decides which it accepts)",
+        "type": "string"
+      },
+      "messages": {
+        "description": "Recent messages copied as context (default: 20, max: 40)",
+        "type": "string"
+      },
+      "name": {
+        "description": "Name of the new chat and session (lowercase, digits, - or _)",
+        "type": "string"
+      },
+      "session": {
+        "description": "Session to clone (defaults to current session)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsCloneReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agentId": {
+        "type": "string"
+      },
+      "clone": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "chatId": {
+                "type": "string"
+              },
+              "inviteFailed": {
+                "type": "boolean"
+              },
+              "invited": {
+                "type": "number"
+              },
+              "sessionKey": {
+                "type": "string"
+              },
+              "sessionName": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "chatId",
+              "sessionKey",
+              "sessionName",
+              "invited",
+              "inviteFailed"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "name": {
+        "type": "string"
+      },
+      "origin": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "sessionKey": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionKey",
+          "sessionName",
+          "channel"
+        ],
+        "type": "object"
+      },
+      "seed": {
+        "additionalProperties": false,
+        "properties": {
+          "messages": {
+            "type": "number"
+          },
+          "redacted": {
+            "type": "boolean"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "messages",
+          "redacted",
+          "truncated"
+        ],
+        "type": "object"
+      },
+      "status": {
+        "enum": [
+          "planned",
+          "cloned"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "name",
+      "origin",
+      "agentId",
+      "seed",
+      "clone"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let SessionsCloseThreadInputSchema = #"""
   {
     "additionalProperties": false,
