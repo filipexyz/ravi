@@ -116,8 +116,9 @@ function endTurn(sessionName: string, data: Record<string, unknown>): void {
 const fires = () => publishCalls.filter((call) => call.payload._trigger === true);
 const returns = () => publishCalls.filter((call) => call.payload._automationChildRun !== undefined);
 
-function createThreadTrigger(replySession = PARENT_KEY) {
+function createThreadTrigger(replySession = PARENT_KEY, extra: { threadVisible?: boolean } = {}) {
   return dbCreateTrigger({
+    ...extra,
     name: "blog-watch",
     agentId: AGENT,
     topic: TOPIC,
@@ -257,6 +258,53 @@ describe("trigger thread mode", () => {
     expect(isTriggerOriginatedEvent("ravi._cli.cli.bases.rows.update", fromChat)).toBe(false);
   });
 
+  it("knows a visible fire's session (a Slack thread's key) as trigger-originated too, and a cron run's as not", () => {
+    const run = (id: string, originKind: "cron" | "trigger", childSessionKey: string) =>
+      openChildRun({
+        id,
+        originKind,
+        originId: "o-1",
+        originName: "watch",
+        agentId: AGENT,
+        parentSessionKey: PARENT_KEY,
+        parentSessionName: "parent-dm",
+        childSessionKey,
+        childSessionName: `${id}-session`,
+        surface: "slack-thread",
+      });
+    run("r-trigger", "trigger", `${PARENT_KEY}:thread:1.1`);
+    run("r-cron", "cron", `${PARENT_KEY}:thread:2.2`);
+    const from = (sessionKey: string) => ({ cliInvocation: { raviContext: { sessionKey } } });
+
+    expect(isTriggerOriginatedEvent("ravi._cli.cli.bases.rows.update", from(`${PARENT_KEY}:thread:1.1`))).toBe(true);
+    expect(isTriggerOriginatedEvent("ravi._cli.cli.bases.rows.update", from(`${PARENT_KEY}:thread:2.2`))).toBe(false);
+  });
+
+  it("runs a fire headless unless the trigger asked for visible runs, even where a surface could show it", async () => {
+    const { registerChildRunSurface } = await import("../../automation/child-runs.js");
+    const opened: string[] = [];
+    const unregister = registerChildRunSurface({
+      id: "slack-thread",
+      canHost: () => true,
+      open: async ({ run }) => {
+        opened.push(run.id);
+      },
+      closeSurface: async () => true,
+    });
+    try {
+      const trigger = createThreadTrigger();
+      await startRunner();
+      emit({ id: 1 });
+      await waitFor(() => fires().length === 1);
+
+      expect(opened).toEqual([]);
+      expect(listChildRunsForOrigin("trigger", trigger.id)[0]).toMatchObject({ surface: "headless" });
+      expect(String(fires()[0]!.payload.prompt)).toContain("nothing written here reaches a chat");
+    } finally {
+      unregister();
+    }
+  });
+
   it("watches run turns again when the subscription ends cleanly", async () => {
     const trigger = createThreadTrigger();
     runner = new TriggerRunner();
@@ -284,10 +332,11 @@ describe("trigger thread mode", () => {
       open: async () => {},
       closeSurface: async (run) => {
         closedSurfaces.push(run.id);
+        return true;
       },
     });
     try {
-      const trigger = createThreadTrigger();
+      const trigger = createThreadTrigger(PARENT_KEY, { threadVisible: true });
       await startRunner();
       emit({ id: 1 });
       await waitFor(() => listChildRunsForOrigin("trigger", trigger.id).length === 1);
@@ -303,6 +352,7 @@ describe("trigger thread mode", () => {
         _triggerAuthority: { triggerId: trigger.id, ownSessionKey: null },
       });
       expect(String(bound?.launch?.prompt)).toContain("ravi sessions close-thread --return");
+      expect(String(bound?.launch?.prompt)).toContain("everyone in that chat sees what you write here");
 
       endTurn("parent-dm-t-56", { type: "turn.complete" });
       await waitFor(() => closedSurfaces.length === 1);

@@ -1,11 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { getOrCreateSession } from "../../router/index.js";
-import { dbCreateAgent, dbUpsertChat } from "../../router/router-db.js";
+import { dbCreateAgent, dbUpsertChannel, dbUpsertChat, getDb } from "../../router/router-db.js";
+import { attachChatToSession, getSession } from "../../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
-import { getChildRun, openChildRun, pendingChildRunSession } from "../../automation/child-runs.js";
-import { createSlackThreadLifecycle, markSlackThreadRootDelivered } from "./thread-lifecycle-store.js";
+import {
+  childRunSurfaceRef,
+  closeChildRun,
+  getChildRun,
+  openChildRun,
+  pendingChildRunSession,
+} from "../../automation/child-runs.js";
+import {
+  createSlackThreadLifecycle,
+  getSlackThreadLifecycle,
+  markSlackThreadRootDelivered,
+} from "./thread-lifecycle-store.js";
 import { finalizeSlackThreadCreation } from "./thread-lifecycle.js";
 import { resolveSlackRunTarget } from "./automation-surface.js";
+import { closeSlackThreadFromCommand } from "./slash-command-handler.js";
 
 let stateDir: string | null = null;
 
@@ -28,6 +40,7 @@ const LAUNCH = {
   _cronAuthority: { jobId: "job-1", ownerPrincipal: "contact:c1", ownerIsOperator: false },
   _cronRunId: "run-1",
 };
+const REF = childRunSurfaceRef("run-1");
 
 function seedRunThread() {
   dbCreateAgent({ id: "ravi", cwd: "/tmp/ravi" });
@@ -49,11 +62,11 @@ function seedRunThread() {
     childSessionKey: pendingChildRunSession("run-1"),
     childSessionName: pendingChildRunSession("run-1"),
     surface: "slack-thread",
-    surfaceRef: "slack-thread:run-1",
+    surfaceRef: REF,
     launch: LAUNCH,
   });
   createSlackThreadLifecycle({
-    requestId: "slack-thread:run-1",
+    requestId: REF,
     parentSessionKey: "ravi-parent",
     parentSessionName: "ravi-parent",
     accountId: "slack-instance-1",
@@ -64,7 +77,7 @@ function seedRunThread() {
     requestedBy: "cron updates",
   });
   markSlackThreadRootDelivered({
-    requestId: "slack-thread:run-1",
+    requestId: REF,
     providerThreadId: "1713000000.000200",
     canonicalRootMessageId: "cm_root",
   });
@@ -81,7 +94,7 @@ describe("Slack surface for automation runs", () => {
       publishEvent: mock(async () => {}),
     };
 
-    const result = await finalizeSlackThreadCreation("slack-thread:run-1", deps);
+    const result = await finalizeSlackThreadCreation(REF, deps);
 
     expect(result).toMatchObject({ status: "opened", childSessionKey: "ravi-parent:thread:1713000000.000200" });
     expect(prompts).toHaveLength(1);
@@ -103,8 +116,107 @@ describe("Slack surface for automation runs", () => {
     });
 
     // A replayed finalization publishes nothing more.
-    await finalizeSlackThreadCreation("slack-thread:run-1", deps);
+    await finalizeSlackThreadCreation(REF, deps);
     expect(prompts).toHaveLength(1);
+  });
+
+  it("still starts the run when its creation is retried after the launch failed to publish, with the same message id", async () => {
+    seedRunThread();
+    const messageIds: string[] = [];
+    let brokerDown = true;
+    const deps = {
+      publishPrompt: mock(
+        async (_session: string, _payload: Record<string, unknown>, options?: { messageId?: string }) => {
+          if (brokerDown) {
+            brokerDown = false;
+            throw new Error("broker unavailable");
+          }
+          messageIds.push(options?.messageId ?? "");
+        },
+      ),
+      publishEvent: mock(async () => {}),
+    };
+
+    await expect(finalizeSlackThreadCreation(REF, deps)).rejects.toThrow("broker unavailable");
+    // Bound already: the retry is the same session, and it must still get the launch.
+    expect(getChildRun("run-1")?.childSessionKey).toBe("ravi-parent:thread:1713000000.000200");
+
+    await finalizeSlackThreadCreation(REF, deps);
+    expect(messageIds).toEqual([`slack-thread-start:${REF}`]);
+  });
+
+  it("starts nothing in the late thread of a run closed before its root landed, and closes that thread", async () => {
+    seedRunThread();
+    await closeChildRun(getChildRun("run-1")!, null);
+    const deps = { publishPrompt: mock(async () => {}), publishEvent: mock(async () => {}) };
+
+    const result = await finalizeSlackThreadCreation(REF, deps);
+
+    expect(result.status).toBe("opened");
+    expect(deps.publishPrompt).not.toHaveBeenCalled();
+    expect(getChildRun("run-1")?.childSessionKey).toBe(pendingChildRunSession("run-1"));
+    expect(getSlackThreadLifecycle(REF)?.status).toBe("closed");
+  });
+
+  it("never starts a run's late thread as an ordinary one when the run's row is gone", async () => {
+    seedRunThread();
+    getDb().query("DELETE FROM automation_child_runs WHERE id = ?").run("run-1");
+    const deps = { publishPrompt: mock(async () => {}), publishEvent: mock(async () => {}) };
+
+    await finalizeSlackThreadCreation(REF, deps);
+
+    // Neither the launch nor the agent's bootstrap: the title is not an instruction.
+    expect(deps.publishPrompt).not.toHaveBeenCalled();
+    expect(getSlackThreadLifecycle(REF)?.status).toBe("closed");
+  });
+
+  it("closes the run, without a return, when a person closes its thread", async () => {
+    seedRunThread();
+    const deps = { publishPrompt: mock(async () => {}), publishEvent: mock(async () => {}) };
+    const opened = await finalizeSlackThreadCreation(REF, deps);
+    expect(getChildRun("run-1")?.status).toBe("open");
+
+    const result = await closeSlackThreadFromCommand("ravi-parent", opened.childSessionName!, undefined, deps);
+
+    expect(result).toMatchObject({ kind: "closed", changed: true });
+    expect(getSlackThreadLifecycle(REF)?.status).toBe("closed");
+    expect(getChildRun("run-1")).toMatchObject({ status: "closed", returnState: "silent" });
+  });
+
+  it("shows a run only in the chat its parent answers in, never in another chat attached to it", () => {
+    dbCreateAgent({ id: "ravi", cwd: "/tmp/ravi" });
+    dbUpsertChannel({ name: "slack-instance-1", provider: "slack", credentialConnection: "installation-a" });
+    const chat = (platformChatId: string, channel = "slack", instanceId = "slack-instance-1") =>
+      dbUpsertChat({ channel, instanceId, platformChatId, chatType: channel === "slack" ? "channel" : "group" });
+
+    // Answers in a private WhatsApp group; a Slack channel is attached for input only.
+    const privateParent = getOrCreateSession("ravi-private", "ravi", "/tmp/ravi", { name: "ravi-private" });
+    attachChatToSession({
+      sessionKey: privateParent.sessionKey,
+      chatId: chat("120363@g.us", "whatsapp", "wa-1").id,
+      role: "primary",
+      setOutputTarget: true,
+    });
+    attachChatToSession({
+      sessionKey: privateParent.sessionKey,
+      chatId: chat("C123").id,
+      role: "input",
+      setOutputTarget: false,
+    });
+    expect(resolveSlackRunTarget(getSession(privateParent.sessionKey)!)).toBeNull();
+
+    // Answers in a Slack channel: the run shows there.
+    const slackParent = getOrCreateSession("ravi-slack", "ravi", "/tmp/ravi", { name: "ravi-slack" });
+    attachChatToSession({
+      sessionKey: slackParent.sessionKey,
+      chatId: chat("C456").id,
+      role: "primary",
+      setOutputTarget: true,
+    });
+    expect(resolveSlackRunTarget(getSession(slackParent.sessionKey)!)).toMatchObject({
+      platformChatId: "C456",
+      accountId: "slack-instance-1",
+    });
   });
 
   it("shows nothing for a parent with no Slack chat", () => {

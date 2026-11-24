@@ -67234,6 +67234,10 @@ public enum RaviSchemas {
       "tz": {
         "description": "Timezone (e.g., America/Sao_Paulo)",
         "type": "string"
+      },
+      "visible": {
+        "description": "With --thread: show each run where the report-to session answers (a thread in its Slack chat), seen by everyone in that chat; elsewhere runs stay unseen. Off by default",
+        "type": "boolean"
       }
     },
     "required": [
@@ -67696,7 +67700,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "key": {
-        "description": "Property: name, message, shell, exec, timeout, env-file, on-error, cron, every, tz, agent, account, description, session, reply-session, delete-after",
+        "description": "Property: name, message, shell, exec, timeout, env-file, on-error, cron, every, tz, agent, account, description, session, reply-session, visible, delete-after",
         "type": "string"
       },
       "value": {
@@ -137393,6 +137397,10 @@ public enum RaviSchemas {
       "topic": {
         "description": "Notif topic pattern to subscribe to",
         "type": "string"
+      },
+      "visible": {
+        "description": "With --thread: show each fire's run where the report-to session answers (a thread in its Slack chat), seen by everyone in that chat; elsewhere runs stay unseen. Off by default",
+        "type": "boolean"
       }
     },
     "required": [
@@ -137752,7 +137760,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "key": {
-        "description": "Property: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, debounce, filter, replySession",
+        "description": "Property: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, debounce, filter, replySession, visible",
         "type": "string"
       },
       "value": {

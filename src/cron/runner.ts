@@ -53,9 +53,11 @@ import {
 import type { CronJob, JobOutcomeUpdate } from "./types.js";
 import type { SessionEntry } from "../router/types.js";
 import {
+  type AutomationChildRun,
   CHILD_RUN_STALE_MS,
   childRunParentRefusal,
   childRunSurfaceFor,
+  childRunSurfaceRef,
   pendingChildRunSession,
   childRunPromptNote,
   closeChildRun,
@@ -199,13 +201,22 @@ export class CronRunner {
         });
       },
     })
-      .then((result) => {
-        if (result.redelivered || result.abandoned.length || result.staleClosed.length)
+      .then(async (result) => {
+        if (result.redelivered || result.abandoned.length || result.staleClosed.length || result.surfacesClosed)
           log.info("Reconciled automation runs", {
             redelivered: result.redelivered,
             abandoned: result.abandoned.length,
             staleClosed: result.staleClosed.length,
+            surfacesClosed: result.surfacesClosed,
           });
+        for (const run of result.staleClosed) {
+          await this.failUnsettledCronRun(run, run.returnText ?? "The run did not end in time").catch((error) =>
+            log.warn("Failed to settle a stale run's cron admission", {
+              runId: run.id,
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          );
+        }
       })
       .catch((error) => log.error("Automation run reconciliation failed", { error }))
       .finally(() => {
@@ -970,8 +981,10 @@ export class CronRunner {
     const agentId = job.agentId ?? getDefaultAgentId();
     const parent = this.resolveThreadParent(job, agentId);
     const parentName = parent.name ?? parent.sessionKey;
+    // Shown only when asked (`--visible`): a run seen in a chat answers to that chat's audience.
+    const surface = job.threadVisible ? childRunSurfaceFor(parent) : null;
     const launch = {
-      prompt: this.buildThreadRunPrompt(job, parentName),
+      prompt: this.buildThreadRunPrompt(job, parentName, surface !== null),
       deliveryBarrier: "after_response",
       deliveryBarrierSource: "default",
       _cron: true,
@@ -979,7 +992,6 @@ export class CronRunner {
       _cronAuthority: authority,
       _cronRunId: runId,
     };
-    const surface = childRunSurfaceFor(parent);
     if (surface) {
       // A visible run (a Slack thread under the parent's chat): its session is made when the thread
       // lands, and the launch above is published there then. Until bound, it goes by a placeholder.
@@ -996,7 +1008,7 @@ export class CronRunner {
         childSessionKey: pending,
         childSessionName: pending,
         surface: surface.id,
-        surfaceRef: `${surface.id}:${runId}`,
+        surfaceRef: childRunSurfaceRef(runId),
         launch,
         now: startTime,
       });
@@ -1043,11 +1055,9 @@ export class CronRunner {
         stillOpen = true;
         continue;
       }
+      const reason = `The run did not end within ${THREAD_RUN_STALE_MS / 60_000} min; it was closed so the job can run again.`;
       try {
-        await closeChildRun(run, {
-          kind: "error",
-          text: `The run did not end within ${THREAD_RUN_STALE_MS / 60_000} min; it was closed so the job can run again.`,
-        });
+        await closeChildRun(run, { kind: "error", text: reason });
       } catch (error) {
         log.warn("Failed to return a stale run's error to its parent", {
           runId: run.id,
@@ -1055,6 +1065,12 @@ export class CronRunner {
         });
       }
       await releaseChildRunRuntime(run, "cron-runner");
+      await this.failUnsettledCronRun(run, reason).catch((error) =>
+        log.warn("Failed to settle a stale run's cron admission", {
+          runId: run.id,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
     }
     return stillOpen;
   }
@@ -1086,8 +1102,32 @@ export class CronRunner {
     return parent;
   }
 
-  private buildThreadRunPrompt(job: CronJob, parentName: string): string {
-    return [`[Cron: ${job.name} ${this.formatNow()}]`, job.message, "", childRunPromptNote(parentName)].join("\n");
+  private buildThreadRunPrompt(job: CronJob, parentName: string, visible: boolean): string {
+    return [
+      `[Cron: ${job.name} ${this.formatNow()}]`,
+      job.message,
+      "",
+      childRunPromptNote(parentName, { visible }),
+    ].join("\n");
+  }
+
+  /**
+   * A cron run closed without its turn's outcome (stale: its turn's end never seen, or its thread
+   * never started): its admission fails, so the job is not held by it (a one-shot is deleted only
+   * when nothing is pending) and its owner hears of the failure as of any other.
+   */
+  private async failUnsettledCronRun(run: AutomationChildRun, reason: string): Promise<void> {
+    if (run.originKind !== "cron") return;
+    const admitted = getCronRun(run.id);
+    if (!admitted || admitted.status !== "pending") return;
+    await this.recordTurnOutcome({
+      kind: "failed",
+      sessionName: admitted.session_name,
+      provenance: "cron",
+      jobId: admitted.job_id,
+      runId: run.id,
+      error: reason,
+    });
   }
 
   /**

@@ -43,6 +43,7 @@ interface CronJobRow {
 
   session_target: string;
   reply_session: string | null;
+  thread_visible?: number | null;
   execution_type: string | null;
   payload_text: string;
   shell_command: string | null;
@@ -94,6 +95,7 @@ function rowToJob(row: CronJobRow): CronJob {
   if (row.account_id !== null) job.accountId = row.account_id;
   if (row.description !== null) job.description = row.description;
   if (row.reply_session !== null) job.replySession = row.reply_session;
+  if (row.thread_visible) job.threadVisible = true;
   if (row.shell_command !== null) job.shellCommand = row.shell_command;
   if (row.shell_timeout_ms !== null) job.shellTimeoutMs = row.shell_timeout_ms;
   if (row.shell_env_file !== null) job.shellEnvFile = row.shell_env_file;
@@ -129,11 +131,11 @@ export function dbCreateCronJob(input: CronJobInput): CronJob {
     INSERT INTO cron_jobs (
       id, agent_id, account_id, name, description, enabled, delete_after_run,
       schedule_type, schedule_at, schedule_every, schedule_cron, schedule_timezone,
-      session_target, reply_session, execution_type, payload_text,
+      session_target, reply_session, thread_visible, execution_type, payload_text,
       shell_command, shell_timeout_ms, shell_env_file, on_error, owner_principal, creator_chat,
       next_run_at,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -151,6 +153,7 @@ export function dbCreateCronJob(input: CronJobInput): CronJob {
     input.schedule.timezone ?? null,
     input.sessionTarget ?? "main",
     input.replySession ?? null,
+    input.threadVisible ? 1 : 0,
     input.executionType ?? "agent",
     input.message,
     input.shellCommand ?? null,
@@ -267,6 +270,10 @@ export function dbUpdateCronJob(id: string, updates: Partial<CronJob>): CronJob 
   if (hasOwn("replySession")) {
     fields.push("reply_session = ?");
     values.push(updates.replySession ?? null);
+  }
+  if (updates.threadVisible !== undefined) {
+    fields.push("thread_visible = ?");
+    values.push(updates.threadVisible ? 1 : 0);
   }
   if (updates.executionType !== undefined) {
     fields.push("execution_type = ?");

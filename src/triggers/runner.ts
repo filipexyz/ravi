@@ -16,7 +16,9 @@ import {
   childRunParentRefusal,
   childRunPromptNote,
   childRunSurfaceFor,
+  childRunSurfaceRef,
   closeChildRunAfterTurn,
+  findChildRunByChildSession,
   findChildRunByChildSessionName,
   getChildRun,
   listOpenChildRuns,
@@ -288,10 +290,10 @@ export function isTriggerOriginatedEvent(topic: string, data: unknown): boolean 
   // record. What such a turn does is not another trigger's to act on.
   const invocation = record.cliInvocation as { raviContext?: { sessionKey?: unknown } } | undefined;
   const invocationSession = invocation?.raviContext?.sessionKey;
-  return (
-    typeof invocationSession === "string" &&
-    (isTriggerOwnSessionKey(invocationSession) || TRIGGER_RUN_SESSION_KEY.test(invocationSession))
-  );
+  if (typeof invocationSession !== "string") return false;
+  if (isTriggerOwnSessionKey(invocationSession) || TRIGGER_RUN_SESSION_KEY.test(invocationSession)) return true;
+  // A visible fire's session is its surface's (a Slack thread key): the core row names its origin.
+  return findChildRunByChildSession(invocationSession)?.originKind === "trigger";
 }
 
 /** The session of one fire of a `--thread` trigger: like its own session, nothing else enters it. */
@@ -856,8 +858,9 @@ export class TriggerRunner {
           undefined;
       }
     } else if (trigger.session === "thread") {
-      // One fire, one run in a session of its own; its replies reach no chat (no source) and only its
-      // return reaches the parent. It never lends the owner's authority: what it reads goes back up.
+      // One fire, one run in a session of its own; only its return reaches the parent, and its replies
+      // reach no chat unless the trigger asked for visible runs (a thread in the parent's chat). It
+      // never lends the owner's authority: what it reads goes back up.
       if ((trigger.executionType ?? "agent") === "shell") {
         log.warn("Skipping trigger fire; a shell trigger cannot run in thread mode", { triggerId: trigger.id });
         return;
@@ -956,7 +959,10 @@ export class TriggerRunner {
     }
 
     const basePrompt = buildTriggerPrompt(trigger, event, opts.batch);
-    const prompt = threadParentName === null ? basePrompt : `${basePrompt}\n\n${childRunPromptNote(threadParentName)}`;
+    const prompt =
+      threadParentName === null
+        ? basePrompt
+        : `${basePrompt}\n\n${childRunPromptNote(threadParentName, { visible: threadSurface !== null })}`;
 
     log.info("Firing trigger", {
       triggerId: trigger.id,
@@ -1066,7 +1072,8 @@ export class TriggerRunner {
     }
     const runId = randomUUID();
     const parentName = parent.name ?? parent.sessionKey;
-    const adapter = childRunSurfaceFor(parent);
+    // Shown only when asked (`--visible`): a run seen in a chat answers to that chat's audience.
+    const adapter = trigger.threadVisible ? childRunSurfaceFor(parent) : null;
     if (adapter) {
       // A visible run (a Slack thread under the parent's chat): its session is made when the thread
       // lands; the fire's launch is stored on the row and published there then.
@@ -1082,7 +1089,7 @@ export class TriggerRunner {
         childSessionKey: pending,
         childSessionName: pending,
         surface: adapter.id,
-        surfaceRef: `${adapter.id}:${runId}`,
+        surfaceRef: childRunSurfaceRef(runId),
         now,
       });
       return { sessionName: pending, parentName, surfaced: { adapter, runId, parent } };

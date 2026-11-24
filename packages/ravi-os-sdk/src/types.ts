@@ -12531,6 +12531,7 @@ export type CronAddInput = {
   thread?: boolean;
   timeout?: string;
   tz?: string;
+  visible?: boolean;
 };
 
 /** Return shape for `cron.add`. */
@@ -26523,6 +26524,7 @@ export type TriggersAddInput = {
   thread?: boolean;
   timeout?: string;
   topic?: string;
+  visible?: boolean;
 };
 
 /** Return shape for `triggers.add`. */

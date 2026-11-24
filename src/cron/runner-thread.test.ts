@@ -293,6 +293,8 @@ describe("cron thread mode", () => {
     expect(getChildRun(stale.runId)).toMatchObject({ status: "closed", returnState: "error" });
     expect(parentReturns()).toHaveLength(1);
     expect(String(parentReturns()[0]!.payload.prompt)).toContain("did not end within 120 min");
+    // Its admission fails with it: a run that never ended never holds the job.
+    expect(getCronRun(stale.runId)?.status).toBe("error");
     expect(runDispatch(job.id).runId).not.toBe(stale.runId);
   });
 
@@ -350,8 +352,93 @@ describe("cron thread mode", () => {
     expect(getChildRun("tr-1")).toMatchObject({ returnState: "error" });
   });
 
+  it("runs a thread job headless unless it asked for visible runs, even where a surface could show it", async () => {
+    const { registerChildRunSurface } = await import("../automation/child-runs.js");
+    const opened: string[] = [];
+    const unregister = registerChildRunSurface({
+      id: "slack-thread",
+      canHost: () => true,
+      open: async ({ run }) => {
+        opened.push(run.id);
+      },
+      closeSurface: async () => true,
+    });
+    try {
+      createParent();
+      const job = createThreadJob();
+      await new CronRunner().triggerJob(job.id);
+
+      expect(opened).toEqual([]);
+      const run = runDispatch(job.id);
+      expect(getChildRun(run.runId)).toMatchObject({ surface: "headless" });
+      expect(String(run.payload.prompt)).toContain("nothing written here reaches a chat");
+    } finally {
+      unregister();
+    }
+  });
+
+  it("fails the admission of a visible run whose thread never started, so a later success still deletes a one-shot", async () => {
+    const { bindChildRunSession, childRunSurfaceRef, registerChildRunSurface } = await import(
+      "../automation/child-runs.js"
+    );
+    const unregister = registerChildRunSurface({
+      id: "slack-thread",
+      canHost: () => true,
+      open: async () => {},
+      closeSurface: async () => true,
+    });
+    try {
+      createParent();
+      const job = createThreadJob({ threadVisible: true, deleteAfterRun: true });
+      const runner = new CronRunner();
+      await runner.triggerJob(job.id);
+      const [lost] = listChildRunsForOrigin("cron", job.id);
+      // Its root never lands (an archived channel, say): the run goes stale, closed by reconciliation.
+      getDb()
+        .query("UPDATE automation_child_runs SET created_at = ? WHERE id = ?")
+        .run(Date.now() - THREAD_RUN_STALE_MS - 1, lost!.id);
+      runner["running"] = true;
+      runner["scheduleChildRunReconcile"]();
+      await runner["childRunReconcile"];
+      runner["running"] = false;
+
+      expect(getChildRun(lost!.id)).toMatchObject({ status: "closed", returnState: "error" });
+      expect(getCronRun(lost!.id)?.status).toBe("error");
+
+      await runner.triggerJob(job.id);
+      const next = listChildRunsForOrigin("cron", job.id).find((run) => run.status === "open")!;
+      bindChildRunSession(
+        "slack-thread",
+        childRunSurfaceRef(next.id),
+        `${PARENT_KEY}:thread:3.4`,
+        "grupo-updates-t-34",
+      );
+      await runner.handleRuntimeEvent({
+        topic: "ravi.session.grupo-updates-t-34.runtime",
+        data: {
+          type: "turn.complete",
+          _turnProvenance: {
+            origin: "cron",
+            background: true,
+            automationOriginated: true,
+            automationId: `cron:${job.id}`,
+            cronRunId: next.id,
+            reason: "prompt._cron",
+          },
+        },
+      });
+
+      expect(getCronRun(next.id)?.status).toBe("ok");
+      expect(dbGetCronJob(job.id)).toBeNull();
+    } finally {
+      unregister();
+    }
+  });
+
   it("shows a run on a registered surface: launch kept for the surface, outcome settled once bound", async () => {
-    const { bindChildRunSession, registerChildRunSurface } = await import("../automation/child-runs.js");
+    const { bindChildRunSession, childRunSurfaceRef, registerChildRunSurface } = await import(
+      "../automation/child-runs.js"
+    );
     const opened: string[] = [];
     const closedSurfaces: string[] = [];
     const unregister = registerChildRunSurface({
@@ -362,11 +449,12 @@ describe("cron thread mode", () => {
       },
       closeSurface: async (run) => {
         closedSurfaces.push(run.id);
+        return true;
       },
     });
     try {
       createParent();
-      const job = createThreadJob();
+      const job = createThreadJob({ threadVisible: true });
       const runner = new CronRunner();
       await runner.triggerJob(job.id);
 
@@ -374,15 +462,17 @@ describe("cron thread mode", () => {
       expect(publishCalls.filter((call) => call.payload._jobId === job.id)).toHaveLength(0);
       const [run] = listChildRunsForOrigin("cron", job.id);
       expect(opened).toEqual([run!.id]);
-      expect(run).toMatchObject({ surface: "slack-thread", surfaceRef: `slack-thread:${run!.id}` });
+      expect(run).toMatchObject({ surface: "slack-thread", surfaceRef: childRunSurfaceRef(run!.id) });
 
       const bound = bindChildRunSession(
         "slack-thread",
-        `slack-thread:${run!.id}`,
+        childRunSurfaceRef(run!.id),
         `${PARENT_KEY}:thread:1.2`,
         "grupo-updates-t-12",
       );
       expect(bound?.launch).toMatchObject({ _cron: true, _jobId: job.id, _cronRunId: run!.id });
+      // The run is told it is seen: what it writes reaches the parent's chat.
+      expect(String(bound?.launch?.prompt)).toContain("everyone in that chat sees what you write here");
 
       await runner.handleRuntimeEvent({
         topic: "ravi.session.grupo-updates-t-12.runtime",

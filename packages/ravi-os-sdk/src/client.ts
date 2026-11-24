@@ -4037,6 +4037,7 @@ export class RaviClient {
       thread?: boolean;
       timeout?: string;
       tz?: string;
+      visible?: boolean;
     }): Promise<CronAddReturn> => {
       return this.transport.call({
         groupSegments: ["cron"],
@@ -10270,6 +10271,7 @@ export class RaviClient {
       thread?: boolean;
       timeout?: string;
       topic?: string;
+      visible?: boolean;
     }): Promise<TriggersAddReturn> => {
       return this.transport.call({
         groupSegments: ["triggers"],

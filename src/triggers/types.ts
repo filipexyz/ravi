@@ -79,6 +79,11 @@ export interface Trigger {
   messageTemplateId?: string | null;
   session: SessionTarget;
   replySession?: string;
+  /**
+   * `thread` mode only: each fire's run shows where the session it reports to answers (a thread in
+   * its Slack chat). Off by default: a visible run's replies are seen by that chat.
+   */
+  threadVisible?: boolean;
   /** Frozen outbound source captured from the creator's runtime context */
   replySource?: TriggerReplySource;
   enabled: boolean;
@@ -129,6 +134,7 @@ export interface TriggerInput {
   messageTemplateId?: string | null;
   session?: SessionTarget;
   replySession?: string;
+  threadVisible?: boolean;
   replySource?: TriggerReplySource;
   enabled?: boolean;
   cooldownMs?: number;

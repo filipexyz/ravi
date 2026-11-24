@@ -13176,7 +13176,7 @@ class CronAckFailuresReturn {
 CronAckFailuresReturn cronAckFailuresReturnFromJson(Object? json) => CronAckFailuresReturn.fromJsonValue(json);
 
 class CronAddOptions {
-  const CronAddOptions({this.account, this.agent, this.at, this.cron, this.deleteAfter, this.description, this.envFile, this.every, this.exec, this.idempotencyKey, this.isolated, this.message, this.onError, this.reportTo, this.shell, this.thread, this.timeout, this.tz});
+  const CronAddOptions({this.account, this.agent, this.at, this.cron, this.deleteAfter, this.description, this.envFile, this.every, this.exec, this.idempotencyKey, this.isolated, this.message, this.onError, this.reportTo, this.shell, this.thread, this.timeout, this.tz, this.visible});
 
   final String? account;
   final String? agent;
@@ -13196,6 +13196,7 @@ class CronAddOptions {
   final bool? thread;
   final String? timeout;
   final String? tz;
+  final bool? visible;
 
   void encodeBody(Map<String, RaviJson> into) {
     if (account != null) {
@@ -13251,6 +13252,9 @@ class CronAddOptions {
     }
     if (tz != null) {
       into["tz"] = RaviJson.from(tz);
+    }
+    if (visible != null) {
+      into["visible"] = RaviJson.from(visible);
     }
   }
 }
@@ -33266,7 +33270,7 @@ class TranscribeFileReturn {
 TranscribeFileReturn transcribeFileReturnFromJson(Object? json) => TranscribeFileReturn.fromJsonValue(json);
 
 class TriggersAddOptions {
-  const TriggersAddOptions({this.account, this.agent, this.cooldown, this.debounce, this.envFile, this.exec, this.filter, this.message, this.onError, this.replySession, this.reportTo, this.session, this.shell, this.thread, this.timeout, this.topic});
+  const TriggersAddOptions({this.account, this.agent, this.cooldown, this.debounce, this.envFile, this.exec, this.filter, this.message, this.onError, this.replySession, this.reportTo, this.session, this.shell, this.thread, this.timeout, this.topic, this.visible});
 
   final String? account;
   final String? agent;
@@ -33284,6 +33288,7 @@ class TriggersAddOptions {
   final bool? thread;
   final String? timeout;
   final String? topic;
+  final bool? visible;
 
   void encodeBody(Map<String, RaviJson> into) {
     if (account != null) {
@@ -33333,6 +33338,9 @@ class TriggersAddOptions {
     }
     if (topic != null) {
       into["topic"] = RaviJson.from(topic);
+    }
+    if (visible != null) {
+      into["visible"] = RaviJson.from(visible);
     }
   }
 }

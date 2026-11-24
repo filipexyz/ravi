@@ -1,9 +1,10 @@
 /**
  * Slack surface for automation runs (cron and trigger `--thread`).
  *
- * When the session a run reports to lives in a Slack chat, the run shows as a thread under that
- * chat's channel root, through the same programmatic thread a `sessions create-thread` opens: a
- * `thread.create` outbound job posts the root, and the thread's session is made when it lands.
+ * When a job or trigger asks for visible runs (`--visible`) and the session its runs report to
+ * answers in a Slack chat (its output chat), each run shows as a thread under that chat's channel
+ * root, through the same programmatic thread a `sessions create-thread` opens: a `thread.create`
+ * outbound job posts the root, and the thread's session is made when it lands.
  *
  * This adapter only shows the run. The run's prompt (with its job's or trigger's own authority
  * envelope) is the core's launch, published when the thread's session is bound, never the agent's
@@ -41,24 +42,20 @@ export interface SlackRunTarget {
 }
 
 /**
- * Where a run reporting to `parent` would show: the Slack chat the parent answers in (its output
- * chat, else any chat attached to it or to its channel root), at that chat's channel root. Null
- * when the parent has no Slack chat or the Slack account has no working credential. Read-only.
+ * Where a run reporting to `parent` would show: the parent's output chat (where its own replies go),
+ * when that chat is a Slack chat, at its channel root. Never another chat attached to the parent: a
+ * run must not be seen by people the parent does not answer. Null when the parent's output chat is
+ * not on Slack or the Slack account has no working credential. Read-only.
  */
 export function resolveSlackRunTarget(parent: SessionEntry): SlackRunTarget | null {
   const rootKey = slackThreadParentSessionKey(parent.sessionKey);
   const rootSession = rootKey === parent.sessionKey ? parent : getSession(rootKey);
   if (!rootSession || rootSession.agentId !== parent.agentId) return null;
-  const own = listSessionSubscriptions(parent.sessionKey);
-  const candidateIds = [
-    own.find((subscription) => subscription.outputAttachedAt !== undefined)?.chatId,
-    ...own.map((subscription) => subscription.chatId),
-    ...(rootSession === parent ? [] : listSessionSubscriptions(rootSession.sessionKey).map((s) => s.chatId)),
-  ].filter((value): value is string => Boolean(value));
-  const chat = candidateIds
-    .map((chatId) => dbGetChat(chatId))
-    .find((found) => found?.channel.toLowerCase() === "slack");
-  if (!chat?.instanceId) return null;
+  const outputChatId = listSessionSubscriptions(parent.sessionKey).find(
+    (subscription) => subscription.outputAttachedAt !== undefined,
+  )?.chatId;
+  const chat = outputChatId ? dbGetChat(outputChatId) : null;
+  if (chat?.channel.toLowerCase() !== "slack" || !chat.instanceId) return null;
   const platformChatId = splitSlackThreadPlatformChatId(chat.platformChatId)?.platformChatId ?? chat.platformChatId;
   if (!platformChatId) return null;
   if (!nativeChannelCredentialConfigured(loadRouterConfig(), chat.instanceId, "slack")) return null;
@@ -111,15 +108,18 @@ export const slackAutomationSurface: ChildRunSurfaceAdapter = {
     );
   },
   async closeSurface(run: AutomationChildRun) {
-    if (!run.surfaceRef) return;
+    if (!run.surfaceRef) return true;
     const record = getSlackThreadLifecycle(run.surfaceRef);
-    if (!record || record.status === "closed") return;
-    // Silent: the run's return, if any, is the core's.
+    if (!record || record.status === "closed" || record.status === "failed") return true;
+    // Its root has not landed: the creation closes it then (a closed run starts nothing).
+    if (!record.childSessionKey) return false;
+    // Silent: the run's return, if any, is the core's. Refused while a decision is open in the thread.
     await closeSlackThreadRecord(record, undefined);
+    return true;
   },
 };
 
-/** Called once by the daemon: runs whose parent answers in Slack show as Slack threads. */
+/** Called once by the daemon: visible runs whose parent answers in Slack show as Slack threads. */
 export function registerSlackAutomationSurface(): () => void {
   log.debug("Slack surface for automation runs registered");
   return registerChildRunSurface(slackAutomationSurface);

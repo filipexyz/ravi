@@ -3536,6 +3536,7 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
   ensureColumn(db, "triggers", "last_filter_reject_at", "INTEGER");
   migrateTriggerSessionCheck(db);
   migrateTriggerOwner(db);
+  ensureColumn(db, "triggers", "thread_visible", "INTEGER NOT NULL DEFAULT 0");
 
   // Migration: add account_id column to cron_jobs
   const cronColumns = db.prepare("PRAGMA table_info(cron_jobs)").all() as Array<{ name: string }>;
@@ -3576,6 +3577,8 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
     log.info("Added owner_principal column to cron_jobs table");
   }
   ensureColumn(db, "cron_jobs", "creator_chat", "TEXT");
+  // A `--thread` job's runs show where the session they report to answers only when asked (`--visible`).
+  ensureColumn(db, "cron_jobs", "thread_visible", "INTEGER NOT NULL DEFAULT 0");
 
   // Migration: add heartbeat_account_id column to agents
   if (addAgentColumnIfMissing("heartbeat_account_id", "ALTER TABLE agents ADD COLUMN heartbeat_account_id TEXT")) {
@@ -4096,6 +4099,7 @@ function automationChildRunsTableSql(table: string, ifNotExists: boolean): strin
       return_text TEXT,
       closed_at INTEGER,
       parent_notified_at INTEGER,
+      surface_closed_at INTEGER,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );`;
@@ -4129,6 +4133,8 @@ function ensureAutomationChildRunSurfaceMigration(database: Database): void {
       })
       .immediate();
   }
+  // When a closed run's surface closed too: a refused close (a decision still open in the thread) is retried.
+  ensureColumn(database, "automation_child_runs", "surface_closed_at", "INTEGER");
   database.exec(
     "CREATE INDEX IF NOT EXISTS idx_automation_child_runs_surface_ref ON automation_child_runs(surface_ref) WHERE surface_ref IS NOT NULL",
   );

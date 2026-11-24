@@ -5,7 +5,7 @@ import { CliExpectedError } from "../../cli/expected-error.js";
 import { nats } from "../../nats.js";
 import { publishSessionPrompt, type PublishSessionPromptOptions } from "../../omni/session-stream.js";
 import { publishChannelSessionPrompt } from "../session-prompt.js";
-import { bindChildRunSession, findChildRunBySurfaceRef } from "../../automation/child-runs.js";
+import { bindChildRunSession, isChildRunSurfaceRef, markChildRunLaunched } from "../../automation/child-runs.js";
 import { handOffClosingThreadFollows } from "../../triggers/follow-owner.js";
 import { clearTriggersRefreshPending, markTriggersRefreshPending } from "../../triggers/refresh-intent.js";
 import { prepareThreadAttentionNotice } from "./thread-attention-admission.js";
@@ -186,8 +186,10 @@ export async function finalizeSlackThreadCreation(
   try {
     const materialized = materializeSlackThreadChild(record);
     // An automation run's thread starts with the run's own launch (its job's or trigger's
-    // authority envelope), published once, never the agent's bootstrap turn.
-    const automationRun = findChildRunBySurfaceRef("slack-thread", record.requestId);
+    // authority envelope), never the agent's bootstrap turn. Handed back until its publish is
+    // confirmed (a retried creation still starts the run; the stable message id keeps it to one).
+    // A run closed or gone before its root landed starts nothing; its thread is closed below.
+    const automationRun = isChildRunSurfaceRef(record.requestId);
     const bound = automationRun
       ? bindChildRunSession(
           "slack-thread",
@@ -196,7 +198,7 @@ export async function finalizeSlackThreadCreation(
           materialized.childSessionName,
         )
       : null;
-    if (bound?.launch) {
+    if (bound?.launch && !bound.closed) {
       await dependencies.publishPrompt(
         materialized.childSessionName,
         {
@@ -206,6 +208,7 @@ export async function finalizeSlackThreadCreation(
         },
         { messageId: `slack-thread-start:${record.requestId}` },
       );
+      markChildRunLaunched(bound.run.id);
     }
     if (!automationRun)
       await publishChannelSessionPrompt(
@@ -240,6 +243,12 @@ export async function finalizeSlackThreadCreation(
           error: errorMessage(error),
         });
       });
+    if (automationRun && (!bound || bound.closed)) {
+      // The run was given up while its root was on the way: the late thread closes without a word.
+      await closeSlackThreadRecord(completed, undefined, dependencies).catch((error) => {
+        log.warn("Failed to close the late thread of a closed run", { requestId, error: errorMessage(error) });
+      });
+    }
     return {
       status: "opened",
       requestId,
@@ -417,7 +426,7 @@ async function reconcileThreadParentReturn(
 ): Promise<void> {
   if (!record.childSessionKey || !record.providerThreadId) return;
   // An automation run's thread ends silently by design (`@@SILENT@@`); its return is the core's.
-  if (findChildRunBySurfaceRef("slack-thread", record.requestId)) return;
+  if (isChildRunSurfaceRef(record.requestId)) return;
   const childSessionKey = record.childSessionKey;
   const providerThreadId = record.providerThreadId;
   const turn = getLatestSessionTurn(childSessionKey);

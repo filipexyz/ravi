@@ -1736,7 +1736,13 @@ describe("CronCommands --thread", () => {
   const MAIN_DM = { sessionKey: "agent:main:slack:ravi-slack:dm:d1", name: "main-dm", agentId: "main" };
   const GROUP = { sessionKey: "agent:ravi-updates:whatsapp:main:group:120363", name: "grupo", agentId: "ravi-updates" };
 
-  function addJob(opts: { isolated?: boolean; thread?: boolean; reportTo?: string; agent?: string }) {
+  function addJob(opts: {
+    isolated?: boolean;
+    thread?: boolean;
+    reportTo?: string;
+    agent?: string;
+    visible?: boolean;
+  }) {
     return new CronCommands().add(
       "Updates",
       undefined,
@@ -1758,6 +1764,7 @@ describe("CronCommands --thread", () => {
       undefined,
       opts.thread,
       opts.reportTo,
+      opts.visible,
     );
   }
 
@@ -1920,6 +1927,44 @@ describe("CronCommands --thread", () => {
 
     await captureJson(() => new CronCommands().set("cron-1", "reply-session", "main-dm", true));
     expect(cronJob).toMatchObject({ replySession: MAIN_DM.sessionKey });
+  });
+
+  it("shows runs only when asked: --visible goes with --thread and is absent otherwise", async () => {
+    mockCliContext = { sessionKey: MAIN_DM.sessionKey, agentId: "main" };
+    await expect(addJob({ visible: true })).rejects.toThrow("--visible only applies with --thread");
+
+    await captureJson(() => addJob({ thread: true }));
+    // Absent, not false: the idempotency fingerprint of a job that never asked stays the same.
+    expect(cronJob).not.toHaveProperty("threadVisible");
+
+    await captureJson(() => addJob({ thread: true, visible: true }));
+    expect(cronJob).toMatchObject({ sessionTarget: "thread", threadVisible: true });
+  });
+
+  it("sets visible on a thread job only, and turns it off when the job leaves thread mode", async () => {
+    cronJob = {
+      id: "cron-1",
+      name: "Updates",
+      agentId: "main",
+      enabled: true,
+      deleteAfterRun: false,
+      sessionTarget: "thread",
+      replySession: MAIN_DM.sessionKey,
+      executionType: "agent",
+      schedule: { type: "every", every: 1_800_000 },
+      message: "Read the blog",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    await expect(new CronCommands().set("cron-1", "visible", "maybe", true)).rejects.toThrow(/Invalid boolean/);
+    const payload = await captureJson(() => new CronCommands().set("cron-1", "visible", "on", true));
+    expect(payload).toMatchObject({ property: "visible", value: true });
+    expect(cronJob).toMatchObject({ threadVisible: true });
+
+    await captureJson(() => new CronCommands().set("cron-1", "session", "main", true));
+    expect(cronJob).toMatchObject({ sessionTarget: "main", threadVisible: false });
+    await expect(new CronCommands().set("cron-1", "visible", "yes", true)).rejects.toThrow(/thread jobs only/);
   });
 
   it("still creates an --isolated job, with a deprecation warning", async () => {
