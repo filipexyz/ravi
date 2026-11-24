@@ -414,18 +414,7 @@ export class RuntimePromptSubscription {
             error: ackError,
           });
         }
-        nats
-          .emit(`ravi.session.${sessionName}.runtime`, {
-            type: "turn.failed",
-            error: SQLITE_CAPACITY_USER_MESSAGE,
-            _turnProvenance: classifyTurnProvenance({ prompt }),
-            recoverable: false,
-            sessionName,
-            timestamp: new Date().toISOString(),
-          })
-          .catch((emitError) => {
-            log.warn("Failed to emit sqlite capacity runtime failure", { sessionName, error: emitError });
-          });
+        this.emitSqliteCapacityTurnFailed(sessionName, prompt);
         if (classifyTurnProvenance({ prompt }).background !== true && prompt.source) {
           nats
             .emit(`ravi.session.${sessionName}.response`, {
@@ -502,6 +491,23 @@ export class RuntimePromptSubscription {
         timestamp: new Date().toISOString(),
       })
       .catch((error) => log.warn("Failed to emit prompt receipt", { sessionName, error }));
+  }
+
+  // Moved verbatim out of `dispatchPrompt`'s catch so that handler no longer builds a raw `turn.failed` envelope
+  // inline. Rebuilding it through the shared diagnostic constructor is a separate change.
+  private emitSqliteCapacityTurnFailed(sessionName: string, prompt: RuntimeLaunchPrompt): void {
+    nats
+      .emit(`ravi.session.${sessionName}.runtime`, {
+        type: "turn.failed",
+        error: SQLITE_CAPACITY_USER_MESSAGE,
+        _turnProvenance: classifyTurnProvenance({ prompt }),
+        recoverable: false,
+        sessionName,
+        timestamp: new Date().toISOString(),
+      })
+      .catch((emitError) => {
+        log.warn("Failed to emit sqlite capacity runtime failure", { sessionName, error: emitError });
+      });
   }
 
   private async emitAdmissionRejected(
