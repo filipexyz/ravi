@@ -54,7 +54,11 @@ export function assertPermissionTagWriteAuthority(action: string, tags: readonly
 
 /** Refuse changing identities or bindings of contacts that hold permission authority. */
 export function assertPrivilegedContactWriteAuthority(action: string, contactIds: readonly string[]): void {
-  if (callerHasAdminAuthority()) return;
+  if (callerHasAdminAuthority()) {
+    // Holding admin lifts the generic check below, never the break-glass one.
+    assertNoBreakGlassContactChange(action, contactIds);
+    return;
+  }
   const privileged = contactIds.filter(contactHoldsPermissionAuthority);
   if (privileged.length === 0) return;
   throw denied(
@@ -120,5 +124,36 @@ export function assertPermissionDefinitionWithoutBreakGlass(
   if (reasons.length === 0) return;
   throw breakGlassDenied(
     `${action}: ${slug} would carry ${reasons.join(", ")}; a permission profile never carries break-glass power.`,
+  );
+}
+
+/**
+ * What break-glass power a contact holds or would hold once allowed: admin
+ * tags by name, permission tags that carry break-glass, and chat grants whose
+ * profile carries it. A dormant (not allowed) contact counts too.
+ */
+export function contactBreakGlassReasons(contactId: string): string[] {
+  const fromTags = contactPermissionPolicyTags(contactId).flatMap((slug) =>
+    tagDefinitionBreakGlassReasons(slug, dbGetTagDefinition(slug)),
+  );
+  const fromGrants = dbListContactChatGrants({ contactId }).flatMap((grant) =>
+    tagDefinitionBreakGlassReasons(grant.profileSlug, dbGetTagDefinition(grant.profileSlug)),
+  );
+  return [...new Set([...fromTags, ...fromGrants])];
+}
+
+/**
+ * Refuse, from an agent turn or a Console invocation, any write that makes an
+ * identity resolve to a contact holding break-glass power, or that activates
+ * such a contact: linking an identity, merging, setting its email or phone,
+ * allowing or approving it (spec permissions/break-glass). Holding admin does
+ * not lift this. The operator terminal is not refused.
+ */
+export function assertNoBreakGlassContactChange(action: string, contactIds: readonly string[]): void {
+  if (!callerIsAgentOrRemote()) return;
+  const reasons = [...new Set(contactIds.flatMap(contactBreakGlassReasons))];
+  if (reasons.length === 0) return;
+  throw breakGlassDenied(
+    `${action}: the contact holds break-glass power (${reasons.join(", ")}); an agent never changes its identities or activates it.`,
   );
 }

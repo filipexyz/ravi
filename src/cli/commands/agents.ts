@@ -28,6 +28,8 @@ import {
   declareCommandReturns,
 } from "./operational-return-schemas.js";
 import { getScopeContext, filterVisibleAgents, canViewAgent } from "../../permissions/scope.js";
+import { breakGlassCapabilities, callerIsAgentOrRemote } from "../../permissions/break-glass.js";
+import { CliExpectedError } from "../expected-error.js";
 import { nats } from "../../nats.js";
 import {
   getAgent,
@@ -1724,6 +1726,23 @@ SOURCES
     const after: AgentRuntimePermissionsConfig | null =
       nextConfig && Object.keys(nextConfig).length > 0 ? nextConfig : null;
 
+    // Spec permissions/break-glass: an agent never raises ANOTHER agent to
+    // break-glass power (full-access, or admin:system:* / execute:executable:*).
+    // The operator terminal is not refused; an agent's own ceiling is.
+    const breakGlassBefore = agentConfigBreakGlassReasons(before);
+    const breakGlassAfter = agentConfigBreakGlassReasons(after);
+    if (breakGlassAfter.length > 0 && breakGlassBefore.length === 0 && callerIsAgentOrRemote()) {
+      const caller = getScopeContext()?.agentId;
+      if (caller !== id) {
+        throw new CliExpectedError(
+          `agents permissions: raising agent ${id} to break-glass (${breakGlassAfter.join(", ")}) is for the operator terminal; an agent never raises another agent.`,
+          "FULL_ACCESS_APPROVAL_REQUIRED",
+          3,
+          `Ask the operator to run, from a terminal: ravi agents permissions ${id} full-access --execute`,
+        );
+      }
+    }
+
     if (execute !== true && expandsRuntimePermissionAuthority(before, after)) {
       // A brake protects only authority expansion. Revocation, capability
       // removal, and no-op updates execute immediately to reduce exposure.
@@ -2532,3 +2551,13 @@ declareCommandReturns(AgentsCommands, {
   specMode: agentSpecModeReturnSchema,
   syncInstructions: agentInstructionSyncReturnSchema,
 });
+
+function agentConfigBreakGlassReasons(config: AgentRuntimePermissionsConfig | null | undefined): string[] {
+  if (!config) return [];
+  const reasons = config.profile === "full-access" ? ["full-access"] : [];
+  const capabilities = (config.capabilities ?? []).flatMap((capability) => {
+    const normalized = normalizeRuntimePermissionCapability(capability);
+    return normalized ? [normalized] : [];
+  });
+  return [...reasons, ...breakGlassCapabilities(capabilities)];
+}

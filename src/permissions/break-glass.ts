@@ -100,5 +100,5 @@ export function isPermissionProfileDefinition(
  */
 export function callerIsAgentOrRemote(): boolean {
   if (currentConsoleInvocation()) return true;
-  return Boolean(getScopeContext().agentId);
+  return Boolean(getScopeContext()?.agentId);
 }

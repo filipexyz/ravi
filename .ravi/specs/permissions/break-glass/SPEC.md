@@ -18,6 +18,7 @@ applies_to:
   - src/cli/commands/permissions.ts
   - src/cli/commands/tags.ts
   - src/cli/commands/contacts.ts
+  - src/cli/commands/agents.ts
 owners:
   - ravi-dev
 status: active
@@ -64,6 +65,16 @@ carries it.
   not refused by this rule.
 - The local operator terminal keeps one bootstrap path: tagging a contact
   `permission-owner|admin|superadmin`, so a fresh install can have an owner.
+- An agent turn or a Console invocation MUST NOT make an identity resolve to a
+  contact holding break-glass power, nor activate such a contact: `contacts
+  link`, `contacts merge` (either side), `contacts set <contact> email`,
+  `contacts allow`, `contacts approve`, `contacts add` of an existing contact and
+  `contacts set <contact> opt-out false` are refused when the contact holds
+  break-glass by an admin tag, a break-glass permission tag or a break-glass chat
+  grant, dormant or not. Holding admin does not lift this.
+- An agent turn or a Console invocation MUST NOT raise another agent to
+  break-glass (`ravi agents permissions <other> full-access`, or explicit
+  `admin:system:*` / `execute:executable:*`). The operator terminal does it.
 - No caller may create or change a permission profile definition (kind `system`,
   source `permissions`) so that it carries break-glass capabilities
   (`tags create`, `tags set`). Admin profiles need no definition and
@@ -73,9 +84,15 @@ carries it.
 
 ## Out of scope
 
-- `ravi agents permissions <agent> full-access` raises an agent's own ceiling.
-  It is the operator's way to make an agent full-access and is governed by the
-  agent rules, not this one.
+- A second approved path exists besides `permissions request`: the approval card
+  of a denial (`src/approval/service.ts`, `applyGrantForDecision`) grants the
+  denied capability or full access on an approver's click. It is an approval,
+  not a bypass; who may click is governed by the approval rules.
+- The terminal is recognized by the absence of an agent identity in the process
+  (`getScopeContext().agentId`, which falls back to `RAVI_AGENT_ID`). For an
+  agent's Bash this holds because the Bash hook refuses unsetting `RAVI_*`.
+- Break-glass is a fixed list (`admin:system:*`, `execute:executable:*`); a new
+  total wildcard must be added to it.
 - A caller that already runs arbitrary host commands (`execute:executable:*`)
   can write the database directly. This rule governs the command surface; it
   does not make a full-access agent less than root.

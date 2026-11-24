@@ -92,6 +92,7 @@ import {
 } from "../../permissions/scope.js";
 import {
   assertBreakGlassTagWriteAllowed,
+  assertNoBreakGlassContactChange,
   assertPermissionTagWriteAuthority,
   assertPrivilegedContactWriteAuthority,
   isPermissionPolicyTag,
@@ -774,6 +775,9 @@ export class ContactsCommands {
 
     let contact = null as ReturnType<typeof getContact>;
     let normalized = identity.trim();
+    // add allows an existing contact too: never activate a dormant break-glass one.
+    const existingForAdd = getContact(identity.trim());
+    if (existingForAdd) assertNoBreakGlassContactChange("contacts add", [existingForAdd.id]);
     if (requestedChannel) {
       const resolvedInstanceId = resolveContactInstanceRef(instanceId);
       if (["slack", "telegram", "discord"].includes(requestedChannel) && !resolvedInstanceId) {
@@ -859,6 +863,7 @@ export class ContactsCommands {
       failContactNotFound("contacts approve", contactRef, asJson);
     }
     failIfChatContact(contactRef, contact);
+    assertNoBreakGlassContactChange("contacts approve", [contact.id]);
 
     allowContact(contact.phone);
     if (replyMode) {
@@ -956,6 +961,7 @@ export class ContactsCommands {
       failContactNotFound("contacts allow", contactRef, asJson);
     }
     failIfChatContact(contactRef, contact);
+    assertNoBreakGlassContactChange("contacts allow", [contact.id]);
     allowContact(contact.phone);
     const updated = getUpdatedContact(contact);
     const payload = {
@@ -1068,6 +1074,8 @@ export class ContactsCommands {
       }
     } else if (key === "opt-out" || key === "optout") {
       const boolValue = value === "true" || value === "yes" || value === "1";
+      // Clearing opt-out reactivates a dormant admin: same rule as allowing it.
+      if (!boolValue) assertNoBreakGlassContactChange("contacts set opt-out", [contact.id]);
       jsonValue = boolValue;
       setOptOut(contact.phone, boolValue);
       if (!asJson) console.log(`✓ Opt-out set: ${contact.id} → ${boolValue ? "yes" : "no"}`);
