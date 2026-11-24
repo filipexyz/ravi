@@ -249,6 +249,7 @@ import {
   isFullSha,
   parsePullRequestRef,
   pickReviewerRuntime,
+  pullRequestFollowedHere,
   readPullClosure,
   readReviewEvidence,
   reviewAutoDispatchEnabled,
@@ -7885,7 +7886,10 @@ export class SessionCommands {
     // A PR that already ended before this wait existed sent its merged/closed event to nobody: read it once
     // and record the wait already closed. A failed read leaves the wait open, as before.
     const prClosure =
-      reviewTarget && pendingHandoff && reviewDispatch?.status !== "dispatched"
+      reviewTarget &&
+      pendingHandoff &&
+      reviewDispatch?.status !== "dispatched" &&
+      pullRequestFollowedHere(dbListTriggers(), reviewTarget)
         ? await readPullClosure(reviewTarget, reviewGithubRead()).catch((error) => {
             logger.child("cli:sessions").debug("PR state not read when declaring a wait; the wait opens", {
               error: error instanceof Error ? error.message : String(error),

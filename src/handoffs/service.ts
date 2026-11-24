@@ -1,7 +1,7 @@
 import { getSession } from "../router/index.js";
 import { logger } from "../utils/logger.js";
 import { publishHandoffEvent } from "./events.js";
-import { describeHandoff, registerHandoffDeliveryPorts } from "./reconcile.js";
+import { describeHandoff, HandoffDeliveryUncertain, registerHandoffDeliveryPorts } from "./reconcile.js";
 import {
   type Handoff,
   type HandoffKind,
@@ -84,7 +84,7 @@ export function ownerHandoffNoticeText(parentSessionKey: string, handoffs: reado
     ...lines,
     handoffs.every((h) => h.parentNudgedAt !== null)
       ? `A sessão ${parentName} já foi lembrada. Ver: ravi sessions handoffs`
-      : `O lembrete à sessão ${parentName} não saiu. Ver: ravi sessions handoffs`,
+      : `O lembrete à sessão ${parentName} não foi confirmado. Ver: ravi sessions handoffs`,
   ].join("\n");
 }
 
@@ -108,7 +108,14 @@ export function registerDefaultHandoffOwnerPort(): void {
         return false;
       }
       const { deliverToChat } = await import("../cloud-agents/chat-target.js");
-      await deliverToChat(target, { text: ownerHandoffNoticeText(parentSessionKey, handoffs, now) });
+      const { RequestReplyTimeoutError } = await import("../utils/request-reply.js");
+      try {
+        await deliverToChat(target, { text: ownerHandoffNoticeText(parentSessionKey, handoffs, now) });
+      } catch (error) {
+        // The request went out and no reply came: the notice may have been sent, so it is never sent again.
+        if (error instanceof RequestReplyTimeoutError) throw new HandoffDeliveryUncertain(error.message);
+        throw error;
+      }
       return true;
     },
   });

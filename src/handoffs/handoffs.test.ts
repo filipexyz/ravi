@@ -11,8 +11,10 @@ import {
   HANDOFF_PARENT_NUDGE_MS,
   HANDOFF_REMINDER_WINDOW_MS,
   handoffsForReminder,
+  HandoffDeliveryUncertain,
   planHandoffActions,
   reconcileHandoffs,
+  resetUncertainParentRemindersForTest,
   type HandoffDeliveryPorts,
 } from "./reconcile.js";
 import {
@@ -212,7 +214,7 @@ describe("handoffs store and reconciler", () => {
     expect(text).toContain("thread-a espera revisão (sha1) há 45 min");
     expect(text).toContain("thread-b espera decisão há 45 min");
     // The parent was never reminded in these rows: the notice must not claim it was.
-    expect(text).toContain("O lembrete à sessão main não saiu");
+    expect(text).toContain("O lembrete à sessão main não foi confirmado");
     const reminded = ownerHandoffNoticeText(
       PARENT,
       [handoff({ parentNudgedAt: T0 + 1 })],
@@ -370,6 +372,31 @@ describe("handoffs store and reconciler", () => {
     await reconcileHandoffs({ now: now + 30_000, ports: hung, portTimeoutMs: 10 });
     await reconcileHandoffs({ now: now + 60_000, ports: hung, portTimeoutMs: 10 });
     expect({ parentCalls, ownerCalls }).toEqual({ parentCalls: 1, ownerCalls: 1 });
+  });
+
+  it("an unconfirmed reminder is neither resent nor reported to the owner as sent", async () => {
+    resetUncertainParentRemindersForTest();
+    const h = await declareHandoff({ childSessionKey: CHILD_A, parentSessionKey: PARENT, kind: "review", now: T0 });
+    let parentCalls = 0;
+    const ownerSaw: Array<number | null> = [];
+    const ports: HandoffDeliveryPorts = {
+      notifyParent: () => {
+        parentCalls++;
+        return new Promise<boolean>(() => {});
+      },
+      notifyOwner: async ({ handoffs }) => {
+        ownerSaw.push(...handoffs.map((x) => x.parentNudgedAt));
+        // The owner port may also report an unknown outcome: the claim is kept, never resent.
+        throw new HandoffDeliveryUncertain("request timeout");
+      },
+    };
+    await reconcileHandoffs({ now: T0 + HANDOFF_PARENT_NUDGE_MS, ports, portTimeoutMs: 10 });
+    expect(getHandoff(h.id)?.parentNudgedAt).toBeNull();
+    await reconcileHandoffs({ now: T0 + HANDOFF_OWNER_ESCALATION_MS, ports, portTimeoutMs: 10 });
+    await reconcileHandoffs({ now: T0 + HANDOFF_OWNER_ESCALATION_MS + 30_000, ports, portTimeoutMs: 10 });
+    expect(parentCalls).toBe(1);
+    expect(ownerSaw).toEqual([null]);
+    expect(getHandoff(h.id)?.ownerEscalatedAt).toBe(T0 + HANDOFF_OWNER_ESCALATION_MS);
   });
 
   it("expires a wait nobody acted on for 7 days and lists only recent or due waits in a reminder", async () => {

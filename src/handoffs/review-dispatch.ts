@@ -77,6 +77,18 @@ export function followsPullRequest(
   );
 }
 
+/**
+ * Whether any session of this install follows the PR. A wait may name a PR its thread did not publish (the
+ * reviewer names the author's), but the runtime reads the state only of PRs this install already follows.
+ */
+export function pullRequestFollowedHere(
+  triggers: ReadonlyArray<{ name: string; enabled?: boolean }>,
+  target: Pick<ReviewTarget, "repo" | "pr">,
+): boolean {
+  const name = `gh-follow:${target.repo}#${target.pr}`;
+  return triggers.some((trigger) => trigger.enabled !== false && trigger.name.toLowerCase() === name);
+}
+
 /** On unless the setting turns it off. */
 export function reviewAutoDispatchEnabled(read: (key: string) => string | null = dbGetSetting): boolean {
   const value = read(REVIEW_AUTO_DISPATCH_SETTING)?.trim().toLowerCase();
