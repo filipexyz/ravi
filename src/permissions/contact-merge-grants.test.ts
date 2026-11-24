@@ -72,7 +72,6 @@ function insertMergeLink(sourceId: string, targetId: string) {
 function liveContextFor(contactId: string, grantRef: string) {
   return createRuntimeContext({
     agentId: "main",
-    cliName: "test",
     kind: "turn-runtime",
     metadata: { actorPrincipal: `contact:${contactId}`, userOverlayGrants: [grantRef] },
   });
