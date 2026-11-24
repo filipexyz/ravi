@@ -5887,6 +5887,18 @@ public struct SessionsNamespace: Sendable {
     return try await transport.call(groupSegments: ["sessions"], command: "list", body: requestBody, as: SessionsListReturn.self)
   }
 
+  public func observe(_ source: String, _ options: SessionsObserveOptions = .init()) async throws -> SessionsObserveReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["source"] = try RaviJSON.fromEncodable(source)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions"], command: "observe", body: requestBody, as: SessionsObserveReturn.self)
+  }
+
+  public func observing() async throws -> SessionsObservingReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["sessions"], command: "observing", body: requestBody, as: SessionsObservingReturn.self)
+  }
+
   public func prune(_ options: SessionsPruneOptions = .init()) async throws -> SessionsPruneReturn {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)
@@ -6018,6 +6030,13 @@ public struct SessionsNamespace: Sendable {
     requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["sessions"], command: "trace", body: requestBody, as: SessionsTraceReturn.self)
+  }
+
+  public func unobserve(_ source: String, _ options: SessionsUnobserveOptions = .init()) async throws -> SessionsUnobserveReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["source"] = try RaviJSON.fromEncodable(source)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions"], command: "unobserve", body: requestBody, as: SessionsUnobserveReturn.self)
   }
 
   public func update(_ nameOrKey: String, _ options: SessionsUpdateOptions = .init()) async throws -> SessionsUpdateReturn {

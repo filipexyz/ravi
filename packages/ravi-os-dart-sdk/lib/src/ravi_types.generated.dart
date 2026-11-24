@@ -24833,6 +24833,34 @@ class SessionsListReturn {
 
 SessionsListReturn sessionsListReturnFromJson(Object? json) => SessionsListReturn.fromJsonValue(json);
 
+class SessionsObserveOptions {
+  const SessionsObserveOptions({this.follow, this.to, this.when});
+
+  final bool? follow;
+  final String? to;
+  final String? when;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (follow != null) {
+      into["follow"] = RaviJson.from(follow);
+    }
+    if (to != null) {
+      into["to"] = RaviJson.from(to);
+    }
+    if (when != null) {
+      into["when"] = RaviJson.from(when);
+    }
+  }
+}
+
+typedef SessionsObserveReturn = Map<String, RaviJson>;
+
+SessionsObserveReturn sessionsObserveReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
+
+typedef SessionsObservingReturn = Map<String, RaviJson>;
+
+SessionsObservingReturn sessionsObservingReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
+
 class SessionsPruneOptions {
   const SessionsPruneOptions({this.agent, this.ephemeral, this.execute, this.inactiveFor, this.namePrefix});
 
@@ -25810,6 +25838,22 @@ class SessionsTraceOptions {
 typedef SessionsTraceReturn = Map<String, RaviJson>;
 
 SessionsTraceReturn sessionsTraceReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
+
+class SessionsUnobserveOptions {
+  const SessionsUnobserveOptions({this.to});
+
+  final String? to;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (to != null) {
+      into["to"] = RaviJson.from(to);
+    }
+  }
+}
+
+typedef SessionsUnobserveReturn = Map<String, RaviJson>;
+
+SessionsUnobserveReturn sessionsUnobserveReturnFromJson(Object? json) => raviJsonAsRaviJsonMap(json);
 
 class SessionsUpdateOptions {
   const SessionsUpdateOptions({this.effort, this.model, this.probeTimeout, this.provider, this.skipProbe, this.thinking});

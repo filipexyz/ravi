@@ -1,0 +1,5 @@
+# Session Observe Checks
+
+- `src/cli/commands/sessions-observe.test.ts`: a healthy turn sends nothing and a turn that ends after tool work with two agent messages sends one `[System] Inform: [from: ravi observer]` to the receiver, naming `turn.no_final_reply` and `chat.narration`, with no `_observation` field; the binding is attached at once; `--follow` delivers every turn; `observe` twice keeps one rule; `unobserve` stops delivery; a scoped caller gets "Session not found" for a session it cannot reach on either end and no rule is created; self-observation, unknown conditions and `--follow` with `--when` are refused.
+- `src/runtime/observation-plane.test.ts` ("Observer conditions", "Condition-gated observer bindings"): condition rules and the end-of-turn-only gate.
+- `src/runtime/session-trace.test.ts` ("ends an inactivity-recovered turn for end-of-turn observers…"): a turn that dies on inactivity reaches a condition-gated observer once, even when the provider reports the aborted turn late.

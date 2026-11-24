@@ -8283,6 +8283,28 @@ class SessionsNamespace {
     );
   }
 
+  Future<SessionsObserveReturn> observe(String source, [SessionsObserveOptions options = const SessionsObserveOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["source"] = RaviJson.from(source);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["sessions"],
+      command: "observe",
+      body: requestBody,
+      decode: sessionsObserveReturnFromJson,
+    );
+  }
+
+  Future<SessionsObservingReturn> observing() async {
+    final requestBody = <String, RaviJson>{};
+    return _transport.callJson(
+      groupSegments: const ["sessions"],
+      command: "observing",
+      body: requestBody,
+      decode: sessionsObservingReturnFromJson,
+    );
+  }
+
   Future<SessionsPruneReturn> prune([SessionsPruneOptions options = const SessionsPruneOptions()]) async {
     final requestBody = <String, RaviJson>{};
     options.encodeBody(requestBody);
@@ -8503,6 +8525,18 @@ class SessionsNamespace {
       command: "trace",
       body: requestBody,
       decode: sessionsTraceReturnFromJson,
+    );
+  }
+
+  Future<SessionsUnobserveReturn> unobserve(String source, [SessionsUnobserveOptions options = const SessionsUnobserveOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["source"] = RaviJson.from(source);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["sessions"],
+      command: "unobserve",
+      body: requestBody,
+      decode: sessionsUnobserveReturnFromJson,
     );
   }
 

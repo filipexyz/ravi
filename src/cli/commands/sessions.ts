@@ -25,6 +25,17 @@ import {
   projectRuntimeUpdateAxisValue,
 } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
+import {
+  dbDeleteObserverRule,
+  dbListObserverRules,
+  dbUpsertObserverRule,
+  ensureObserverBindingsForSession,
+} from "../../runtime/observation-plane.js";
+import {
+  DEFAULT_ALERT_CONDITIONS,
+  OBSERVATION_CONDITIONS,
+  parseObservationConditions,
+} from "../../runtime/observation-conditions.js";
 import { isTriggerOwnSessionKey, triggerOfSessionKey } from "../../triggers/authority.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -1005,6 +1016,18 @@ function buildSessionActionToolHints(sessionRef: string): Record<string, Record<
 
 function sessionActionRef(session: Pick<SessionEntry, "name" | "sessionKey">): string {
   return session.name ?? session.sessionKey;
+}
+
+const OBSERVE_RULE_PREFIX = "observe:";
+
+/** One rule per (observer, source) pair, so observe is idempotent and unobserve finds it. */
+function observeRuleId(target: SessionEntry, source: SessionEntry): string {
+  const slug = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9_.-]+/g, "-")
+      .slice(0, 56);
+  return `${OBSERVE_RULE_PREFIX}${slug(sessionLabel(target))}:${slug(sessionLabel(source))}`;
 }
 
 function resolveCurrentSessionRef(): string | undefined {
@@ -5916,6 +5939,203 @@ export class SessionCommands {
   }
 
   @Command({
+    name: "observe",
+    description: "Watch another session and get a short notice in this one when something is wrong (or on every turn)",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "observe",
+    risk: "medium",
+  })
+  observe(
+    @Arg("source", { description: "Session to observe" }) sourceRef: string,
+    @Option({
+      flags: "--to <session>",
+      description: "Session that receives the notices (default: the current session)",
+    })
+    toRef?: string,
+    @Option({
+      flags: "--when <conditions>",
+      description: `Comma-separated conditions (default: ${DEFAULT_ALERT_CONDITIONS.join(",")}); one of ${OBSERVATION_CONDITIONS.join(", ")}`,
+    })
+    whenRaw?: string,
+    @Option({
+      flags: "--follow",
+      description: "Get a compact summary of every finished turn instead of only when a condition holds",
+    })
+    follow?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    if (follow && whenRaw) fail("Use either --follow (every turn) or --when (only on conditions), not both.");
+    const { source, target } = this.resolveObservePair(sourceRef, toRef);
+    if (!source || !target) return;
+    const when = follow
+      ? null
+      : parseObservationConditions(whenRaw ? whenRaw.split(",") : [...DEFAULT_ALERT_CONDITIONS]);
+    const ruleId = observeRuleId(target, source);
+    const rule = dbUpsertObserverRule({
+      id: ruleId,
+      enabled: true,
+      scope: "session",
+      sourceSession: sessionLabel(source),
+      observerAgentId: target.agentId,
+      observerRole: ruleId.replace(/[^a-z0-9_-]/g, "-").slice(0, 64),
+      observerMode: "observe",
+      observerProfileId: "compact",
+      deliveryPolicy: "end_of_turn",
+      eventTypes: [
+        "message.user",
+        "message.assistant",
+        "tool.start",
+        "tool.end",
+        "tool.inactive",
+        "turn.complete",
+        "turn.failed",
+        "turn.interrupt",
+      ],
+      permissionGrants: [],
+      metadata: { deliverTo: sessionLabel(target), ...(when ? { when } : {}), createdBy: "sessions observe" },
+    });
+    // Attach now: a running source session would otherwise only pick the rule up on its next launch.
+    ensureObserverBindingsForSession({ sessionName: sessionLabel(source), session: source });
+    const payload = {
+      success: true,
+      observing: {
+        ruleId: rule.id,
+        source: sessionLabel(source),
+        to: sessionLabel(target),
+        mode: when ? "alerts" : "follow",
+        when: when ?? [],
+      },
+    };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(
+      when
+        ? `✓ ${sessionLabel(target)} now gets a notice when ${sessionLabel(source)} hits: ${when.join(", ")}`
+        : `✓ ${sessionLabel(target)} now gets a summary of every turn of ${sessionLabel(source)}`,
+    );
+    console.log(
+      `  Stop with: ravi sessions unobserve ${sessionLabel(source)}${toRef ? ` --to ${sessionLabel(target)}` : ""}`,
+    );
+    return payload;
+  }
+
+  @Command({
+    name: "unobserve",
+    description: "Stop watching a session started with 'ravi sessions observe'",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "observe",
+    risk: "low",
+  })
+  unobserve(
+    @Arg("source", { description: "Observed session" }) sourceRef: string,
+    @Option({
+      flags: "--to <session>",
+      description: "Session that was receiving the notices (default: the current session)",
+    })
+    toRef?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    const { source, target } = this.resolveObservePair(sourceRef, toRef);
+    if (!source || !target) return;
+    const ruleId = observeRuleId(target, source);
+    // Deleting the rule disables its binding in the same transaction.
+    const removed = dbDeleteObserverRule(ruleId);
+    const payload = { success: true, removed, ruleId, source: sessionLabel(source), to: sessionLabel(target) };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    console.log(
+      removed
+        ? `✓ ${sessionLabel(target)} no longer observes ${sessionLabel(source)}`
+        : `${sessionLabel(target)} was not observing ${sessionLabel(source)}`,
+    );
+    return payload;
+  }
+
+  @Command({
+    name: "observing",
+    description: "List the observations started with 'ravi sessions observe' that you can see",
+  })
+  @CommandAccess({
+    kind: "read",
+    resource: "sessions",
+    action: "observing",
+    risk: "low",
+  })
+  observing(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+    const scopeCtx = getScopeContext();
+    const enforced = isScopeEnforced(scopeCtx);
+    const items = dbListObserverRules()
+      .filter((rule) => rule.id.startsWith(OBSERVE_RULE_PREFIX) && rule.enabled)
+      .map((rule) => {
+        const when = Array.isArray(rule.metadata?.when) ? (rule.metadata?.when as string[]) : [];
+        return {
+          ruleId: rule.id,
+          source: rule.sourceSession ?? "",
+          to: typeof rule.metadata?.deliverTo === "string" ? rule.metadata.deliverTo : "",
+          mode: when.length > 0 ? "alerts" : "follow",
+          when,
+        };
+      })
+      .filter((item) => !enforced || (canAccessSession(scopeCtx, item.source) && canAccessSession(scopeCtx, item.to)));
+    const payload = { success: true, observing: items, total: items.length };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    if (items.length === 0) {
+      console.log("No observations. Start one with: ravi sessions observe <session>");
+      return payload;
+    }
+    for (const item of items) {
+      console.log(`${item.to} ← ${item.source} (${item.mode}${item.when.length ? `: ${item.when.join(", ")}` : ""})`);
+    }
+    return payload;
+  }
+
+  /** Both ends of an observation, each scope-checked like any other session target. */
+  private resolveObservePair(
+    sourceRef: string,
+    toRef?: string,
+  ): { source: SessionEntry | null; target: SessionEntry | null } {
+    const targetRef = toRef?.trim() || resolveCurrentSessionRef();
+    if (!targetRef) {
+      fail("No current session to receive the notices. Pass --to <session>.");
+      return { source: null, target: null };
+    }
+    const source = this.resolveTarget(sourceRef);
+    if (!source) return { source: null, target: null };
+    const target = this.resolveTarget(targetRef);
+    if (!target) return { source, target: null };
+    if (source.sessionKey === target.sessionKey) {
+      fail("A session cannot observe itself.");
+      return { source: null, target: null };
+    }
+    // The notices run as a turn of the target's agent: that agent must be the caller's own or one it may mutate.
+    const scopeCtx = getScopeContext();
+    if (
+      isScopeEnforced(scopeCtx) &&
+      target.agentId !== scopeCtx.agentId &&
+      !canAccessResource(scopeCtx, target.agentId, "mutate")
+    ) {
+      fail(`Permission denied: notices for ${sessionLabel(target)} would run as agent ${target.agentId}.`);
+      return { source: null, target: null };
+    }
+    return { source, target };
+  }
+
+  @Command({
     name: "inform",
     description: "Send an informational message to another session (fire-and-forget)",
   })
@@ -8496,6 +8716,9 @@ declareCommandReturns(SessionCommands, {
   info: commandEnvelopeReturnSchema,
   inform: commandEnvelopeReturnSchema,
   keep: commandEnvelopeReturnSchema,
+  observe: commandEnvelopeReturnSchema,
+  observing: commandEnvelopeReturnSchema,
+  unobserve: commandEnvelopeReturnSchema,
   list: pagedItemsReturnSchema,
   prune: commandEnvelopeReturnSchema,
   read: sessionReadReturnSchema,

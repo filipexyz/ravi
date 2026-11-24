@@ -29076,6 +29076,40 @@ public struct SessionsListReturn: Codable, Sendable {
   }
 }
 
+public struct SessionsObserveOptions: Codable, Sendable {
+  public var follow: Bool?
+  public var to: String?
+  public var when: String?
+
+  public init(follow: Bool? = nil, to: String? = nil, when: String? = nil) {
+    self.follow = follow
+    self.to = to
+    self.when = when
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case follow = "follow"
+    case to = "to"
+    case when = "when"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.follow {
+      body["follow"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.to {
+      body["to"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.when {
+      body["when"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public typealias SessionsObserveReturn = [String: RaviJSON]
+
+public typealias SessionsObservingReturn = [String: RaviJSON]
+
 public struct SessionsPruneOptions: Codable, Sendable {
   public var agent: String?
   public var ephemeral: Bool?
@@ -30266,6 +30300,26 @@ public struct SessionsTraceOptions: Codable, Sendable {
 }
 
 public typealias SessionsTraceReturn = [String: RaviJSON]
+
+public struct SessionsUnobserveOptions: Codable, Sendable {
+  public var to: String?
+
+  public init(to: String? = nil) {
+    self.to = to
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case to = "to"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.to {
+      body["to"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public typealias SessionsUnobserveReturn = [String: RaviJSON]
 
 public struct SessionsUpdateOptions: Codable, Sendable {
   public var effort: String?

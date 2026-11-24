@@ -137,6 +137,23 @@ A binding with `metadata.pulseMs` also receives the events gathered so far every
 
 Each delivery MUST be idempotent. The observer session MUST be able to ignore duplicate event ids.
 
+Every way a source turn ends MUST reach end-of-turn observers with a terminal event, including the inactivity recovery that aborts and closes the runtime itself (`turn.interrupt`, or `turn.failed` when the recovery budget is spent). A late provider terminal for that aborted turn MUST NOT produce a second delivery.
+
+### Conditions
+
+A binding MAY carry `metadata.when`, a list of conditions from `src/runtime/observation-conditions.ts`. Such a binding delivers only at end of turn and only when one of its conditions holds for the finished turn; it is skipped otherwise (`no_condition`), and never evaluated on a realtime, debounce or pulse view of a turn. Conditions are computed by the daemon from event types and runtime-set payload fields, never from message text:
+
+- `turn.no_final_reply`: the turn ended with no agent reply after the person's message, or the agent worked (tool events) after its last reply. An intentional silence (`turn.complete` with `silent: true`) does not count.
+- `chat.narration`: two or more agent replies (commentary excluded) in one turn.
+- `turn.failed`, `turn.interrupt`: the terminal type, with the runtime reason.
+- `tool.idle`: a `tool.inactive` event in the turn.
+
+The delivery carries the condition lines (`⚠ <condition> (turn <id>): <detail>`) outside the data boundary and the condition names in its metadata. A rule with `metadata.when` MUST use `end_of_turn` delivery; unknown condition names are rejected.
+
+### Delivery to a live session
+
+A binding MAY carry `metadata.deliverTo`, a session name. Its deliveries go to that session as a normal `[System] Inform: [from: ravi observer] …` prompt instead of an `_observation` prompt to a dedicated observer session. A rule with `deliverTo` MUST be session-scoped with a source session, and `deliverTo` MUST NOT be the source. This is how `ravi sessions observe` (spec `sessions/observe`) reaches a conversation.
+
 The Observation Plane SHOULD support per-observer budgets for max events, max payload bytes, max prompt tokens, max runtime cost, and max executions per source turn.
 
 Delivery rendering MUST happen in two phases:

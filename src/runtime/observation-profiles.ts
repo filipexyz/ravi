@@ -853,7 +853,8 @@ const DIGEST_TEXT_MAX = 300;
 const DIGEST_DETAIL_MAX = 2_000;
 
 function oneLine(value: string, max = DIGEST_TEXT_MAX): string {
-  return truncate(value.replace(/\s+/g, " ").trim(), max);
+  // `\s` misses U+0085 (NEL) and other C0/C1 controls, which some readers split lines on.
+  return truncate(value.replace(/[\s\p{Cc}]+/gu, " ").trim(), max);
 }
 
 function payloadString(payload: Record<string, unknown> | undefined, key: string): string | undefined {
@@ -962,6 +963,7 @@ function buildBaseRenderContext(input: {
   event?: ObserverProfileRenderEvent;
   input?: Record<string, unknown>;
   deliveryId?: string;
+  conditionsText?: string;
 }): Record<string, unknown> {
   const instructions = observerInstructions(input.binding);
   // One hash per delivery: the idempotency key and the boundary token are two slices of the same
@@ -1013,6 +1015,8 @@ function buildBaseRenderContext(input: {
       // Per-delivery boundary token. Observed content is written before this render and cannot know
       // it, so a preview cannot close the observed-events block by echoing the marker text.
       boundaryId: deliveryHash.slice(0, 12),
+      // Runtime-computed condition lines; never observed text, so they sit outside the data boundary.
+      conditions: input.conditionsText ?? "",
     },
     events: {
       rendered: input.renderedEvents ?? "",
@@ -1097,6 +1101,8 @@ export function renderObservationPromptForProfile(input: {
   deliveryId?: string;
   /** Producer-supplied context under the `input` root. */
   input?: Record<string, unknown>;
+  /** Rendered condition lines (`⚠ …`), empty when the delivery is not condition-gated. */
+  conditionsText?: string;
 }): string {
   const deliveryPolicy = input.deliveryPolicy ?? input.binding.deliveryPolicy;
   const renderedEvents = neutralizeObservationBoundary(

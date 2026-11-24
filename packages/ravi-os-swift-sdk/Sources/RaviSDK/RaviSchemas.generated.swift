@@ -107370,6 +107370,58 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let SessionsObserveInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "follow": {
+        "description": "Get a compact summary of every finished turn instead of only when a condition holds",
+        "type": "boolean"
+      },
+      "source": {
+        "description": "Session to observe",
+        "type": "string"
+      },
+      "to": {
+        "description": "Session that receives the notices (default: the current session)",
+        "type": "string"
+      },
+      "when": {
+        "description": "Comma-separated conditions (default: turn.no_final_reply,chat.narration,turn.failed,tool.idle); one of turn.no_final_reply, chat.narration, turn.failed, turn.interrupt, tool.idle",
+        "type": "string"
+      }
+    },
+    "required": [
+      "source"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsObserveReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsObservingInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsObservingReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
   public static let SessionsPruneInputSchema = #"""
   {
     "additionalProperties": false,
@@ -112213,6 +112265,34 @@ public enum RaviSchemas {
   """#
 
   public static let SessionsTraceReturnSchema = #"""
+  {
+    "additionalProperties": {},
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsUnobserveInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "source": {
+        "description": "Observed session",
+        "type": "string"
+      },
+      "to": {
+        "description": "Session that was receiving the notices (default: the current session)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "source"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsUnobserveReturnSchema = #"""
   {
     "additionalProperties": {},
     "properties": {},
