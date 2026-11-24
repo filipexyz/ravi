@@ -2246,6 +2246,8 @@ describe("runtime request context chat-scoped user overlay", () => {
     expect(canWithCapabilities(relayed.capabilities, "admin", "system", "*")).toBe(false);
     expect(canWithCapabilities(relayed.capabilities, "execute", "executable", "rm")).toBe(false);
     expect(relayed.metadata?.actorBreakGlassWithheld).toEqual(["admin:system:*", "execute:executable:*"]);
+    // Even an inform relay (not a work handoff) is capped at the caller's positive authority.
+    expect(relayed.metadata?.relayNarrowing).toBe(true);
 
     // Revoking the last grant of a chat must not widen the person to the agent.
     grant(stranger.id, "chat", chat.id);

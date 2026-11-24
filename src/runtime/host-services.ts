@@ -51,8 +51,9 @@ import { isOperatorOwnTurn } from "../library/turn.js";
 import {
   contextCan,
   fileWriteToolTargets,
-  providerConfigWriteDenial,
   isActorBreakGlassLimited,
+  isFileWriteTool,
+  providerConfigWriteDenial,
 } from "../permissions/provider-config-paths.js";
 import {
   commandLineRunsSkillRemediation,
@@ -728,13 +729,25 @@ async function authorizeRuntimeToolUse(
     return { approved: false, reason: result.reason ?? `${request.toolName} permission denied.` };
   }
 
-  const configWriteDenial = providerConfigWriteDenial({
-    can: contextCan(options.context),
-    agentId: options.agentId,
-    targets: fileWriteToolTargets(request.toolName, request.input),
-    cwd: options.cwd,
-    restrictToWorkspace: isActorBreakGlassLimited(options.context),
-  });
+  const writeTargets = fileWriteToolTargets(request.toolName, request.input);
+  const restrictToWorkspace = isActorBreakGlassLimited(options.context);
+  // A file-change approval that names no path (e.g. a Codex change known only
+  // by item id) cannot be checked against the workspace: refuse it for a
+  // limited person instead of approving an unchecked write.
+  const unverifiableWrite =
+    restrictToWorkspace &&
+    writeTargets.length === 0 &&
+    isFileWriteTool(request.toolName) &&
+    !contextCan(options.context)("execute", "executable", "*");
+  const configWriteDenial = unverifiableWrite
+    ? `Permission denied: agent:${options.agentId ?? "unknown"} cannot approve a file change without target paths for the person who asked.`
+    : providerConfigWriteDenial({
+        can: contextCan(options.context),
+        agentId: options.agentId,
+        targets: writeTargets,
+        cwd: options.cwd,
+        restrictToWorkspace,
+      });
   if (configWriteDenial) {
     emitRuntimePolicyDenied(options, {
       type: "tool",
