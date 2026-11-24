@@ -309,6 +309,11 @@ feature alone, with no change planned here:
   `ts`) among every thread of the session of the chat, so a root `ts` copied from
   another channel of the same session names that channel's thread. Shortcuts and
   buttons are tighter: they name the thread by the chat they were used in.
+- The chat scope that shortcuts and buttons use (a thread by the channel it was used in
+  and its root `ts`) only fits a root-`ts` ref. `close idle` closes by request id, which that
+  scope would not find, so it stays unscoped. Today no button or shortcut runs it (they build
+  `close <ts>` and `stop <ts>`), but the rule that the scope comes from the surface would
+  break silently if one ever did.
 
 ## Out of scope for this feature
 
