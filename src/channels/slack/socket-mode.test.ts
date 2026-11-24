@@ -25,6 +25,7 @@ import { dbSetLibraryAgentDescription, dbSetLibraryAgentListed } from "../../lib
 import { InstancesPendingCommands } from "../../cli/commands/instances.js";
 import { nats } from "../../nats.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import { storeSlackInteractionResponseUrl } from "./interactions.js";
 import { canWithCapabilities } from "../../permissions/provider-runtime.js";
 import {
   attachChatToSession,
@@ -2632,6 +2633,38 @@ describe("Slack Socket Mode routing", () => {
       });
       expect(interactions[0]?.payload).not.toHaveProperty("responseUrlId");
       expect(JSON.stringify(interactions[0]?.payload)).not.toContain("elsewhere.example");
+    });
+
+    it("publishes a shortcut whose trusted handle could not be stored, without the handle, and still refuses a click (review N5 of #941)", async () => {
+      // Make the store fail the way a database does: its table exists, and an insert is aborted.
+      storeSlackInteractionResponseUrl({
+        accountId: "ravi-rbbt-slack",
+        responseUrl: "https://hooks.slack.com/actions/T1/B1/seed",
+      });
+      getDb().exec(
+        "CREATE TRIGGER handle_store_down BEFORE INSERT ON slack_interaction_response_urls BEGIN SELECT RAISE(ABORT, 'handle store is down'); END;",
+      );
+      const interactions: Array<{ topic: string; payload: Record<string, unknown> }> = [];
+      const service = interactionService(interactions);
+
+      const shortcut = await service.handleEnvelope(
+        envelope("message_action", "https://hooks.slack.com/app-actions/T1/B1/secret"),
+        async () => {},
+      );
+
+      expect(shortcut).toBe("processed");
+      expect(interactions).toHaveLength(1);
+      expect(interactions[0]?.payload).toMatchObject({ interactionType: "message_action", responseUrlPresent: true });
+      expect(interactions[0]?.payload).not.toHaveProperty("responseUrlId");
+
+      // A click that cannot be answered is not run: the same failure still refuses it.
+      await expect(
+        service.handleEnvelope(
+          envelope("block_actions", "https://hooks.slack.com/actions/T1/B1/secret"),
+          async () => {},
+        ),
+      ).rejects.toThrow("handle store is down");
+      expect(interactions).toHaveLength(1);
     });
 
     it("still refuses any other interaction whose handle it does not trust", async () => {

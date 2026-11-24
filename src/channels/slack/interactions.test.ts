@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { getDb } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import {
+  describeSlackResponseUrlFailure,
   isAllowedSlackInteractionResponseUrl,
   respondToSlackInteraction,
   SLACK_RESPONSE_URL_MAX_USES,
@@ -52,6 +53,17 @@ describe("Slack interaction response boundary", () => {
     expect(isAllowedSlackInteractionResponseUrl("https://rilke.slack.com/api/chat.postMessage")).toBe(false);
     expect(isAllowedSlackInteractionResponseUrl("https://hooks.slack.com/commandsx/T1/B1/secret")).toBe(false);
     expect(isAllowedSlackInteractionResponseUrl("https://user:pass@hooks.slack.com/commands/T1/B1/secret")).toBe(false);
+  });
+});
+
+describe("why a response handle was not kept (review N5 of #941)", () => {
+  it("says a handle of a shape Slack does not issue is untrusted, and one it does issue failed to store", () => {
+    expect(describeSlackResponseUrlFailure("https://elsewhere.example/app-actions/T1/B1/secret")).toBe(
+      "untrusted_shape",
+    );
+    expect(describeSlackResponseUrlFailure("not a url")).toBe("untrusted_shape");
+    expect(describeSlackResponseUrlFailure("https://hooks.slack.com/app-actions/T1/B1/secret")).toBe("storage_failed");
+    expect(describeSlackResponseUrlFailure("https://hooks.slack.com/actions/T1/B1/secret")).toBe("storage_failed");
   });
 });
 

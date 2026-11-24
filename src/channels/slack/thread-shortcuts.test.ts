@@ -266,6 +266,24 @@ describe("which interactions are a thread shortcut, a confirmation or a cancella
     ).toMatchObject({ kind: "cancel", userId: "U0PERSON" });
   });
 
+  it("reads a confirmation only from the chat of its card or from a DM with the app (review N4 of #941)", () => {
+    // Same chat as the card: read. A DM with the app, where Slack puts the card when it will not show it in the chat: read.
+    expect(parseSlackThreadShortcutEvent(confirmation({ channelId: "C0CHAN" }))).toMatchObject({ kind: "confirm" });
+    expect(parseSlackThreadShortcutEvent(confirmation({ channelId: "D0DMAPP" }))).toMatchObject({
+      kind: "confirm",
+      channelId: "C0CHAN",
+    });
+    // Any other conversation is not where this card was sent.
+    expect(parseSlackThreadShortcutEvent(confirmation({ channelId: "C0OTHER" }))).toBeNull();
+    expect(parseSlackThreadShortcutEvent(confirmation({ channelId: "G0GROUPDM" }))).toBeNull();
+    // A cancellation changes nothing, so it has no chat to hold.
+    expect(
+      parseSlackThreadShortcutEvent(
+        confirmation({ channelId: "C0OTHER", actionId: SLACK_THREAD_CANCEL_ACTION_ID, value: "cancel" }),
+      ),
+    ).toMatchObject({ kind: "cancel" });
+  });
+
   it("does not read a confirmation whose value is not a thread and a time, whoever sent it", () => {
     const refused = [
       confirmation({ value: undefined }),

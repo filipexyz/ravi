@@ -154,6 +154,14 @@ export function isAllowedSlackInteractionResponseUrl(value: string): boolean {
   return SLACK_WORKSPACE_HOST.test(url.hostname) && url.pathname.startsWith("/commands/");
 }
 
+/**
+ * Why a response handle was not kept, for a log line: its shape is not one Slack issues, or it is and
+ * the store failed. The two are different problems for whoever reads the log.
+ */
+export function describeSlackResponseUrlFailure(responseUrl: string): "untrusted_shape" | "storage_failed" {
+  return isAllowedSlackInteractionResponseUrl(responseUrl) ? "storage_failed" : "untrusted_shape";
+}
+
 function ensureSlackInteractionResponseUrlTable(): void {
   const db = getDb();
   db.prepare(

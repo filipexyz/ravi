@@ -284,6 +284,98 @@ describe("a click becomes the same command, with the authority of the person who
     expect(text(h.replies[0])).toContain("You are not allowed to change session `main`");
   });
 
+  describe("a click names the thread of its own chat, not another chat's of the same session (review N2 of #941)", () => {
+    const OTHER_CHAT_CHILD_KEY = "agent:main:main:thread:1795189835.360089#other";
+
+    function registerInOtherChat(seenAt: number) {
+      // The same root ts in another channel of the same parent session, and the newer of the two.
+      return registerInboundSlackThread({
+        requestId: "req-other-chat",
+        parentSessionKey: PARENT_KEY,
+        parentSessionName: "main",
+        childSessionKey: OTHER_CHAT_CHILD_KEY,
+        childSessionName: "main-t-other-chat",
+        accountId: ACCOUNT,
+        instanceId: INSTANCE,
+        platformChatId: "C0OTHER",
+        threadCanonicalChatId: "chat-other",
+        providerThreadId: CARD_TS,
+        seenAt,
+      });
+    }
+
+    it("stops the thread of the clicked chat, whichever of the two was updated last", async () => {
+      registerCard();
+      registerInOtherChat(NOW - 60_000);
+      const own = getOrCreateSession(CHILD_KEY, "main", "/tmp/main", { name: "main-t-card" });
+      getOrCreateSession(OTHER_CHAT_CHILD_KEY, "main", "/tmp/main", { name: "main-t-other-chat" });
+      const h = harness();
+
+      const outcome = await handleSlackThreadControlClick(click({ actionId: SLACK_THREAD_STOP_ACTION_ID }), h.deps);
+
+      expect(outcome).toEqual({ decision: "allowed", code: "ok" });
+      expect(h.calls.interrupted).toEqual([own.sessionKey]);
+    });
+
+    it("finds nothing for a chat that has no thread with that root, though another chat of the session has", async () => {
+      registerInOtherChat(NOW - 60_000);
+      getOrCreateSession(OTHER_CHAT_CHILD_KEY, "main", "/tmp/main", { name: "main-t-other-chat" });
+      const h = harness();
+
+      expect(await handleSlackThreadControlClick(click({ actionId: SLACK_THREAD_STOP_ACTION_ID }), h.deps)).toEqual({
+        decision: "info",
+        code: "thread_not_found",
+      });
+      expect(h.calls.interrupted).toEqual([]);
+    });
+
+    it("closes under the clicked chat too: the lookup is asked for that chat", async () => {
+      const asked: Array<[string, string, string | undefined]> = [];
+      const h = harness();
+      const deps: SlackCommandDeps = {
+        ...h.deps,
+        closeThread: async (parent, ref, chatId) => {
+          asked.push([parent, ref, chatId]);
+          return { kind: "closed", name: "main-t-card", changed: true };
+        },
+      };
+
+      await handleSlackThreadControlClick(click(), deps);
+
+      expect(asked).toEqual([[PARENT_KEY, CARD_TS, "C0CHAN"]]);
+    });
+
+    it("keeps a typed command free to name any thread of the session: no chat is asked for", async () => {
+      const asked: Array<[string, string, string | undefined]> = [];
+      const h = harness();
+      const deps: SlackCommandDeps = {
+        ...h.deps,
+        closeThread: async (parent, ref, chatId) => {
+          asked.push([parent, ref, chatId]);
+          return { kind: "closed", name: "main-t-card", changed: true };
+        },
+      };
+      const channel = slackCommandChannel(
+        {
+          accountId: ACCOUNT,
+          instanceId: INSTANCE,
+          routeAccountId: ACCOUNT,
+          channelId: "C0CHAN",
+          userId: "U0PERSON",
+          text: "close main-t-card",
+          receivedAt: NOW,
+          command: "/ravi",
+          surface: "command",
+        },
+        deps,
+      );
+
+      await runChatCommand(channel, slackChatCommandDeps(deps));
+
+      expect(asked).toEqual([[PARENT_KEY, "main-t-card", undefined]]);
+    });
+  });
+
   it("does not let a card name a thread of another chat's session", async () => {
     // The thread belongs to a session other than the one this chat resolves to.
     registerCard({ parent: "agent:other:main" });
