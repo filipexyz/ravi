@@ -47,3 +47,12 @@
   moving an agent's `cwd` or creating an agent in a limited turn MUST be refused,
   and a derived context with only inherited `deny_*` MUST be held
   (`automation-store-guard.test.ts`).
+- A relative `--out` / `--output` / `--download` / `rules import --cwd` MUST be
+  resolved against the caller's cwd, and the worker or writer MUST receive that
+  resolved path, never the raw value (`meetings.test.ts`, `cloud-agents.test.ts`,
+  `caller-cwd.test.ts`); a limited person downloading cloud outputs or importing
+  rules outside the workspace MUST be refused before the cloud is contacted or
+  any file is written.
+- Disabling an existing observer rule from a limited turn MUST be judged on the
+  stored columns after normalization: repeating what is stored still disables,
+  any other stored change is refused (`automation-store-guard.test.ts`).
