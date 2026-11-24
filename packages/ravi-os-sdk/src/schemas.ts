@@ -106869,6 +106869,9 @@ export const SessionsReportReturnSchema = {
             "provider": {
               "type": "string"
             },
+            "publishPending": {
+              "type": "boolean"
+            },
             "replayed": {
               "type": "boolean"
             },
@@ -106886,6 +106889,7 @@ export const SessionsReportReturnSchema = {
             "replayed",
             "provider",
             "model",
+            "publishPending",
             "gate"
           ],
           "type": "object"

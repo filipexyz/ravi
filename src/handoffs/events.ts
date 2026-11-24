@@ -1,4 +1,5 @@
 import { logger } from "../utils/logger.js";
+import { handoffRefSha, parsePullRequestHandoffRef } from "./review-dispatch.js";
 import type { Handoff } from "./store.js";
 
 const log = logger.child("handoffs:events");
@@ -17,7 +18,8 @@ export function handoffEventPayload(type: HandoffEventType, handoff: Handoff, no
     threadSession: handoff.childSessionKey,
     parentSession: handoff.parentSessionKey,
     kind: handoff.kind,
-    ...(handoff.ref ? { sha: handoff.ref } : {}),
+    ...(handoffRefSha(handoff.ref) ? { sha: handoffRefSha(handoff.ref) } : {}),
+    ...(parsePullRequestHandoffRef(handoff.ref) ? { pr: parsePullRequestHandoffRef(handoff.ref)!.pr } : {}),
     since: handoff.createdAt,
     ageMin: Math.max(0, Math.floor((now - handoff.createdAt) / 60_000)),
     ...(handoff.ackReason ? { reason: handoff.ackReason } : {}),

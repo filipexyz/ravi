@@ -108137,6 +108137,9 @@ public enum RaviSchemas {
               "provider": {
                 "type": "string"
               },
+              "publishPending": {
+                "type": "boolean"
+              },
               "replayed": {
                 "type": "boolean"
               },
@@ -108154,6 +108157,7 @@ public enum RaviSchemas {
               "replayed",
               "provider",
               "model",
+              "publishPending",
               "gate"
             ],
             "type": "object"

@@ -108137,6 +108137,9 @@ class RaviSchemas {
             "provider": {
               "type": "string"
             },
+            "publishPending": {
+              "type": "boolean"
+            },
             "replayed": {
               "type": "boolean"
             },
@@ -108154,6 +108157,7 @@ class RaviSchemas {
             "replayed",
             "provider",
             "model",
+            "publishPending",
             "gate"
           ],
           "type": "object"

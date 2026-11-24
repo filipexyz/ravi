@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { closeSessionStore, getOrCreateSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { handoffEventPayload } from "./events.js";
+import { handleHandoffPullRequestEvent } from "./pr-events.js";
 import {
   HANDOFF_EXPIRY_MS,
   HANDOFF_OWNER_ESCALATION_MS,
@@ -283,6 +284,42 @@ describe("handoffs store and reconciler", () => {
     release();
     expect(await first).toMatchObject({ escalated: 1 });
     expect(calls).toBe(1);
+  });
+
+  it("closes a review or merge wait on a PR when the watch reports the PR merged or closed", async () => {
+    const sha = "a".repeat(40);
+    const merge = await declareHandoff({
+      childSessionKey: CHILD_A,
+      parentSessionKey: PARENT,
+      kind: "merge",
+      ref: `filipexyz/ravi#942@${sha}`,
+      now: T0,
+    });
+    const plain = await declareHandoff({
+      childSessionKey: CHILD_B,
+      parentSessionKey: PARENT,
+      kind: "merge",
+      ref: sha,
+      now: T0,
+    });
+    // Another PR of the same repo, and a malformed event, close nothing.
+    expect(
+      await handleHandoffPullRequestEvent("ravi.watch.github.pull_request.merged", {
+        payload: { repository: "filipexyz/ravi", number: 94 },
+      }),
+    ).toBe(0);
+    expect(await handleHandoffPullRequestEvent("ravi.watch.github.pull_request.merged", { payload: {} })).toBe(0);
+    expect(
+      await handleHandoffPullRequestEvent(
+        "ravi.watch.github.pull_request.merged",
+        { payload: { repository: "FilipeXYZ/Ravi", number: 942 } },
+        T0 + 1,
+      ),
+    ).toBe(1);
+    expect(getHandoff(merge.id)).toMatchObject({ status: "acknowledged", ackReason: "PR merged" });
+    // A ref that names no PR is left to the parent.
+    expect(getHandoff(plain.id)?.status).toBe("open");
+    expect(handoffEventPayload("acknowledged", getHandoff(merge.id)!, T0)).toMatchObject({ sha, pr: 942 });
   });
 
   it("expires a wait nobody acted on for 7 days and lists only recent or due waits in a reminder", async () => {

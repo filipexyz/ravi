@@ -19,6 +19,21 @@ export const HANDOFF_OWNER_ESCALATION_MS = 45 * 60_000;
 export const HANDOFF_REMINDER_WINDOW_MS = 24 * 60 * 60_000;
 /** An open handoff nobody acted on for this long is closed as expired: an abandoned thread is not a live wait. */
 export const HANDOFF_EXPIRY_MS = 7 * 24 * 60 * 60_000;
+/** A delivery that takes longer is a failure: a hung port must not hold every later tick. */
+export const HANDOFF_PORT_TIMEOUT_MS = 60_000;
+
+function withTimeout<T>(work: Promise<T>, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    work,
+    new Promise<T>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`${label} timed out after ${HANDOFF_PORT_TIMEOUT_MS / 1000} s`)),
+        HANDOFF_PORT_TIMEOUT_MS,
+      );
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
 
 export interface HandoffPlan {
   expire: Handoff[];
@@ -93,9 +108,17 @@ export function handoffsForReminder(
 
 let ticking = false;
 
+type ReconcileResult = {
+  nudged: number;
+  escalated: number;
+  expired: number;
+  failures: number;
+  skipped?: true;
+};
+
 export async function reconcileHandoffs(
   options: { now?: number; ports?: HandoffDeliveryPorts } = {},
-): Promise<{ nudged: number; escalated: number; expired: number; failures: number; skipped?: true }> {
+): Promise<ReconcileResult> {
   // Ticks overlap when a delivery outlasts the interval: the late one would deliver the same notice again.
   if (ticking) return { nudged: 0, escalated: 0, expired: 0, failures: 0, skipped: true };
   ticking = true;
@@ -106,18 +129,16 @@ export async function reconcileHandoffs(
   }
 }
 
-async function reconcileOnce(options: {
-  now?: number;
-  ports?: HandoffDeliveryPorts;
-}): Promise<{ nudged: number; escalated: number; expired: number; failures: number }> {
+async function reconcileOnce(options: { now?: number; ports?: HandoffDeliveryPorts }): Promise<ReconcileResult> {
   const now = options.now ?? Date.now();
   const ports = options.ports ?? registered;
-  const all = listHandoffs();
-  const plan = planHandoffActions(all, now);
   let nudged = 0;
   let escalated = 0;
   let expired = 0;
   let failures = 0;
+
+  const all = listHandoffs();
+  const plan = planHandoffActions(all, now);
 
   for (const handoff of plan.expire) {
     const acked = acknowledgeHandoff(handoff.id, "expired: no action for 7 days", now);
@@ -139,7 +160,10 @@ async function reconcileOnce(options: {
     if (!ports.notifyParent) break;
     const siblings = handoffsForReminder(open, parentSessionKey, due, now);
     try {
-      const delivered = await ports.notifyParent({ parentSessionKey, due, open: siblings, now });
+      const delivered = await withTimeout(
+        ports.notifyParent({ parentSessionKey, due, open: siblings, now }),
+        "Parent reminder",
+      );
       if (!delivered) continue;
       for (const handoff of due) {
         if (!claimParentNudge(handoff.id, now)) continue;
@@ -171,7 +195,7 @@ async function reconcileOnce(options: {
     );
     let delivered = false;
     try {
-      delivered = await ports.notifyOwner({ parentSessionKey, handoffs: reminded, now });
+      delivered = await withTimeout(ports.notifyOwner({ parentSessionKey, handoffs: reminded, now }), "Owner notice");
     } catch (error) {
       failures++;
       log.warn("Handoff owner notice failed", { parentSessionKey, error: errorMessage(error) });
