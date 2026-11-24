@@ -7069,6 +7069,12 @@ public struct TagsNamespace: Sendable {
     return try await transport.call(groupSegments: ["tags"], command: "detach", body: requestBody, as: TagsDetachReturn.self)
   }
 
+  public func doctor(_ options: TagsDoctorOptions = .init()) async throws -> TagsDoctorReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["tags"], command: "doctor", body: requestBody, as: TagsDoctorReturn.self)
+  }
+
   public func list(_ options: TagsListOptions = .init()) async throws -> TagsListReturn {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)

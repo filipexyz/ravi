@@ -8,6 +8,7 @@ import {
   tagDetachReturnSchema,
   tagMutationReturnSchema,
   tagShowReturnSchema,
+  tagsDoctorReturnSchema,
   tagsListReturnSchema,
   tagsSearchReturnSchema,
 } from "./operational-return-schemas.js";
@@ -28,6 +29,8 @@ import {
   dbUpdateTagDefinition,
 } from "../../tags/index.js";
 import { attachTagToSelector, detachTagFromSelector, resolveTagTarget } from "../../tags/service.js";
+import { buildTagDoctorReport, type TagDoctorReport } from "../../tags/doctor.js";
+import { materializeContactPolicyCapabilities } from "../../permissions/contact-policy-permissions-provider.js";
 import {
   assertBreakGlassTagWriteAllowed,
   assertPermissionDefinitionWithoutBreakGlass,
@@ -367,6 +370,54 @@ function rethrowTagCommandError(op: string, slug: string, err: unknown, asJson?:
 function isPermissionDefinition(kind: string | null | undefined, source: string | null | undefined): boolean {
   // Judged after the casing the tag store applies (normalizeTagSource lowercases).
   return isPermissionProfileDefinition({ kind, source });
+}
+
+function printTagDoctorReport(report: TagDoctorReport): void {
+  const s = report.summary;
+  console.log("Tag doctor (read-only)");
+  console.log(`Definitions: ${s.definitions} (${s.unusedDefinitions} never bound)`);
+  console.log(`Bindings:    ${s.bindings} (${s.orphanBindings} orphan in checked types)`);
+  console.log(`Bound tags without a behavior consumer: ${s.boundTagsWithoutConsumer}`);
+  console.log(
+    `Contacts with capabilities from tags: ${s.contactsWithCapabilities} (${s.contactsWithBreakGlass} break-glass)`,
+  );
+  console.log(`Bindings from legacy mirrors: ${s.legacyMirrorBindings}`);
+
+  console.log("\nBindings by asset type:");
+  for (const row of report.bindingsByAssetType) {
+    console.log(`  - ${row.assetType}: ${row.bindings} bindings, ${row.assets} assets, ${row.tags} tags`);
+  }
+  console.log("\nOrphan bindings:");
+  for (const row of report.orphanBindings.checked) {
+    const sample = row.sampleAssetIds.length > 0 ? ` e.g. ${row.sampleAssetIds.slice(0, 3).join(", ")}` : "";
+    console.log(`  - ${row.assetType}: ${row.orphans}/${row.bindings}${sample}`);
+  }
+  if (report.orphanBindings.uncheckedAssetTypes.length > 0) {
+    console.log(`  (not checked: ${report.orphanBindings.uncheckedAssetTypes.join(", ")})`);
+  }
+  console.log("\nTags that grant power (contact tags read by the permission provider):");
+  if (report.powerTags.length === 0) console.log("  - none");
+  for (const row of report.powerTags) {
+    const flag = row.breakGlass.length > 0 ? ` BREAK-GLASS ${row.breakGlass.join(",")}` : "";
+    console.log(`  - contact:${row.contactId} -> ${row.capabilities.join(", ")}${flag}`);
+  }
+  console.log(`\nBound tags without consumer (top ${report.limit}):`);
+  for (const row of report.tagsWithoutConsumer) {
+    console.log(`  - ${row.slug}: ${row.bindings} (${row.assetTypes.join(",")})`);
+  }
+  console.log(`\nNever-bound definitions (first ${report.limit}):`);
+  for (const row of report.unusedDefinitions) {
+    console.log(`  - ${row.slug} [${row.kind}/${row.source}]`);
+  }
+  console.log("\nLegacy mirrors:");
+  if (report.legacyMirrors.length === 0) console.log("  - none");
+  for (const row of report.legacyMirrors) {
+    console.log(`  - ${row.source}: ${row.bindings} bindings, ${row.rewrites} rewrites`);
+  }
+  if (report.tagRuleErrors.length > 0) {
+    console.log("\nTag rule files that failed to load:");
+    for (const row of report.tagRuleErrors) console.log(`  - ${row.source}: ${row.error}`);
+  }
 }
 
 @Group({
@@ -950,6 +1001,30 @@ export class TagCommands {
     return payload;
   }
 
+  @Command({
+    name: "doctor",
+    description: "Read-only health report: unused tags, orphan bindings, tags without consumer, tags that grant power",
+  })
+  @CommandAccess({ kind: "read", resource: "tags", action: "doctor", risk: "low" })
+  doctor(
+    @Option({ flags: "--limit <n>", description: "Max items per list section (default: 50, max: 500)" })
+    limit?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    const parsedLimit = parseListLimit(limit, { defaultValue: 50, maxValue: MAX_TAG_LIST_LIMIT, flag: "--limit" });
+    const report = buildTagDoctorReport({
+      limit: parsedLimit,
+      materializeContact: materializeContactPolicyCapabilities,
+    });
+    if (asJson) {
+      printJson(report);
+    } else {
+      printTagDoctorReport(report);
+    }
+    return report;
+  }
+
   @Command({ name: "search", description: "Search bindings by tag or asset" })
   @CommandAccess({ kind: "read", resource: "tags", action: "search", risk: "low" })
   search(
@@ -1178,6 +1253,7 @@ declareCommandReturns(TagCommands, {
   attach: tagMutationReturnSchema,
   create: tagMutationReturnSchema,
   detach: tagDetachReturnSchema,
+  doctor: tagsDoctorReturnSchema,
   list: tagsListReturnSchema,
   search: tagsSearchReturnSchema,
   set: tagMutationReturnSchema,

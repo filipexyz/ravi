@@ -56,6 +56,15 @@ ZERO braked ops — that absence is a decision of this spec, not an omission.
 7. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry dispatcher.
 8. Without `--json`, error output keeps the legacy text path (exit 1).
+9. `tags doctor` is read-only: it MUST NOT write tag definitions, bindings,
+   events or any other row. It reports never-bound definitions, orphan
+   bindings (only for asset types whose table lives in the Ravi DB; the rest
+   are listed as unchecked, never guessed), bound tags without a behavior
+   consumer (observer rule, tag rule or permission provider; list filters do
+   not count), contacts whose tags materialize capabilities with break-glass
+   flagged, and bindings from legacy mirrors with their rewrite churn.
+   `--limit` truncates list sections only; `summary` counts are never
+   truncated.
 
 ## Write classification (brake decision per op)
 
@@ -65,6 +74,7 @@ ZERO braked ops — that absence is a decision of this spec, not an omission.
 | set | single-property update, reversible by re-setting | not braked (declared) |
 | attach | unitary binding upsert, reversed by detach | not braked (declared) |
 | detach | unitary binding removal, reversed by attach (binding metadata/provenance is lost — accepted) | not braked (declared) |
+| doctor | read-only report | n/a (no write) |
 | rm / delete | does not exist on this surface | n/a (future op MUST bring the brake) |
 
 ## Official error cases

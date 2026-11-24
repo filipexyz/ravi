@@ -130279,6 +130279,322 @@ class RaviSchemas {
 }
 ''';
 
+  static const tagsDoctorInputSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Max items per list section (default: 50, max: 500)",
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+''';
+
+  static const tagsDoctorReturnSchema = r'''
+{
+  "additionalProperties": false,
+  "properties": {
+    "bindingsByAssetType": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "assetType": {
+            "type": "string"
+          },
+          "assets": {
+            "type": "number"
+          },
+          "bindings": {
+            "type": "number"
+          },
+          "tags": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "assetType",
+          "bindings",
+          "assets",
+          "tags"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "consumers": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "kinds": {
+            "items": {
+              "enum": [
+                "observer_rule",
+                "tag_rule",
+                "permission_provider"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "kinds",
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "generatedAt": {
+      "type": "number"
+    },
+    "legacyMirrors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "bindings": {
+            "type": "number"
+          },
+          "rewrites": {
+            "type": "number"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "bindings",
+          "rewrites"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "limit": {
+      "type": "number"
+    },
+    "orphanBindings": {
+      "additionalProperties": false,
+      "properties": {
+        "checked": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "assetType": {
+                "type": "string"
+              },
+              "bindings": {
+                "type": "number"
+              },
+              "orphans": {
+                "type": "number"
+              },
+              "sampleAssetIds": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "assetType",
+              "bindings",
+              "orphans",
+              "sampleAssetIds"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "uncheckedAssetTypes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "checked",
+        "uncheckedAssetTypes"
+      ],
+      "type": "object"
+    },
+    "powerTags": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "breakGlass": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "contactId": {
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "contactId",
+          "capabilities",
+          "breakGlass",
+          "sources"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "summary": {
+      "additionalProperties": false,
+      "properties": {
+        "bindings": {
+          "type": "number"
+        },
+        "boundTagsWithoutConsumer": {
+          "type": "number"
+        },
+        "contactsWithBreakGlass": {
+          "type": "number"
+        },
+        "contactsWithCapabilities": {
+          "type": "number"
+        },
+        "definitions": {
+          "type": "number"
+        },
+        "legacyMirrorBindings": {
+          "type": "number"
+        },
+        "orphanBindings": {
+          "type": "number"
+        },
+        "unusedDefinitions": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "definitions",
+        "bindings",
+        "unusedDefinitions",
+        "orphanBindings",
+        "boundTagsWithoutConsumer",
+        "contactsWithCapabilities",
+        "contactsWithBreakGlass",
+        "legacyMirrorBindings"
+      ],
+      "type": "object"
+    },
+    "tagRuleErrors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "error"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "tagsWithoutConsumer": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "assetTypes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "bindings": {
+            "type": "number"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "bindings",
+          "assetTypes"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "unusedDefinitions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "kind",
+          "source",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "generatedAt",
+    "summary",
+    "bindingsByAssetType",
+    "unusedDefinitions",
+    "orphanBindings",
+    "consumers",
+    "tagsWithoutConsumer",
+    "powerTags",
+    "legacyMirrors",
+    "tagRuleErrors",
+    "limit"
+  ],
+  "type": "object"
+}
+''';
+
   static const tagsListInputSchema = r'''
 {
   "additionalProperties": false,

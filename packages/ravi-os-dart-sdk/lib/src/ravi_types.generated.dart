@@ -30729,6 +30729,56 @@ class TagsDetachReturn {
 
 TagsDetachReturn tagsDetachReturnFromJson(Object? json) => TagsDetachReturn.fromJsonValue(json);
 
+class TagsDoctorOptions {
+  const TagsDoctorOptions({this.limit});
+
+  final String? limit;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (limit != null) {
+      into["limit"] = RaviJson.from(limit);
+    }
+  }
+}
+
+class TagsDoctorReturn {
+  const TagsDoctorReturn({required this.bindingsByAssetType, required this.consumers, required this.generatedAt, required this.legacyMirrors, required this.limit, required this.orphanBindings, required this.powerTags, required this.summary, required this.tagRuleErrors, required this.tagsWithoutConsumer, required this.unusedDefinitions});
+
+  final List<RaviJson> bindingsByAssetType;
+  final List<RaviJson> consumers;
+  final double generatedAt;
+  final List<RaviJson> legacyMirrors;
+  final double limit;
+  final RaviJson orphanBindings;
+  final List<RaviJson> powerTags;
+  final RaviJson summary;
+  final List<RaviJson> tagRuleErrors;
+  final List<RaviJson> tagsWithoutConsumer;
+  final List<RaviJson> unusedDefinitions;
+
+  factory TagsDoctorReturn.fromJson(Map<String, Object?> json) {
+    return TagsDoctorReturn(
+      bindingsByAssetType: raviJsonAsList(json["bindingsByAssetType"], RaviJson.from),
+      consumers: raviJsonAsList(json["consumers"], RaviJson.from),
+      generatedAt: raviJsonAsDouble(json["generatedAt"]),
+      legacyMirrors: raviJsonAsList(json["legacyMirrors"], RaviJson.from),
+      limit: raviJsonAsDouble(json["limit"]),
+      orphanBindings: RaviJson.from(json["orphanBindings"]),
+      powerTags: raviJsonAsList(json["powerTags"], RaviJson.from),
+      summary: RaviJson.from(json["summary"]),
+      tagRuleErrors: raviJsonAsList(json["tagRuleErrors"], RaviJson.from),
+      tagsWithoutConsumer: raviJsonAsList(json["tagsWithoutConsumer"], RaviJson.from),
+      unusedDefinitions: raviJsonAsList(json["unusedDefinitions"], RaviJson.from),
+    );
+  }
+
+  static TagsDoctorReturn fromJsonValue(Object? json) {
+    return TagsDoctorReturn.fromJson(raviJsonObject(json, "TagsDoctorReturn"));
+  }
+}
+
+TagsDoctorReturn tagsDoctorReturnFromJson(Object? json) => TagsDoctorReturn.fromJsonValue(json);
+
 class TagsListOptions {
   const TagsListOptions({this.cursor, this.fields, this.kind, this.limit, this.order, this.query, this.sort, this.source});
 

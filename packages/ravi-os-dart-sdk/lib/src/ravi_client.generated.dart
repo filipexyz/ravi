@@ -10189,6 +10189,17 @@ class TagsNamespace {
     );
   }
 
+  Future<TagsDoctorReturn> doctor([TagsDoctorOptions options = const TagsDoctorOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["tags"],
+      command: "doctor",
+      body: requestBody,
+      decode: tagsDoctorReturnFromJson,
+    );
+  }
+
   Future<TagsListReturn> list([TagsListOptions options = const TagsListOptions()]) async {
     final requestBody = <String, RaviJson>{};
     options.encodeBody(requestBody);
