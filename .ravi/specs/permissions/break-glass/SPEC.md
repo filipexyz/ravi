@@ -73,8 +73,15 @@ carries it.
   break-glass by an admin tag, a break-glass permission tag or a break-glass chat
   grant, dormant or not. Holding admin does not lift this.
 - An agent turn or a Console invocation MUST NOT raise another agent to
-  break-glass (`ravi agents permissions <other> full-access`, or explicit
-  `admin:system:*` / `execute:executable:*`). The operator terminal does it.
+  break-glass through any writer of agent runtime permissions:
+  `ravi agents permissions <other> full-access` (or explicit `admin:system:*` /
+  `execute:executable:*`), `ravi agents set <other> defaults` carrying such a
+  `runtimePermissions`, and a Library install or update whose profile is
+  `full-access`. The check runs before any write (no half-installed agent). The
+  operator terminal does it. One rule, `assertAgentBreakGlassRaiseAllowed` in
+  `src/permissions/break-glass.ts`, serves every writer.
+- `ravi instances pending approve` of a contact holding break-glass is refused
+  like `contacts approve`.
 - No caller may create or change a permission profile definition (kind `system`,
   source `permissions`) so that it carries break-glass capabilities
   (`tags create`, `tags set`). Admin profiles need no definition and
@@ -91,6 +98,8 @@ carries it.
 - The terminal is recognized by the absence of an agent identity in the process
   (`getScopeContext().agentId`, which falls back to `RAVI_AGENT_ID`). For an
   agent's Bash this holds because the Bash hook refuses unsetting `RAVI_*`.
+- An agent raising its OWN ceiling is not refused by this rule (review N5; it
+  needs `agents` mutate authority). Follow-up.
 - Break-glass is a fixed list (`admin:system:*`, `execute:executable:*`); a new
   total wildcard must be added to it.
 - A caller that already runs arbitrary host commands (`execute:executable:*`)

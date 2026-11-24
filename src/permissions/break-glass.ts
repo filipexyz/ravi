@@ -19,6 +19,7 @@
  * confers it by any command. The local operator terminal keeps one bootstrap
  * path: tagging a contact `permission-owner|admin|superadmin`.
  */
+import { CliExpectedError } from "../cli/expected-error.js";
 import { currentConsoleInvocation } from "../sdk/gateway/console-context.js";
 import type { TagDefinition } from "../tags/types.js";
 import { readPermissionTagCapabilities } from "./authorization-guidance.js";
@@ -101,4 +102,50 @@ export function isPermissionProfileDefinition(
 export function callerIsAgentOrRemote(): boolean {
   if (currentConsoleInvocation()) return true;
   return Boolean(getScopeContext()?.agentId);
+}
+
+interface AgentPermissionsConfigLike {
+  profile?: string | null;
+  capabilities?: ReadonlyArray<string | Partial<CapabilityLike>> | null;
+}
+
+/** Break-glass an agent runtime config carries: the full-access profile or break-glass capabilities. */
+export function agentConfigBreakGlassReasons(config: AgentPermissionsConfigLike | null | undefined): string[] {
+  if (!config) return [];
+  const reasons = config.profile === "full-access" ? ["full-access"] : [];
+  const capabilities = (config.capabilities ?? []).flatMap((value): CapabilityLike[] => {
+    if (typeof value === "string") {
+      const [permission, objectType, objectId] = value.split(":");
+      return permission && objectType && objectId ? [{ permission, objectType, objectId }] : [];
+    }
+    return value?.permission && value.objectType && value.objectId
+      ? [{ permission: value.permission, objectType: value.objectType, objectId: value.objectId }]
+      : [];
+  });
+  return [...new Set([...reasons, ...breakGlassCapabilities(capabilities)])];
+}
+
+/**
+ * Refuse, from an agent turn or a Console invocation, raising ANOTHER agent to
+ * break-glass by any writer of agent runtime permissions (`agents permissions`,
+ * `agents set <id> defaults`, a Library install/update profile). Lowering or
+ * keeping power is never refused; the operator terminal is not refused. An
+ * agent's own ceiling is out of this check (spec permissions/break-glass).
+ */
+export function assertAgentBreakGlassRaiseAllowed(
+  action: string,
+  targetAgentId: string,
+  before: AgentPermissionsConfigLike | null | undefined,
+  after: AgentPermissionsConfigLike | null | undefined,
+): void {
+  const raised = agentConfigBreakGlassReasons(after);
+  if (raised.length === 0 || agentConfigBreakGlassReasons(before).length > 0) return;
+  if (!callerIsAgentOrRemote()) return;
+  if (getScopeContext()?.agentId === targetAgentId) return;
+  throw new CliExpectedError(
+    `${action}: raising agent ${targetAgentId} to break-glass (${raised.join(", ")}) is for the operator terminal; an agent never raises another agent.`,
+    "FULL_ACCESS_APPROVAL_REQUIRED",
+    3,
+    `Ask the operator to run, from a terminal: ravi agents permissions ${targetAgentId} full-access --execute`,
+  );
 }

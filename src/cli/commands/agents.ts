@@ -28,8 +28,7 @@ import {
   declareCommandReturns,
 } from "./operational-return-schemas.js";
 import { getScopeContext, filterVisibleAgents, canViewAgent } from "../../permissions/scope.js";
-import { breakGlassCapabilities, callerIsAgentOrRemote } from "../../permissions/break-glass.js";
-import { CliExpectedError } from "../expected-error.js";
+import { assertAgentBreakGlassRaiseAllowed } from "../../permissions/break-glass.js";
 import { nats } from "../../nats.js";
 import {
   getAgent,
@@ -1564,6 +1563,15 @@ SOURCES
         fail(`defaults must be valid JSON object, e.g. '{"tts_voice":"abc","image_mode":"fast"}'`);
       }
     }
+    if (key === "defaults") {
+      // defaults carries runtimePermissions: the same break-glass rule as `agents permissions`.
+      assertAgentBreakGlassRaiseAllowed(
+        "agents set defaults",
+        id,
+        getAgentRuntimePermissionsConfigFromDefaults(agent.defaults),
+        getAgentRuntimePermissionsConfigFromDefaults(parsedValue as Record<string, unknown>),
+      );
+    }
 
     try {
       // A direct model write clears any existing preset reference atomically so
@@ -1726,22 +1734,8 @@ SOURCES
     const after: AgentRuntimePermissionsConfig | null =
       nextConfig && Object.keys(nextConfig).length > 0 ? nextConfig : null;
 
-    // Spec permissions/break-glass: an agent never raises ANOTHER agent to
-    // break-glass power (full-access, or admin:system:* / execute:executable:*).
-    // The operator terminal is not refused; an agent's own ceiling is.
-    const breakGlassBefore = agentConfigBreakGlassReasons(before);
-    const breakGlassAfter = agentConfigBreakGlassReasons(after);
-    if (breakGlassAfter.length > 0 && breakGlassBefore.length === 0 && callerIsAgentOrRemote()) {
-      const caller = getScopeContext()?.agentId;
-      if (caller !== id) {
-        throw new CliExpectedError(
-          `agents permissions: raising agent ${id} to break-glass (${breakGlassAfter.join(", ")}) is for the operator terminal; an agent never raises another agent.`,
-          "FULL_ACCESS_APPROVAL_REQUIRED",
-          3,
-          `Ask the operator to run, from a terminal: ravi agents permissions ${id} full-access --execute`,
-        );
-      }
-    }
+    // Spec permissions/break-glass: an agent never raises ANOTHER agent to break-glass.
+    assertAgentBreakGlassRaiseAllowed("agents permissions", id, before, after);
 
     if (execute !== true && expandsRuntimePermissionAuthority(before, after)) {
       // A brake protects only authority expansion. Revocation, capability
@@ -2551,13 +2545,3 @@ declareCommandReturns(AgentsCommands, {
   specMode: agentSpecModeReturnSchema,
   syncInstructions: agentInstructionSyncReturnSchema,
 });
-
-function agentConfigBreakGlassReasons(config: AgentRuntimePermissionsConfig | null | undefined): string[] {
-  if (!config) return [];
-  const reasons = config.profile === "full-access" ? ["full-access"] : [];
-  const capabilities = (config.capabilities ?? []).flatMap((capability) => {
-    const normalized = normalizeRuntimePermissionCapability(capability);
-    return normalized ? [normalized] : [];
-  });
-  return [...reasons, ...breakGlassCapabilities(capabilities)];
-}

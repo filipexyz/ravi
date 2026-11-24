@@ -1,4 +1,5 @@
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
+import { assertNoBreakGlassContactChange } from "../../permissions/privileged-contact-writes.js";
 /**
  * Instances Commands - Central config entity for all channels/accounts
  *
@@ -2336,6 +2337,7 @@ export class InstancesPendingCommands {
         });
       }
       if (resolved.contact) {
+        assertNoBreakGlassContactChange("instances pending approve", [resolved.contact.id]);
         allowContact(resolved.contact.id);
       } else {
         upsertContactFromPlatformIdentity({
@@ -2347,6 +2349,8 @@ export class InstancesPendingCommands {
         });
       }
     } else {
+      const existing = getContact(contact);
+      if (existing) assertNoBreakGlassContactChange("instances pending approve", [existing.id]);
       allowContact(contact);
     }
     const removedPending = pending ? removeAccountPending(name, pending.phone) : removeAccountPending(name, contact);

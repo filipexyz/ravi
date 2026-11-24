@@ -1,10 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
+import { existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { AgentsCommands } from "../cli/commands/agents.js";
 import { ContactsCommands } from "../cli/commands/contacts.js";
+import { InstancesPendingCommands } from "../cli/commands/instances.js";
+import { executeLibraryAgentInstall, executeLibraryAgentUpdate } from "../library/agent-definitions.js";
 import { runWithContext, type ToolContext } from "../cli/context.js";
 import { addContactTag, allowContact, closeContacts, getContact, setOptOut, upsertContact } from "../contacts.js";
 import type { ContextCapability } from "../router/router-db.js";
-import { dbCreateAgent, dbGetAgent, dbUpsertChat } from "../router/router-db.js";
+import { dbCreateAgent, dbGetAgent, dbUpsertChat, dbUpsertInstance } from "../router/router-db.js";
 import { dbCreateTagDefinition } from "../tags/index.js";
 import { dbEnsureContactChatGrant } from "./contact-chat-grants.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
@@ -203,5 +208,82 @@ describe("an agent never raises another agent to break-glass", () => {
     runWithContext(ADMIN_AGENT, () =>
       commands.permissions("narrow", "explicit-only", "execute:executable:git", true, undefined, true),
     );
+  });
+});
+
+describe("every writer of agent runtime permissions keeps the rule", () => {
+  it("refuses agents set defaults that carries full-access or break-glass capabilities for another agent", async () => {
+    dbCreateAgent({ id: "victim", cwd: "/tmp" });
+    const commands = new AgentsCommands();
+    const denied = { code: "FULL_ACCESS_APPROVAL_REQUIRED", exitCode: 3 };
+    await runWithContext(ADMIN_AGENT, async () => {
+      await expect(
+        commands.set("victim", "defaults", JSON.stringify({ runtimePermissions: { profile: "full-access" } })),
+      ).rejects.toMatchObject(denied);
+      await expect(
+        commands.set(
+          "victim",
+          "defaults",
+          JSON.stringify({ runtimePermissions: { profile: "explicit-only", capabilities: ["admin:system:*"] } }),
+        ),
+      ).rejects.toMatchObject(denied);
+      await commands.set("victim", "defaults", JSON.stringify({ tts_voice: "abc" }), true);
+    });
+    expect(JSON.stringify(dbGetAgent("victim")?.defaults ?? {})).not.toContain("full-access");
+    expect(JSON.stringify(dbGetAgent("victim")?.defaults ?? {})).toContain("tts_voice");
+    await new AgentsCommands().set(
+      "victim",
+      "defaults",
+      JSON.stringify({ runtimePermissions: { profile: "full-access" } }),
+      true,
+    );
+    expect(JSON.stringify(dbGetAgent("victim")?.defaults ?? {})).toContain("full-access");
+  });
+
+  it("refuses a Library install or update with a full-access profile, before any write", () => {
+    const install = {
+      plan: { agent: { id: "library-new", cwd: "/tmp/library-new-never" }, profile: { apply: "full-access" } },
+      definition: {},
+    } as unknown as Parameters<typeof executeLibraryAgentInstall>[0];
+    runWithContext(ADMIN_AGENT, () => expectBreakGlassDenied(() => executeLibraryAgentInstall(install)));
+    expect(dbGetAgent("library-new")).toBeNull();
+
+    const updateDir = mkdtempSync(join(tmpdir(), "break-glass-library-update-"));
+    dbCreateAgent({ id: "library-old", cwd: updateDir });
+    const update = {
+      plan: {
+        agent: "library-old",
+        files: [{ file: "HEARTBEAT.md", action: "write" }],
+        skills: [],
+        profile: { apply: "full-access" },
+      },
+      definition: { instructions: "x", heartbeat: "written-before-the-guard" },
+      state: { origin: {} },
+      cwd: updateDir,
+    } as unknown as Parameters<typeof executeLibraryAgentUpdate>[0];
+    runWithContext(ADMIN_AGENT, () => expectBreakGlassDenied(() => executeLibraryAgentUpdate(update)));
+    expect(JSON.stringify(dbGetAgent("library-old")?.defaults ?? {})).not.toContain("full-access");
+    // Refused before any write: no file of the update landed.
+    expect(existsSync(join(updateDir, "HEARTBEAT.md"))).toBe(false);
+
+    // The operator terminal gets past the guard (the partial fixture then fails on its own, not on break-glass).
+    let terminalError: unknown;
+    try {
+      executeLibraryAgentUpdate(update);
+    } catch (error) {
+      terminalError = error;
+    }
+    expect((terminalError as { code?: string } | undefined)?.code).not.toBe("FULL_ACCESS_APPROVAL_REQUIRED");
+  });
+
+  it("refuses instances pending approve of a dormant admin", () => {
+    dbUpsertInstance({ name: "wa-test", channel: "whatsapp" });
+    upsertContact("5511900007008", "Pending admin", "pending");
+    addContactTag("5511900007008", "permission-admin");
+    const dormant = getContact("5511900007008")!;
+    runWithContext(ADMIN_AGENT, () => {
+      expectBreakGlassDenied(() => new InstancesPendingCommands().approve("wa-test", "5511900007008", undefined, true));
+    });
+    expect(materializeContactPolicyCapabilities(dormant.id)).toEqual([]);
   });
 });

@@ -10,7 +10,8 @@
 - `src/permissions/break-glass.ts` MUST NOT name any channel.
 - An agent turn holding `admin:system:*` MUST NOT link an identity to, merge into or out of, or set the email of a contact holding break-glass; the stranger MUST NOT materialize `admin:system:*`. The operator terminal MUST still link, and an admin agent MUST still link an ordinary contact.
 - An agent turn MUST NOT activate a dormant break-glass contact by `contacts allow`, `approve`, `add` or `set opt-out false`.
-- An agent turn MUST NOT raise another agent to `full-access`, `admin:system:*` or `execute:executable:*`; the operator terminal MUST still do it, and an agent MUST still narrow another (`execute:executable:git`).
+- An agent turn MUST NOT raise another agent to `full-access`, `admin:system:*` or `execute:executable:*` by `agents permissions`, `agents set <id> defaults` or a Library install/update profile, and a refused install MUST leave no agent; the operator terminal MUST still do it, and an agent MUST still narrow another (`execute:executable:git`) or set unrelated defaults.
+- `instances pending approve` MUST NOT activate a dormant break-glass contact from an agent turn.
 - `bun test src/cli/commands/permissions.test.ts src/permissions/privileged-contact-writes.test.ts src/permissions/break-glass.test.ts src/permissions/break-glass-identity.test.ts` MUST pass.
 - `bun run typecheck` MUST pass.
 - An admin profile MUST be recognized in every spelling the contact-policy provider reads (`Admin.`, `admin_`, `OWNER`), including on a global (`--force`) grant, and its preview MUST show `admin:system:*` instead of failing as an unknown profile.
