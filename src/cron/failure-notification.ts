@@ -248,7 +248,9 @@ async function defaultReachable(target: OwnerDirectTarget): Promise<boolean | nu
     if (!instance?.instanceId || !connection) return null;
     const omni = createOmniClient({ baseUrl: connection.apiUrl, apiKey: connection.apiKey, timeoutMs: 3_000 });
     return (await omni.instances.status(instance.instanceId)).isConnected === true;
-  } catch {
+  } catch (cause) {
+    // Omni down or slow: the chat's state cannot be told, so it is still tried.
+    log.debug("Owner chat reachability unknown", { accountId: target.accountId, error: cause });
     return null;
   }
 }

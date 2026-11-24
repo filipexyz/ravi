@@ -12505,10 +12505,9 @@ export type CronAckFailuresReturn = {
   pending: number;
   status: "acknowledged";
   target: {
-    type: string;
-    [k: string]: unknown;
+    id: string;
+    type: "cron";
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `cron.add`. */

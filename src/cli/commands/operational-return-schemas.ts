@@ -2218,25 +2218,23 @@ export const cronMutationReturnSchema = z
   })
   .passthrough();
 
-export const cronFailureAckReturnSchema = z
-  .object({
-    status: z.literal("acknowledged"),
-    target: commandTargetSchema,
-    changedCount: z.number(),
-    pending: z.number(),
-    denied: z.number(),
-    jobs: z.array(
-      z.object({
-        jobId: z.string(),
-        name: z.string().nullable(),
-        ownerAgentId: z.string().nullable(),
-        runs: z.number(),
-        oldestAt: z.string(),
-        newestAt: z.string(),
-      }),
-    ),
-  })
-  .passthrough();
+export const cronFailureAckReturnSchema = z.object({
+  status: z.literal("acknowledged"),
+  target: z.object({ type: z.literal("cron"), id: z.string() }),
+  changedCount: z.number(),
+  pending: z.number(),
+  denied: z.number(),
+  jobs: z.array(
+    z.object({
+      jobId: z.string(),
+      name: z.string().nullable(),
+      ownerAgentId: z.string().nullable(),
+      runs: z.number(),
+      oldestAt: z.string(),
+      newestAt: z.string(),
+    }),
+  ),
+});
 
 export const watchConnectorsReturnSchema = z
   .object({

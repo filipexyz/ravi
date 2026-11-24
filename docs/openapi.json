@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "01a9bad34a5ab7e4"
+    "version": "d79694d6ae484eec"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -73349,7 +73349,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {},
+                  "additionalProperties": false,
                   "properties": {
                     "changedCount": {
                       "type": "number"
@@ -73414,14 +73414,19 @@
                       "type": "string"
                     },
                     "target": {
-                      "additionalProperties": {},
+                      "additionalProperties": false,
                       "properties": {
+                        "id": {
+                          "type": "string"
+                        },
                         "type": {
+                          "const": "cron",
                           "type": "string"
                         }
                       },
                       "required": [
-                        "type"
+                        "type",
+                        "id"
                       ],
                       "type": "object"
                     }

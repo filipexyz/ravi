@@ -66443,7 +66443,7 @@ export const CronAckFailuresInputSchema = {
 
 /** JSON Schema for the return shape of `cron.ack-failures`. */
 export const CronAckFailuresReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -66508,14 +66508,19 @@ export const CronAckFailuresReturnSchema = {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
+        "id": {
+          "type": "string"
+        },
         "type": {
+          "const": "cron",
           "type": "string"
         }
       },
       "required": [
-        "type"
+        "type",
+        "id"
       ],
       "type": "object"
     }

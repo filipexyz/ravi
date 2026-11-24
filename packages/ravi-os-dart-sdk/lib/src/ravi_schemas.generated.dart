@@ -67061,7 +67061,7 @@ class RaviSchemas {
 
   static const cronAckFailuresReturnSchema = r'''
 {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "changedCount": {
       "type": "number"
@@ -67126,14 +67126,19 @@ class RaviSchemas {
       "type": "string"
     },
     "target": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
+        "id": {
+          "type": "string"
+        },
         "type": {
+          "const": "cron",
           "type": "string"
         }
       },
       "required": [
-        "type"
+        "type",
+        "id"
       ],
       "type": "object"
     }
