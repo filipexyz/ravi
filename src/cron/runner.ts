@@ -10,6 +10,7 @@ import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import { isTriggerOwnSessionKey } from "../triggers/authority.js";
+import { dbGetTrigger } from "../triggers/triggers-db.js";
 import { getDefaultAgentId } from "../router/router-db.js";
 import { deriveSourceFromSessionKey } from "../router/session-key.js";
 import {
@@ -68,6 +69,7 @@ import {
   deliverCronFailureReports,
   describeCronFailure,
   notifyCronFailure,
+  notifyUndeliveredRunReturn,
   prepareCronFailureReport,
   recordUnreadableCronFailure,
   type CronFailureJob,
@@ -174,15 +176,24 @@ export class CronRunner {
       isRunning: () => this.running,
       releaseSource: "cron-runner",
       onAbandoned: async (run) => {
-        if (run.originKind !== "cron") return;
-        // The run's admitted notice: its owner even after the job changed hands or a one-shot was deleted.
-        // Dated now, when the return was given up, so the notice is not treated as a stale failure.
-        const admitted = getCronRun(run.id);
-        if (!admitted) return;
-        await notifyCronFailure(
-          { ...cronRunNotification(admitted), lastRunAt: Date.now() },
-          "The run's result never reached the session it reports to",
-        );
+        // Cron: the run's admitted owner, even after the job changed hands or a one-shot was deleted.
+        // Trigger: its stored owner (a deleted trigger owes nobody a message; the inbox keeps the record).
+        const admitted = run.originKind === "cron" ? getCronRun(run.id) : null;
+        const ownerPrincipal = admitted
+          ? cronRunNotification(admitted).ownerPrincipal
+          : // A trigger with no owner, or deleted since, owes nobody a message (an absent owner would
+            // read as the operator).
+            (dbGetTrigger(run.originId)?.ownerPrincipal ?? "unknown");
+        await notifyUndeliveredRunReturn({
+          originKind: run.originKind,
+          originId: run.originId,
+          originName: run.originName,
+          agentId: run.agentId,
+          ownerPrincipal,
+          runId: run.id,
+          runSessionName: run.childSessionName,
+          parentSessionName: run.parentSessionName,
+        });
       },
     })
       .then((result) => {
@@ -268,6 +279,20 @@ export class CronRunner {
   }
 
   /** Wait for the report in flight, but only a moment: the daemon stops its components in series. */
+  private async settleChildRunReconcile(): Promise<void> {
+    const pass = this.childRunReconcile;
+    if (!pass) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settled = await Promise.race([
+      pass.then(() => true),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), this.failureReportStopGraceMs);
+      }),
+    ]);
+    clearTimeout(timer);
+    if (!settled) log.warn("Automation run reconciliation still in flight at shutdown; the next start resumes it");
+  }
+
   private async settleFailureReportLoop(): Promise<void> {
     const loop = this.failureReportLoop;
     if (!loop) return;
@@ -300,6 +325,10 @@ export class CronRunner {
       clearInterval(this.childRunTimer);
       this.childRunTimer = null;
     }
+    // A pass in flight stops between runs once `running` is false. Waited for as briefly as the failure
+    // reports (a notice may hold a chat for 30 s; the daemon stops components inside one 15 s guard):
+    // an unfinished pass keeps its state persisted and the next start reconciles again.
+    await this.settleChildRunReconcile();
 
     this.runtimeEventAbort?.abort();
     if (this.runtimeEventStream) {

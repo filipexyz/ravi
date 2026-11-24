@@ -953,7 +953,13 @@ export class TriggersCommands {
     }
     // A trigger's own session takes that trigger's fires only, so a trigger
     // created during one of its turns has no current session to default to.
-    const currentSession = isTriggerOwnSessionKey(ctx?.sessionKey) ? undefined : ctx?.sessionName || ctx?.sessionKey;
+    // Inside an automation run, the session that lasts is the run's parent: the run's own is pruned.
+    const creatingRun = ctx?.sessionKey ? findChildRunByChildSession(ctx.sessionKey) : null;
+    const currentSession = isTriggerOwnSessionKey(ctx?.sessionKey)
+      ? undefined
+      : creatingRun
+        ? creatingRun.parentSessionKey
+        : ctx?.sessionName || ctx?.sessionKey;
     const sessionTarget: SessionTarget = thread ? "thread" : session?.trim() || currentSession || "main";
     const resolvedAgent = agent ?? ctx?.agentId;
     const addWarningsBefore: string[] = [];
@@ -971,7 +977,11 @@ export class TriggersCommands {
     // getAccountForAgent: it picks the wrong account in multi-account setups
     // and causes outbound deliveries to fail with "chat not found".
     const resolvedAccount =
-      account ?? ctx?.source?.accountId ?? (resolvedAgent ? getAccountForAgent(resolvedAgent) : undefined);
+      account ??
+      ctx?.source?.accountId ??
+      // Inside a run, replies go to the parent's chat: through the parent's account.
+      (creatingRun ? resolveSession(creatingRun.parentSessionKey)?.lastAccountId : undefined) ??
+      (resolvedAgent ? getAccountForAgent(resolvedAgent) : undefined);
 
     // Capture reply session from caller context for source routing.
     // Prefer the friendly session name when available so `triggers show`
@@ -985,13 +995,15 @@ export class TriggersCommands {
           isTriggerOwnSessionKey(ctx?.sessionKey) ? undefined : ctx?.sessionKey,
           resolvedAgent ?? getDefaultAgentId(),
         )
-      : replySessionOverride?.trim() || (ctx?.sessionName ?? ctx?.sessionKey);
+      : replySessionOverride?.trim() ||
+        (creatingRun ? creatingRun.parentSessionKey : (ctx?.sessionName ?? ctx?.sessionKey));
     assertTriggerTargetAuthorized(
       "triggers add",
       {
         ...(agent ? { agentId: agent } : {}),
-        ...(session !== undefined ? { session: sessionTarget } : {}),
-        ...(replySessionOverride?.trim() || reportTo?.trim() ? { replySession } : {}),
+        // A run's parent standing in for the caller's own session is checked like an explicit target.
+        ...(session !== undefined || (creatingRun && !thread) ? { session: sessionTarget } : {}),
+        ...(replySessionOverride?.trim() || reportTo?.trim() || creatingRun ? { replySession } : {}),
       },
       asJson,
     );
@@ -1161,6 +1173,13 @@ export class TriggersCommands {
     const trigger = dbGetTrigger(id);
     if (!trigger) failTriggerNotFound("triggers set", id, asJson);
     assertTriggerMutable("triggers set", id, trigger, asJson);
+    // Mode conflicts first, before any authorization: a thread trigger runs agent fires only.
+    if ((key === "shell" || key === "exec") && trigger.session === "thread") {
+      fail(`A thread trigger runs agent fires only: set its session first (ravi triggers set ${id} session main)`);
+    }
+    if (key === "session" && value.trim() === "thread" && (trigger.executionType ?? "agent") === "shell") {
+      fail("A shell trigger cannot run in thread mode: thread runs are agent fires");
+    }
     // Every edit (message, filter, topic...) changes what runs later as the agent.
     assertNoUserOverlayAutomationWrite("triggers set");
     const clearing = value === "null" || value === "-";
@@ -1222,11 +1241,6 @@ export class TriggersCommands {
           const shellCommand = value.trim();
           if (!shellCommand) {
             fail("Shell command cannot be empty");
-          }
-          if (trigger!.session === "thread") {
-            fail(
-              `A thread trigger runs agent fires only: set its session first (ravi triggers set ${id} session main)`,
-            );
           }
           updated = update({
             executionType: "shell",
@@ -1311,9 +1325,6 @@ export class TriggersCommands {
           if (error) fail(error);
           const session = value.trim();
           if (session === "thread") {
-            if ((trigger!.executionType ?? "agent") === "shell") {
-              fail("A shell trigger cannot run in thread mode: thread runs are agent fires");
-            }
             if (trigger!.replySession) {
               resolveTriggerThreadReportTo(undefined, trigger!.replySession, trigger!.agentId ?? getDefaultAgentId());
             }

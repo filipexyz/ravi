@@ -40,6 +40,8 @@ let triggerRecord: Record<string, unknown> | null = buildTriggerRecord();
 let triggerList: Array<Record<string, unknown>> = [];
 let mockScopeContext: Record<string, unknown> | undefined;
 let mockScopeEnforced = false;
+/** Whether the caller may modify a session (all of them, unless a test says otherwise). */
+let mockCanModifySession = true;
 // Cross-agent grants held by the mock caller, e.g. { permission: "view", objectType: "agent", objectId: "*" }.
 let mockGrants: Array<{ permission: string; objectType: string; objectId: string }> = [];
 const recordedResourceDenials: Array<Record<string, unknown>> = [];
@@ -94,7 +96,7 @@ mock.module("../../permissions/scope.js", () => ({
   getScopeContext: () => mockScopeContext,
   isScopeEnforced: () => mockScopeEnforced,
   canAccessSession: () => true,
-  canModifySession: () => true,
+  canModifySession: () => mockCanModifySession,
   canAccessContact: () => true,
   // Mirrors the real check: operator/superadmin (scope not enforced) and own
   // resources always pass; other agents' resources need `view agent:<owner>`
@@ -1844,6 +1846,78 @@ describe("TriggersCommands --thread", () => {
       /belongs to other/,
     );
     triggerRecord = buildTriggerRecord();
+  });
+
+  it("refuses shell on a thread trigger and thread on a shell trigger before any authorization", async () => {
+    triggerRecord = { ...buildTriggerRecord(), executionType: "agent", session: "thread" };
+    await expect(new TriggersCommands().set("trg_1", "shell", "echo hi", true)).rejects.toThrow(
+      /thread trigger runs agent fires only/,
+    );
+    triggerRecord = { ...buildTriggerRecord(), executionType: "shell", session: "main" };
+    await expect(new TriggersCommands().set("trg_1", "session", "thread", true)).rejects.toThrow(
+      /shell trigger cannot run in thread mode/,
+    );
+    triggerRecord = buildTriggerRecord();
+  });
+
+  it("reads a --report-to the caller may not modify as not found, saying nothing else about it", async () => {
+    const { getOrCreateSession } = await import("../../router/sessions.js");
+    getOrCreateSession("agent:other:slack:dm:hidden-parent", "other", "/tmp/other", { name: "hidden-parent" });
+    mockScopeEnforced = true;
+    mockScopeContext = { agentId: "main" };
+    mockCanModifySession = false;
+    try {
+      await expect(add({ thread: true, reportTo: "hidden-parent" })).rejects.toThrow(
+        /^Report-to session not found: hidden-parent$/,
+      );
+    } finally {
+      mockScopeEnforced = false;
+      mockScopeContext = undefined;
+      mockCanModifySession = true;
+    }
+  });
+
+  it("gives a trigger made inside an automation run, without --thread, the run's parent as its session", async () => {
+    const { getOrCreateSession } = await import("../../router/sessions.js");
+    const { openChildRun } = await import("../../automation/child-runs.js");
+    getOrCreateSession("agent:main:slack:dm:run-parent", "main", "/tmp/main", { name: "run-parent" });
+    getOrCreateSession("agent:main:trigger:t9:run:r9", "main", "/tmp/main", { name: "main-run-r9" });
+    openChildRun({
+      id: `r9-${Math.random().toString(36).slice(2, 8)}`,
+      originKind: "trigger",
+      originId: "t9",
+      originName: "t9",
+      agentId: "main",
+      parentSessionKey: "agent:main:slack:dm:run-parent",
+      parentSessionName: "run-parent",
+      childSessionKey: "agent:main:trigger:t9:run:r9",
+      childSessionName: "main-run-r9",
+    });
+    mockToolContext = { sessionKey: "agent:main:trigger:t9:run:r9", sessionName: "main-run-r9", agentId: "main" };
+
+    await add({});
+
+    // By key: a later rename of the parent cannot strand the trigger.
+    expect(createdTriggers).toContainEqual(
+      expect.objectContaining({
+        session: "agent:main:slack:dm:run-parent",
+        replySession: "agent:main:slack:dm:run-parent",
+      }),
+    );
+
+    // The parent stands in for the caller's own session: a caller that may not modify it is refused.
+    createdTriggers.length = 0;
+    mockScopeEnforced = true;
+    mockScopeContext = { agentId: "main" };
+    mockCanModifySession = false;
+    try {
+      await expect(add({})).rejects.toThrow(/Permission denied for session target/);
+    } finally {
+      mockScopeEnforced = false;
+      mockScopeContext = undefined;
+      mockCanModifySession = true;
+    }
+    expect(createdTriggers).toHaveLength(0);
   });
 
   it("stores thread mode reporting to a lasting session of the trigger's agent", async () => {

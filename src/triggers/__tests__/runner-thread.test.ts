@@ -79,7 +79,9 @@ mock.module("../../omni/session-stream.js", () => ({
   }),
 }));
 
-const { TriggerRunner } = await import("../runner.js");
+const { TriggerRunner, isTriggerOriginatedEvent } = await import("../runner.js");
+const { openChildRun } = await import("../../automation/child-runs.js");
+const { setSessionEphemeral } = await import("../../router/sessions.js");
 const { dbCreateTrigger } = await import("../triggers-db.js");
 const { getChildRun, listChildRunsForOrigin } = await import("../../automation/child-runs.js");
 const { saveMessage } = await import("../../db.js");
@@ -246,6 +248,70 @@ describe("trigger thread mode", () => {
     expect(prompt).toContain("falhou.");
     expect(prompt).toContain("\n> erro de execução");
     expect(prompt).not.toContain("provider refused the model");
+  });
+
+  it("treats a CLI call from a run's session as trigger-originated, so it fires no trigger", () => {
+    const fromRun = { cliInvocation: { raviContext: { sessionKey: `agent:${AGENT}:trigger:t1:run:r1` } } };
+    const fromChat = { cliInvocation: { raviContext: { sessionKey: PARENT_KEY } } };
+    expect(isTriggerOriginatedEvent("ravi._cli.cli.bases.rows.update", fromRun)).toBe(true);
+    expect(isTriggerOriginatedEvent("ravi._cli.cli.bases.rows.update", fromChat)).toBe(false);
+  });
+
+  it("watches run turns again when the subscription ends cleanly", async () => {
+    const trigger = createThreadTrigger();
+    runner = new TriggerRunner();
+    runner["runTurnRestartMs"] = 10;
+    await runner.start();
+    channels.get("ravi.session.*.runtime")!.close();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    emit({ id: 1 });
+    await waitFor(() => fires().length === 1);
+    saveMessage(fires()[0]!.sessionName, "assistant", "depois do reinício", null, { utteranceClass: "final" });
+    endTurn(fires()[0]!.sessionName, { type: "turn.complete" });
+    await waitFor(() => returns().length === 1);
+
+    expect(String(returns()[0]!.payload.prompt)).toContain("\n> depois do reinício");
+    expect(listChildRunsForOrigin("trigger", trigger.id)[0]).toMatchObject({ status: "closed" });
+  });
+
+  it("leaves a cron run's turn to the cron runner", async () => {
+    getOrCreateSession(`agent:${AGENT}:cron:job-1:run:cron-run-1`, AGENT, "/tmp/trigger-test-agent-real", {
+      name: `${AGENT}-run-cron-run-1`,
+    });
+    openChildRun({
+      id: "cron-run-1",
+      originKind: "cron",
+      originId: "job-1",
+      originName: "job",
+      agentId: AGENT,
+      parentSessionKey: PARENT_KEY,
+      parentSessionName: "parent-dm",
+      childSessionKey: `agent:${AGENT}:cron:job-1:run:cron-run-1`,
+      childSessionName: `${AGENT}-run-cron-run-1`,
+    });
+    await startRunner();
+
+    endTurn(`${AGENT}-run-cron-run-1`, { type: "turn.complete" });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    expect(getChildRun("cron-run-1")).toMatchObject({ status: "open" });
+    expect(emittedEvents.filter((event) => event.topic === "ravi.session.abort")).toHaveLength(0);
+  });
+
+  it("opens no run when, at fire time, the session it reports to is ephemeral", async () => {
+    const ephemeral = getOrCreateSession(`agent:${AGENT}:tmp`, AGENT, "/tmp/trigger-test-agent-real", {
+      name: "tmp-parent",
+    });
+    setSessionEphemeral(ephemeral.sessionKey, 60 * 60_000);
+    const trigger = createThreadTrigger(ephemeral.sessionKey);
+    await startRunner();
+
+    emit({ id: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    expect(fires()).toHaveLength(0);
+    expect(listChildRunsForOrigin("trigger", trigger.id)).toHaveLength(0);
   });
 
   it("opens no run when the session it reports to belongs to another agent", async () => {

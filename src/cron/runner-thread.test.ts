@@ -36,7 +36,7 @@ const { CronRunner, THREAD_RUN_STALE_MS } = await import("./runner.js");
 const { getDb } = await import("../router/router-db.js");
 const { dbCreateCronJob, dbGetCronJob } = await import("./cron-db.js");
 const { getCronRun } = await import("./run-db.js");
-const { closeChildRun, getChildRun, listChildRunsForOrigin, pruneClosedChildRuns } = await import(
+const { closeChildRun, getChildRun, listChildRunsForOrigin, openChildRun, pruneClosedChildRuns } = await import(
   "../automation/child-runs.js"
 );
 const { saveMessage } = await import("../db.js");
@@ -294,6 +294,60 @@ describe("cron thread mode", () => {
     expect(parentReturns()).toHaveLength(1);
     expect(String(parentReturns()[0]!.payload.prompt)).toContain("did not end within 120 min");
     expect(runDispatch(job.id).runId).not.toBe(stale.runId);
+  });
+
+  it("tells a trigger's owner when its run's return is given up after a day", async () => {
+    const { dbCreateTrigger } = await import("../triggers/triggers-db.js");
+    createParent();
+    const trigger = dbCreateTrigger({
+      name: "blog-watch",
+      agentId: "test-agent",
+      topic: "ravi.test.blog",
+      message: "read the blog",
+      session: "thread",
+      replySession: PARENT_KEY,
+      ownerPrincipal: "operator",
+      cooldownMs: 0,
+    });
+    const childKey = `agent:test-agent:trigger:${trigger.id}:run:tr-1`;
+    getOrCreateSession(childKey, "test-agent", stateDir!, { name: "test-agent-run-tr-1" });
+    openChildRun({
+      id: "tr-1",
+      originKind: "trigger",
+      originId: trigger.id,
+      originName: trigger.name,
+      agentId: "test-agent",
+      parentSessionKey: PARENT_KEY,
+      parentSessionName: "grupo-updates",
+      childSessionKey: childKey,
+      childSessionName: "test-agent-run-tr-1",
+    });
+    // Closed a day and more ago with a return that never reached the parent.
+    getDb()
+      .query(
+        "UPDATE automation_child_runs SET status = 'closed', return_state = 'pending', return_kind = 'result', return_text = 'x', closed_at = ? WHERE id = 'tr-1'",
+      )
+      .run(Date.now() - 25 * 60 * 60_000);
+    const { listLocalInboxItems } = await import("../inbox/local-db.js");
+    const notice = () =>
+      listLocalInboxItems().find(
+        (item) => item.sourceType === "run_return_undelivered" && item.sourceId === trigger.id,
+      );
+    const runner = new CronRunner();
+
+    // The real notice, no module mock (one would leak into other files of the same process): with no
+    // owner chat here, it is recorded in the inbox and settled.
+    await runner.start();
+    try {
+      const deadline = Date.now() + 3_000;
+      while (!notice() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+    } finally {
+      await runner.stop();
+    }
+
+    expect(notice()).toMatchObject({ sourceDomain: "triggers", sourceId: trigger.id });
+    expect(notice()!.metadata).toMatchObject({ runId: "tr-1", originKind: "trigger", ownerPrincipal: "operator" });
+    expect(getChildRun("tr-1")).toMatchObject({ returnState: "error" });
   });
 
   it("prunes a job's oldest closed runs, sessions included", async () => {

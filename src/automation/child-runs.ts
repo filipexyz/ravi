@@ -235,8 +235,21 @@ export function clipChildRunReturn(text: string): string {
 
 const clip = clipChildRunReturn;
 
+/**
+ * Anything a reader may take for the end of a line: every control character but tab (C0, DEL and C1,
+ * which include LF, CR, VT, FF, the FS/GS/RS separators and NEL) and the Unicode line and paragraph
+ * separators.
+ */
+const LINE_BREAKS = /\r\n|(?!\t)[\p{Cc}\p{Zl}\p{Zp}]/u;
+
 function runLabel(run: AutomationChildRun): string {
-  return `${run.originKind} "${run.originName}" (${run.childSessionName})`;
+  // The name is free text: quoted as JSON on the notice's first line, with what JSON leaves raw
+  // (DEL, the C1 controls with NEL, LS, PS) escaped too, so no reader can see it start a new line.
+  const quoted = JSON.stringify(run.originName).replace(
+    /[\p{Cc}\p{Zl}\p{Zp}]/gu,
+    (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+  return `${run.originKind} ${quoted} (${run.childSessionName})`;
 }
 
 /** The internal turn the parent receives; the same shape a Slack thread return has. */
@@ -269,7 +282,7 @@ export function buildChildRunParentNotice(
  */
 function quoteRunText(body: string): string {
   return clip(body)
-    .split("\n")
+    .split(LINE_BREAKS)
     .map((line) => `> ${line}`)
     .join("\n");
 }

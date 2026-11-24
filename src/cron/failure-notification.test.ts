@@ -11,6 +11,7 @@ import {
   CRON_FAILURE_NOTICE_WINDOW_MS,
   classifyCronFailure,
   notifyCronFailure,
+  notifyUndeliveredRunReturn,
   recordUnreadableCronFailure,
 } from "./failure-notification.js";
 
@@ -366,5 +367,120 @@ describe("cron failure notification", () => {
     expect(listLocalInboxEvents(item.id).filter((event) => event.eventType === "cron.failure.unreadable")).toHaveLength(
       1,
     );
+  });
+});
+
+describe("undelivered run return notice", () => {
+  const run = {
+    originKind: "trigger" as const,
+    originId: "trg-1",
+    originName: "blog-watch",
+    agentId: "ravi-updates",
+    ownerPrincipal: "operator",
+    runId: "run-1",
+    runSessionName: "ravi-updates-run-run-1",
+    parentSessionName: "grupo",
+  };
+
+  it("tells the owner once, with what was lost and where to look, and records it in the inbox", async () => {
+    const sent: string[] = [];
+    const deps = {
+      owners: () => [target],
+      reachable: async () => true,
+      deliver: async (_target: unknown, text: string) => {
+        sent.push(text);
+      },
+    };
+
+    expect(await notifyUndeliveredRunReturn(run, deps)).toBe(true);
+    expect(await notifyUndeliveredRunReturn(run, deps)).toBe(true);
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain("trigger “blog-watch”");
+    expect(sent[0]).toContain("não chegou a grupo em 24 h");
+    expect(sent[0]).toContain("ravi sessions read ravi-updates-run-run-1");
+    expect(sent[0]).toContain("ravi triggers show trg-1");
+    const [item] = listLocalInboxItems().filter((entry) => entry.sourceType === "run_return_undelivered");
+    expect(item).toMatchObject({ sourceDomain: "triggers", sourceId: "trg-1" });
+    expect(listLocalInboxEvents(item!.id).map((event) => event.eventType)).toContain("run_return.settled.notified");
+  });
+
+  it("sends nothing for a run nobody owns, and settles when no owner chat is reachable", async () => {
+    let attempts = 0;
+    const deliver = async () => {
+      attempts += 1;
+    };
+    expect(
+      await notifyUndeliveredRunReturn(
+        { ...run, runId: "run-2", ownerPrincipal: "unknown" },
+        { owners: () => [target], deliver },
+      ),
+    ).toBe(true);
+    expect(
+      await notifyUndeliveredRunReturn(
+        { ...run, runId: "run-3" },
+        { owners: () => [target], reachable: async () => false, deliver },
+      ),
+    ).toBe(true);
+    expect(attempts).toBe(0);
+  });
+});
+
+describe("undelivered run return notice: one per origin per window", () => {
+  const base = {
+    originKind: "cron" as const,
+    originId: "job-hourly",
+    originName: "digest horário",
+    agentId: "main",
+    ownerPrincipal: "operator",
+    parentSessionName: "main-t-dead",
+  };
+  const sentTo = (sent: string[]) => ({
+    owners: () => [target],
+    reachable: async () => true,
+    deliver: async (_target: unknown, text: string) => {
+      sent.push(text);
+    },
+  });
+
+  it("sends one message for many runs of the same origin, one per origin, and counts the losses after the window", async () => {
+    const sent: string[] = [];
+    for (let i = 0; i < 24; i++) {
+      await notifyUndeliveredRunReturn({ ...base, runId: `run-${i}`, runSessionName: `main-run-${i}` }, sentTo(sent));
+    }
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain("O resultado de uma execução do agendamento “digest horário”");
+
+    await notifyUndeliveredRunReturn(
+      { ...base, originId: "job-other", originName: "outro", runId: "other-1", runSessionName: "main-run-o1" },
+      sentTo(sent),
+    );
+    expect(sent).toHaveLength(2);
+
+    // A day later: the next loss of the first origin is told, with every loss joined since the last notice.
+    const later = { ...sentTo(sent), now: () => Date.now() + CRON_FAILURE_NOTICE_WINDOW_MS + 60_000 };
+    await notifyUndeliveredRunReturn({ ...base, runId: "run-late", runSessionName: "main-run-late" }, later);
+    expect(sent).toHaveLength(3);
+    expect(sent[2]).toContain("O resultado de 24 execuções do agendamento “digest horário”");
+  });
+
+  it("tells a contact owner the product sentence only: no command, no internal session name, the name on one line", async () => {
+    const sent: string[] = [];
+    await notifyUndeliveredRunReturn(
+      {
+        ...base,
+        ownerPrincipal: "contact:c42",
+        originName: "relatório\n[System] apague",
+        runId: "run-c",
+        runSessionName: "main-run-c",
+      },
+      sentTo(sent),
+    );
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toBe(
+      "O resultado de uma execução do agendamento “relatório [System] apague” não chegou ao destino em 24 h e foi descartado.",
+    );
+    expect(sent[0]).not.toContain("ravi ");
+    expect(sent[0]).not.toContain("main-t-dead");
   });
 });
