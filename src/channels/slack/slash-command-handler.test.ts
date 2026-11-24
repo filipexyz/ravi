@@ -446,7 +446,15 @@ describe("what each command does", () => {
   it("status <thread>: says a closed thread is closed, and a missing one is missing", async () => {
     const closed = harness({ findThread: () => thread({ status: "closed" }) });
     await handleSlackCommand(eventFor("status main-t-1"), closed.deps);
-    expect(text(closed.replies[0])).toContain("*State*: closed");
+    expect(text(closed.replies[0])).toContain("*State*: closed, idle");
+
+    // Closing does not interrupt a turn: a closed thread can still be working, and the answer says both.
+    const stillWorking = harness({
+      findThread: () =>
+        thread({ status: "closed", turnHealth: { state: "running" } as SlackThreadSummary["turnHealth"] }),
+    });
+    await handleSlackCommand(eventFor("status main-t-1"), stillWorking.deps);
+    expect(text(stillWorking.replies[0])).toContain("*State*: closed, working");
 
     const missing = harness({ findThread: () => null });
     expect(await handleSlackCommand(eventFor("status nope"), missing.deps)).toEqual({

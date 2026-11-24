@@ -343,6 +343,34 @@ describe("a click becomes the same command, with the authority of the person who
     });
   });
 
+  it("finds a thread older than the newest 500 of its parent, by its root ts", async () => {
+    // The lookup asks the table itself: a page of the newest threads, closed ones included, is not where it looks.
+    registerCard();
+    const child = getOrCreateSession(CHILD_KEY, "main", "/tmp/main", { name: "main-t-card" });
+    for (let index = 0; index < 501; index += 1) {
+      const ts = `1795300${String(index).padStart(3, "0")}.000100`;
+      registerInboundSlackThread({
+        requestId: `req-newer-${index}`,
+        parentSessionKey: PARENT_KEY,
+        parentSessionName: "main",
+        childSessionKey: `${PARENT_KEY}:thread:${ts}`,
+        childSessionName: `main-t-newer-${index}`,
+        accountId: ACCOUNT,
+        instanceId: INSTANCE,
+        platformChatId: "C0CHAN",
+        threadCanonicalChatId: `chat-newer-${index}`,
+        providerThreadId: ts,
+        seenAt: NOW - index * 1000 - 1,
+      });
+    }
+    const h = harness();
+
+    const outcome = await handleSlackThreadControlClick(click({ actionId: SLACK_THREAD_STOP_ACTION_ID }), h.deps);
+
+    expect(outcome).toEqual({ decision: "allowed", code: "ok" });
+    expect(h.calls.interrupted).toEqual([child.sessionKey]);
+  });
+
   it("does not run a click that arrived late, and says so", async () => {
     const h = harness();
 

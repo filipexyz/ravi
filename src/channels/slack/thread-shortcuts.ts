@@ -58,6 +58,8 @@ export const SLACK_THREAD_CANCEL_ACTION_ID = "ravi_cancel_thread_action";
 export const SLACK_THREAD_CONFIRM_MAX_AGE_MS = 10 * 60_000;
 /** How far apart the clock that stamped the card and the clock that stamped the tap may be. */
 const CLOCK_SKEW_MS = 60_000;
+/** A Slack conversation id, as the card carries it. */
+const SLACK_ID_PATTERN = /^[A-Z][A-Z0-9]{1,31}$/;
 
 interface ShortcutBase {
   readonly accountId: string;
@@ -77,7 +79,11 @@ export type SlackThreadShortcutEvent =
       readonly action: "status" | "close" | "stop";
       readonly threadTs: string;
     })
-  /** The person confirmed on the card a shortcut sent, `askedAt` being when the card was built. */
+  /**
+   * The person confirmed on the card a shortcut sent, `askedAt` being when the card was built. The
+   * command runs in the chat the card was asked in: `channelId` is the card's own, not the click's,
+   * because when Slack put the card in the person's DM with the app the click comes from there.
+   */
   | (ShortcutBase & {
       readonly kind: "confirm";
       readonly action: "close" | "stop";
@@ -150,10 +156,19 @@ export function parseSlackThreadShortcutEvent(data: unknown): SlackThreadShortcu
           : null;
     if (!action) return null;
     const base = readBase(record);
-    const [threadTs = "", asked = ""] = text(record.value).split("|");
+    const [channelId = "", threadTs = "", asked = "", ...rest] = text(record.value).split("|");
     const askedSeconds = /^[0-9]{9,11}$/.test(asked) ? Number(asked) : Number.NaN;
-    if (!base || !SLACK_TS_PATTERN.test(threadTs) || !Number.isSafeInteger(askedSeconds)) return null;
-    return { kind: "confirm", action, threadTs, askedAt: askedSeconds * 1000, ...base };
+    if (
+      !base ||
+      rest.length > 0 ||
+      !SLACK_ID_PATTERN.test(channelId) ||
+      !SLACK_TS_PATTERN.test(threadTs) ||
+      !Number.isSafeInteger(askedSeconds)
+    ) {
+      return null;
+    }
+    // The chat of the card, not of the click: the person is still the click's own user.
+    return { kind: "confirm", action, threadTs, askedAt: askedSeconds * 1000, ...base, channelId };
   }
 
   return null;
@@ -162,6 +177,7 @@ export function parseSlackThreadShortcutEvent(data: unknown): SlackThreadShortcu
 /** The private card a `close` or `stop` shortcut sends first: Confirm and Cancel, and nothing has changed yet. */
 export function buildSlackThreadConfirmCard(
   action: "close" | "stop",
+  channelId: string,
   threadTs: string,
   askedAt: number,
 ): SlackPrivateCard {
@@ -183,8 +199,8 @@ export function buildSlackThreadConfirmCard(
             action_id: closing ? SLACK_THREAD_CONFIRM_CLOSE_ACTION_ID : SLACK_THREAD_CONFIRM_STOP_ACTION_ID,
             text: { type: "plain_text", text: closing ? "Fechar" : "Parar", emoji: true },
             ...(closing ? {} : { style: "danger" }),
-            // The thread and when it was asked: a hint the click checks, never an authority.
-            value: `${threadTs}|${Math.floor(askedAt / 1000)}`,
+            // The chat, the thread and when it was asked: a hint the click checks, never an authority.
+            value: `${channelId}|${threadTs}|${Math.floor(askedAt / 1000)}`,
           },
           {
             type: "button",
@@ -258,6 +274,7 @@ export async function handleSlackThreadShortcut(
       }
       // A shortcut that arrived long after it was picked asks nothing: the person is not waiting for it.
       if (Math.abs(now - event.receivedAt) > CHAT_COMMAND_MAX_AGE_MS) return { kind: "stale" };
+      const card = buildSlackThreadConfirmCard(event.action, event.channelId, event.threadTs, now);
       try {
         await (deps.deliverPrivate ?? deliverSlackPrivateCard)(
           {
@@ -266,11 +283,26 @@ export async function handleSlackThreadShortcut(
             userId: event.userId,
             threadTs: event.threadTs,
           },
-          buildSlackThreadConfirmCard(event.action, event.threadTs, now),
+          card,
         );
         return { kind: "card_sent" };
       } catch (error) {
-        log.warn("The thread confirmation card was not delivered", { error: errorText(error) });
+        log.warn("The thread confirmation card was not delivered; trying the response handle", {
+          error: errorText(error),
+        });
+      }
+      // The shortcut's own response handle still reaches only this person, at channel level: better than silence.
+      if (!event.responseUrlId) return { kind: "card_not_sent" };
+      try {
+        await (deps.respond ?? respondToSlackInteraction)({
+          responseUrlId: event.responseUrlId,
+          payload: { response_type: "ephemeral", text: card.text, blocks: card.blocks },
+        });
+        return { kind: "card_sent" };
+      } catch (error) {
+        log.warn("The thread confirmation card was not delivered on the response handle either", {
+          error: errorText(error),
+        });
         return { kind: "card_not_sent" };
       }
     }

@@ -90,7 +90,7 @@ function confirmation(overrides: Record<string, unknown> = {}) {
     actionId: SLACK_THREAD_CONFIRM_CLOSE_ACTION_ID,
     blockId: "ravi_thread_confirm",
     actionType: "button",
-    value: `${ROOT_TS}|${ASKED_AT_SECONDS}`,
+    value: `C0CHAN|${ROOT_TS}|${ASKED_AT_SECONDS}`,
     responseUrlId: "handle-2",
     receivedAt: NOW,
     ...overrides,
@@ -270,12 +270,19 @@ describe("which interactions are a thread shortcut, a confirmation or a cancella
     const refused = [
       confirmation({ value: undefined }),
       confirmation({ value: ROOT_TS }),
-      confirmation({ value: `|${ASKED_AT_SECONDS}` }),
-      confirmation({ value: `main-t-1|${ASKED_AT_SECONDS}` }),
+      confirmation({ value: `C0CHAN||${ASKED_AT_SECONDS}` }),
+      confirmation({ value: `C0CHAN|main-t-1|${ASKED_AT_SECONDS}` }),
+      // No chat, or a chat that is not a Slack conversation id.
+      confirmation({ value: `${ROOT_TS}|${ASKED_AT_SECONDS}` }),
+      confirmation({ value: `|${ROOT_TS}|${ASKED_AT_SECONDS}` }),
+      confirmation({ value: `c0chan|${ROOT_TS}|${ASKED_AT_SECONDS}` }),
+      confirmation({ value: `C0CHAN stop|${ROOT_TS}|${ASKED_AT_SECONDS}` }),
+      // Nothing may trail the three parts.
+      confirmation({ value: `C0CHAN|${ROOT_TS}|${ASKED_AT_SECONDS}|extra` }),
       // Nothing after the thread may ride along as another word of the command.
-      confirmation({ value: `${ROOT_TS} stop|${ASKED_AT_SECONDS}` }),
-      confirmation({ value: `${ROOT_TS}|soon` }),
-      confirmation({ value: `${ROOT_TS}|12` }),
+      confirmation({ value: `C0CHAN|${ROOT_TS} stop|${ASKED_AT_SECONDS}` }),
+      confirmation({ value: `C0CHAN|${ROOT_TS}|soon` }),
+      confirmation({ value: `C0CHAN|${ROOT_TS}|12` }),
       confirmation({ receivedAt: undefined }),
       confirmation({ actionId: "approve:pgr_1" }),
       confirmation({ interactionType: "message_action" }),
@@ -286,8 +293,8 @@ describe("which interactions are a thread shortcut, a confirmation or a cancella
 
 describe("the confirmation card", () => {
   it("asks first, and carries only the thread and the time it was asked", () => {
-    const close = buildSlackThreadConfirmCard("close", ROOT_TS, NOW);
-    const stop = buildSlackThreadConfirmCard("stop", ROOT_TS, NOW);
+    const close = buildSlackThreadConfirmCard("close", "C0CHAN", ROOT_TS, NOW);
+    const stop = buildSlackThreadConfirmCard("stop", "C0CHAN", ROOT_TS, NOW);
 
     const buttons = (card: SlackPrivateCard) =>
       (card.blocks.find((block) => block.type === "actions") as { elements: Array<Record<string, unknown>> }).elements;
@@ -299,8 +306,11 @@ describe("the confirmation card", () => {
       SLACK_THREAD_CONFIRM_STOP_ACTION_ID,
       SLACK_THREAD_CANCEL_ACTION_ID,
     ]);
-    expect(buttons(close)[0]?.value).toBe(`${ROOT_TS}|${Math.floor(NOW / 1000)}`);
-    expect(buttons(stop)[0]).toMatchObject({ style: "danger", value: `${ROOT_TS}|${Math.floor(NOW / 1000)}` });
+    expect(buttons(close)[0]?.value).toBe(`C0CHAN|${ROOT_TS}|${Math.floor(NOW / 1000)}`);
+    expect(buttons(stop)[0]).toMatchObject({
+      style: "danger",
+      value: `C0CHAN|${ROOT_TS}|${Math.floor(NOW / 1000)}`,
+    });
     expect(buttons(close)[0]).not.toHaveProperty("style");
     expect(close.text).toBe("Fechar esta thread?");
     expect(stop.text).toBe("Parar o turno em andamento?");
@@ -398,7 +408,7 @@ describe("a shortcut becomes the same command, with the authority of the person 
         userId: "U0PERSON",
         threadTs: ROOT_TS,
       });
-      expect(h.cards[0]?.card).toEqual(buildSlackThreadConfirmCard(action, ROOT_TS, NOW));
+      expect(h.cards[0]?.card).toEqual(buildSlackThreadConfirmCard(action, "C0CHAN", ROOT_TS, NOW));
       expect(h.calls.close).toEqual([]);
       expect(h.calls.interrupted).toEqual([]);
       expect(h.audits).toEqual([]);
@@ -417,10 +427,41 @@ describe("a shortcut becomes the same command, with the authority of the person 
     expect(h.cards).toEqual([]);
   });
 
-  it("says nothing ran when the confirmation card could not be sent", async () => {
+  it("asks on the response handle, to the same person, when the confirmation card could not be sent", async () => {
     const h = harness({ cardFails: true });
 
     expect(await handleSlackThreadShortcut(shortcut({ callbackId: SLACK_THREAD_STOP_SHORTCUT_ID }), h.deps)).toEqual({
+      kind: "card_sent",
+    });
+    expect(h.cards).toEqual([]);
+    expect(h.replies).toEqual([
+      {
+        response_type: "ephemeral",
+        text: "Parar o turno em andamento?",
+        blocks: buildSlackThreadConfirmCard("stop", "C0CHAN", ROOT_TS, NOW).blocks,
+      },
+    ]);
+    // Still only a question: nothing was interrupted.
+    expect(h.calls.interrupted).toEqual([]);
+  });
+
+  it("says nothing was asked when neither the card nor the response handle could be used", async () => {
+    const h = harness({ cardFails: true });
+
+    expect(
+      await handleSlackThreadShortcut(
+        shortcut({ callbackId: SLACK_THREAD_STOP_SHORTCUT_ID, responseUrlId: undefined }),
+        h.deps,
+      ),
+    ).toEqual({ kind: "card_not_sent" });
+
+    const refused: SlackCommandDeps = {
+      ...h.deps,
+      respond: async () => {
+        throw new Error("Slack refused the handle");
+      },
+    };
+    expect(await handleSlackThreadShortcut(shortcut({ callbackId: SLACK_THREAD_STOP_SHORTCUT_ID }), refused)).toEqual({
       kind: "card_not_sent",
     });
     expect(h.calls.interrupted).toEqual([]);
@@ -508,6 +549,31 @@ describe("a confirmation runs the command, and the card becomes its answer", () 
     expect(h.calls.close).toEqual([]);
   });
 
+  it("runs in the chat the card was asked in when Slack put the card in the person's DM", async () => {
+    // The click comes from the DM with the app; the command still belongs to the channel it was asked in.
+    registerThread();
+    const h = harness();
+    const resolved: string[] = [];
+    const deps: SlackCommandDeps = {
+      ...h.deps,
+      resolveSession: (where) => {
+        resolved.push(where.channelId);
+        return { kind: "session", session: session(), agentId: "main" };
+      },
+    };
+
+    const result = await handleSlackThreadShortcut(
+      confirmation({ channelId: "D0DMAPP", actionId: SLACK_THREAD_CONFIRM_STOP_ACTION_ID }),
+      deps,
+    );
+
+    expect(result).toMatchObject({ kind: "ran", outcome: { decision: "allowed" } });
+    expect(resolved).toEqual(["C0CHAN"]);
+    expect(h.audits).toMatchObject([{ chatId: "C0CHAN", actorId: "U0PERSON", surface: "shortcut" }]);
+    // The person is still the one who clicked.
+    expect(h.calls.interrupted).toHaveLength(1);
+  });
+
   it("does not let a card name a thread of another chat's session", async () => {
     registerThread({ parent: "agent:other:main" });
     const h = harness();
@@ -531,7 +597,7 @@ describe("a confirmation runs the command, and the card becomes its answer", () 
 
   it("does not run a confirmation asked more than ten minutes ago, and says so on the card", async () => {
     const h = harness();
-    const asked = (ageMs: number) => `${ROOT_TS}|${Math.floor((NOW - ageMs) / 1000)}`;
+    const asked = (ageMs: number) => `C0CHAN|${ROOT_TS}|${Math.floor((NOW - ageMs) / 1000)}`;
 
     expect(
       await handleSlackThreadShortcut(confirmation({ value: asked(SLACK_THREAD_CONFIRM_MAX_AGE_MS + 5_000) }), h.deps),
@@ -554,7 +620,7 @@ describe("a confirmation runs the command, and the card becomes its answer", () 
 
     expect(
       await handleSlackThreadShortcut(
-        confirmation({ value: `${ROOT_TS}|${Math.floor((NOW + 120_000) / 1000)}` }),
+        confirmation({ value: `C0CHAN|${ROOT_TS}|${Math.floor((NOW + 120_000) / 1000)}` }),
         h.deps,
       ),
     ).toEqual({ kind: "expired" });

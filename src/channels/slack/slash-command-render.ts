@@ -139,7 +139,8 @@ export function renderSlackCommandResult(result: ChatCommandResult, command: str
       const { thread } = result;
       const title = thread.title ? ` ${oneLine(thread.title)}` : "";
       const lines = [`*Thread* \`${escapeMrkdwn(thread.name)}\`${title}`];
-      lines.push(`*State*: ${thread.closed ? "closed" : threadStateLabel(thread)}`);
+      // Closing a thread does not interrupt a turn, so a closed thread can still be working: say both.
+      lines.push(`*State*: ${thread.closed ? "closed, " : ""}${threadStateLabel(thread)}`);
       const age = formatSlackCommandAge(thread.ageMs);
       lines.push(`*Last activity*: ${age === "now" ? age : `${age} ago`}`);
       if (thread.pendingAnswerCount > 0) {
