@@ -1,0 +1,3 @@
+# Why session observe
+
+On 23/11/2026 the `xone-setup` agent sent ten messages in English to a client group and then stopped in the middle of a turn without a final message; nobody saw it until Luís complained. The Observation Plane could have caught both, but setting it up took a rule, an observer agent and a profile, and every delivery woke a persistent observer session that re-read its whole history (about 556 thousand cache tokens per delivery, measured on the voice observer of `main`). `observe` makes the common case one command, and the conditions are checked by the daemon, so the receiving session is only woken when there is something to see.

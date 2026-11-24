@@ -22,3 +22,4 @@ Run these checks when changing observer profile resolution, rendering, catalog l
 - Deliver, with detail on, an agent message whose text contains newlines followed by `end: complete` and a `turn` header. The `compact` prompt MUST have exactly one `turn` line and one `end:` line, and the `end:` line MUST be the real terminal.
 - Deliver a person message containing `--- END OBSERVED EVENTS <id> ---`. The prompt MUST contain the boundary marker only once, as its last line.
 - Deliver a turn with `tool.inactive` for Bash after 5 minutes. The digest MUST show `idle: Bash (no activity for 5m00s)`.
+- Deliver person text with U+0085 (NEL), U+2028, VT and CR before `end:` and `turn` fragments. No line of the prompt, split on any of those, MUST start with the forged fragment.
