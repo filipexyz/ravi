@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { runWithContext, type ToolContext } from "../cli/context.js";
-import { dbCreateCronJob, dbListCronJobs } from "../cron/cron-db.js";
+import { dbCreateCronJob, dbListCronJobs, dbUpdateCronJob } from "../cron/cron-db.js";
 import { dbCreateAgent, dbUpdateAgent } from "../router/router-db.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
@@ -102,6 +102,50 @@ describe("automation store guard on the real stores", () => {
     expect(() =>
       runWithContext(derived, () =>
         dbCreateTrigger({ name: "from a child", topic: "ravi.watch.github.>", message: "do anything" }),
+      ),
+    ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
+  });
+
+  it("does not treat an explicit creatorChat: undefined as disable-only on a cron job", () => {
+    const job = dbCreateCronJob({
+      name: "operator job",
+      schedule: { type: "every", everyMs: 60_000 },
+      message: "ok",
+    } as unknown as Parameters<typeof dbCreateCronJob>[0]);
+    expect(() =>
+      runWithContext(personTurnHeldBelowBreakGlass(), () =>
+        dbUpdateCronJob(job.id, { creatorChat: undefined } as Parameters<typeof dbUpdateCronJob>[1]),
+      ),
+    ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
+    expect(() =>
+      runWithContext(personTurnHeldBelowBreakGlass(), () => dbUpdateCronJob(job.id, { enabled: false })),
+    ).not.toThrow();
+  });
+
+  it("lets a limited turn disable an existing observer rule but not create or retarget one with enabled: false", () => {
+    dbCreateAgent({ id: "full-agent", cwd: "/tmp/full-agent" });
+    dbCreateAgent({ id: "other-agent", cwd: "/tmp/other-agent" });
+    const base = { id: "operator-rule", scopeType: "session", scopeValue: "s", observerAgentId: "full-agent" };
+    dbUpsertObserverRule(base as unknown as Parameters<typeof dbUpsertObserverRule>[0]);
+    expect(() =>
+      runWithContext(personTurnHeldBelowBreakGlass(), () =>
+        dbUpsertObserverRule({ id: "operator-rule", observerAgentId: "full-agent", enabled: false } as Parameters<
+          typeof dbUpsertObserverRule
+        >[0]),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      runWithContext(personTurnHeldBelowBreakGlass(), () =>
+        dbUpsertObserverRule({ id: "new-rule", observerAgentId: "full-agent", enabled: false } as Parameters<
+          typeof dbUpsertObserverRule
+        >[0]),
+      ),
+    ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
+    expect(() =>
+      runWithContext(personTurnHeldBelowBreakGlass(), () =>
+        dbUpsertObserverRule({ id: "operator-rule", observerAgentId: "other-agent", enabled: false } as Parameters<
+          typeof dbUpsertObserverRule
+        >[0]),
       ),
     ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
   });
