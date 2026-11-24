@@ -172,7 +172,7 @@ Both print which CLI build and database you are targeting, the configured route 
 
 `ravi whatsapp group` talks to the Omni API directly, so Omni must be configured and the instance must have an Omni id. Group ids work as `group:120363425628305127` or `120363425628305127@g.us`.
 
-Pass `--account <instance>` when you have more than one instance. Without it, an agent running the command inside a chat uses that chat's instance, and your terminal uses the first enabled instance in alphabetical order (`slack-main` comes before `wa-main`). The examples below assume a single WhatsApp instance.
+Pass `--account <instance>` when you have more than one WhatsApp instance. Without it, an agent running the command inside a WhatsApp chat uses that chat's instance, and with a single enabled WhatsApp instance that one is used from anywhere. With several WhatsApp instances and no WhatsApp chat (your terminal, a cron job, a Slack thread) the command fails and lists them, because taking the first one by name could send through an account nobody uses. Instances of other channels, such as `slack-main`, never count. The examples below assume a single WhatsApp instance.
 
 | Kind | Commands |
 |---|---|

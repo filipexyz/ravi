@@ -24,6 +24,7 @@
 - `ravi context codex-tool-hook` is a registered alias of `codex-bash-hook`.
 - Doctor fails on a stale `codex-tool-hook` command and on a matcher other than `^(Bash|shell)$`.
 - Rematerialize replaces a legacy wide-matcher `codex-tool-hook` group instead of leaving it in place.
+- A Codex session whose `hooks/list` lacks the Ravi gate, or shows it changed, disabled, async or untrusted after the trust write, fails before `thread/start`; a confirmed gate is checked before `thread/start` and the turn runs.
 - Dynamic tool handler throws.
 - Dynamic tool handler returns no content.
 - Dynamic tool handler returns image content.
