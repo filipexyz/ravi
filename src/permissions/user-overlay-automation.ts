@@ -6,12 +6,20 @@ import { CliExpectedError } from "../cli/expected-error.js";
  * user-overlay`) cannot write work that runs later as the executor agent:
  * triggers, followups, hooks, tasks and signals carry no binding to the
  * contact's grants, so they would outlive and exceed them. A turn relayed from
- * such a turn (`relayNarrowing`) is held to the same rule. Cron jobs record
- * the overlay chat instead (`creatorChat`).
+ * such a turn (`relayNarrowing`) is held to the same rule, and so is a
+ * person's turn in an ungoverned chat that was held below the agent's
+ * break-glass (`actorBreakGlassWithheld`). Cron jobs record the overlay chat
+ * instead (`creatorChat`).
  */
 export function isUserOverlayAutomationTurn(): boolean {
   const metadata = getContext()?.context?.metadata;
-  return metadata?.actorAuthorizationMode === "user-overlay" || metadata?.relayNarrowing === true;
+  return (
+    metadata?.actorAuthorizationMode === "user-overlay" ||
+    metadata?.relayNarrowing === true ||
+    // A person's turn (or a relay of it) held to "agent minus break-glass":
+    // automation written here would run later as the whole agent.
+    (Array.isArray(metadata?.actorBreakGlassWithheld) && metadata.actorBreakGlassWithheld.length > 0)
+  );
 }
 
 export function assertNoUserOverlayAutomationWrite(op: string): void {

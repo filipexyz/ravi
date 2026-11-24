@@ -27,3 +27,9 @@
   break-glass").
 - A denial carrying `actorBreakGlassWithheld` MUST resolve to a chat-scoped
   contact grant (`permissions.test.ts`, "withheld break-glass denial").
+- A turn relayed from a person's ungoverned-chat turn MUST keep ordinary
+  capabilities and stay without admin and executables
+  (`runtime-request-context.test.ts`, break-glass case, relay block).
+- Automation writes (cron, triggers, followups, hooks, signals, tasks) MUST be
+  refused in a turn with `actorBreakGlassWithheld`
+  (`user-overlay-automation.test.ts`, `cron-commands.test.ts`).

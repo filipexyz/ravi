@@ -33,6 +33,17 @@ describe("automation writes from a contact-narrowed turn", () => {
     ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
   });
 
+  it("refuses them in a person's turn held below the agent's break-glass (ungoverned chat)", () => {
+    for (const op of ["triggers add", "session-followups add", "hooks create", "signals raise", "tasks"]) {
+      expect(() =>
+        runWithContext(
+          turn("invoke-only", { actorBreakGlassWithheld: ["admin:system:*", "execute:executable:*"] }),
+          () => assertNoUserOverlayAutomationWrite(op),
+        ),
+      ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
+    }
+  });
+
   it("leaves other turns and the terminal alone", () => {
     expect(() =>
       runWithContext(turn("invoke-only"), () => assertNoUserOverlayAutomationWrite("triggers add")),

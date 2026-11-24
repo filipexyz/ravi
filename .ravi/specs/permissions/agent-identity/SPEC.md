@@ -95,6 +95,24 @@ Ungoverned chats keep `agent_identity ∩ turn_caps`, with one exception:
   are unchanged. The withheld list is recorded as `actorBreakGlassWithheld`.
 - A denial born from that rule resolves to a chat-scoped grant for the contact
   (`permissions resolve`), not to the executor agent.
+- The limit follows derived turns. A turn relayed from that person's turn
+  (inform, ask, execute, thread bootstrap) gets the caller's positive
+  capabilities and re-applies the same `deny_*`; a deny is never passed as a
+  positive narrowing (a deny of the admin shortcut would erase everything).
+- Automation cannot outlive the limit: a turn carrying
+  `actorBreakGlassWithheld` (or a relay of one) cannot write cron jobs,
+  triggers, session followups, hooks, signals or tasks; the write is refused
+  with `PERMISSION_DENIED` and the operator sets it up. Binding the job to the
+  creator's ceiling is deferred.
+- What "everything except break-glass" still includes (declared): the admin
+  shortcut still grants every other `(permission, objectType)`, e.g.
+  `execute:group:*` CLI groups, `write_contacts:system:*` and `admin` on types
+  other than `system`. Only `admin:system:*` and `execute:executable:*` are
+  withheld.
+- Known residual risk: file tools (`use:tool:Write|Edit|Read`) stay open
+  through the shortcut, so a person without grants can edit files in the
+  agent's workspace (AGENTS.md, MEMORY.md, skills) that later autonomous turns
+  read as instructions. Follow-up of design, not closed here.
 - Consequence: revoking the last grant of a chat can never widen a participant
   to the agent's break-glass.
 

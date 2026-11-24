@@ -23,6 +23,8 @@ import { skillIdentifiersMatch } from "./skill-visibility.js";
  */
 
 export function isAdminAll(capabilities: readonly ContextCapability[]): boolean {
+  // A `deny_admin:system:*` (person held below the agent's break-glass) wins.
+  if (capabilities.some((cap) => cap.permission === "deny_admin" && cap.objectType === "system")) return false;
   return capabilities.some((cap) => cap.permission === "admin" && cap.objectType === "system" && cap.objectId === "*");
 }
 

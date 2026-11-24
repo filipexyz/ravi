@@ -2238,6 +2238,14 @@ describe("runtime request context chat-scoped user overlay", () => {
     expect(canWithCapabilities(ownerContext.capabilities, "execute", "executable", "rm")).toBe(true);
     expect(ownerContext.metadata?.actorBreakGlassWithheld).toBeUndefined();
 
+    // A turn relayed from the person's turn keeps the agent minus break-glass:
+    // the denies travel as denies, never as a positive narrowing that would zero it.
+    const relayed = relayFor(strangerContext);
+    expect(canWithCapabilities(relayed.capabilities, "mutate", "image", "generate")).toBe(true);
+    expect(canWithCapabilities(relayed.capabilities, "admin", "system", "*")).toBe(false);
+    expect(canWithCapabilities(relayed.capabilities, "execute", "executable", "rm")).toBe(false);
+    expect(relayed.metadata?.actorBreakGlassWithheld).toEqual(["admin:system:*", "execute:executable:*"]);
+
     // Revoking the last grant of a chat must not widen the person to the agent.
     grant(stranger.id, "chat", chat.id);
     expect(canWithCapabilities(contextFor(stranger.id, chat).capabilities, "admin", "system", "*")).toBe(false);

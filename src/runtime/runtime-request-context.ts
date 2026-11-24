@@ -33,7 +33,11 @@ import {
   type ContactChatOverlay,
 } from "../permissions/contact-policy-permissions-provider.js";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
-import { breakGlassDeniesForContact } from "../permissions/actor-break-glass.js";
+import {
+  breakGlassDeniesForContact,
+  dedupeBreakGlassDenies,
+  isActorBreakGlassDeny,
+} from "../permissions/actor-break-glass.js";
 import { consoleIdentityFromBinding, readActorBindingForActiveLogin } from "../cloud-auth/actor-bindings.js";
 import { dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
@@ -599,10 +603,12 @@ function buildAgentIdentityRuntimeContextInput(options: {
 
   // A person's turn in a chat with no contact grants: everything of the agent
   // except break-glass the person does not hold. Autonomous turns are unchanged.
-  const breakGlassDenies =
-    !userOverlay && options.actorPrincipal?.subjectType === "contact"
+  const breakGlassDenies = dedupeBreakGlassDenies([
+    ...(!userOverlay && options.actorPrincipal?.subjectType === "contact"
       ? breakGlassDeniesForContact(effectiveCapabilities, options.actorPrincipal.subjectId)
-      : [];
+      : []),
+    ...(relayCaller.breakGlassDenies ?? []),
+  ]);
   const turnScopedCapabilities =
     breakGlassDenies.length > 0 ? [...effectiveCapabilities, ...breakGlassDenies] : effectiveCapabilities;
 
@@ -657,6 +663,8 @@ function buildAgentIdentityRuntimeContextInput(options: {
  */
 function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
   narrowing?: ContextCapability[];
+  /** The producing turn's withheld break-glass (`deny_*`), carried as-is to the relayed turn. */
+  breakGlassDenies?: ContextCapability[];
   /** The contact the producing turn acted for, so Console calls stay attributed to them. */
   contactId?: string;
 } {
@@ -688,10 +696,18 @@ function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
     : typeof metadata.relayCallerContactId === "string"
       ? metadata.relayCallerContactId
       : undefined;
+  // A person's turn in an ungoverned chat carries `deny_*` for withheld
+  // break-glass. They are never a positive narrowing (a deny of the admin
+  // shortcut would erase everything): the relayed turn gets the caller's
+  // positive capabilities and re-applies the same denies, whether or not the
+  // relay is a narrowed work handoff.
+  const breakGlassDenies = caller.capabilities.filter(isActorBreakGlassDeny);
+  const positiveCapabilities = caller.capabilities.filter((capability) => !isActorBreakGlassDeny(capability));
   return {
     ...(profileRevoked || humanHandoffRefused || narrowed
-      ? { narrowing: profileRevoked || humanHandoffRefused ? [] : caller.capabilities }
+      ? { narrowing: profileRevoked || humanHandoffRefused ? [] : positiveCapabilities }
       : {}),
+    ...(breakGlassDenies.length > 0 ? { breakGlassDenies } : {}),
     ...(contactId ? { contactId } : {}),
   };
 }

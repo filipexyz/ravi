@@ -31,6 +31,33 @@ export function breakGlassDeniesForContact(
     permission: `deny_${target.permission}`,
     objectType: target.objectType,
     objectId: target.objectId,
-    source: "actor-break-glass",
+    source: ACTOR_BREAK_GLASS_SOURCE,
   }));
+}
+
+export const ACTOR_BREAK_GLASS_SOURCE = "actor-break-glass";
+
+/**
+ * A `deny_*` entry for a break-glass target (what this module adds to a
+ * person's turn). Matched by shape, not by `source`, so it survives storage.
+ */
+export function isActorBreakGlassDeny(capability: ContextCapability): boolean {
+  if (!capability.permission.startsWith("deny_")) return false;
+  const permission = capability.permission.slice("deny_".length);
+  return BREAK_GLASS_TARGETS.some(
+    (target) =>
+      target.permission === permission &&
+      target.objectType === capability.objectType &&
+      target.objectId === capability.objectId,
+  );
+}
+
+export function dedupeBreakGlassDenies(denies: ContextCapability[]): ContextCapability[] {
+  const seen = new Set<string>();
+  return denies.filter((deny) => {
+    const key = `${deny.permission}:${deny.objectType}:${deny.objectId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
