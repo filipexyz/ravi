@@ -355,6 +355,8 @@ async function reconcileThreadTurnHealth(dependencies: SlackThreadLifecycleDepen
       const health = getThreadTurnHealth(requestId)!;
       if (health.state !== "attention" || !health.turnId || !record.childSessionKey || !record.providerThreadId)
         continue;
+      // An automation run's thread needs no notice: the core returns the run's outcome to its parent.
+      if (isChildRunSurfaceRef(record.requestId)) continue;
       claimId = claimThreadTurnNotice(requestId, health.turnId, now);
       if (!claimId) continue;
       // Fence a concurrent close/reopen/new turn before publishing the observation.

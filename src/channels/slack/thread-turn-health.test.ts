@@ -579,3 +579,69 @@ describe("thread turn health reconciliation", () => {
     expect(publishPrompt).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("thread turn health of an automation run's thread", () => {
+  it("sends no attention notice for a run's thread: the core returns the run's outcome", async () => {
+    const runRef = "automation-run:health-run-1";
+    const runChildKey = "health-parent:thread:1713000000.000200";
+    const runChildName = "health-run-child";
+    const runTurnId = "health-run-turn-1";
+    getOrCreateSession(runChildKey, "main", "/tmp/ravi", { name: runChildName });
+    registerInboundSlackThread({
+      requestId: runRef,
+      parentSessionKey: parentKey,
+      parentSessionName: parentKey,
+      childSessionKey: runChildKey,
+      childSessionName: runChildName,
+      accountId: "test-slack",
+      instanceId: "test-slack",
+      platformChatId: "C_TEST",
+      threadCanonicalChatId: "chat-thread-run",
+      providerThreadId: "1713000000.000200",
+      seenAt: startedAt,
+    });
+    upsertSessionTurn({
+      turnId: runTurnId,
+      sessionKey: runChildKey,
+      sessionName: runChildName,
+      runId: "health-run-run",
+      status: "running",
+      startedAt,
+      updatedAt: startedAt,
+    });
+    const context = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: "main",
+      sessionKey: runChildKey,
+      sessionName: runChildName,
+      capabilities: [],
+      metadata: { actorAuthorizationMode: "invoke-only" },
+    });
+    recordSessionEvent({
+      sessionKey: runChildKey,
+      sessionName: runChildName,
+      turnId: runTurnId,
+      eventType: "adapter.request",
+      eventGroup: "runtime",
+      timestamp: startedAt,
+      payloadJson: { context_id: context.contextId },
+    });
+    recordTerminalTurnTrace({
+      sessionKey: runChildKey,
+      sessionName: runChildName,
+      turnId: runTurnId,
+      status: "failed",
+      eventType: "turn.failed",
+      completedAt: now - 61_000,
+      abortReason: null,
+    });
+
+    await tick();
+
+    expect(getThreadTurnHealth(runRef)).toMatchObject({ state: "attention", reason: "failed", turnId: runTurnId });
+    const notices = publishPrompt.mock.calls.map((call) => JSON.stringify(call[1]));
+    expect(notices.filter((notice) => notice.includes(runTurnId))).toEqual([]);
+    // The ordinary thread beside it still gets its notice.
+    expect(notices.some((notice) => notice.includes(turnId))).toBe(true);
+  });
+});

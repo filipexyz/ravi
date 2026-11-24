@@ -807,6 +807,10 @@ export async function reconcileChildRuns(options: {
         runId: run.id,
         error: error instanceof Error ? error.message : String(error),
       });
+      // The row closed before its error return failed to publish (the return stays pending and is
+      // delivered again): it is closed as stale all the same, so its origin still settles it.
+      const closedRun = getChildRun(run.id);
+      if (closedRun?.status === "closed") result.staleClosed.push(closedRun);
     }
     await releaseChildRunRuntime(run, options.releaseSource);
   }

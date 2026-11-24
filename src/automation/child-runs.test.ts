@@ -380,6 +380,18 @@ describe("reconciliation", () => {
     expect(pruneClosedChildRuns("cron", "job-1", 0)).toEqual([run.childSessionKey]);
   });
 
+  it("reports a stale run it closed even when its error return could not be published, so its origin settles it", async () => {
+    openRun("stale-unpublished");
+    age("stale-unpublished", "created_at", CHILD_RUN_STALE_MS + 1);
+    publishFails = true;
+
+    const result = await reconcileChildRuns({ releaseSource: "test" });
+
+    expect(result.staleClosed.map((run) => run.id)).toEqual(["stale-unpublished"]);
+    // The return stays pending: the next pass delivers it again.
+    expect(getChildRun("stale-unpublished")).toMatchObject({ status: "closed", returnState: "pending" });
+  });
+
   it("closes a run left open past the stale limit with one error return, and releases its runtime", async () => {
     const run = openRun("r-stale");
     age(run.id, "created_at", CHILD_RUN_STALE_MS + 1);
