@@ -6,6 +6,7 @@ import { configStore } from "../config-store.js";
 import { nats } from "../nats.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import {
+  RUNTIME_INTERRUPT_NOTICE,
   RuntimeSessionDispatcher,
   buildStashedRestartPrompt,
   canReuseLivePiSteerAuthority,
@@ -15,6 +16,7 @@ import {
   runtimeModelBrokerRouteRequiresRestart,
   shouldQueuePromptOnLiveSession,
   stashPromptForStartingSession,
+  withRuntimeInterruptNotice,
 } from "./session-dispatcher.js";
 import {
   createQueuedRuntimeUserMessage,
@@ -1288,6 +1290,41 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
     mock.restore();
     await cleanupIsolatedRaviState(recoveryState);
     recoveryState = undefined;
+  });
+
+  it("tells the model the runtime, not a person, interrupted the previous tool", async () => {
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async () => {},
+      notifyRuntimeRecoveryExhausted: async () => {},
+      getConfigModel: () => "test-model",
+      crashRecovery: crashRecoveryStub,
+    });
+    const launched: string[] = [];
+    dispatcher.startStreamingSession = mock(async (_name: string, prompt: { prompt: string }) => {
+      launched.push(prompt.prompt);
+    }) as unknown as typeof dispatcher.startStreamingSession;
+    const recovery = dispatcher as unknown as {
+      restartStashedSession(sessionName: string, reason: string): Promise<void>;
+    };
+    const stash = (name: string) =>
+      dispatcher.stashedMessages.set(name, [
+        createQueuedRuntimeUserMessage({ prompt: "[System] Inform: thread concluída", _agentId: "main" }),
+      ]);
+
+    stash("interrupted");
+    await recovery.restartStashedSession("interrupted", "recoverable_interrupt_failure");
+    stash("other-recovery");
+    await recovery.restartStashedSession("other-recovery", "model_change_restart");
+
+    expect(launched[0]?.startsWith(RUNTIME_INTERRUPT_NOTICE)).toBe(true);
+    expect(launched[0]).toContain("[System] Inform: thread concluída");
+    expect(launched[1]).toBe("[System] Inform: thread concluída");
+    expect(withRuntimeInterruptNotice(withRuntimeInterruptNotice({ prompt: "x" })).prompt).toBe(
+      `${RUNTIME_INTERRUPT_NOTICE}\n\nx`,
+    );
   });
 
   it("sends only a generic notice to the channel and alerts the operator after repeated event-loop closures", async () => {

@@ -87,6 +87,8 @@ interface GhWorkflowRun {
   status?: string;
   conclusion?: string | null;
   headBranch?: string;
+  headSha?: string;
+  url?: string;
 }
 
 interface GhIssueComment {
@@ -208,7 +210,7 @@ export function createGhLocalWatchSource(runner: (args: string[]) => string): Lo
             "--limit",
             String(MAX_WORKFLOW_RUNS),
             "--json",
-            "databaseId,name,status,conclusion,headBranch",
+            "databaseId,name,status,conclusion,headBranch,headSha,url",
           ]),
         ) ?? [];
 
@@ -236,6 +238,9 @@ export function createGhLocalWatchSource(runner: (args: string[]) => string): Lo
           // `headBranch` era pedido ao gh e nunca gravado: a correlação run → PR
           // dependia de um campo que ficava sempre vazio.
           ...(run.headBranch ? { branch: run.headBranch } : {}),
+          ...(run.headSha ? { headSha: run.headSha } : {}),
+          // O texto do follow pede o link do evento; sem isto o CI não tinha nenhum.
+          ...(run.url ? { url: run.url } : {}),
         };
       }
 

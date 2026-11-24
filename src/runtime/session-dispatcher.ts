@@ -2247,6 +2247,9 @@ export class RuntimeSessionDispatcher {
     if (!prompt) {
       return;
     }
+    if (reason === "recoverable_interrupt_failure") {
+      prompt = withRuntimeInterruptNotice(prompt);
+    }
 
     let traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
     const maxRestartAttempts = RUNTIME_RECOVERY_RESTART_LIMITS[reason];
@@ -3685,6 +3688,20 @@ function appendUniqueRuntimeMessagesToStash(
   appendUniqueRuntimeMessages(queued, messages);
   stashedMessages.set(sessionName, queued);
   return queued;
+}
+
+/**
+ * O provider entrega ao modelo a interrupção de uma ferramenta como recusa do
+ * usuário ("the user doesn't want to proceed ... STOP and wait"). Quando quem
+ * interrompeu foi o runtime, para entregar a mensagem seguinte, o modelo precisa
+ * saber disso; senão ele para e espera uma pessoa que não recusou nada.
+ */
+export const RUNTIME_INTERRUPT_NOTICE =
+  "[Runtime] A ferramenta anterior foi interrompida pelo runtime para entregar esta mensagem; ninguém recusou nada. Confira se ela rodou antes de repetir e siga.";
+
+export function withRuntimeInterruptNotice(prompt: RuntimeLaunchPrompt): RuntimeLaunchPrompt {
+  if (prompt.prompt.startsWith(RUNTIME_INTERRUPT_NOTICE)) return prompt;
+  return { ...prompt, prompt: `${RUNTIME_INTERRUPT_NOTICE}\n\n${prompt.prompt}` };
 }
 
 export function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): RuntimeLaunchPrompt | null {

@@ -82,6 +82,20 @@ When no explicit barrier is provided, Ravi MUST infer the barrier from the sourc
 
 No generic external session event may default to `after_tool`. `after_tool` is reserved for human channel input and explicitly requested `steer` behavior.
 
+The runtime MUST enforce this at the queue, not only at producers: a prompt
+whose `source.actorType` is `system` and whose barrier source is not
+`explicit` MUST be delivered as `after_response`, even if the producer wrote
+`after_tool` or `immediate_interrupt`. This covers Slack thread lifecycle
+notices (`thread.closed`, `thread.attention`, `thread.report`), handoff and
+health alerts, and any future system notice. On 24/11 the parent return of a
+closed thread was published with `after_tool`; the runtime cut the parent's
+next tool and the provider showed the model a user refusal that no person made.
+
+When the runtime itself interrupts a turn to deliver the next prompt, the
+restarted turn MUST tell the model that the runtime interrupted the previous
+tool and that nobody refused it, because the provider renders the abort as a
+user refusal ("STOP and wait for the user").
+
 ## Followup, Steer, and Immediate
 
 Every operator-facing producer that can inject an external session event SHOULD expose `followup` and `steer` vocabulary.
