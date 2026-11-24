@@ -156,7 +156,7 @@ export async function publishGhPr(input: GhPrPublication, deps: GhPrPublicationD
   resolvePublicationFollowContext(input.context);
   const follow = await ensureGhWatchFollow(
     { repo: input.repo, prNumber: pr.number, context: input.context, reconcile: true },
-    { ...deps.follow, localOnly: true, systemOwned: true },
+    { ...deps.follow, localOnly: true },
   );
   if (!follow.watchId || !follow.ciWatchId || !follow.triggerId)
     throw prError(

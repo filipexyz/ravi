@@ -6,7 +6,6 @@ import { getRaviStateDir } from "../utils/paths.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { dbUpsertObserverRule } from "../runtime/observation-plane.js";
 import { dbCreateTrigger, dbListTriggers } from "../triggers/triggers-db.js";
-import { runCanonicalFollowWrite } from "./user-overlay-automation.js";
 
 let stateDir: string | null = null;
 
@@ -43,6 +42,45 @@ describe("automation store guard on the real stores", () => {
       runWithContext(personTurnHeldBelowBreakGlass(), () =>
         dbCreateTrigger({ name: "from a person", topic: "ravi.watch.github.>", message: "do anything" }),
       ),
+    ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
+    expect(dbListTriggers()).toHaveLength(0);
+  });
+
+  it("lets the operator's own relay (a thread they asked for) leave a trigger and a cron job behind", () => {
+    const operatorRelay = (): ToolContext => {
+      const context = personTurnHeldBelowBreakGlass();
+      return {
+        ...context,
+        context: {
+          ...context.context!,
+          capabilities: [],
+          metadata: { actorAuthorizationMode: "invoke-only", relayNarrowing: true, relayCallerUnrestricted: true },
+        },
+      };
+    };
+    runWithContext(operatorRelay(), () => {
+      dbCreateTrigger({ name: "gh-follow:o/r#7", topic: "ravi.watch.github.>", message: "ok" });
+      dbCreateCronJob({
+        name: "from the operator's thread",
+        schedule: { type: "every", everyMs: 60_000 },
+        message: "ok",
+      } as unknown as Parameters<typeof dbCreateCronJob>[0]);
+    });
+    expect(dbListTriggers().map((trigger) => trigger.name)).toEqual(["gh-follow:o/r#7"]);
+    expect(dbListCronJobs()).toHaveLength(1);
+  });
+
+  it("still refuses the same writes from a relay of a person held below the agent", () => {
+    const heldRelay: ToolContext = {
+      ...personTurnHeldBelowBreakGlass(),
+      context: {
+        ...personTurnHeldBelowBreakGlass().context!,
+        capabilities: [],
+        metadata: { actorAuthorizationMode: "invoke-only", relayNarrowing: true },
+      },
+    };
+    expect(() =>
+      runWithContext(heldRelay, () => dbCreateTrigger({ name: "gh-follow:o/r#7", topic: "x.y", message: "ok" })),
     ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
     expect(dbListTriggers()).toHaveLength(0);
   });
@@ -109,49 +147,5 @@ describe("automation store guard on the real stores", () => {
 
   it("still lets code outside a turn write (daemon, terminal)", () => {
     expect(() => dbCreateTrigger({ name: "operator", topic: "ravi.watch.github.>", message: "ok" })).not.toThrow();
-  });
-});
-
-describe("the canonical-follow scope of the automation store guard", () => {
-  beforeEach(async () => {
-    stateDir = await createIsolatedRaviState("ravi-automation-store-guard-follow-");
-  });
-  afterEach(async () => {
-    await cleanupIsolatedRaviState(stateDir);
-    stateDir = null;
-  });
-
-  const canonical = { name: "gh-follow:o/r#7", topic: "ravi.watch.github.*", message: "fixed", enabled: true };
-
-  it("lets a turn held below the agent write exactly the follow the scope names, and nothing else", () => {
-    runWithContext(personTurnHeldBelowBreakGlass(), () => {
-      runCanonicalFollowWrite({ fields: canonical }, () => dbCreateTrigger({ ...canonical }));
-      // Same scope, different instruction / extra field: still the plain refusal.
-      expect(() =>
-        runCanonicalFollowWrite({ fields: canonical }, () => dbCreateTrigger({ ...canonical, message: "other" })),
-      ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
-      expect(() =>
-        runCanonicalFollowWrite({ fields: canonical }, () =>
-          dbCreateTrigger({ ...canonical, executionType: "shell", shellCommand: "id" } as never),
-        ),
-      ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
-    });
-    expect(dbListTriggers().map((trigger) => trigger.name)).toEqual(["gh-follow:o/r#7"]);
-  });
-
-  it("does not outlive the write: the next write in the same turn is refused again", () => {
-    runWithContext(personTurnHeldBelowBreakGlass(), () => {
-      runCanonicalFollowWrite({ fields: canonical }, () => dbCreateTrigger({ ...canonical }));
-      expect(() => dbCreateTrigger({ ...canonical, name: "gh-follow:o/r#8" })).toThrow(
-        expect.objectContaining({ code: "PERMISSION_DENIED" }),
-      );
-    });
-  });
-
-  it("takes a synchronous body only, so a continuation can never run inside the scope", () => {
-    expect(() => runCanonicalFollowWrite({ fields: canonical }, (async () => undefined) as never)).toThrow(
-      /synchronous/,
-    );
-    expect(() => runCanonicalFollowWrite({ fields: canonical }, (() => Promise.resolve()) as never)).toThrow(/promise/);
   });
 });

@@ -21,7 +21,6 @@ import type { Database } from "bun:sqlite";
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import { dbGetAgent } from "../router/router-db.js";
 import type { ContextSource } from "../router/router-db.js";
-import { runCanonicalFollowWrite } from "../permissions/user-overlay-automation.js";
 import { resolveDurableFollowOwner } from "../triggers/follow-owner.js";
 import {
   dbCreateTrigger,
@@ -137,12 +136,6 @@ export interface GhWatchFollowResult {
 export interface GhWatchFollowDeps {
   /** Explicit publication only needs the local producer; do not introduce Console network work. */
   localOnly?: boolean;
-  /**
-   * The runtime itself is registering this follow on behalf of `ravi pr publish`, after it verified the
-   * PR and the publisher's session. Only then may a turn held below the agent's authority leave the
-   * follow behind (see `runCanonicalFollowWrite`); the Bash observation hook and the sweep never set it.
-   */
-  systemOwned?: boolean;
   listWatches?: typeof listWatchRecords;
   createWatch?: typeof createWatch;
   listTriggers?: () => Trigger[];
@@ -944,9 +937,6 @@ export async function ensureGhWatchFollow(
     }
   }
   const desired = buildGhFollowTriggerInput(input.repo, input.prNumber, resolved);
-  // Only the publication path writes under the canonical-follow scope; every other caller keeps the plain store guard.
-  const writeFollow = <T>(fields: Record<string, unknown>, write: () => T): T =>
-    deps.systemOwned ? runCanonicalFollowWrite({ fields }, write) : write();
   const listTriggers = deps.listTriggers ?? dbListTriggers;
   const existing = findExistingGhFollowTrigger(input.repo, input.prNumber, listTriggers());
   if (existing) {
@@ -961,8 +951,7 @@ export async function ensureGhWatchFollow(
     if (existing.topic !== desired.topic) patch.topic = desired.topic;
     // A closed owner thread must not take the follow down with it: always repoint
     // the saved owner to its live lifecycle target, even when only observing.
-    const replyTargetPatch = ghFollowReplyTargetPatch(existing);
-    Object.assign(patch, replyTargetPatch);
+    Object.assign(patch, ghFollowReplyTargetPatch(existing));
     // Explicit publication owns this follow; automatic observation does not
     // steal another session's subscription or re-enable a deliberately paused one.
     if (input.reconcile) {
@@ -975,9 +964,7 @@ export async function ensureGhWatchFollow(
     }
     if (Object.keys(patch).length > 0) {
       try {
-        const updated = writeFollow({ ...desired, enabled: true, ...replyTargetPatch } as Record<string, unknown>, () =>
-          (deps.updateTrigger ?? dbUpdateTrigger)(existing.id, patch),
-        );
+        const updated = (deps.updateTrigger ?? dbUpdateTrigger)(existing.id, patch);
         if (!updated) throw new Error(`Could not reconcile gh follow ${existing.id}`);
         result.triggerRepaired = true;
         await (deps.emitTriggersRefresh ?? defaultEmitTriggersRefresh)();
@@ -998,9 +985,7 @@ export async function ensureGhWatchFollow(
     return result;
   }
 
-  const trigger = writeFollow({ ...desired, enabled: true } as Record<string, unknown>, () =>
-    (deps.createTrigger ?? dbCreateTrigger)(desired),
-  );
+  const trigger = (deps.createTrigger ?? dbCreateTrigger)(desired);
   result.triggerId = trigger.id;
   result.triggerReused = false;
 

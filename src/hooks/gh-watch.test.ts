@@ -1467,9 +1467,9 @@ describe("durable PR follow owner", () => {
   });
 });
 
-describe("the CI follow that `pr publish` leaves from a turn held below the agent", () => {
-  /** A thread started by the main session: relayed, so held to the caller's grants (24/11: every thread). */
-  function relayedThreadTurn(): ToolContext {
+describe("the CI follow that `pr publish` leaves from a thread turn", () => {
+  /** A thread the main session starts for the operator is a relayed turn (relayNarrowing true). */
+  function threadTurn(metadata: Record<string, unknown>): ToolContext {
     return {
       contextId: "ctx_thread",
       agentId: "main",
@@ -1479,12 +1479,11 @@ describe("the CI follow that `pr publish` leaves from a turn held below the agen
         kind: "turn-runtime",
         agentId: "main",
         capabilities: [],
-        metadata: { actorAuthorizationMode: "invoke-only", relayNarrowing: true },
+        metadata: { actorAuthorizationMode: "invoke-only", relayNarrowing: true, ...metadata },
         createdAt: 0,
       },
     };
   }
-
   const followDeps = {
     localOnly: true,
     listWatches: () => ({ items: [], total: 0 }) as never,
@@ -1496,66 +1495,29 @@ describe("the CI follow that `pr publish` leaves from a turn held below the agen
   };
   const publisher = { sessionName: "dev-thread" };
 
-  it("is registered, and registering it again repairs nothing twice", async () => {
-    const first = await runWithContext(relayedThreadTurn(), () =>
-      ensureGhWatchFollow(
-        { repo: "o/r", prNumber: 7, context: publisher, reconcile: true },
-        { ...followDeps, systemOwned: true },
-      ),
+  it("is registered from the operator's thread, and registering again creates nothing twice", async () => {
+    const operatorThread = threadTurn({ relayCallerUnrestricted: true });
+    const first = await runWithContext(operatorThread, () =>
+      ensureGhWatchFollow({ repo: "o/r", prNumber: 7, context: publisher, reconcile: true }, followDeps),
     );
     expect(first.triggerReused).toBe(false);
     const desired = buildGhFollowTriggerInput("o/r", 7, publisher);
     expect(dbListTriggers().map((item) => [item.name, item.message, item.replySession])).toEqual([
       [desired.name, desired.message, "dev-thread"],
     ]);
-
-    const again = await runWithContext(relayedThreadTurn(), () =>
-      ensureGhWatchFollow(
-        { repo: "o/r", prNumber: 7, context: publisher, reconcile: true },
-        { ...followDeps, systemOwned: true },
-      ),
+    const again = await runWithContext(operatorThread, () =>
+      ensureGhWatchFollow({ repo: "o/r", prNumber: 7, context: publisher, reconcile: true }, followDeps),
     );
     expect(again.triggerReused).toBe(true);
     expect(dbListTriggers()).toHaveLength(1);
   });
 
-  it("repairs a stale follow of the same PR instead of leaving it silent", async () => {
-    const desired = buildGhFollowTriggerInput("o/r", 7, publisher);
-    const stale = dbCreateTrigger({ ...desired, message: "old", cooldownMs: 30_000, enabled: false });
-    await runWithContext(relayedThreadTurn(), () =>
-      ensureGhWatchFollow(
-        { repo: "o/r", prNumber: 7, context: publisher, reconcile: true },
-        { ...followDeps, systemOwned: true },
-      ),
-    );
-    expect(dbGetTrigger(stale.id)).toMatchObject({ message: desired.message, cooldownMs: 0, enabled: true });
-  });
-
-  it("still refuses the same write from anything that is not the publication (the Bash observation, the next caller)", async () => {
+  it("is still refused from a thread opened from a held turn", async () => {
     await expect(
-      runWithContext(relayedThreadTurn(), () =>
-        ensureGhWatchFollow({ repo: "o/r", prNumber: 7, context: publisher }, followDeps),
+      runWithContext(threadTurn({}), () =>
+        ensureGhWatchFollow({ repo: "o/r", prNumber: 7, context: publisher, reconcile: true }, followDeps),
       ),
     ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
     expect(dbListTriggers()).toHaveLength(0);
-  });
-
-  it("does not let the publication's allowance carry a trigger the person wrote", async () => {
-    const desired = buildGhFollowTriggerInput("o/r", 7, publisher);
-    await expect(
-      runWithContext(relayedThreadTurn(), () =>
-        ensureGhWatchFollow(
-          { repo: "o/r", prNumber: 7, context: publisher, reconcile: true },
-          {
-            ...followDeps,
-            systemOwned: true,
-            // A writer that swaps the instruction for its own text.
-            createTrigger: (input) => dbCreateTrigger({ ...input, message: "run this as the agent" }),
-          },
-        ),
-      ),
-    ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
-    expect(dbListTriggers()).toHaveLength(0);
-    expect(desired.message).not.toBe("run this as the agent");
   });
 });

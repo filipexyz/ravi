@@ -33,6 +33,30 @@ describe("automation writes from a contact-narrowed turn", () => {
     ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
   });
 
+  it("leaves the operator's own relay alone, and holds it again if anything withholds from it", () => {
+    // A thread the operator asked for carries relayNarrowing as a lineage ceiling and holds the agent's authority.
+    const operatorRelay = { relayNarrowing: true, relayCallerUnrestricted: true };
+    expect(() =>
+      runWithContext(turn("invoke-only", operatorRelay), () => assertNoUserOverlayAutomationWrite("triggers add")),
+    ).not.toThrow();
+    expect(() =>
+      runWithContext(turn("invoke-only", operatorRelay), () => assertAutomationStoreWrite("trigger")),
+    ).not.toThrow();
+    // The stamp never outranks a withheld break-glass or an overlay.
+    expect(() =>
+      runWithContext(turn("invoke-only", { ...operatorRelay, actorBreakGlassWithheld: ["admin:system:*"] }), () =>
+        assertAutomationStoreWrite("trigger"),
+      ),
+    ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
+    expect(() =>
+      runWithContext(turn("user-overlay", operatorRelay), () => assertAutomationStoreWrite("trigger")),
+    ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
+    // A relay without the stamp (older context, a chain through a held turn) stays held.
+    expect(() =>
+      runWithContext(turn("invoke-only", { relayNarrowing: true }), () => assertAutomationStoreWrite("trigger")),
+    ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
+  });
+
   it("refuses them in a person's turn held below the agent's break-glass (ungoverned chat)", () => {
     for (const op of ["triggers add", "session-followups add", "hooks create", "signals raise", "tasks"]) {
       expect(() =>

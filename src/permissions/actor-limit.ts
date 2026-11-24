@@ -22,3 +22,18 @@ export function isActorBreakGlassLimitedContext(context: ActorLimitContextLike |
         capability.objectId === "*"),
   );
 }
+
+/**
+ * Whether a relayed turn (a session relay, a Slack thread bootstrap, a report)
+ * is held below the agent. `relayNarrowing` only says the turn carries its
+ * caller's capabilities as a ceiling (the lineage a revocation follows); it is
+ * set for every verified human work handoff, the operator's included, and the
+ * operator's relay holds the agent's whole authority. The relay is held when
+ * its caller was: narrowed to a contact's chat grants, held below the agent's
+ * break-glass, revoked, or itself a held relay. A relay of a turn that was none
+ * of those is stamped `relayCallerUnrestricted` when it is built; a relay
+ * without the stamp (an older context, a chain through a held one) stays held.
+ */
+export function isRelayHeldBelowAgent(metadata: Record<string, unknown> | null | undefined): boolean {
+  return metadata?.relayNarrowing === true && metadata.relayCallerUnrestricted !== true;
+}

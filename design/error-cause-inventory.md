@@ -1285,18 +1285,18 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | hooks | src/hooks/gh-follow-sweep.ts | 376 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:b53ab0d130807a6b05e97125 |
 | hooks | src/hooks/gh-follow-sweep.ts | 440 | fixed | binding retained / no recognized error surface | src/hooks/gh-follow-sweep.ts:8cb91fffe47bdc0cae186f89 |
 | hooks | src/hooks/gh-pr-publish.ts | 139 | fixed | binding retained / no recognized error surface | src/hooks/gh-pr-publish.ts:21b7ea1410bb22bbfc408308 |
-| hooks | src/hooks/gh-watch.ts | 775 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:8073d9576e24b20742de4a05 |
-| hooks | src/hooks/gh-watch.ts | 807 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:15462fd7c975cd3568f4bc2c |
-| hooks | src/hooks/gh-watch.ts | 836 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:15c7b4fe70049a4776673155 |
-| hooks | src/hooks/gh-watch.ts | 895 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:09ba37f04ad007cd21eee4b0 |
-| hooks | src/hooks/gh-watch.ts | 908 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:08ad2f925bb9e28a05118a0e |
-| hooks | src/hooks/gh-watch.ts | 942 | triaged-follow-up | catch-without-binding | src/hooks/gh-watch.ts:af8457fcadfb65da4dd90240 |
-| hooks | src/hooks/gh-watch.ts | 984 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:26f04b4cb70174099933b9d4 |
+| hooks | src/hooks/gh-watch.ts | 768 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:8073d9576e24b20742de4a05 |
+| hooks | src/hooks/gh-watch.ts | 800 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:15462fd7c975cd3568f4bc2c |
+| hooks | src/hooks/gh-watch.ts | 829 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:15c7b4fe70049a4776673155 |
+| hooks | src/hooks/gh-watch.ts | 888 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:09ba37f04ad007cd21eee4b0 |
+| hooks | src/hooks/gh-watch.ts | 901 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:08ad2f925bb9e28a05118a0e |
+| hooks | src/hooks/gh-watch.ts | 935 | triaged-follow-up | catch-without-binding | src/hooks/gh-watch.ts:af8457fcadfb65da4dd90240 |
+| hooks | src/hooks/gh-watch.ts | 971 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:26f04b4cb70174099933b9d4 |
+| hooks | src/hooks/gh-watch.ts | 981 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:3c35affae2df1ffb3c3a9a22 |
 | hooks | src/hooks/gh-watch.ts | 994 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:3c35affae2df1ffb3c3a9a22 |
-| hooks | src/hooks/gh-watch.ts | 1009 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:3c35affae2df1ffb3c3a9a22 |
-| hooks | src/hooks/gh-watch.ts | 1041 | triaged-follow-up | catch-without-binding | src/hooks/gh-watch.ts:23d0acda26def2baf561fcf1 |
-| hooks | src/hooks/gh-watch.ts | 1057 | triaged-follow-up | catch-without-binding | src/hooks/gh-watch.ts:d400d88bf210764803f508f4 |
-| hooks | src/hooks/gh-watch.ts | 1184 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:108b86d5f9678900d5b1b3cb |
+| hooks | src/hooks/gh-watch.ts | 1026 | triaged-follow-up | catch-without-binding | src/hooks/gh-watch.ts:23d0acda26def2baf561fcf1 |
+| hooks | src/hooks/gh-watch.ts | 1042 | triaged-follow-up | catch-without-binding | src/hooks/gh-watch.ts:d400d88bf210764803f508f4 |
+| hooks | src/hooks/gh-watch.ts | 1169 | fixed | binding retained / no recognized error surface | src/hooks/gh-watch.ts:108b86d5f9678900d5b1b3cb |
 | hooks | src/hooks/jobs-promote.ts | 106 | fixed | binding retained / no recognized error surface | src/hooks/jobs-promote.ts:21c4820fb5c34b39bc576264 |
 | hooks | src/hooks/pre-compact.ts | 313 | fixed | binding retained / no recognized error surface | src/hooks/pre-compact.ts:8bd137fa7ea0b369d8761dd5 |
 | hooks | src/hooks/pre-compact.ts | 324 | triaged-follow-up | catch-without-binding | src/hooks/pre-compact.ts:b200a5a7c730aeae6a9170c4 |
@@ -2118,10 +2118,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/runtime-request-builder.ts | 1313 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:97f069feec77376de9ce4cfe |
 | runtime-chat | src/runtime/runtime-request-builder.ts | 1329 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:fceed3ce3c4bcb1014946096 |
 | runtime-chat | src/runtime/runtime-request-builder.ts | 1339 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:e11eb49a2511c5a3e84172db |
-| runtime-chat | src/runtime/runtime-request-context.ts | 116 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:9c19b85e67a579c3b18fc384 |
-| runtime-chat | src/runtime/runtime-request-context.ts | 208 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:fb0b243ac337da14f0ac5365 |
-| runtime-chat | src/runtime/runtime-request-context.ts | 496 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:7206346edd25c13ff4d8a8d8 |
-| runtime-chat | src/runtime/runtime-request-context.ts | 754 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:f5a91420c25bdfe230c4347d |
+| runtime-chat | src/runtime/runtime-request-context.ts | 117 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:9c19b85e67a579c3b18fc384 |
+| runtime-chat | src/runtime/runtime-request-context.ts | 209 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:fb0b243ac337da14f0ac5365 |
+| runtime-chat | src/runtime/runtime-request-context.ts | 497 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:7206346edd25c13ff4d8a8d8 |
+| runtime-chat | src/runtime/runtime-request-context.ts | 769 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:f5a91420c25bdfe230c4347d |
 | sessions | src/runtime/session-dispatcher.ts | 557 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:f62a129921ede3d5cf54be0f |
 | sessions | src/runtime/session-dispatcher.ts | 566 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:083324775001a686ec7a5875 |
 | sessions | src/runtime/session-dispatcher.ts | 701 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:4e182c47be33a9110d382f81 |

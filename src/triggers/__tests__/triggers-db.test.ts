@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { runWithContext, type ToolContext } from "../../cli/context.js";
-import { runCanonicalFollowWrite } from "../../permissions/user-overlay-automation.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { getDb } from "../../router/router-db.js";
 import {
@@ -308,28 +307,5 @@ describe("triggers-db automation store guard", () => {
       expect.objectContaining({ code: "PERMISSION_DENIED" }),
     );
     expect(runWithContext(limitedTurn, () => dbUpdateTrigger(trigger.id, { enabled: false })).enabled).toBe(false);
-  });
-  it("takes the publication's canonical follow from a held turn, create and repair, and nothing it did not name", () => {
-    const follow = { name: "gh-follow:o/r#7", topic: "ravi.watch.github.*", message: "fixed", cooldownMs: 0 };
-    const created = runWithContext(limitedTurn, () =>
-      runCanonicalFollowWrite({ fields: { ...follow, enabled: true } }, () => dbCreateTrigger(follow)),
-    );
-    expect(dbGetTrigger(created.id)).toMatchObject({ name: "gh-follow:o/r#7", message: "fixed" });
-    // The repair path writes through dbUpdateTrigger under the same scope: exactly the named fields.
-    expect(
-      runWithContext(limitedTurn, () =>
-        runCanonicalFollowWrite({ fields: { ...follow, enabled: true } }, () =>
-          dbUpdateTrigger(created.id, { message: "fixed", enabled: true }),
-        ),
-      ).enabled,
-    ).toBe(true);
-    expect(() =>
-      runWithContext(limitedTurn, () =>
-        runCanonicalFollowWrite({ fields: { ...follow, enabled: true } }, () =>
-          dbUpdateTrigger(created.id, { message: "something the person wrote" }),
-        ),
-      ),
-    ).toThrow(expect.objectContaining({ code: "PERMISSION_DENIED" }));
-    expect(dbGetTrigger(created.id)?.message).toBe("fixed");
   });
 });

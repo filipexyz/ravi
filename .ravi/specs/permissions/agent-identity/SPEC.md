@@ -113,19 +113,19 @@ Ungoverned chats keep `agent_identity ∩ turn_caps`, with one exception:
   always allowed; code outside a turn is unaffected; an overlay turn may still
   write a cron job bound to its chat (`creatorChat`). Command guards remain
   for a good error. Binding the job to the creator's ceiling is deferred.
-- One automation a limited turn may still leave behind: the CI follow that
-  `ravi pr publish` arms for the publishing session (`gh-follow:<repo>#<n>`).
-  Its topic, filter, message and routing come only from the verified
-  repository, PR number and the publisher's own session, and the publisher
-  already holds `mutate:pr:publish`, so it carries nothing the person wrote.
-  `runCanonicalFollowWrite` (`permissions/user-overlay-automation.ts`) opens a
-  synchronous scope that the publication alone enters (`systemOwned` in
-  `ensureGhWatchFollow`); inside it a trigger write is accepted only if every
-  field it sets equals the canonical follow. Another field, another value, a
-  later write, or any other caller (the Bash observation hook, `watch
-  trigger`, a new writer) is refused as above. Before this scope existed, every
-  thread turn (relayed, so held) lost its follow with a generic
-  `PR_PUBLICATION_INCOMPLETE` that read as transient.
+- A relay the operator asked for (a thread the main session opens for a verified
+  human request, a session relay of the operator's turn) is not a held turn.
+  `relayNarrowing` only says the turn carries its caller's capabilities as a
+  ceiling, for the lineage a revocation follows; it is set for every verified
+  human work handoff, the operator's included. `resolveRelayCaller` stamps the
+  relay `relayCallerUnrestricted` when its caller was none of: narrowed to a
+  contact's chat grants, held below break-glass (`deny_*`), revoked, or itself a
+  held relay. The automation guards (command and store) read
+  `isRelayHeldBelowAgent` (`permissions/actor-limit.ts`), not the bare flag, so
+  only a held relay is refused. A relay without the stamp (an older context, a
+  chain through a held turn) stays held: the rule fails closed. Before this,
+  every thread of the operator lost the CI follow of `ravi pr publish` (24/11,
+  3.261124.15) and `triggers add`/`cron add`/follow-ups from it were refused.
 - What "everything except break-glass" still includes (declared): the admin
   shortcut still grants every other `(permission, objectType)`, e.g.
   `execute:group:*` CLI groups, `write_contacts:system:*` and `admin` on types

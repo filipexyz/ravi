@@ -34,6 +34,7 @@ import {
 } from "../permissions/contact-policy-permissions-provider.js";
 import { canWithCapabilities } from "../permissions/capability-snapshot.js";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
+import { isRelayHeldBelowAgent } from "../permissions/actor-limit.js";
 import {
   breakGlassDeniesForContact,
   dedupeBreakGlassDenies,
@@ -667,6 +668,7 @@ function buildAgentIdentityRuntimeContextInput(options: {
       turnCapabilityCount: turnCapabilities?.length ?? 0,
       ...(turnCapabilities && turnCapabilities.length > 0 ? { turnCapabilities } : {}),
       ...(relayNarrowing ? { relayNarrowing: true } : {}),
+      ...(relayNarrowing && relayCaller.unrestricted ? { relayCallerUnrestricted: true } : {}),
       ...(relayCaller.contactId ? { relayCallerContactId: relayCaller.contactId } : {}),
       effectiveCapabilityCount: effectiveCapabilities.length,
       ...(options.consoleBinding?.consoleUserId ? { consoleUserId: options.consoleBinding.consoleUserId } : {}),
@@ -687,6 +689,8 @@ function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
   breakGlassDenies?: ContextCapability[];
   /** The contact the producing turn acted for, so Console calls stay attributed to them. */
   contactId?: string;
+  /** The producing turn held the agent's whole authority: the relay narrows its lineage, not its power. */
+  unrestricted?: boolean;
 } {
   const origin = resolveRuntimeTurnOrigin(prompt._turnOrigin);
   const callerContextId = origin?.callerContextId;
@@ -723,10 +727,21 @@ function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
   // relay is a narrowed work handoff.
   const breakGlassDenies = caller.capabilities.filter(isActorBreakGlassDeny);
   const positiveCapabilities = caller.capabilities.filter((capability) => !isActorBreakGlassDeny(capability));
+  // `narrowed` also covers a verified human handoff whose person (the operator) holds the agent's
+  // whole authority: that relay carries its caller's capabilities as a ceiling, nothing less.
+  // Held means the caller was narrowed to a contact's grants, held below break-glass, revoked or
+  // itself a held relay; automation guards refuse only those (`isRelayHeldBelowAgent`).
+  const callerHeld =
+    profileRevoked ||
+    humanHandoffRefused ||
+    metadata.actorAuthorizationMode === USER_OVERLAY_AUTHORIZATION_MODE ||
+    breakGlassDenies.length > 0 ||
+    isRelayHeldBelowAgent(metadata);
   return {
     ...(profileRevoked || humanHandoffRefused || narrowed
       ? { narrowing: profileRevoked || humanHandoffRefused ? [] : positiveCapabilities }
       : {}),
+    ...(narrowed && !callerHeld ? { unrestricted: true } : {}),
     ...(breakGlassDenies.length > 0 ? { breakGlassDenies } : {}),
     ...(contactId ? { contactId } : {}),
   };
