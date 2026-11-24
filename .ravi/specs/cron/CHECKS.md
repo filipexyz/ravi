@@ -133,3 +133,10 @@ RAVI_CONTEXT_KEY=<viewer-ctx> ravi cron disable <other-agent-job-id> --json
 - `bun test src/cron/runner.test.ts` MUST prove failed runs drained at start go out as one
   digest ("falhou 2 vezes" for one job), online and offline, and that a run whose report was
   delivered but cannot be marked stays pending while the others settle.
+
+## Thread mode
+
+- `bun test src/cron/runner-thread.test.ts` MUST cover: a fresh child per run, named after the run id, with the job's authority and no source; silent close and runtime release; one automatic return read from the run's own history; `@@SILENT@@` closing silently; no second return after an explicit close; one classified error return on failure (raw provider text absent); another agent's parent refused with no child; the main-session fallback; a scheduled run skipped while the previous one is open; a stale run closed as failed; pruning removing sessions too.
+- `bun test src/cli/commands/sessions-automation-run.test.ts` MUST cover `close-thread --return` (delivered once, `THREAD_CLOSED` after), the silent close, `report` keeping the run open, and the Slack-only wait flags refused.
+- `bun test src/cli/commands/cron-commands.test.ts` MUST cover `--thread`, `--report-to`, the refused pairs on `cron add` and on `cron set agent|reply-session`, the usage errors, and the `--isolated` warning.
+- `bun test src/router/router.test.ts -t "automation child-run"` MUST create the child-run table on reopen and refuse unknown states.

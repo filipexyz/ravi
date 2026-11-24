@@ -73,3 +73,9 @@ runs, not the current one. A blocked/deleted admitted contact loses subsequent
 owner-attributed access. An old queued run without a snapshot fails closed; after
 review, admit a new run through the scheduler or explicit manual run. No deployment
 or restart is part of validating this contract in isolated tests.
+
+## Thread-mode runs
+
+- `ravi cron show <id>` says where the runs report to, or that the report-to session no longer resolves (runs fail until `cron set <id> reply-session <session of the job's agent>`).
+- A run's work: `ravi sessions read <agent>-run-<runId>` (the 20 newest closed runs of a job are kept).
+- A run stuck open (its turn's end was never seen) is closed as failed by the next scheduled run after 2 h, with one error return to the parent; until then scheduled runs are skipped.
