@@ -1,5 +1,6 @@
 import { nats } from "../../../nats.js";
 import { sessionViewChannel } from "./session-view.js";
+import { voiceCallChannel } from "./voice.js";
 import { matchesTopicGlob } from "../../../events/topic-glob.js";
 import type { StreamChannel, StreamChannelMatch, StreamEvent, StreamRequestContext } from "./types.js";
 
@@ -191,6 +192,7 @@ const CHAT_UNREAD_UPDATED_SCHEMA = {
 
 export const defaultStreamChannels: StreamChannel[] = [
   sessionViewChannel,
+  voiceCallChannel,
   {
     name: "events",
     meta: {

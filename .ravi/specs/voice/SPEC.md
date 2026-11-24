@@ -3,24 +3,19 @@ id: voice
 title: Voice
 kind: domain
 domain: voice
-capabilities:
-  - sessions
-  - transports
-  - cli
 tags:
   - voice
-  - realtime
   - sessions
-  - agents
-  - extension
+  - realtime
 applies_to:
   - src/voice
   - src/cli/commands/voice.ts
-  - packages/ravi-os-sdk
-  - extensions/whatsapp-overlay
+  - src/sdk/gateway/streaming/channels.ts
+  - packages/ravi-os-voice
+  - packages/ravi-voice-worker
 owners:
   - ravi-dev
-status: draft
+status: active
 normative: true
 ---
 
@@ -28,157 +23,151 @@ normative: true
 
 ## Intent
 
-The `voice` domain owns live speech conversations between a human operator and a Ravi agent.
+The `voice` domain gives every Ravi session a **voice door**: an app built on the SDK opens a call
+on an existing session, speaks, and hears the answer. The session (Claude Code, Codex, Pi or Grok
+runtime) is the one that thinks the work and the only actor. The door turns speech into session
+turns in the caller's name, keeps the person company while the session works, and speaks a short
+form of the result.
 
-Voice is a Ravi semantic domain, not a provider name. OpenAI Realtime, LiveKit, SIP, browser WebRTC, and future media runtimes are implementation transports behind the same Ravi contract.
+Voice is a Ravi domain, not a vendor. OpenAI GPT-Live, LiveKit, ElevenLabs and Whisper are engines
+behind one contract. Users see only Ravi.
 
-The first production path SHOULD be browser extension to OpenAI Realtime 2 over WebRTC with a Ravi server-side sideband connection for tools, context, permissions, persistence, and observability.
+This spec supersedes the earlier draft in which a realtime model was the brain and transcripts never
+entered the session, and the feature spec `runtime/providers/realtime-voice` (archived).
 
-The default OpenAI realtime model for new `openai-direct` voice profiles SHOULD be `gpt-realtime-2`, not the older `gpt-realtime` alias. Profiles MAY opt into another supported realtime model only when latency, cost, or compatibility requires it.
+## Three rules
 
-## Boundary
+1. **Acknowledge fast, delegate the work.** A voice turn becomes an ordinary session prompt. The
+   session is never the inline LLM of a media pipeline.
+2. **Interrupting speech never cancels work.** Cancel is explicit (`calls cancel-turn`).
+3. **Every result has a delivery class.** `speak` (now), `when_idle` (after the person stops
+   talking), `silent` (screen and context only).
 
-Voice owns:
+## Modes and engines
 
-- live voice session lifecycle: start, connect, interrupt, end, status;
-- reusable voice profiles: model, voice, transport, turn detection, tool policy, and UI defaults;
-- voice transport adapter selection: `openai-direct`, `livekit`, or future adapters;
-- server-side sideband control for provider sessions when the media path is client-to-provider;
-- voice transcript, tool, state, and provider events linked to Ravi sessions;
-- extension-facing and SDK-facing command contracts for voice calls.
+| Mode | Engine | Ears and mouth | Connection |
+|---|---|---|---|
+| `push` | `push` | batch STT (Groq `whisper-large-v3-turbo`, else OpenAI `whisper-1`) + ElevenLabs TTS | none; clips through `calls push` |
+| `live` | `live` | OpenAI GPT-Live with `delegation: client` | app to OpenAI WebRTC; the daemon owns the sideband |
+| `handsfree` | `handsfree` | streaming STT + fast model + streaming TTS in a LiveKit room | app joins the room; `packages/ravi-voice-worker` serves it |
+| any | `mock` | text in, text out, no vendor | none; for apps and CI |
 
-Voice does NOT own:
+- Every engine MUST declare `capabilities` (`bargeIn`, `streamingAudio`, `exactSpeech`,
+  `serverAudio`, `needs`) and a `check` that reports missing configuration without calling the vendor.
+- The default mode is `push`. A profile MAY choose another.
+- The `live` engine MUST use its own key (`RAVI_VOICE_OPENAI_API_KEY`), never `OPENAI_API_KEY`, which
+  Codex inherits. It MUST create sessions with `store: false` and lock the browser data channel with
+  `allowed_client_events: []`. The sideband receives copies of both audio directions; the daemon MUST
+  discard them, never log them and never publish them on NATS.
+- In `live`, the voice model may converse and may be wrong. Anything about the workspace or the work
+  MUST be delegated to the session; the session's answers reach the voice model only through
+  `session.commentary.append` (speak) or `session.thinking.append` (silent).
+- The `handsfree` worker is a stateless media worker. It has no database access, joins rooms with a
+  token the daemon mints, and talks to the daemon only through the gateway with the call's device
+  credential.
 
-- Ravi session identity, rename, attach, or output chat routing. Those remain in `sessions` and `sessions/attach`.
-- Chat identity or chat participants. Those remain in `channels/chats`.
-- Runtime provider lifecycle for normal text turns. That remains in `runtime`.
-- Static TTS/audio file generation. That remains in `audio`.
-- WhatsApp transport delivery. That remains in channels/Omni.
+## The door
 
-## Core Model
+- The door lives in the **daemon** (`VoiceDoorService`, `src/voice/door.ts`), not in `ravi-channels`.
+- A voice utterance becomes `publishSessionPrompt(session, …)` with:
+  - `deliveryBarrier: "after_response"` (a voice utterance never steers running work);
+  - `_cliDestination: true` and no `source`, so it never writes the session's `last_channel` or
+    `last_to`, and the reply is read from the transcript, not delivered to a chat;
+  - `_approvalSource: { channel: "voice", accountId: "voice", chatId: <callId> }`, so approvals for
+    the turn come back to the call;
+  - a `session-relay` turn origin built from the caller's context.
+- The prompt carries a voice surface line asking the session to open its reply with one spoken line
+  (`🔊 …`, 1-3 sentences, no markdown). The door speaks that line; when it is missing, it speaks the
+  first sentences of the reply with markdown removed. The full text goes to the screen.
+- The public sanitizer runs before any speech: no code blocks, URLs, paths, secrets or raw tool
+  output reach the voice.
+- One active call per (session, speaker). One utterance in flight per call; later utterances queue
+  in the door in order.
+- Long turns: one acknowledgement, progress only from real session events (`work.state`,
+  `work.tool`), completion announced by event.
+- A daemon restart ends `live` calls (the sideband cannot reconnect); `push` and `mock` calls survive
+  because every state change is stored.
 
-A `voice_session` is a live call-like interaction linked to one Ravi session and one agent.
+## Authority
 
-It MUST reference:
+- Starting, connecting, approving and denying MUST refuse agent turn contexts (every command is also a
+  session tool): exit 3 with `VOICE_AGENT_TURN_REFUSED`.
+- The caller needs the same authority as `sessions send` on the target session: the local operator,
+  or a context that can access the session. A paired **device credential** (`voice devices pair`) is
+  a person-bound context key (`kind: voice-device`) limited to `voice` commands and the sessions
+  listed at pairing. Device keys last 30 days; `voice devices revoke` revokes the key and ends the
+  device's calls.
+- The speaker is recorded on every utterance (`speaker.kind`: `operator` | `device` | `guest`;
+  `speaker.contactId`). The speaker never adds authority: the session turn runs with the caller's
+  authority, exactly as `sessions send`.
+- **Third-party speakers (guests).** A guest is someone in the call who is not the paired person
+  (a callee on a phone call, a meeting participant). Guests MUST be opted in on the profile
+  (`allowGuests`). A guest utterance is marked as such in the prompt, can never approve, deny,
+  cancel or end, and is dropped when the profile does not allow guests.
+- **Approvals are tap only in v1.** A spoken "yes" never approves. A spoken deny or cancel is
+  allowed. `calls approve` MUST carry the approval's `--version` and `--digest` and `--execute`; it
+  is accepted only from the paired person (operator or device), and is checked again by the approval
+  grantor gate (`channel: voice`, sender = the device id or `operator`).
 
-- `voice_session_id`: stable id for the voice call.
-- `session_key`: canonical Ravi session key.
-- `session_name`: optional secondary lookup/display value.
-- `agent_id`: Ravi agent that owns the conversation.
-- `chat_id`: canonical chat id when the call was initiated from a chat-scoped surface.
-- `profile_id`: reusable voice profile.
-- `transport_id`: transport adapter used for this session.
-- `client_kind`: `wa-overlay`, `cli`, `sdk`, `test`, or future client.
-- `state`: `created`, `pending_client`, `connecting`, `active`, `interrupting`, `ending`, `ended`, or `failed`.
-- `provider_session_id` and `provider_call_id`: provider-native ids stored as provenance only.
+## Surface
 
-Voice MUST NOT treat provider call ids as Ravi session ids.
+```
+ravi voice targets list
+ravi voice calls start <session> [--profile <id>] [--mode push|live|handsfree|mock] [--offer <sdp>]
+ravi voice calls connect <call> [--offer <sdp>]
+ravi voice calls list | show <call> | transcript <call> | events <call> [--after <seq>]
+ravi voice calls push <call> --audio <file> | --audio-data <base64> [--mime <type>]
+ravi voice calls audio <call> <item>
+ravi voice calls send <call> <text>
+ravi voice calls silence <call>
+ravi voice calls cancel-turn <call> --turn <id>
+ravi voice calls approve <call> <approval> --version <n> --digest <d> --execute
+ravi voice calls deny <call> <approval>
+ravi voice calls end <call>
+ravi voice profiles list|show|create|update|delete
+ravi voice voices list
+ravi voice devices pair|list|revoke
+ravi voice engines list|check
+GET /api/v1/_stream/voice/{call}?after=<seq>
+```
 
-Voice MUST NOT mutate `sessions.session_key`, `sessions.name`, chat bindings, route config, or channel output selection as part of normal call start/end.
+- `start` and `connect` return flat fields: `callId`, `connectionKind` (`none` | `webrtc` | `room`),
+  `sdpAnswer`, `roomUrl`, `roomToken`, `lastSeq`. Connection material leaves only through these two.
+- `start` with `--execute` is not required: a call is a reversible local action and costs nothing
+  until speech flows. `approve` is braked; `end`, `deny`, `cancel-turn` and `silence` reduce
+  authority and run immediately.
 
-## Default Transport Decision
+## Events
 
-For browser and extension calls, the default MVP transport SHOULD be `openai-direct`.
+Calls store every event in `voice.db` with a per-call `seq`. The stream opens with `call.snapshot`
+and resumes with `after`.
 
-`openai-direct` means:
+| Event | Meaning |
+|---|---|
+| `call.snapshot` | full state at subscribe time |
+| `call.state` | `starting` → `active` → `ending` → `ended` |
+| `call.ended` | final; carries `reason` and usage totals |
+| `agent.state` | `listening` · `thinking` · `speaking` · `idle`; `reason: silenced` after `calls silence` |
+| `work.state` | `queued` · `running` · `done` · `failed` · `cancelled` for a turn |
+| `work.tool` | a tool started or finished in the session (name only) |
+| `user.transcript` | what the person said (final text) |
+| `agent.transcript` | what the door spoke: `text`, `turnId`, `delivery`, optional `audio` item (`item`, `mime`, `durationSec`) for push and mock calls |
+| `turn.accepted` | an utterance became a session turn (`turnId`) |
+| `turn.completed` | `turnId`, `spokenText`, `fullText` (text only; audio rides on `agent.transcript`) |
+| `turn.approval_requested` | `approvalId`, `version`, `digest`, `text` |
+| `turn.approval_resolved` | `approvalId`, `decision` |
+| `usage` | audio seconds in and out, characters spoken, estimated cost |
+| `error` | `code`, `message` |
 
-- the browser owns microphone capture and playback;
-- the browser connects to OpenAI Realtime with WebRTC;
-- Ravi uses the OpenAI Realtime unified WebRTC interface by default: browser creates an SDP offer, Ravi posts the SDP plus session config to `/v1/realtime/calls`, and Ravi returns the provider SDP answer;
-- Ravi MAY use Realtime client secrets as a fallback/alternate `webrtc-token` mode, but those secrets currently expire after one minute and MUST be treated as single-session browser credentials;
-- Ravi keeps OpenAI API keys server-side;
-- Ravi stores the provider call id returned by OpenAI as provenance and uses it to open a server-side sideband connection to the same realtime session when supported;
-- Ravi executes tools server-side through existing host services and permission policy.
+## Limits and money
 
-`livekit` MAY be added behind the same voice transport interface when Ravi needs multi-party rooms, telephony/SIP, recording, media routing, cross-platform room orchestration, or LiveKit-managed agent dispatch.
+- Each profile has `maxCallMinutes`, `maxCallCostUsd` and `maxDailyCostUsd`. The door ends the call
+  with `reason: limit` when one is reached. Defaults: 30 minutes, US$ 2 per call, US$ 10 per day.
+- Usage is metered per call (audio seconds in and out, characters synthesized, engine minutes) and
+  summed per day.
+- No audio is recorded. Synthesized clips are kept only until the call ends, for `calls audio`.
 
-## Security
+## Storage
 
-Client-facing voice start/connect commands MUST NOT expose provider API keys.
-
-The browser extension MUST authenticate to Ravi with the active gateway context key defined by `wa-overlay/auth`.
-
-OpenAI Realtime client secrets, SDP answers, LiveKit room tokens, and equivalent provider credentials MUST be short-lived and scoped to one voice session, one client kind, and the authenticated Ravi gateway context that requested them.
-
-For OpenAI `webrtc-token` mode, Ravi MUST set `OpenAI-Safety-Identifier` on the server-side client-secret request using a stable, non-reversible identifier for the local operator/contact/session actor. The browser MUST NOT be required to send the safety identifier separately when connecting with the returned client secret.
-
-Client-facing connection material MUST NOT be persisted in SQLite, extension storage, SDK logs, traces, or raw provider event payloads. A reconnect MUST mint or negotiate fresh connection material instead of reusing expired output from `start` or `connect`.
-
-Tool execution MUST remain server-side. A client MAY observe tool activity, but MUST NOT execute Ravi tools directly on behalf of the realtime model.
-
-Voice tool permissions MUST flow through Ravi host services, context-key authorization, or the same permission system used by runtime providers. Voice MUST NOT introduce a parallel permission model.
-
-## OpenAI Realtime 2 Baseline
-
-When `transport_id=openai-direct` and `model=gpt-realtime-2`, Ravi MUST assume:
-
-- speech-to-speech is the primary interaction mode;
-- text input/output and image input are supported;
-- video input/output is not supported;
-- function calling is supported;
-- structured outputs are not supported and MUST NOT be required for voice correctness;
-- reasoning effort is configurable and higher effort can increase latency and token usage;
-- the realtime context window is large, but long-session context still needs explicit structure.
-
-OpenAI Realtime 2 voice prompts SHOULD be generated as short, structured sections rather than dense prose. Voice profile instructions SHOULD define:
-
-- role and objective;
-- language behavior and unclear-audio handling;
-- turn/preamble behavior for long reasoning or tool flows;
-- exact tool-call triggers and confirmation boundaries for write actions;
-- current state versus background context when injecting session history;
-- variety rules to avoid robotic repetition.
-
-## Event Model
-
-Voice events MUST be durable and linked to the voice session.
-
-Canonical event types:
-
-- `voice.session.created`
-- `voice.session.connected`
-- `voice.session.active`
-- `voice.input.transcript.delta`
-- `voice.input.transcript.completed`
-- `voice.output.transcript.delta`
-- `voice.output.transcript.completed`
-- `voice.output.audio.started`
-- `voice.output.audio.stopped`
-- `voice.tool.requested`
-- `voice.tool.started`
-- `voice.tool.completed`
-- `voice.interrupt.requested`
-- `voice.interrupted`
-- `voice.session.ended`
-- `voice.session.failed`
-- `voice.provider.raw`
-
-Raw provider events MAY be stored under `voice.provider.raw`, but product logic MUST consume canonical voice events.
-
-Raw provider event storage MUST be disabled by default or guarded by an explicit debug setting. When enabled, raw provider payloads MUST be redacted, size-limited, TTL-bound, and excluded from normal sync/export paths unless a separate safe export contract exists.
-
-Voice transcript events SHOULD be projectable into session timelines and overlay UI, but they MUST NOT automatically emit as outbound chat messages.
-
-## Relationship To Runtime Providers
-
-The first cut SHOULD implement voice as a dedicated `VoiceSessionService`, not as a normal `RuntimeProvider`.
-
-Reason: a live voice call has a continuous browser media path and server sideband control, while normal Ravi runtime turns are prompt/response executions.
-
-Voice MAY reuse runtime primitives:
-
-- agent/session resolution;
-- prompt/context rendering;
-- `RuntimeHostServices` for dynamic tools;
-- permission checks;
-- trace/event recording;
-- runtime credential selection.
-
-If a future implementation registers a `realtime` runtime provider, it MUST still satisfy `runtime/providers` and MUST NOT bypass the `voice` domain contract for browser media/session lifecycle.
-
-## Validation
-
-- Voice specs MUST be consulted before implementing `src/voice`, `ravi voice`, or extension voice UI.
-- `ravi voice` list-like commands MUST support pagination and `--json`.
-- `ravi voice sessions start --json` MUST return enough data for an SDK/extension client to perform the next connection step without scraping human output.
-- Provider credentials MUST never appear in CLI output, SDK output, logs, traces, or extension storage.
+`voice.db` under `RAVI_STATE_DIR`, owned by the daemon like every runtime store:
+`voice_calls`, `voice_events`, `voice_profiles`, `voice_devices`, `voice_usage_daily`.

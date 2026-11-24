@@ -1,0 +1,71 @@
+---
+title: Voice
+description: Talk to any Ravi session by voice from your own app. The session keeps thinking and working; the call only carries voice.
+icon: microphone
+---
+
+A voice call sits on an existing session. What you say becomes a turn in that session, with the same agent, memory, tools and approvals as a chat message. The reply comes back as a short spoken lead, and the full text stays in the session.
+
+## Modes
+
+| Mode | What it is | Needs |
+|---|---|---|
+| `push` | Push-to-talk: one recorded clip per press, a spoken reply clip back. | `GROQ_API_KEY` or `OPENAI_API_KEY` (speech to text), `ELEVENLABS_API_KEY` (speech) |
+| `live` | A live model (GPT-Live) talks with you over WebRTC and hands the work to the session. | `RAVI_VOICE_OPENAI_API_KEY` |
+| `handsfree` | A LiveKit room with the `ravi-voice` worker listening and speaking. | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, a running worker |
+| `mock` | Text only, for tests and development. | nothing |
+
+```bash
+ravi voice engines check     # what each engine is missing; makes no vendor calls
+```
+
+## Try it from the terminal
+
+```bash
+ravi voice calls start main --mode mock --json
+ravi voice calls send <call> "o que tem na minha agenda hoje?"
+ravi voice calls transcript <call>
+ravi voice calls end <call>
+```
+
+## Pair a phone or a web app
+
+An app speaks with a device key. Each key speaks for one person (a contact) and may only call the sessions you list.
+
+```bash
+ravi voice devices pair --contact <contact> --label "iPhone" --session main --execute
+```
+
+The key is printed once. Revoke it with `ravi voice devices revoke <device>`; its calls end.
+
+## Build an app
+
+The TypeScript SDK has `ravi.voice.calls.*` and the `voiceCall(call)` stream. The `@ravi-os/voice` browser kit wraps them:
+
+```ts
+import { createRaviVoice, pushToTalk, autoplayReplies } from "@ravi-os/voice";
+
+const voice = createRaviVoice({ baseUrl, contextKey: deviceKey });
+const call = await voice.start("main", { mode: "push" });
+call.on("agent.transcript", (e) => render(e.data.text));
+void call.follow();
+const ptt = pushToTalk(call);   // ptt.start() on press, ptt.stop() on release
+autoplayReplies(call);
+```
+
+The stream opens with `call.snapshot` and then sends every event with a per-call `seq`. Reconnect with `?after=<seq>` and nothing is lost.
+
+## Approvals and control
+
+- A request that needs approval shows in the call as `turn.approval_requested`. It is approved only with a tap (`ravi voice calls approve <call> <approval> --execute`, or `call.approve()` in the kit), never by voice. Saying "cancela" or "não" cancels or denies.
+- `silence` stops speech at once. `cancel-turn` cancels this call's running turn and nothing else. `end` ends the call; work already running keeps going in the session.
+- Agents cannot open calls or speak in them.
+
+## Profiles and limits
+
+```bash
+ravi voice profiles create pt --language pt --voice <id> --max-call-minutes 20 --max-daily-cost 5
+ravi voice calls start main --profile pt
+```
+
+Every call has a minute limit, a cost limit and a daily cost limit (defaults: 30 minutes, US$ 2 per call, US$ 10 per day). No audio is recorded. Synthesized clips are kept only until the call ends.

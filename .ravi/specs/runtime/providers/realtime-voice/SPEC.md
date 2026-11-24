@@ -22,9 +22,13 @@ applies_to:
   - src/channels/meetings/
 owners:
   - ravi-dev
-status: draft
-normative: true
+status: archived
+normative: false
 ---
+
+## SUPERSEDED — 2026-11-24
+
+Replaced by the `voice` spec: the session is the brain and the realtime model is only the ears and mouth (engine `live`). Nothing below is normative.
 
 # Realtime Voice Runtime Providers
 

@@ -22,6 +22,7 @@ import { TrackedWorkDrain, type WorkDrainProof, type WorkDrainStatus } from "./r
  *   ravi.config.changed        -> reload router config
  */
 
+import { deliverVoiceApprovalRequest, VOICE_CHANNEL } from "./voice/approvals.js";
 import { LIBRARY_REQUEST_CHANNEL } from "./library/request-channel.js";
 import {
   type GuardedSession,
@@ -2105,6 +2106,15 @@ export class Gateway {
   }
 
   private async handleDirectSendEvent(data: DirectSendRequest): Promise<void> {
+    // Voice calls are not chats: only approval requests for an open call reach them.
+    if (data.channel === VOICE_CHANNEL) {
+      const result = await deliverVoiceApprovalRequest(data).catch((error) => ({
+        success: false as const,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+      if (data.replyTopic) await this.emitEvent(data.replyTopic, result);
+      return;
+    }
     // Knowledge egress guard for packet conversations, text and poll alike.
     const guarded = guardedSessionForChat(data.channel, data.to);
     if (guarded) {

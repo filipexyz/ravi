@@ -26840,6 +26840,356 @@ export type VideoAnalyzeReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `voice.calls.approve`. */
+export type VoiceCallsApproveInput = {
+  approval: string;
+  call: string;
+  digest?: string;
+  execute?: boolean;
+  version?: string;
+};
+
+/** Return shape for `voice.calls.approve`. */
+export type VoiceCallsApproveReturn = {
+  approvalId: string;
+  callId: string;
+  decision: "approved";
+};
+
+/** Input shape for `voice.calls.audio`. */
+export type VoiceCallsAudioInput = {
+  call: string;
+  item: string;
+  out?: string;
+};
+
+/** Return shape for `voice.calls.audio`. */
+export type VoiceCallsAudioReturn = {
+  audioBase64?: string;
+  bytes: number;
+  callId: string;
+  item: string;
+  mime: string;
+  path?: string;
+};
+
+/** Input shape for `voice.calls.cancel-turn`. */
+export type VoiceCallsCancelTurnInput = {
+  call: string;
+  turn?: string;
+};
+
+/** Return shape for `voice.calls.cancel-turn`. */
+export type VoiceCallsCancelTurnReturn = {
+  callId: string;
+  cancelRequested: true;
+  turnId: string;
+};
+
+/** Input shape for `voice.calls.connect`. */
+export type VoiceCallsConnectInput = {
+  call: string;
+  offer?: string;
+};
+
+/** Return shape for `voice.calls.connect`. */
+export type VoiceCallsConnectReturn = {
+  callId: string;
+  connectionKind: "none" | "webrtc" | "room";
+  lastSeq: number;
+  roomToken: string | null;
+  roomUrl: string | null;
+  sdpAnswer: string | null;
+};
+
+/** Input shape for `voice.calls.deny`. */
+export type VoiceCallsDenyInput = {
+  approval: string;
+  call: string;
+};
+
+/** Return shape for `voice.calls.deny`. */
+export type VoiceCallsDenyReturn = {
+  approvalId: string;
+  callId: string;
+  decision: "rejected";
+};
+
+/** Input shape for `voice.calls.end`. */
+export type VoiceCallsEndInput = {
+  call: string;
+};
+
+/** Return shape for `voice.calls.end`. */
+export type VoiceCallsEndReturn = {
+  callId: string;
+  ended: true;
+};
+
+/** Input shape for `voice.calls.events`. */
+export type VoiceCallsEventsInput = {
+  after?: string;
+  call: string;
+  limit?: string;
+};
+
+/** Return shape for `voice.calls.events`. */
+export type VoiceCallsEventsReturn = {
+  callId: string;
+  events: Array<Record<string, unknown>>;
+  lastSeq: number;
+};
+
+/** Input shape for `voice.calls.list`. */
+export type VoiceCallsListInput = {
+  active?: boolean;
+  limit?: string;
+};
+
+/** Return shape for `voice.calls.list`. */
+export type VoiceCallsListReturn = {
+  calls: Array<Record<string, unknown>>;
+  total: number;
+};
+
+/** Input shape for `voice.calls.push`. */
+export type VoiceCallsPushInput = {
+  audio?: string;
+  audioData?: string;
+  call: string;
+  mime?: string;
+};
+
+/** Return shape for `voice.calls.push`. */
+export type VoiceCallsPushReturn = {
+  callId: string;
+  text: string;
+  turnId: string | null;
+};
+
+/** Input shape for `voice.calls.send`. */
+export type VoiceCallsSendInput = {
+  call: string;
+  guest?: string;
+  text: string[];
+};
+
+/** Return shape for `voice.calls.send`. */
+export type VoiceCallsSendReturn = {
+  callId: string;
+  text: string;
+  turnId: string;
+};
+
+/** Input shape for `voice.calls.show`. */
+export type VoiceCallsShowInput = {
+  call: string;
+};
+
+/** Return shape for `voice.calls.show`. */
+export type VoiceCallsShowReturn = {
+  call: Record<string, unknown>;
+  engine: Record<string, unknown>;
+  lastSeq: number;
+  openApprovals: Array<Record<string, unknown>>;
+  turns: Array<Record<string, unknown>>;
+};
+
+/** Input shape for `voice.calls.silence`. */
+export type VoiceCallsSilenceInput = {
+  call: string;
+};
+
+/** Return shape for `voice.calls.silence`. */
+export type VoiceCallsSilenceReturn = {
+  callId: string;
+  silenced: true;
+};
+
+/** Input shape for `voice.calls.start`. */
+export type VoiceCallsStartInput = {
+  mode?: string;
+  offer?: string;
+  profile?: string;
+  session: string;
+};
+
+/** Return shape for `voice.calls.start`. */
+export type VoiceCallsStartReturn = {
+  callId: string;
+  capabilities: Record<string, unknown>;
+  connectionKind: "none" | "webrtc" | "room";
+  lastSeq: number;
+  mode: "push" | "live" | "handsfree" | "mock";
+  profileId: string;
+  roomToken: string | null;
+  roomUrl: string | null;
+  sdpAnswer: string | null;
+  sessionName: string;
+  state: string;
+};
+
+/** Input shape for `voice.calls.transcript`. */
+export type VoiceCallsTranscriptInput = {
+  call: string;
+};
+
+/** Return shape for `voice.calls.transcript`. */
+export type VoiceCallsTranscriptReturn = {
+  callId: string;
+  lines: Array<Record<string, unknown>>;
+};
+
+/** Input shape for `voice.devices.list`. */
+export type VoiceDevicesListInput = {
+  all?: boolean;
+};
+
+/** Return shape for `voice.devices.list`. */
+export type VoiceDevicesListReturn = {
+  devices: Array<(Record<string, unknown>) | null>;
+  total: number;
+};
+
+/** Input shape for `voice.devices.pair`. */
+export type VoiceDevicesPairInput = {
+  contact?: string;
+  execute?: boolean;
+  label?: string;
+  session?: string;
+  worker?: boolean;
+};
+
+/** Return shape for `voice.devices.pair`. */
+export type VoiceDevicesPairReturn = {
+  contextKey: string;
+  device: (Record<string, unknown>) | null;
+  shownOnce: true;
+};
+
+/** Input shape for `voice.devices.revoke`. */
+export type VoiceDevicesRevokeInput = {
+  device: string;
+};
+
+/** Return shape for `voice.devices.revoke`. */
+export type VoiceDevicesRevokeReturn = {
+  device: (Record<string, unknown>) | null;
+  endedCalls: string[];
+};
+
+/** Input shape for `voice.engines.check`. */
+export type VoiceEnginesCheckInput = Record<string, never>;
+
+/** Return shape for `voice.engines.check`. */
+export type VoiceEnginesCheckReturn = {
+  checks: Array<Record<string, unknown>>;
+};
+
+/** Input shape for `voice.engines.list`. */
+export type VoiceEnginesListInput = Record<string, never>;
+
+/** Return shape for `voice.engines.list`. */
+export type VoiceEnginesListReturn = {
+  engines: Array<Record<string, unknown>>;
+};
+
+/** Input shape for `voice.profiles.create`. */
+export type VoiceProfilesCreateInput = {
+  allowGuests?: boolean;
+  delivery?: string;
+  id: string;
+  label?: string;
+  language?: string;
+  liveModel?: string;
+  liveVoice?: string;
+  maxCallCost?: string;
+  maxCallMinutes?: string;
+  maxDailyCost?: string;
+  mode?: string;
+  ttsModel?: string;
+  voice?: string;
+};
+
+/** Return shape for `voice.profiles.create`. */
+export type VoiceProfilesCreateReturn = {
+  profile: Record<string, unknown>;
+};
+
+/** Input shape for `voice.profiles.delete`. */
+export type VoiceProfilesDeleteInput = {
+  id: string;
+};
+
+/** Return shape for `voice.profiles.delete`. */
+export type VoiceProfilesDeleteReturn = {
+  deleted: true;
+  id: string;
+};
+
+/** Input shape for `voice.profiles.list`. */
+export type VoiceProfilesListInput = Record<string, never>;
+
+/** Return shape for `voice.profiles.list`. */
+export type VoiceProfilesListReturn = {
+  profiles: Array<Record<string, unknown>>;
+  total: number;
+};
+
+/** Input shape for `voice.profiles.show`. */
+export type VoiceProfilesShowInput = {
+  id: string;
+};
+
+/** Return shape for `voice.profiles.show`. */
+export type VoiceProfilesShowReturn = {
+  profile: Record<string, unknown>;
+};
+
+/** Input shape for `voice.profiles.update`. */
+export type VoiceProfilesUpdateInput = {
+  allowGuests?: boolean;
+  delivery?: string;
+  id: string;
+  label?: string;
+  language?: string;
+  liveModel?: string;
+  liveVoice?: string;
+  maxCallCost?: string;
+  maxCallMinutes?: string;
+  maxDailyCost?: string;
+  mode?: string;
+  noGuests?: boolean;
+  ttsModel?: string;
+  voice?: string;
+};
+
+/** Return shape for `voice.profiles.update`. */
+export type VoiceProfilesUpdateReturn = {
+  profile: Record<string, unknown>;
+};
+
+/** Input shape for `voice.targets.list`. */
+export type VoiceTargetsListInput = Record<string, never>;
+
+/** Return shape for `voice.targets.list`. */
+export type VoiceTargetsListReturn = {
+  targets: Array<Record<string, unknown>>;
+  total: number;
+};
+
+/** Input shape for `voice.voices.list`. */
+export type VoiceVoicesListInput = {
+  limit?: string;
+  search?: string;
+};
+
+/** Return shape for `voice.voices.list`. */
+export type VoiceVoicesListReturn = {
+  total: number;
+  voices: Array<Record<string, unknown>>;
+};
+
 /** Input shape for `watch.connectors`. */
 export type WatchConnectorsInput = {
   provider?: string;

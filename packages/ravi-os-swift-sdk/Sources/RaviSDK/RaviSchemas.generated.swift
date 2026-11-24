@@ -138754,6 +138754,1333 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let VoiceCallsApproveInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "approval": {
+        "description": "Approval id (from turn.approval_requested)",
+        "type": "string"
+      },
+      "call": {
+        "description": "Call id",
+        "type": "string"
+      },
+      "digest": {
+        "description": "Approval digest shown in the call",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Actually approve; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
+      "version": {
+        "description": "Approval version shown in the call",
+        "type": "string"
+      }
+    },
+    "required": [
+      "approval",
+      "call"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsApproveReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "approvalId": {
+        "type": "string"
+      },
+      "callId": {
+        "type": "string"
+      },
+      "decision": {
+        "const": "approved",
+        "type": "string"
+      }
+    },
+    "required": [
+      "callId",
+      "approvalId",
+      "decision"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsAudioInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "call": {
+        "description": "Call id",
+        "type": "string"
+      },
+      "item": {
+        "description": "Audio item id (from agent.transcript)",
+        "type": "string"
+      },
+      "out": {
+        "description": "Write the clip to this file instead of returning base64",
+        "type": "string"
+      }
+    },
+    "required": [
+      "call",
+      "item"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsAudioReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "audioBase64": {
+        "type": "string"
+      },
+      "bytes": {
+        "type": "number"
+      },
+      "callId": {
+        "type": "string"
+      },
+      "item": {
+        "type": "string"
+      },
+      "mime": {
+        "type": "string"
+      },
+      "path": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "callId",
+      "item",
+      "mime",
+      "bytes"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsCancelTurnInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "call": {
+        "description": "Call id",
+        "type": "string"
+      },
+      "turn": {
+        "description": "Turn id (from turn.accepted)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "call"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsCancelTurnReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "callId": {
+        "type": "string"
+      },
+      "cancelRequested": {
+        "const": true,
+        "type": "boolean"
+      },
+      "turnId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "callId",
+      "turnId",
+      "cancelRequested"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsConnectInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "call": {
+        "description": "Call id",
+        "type": "string"
+      },
+      "offer": {
+        "description": "WebRTC SDP offer (live mode)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "call"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsConnectReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "callId": {
+        "type": "string"
+      },
+      "connectionKind": {
+        "enum": [
+          "none",
+          "webrtc",
+          "room"
+        ],
+        "type": "string"
+      },
+      "lastSeq": {
+        "type": "number"
+      },
+      "roomToken": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "roomUrl": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "sdpAnswer": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "callId",
+      "connectionKind",
+      "sdpAnswer",
+      "roomUrl",
+      "roomToken",
+      "lastSeq"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsDenyInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "approval": {
+        "description": "Approval id (from turn.approval_requested)",
+        "type": "string"
+      },
+      "call": {
+        "description": "Call id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "approval",
+      "call"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsDenyReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "approvalId": {
+        "type": "string"
+      },
+      "callId": {
+        "type": "string"
+      },
+      "decision": {
+        "const": "rejected",
+        "type": "string"
+      }
+    },
+    "required": [
+      "callId",
+      "approvalId",
+      "decision"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsEndInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "call": {
+        "description": "Call id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "call"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsEndReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "callId": {
+        "type": "string"
+      },
+      "ended": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "callId",
+      "ended"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsEventsInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "after": {
+        "description": "Only events after this sequence number",
+        "type": "string"
+      },
+      "call": {
+        "description": "Call id",
+        "type": "string"
+      },
+      "limit": {
+        "description": "Maximum events (default 500)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "call"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsEventsReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "callId": {
+        "type": "string"
+      },
+      "events": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "lastSeq": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "callId",
+      "events",
+      "lastSeq"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "active": {
+        "description": "Only calls that have not ended",
+        "type": "boolean"
+      },
+      "limit": {
+        "description": "Maximum calls (default 50)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "calls": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "calls",
+      "total"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsPushInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "audio": {
+        "description": "Audio clip file",
+        "type": "string"
+      },
+      "audioData": {
+        "description": "Audio clip as base64 (SDK and apps)",
+        "type": "string"
+      },
+      "call": {
+        "description": "Call id",
+        "type": "string"
+      },
+      "mime": {
+        "description": "Audio type, e.g. audio/webm",
+        "type": "string"
+      }
+    },
+    "required": [
+      "call"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsPushReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "callId": {
+        "type": "string"
+      },
+      "text": {
+        "type": "string"
+      },
+      "turnId": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "callId",
+      "turnId",
+      "text"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsSendInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "call": {
+        "description": "Call id",
+        "type": "string"
+      },
+      "guest": {
+        "description": "Mark the speaker as a guest (third party)",
+        "type": "string"
+      },
+      "text": {
+        "description": "What to say",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "call",
+      "text"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsSendReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "callId": {
+        "type": "string"
+      },
+      "text": {
+        "type": "string"
+      },
+      "turnId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "callId",
+      "turnId",
+      "text"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "call": {
+        "description": "Call id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "call"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsShowReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "call": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "engine": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "lastSeq": {
+        "type": "number"
+      },
+      "openApprovals": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "turns": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "call",
+      "engine",
+      "turns",
+      "openApprovals",
+      "lastSeq"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsSilenceInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "call": {
+        "description": "Call id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "call"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsSilenceReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "callId": {
+        "type": "string"
+      },
+      "silenced": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "callId",
+      "silenced"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsStartInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "mode": {
+        "description": "push|live|handsfree|mock (default: the profile's)",
+        "type": "string"
+      },
+      "offer": {
+        "description": "WebRTC SDP offer (live mode)",
+        "type": "string"
+      },
+      "profile": {
+        "description": "Voice profile (default: default)",
+        "type": "string"
+      },
+      "session": {
+        "description": "Session name or key",
+        "type": "string"
+      }
+    },
+    "required": [
+      "session"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsStartReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "callId": {
+        "type": "string"
+      },
+      "capabilities": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "connectionKind": {
+        "enum": [
+          "none",
+          "webrtc",
+          "room"
+        ],
+        "type": "string"
+      },
+      "lastSeq": {
+        "type": "number"
+      },
+      "mode": {
+        "enum": [
+          "push",
+          "live",
+          "handsfree",
+          "mock"
+        ],
+        "type": "string"
+      },
+      "profileId": {
+        "type": "string"
+      },
+      "roomToken": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "roomUrl": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "sdpAnswer": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "sessionName": {
+        "type": "string"
+      },
+      "state": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "callId",
+      "connectionKind",
+      "sdpAnswer",
+      "roomUrl",
+      "roomToken",
+      "lastSeq",
+      "sessionName",
+      "mode",
+      "profileId",
+      "state",
+      "capabilities"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsTranscriptInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "call": {
+        "description": "Call id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "call"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceCallsTranscriptReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "callId": {
+        "type": "string"
+      },
+      "lines": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "callId",
+      "lines"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceDevicesListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "all": {
+        "description": "Include revoked devices",
+        "type": "boolean"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceDevicesListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "devices": {
+        "items": {
+          "anyOf": [
+            {
+              "additionalProperties": {},
+              "properties": {},
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "devices",
+      "total"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceDevicesPairInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "contact": {
+        "description": "The person this device speaks for",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Actually pair and print the key once; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
+      "label": {
+        "description": "Device name, e.g. 'iPhone'",
+        "type": "string"
+      },
+      "session": {
+        "description": "Sessions it may call (comma-separated; '*' only for the owner)",
+        "type": "string"
+      },
+      "worker": {
+        "description": "Issue a hands-free worker key instead of a person's device key",
+        "type": "boolean"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceDevicesPairReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "contextKey": {
+        "type": "string"
+      },
+      "device": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "shownOnce": {
+        "const": true,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "device",
+      "contextKey",
+      "shownOnce"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceDevicesRevokeInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "device": {
+        "description": "Device id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "device"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceDevicesRevokeReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "device": {
+        "anyOf": [
+          {
+            "additionalProperties": {},
+            "properties": {},
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "endedCalls": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "device",
+      "endedCalls"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceEnginesCheckInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceEnginesCheckReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "checks": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "checks"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceEnginesListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceEnginesListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "engines": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "engines"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceProfilesCreateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "allowGuests": {
+        "description": "Accept third-party speakers (speech only, never control)",
+        "type": "boolean"
+      },
+      "delivery": {
+        "description": "speak|when_idle|silent",
+        "type": "string"
+      },
+      "id": {
+        "description": "Profile id (letters, digits, - and _)",
+        "type": "string"
+      },
+      "label": {
+        "description": "Display name",
+        "type": "string"
+      },
+      "language": {
+        "description": "Language, e.g. pt or en",
+        "type": "string"
+      },
+      "liveModel": {
+        "description": "GPT-Live model",
+        "type": "string"
+      },
+      "liveVoice": {
+        "description": "GPT-Live voice",
+        "type": "string"
+      },
+      "maxCallCost": {
+        "description": "End a call at this estimated cost",
+        "type": "string"
+      },
+      "maxCallMinutes": {
+        "description": "End calls after this many minutes",
+        "type": "string"
+      },
+      "maxDailyCost": {
+        "description": "Refuse and end calls past this daily cost",
+        "type": "string"
+      },
+      "mode": {
+        "description": "push|live|handsfree|mock",
+        "type": "string"
+      },
+      "ttsModel": {
+        "description": "ElevenLabs model id",
+        "type": "string"
+      },
+      "voice": {
+        "description": "ElevenLabs voice id (push and hands-free)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceProfilesCreateReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "profile": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "profile"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceProfilesDeleteInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Profile id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceProfilesDeleteReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "deleted": {
+        "const": true,
+        "type": "boolean"
+      },
+      "id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "deleted"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceProfilesListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceProfilesListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "profiles": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "profiles",
+      "total"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceProfilesShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Profile id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceProfilesShowReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "profile": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "profile"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceProfilesUpdateInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "allowGuests": {
+        "description": "Accept third-party speakers",
+        "type": "boolean"
+      },
+      "delivery": {
+        "description": "speak|when_idle|silent",
+        "type": "string"
+      },
+      "id": {
+        "description": "Profile id",
+        "type": "string"
+      },
+      "label": {
+        "description": "Display name",
+        "type": "string"
+      },
+      "language": {
+        "description": "Language, e.g. pt or en",
+        "type": "string"
+      },
+      "liveModel": {
+        "description": "GPT-Live model",
+        "type": "string"
+      },
+      "liveVoice": {
+        "description": "GPT-Live voice",
+        "type": "string"
+      },
+      "maxCallCost": {
+        "description": "End a call at this estimated cost",
+        "type": "string"
+      },
+      "maxCallMinutes": {
+        "description": "End calls after this many minutes",
+        "type": "string"
+      },
+      "maxDailyCost": {
+        "description": "Refuse and end calls past this daily cost",
+        "type": "string"
+      },
+      "mode": {
+        "description": "push|live|handsfree|mock",
+        "type": "string"
+      },
+      "noGuests": {
+        "default": false,
+        "description": "Stop accepting third-party speakers",
+        "type": "boolean"
+      },
+      "ttsModel": {
+        "description": "ElevenLabs model id",
+        "type": "string"
+      },
+      "voice": {
+        "description": "ElevenLabs voice id (push and hands-free)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceProfilesUpdateReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "profile": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "profile"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceTargetsListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceTargetsListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "targets": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "targets",
+      "total"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceVoicesListInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "limit": {
+        "description": "Maximum voices (default 40)",
+        "type": "string"
+      },
+      "search": {
+        "description": "Filter by name or description",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let VoiceVoicesListReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "total": {
+        "type": "number"
+      },
+      "voices": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "voices",
+      "total"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let WatchConnectorsInputSchema = #"""
   {
     "additionalProperties": false,
