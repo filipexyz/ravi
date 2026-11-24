@@ -2755,6 +2755,26 @@ describe("verified human work handoffs", () => {
     expect((refusal as Error).message).not.toContain("contact's chat permissions");
   });
 
+  it("a thread opened from a governed chat is named a held relay, which no chat grant lifts", () => {
+    // The thread keeps the parent chat's overlay and is held as a relay of an overlay turn; the
+    // refusal names the relay (Devin on #972).
+    const { contact } = humanTurn("5511900098103");
+    dbEnsureContactChatGrant({
+      contactId: contact.id,
+      profileSlug: "permission-image",
+      scopeType: "chat",
+      scopeId: "chat_group_1",
+    });
+    const governedTurn = runtimeFor(promptForContact(contact.id, "Plan it in a thread"), originAgent, "governed");
+    expect(governedTurn.metadata?.actorAuthorizationMode).toBe("user-overlay");
+    expect(automationHoldCause(governedTurn)).toBe("contact-chat-grants");
+    const thread = handoff(governedTurn, "session.bootstrap");
+    expect(thread.metadata?.actorAuthorizationMode).toBe("user-overlay");
+    expect(thread.metadata?.relayNarrowing).toBe(true);
+    expect(isRelayHeldBelowAgent(thread.metadata)).toBe(true);
+    expect(automationHoldCause(thread)).toBe("held-relay");
+  });
+
   it("a relay to an agent with more authority than the caller's ceiling is held, not stamped", () => {
     // A plain contact in the origin agent's chat relays to a full-access agent: the turn is
     // narrowed to the caller's ceiling, so automation written there would run later as the

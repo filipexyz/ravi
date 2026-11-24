@@ -38,7 +38,8 @@ capability: profiles
   literal. A contact whose turns in that chat already hold full access (admin
   tag in a chat with no grants, or a governed chat whose overlay covers it) is
   refused with `already_held` before any adapter is asked, also over an open
-  identical request; a governed chat whose overlay does not cover it still asks.
+  identical request, which is closed and can no longer be approved; a governed
+  chat whose overlay does not cover it still asks.
 - `bun test src/channels/slack/grant-request-adapter.test.ts` covers the Slack
   adapter: it reaches only human Slack identities on enabled instances, sends a
   private card naming contact and chat with ids and offering one intent, turns an

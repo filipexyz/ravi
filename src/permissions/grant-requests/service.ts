@@ -180,7 +180,7 @@ export function previewGrantRequest(
 function alreadyHeldError(plan: GrantRequestPlan): GrantRequestError {
   return new GrantRequestError(
     "already_held",
-    `Contact ${plan.contactId} already holds full access in chat ${plan.chatId}: their own turns there run with the agent's whole authority, so there is nothing to approve and nobody was asked.`,
+    `Contact ${plan.contactId} already holds full access in chat ${plan.chatId}: their own turns there run with the agent's whole authority, so there is nothing to approve, nobody was asked and an open identical request was closed.`,
   );
 }
 
@@ -217,8 +217,13 @@ export async function requestGrant(
 ): Promise<RequestGrantResult> {
   const now = dependencies.now();
   expireGrantRequests(now);
-  // Checked before reuse: an open request for access the contact now holds is not worth answering.
-  if (contactHoldsFullAccessInChat(input.plan.contactId, input.plan.chatId)) throw alreadyHeldError(input.plan);
+  if (contactHoldsFullAccessInChat(input.plan.contactId, input.plan.chatId)) {
+    // An open identical request asks for access the contact now holds: close it, so its prompts
+    // can no longer write a grant (approving it would turn the chat governed for nothing).
+    const open = findOpenGrantRequest(input.plan, now);
+    if (open) failGrantRequest(open.id, "the contact already holds full access in that chat", now);
+    throw alreadyHeldError(input.plan);
+  }
 
   const open = findOpenGrantRequest(input.plan, now);
   if (open) return { request: open, deliveries: listGrantRequestDeliveries(open.id), reused: true };

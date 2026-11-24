@@ -741,8 +741,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/pages.ts | 1533 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:23b402e772b919537c1430af |
 | cli | src/cli/commands/pages.ts | 2405 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:3782eede5f9231e775e0fc9c |
 | cli | src/cli/commands/pages.ts | 2835 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/pages.ts:e2474b6819dd57cf210efcfa |
-| permissions | src/cli/commands/permissions.ts | 1183 | fixed | binding retained / no recognized error surface | src/cli/commands/permissions.ts:50df5461a8d7f99878a3460b |
-| permissions | src/cli/commands/permissions.ts | 1220 | fixed | binding retained / no recognized error surface | src/cli/commands/permissions.ts:50df5461a8d7f99878a3460b |
+| permissions | src/cli/commands/permissions.ts | 1186 | fixed | binding retained / no recognized error surface | src/cli/commands/permissions.ts:50df5461a8d7f99878a3460b |
+| permissions | src/cli/commands/permissions.ts | 1223 | fixed | binding retained / no recognized error surface | src/cli/commands/permissions.ts:50df5461a8d7f99878a3460b |
 | cli | src/cli/commands/pr.ts | 124 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:6dc250c56e86cef1e8a12b0a |
 | cli | src/cli/commands/pr.ts | 191 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:f2cfbe4db8427d9da814ffde |
 | cli | src/cli/commands/pr.ts | 211 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:5542d2a05595df529681fc30 |
@@ -978,15 +978,15 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/registry.ts | 271 | fixed | binding retained / no recognized error surface | src/cli/registry.ts:93655d78883a03d1fbd85a5e |
 | cli | src/cli/registry.ts | 376 | fixed | binding retained / no recognized error surface | src/cli/registry.ts:e75dd981fe9367c1cbd9478b |
 | cli | src/cli/registry.ts | 483 | fixed | binding retained / no recognized error surface | src/cli/registry.ts:7b1c42218079b4b73c93330c |
-| relay | src/cli/remote-gateway.ts | 154 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:950513833066c4a74bd40ca2 |
-| relay | src/cli/remote-gateway.ts | 194 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:7b442ec9c6f86f3ce4264b74 |
-| relay | src/cli/remote-gateway.ts | 309 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:1607538d1a25b7ef5066f1ea |
-| relay | src/cli/remote-gateway.ts | 348 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:184b15658d372cdd90140658 |
-| relay | src/cli/remote-gateway.ts | 374 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:ac623af48505defd94499ca8 |
-| relay | src/cli/remote-gateway.ts | 469 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:c41d6e44f3fc6e90b2094dde |
-| relay | src/cli/remote-gateway.ts | 954 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:266a824d891cb5d497d3ac3e |
-| relay | src/cli/remote-gateway.ts | 1021 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:b25c88a5d690b9855455a3a6 |
-| relay | src/cli/remote-gateway.ts | 1550 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:c189970f4ec710d509af0466 |
+| relay | src/cli/remote-gateway.ts | 155 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:950513833066c4a74bd40ca2 |
+| relay | src/cli/remote-gateway.ts | 195 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:7b442ec9c6f86f3ce4264b74 |
+| relay | src/cli/remote-gateway.ts | 310 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:1607538d1a25b7ef5066f1ea |
+| relay | src/cli/remote-gateway.ts | 349 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:184b15658d372cdd90140658 |
+| relay | src/cli/remote-gateway.ts | 375 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:ac623af48505defd94499ca8 |
+| relay | src/cli/remote-gateway.ts | 470 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:c41d6e44f3fc6e90b2094dde |
+| relay | src/cli/remote-gateway.ts | 955 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:266a824d891cb5d497d3ac3e |
+| relay | src/cli/remote-gateway.ts | 1022 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:b25c88a5d690b9855455a3a6 |
+| relay | src/cli/remote-gateway.ts | 1560 | triaged-follow-up | catch-without-binding | src/cli/remote-gateway.ts:c189970f4ec710d509af0466 |
 | cli | src/cli/runtime-target.ts | 34 | triaged-follow-up | catch-without-binding | src/cli/runtime-target.ts:a330f4808d976b8052774005 |
 | cli | src/cli/runtime-target.ts | 86 | triaged-follow-up | catch-without-binding | src/cli/runtime-target.ts:863230d57a244c76b7fe3ddb |
 | cli | src/cli/skill-gates.ts | 264 | no-cause | Incomplete shell text is expected during best-effort skill discovery; retain only its visible command prefix, never an authorization verdict. | src/cli/skill-gates.ts:b60b7d61e8d7d344de5faa41 |
@@ -1762,9 +1762,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | permissions | src/permissions/external-authority-provider.ts | 279 | triaged-follow-up | catch-without-binding | src/permissions/external-authority-provider.ts:ea3cce06a9b84d07571d739f |
 | permissions | src/permissions/external-authority-provider.ts | 324 | fixed | binding retained / no recognized error surface | src/permissions/external-authority-provider.ts:246ebf20a63fb8171d85dfd7 |
 | permissions | src/permissions/grant-requests/runner.ts | 15 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/runner.ts:0af4833007804829812bb722 |
-| permissions | src/permissions/grant-requests/service.ts | 256 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:97faa890175ca9178433118e |
-| permissions | src/permissions/grant-requests/service.ts | 368 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:f40c7396592b295b1f24760b |
-| permissions | src/permissions/grant-requests/service.ts | 398 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:463fd044a194df89861eef7a |
+| permissions | src/permissions/grant-requests/service.ts | 261 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:97faa890175ca9178433118e |
+| permissions | src/permissions/grant-requests/service.ts | 373 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:f40c7396592b295b1f24760b |
+| permissions | src/permissions/grant-requests/service.ts | 403 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:463fd044a194df89861eef7a |
 | permissions | src/permissions/grant-requests/store.ts | 290 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/store.ts:4d2c02c75762345efbd4df15 |
 | permissions | src/permissions/grant-requests/store.ts | 301 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/store.ts:0f6e90634e8a1fecf83e5e95 |
 | permissions | src/permissions/provider-config-paths.ts | 59 | fixed | binding retained / no recognized error surface | src/permissions/provider-config-paths.ts:478e4cc0b615ab3752dae1ed |
@@ -1795,10 +1795,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | pr | src/pr/journal.ts | 81 | triaged-follow-up | catch-without-binding | src/pr/journal.ts:e14961799fa1b1b0097757a3 |
 | pr | src/pr/journal.ts | 91 | triaged-follow-up | catch-without-binding | src/pr/journal.ts:3145d57414f258193d41f330 |
 | pr | src/pr/journal.ts | 107 | fixed | binding retained / no recognized error surface | src/pr/journal.ts:09aaf61b134f593fe2233482 |
-| pr | src/pr/service.ts | 154 | fixed | binding retained / no recognized error surface | src/pr/service.ts:b8163c956737ef1f22b2c7c6 |
-| pr | src/pr/service.ts | 245 | fixed | binding retained / no recognized error surface | src/pr/service.ts:f1b1fc7d98ae1d310aaa4e2a |
-| pr | src/pr/service.ts | 331 | fixed | binding retained / no recognized error surface | src/pr/service.ts:a4e6607a0338f2c8f78ffc19 |
-| pr | src/pr/service.ts | 359 | triaged-follow-up | catch-without-binding | src/pr/service.ts:33a082f827152892352f8ea2 |
+| pr | src/pr/service.ts | 155 | fixed | binding retained / no recognized error surface | src/pr/service.ts:b8163c956737ef1f22b2c7c6 |
+| pr | src/pr/service.ts | 246 | fixed | binding retained / no recognized error surface | src/pr/service.ts:f1b1fc7d98ae1d310aaa4e2a |
+| pr | src/pr/service.ts | 332 | fixed | binding retained / no recognized error surface | src/pr/service.ts:a4e6607a0338f2c8f78ffc19 |
+| pr | src/pr/service.ts | 360 | triaged-follow-up | catch-without-binding | src/pr/service.ts:33a082f827152892352f8ea2 |
 | pr | src/pr/test-fixture.ts | 40 | triaged-follow-up | catch-without-binding | src/pr/test-fixture.ts:60d092aaec01b4962f56ab04 |
 | pr | src/pr/test-fixture.ts | 79 | triaged-follow-up | catch-without-binding | src/pr/test-fixture.ts:cafd5f68270c88168afab8e4 |
 | pr | src/pr/test-fixture.ts | 115 | triaged-follow-up | catch-without-binding | src/pr/test-fixture.ts:7bfdcaa0eb9fb376d4a9f61d |

@@ -321,7 +321,8 @@ Semantics:
   and leave nothing pending. The grantee is never a candidate.
 - A request for a contact whose own turns in that chat already hold full access
   MUST be refused before anyone is asked (`FULL_ACCESS_ALREADY_HELD`, exit 3),
-  even with an identical request open: the grant would change nothing. It reads
+  even with an identical request open, which is closed (`failed`) so its prompts
+  can no longer write a grant: the grant would change nothing. It reads
   what a turn of theirs gets: in a chat with no grants, their own capabilities
   (an admin tag keeps break-glass); in a governed chat, their overlay. On 24/11 a
   relayed turn refused automation with a message about "a contact's chat

@@ -132,24 +132,34 @@ describe("the refusal names its cause", () => {
   it("names a held relay as a relay, never as a contact's chat permissions", () => {
     // 24/11: a thread's return refused as "limited to a contact's chat permissions" led the main
     // session to ask full access for the operator, who already held it.
-    for (const metadata of [{ relayNarrowing: true }, { relayNarrowing: true, ...withheld }]) {
-      const ctx = turn("invoke-only", metadata);
+    // Also a thread opened from a governed chat: narrowed to the contact's grants and a held relay.
+    for (const ctx of [
+      turn("invoke-only", { relayNarrowing: true }),
+      turn("invoke-only", { relayNarrowing: true, ...withheld }),
+      turn("user-overlay", { relayNarrowing: true }),
+    ]) {
       expect(automationHoldCause(ctx.context)).toBe("held-relay");
       const command = refusal(ctx, () => assertNoUserOverlayAutomationWrite("cron add"));
-      expect(command).toMatchObject({ code: "PERMISSION_DENIED" });
+      expect(command).toMatchObject({ code: "PERMISSION_DENIED", details: { automationHold: "held-relay" } });
       expect(command.message).toContain("cron add is not available in a relayed turn");
       expect(command.message).not.toContain("contact's chat permissions");
       expect(command.suggestedAction).toContain("requesting access for a contact does not lift it");
       const store = refusal(ctx, () => assertAutomationStoreWrite("cron job"));
       expect(store.message).toContain("(a relay whose caller does not carry the agent's whole authority)");
-      expect(store.suggestedAction).toBe(command.suggestedAction);
+      expect(store).toMatchObject({
+        suggestedAction: command.suggestedAction,
+        details: { automationHold: "held-relay" },
+      });
     }
   });
 
-  it("names a contact-narrowed turn and a person with no grant in the chat", () => {
-    expect(refusal(turn("user-overlay"), () => assertNoUserOverlayAutomationWrite("triggers add")).message).toBe(
+  it("names a contact-narrowed turn and a person with no grant in the chat, and sends neither to ask access", () => {
+    const overlay = refusal(turn("user-overlay"), () => assertNoUserOverlayAutomationWrite("triggers add"));
+    expect(overlay.message).toBe(
       "triggers add is not available in a turn limited to a contact's chat permissions: it would run later with the agent's full authority.",
     );
+    expect(overlay).toMatchObject({ details: { automationHold: "contact-chat-grants" } });
+    expect(overlay.suggestedAction).toContain("More chat permissions do not lift this");
     expect(refusal(turn("user-overlay"), () => assertAutomationStoreWrite("trigger")).message).toContain(
       "(a contact's chat permissions)",
     );
@@ -157,7 +167,10 @@ describe("the refusal names its cause", () => {
     expect(automationHoldCause(person.context)).toBe("person-without-chat-grant");
     const command = refusal(person, () => assertNoUserOverlayAutomationWrite("triggers add"));
     expect(command.message).toContain("the turn of a person with no grant in this chat");
-    expect(command.suggestedAction).toContain("ravi permissions request full-access");
+    expect(command).toMatchObject({ details: { automationHold: "person-without-chat-grant" } });
+    // Approving full access for that person makes the chat governed: their next turn is an overlay
+    // turn, still refused. So the advice never points at a grant (Devin on #972).
+    expect(command.suggestedAction).toBe("Ask the operator to set it up.");
     expect(refusal(person, () => assertAutomationStoreWrite("trigger")).message).toContain(
       "(a person with no grant in this chat)",
     );

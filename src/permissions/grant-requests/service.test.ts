@@ -205,13 +205,21 @@ describe("grant requests (core, no channel)", () => {
       expect(adapter.delivered).toEqual([]);
       expect(findOpenGrantRequest(forAdmin, nowMs)).toBeNull();
 
-      // An open identical request is not reused once the contact holds it.
+      // An open identical request is closed, not reused, once the contact holds it: its prompts can
+      // no longer write a grant (Devin on #972).
       const open = await requestGrant({ plan, requester }, deps([adapter]));
       expect(adapter.delivered).toHaveLength(2);
       seedApprovalContact({ phone: APPROVAL_TEST_STRANGER_PHONE, name: "Breno", tags: ["permission.admin"] });
       await expect(requestGrant({ plan, requester }, deps([adapter]))).rejects.toMatchObject({ code: "already_held" });
       expect(adapter.delivered).toHaveLength(2);
-      expect(getGrantRequest(open.request.id)?.status).toBe("pending");
+      expect(getGrantRequest(open.request.id)?.status).toBe("failed");
+      expect(findOpenGrantRequest(plan, nowMs)).toBeNull();
+      const late = decide(
+        { requestId: open.request.id, decision: "approve", actor: sender(APPROVAL_TEST_SLACK_OWNER_PHONE) },
+        deps([]),
+      );
+      expect(late).toMatchObject({ kind: "refused" });
+      expect(dbListContactChatGrants({ contactId: grantee.id })).toEqual([]);
     });
 
     it("reads the contact's overlay in a chat governed by contact grants", async () => {

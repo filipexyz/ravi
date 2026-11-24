@@ -1079,12 +1079,13 @@ export async function requestFullAccessApproval(input: FullAccessRequestInput) {
       details: { suggestedAction },
       diagnostic: errorDiagnostic(message, { operation: op }),
     });
-  const policy = (code: string, message: string, suggestedAction: string): never =>
+  const policy = (code: string, message: string, suggestedAction: string, caught?: unknown): never =>
     contractFail(op, code, message, {
       asJson: input.asJson,
       exitCode: CONTRACT_EXIT_POLICY,
       details: { suggestedAction },
-      diagnostic: errorDiagnostic(message, { operation: op }),
+      // A caught error reaches the diagnostic as itself (cause chain), not as its message.
+      diagnostic: errorDiagnostic(caught ?? message, { operation: op }),
     });
 
   if (normalizePermissionTagSlug(input.profile) !== "permission-full-access") {
@@ -1161,6 +1162,7 @@ export async function requestFullAccessApproval(input: FullAccessRequestInput) {
         "FULL_ACCESS_ALREADY_HELD",
         error.message,
         "Nothing was requested. If a command was refused in a turn of theirs, read its message: a relayed turn (a thread or a thread's return) is held by the relay, and no grant lifts that.",
+        error,
       );
     }
     const code =
@@ -1173,6 +1175,7 @@ export async function requestFullAccessApproval(input: FullAccessRequestInput) {
       code,
       error.message,
       "Nothing was requested. An installation needs at least one contact with admin that a connected channel can reach.",
+      error,
     );
   };
 
