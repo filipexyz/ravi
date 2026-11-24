@@ -120806,7 +120806,7 @@ class RaviSchemas {
       "type": "boolean"
     },
     "limit": {
-      "description": "Page size (default: 50, max: 500)",
+      "description": "Page size (default and max: 500, so every skill is listed)",
       "type": "string"
     },
     "offset": {

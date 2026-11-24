@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "eb32eb41e0b98676"
+    "version": "356bdc16e7ac59e4"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -136287,7 +136287,7 @@
                     "type": "boolean"
                   },
                   "limit": {
-                    "description": "Page size (default: 50, max: 500)",
+                    "description": "Page size (default and max: 500, so every skill is listed)",
                     "type": "string"
                   },
                   "offset": {
