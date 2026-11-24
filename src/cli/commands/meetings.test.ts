@@ -50,6 +50,44 @@ describe("MeetingsCommands", () => {
     previousRecorderBin = undefined;
   });
 
+  it("hands the recorder the --out path resolved against the caller's cwd, not the daemon's", async () => {
+    const callerCwd = join(tempDir!, "caller-workspace");
+    const { output } = await captureConsole(() =>
+      runWithContext({ cwd: callerCwd }, () =>
+        new MeetingsCommands().join(
+          "google-meet",
+          "https://meet.google.com/abc-defg-hij",
+          "Ravi",
+          "recordings",
+          undefined,
+          undefined,
+          "120",
+          "5",
+          "webrtc-tap",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          false,
+          false,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          true,
+          undefined,
+          undefined,
+          true,
+        ),
+      ),
+    );
+    const payload = JSON.parse(output) as { args: string[] };
+    const out = payload.args[payload.args.indexOf("--out") + 1];
+    expect(out).toBe(join(callerCwd, "recordings"));
+  });
+
   it("validates Google Meet provider invocation without joining on dry-run", async () => {
     const { output, result } = await captureConsole(() =>
       new MeetingsCommands().join(

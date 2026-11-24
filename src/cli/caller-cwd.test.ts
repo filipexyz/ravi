@@ -1,8 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseCallerCwd, resolveCallerPath } from "./caller-cwd.js";
+import { RulesCommands } from "./commands/rules.js";
 import { WidgetsCommands } from "./commands/widgets.js";
 import { runWithContext, type ToolContext } from "./context.js";
 
@@ -75,8 +76,40 @@ describe("resolveCallerPath file authority", () => {
     };
     expect(runWithContext(limited, () => resolveCallerPath("notes.md", "write"))).toBe(join(workspace, "notes.md"));
     expect(() =>
-      runWithContext(limited, () => resolveCallerPath(join(process.cwd(), "daemon-side.txt"), "write")),
+      // A path outside both the workspace and the temp roots, wherever the checkout lives.
+      runWithContext(limited, () =>
+        resolveCallerPath(join(homedir(), "ravi-daemon-side-test", "daemon-side.txt"), "write"),
+      ),
     ).toThrow(denied);
+  });
+
+  it("imports rules into the caller's workspace and refuses a limited turn writing them anywhere else", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "ravi-rules-caller-"));
+    const outside = join(homedir(), `ravi-rules-outside-${process.pid}`);
+    try {
+      for (const root of [workspace, outside]) {
+        mkdirSync(join(root, ".claude", "rules"), { recursive: true });
+        writeFileSync(join(root, ".claude", "rules", "testing.md"), "Run focused tests.\n");
+      }
+      const limited: ToolContext = { ...agentContext("use:tool:Write", "deny_execute:executable:*"), cwd: workspace };
+      const silent = console.log;
+      console.log = () => {};
+      try {
+        // Relative --cwd is the caller's, not the daemon's.
+        await runWithContext(limited, () => new RulesCommands().importRules("claude", ".", false, true, false, true));
+        await expect(
+          runWithContext(limited, () => new RulesCommands().importRules("claude", outside, false, true, false, true)),
+        ).rejects.toThrow(denied);
+      } finally {
+        console.log = silent;
+      }
+      expect(existsSync(join(workspace, ".ravi", "rules", "imported", "claude", "project", "testing.md"))).toBe(true);
+      // Rules are loaded as authoritative instructions: nothing lands outside.
+      expect(existsSync(join(outside, ".ravi"))).toBe(false);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it("refuses widgets init into a folder before writing anything", () => {

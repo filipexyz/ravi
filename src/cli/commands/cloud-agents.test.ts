@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -15,6 +15,7 @@ import {
 import { dbGetActiveCloudThreadByKey } from "../../cloud-agents/chat-db.js";
 import type { CloudChatTarget } from "../../cloud-agents/chat-target.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import { runWithContext, type ToolContext } from "../context.js";
 import { getCliOnlyMetadata, getReturnsMetadata } from "../decorators.js";
 import {
   type CloudAgentsCommandDeps,
@@ -562,6 +563,44 @@ describe("ravi cloud runs", () => {
     const outcome = await capture(() => new CloudRunsCommands(deps(fake)).outputs("run_1", dir, true));
     expect(outcome.error).toMatchObject({ code: "CLOUD_OUTPUT_EXISTS", exitCode: 1 });
     expect(readFileSync(join(dir, "a"), "utf8")).toBe("a file where a folder is needed");
+  });
+
+  it("outputs resolve --download against the caller's cwd and refuse a limited turn outside its workspace", async () => {
+    const fake = createFakeCloudConsole({
+      runs: [fakeCloudRun({ outputs: [{ id: "out_1", name: "report.md", size: 5 }] })],
+    });
+    fake.outputs.set("run_1/out_1", new TextEncoder().encode("# Hi\n"));
+    const workspace = mkdtempSync(join(tmpdir(), "ravi-cloud-caller-"));
+    tempDirs.push(workspace);
+    await capture(() =>
+      runWithContext({ cwd: workspace }, () => new CloudRunsCommands(deps(fake)).outputs("run_1", "got", true)),
+    );
+    expect(readFileSync(join(workspace, "got", "report.md"), "utf8")).toBe("# Hi\n");
+
+    const outside = join(homedir(), `ravi-cloud-outside-${process.pid}`);
+    const requestsBefore = fake.requests.length;
+    const limited: ToolContext = {
+      agentId: "full-agent",
+      cwd: workspace,
+      context: {
+        contextId: "ctx_limited",
+        contextKey: "rctx_limited",
+        kind: "turn-runtime",
+        agentId: "full-agent",
+        capabilities: [
+          { permission: "use", objectType: "tool", objectId: "Write" },
+          { permission: "deny_execute", objectType: "executable", objectId: "*" },
+        ],
+        createdAt: 0,
+      },
+    };
+    const refused = await capture(() =>
+      runWithContext(limited, () => new CloudRunsCommands(deps(fake)).outputs("run_1", outside, true)),
+    );
+    expect(refused.error).toBeDefined();
+    expect(existsSync(outside)).toBe(false);
+    // Refused before the cloud is contacted.
+    expect(fake.requests.length).toBe(requestsBefore);
   });
 
   it("outputs keep downloads inside the folder", async () => {

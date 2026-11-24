@@ -924,15 +924,12 @@ export function dbGetObserverRule(id: string): ObserverRule | null {
 }
 
 export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
-  // An observer rule makes the agent take turns later; a limited turn cannot
-  // write one (disabling is a reduction and stays allowed).
-  // Disabling is a reduction only for an existing rule whose other fields stay
-  // as they are: creating a disabled rule, or changing observer, scope or
-  // grants while passing `enabled: false`, is a write like any other.
-  assertAutomationStoreWrite("observer rule", { disablesOnly: isObserverRuleDisableOnly(input) });
   ensureObservationSchema();
   const id = normalizeId(input.id, "observer rule id");
   const existing = dbGetObserverRule(id);
+  // Refused before any validation unless this could be disabling an existing
+  // rule; that case is judged on the stored values further down.
+  if (input.enabled !== false || !existing) assertAutomationStoreWrite("observer rule", { disablesOnly: false });
   const scope = normalizeScope(input.scope ?? existing?.scope);
   const observerRole = normalizeRole(input.observerRole ?? existing?.observerRole ?? id);
   const observerAgentId = cleanOptionalText(input.observerAgentId ?? existing?.observerAgentId);
@@ -972,9 +969,44 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
     permissionGrants,
   });
 
-  const now = Date.now();
   const enabled = input.enabled ?? existing?.enabled ?? true;
   const db = getDb();
+  // Every stored column but id, enabled and the timestamps, exactly as written.
+  const stored: Record<(typeof OBSERVER_RULE_CONTENT_COLUMNS)[number], string | number | null> = {
+    scope,
+    priority: input.priority ?? existing?.priority ?? 100,
+    observer_role: observerRole,
+    observer_agent_id: observerAgentId,
+    observer_runtime_provider_id: observerRuntimeProviderId ?? null,
+    observer_model: observerModel ?? null,
+    observer_profile_id: observerProfileId ?? null,
+    observer_mode: observerMode,
+    event_types_json: stringifyJson(eventTypes),
+    delivery_policy: deliveryPolicy,
+    debounce_ms: input.debounceMs ?? existing?.debounceMs ?? null,
+    source_agent_id: cleanOptionalText(input.sourceAgentId ?? existing?.sourceAgentId) ?? null,
+    source_session: cleanOptionalText(input.sourceSession ?? existing?.sourceSession) ?? null,
+    source_task_id: cleanOptionalText(input.sourceTaskId ?? existing?.sourceTaskId) ?? null,
+    source_profile_id: cleanOptionalText(input.sourceProfileId ?? existing?.sourceProfileId) ?? null,
+    source_project_id: cleanOptionalText(input.sourceProjectId ?? existing?.sourceProjectId) ?? null,
+    tag_target_type: tagTargetType ?? null,
+    tag_slug: tagSlug ?? null,
+    tag_inherited: (input.tagInherited ?? existing?.tagInherited) ? 1 : 0,
+    permission_grants_json: stringifyJson(permissionGrants),
+    selector: selector ?? null,
+    metadata_json: metadata ? stringifyJson(metadata) : null,
+  };
+  // An observer rule makes the agent take turns later; a limited turn cannot
+  // write one. Disabling is a reduction only when the rule exists and this
+  // write leaves every other stored column as it is: creating a disabled rule,
+  // or changing observer, scope or grants while passing `enabled: false`, is a
+  // write like any other. Compared on the stored values, after normalization,
+  // so a `rules set --disabled` that repeats defaults still counts as disabling.
+  assertAutomationStoreWrite("observer rule", {
+    disablesOnly: input.enabled === false && Boolean(existing) && storedRuleContentEquals(db, id, stored),
+  });
+
+  const now = Date.now();
   // The rule row and the cascade commit together, like `rules disable` and `rules rm`.
   db.transaction(() => {
     db.prepare(
@@ -1016,28 +1048,7 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
     ).run(
       id,
       enabled ? 1 : 0,
-      scope,
-      input.priority ?? existing?.priority ?? 100,
-      observerRole,
-      observerAgentId,
-      observerRuntimeProviderId ?? null,
-      observerModel ?? null,
-      observerProfileId ?? null,
-      observerMode,
-      stringifyJson(eventTypes),
-      deliveryPolicy,
-      input.debounceMs ?? existing?.debounceMs ?? null,
-      cleanOptionalText(input.sourceAgentId ?? existing?.sourceAgentId),
-      cleanOptionalText(input.sourceSession ?? existing?.sourceSession),
-      cleanOptionalText(input.sourceTaskId ?? existing?.sourceTaskId),
-      cleanOptionalText(input.sourceProfileId ?? existing?.sourceProfileId),
-      cleanOptionalText(input.sourceProjectId ?? existing?.sourceProjectId),
-      tagTargetType,
-      tagSlug,
-      (input.tagInherited ?? existing?.tagInherited) ? 1 : 0,
-      stringifyJson(permissionGrants),
-      selector ?? null,
-      metadata ? stringifyJson(metadata) : null,
+      ...OBSERVER_RULE_CONTENT_COLUMNS.map((column) => stored[column]),
       existing?.createdAt ?? now,
       now,
     );
@@ -1993,13 +2004,41 @@ export function logObservationDeliveryFailure(error: unknown, context: Record<st
   log.warn("Observation delivery failed", { ...context, error });
 }
 
-function isObserverRuleDisableOnly(input: ObserverRuleInput): boolean {
-  if (input.enabled !== false) return false;
-  const existing = dbGetObserverRule(input.id);
-  if (!existing) return false;
-  const current = existing as unknown as Record<string, unknown>;
-  return Object.entries(input as unknown as Record<string, unknown>).every(([key, value]) => {
-    if (key === "id" || key === "enabled" || value === undefined) return true;
-    return JSON.stringify(value) === JSON.stringify(current[key]);
-  });
+/** Rule columns a write may change besides `enabled`, in INSERT order. */
+const OBSERVER_RULE_CONTENT_COLUMNS = [
+  "scope",
+  "priority",
+  "observer_role",
+  "observer_agent_id",
+  "observer_runtime_provider_id",
+  "observer_model",
+  "observer_profile_id",
+  "observer_mode",
+  "event_types_json",
+  "delivery_policy",
+  "debounce_ms",
+  "source_agent_id",
+  "source_session",
+  "source_task_id",
+  "source_profile_id",
+  "source_project_id",
+  "tag_target_type",
+  "tag_slug",
+  "tag_inherited",
+  "permission_grants_json",
+  "selector",
+  "metadata_json",
+] as const;
+
+/** True when the stored row already holds exactly these values in every content column. */
+function storedRuleContentEquals(
+  db: ReturnType<typeof getDb>,
+  id: string,
+  next: Record<(typeof OBSERVER_RULE_CONTENT_COLUMNS)[number], unknown>,
+): boolean {
+  const row = db
+    .prepare(`SELECT ${OBSERVER_RULE_CONTENT_COLUMNS.join(", ")} FROM observer_rules WHERE id = ?`)
+    .get(id) as Record<string, unknown> | null;
+  if (!row) return false;
+  return OBSERVER_RULE_CONTENT_COLUMNS.every((column) => (row[column] ?? null) === (next[column] ?? null));
 }
