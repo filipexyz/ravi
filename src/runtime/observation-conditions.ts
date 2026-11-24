@@ -80,6 +80,11 @@ function isReply(event: ObservationConditionEvent): boolean {
   return event.type === "message.assistant" && event.payload?.commentary !== true;
 }
 
+/** A reply a chat saw: a session whose output never reaches a chat (a work thread) does not narrate. */
+function isChatReply(event: ObservationConditionEvent): boolean {
+  return isReply(event) && event.payload?.chatEmitted !== false;
+}
+
 function isToolEvent(event: ObservationConditionEvent): boolean {
   return event.type === "tool.start" || event.type === "tool.end" || event.type === "tool.inactive";
 }
@@ -103,7 +108,9 @@ export function evaluateObservationConditions(events: readonly ObservationCondit
     if (terminalIndex < 0) continue;
     const terminal = turnEvents[terminalIndex]!;
     const turnId = key || undefined;
-    const reason = text(terminal.payload, "error") ?? text(terminal.payload, "reason");
+    // Runtime reason codes only: a provider error message can quote observed content, and condition
+    // lines sit outside the data boundary.
+    const reason = text(terminal.payload, "reason") ?? text(terminal.payload, "abortReason");
     const hit = (condition: ObservationCondition, detail: string) =>
       hits.push({ condition, ...(turnId ? { turnId } : {}), detail });
 
@@ -121,7 +128,7 @@ export function evaluateObservationConditions(events: readonly ObservationCondit
       );
     }
 
-    const replies = turnEvents.filter(isReply).length;
+    const replies = turnEvents.filter(isChatReply).length;
     if (replies >= NARRATION_THRESHOLD) {
       hit("chat.narration", `${replies} agent messages in one turn`);
     }

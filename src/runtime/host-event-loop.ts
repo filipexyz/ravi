@@ -3952,6 +3952,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                   payload: {
                     chars: text.length,
                     commentary: commentaryResponse,
+                    // Whether this reply can reach a chat at all: narration only counts what a chat sees.
+                    chatEmitted: !streaming.suppressChatEmit,
                     metadata: event.metadata ?? null,
                     detail: { text: truncateObservationPreview(text, OBSERVATION_DETAIL_TEXT_MAX) },
                   },
