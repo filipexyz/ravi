@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { execSync } from "node:child_process";
 import { tightenStateDirPermissions } from "../../security/state-dir-permissions.js";
+import { isStateNotReadyError } from "../../db/state-readiness.js";
 
 const RAVI_DOT_DIR = join(homedir(), ".ravi");
 const ENV_FILE = join(RAVI_DOT_DIR, ".env");
@@ -320,7 +321,7 @@ async function stepEnvironment(): Promise<void> {
 }
 
 async function stepAgent(): Promise<void> {
-  heading(3, 5, "Agente", "~/ravi/main");
+  heading(4, 5, "Agente", "~/ravi/main");
 
   const { dbListAgents, dbCreateAgent, dbSetSetting } = await import("../../router/router-db.js");
   const { ensureAgentDirs, loadRouterConfig } = await import("../../router/config.js");
@@ -352,7 +353,7 @@ async function stepAgent(): Promise<void> {
 }
 
 async function stepSettings(): Promise<void> {
-  heading(4, 5, "Configurações", "fuso horário, políticas");
+  heading(5, 5, "Configurações", "fuso horário, políticas");
 
   const { dbGetSetting, dbSetSetting } = await import("../../router/router-db.js");
 
@@ -388,16 +389,24 @@ async function stepSettings(): Promise<void> {
   }
 }
 
-async function stepDaemon(): Promise<void> {
-  heading(5, 5, "Daemon", "iniciar via PM2");
+/**
+ * The CLI never creates ravi.db: on a new install the daemon creates it as it
+ * starts (spec quality/state-boundary). So the daemon starts before any step
+ * that reads or writes state, and the wizard waits until state is ready.
+ */
+async function stepDaemon(): Promise<boolean> {
+  heading(3, 5, "Daemon", "iniciar via PM2");
 
+  let started = false;
   try {
     execSync("ravi daemon start", { stdio: "pipe" });
     done("Daemon iniciado via PM2");
+    started = true;
   } catch (err: any) {
     const msg = err?.stderr?.toString() || err?.stdout?.toString() || "";
     if (msg.includes("already running")) {
       done("Daemon já está rodando");
+      started = true;
     } else {
       warning("Não foi possível iniciar — execute: ravi daemon start");
     }
@@ -410,24 +419,118 @@ async function stepDaemon(): Promise<void> {
   } catch {
     info("Execute: pm2 save && pm2 startup");
   }
+
+  if (!started) return false;
+
+  info("Aguardando o daemon preparar o estado...");
+  const ready = await waitForStateReady({ isReady: daemonStateReady });
+  if (ready) {
+    done("Estado pronto");
+  } else {
+    warning("O daemon ainda não preparou o estado — veja: ravi daemon logs");
+  }
+  return ready;
+}
+
+export interface WaitForStateReadyOptions {
+  /** True when state is ready for the CLI. */
+  isReady: () => boolean | Promise<boolean>;
+  timeoutMs?: number;
+  pollMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
+}
+
+/** Polls until state is ready or the time runs out. Returns whether it became ready. */
+export async function waitForStateReady(options: WaitForStateReadyOptions): Promise<boolean> {
+  const { MANAGED_RUNTIME_READY_TIMEOUT_MS } = await import("../../db/state-boundary.js");
+  const timeoutMs = options.timeoutMs ?? MANAGED_RUNTIME_READY_TIMEOUT_MS;
+  const pollMs = options.pollMs ?? 500;
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const now = options.now ?? Date.now;
+  const deadline = now() + timeoutMs;
+  for (;;) {
+    if (await options.isReady()) return true;
+    if (now() >= deadline) return false;
+    await sleep(pollMs);
+  }
+}
+
+/**
+ * Ready when the online daemon reports its schema phase as `ready`. A phase in
+ * progress (`waiting`, `owned`) is not ready. Without phase evidence (a daemon
+ * still booting, or one that writes no receipt), ready means the CLI can read
+ * ravi.db without STATE_SCHEMA_NOT_READY.
+ */
+async function daemonStateReady(): Promise<boolean> {
+  const { getPm2Processes, PM2_PROCESS_NAME } = await import("../../pm2.js");
+  const { readDaemonSchemaPhase } = await import("../../db/daemon-schema-owner.js");
+  const daemon = getPm2Processes().find((p) => p.name === PM2_PROCESS_NAME && p.status === "online");
+  if (!daemon) return false;
+  const phase = readDaemonSchemaPhase({ pid: daemon.pid, startedAt: daemon.startedAt ?? undefined });
+  if (phase === "ready") return true;
+  if (phase !== null) return false;
+  const { dbListAgents } = await import("../../router/router-db.js");
+  try {
+    dbListAgents();
+    return true;
+  } catch (error) {
+    if (isStateNotReadyError(error)) return false;
+    throw error;
+  }
+}
+
+/** Runs a step that needs state; when state is not ready, says how to finish and returns false. */
+export async function runStateStep(step: () => Promise<void>): Promise<boolean> {
+  try {
+    await step();
+    return true;
+  } catch (error) {
+    if (!isStateNotReadyError(error)) throw error;
+    warning("O daemon ainda não preparou o estado (STATE_SCHEMA_NOT_READY).");
+    info("Execute `ravi daemon start`, aguarde e rode `ravi setup` de novo.");
+    return false;
+  }
 }
 
 // ============================================================================
 // Main entry
 // ============================================================================
 
-export async function runSetup(): Promise<void> {
+export interface SetupSteps {
+  omni: () => Promise<void>;
+  environment: () => Promise<void>;
+  daemon: () => Promise<unknown>;
+  agent: () => Promise<void>;
+  settings: () => Promise<void>;
+}
+
+const DEFAULT_STEPS: SetupSteps = {
+  omni: stepOmni,
+  environment: stepEnvironment,
+  daemon: stepDaemon,
+  agent: stepAgent,
+  settings: stepSettings,
+};
+
+/** Returns whether every step that needs state ran. */
+export async function runSetup(steps: SetupSteps = DEFAULT_STEPS): Promise<boolean> {
   console.log();
   console.log(`  ${c.bold}Ravi Bot${c.reset} ${c.gray}— setup${c.reset}`);
   console.log(`  ${c.gray}${"─".repeat(30)}${c.reset}`);
 
-  await stepOmni();
-  await stepEnvironment();
-  await stepAgent();
-  await stepSettings();
-  await stepDaemon();
+  await steps.omni();
+  await steps.environment();
+  // The daemon creates ravi.db; the agent and settings steps need it.
+  await steps.daemon();
+  const complete = (await runStateStep(steps.agent)) && (await runStateStep(steps.settings));
 
   console.log();
+  if (!complete) {
+    console.log(`  ${c.yellow}${c.bold}Configuração incompleta${c.reset} ${c.gray}— leia os avisos acima${c.reset}`);
+    console.log();
+    return false;
+  }
   console.log(`  ${c.green}${c.bold}Configuração completa!${c.reset}`);
   console.log();
   console.log(`  ${c.gray}Próximos passos:${c.reset}`);
@@ -436,4 +539,5 @@ export async function runSetup(): Promise<void> {
   console.log(`    ${bullet} ${c.white}ravi agents chat main${c.reset}     ${c.gray}Testar o agente${c.reset}`);
   console.log(`    ${bullet} ${c.white}pm2 startup${c.reset}              ${c.gray}Iniciar no boot${c.reset}`);
   console.log();
+  return true;
 }

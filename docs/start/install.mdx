@@ -51,11 +51,11 @@ These docs follow the `next` release channel (`ravi.bot@next`). The `latest` cha
     |---|---|
     | 1. Omni Infrastructure | Installs PM2 (`bun add -g pm2`) and Omni (`bun add -g @automagik/omni`) if they are missing, then runs `omni install`. Omni starts two PM2 processes: `omni-nats` (NATS with JetStream on port 4222) and `omni-api` (port 8882). |
     | 2. Ambiente | Creates `~/.ravi/.env` and asks for a Claude credential. Type `OAuth token` in full to paste a Claude Code token; any other answer means `API key`. Then it asks for an optional OpenAI key (audio transcription) and a model (`sonnet`, `haiku` or `opus`). |
-    | 3. Agente | Ravi creates the `main` agent on first run, so this step only lists it. |
-    | 4. Configurações | Asks your time zone, then WhatsApp DM and group policies. The policy answers are saved as global settings and do not change any instance. You set the real policies per instance on the channel pages. |
-    | 5. Daemon | Starts the daemon under PM2 (`ravi daemon start`) and runs `pm2 save`. |
+    | 3. Daemon | Starts the daemon under PM2 (`ravi daemon start`), runs `pm2 save`, then waits until the daemon has created and prepared `~/.ravi/ravi.db`. The CLI never creates that database itself, so the next steps need the daemon first. |
+    | 4. Agente | The daemon creates the `main` agent when it prepares the database, so this step only lists it. |
+    | 5. Configurações | Asks your time zone, then WhatsApp DM and group policies. The policy answers are saved as global settings and do not change any instance. You set the real policies per instance on the channel pages. |
 
-    The wizard prints "Configuração completa!" even when a step failed, so read any warning lines above it. Its final hint, `ravi agents chat main`, is not a real command. Use the commands in [Talk to your agent](#talk-to-your-agent) instead.
+    If the daemon has not prepared the database in time, the wizard skips steps 4 and 5, prints "Configuração incompleta" and exits with code 1: check `ravi daemon logs`, then run `ravi setup` again. A failed Omni or environment step only prints a warning, so read any warning lines above "Configuração completa!". Its final hint, `ravi agents chat main`, is not a real command. Use the commands in [Talk to your agent](#talk-to-your-agent) instead.
   </Step>
   <Step title="Create the agent's instructions file">
     ```bash
@@ -190,10 +190,13 @@ Once you have run it with `--next`, a plain `ravi update` stays on `next`. Befor
   # binary from https://github.com/nats-io/nats-server/releases on Linux.
   mkdir -p ~/.ravi/jetstream
   pm2 start "$(command -v nats-server)" --name nats --interpreter none -- -js -sd ~/.ravi/jetstream -a 127.0.0.1 -p 4222
-  ravi settings set defaultTimezone America/Sao_Paulo   # your time zone
   ravi daemon start
   pm2 save
+  # The daemon creates ~/.ravi/ravi.db as it starts; until then the CLI answers STATE_SCHEMA_NOT_READY.
+  for i in $(seq 30); do ravi settings set defaultTimezone America/Sao_Paulo && break; sleep 2; done   # your time zone
   ```
+
+  PM2 shows the daemon `online` before it has prepared the database, so the first state write retries for up to a minute. If it still fails, read `ravi daemon logs`.
 
   Then continue with step 3 and [Choose the model provider](#choose-the-model-provider). `-js` turns on JetStream, which Ravi requires.
 

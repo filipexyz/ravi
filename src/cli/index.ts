@@ -210,7 +210,10 @@ program
         tool: "root_setup",
         closeLazyConnection: true,
       },
-      () => runSetup(),
+      async () => {
+        // An incomplete setup (state not ready) already printed how to finish.
+        if (!(await runSetup())) process.exitCode = 1;
+      },
     );
   });
 

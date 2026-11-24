@@ -12,7 +12,15 @@ normative: true
 
 ## The operator's terminal
 
-The installed `ravi` runs its commands in the terminal, on real state, with no gateway in between. It never creates or migrates a store there. When a command answers `STATE_SCHEMA_NOT_READY`, the daemon of this release has not prepared a store yet (first start, or an update whose restart has not happened):
+The installed `ravi` runs its commands in the terminal, on real state, with no gateway in between. It never creates or migrates a store there. When a command answers `STATE_SCHEMA_NOT_READY`, the daemon of this release has not prepared a store yet.
+
+On a new install there is no database, and `ravi daemon restart` refuses a missing one. Start the daemon and retry once it has prepared state (PM2 shows it `online` before that):
+
+```bash
+ravi daemon start
+```
+
+After an update whose restart has not happened:
 
 ```bash
 ravi daemon restart -m "prepare state"
