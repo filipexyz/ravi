@@ -374,7 +374,11 @@ export class RuntimePromptSubscription {
             })
             .catch((emitError) => log.warn("Failed to emit admission inbox event", { sessionName, error: emitError }));
         }
-        if (prompt.source && created) {
+        // Only a person waits for this receipt. An automation turn (cron, trigger, follow-up, observer, task,
+        // agent/system relay) has no one waiting: its `source` is just the chat it would have posted to, which can
+        // be a group with outsiders. The saved inbox item and the runtime_start_rejected event above are the
+        // operator's receipt. Same predicate as the SQLite capacity notice below.
+        if (prompt.source && created && classifyTurnProvenance({ prompt }).background !== true) {
           const c = error.capacity;
           // Occupant identities belong in operator telemetry, never in an unrelated chat.
           const response =

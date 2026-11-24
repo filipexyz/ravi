@@ -581,6 +581,62 @@ describe("RuntimePromptSubscription", () => {
     expect(executed).toEqual(["other", "first"]);
   });
 
+  it("keeps the capacity receipt out of the chat for automation prompts, still saving and signalling them", async () => {
+    // 2026-11-24: a 3-hourly cron whose reply surface is a WhatsApp group was refused for background capacity and
+    // the runtime posted "Sem capacidade agora ... Recibo: inbox_item_..." into that group of outsiders.
+    const group = { channel: "whatsapp-baileys", accountId: "main", chatId: "120363000000000000@g.us" };
+    const cron = makePromptMessage("ravi.session.main.prompt", {
+      prompt: "[Cron: blog] check the blog",
+      source: { ...group, suppressPresence: true },
+      _cron: true,
+      _jobId: "job-1",
+      _cronRunId: "run-1",
+    });
+    const person = makePromptMessage("ravi.session.main.prompt", {
+      prompt: "update do dia?",
+      source: { ...group, actorType: "contact" },
+    });
+    consumedMessages = [cron, person];
+    const subscription = new RuntimePromptSubscription({
+      isRunning: () => running,
+      canAcceptPrompt: () => true,
+      getStreamingSessionCount: () => 8,
+      ensurePromptInfrastructure: ensureInfrastructureMock,
+      startCapacityRetryDelaysMs: [],
+      markConsumerReady: () => {},
+      handlePrompt: async () => {
+        throw new RuntimeStartCapacityError({
+          lane: "background",
+          reason: "interactive_reserved_capacity",
+          active: 8,
+          reserved: 0,
+          max: 12,
+          backgroundLimit: 8,
+          queuePosition: null,
+          occupants: [{ sessionName: "private-session", agentId: "private-agent", state: "tool", inactiveMs: 5 }],
+          largestConsumer: { agentId: "private-agent", slots: 8 },
+        });
+      },
+    });
+    subscription.subscribe();
+    await waitUntil(() => cron.ack.mock.calls.length === 1 && person.ack.mock.calls.length === 1);
+
+    // Both stay retained for the operator, with the operator-facing event and the rejection telemetry.
+    const items = listLocalInboxItems({ sourceDomain: "system" });
+    expect(items.map((item) => (item.metadata.prompt as { prompt: string }).prompt).sort()).toEqual([
+      "[Cron: blog] check the blog",
+      "update do dia?",
+    ]);
+    expect(emitCalls.filter((c) => c.topic === "ravi.inbox.system.runtime_start_rejected")).toHaveLength(2);
+    expect(emitCalls.filter((c) => c.payload.type === "dispatch.start_rejected")).toHaveLength(2);
+
+    // Only the person who is waiting gets the text. The cron's chat never asked for it.
+    const notices = emitCalls.filter((c) => c.topic === "ravi.session.main.response");
+    expect(notices).toHaveLength(1);
+    expect(notices[0]?.payload.target).toMatchObject({ actorType: "contact" });
+    expect(notices[0]?.payload.response).toContain("Sem capacidade agora");
+  });
+
   it("leaves refused decision answers with their existing durable retry owner", async () => {
     const message = makePromptMessage("ravi.session.main.prompt", {
       prompt: "answer",
