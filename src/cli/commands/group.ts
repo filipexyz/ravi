@@ -18,7 +18,6 @@ import {
   dbListChats,
   dbUpsertChat,
   dbUpsertChatParticipant,
-  getFirstAccountName,
 } from "../../router/router-db.js";
 import { publishChannelSessionPrompt } from "../../channels/session-prompt.js";
 import { resolveOmniGroupMetadata } from "../../omni/group-metadata-cache.js";
@@ -37,6 +36,7 @@ import { generateSessionName, ensureUniqueName } from "../../router/session-name
 import { getAgent } from "../../router/config.js";
 import { expandHome } from "../../router/resolver.js";
 import { ensureChannelAgent } from "../channel-agent.js";
+import { currentWhatsAppAccountsHint, resolveWhatsAppAccount } from "../whatsapp-account.js";
 import { buildRuntimeCallerPrincipal } from "../../runtime/turn-origin.js";
 import { nats } from "../../nats.js";
 
@@ -55,16 +55,11 @@ function emitConfigChanged() {
 }
 
 function resolveGroupAccount(account?: string): string {
-  return account ?? getContextAccountId() ?? getFirstAccountName() ?? "";
+  return resolveWhatsAppAccount(account);
 }
 
 function resolveGroupSendAccount(account?: string): string {
   return resolveGroupAccount(account);
-}
-
-function getContextAccountId(): string | undefined {
-  const accountId = getContext()?.source?.accountId?.trim();
-  return accountId || undefined;
 }
 
 function normalizeGroupJid(groupId: string): string {
@@ -329,7 +324,7 @@ function resolveGroupInstance(account?: string): { accountId: string; instanceId
 
   const instance = dbGetInstance(accountId);
   const instanceId = instance?.instanceId ?? (UUID_RE.test(accountId) ? accountId : "");
-  if (!instanceId) fail(`No omni instance mapped for account "${accountId}".`);
+  if (!instanceId) fail(`No omni instance mapped for account "${accountId}".${currentWhatsAppAccountsHint()}`);
 
   return { accountId, instanceId };
 }
@@ -935,7 +930,7 @@ export class GroupCommands {
     if (!accountId) fail("No WhatsApp account configured.");
 
     const instanceId = resolveGroupSendInstanceId(accountId);
-    if (!instanceId) fail(`No omni instance mapped for account "${accountId}".`);
+    if (!instanceId) fail(`No omni instance mapped for account "${accountId}".${currentWhatsAppAccountsHint()}`);
 
     const connection = resolveOmniConnection();
     if (!connection) fail("Omni API is not configured. Set OMNI_API_URL/OMNI_API_KEY or ~/.omni/config.json.");

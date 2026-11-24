@@ -40,6 +40,10 @@ const upsertChatCalls: Array<Record<string, unknown>> = [];
 const upsertChatParticipantCalls: Array<Record<string, unknown>> = [];
 const publishPromptCalls: Array<Record<string, unknown>> = [];
 let mockAgent: { id: string; cwd: string } | undefined;
+let mockInstances: Array<Record<string, unknown>> = [
+  { name: "main", channel: "whatsapp", instanceId: "inst-1", enabled: true },
+];
+let mockContextSource: { channel: string; accountId: string; chatId: string } | undefined;
 
 let listGroupsResult: Array<Record<string, unknown>> = [];
 let metadataResult: Record<string, unknown> | null = null;
@@ -97,7 +101,7 @@ mock.module("../decorators.js", () => ({
 }));
 
 mock.module("../context.js", () => ({
-  getContext: () => undefined,
+  getContext: () => (mockContextSource ? { source: mockContextSource } : undefined),
   // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
   // ContractError instead of process.exit, which is what tests need.
   hasContext: () => true,
@@ -139,6 +143,7 @@ mock.module("../../contacts.js", () => ({
 
 mock.module("../../router/router-db.js", () => ({
   dbGetInstance: () => ({ instanceId: "inst-1" }),
+  dbListInstances: () => mockInstances,
   getFirstAccountName: () => "main",
   dbListChats: () => ({ items: [], total: 0 }),
   dbFindChat: () => null,
@@ -352,6 +357,8 @@ beforeEach(() => {
   upsertChatParticipantCalls.length = 0;
   publishPromptCalls.length = 0;
   mockAgent = undefined;
+  mockInstances = [{ name: "main", channel: "whatsapp", instanceId: "inst-1", enabled: true }];
+  mockContextSource = undefined;
   listGroupsResult = [];
   metadataResult = null;
   historyMock = [];
@@ -940,6 +947,120 @@ describe("whatsapp dm contract", () => {
     for (const message of payload.messages as unknown as Array<Record<string, unknown>>) {
       expect(Object.keys(message).sort()).toEqual(["content", "role"]);
     }
+    expect(natsEmits).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Account resolution from a turn of another channel
+// ---------------------------------------------------------------------------
+
+describe("whatsapp commands run from a turn of another channel", () => {
+  // Incident 2026-11-24: from a Slack turn `ravi whatsapp group info <jid>` failed with
+  // `No omni instance mapped for account "ravi-slack"`, and the first enabled instance could be a non-WhatsApp one.
+  const slackSource = { channel: "slack", accountId: "ravi-slack", chatId: "D0C8BEV8QUR" };
+  const slackInstance = { name: "ravi-slack", channel: "slack", enabled: true };
+  const mainInstance = { name: "main", channel: "whatsapp", instanceId: "inst-1", enabled: true };
+  const luisInstance = { name: "luis", channel: "whatsapp", instanceId: "inst-2", enabled: true };
+
+  it("group send uses the only WhatsApp account, not the account of the Slack turn", async () => {
+    mockContextSource = slackSource;
+    mockInstances = [slackInstance, mainInstance];
+    const commands = new GroupCommands();
+
+    const payload = await silenced(() => commands.send("120363000000000001", "oi", undefined, undefined, true, true));
+
+    expect(payload).toMatchObject({ status: "sent", accountId: "main" });
+    expect(senderSendCalls[0]).toMatchObject({ instanceId: "inst-1" });
+  });
+
+  it("group send dry-run from a Slack turn plans on the WhatsApp account", async () => {
+    mockContextSource = slackSource;
+    mockInstances = [slackInstance, mainInstance];
+    const commands = new GroupCommands();
+
+    const error = await expectContractError(
+      () => commands.send("120363000000000001", "oi", undefined, undefined, true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect((error.details.plan as Record<string, unknown>).accountId).toBe("main");
+    expect(senderSendCalls).toHaveLength(0);
+  });
+
+  it("group send from a Slack turn names the accounts when there is more than one WhatsApp account", async () => {
+    mockContextSource = slackSource;
+    mockInstances = [slackInstance, mainInstance, luisInstance];
+    const commands = new GroupCommands();
+
+    let message = "";
+    await silenced(async () => {
+      try {
+        await commands.send("120363000000000001", "oi", undefined, undefined, true, true);
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+    });
+
+    expect(message).toContain("comes from slack");
+    expect(message).toContain("main, luis");
+    expect(message).toContain("--account");
+    expect(senderSendCalls).toHaveLength(0);
+  });
+
+  it("group send honours --account from a Slack turn", async () => {
+    mockContextSource = slackSource;
+    mockInstances = [slackInstance, mainInstance, luisInstance];
+    const commands = new GroupCommands();
+
+    const payload = await silenced(() => commands.send("120363000000000001", "oi", "luis", undefined, true, true));
+
+    expect(payload).toMatchObject({ status: "sent", accountId: "luis" });
+  });
+
+  it("group send refuses --account naming the Slack account", async () => {
+    mockContextSource = slackSource;
+    mockInstances = [slackInstance, mainInstance];
+    const commands = new GroupCommands();
+
+    let message = "";
+    await silenced(async () => {
+      try {
+        await commands.send("120363000000000001", "oi", "ravi-slack", undefined, true, true);
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+    });
+
+    expect(message).toContain('"ravi-slack" is a slack account');
+    expect(message).toContain("main");
+    expect(senderSendCalls).toHaveLength(0);
+  });
+
+  it("group info from a Slack turn reads the WhatsApp account", async () => {
+    mockContextSource = slackSource;
+    mockInstances = [slackInstance, mainInstance];
+    listGroupsResult = [{ id: "120363000000000001@g.us", subject: "Grupo", size: 3 }];
+    const commands = new GroupCommands();
+
+    const result = await silenced(() => commands.info("120363000000000001@g.us", undefined, true));
+
+    expect(result).toMatchObject({ accountId: "main", instanceId: "inst-1" });
+  });
+
+  it("dm send from a Slack turn plans the send on the WhatsApp account", async () => {
+    mockContextSource = slackSource;
+    mockInstances = [slackInstance, mainInstance];
+    const commands = new WhatsAppDmCommands();
+
+    const error = await expectContractError(
+      () => commands.send("5511999999999", "oi", undefined, true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect((error.details.plan as Record<string, unknown>).accountId).toBe("main");
     expect(natsEmits).toHaveLength(0);
   });
 });
