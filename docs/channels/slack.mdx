@@ -33,7 +33,7 @@ At [api.slack.com/apps](https://api.slack.com/apps), choose **Create New App**. 
 
 1. **Socket Mode:** turn it on and create the app-level token with the `connections:write` scope. Copy it (`xapp-...`). Create it in **Basic Information > App-Level Tokens**, with or without the manifest.
 2. **Event Subscriptions:** turn it on and subscribe to the bot events `message.im`, `message.channels`, `message.groups`, `message.mpim`, `app_mention` and `app_home_opened` (plus `reaction_added` for reaction triggers).
-3. **Interactivity & Shortcuts:** turn it on. Approval buttons need it.
+3. **Interactivity & Shortcuts:** turn it on. Approval buttons and the thread buttons need it. To control a thread from the "..." menu of its messages, also create the three message shortcuts in [Control Ravi from Slack](#message-shortcuts-on-a-thread).
 4. **Slash Commands:** create `/ravi` (or the name this app should have). With Socket Mode no Request URL is needed. [Control Ravi from Slack](#control-ravi-from-slack) says what it does.
 5. **App Home:** turn on the **Messages Tab** and allow users to send messages from it, or you cannot DM the app. Turn on the **Home Tab** too: Ravi fills it (see [The Home tab](#the-home-tab)).
 6. **OAuth & Permissions:** add the bot scopes below. Leave token rotation off: Ravi does not refresh tokens.
@@ -55,8 +55,28 @@ At [api.slack.com/apps](https://api.slack.com/apps), choose **Create New App**. 
       {
         "command": "/ravi",
         "description": "Control Ravi: who answers here, threads, stop a turn",
-        "usage_hint": "[help | status | threads | close <thread> | close idle [12h] | stop [thread]]",
+        "usage_hint": "[help | status [thread] | threads | close <thread> | close idle [12h] | stop [thread]]",
         "should_escape": false
+      }
+    ],
+    "shortcuts": [
+      {
+        "name": "Ravi: status da thread",
+        "type": "message",
+        "callback_id": "ravi_status_thread",
+        "description": "Shows the state of the thread this message is in"
+      },
+      {
+        "name": "Ravi: fechar a thread",
+        "type": "message",
+        "callback_id": "ravi_close_thread",
+        "description": "Closes the thread this message is in, after asking"
+      },
+      {
+        "name": "Ravi: parar a thread",
+        "type": "message",
+        "callback_id": "ravi_stop_thread",
+        "description": "Stops the turn running in the thread this message is in, after asking"
       }
     ]
   },
@@ -303,7 +323,7 @@ At `full-access` few requests need approval. See [Permissions](/guides/permissio
 | Command | What it does | You need |
 |---|---|---|
 | `/ravi help` | Lists the commands | Nothing |
-| `/ravi status` | Which agent and session answer in this chat, the model, whether a turn is running, and how many threads are open | Access to the session |
+| `/ravi status [thread]` | Which agent and session answer in this chat, the model, whether a turn is running, and how many threads are open; with a thread (named as `close` names it), that thread's own state | Access to the session |
 | `/ravi threads` | The open threads of the session, newest first, with age and state | Access to the session |
 | `/ravi close <thread>` | Closes a thread, named as `threads` shows it | To modify the session, and the capability of `sessions close-thread` |
 | `/ravi close idle [12h]` | Closes the threads with no activity for more than N hours (12 by default), at most 25 per call. It skips any that has a turn running, an open question or a return pending | The same as `close` |
@@ -312,9 +332,22 @@ At `full-access` few requests need approval. See [Permissions](/guides/permissio
 - The **owner** (`permission-owner`) can run all of them. Anyone else needs their Slack user linked to a contact, as for [approvals](#approvals), and the rights in the table. A Slack user with no contact is told so, and nothing runs.
 - A command acts on the session of the DM or channel it is typed in. Slack does not run an app's command inside a thread, so type it in the channel or the DM, and name the thread when it is one (`/ravi close <thread>`, `/ravi stop <thread>`).
 - The card a thread opens with carries **Fechar** and **Parar** buttons (they go away when the thread is closed). Each asks Slack's confirmation first, then does what `/ravi close <thread>` or `/ravi stop <thread>` does for that thread, with *your* authority, and answers only you. Nothing changes in the Slack app to turn them on: they use the same interactivity as the approval buttons. A card that was posted before this release gets them the next time Ravi updates it (a report, a close, a reopen).
+- The "..." menu of any message in a thread can carry three **message shortcuts**: status of the thread, close it, stop its turn (see [Message shortcuts on a thread](#message-shortcuts-on-a-thread)). Status answers at once. Close and stop ask first, on a card only you see, with Confirm and Cancel, and run only when you confirm, with *your* authority and the same rules as the command.
 - `close` says why a thread did not close. The usual reason is a trigger still pointed at it: the answer names the triggers and the `ravi triggers set <id> replySession <channel-session>` that moves them.
 - A command that reaches Ravi more than a minute after it was typed is not run. Run it again.
 - Every command that reaches the daemon, the refused ones included, is written to the audit trail (`ravi events replay --subject ravi.audit.chat_command`), without what you typed. A command the runner refuses before publishing (another workspace, an origin it could not verify) shows only in the runner's log.
+
+### Message shortcuts on a thread
+
+The shortcuts are optional and need no Ravi setting, only the app. Once per Slack app, at **Interactivity & Shortcuts**:
+
+1. **Create New Shortcut**, **On messages**, three times, with these **Callback IDs** (the names are only what people read in the "..." menu): `ravi_status_thread` ("Ravi: status da thread"), `ravi_close_thread` ("Ravi: fechar a thread") and `ravi_stop_thread` ("Ravi: parar a thread").
+2. Reinstall the app when Slack asks.
+3. `ravi channels restart`.
+
+Then open the "..." menu of any message in a Ravi thread and pick **Ravi: status da thread**: a card only you see appears in the thread. Close and stop ask first; **Cancelar** changes nothing, and a confirmation left on screen for more than ten minutes expires. A person who is not linked to a contact, or who may not change the session, is told so and nothing runs, exactly as for the command.
+
+Slack shows a private card inside a thread only once the thread has replies. On the first message of a thread nobody has answered yet, use `/ravi status <thread>` or the buttons on the thread's card.
 
 ### Name the command per app
 

@@ -16,8 +16,20 @@ Slack constrains the shape. A slash command must be acked within three seconds,
 so the runner acks first and answers later through the `response_url`, which
 Slack accepts five times and for thirty minutes. The command payload carries no
 thread, and Slack does not run an app's command inside a thread, so commands
-act on the DM or channel session; controls for one thread belong to message
-shortcuts and buttons on the thread card, a separate feature.
+act on the DM or channel session; controls for one thread are buttons on the
+thread card and message shortcuts in the "..." menu of its messages.
+
+A shortcut that changes something asks first. The tap is one gesture in a menu
+next to many harmless ones, and a stray one must not close a thread or stop a
+turn. The question is a private card in the thread and not a modal on purpose: a
+modal has to be opened within three seconds of the tap, by something that holds
+a Slack Web client with the right to open views, and today only the runner does,
+while the engine, the authority and the audit are in the daemon, which reaches
+Slack for message sends only. A private card in the thread is the path approval
+cards already use, has no three-second window, and keeps the answer where the
+person is looking: a shortcut's own response handle posts at channel level.
+The card carries the time it was asked so a confirmation left on screen is not an
+order for later.
 
 Socket Mode has no request signature, so "verify the origin" cannot mean a
 signature. What can still be wrong is whose command it is: a distributed app

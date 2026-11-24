@@ -420,6 +420,50 @@ describe("what each command does", () => {
     expect(text(h.replies[0])).toContain("*Now*: idle");
   });
 
+  it("status <thread>: that thread's own state, its age, and what waits on someone", async () => {
+    const h = harness({
+      findThread: (parent, ref) => {
+        expect([parent, ref]).toEqual(["agent:main:main", "1795189835.360089"]);
+        return thread({
+          title: "A <b>study</b>",
+          openDecisionCount: 2,
+          pendingAnswerCount: 1,
+          updatedAt: NOW - 25 * 60_000,
+        });
+      },
+    });
+
+    const outcome = await handleSlackCommand(eventFor("status 1795189835.360089"), h.deps);
+
+    expect(outcome).toEqual({ decision: "allowed", code: "ok" });
+    const reply = text(h.replies[0]);
+    expect(reply).toContain("*Thread* `main-t-1` A &lt;b&gt;study&lt;/b&gt;");
+    expect(reply).toContain("*State*: idle, 2 open questions");
+    expect(reply).toContain("*Last activity*: 25 min ago");
+    expect(reply).toContain("*Answers not delivered yet*: 1");
+  });
+
+  it("status <thread>: says a closed thread is closed, and a missing one is missing", async () => {
+    const closed = harness({ findThread: () => thread({ status: "closed" }) });
+    await handleSlackCommand(eventFor("status main-t-1"), closed.deps);
+    expect(text(closed.replies[0])).toContain("*State*: closed, idle");
+
+    // Closing does not interrupt a turn: a closed thread can still be working, and the answer says both.
+    const stillWorking = harness({
+      findThread: () =>
+        thread({ status: "closed", turnHealth: { state: "running" } as SlackThreadSummary["turnHealth"] }),
+    });
+    await handleSlackCommand(eventFor("status main-t-1"), stillWorking.deps);
+    expect(text(stillWorking.replies[0])).toContain("*State*: closed, working");
+
+    const missing = harness({ findThread: () => null });
+    expect(await handleSlackCommand(eventFor("status nope"), missing.deps)).toEqual({
+      decision: "info",
+      code: "thread_not_found",
+    });
+    expect(text(missing.replies[0])).toContain("I could not find thread `nope`");
+  });
+
   it("threads: lists them newest first, with age and state, and cuts a long list", async () => {
     const many = Array.from({ length: 15 }, (_, index) =>
       thread({
@@ -866,6 +910,27 @@ describe("with the real contacts, permissions and CLI access metadata", () => {
       command: "close-thread",
       access: { kind: "mutate", resource: "sessions", action: "close-thread" },
     });
+  });
+
+  it("declares exactly what the CLI declares for closing a thread, not a look-alike (review N1 of #937)", async () => {
+    const { getCommandAccessMetadata } = await import("../../cli/decorators.js");
+    const { SessionCommands } = await import("../../cli/commands/sessions.js");
+    const channel = slackCommandChannel({
+      accountId: ACCOUNT,
+      instanceId: INSTANCE,
+      routeAccountId: ACCOUNT,
+      channelId: "D0CHAT",
+      userId: "U0PERSON",
+      text: "close main-t-1",
+      receivedAt: NOW,
+      command: "/ravi",
+      surface: "command",
+    });
+
+    const declared = await channel.closeAccess?.();
+
+    // Field for field, so a weaker or different capability under the same kind cannot stand in for it.
+    expect(declared?.access).toEqual(getCommandAccessMetadata(SessionCommands).get("closeThread"));
   });
 
   it("refuses a contact who holds nothing: not even the read", async () => {

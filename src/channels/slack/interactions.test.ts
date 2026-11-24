@@ -12,6 +12,18 @@ describe("Slack interaction response boundary", () => {
   it("allows only action and command response handles hosted by Slack", () => {
     expect(isAllowedSlackInteractionResponseUrl("https://hooks.slack.com/actions/T1/B1/secret")).toBe(true);
     expect(isAllowedSlackInteractionResponseUrl("https://hooks.slack.com/commands/T1/B1/secret")).toBe(true);
+    // A message shortcut's handle, in the shape Slack's shortcut payload reference shows.
+    expect(
+      isAllowedSlackInteractionResponseUrl(
+        "https://hooks.slack.com/app-actions/T0MJR11A4/21974584944/yk1S9ndf35Q1flupVG5JbpM6",
+      ),
+    ).toBe(true);
+    expect(isAllowedSlackInteractionResponseUrl("https://hooks.slack.com/app-actionsx/T1/B1/secret")).toBe(false);
+    expect(isAllowedSlackInteractionResponseUrl("https://hooks.slack.com.attacker.test/app-actions/T1/B1/secret")).toBe(
+      false,
+    );
+    // The workspace host is for slash commands alone: a shortcut handle is Slack's `hooks.slack.com` and nothing else.
+    expect(isAllowedSlackInteractionResponseUrl("https://rilke.slack.com/app-actions/T1/B1/secret")).toBe(false);
     expect(isAllowedSlackInteractionResponseUrl("http://hooks.slack.com/actions/T1/B1/secret")).toBe(false);
     expect(isAllowedSlackInteractionResponseUrl("https://hooks.slack.com.attacker.test/actions/T1/B1/secret")).toBe(
       false,

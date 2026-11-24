@@ -1745,8 +1745,10 @@ export class SlackSocketModeService {
     const userId = stringField(user, "id");
     const messageTs = stringField(message, "ts") ?? stringField(container, "message_ts");
     const responseUrl = slackInteractionResponseUrl(record);
-    const responseUrlId = responseUrl
-      ? storeSlackInteractionResponseUrl({
+    let responseUrlId: string | undefined;
+    if (responseUrl) {
+      try {
+        responseUrlId = storeSlackInteractionResponseUrl({
           accountId: this.options.accountId,
           envelopeId: cleanSlackId(envelope.envelope_id),
           teamId,
@@ -1754,8 +1756,19 @@ export class SlackSocketModeService {
           userId,
           messageTs,
           responseUrl,
-        })
-      : undefined;
+        });
+      } catch (error) {
+        // A shortcut does not need its response handle: it answers with a private card, and the handle is
+        // only a fallback. A handle of a shape Ravi does not recognise must not take the shortcut away, so
+        // it goes without one. Every other interaction still refuses: a click that cannot be answered is not run.
+        if (interactionType !== "message_action" && interactionType !== "shortcut") throw error;
+        log.warn("Slack shortcut carries a response handle Ravi does not trust; publishing it without one", {
+          interactionType,
+          shape: slackResponseUrlShape(responseUrl),
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
 
     return compactInteractionPayload({
       provider: "slack",
@@ -1767,6 +1780,8 @@ export class SlackSocketModeService {
       routeAccountId: this.options.routeAccountId ?? this.options.accountId,
       envelopeId: cleanSlackId(envelope.envelope_id),
       interactionType,
+      // A shortcut (`shortcut`, `message_action`) says which one it is by this id, set in the app.
+      callbackId: stringField(record, "callback_id"),
       teamId,
       userId,
       channelId,
@@ -3098,6 +3113,16 @@ function selectedOptionValue(action: Record<string, unknown> | undefined): unkno
   const selectedOptions = Array.isArray(action.selected_options) ? action.selected_options : undefined;
   if (!selectedOptions) return undefined;
   return selectedOptions.map((option) => stringField(asRecord(option), "value")).filter(Boolean);
+}
+
+/** Where a response handle points, without its secret: the host and the first path segment, for a log line. */
+function slackResponseUrlShape(value: string): string {
+  try {
+    const url = new URL(value);
+    return `${url.protocol}//${url.hostname}/${url.pathname.split("/")[1] ?? ""}`;
+  } catch (error) {
+    return `unparseable (${error instanceof Error ? error.name : typeof error})`;
+  }
 }
 
 function slackInteractionResponseUrl(record: Record<string, unknown>): string | undefined {

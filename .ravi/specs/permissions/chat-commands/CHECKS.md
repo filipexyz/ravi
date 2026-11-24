@@ -9,6 +9,7 @@
 - `close idle` MUST skip busy threads, threads with an open question, an undelivered answer or a pending return, and threads with recent activity; it MUST count only its own closes and MUST bound the tries.
 - `stop` MUST tell nothing running, session not active, a failure code, a timeout and an unreachable runtime apart.
 - `stop <thread>` MUST interrupt the thread's own session and not the chat's, MUST ask the rights of a plain `stop` before the thread is looked up, MUST say a thread not found or with no session left, and MUST say `threads_unsupported` for a channel with no thread lookup.
+- `status <thread>` MUST say that thread's state as facts (closed, busy, health, age, open questions, answers not delivered), MUST ask only access to the session and no capability of the CLI, and MUST say when the thread is not found or the channel has no `findThread`.
 - A command that changes state (`close`, `close idle`, `stop`) whose declared access is not `mutate` MUST be refused as `access_metadata_missing`, and nothing MUST be listed, closed or interrupted.
 - The audit row MUST carry `surface` when the channel supplies it and MUST NOT carry the key when it does not.
 - A channel with no threads MUST be told `threads_unsupported` for `threads`, `close` and `close idle`, and `status` MUST omit the thread count.
