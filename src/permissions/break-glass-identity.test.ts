@@ -269,6 +269,36 @@ describe("every writer of agent runtime permissions keeps the rule", () => {
     expect(JSON.stringify(dbGetAgent("plant-victim")?.defaults ?? {})).toContain("chat-only");
   });
 
+  it("warns the operator once, on the real write, not on the dry run", async () => {
+    dbCreateAgent({ id: "dormant-terminal", cwd: "/tmp" });
+    const commands = new AgentsCommands();
+    await commands.set(
+      "dormant-terminal",
+      "defaults",
+      JSON.stringify({ runtimePermissions: { profile: "chat-only", capabilities: ["admin:system:*"] } }),
+      true,
+    );
+    const stderr: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      stderr.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      try {
+        commands.permissions("dormant-terminal", "bootstrap", undefined, true, undefined, false);
+      } catch {
+        // dry run exits with a contract error; nothing written
+      }
+      const afterDryRun = stderr.join("");
+      expect(afterDryRun).not.toContain("waking dormant");
+      commands.permissions("dormant-terminal", "bootstrap", undefined, true, undefined, true);
+    } finally {
+      process.stderr.write = original;
+    }
+    expect(stderr.join("").split("waking dormant break-glass on agent dormant-terminal").length - 1).toBe(1);
+  });
+
   it("refuses a Library install or update with a full-access profile, before any write", () => {
     const install = {
       plan: { agent: { id: "library-new", cwd: "/tmp/library-new-never" }, profile: { apply: "full-access" } },
@@ -426,6 +456,33 @@ describe("storage sinks refuse break-glass from any new writer", () => {
     }
     expect(materializeContactPolicyCapabilities(dormant.id).map((cap) => cap.permission)).toEqual(["admin"]);
     expect(stderr.join("")).toContain(`activating contact:${dormant.id} gives break-glass power`);
+  });
+
+  it("refuses activating a dormant contact whose break-glass comes only from a chat grant", () => {
+    upsertContact("5511900007017", "Grant only", "pending");
+    const holder = getContact("5511900007017")!;
+    dbCreateTagDefinition({
+      slug: "permission-grant-root",
+      label: "Root",
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["admin:system:*"] } },
+    });
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "break-glass-grant-only",
+      chatType: "group",
+      title: "grant only",
+    });
+    dbEnsureContactChatGrant({
+      contactId: holder.id,
+      profileSlug: "permission-grant-root",
+      scopeType: "chat",
+      scopeId: chat.id,
+    });
+    runWithContext(ADMIN_AGENT, () => expectBreakGlassDenied(() => allowContact(holder.id)));
+    expect(getContact(holder.id)?.status).not.toBe("allowed");
   });
 
   it("refuses a new contact created with a break-glass tag and leaves nothing behind", () => {

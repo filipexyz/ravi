@@ -98,8 +98,9 @@ describe("chat grants follow a contact merge", () => {
     expect(profileCarriesBreakGlass("permission-exec-all")).toBe(true);
     expect(profileCarriesBreakGlass("permission-system-narrow")).toBe(true);
     expect(profileCarriesBreakGlass("permission-chat-reader")).toBe(false);
-    // One rule with the sinks: the provider's spelling counts too.
-    expect(profileCarriesBreakGlass("permission.sneaky.full")).toBe(true);
+    // Grants are read by the exact stored slug, like the provider: a dotted slug
+    // with no definition of its own confers nothing and is not dropped.
+    expect(profileCarriesBreakGlass("permission.sneaky.full")).toBe(false);
   });
 
   it("drops the source's break-glass tags instead of carrying them to the target", () => {
@@ -120,7 +121,7 @@ describe("chat grants follow a contact merge", () => {
     expect(merged?.tags ?? []).toContain("vip");
     expect(merged?.tags ?? []).not.toContain("permission-admin");
     expect(materializeContactPolicyCapabilities(target.id)).toEqual([]);
-    expect(stderr.join("")).toContain("dropped the break-glass tag permission-admin");
+    expect(stderr.join("")).toContain("dropped the break-glass tag(s) permission-admin");
   });
 
   it("moves ordinary grants to the target and drops break-glass ones", () => {

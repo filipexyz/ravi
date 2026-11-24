@@ -60,7 +60,8 @@ function definitionCapabilities(definition: TagDefinition): CapabilityLike[] {
       : [];
   return values.flatMap((value: unknown): CapabilityLike[] => {
     if (typeof value === "string") {
-      const [permission, objectType, objectId] = value.trim().split(":");
+      const [permission, objectType, ...rest] = value.trim().split(":");
+      const objectId = rest.join(":");
       return permission && objectType && objectId ? [{ permission, objectType, objectId }] : [];
     }
     if (value && typeof value === "object") {
@@ -75,7 +76,13 @@ function definitionCapabilities(definition: TagDefinition): CapabilityLike[] {
   });
 }
 
-const approvedBreakGlassGrant = new AsyncLocalStorage<string>();
+// The scope holds a token that is switched off when the approved body returns,
+// so a continuation the body scheduled never sees an open approval.
+const approvedBreakGlassGrant = new AsyncLocalStorage<{ approval: string; active: boolean }>();
+
+function approvalOpen(): boolean {
+  return approvedBreakGlassGrant.getStore()?.active === true;
+}
 
 export const BREAK_GLASS_REQUEST_COMMAND =
   "ravi permissions request full-access --to contact:<id> --chat <chat-id> --agent <executor> --execute";
@@ -161,7 +168,8 @@ export function agentConfigBreakGlassReasons(
   const reasons = profile === "full-access" ? ["full-access"] : [];
   const capabilities = (config.capabilities ?? []).flatMap((value): CapabilityLike[] => {
     if (typeof value === "string") {
-      const [permission, objectType, objectId] = value.split(":");
+      const [permission, objectType, ...rest] = value.split(":");
+      const objectId = rest.join(":");
       return permission && objectType && objectId ? [{ permission, objectType, objectId }] : [];
     }
     return typeof value?.permission === "string" &&
@@ -188,6 +196,7 @@ export function assertAgentBreakGlassRaiseAllowed(
   targetAgentId: string,
   before: AgentPermissionsConfigLike | null | undefined,
   after: AgentPermissionsConfigLike | null | undefined,
+  options: { warnOperator?: boolean } = {},
 ): void {
   // An agent that already holds break-glass effectively keeps it; nothing to judge.
   if (agentConfigBreakGlassReasons(before, "effective").length > 0) return;
@@ -200,9 +209,11 @@ export function assertAgentBreakGlassRaiseAllowed(
   const effectiveAfter = agentConfigBreakGlassReasons(after, "effective");
   const raised = [...new Set([...effectiveAfter, ...newlyStored])];
   if (raised.length === 0) return;
-  if (approvedBreakGlassGrant.getStore()) return;
+  if (approvalOpen()) return;
   if (!callerIsAgentOrRemote()) {
     // The operator may do it; say so when it wakes something that was dormant.
+    // Only the storage sink warns: command pre-checks and dry runs stay quiet.
+    if (options.warnOperator === false) return;
     warnOperatorBreakGlass(
       `waking dormant break-glass on agent ${targetAgentId}`,
       effectiveAfter.filter((reason) => storedBefore.has(reason)),
@@ -229,13 +240,18 @@ export function runApprovedBreakGlassGrant<T>(
 ): T {
   // The scope must close when fn returns: an async body would let every
   // continuation after an await inherit an open approval (review N7).
-  return approvedBreakGlassGrant.run(approval, () => {
-    const result = fn() as T;
-    if (result && typeof (result as { then?: unknown }).then === "function") {
-      throw new Error("runApprovedBreakGlassGrant: the approved body must be synchronous.");
-    }
-    return result;
-  });
+  const token = { approval, active: true };
+  try {
+    return approvedBreakGlassGrant.run(token, () => {
+      const result = fn() as T;
+      if (result && typeof (result as { then?: unknown }).then === "function") {
+        throw new Error("runApprovedBreakGlassGrant: the approved body must be synchronous.");
+      }
+      return result;
+    });
+  } finally {
+    token.active = false;
+  }
 }
 
 /**
@@ -244,7 +260,7 @@ export function runApprovedBreakGlassGrant<T>(
  * becoming effective, or a contact holding break-glass being activated.
  */
 export function warnOperatorBreakGlass(action: string, reasons: readonly string[]): void {
-  if (reasons.length === 0 || approvedBreakGlassGrant.getStore() || callerIsAgentOrRemote()) return;
+  if (reasons.length === 0 || approvalOpen() || callerIsAgentOrRemote()) return;
   process.stderr.write(
     `warning: ${action} gives break-glass power (${[...new Set(reasons)].join(", ")}). Undo it if that was not intended.\n`,
   );
@@ -259,7 +275,7 @@ export function warnOperatorBreakGlass(action: string, reasons: readonly string[
  */
 export function assertBreakGlassStoreWrite(action: string, reasons: readonly string[]): void {
   if (reasons.length === 0) return;
-  if (approvedBreakGlassGrant.getStore()) return;
+  if (approvalOpen()) return;
   if (!callerIsAgentOrRemote()) return;
   throw new CliExpectedError(
     `${action}: writing ${[...new Set(reasons)].join(", ")} confers break-glass power; only an approved request or the operator terminal writes it.`,
@@ -280,4 +296,21 @@ export function slugBreakGlassReasons(raw: string, lookup: (slug: string) => Tag
   const normalized = normalizePermissionTag(raw) ?? given;
   const slugs = [...new Set([normalized, given].filter(Boolean))];
   return [...new Set(slugs.flatMap((slug) => tagDefinitionBreakGlassReasons(slug, lookup(slug))))];
+}
+
+/**
+ * Break-glass a chat grant's profile confers, read the way the provider reads
+ * grants: the slug exactly as stored (admin names and the definition under that
+ * slug), with no spelling normalization. Tags are read normalized; grants are not.
+ */
+export function grantProfileBreakGlassReasons(
+  profileSlug: string,
+  lookup: (slug: string) => TagDefinition | null,
+): string[] {
+  const slug = profileSlug.trim();
+  const reasons = ADMIN_PROFILE_SLUGS.includes(slug) ? [`${slug} (admin profile)`] : [];
+  const definition = lookup(slug);
+  const capabilities =
+    isPermissionProfileDefinition(definition) && definition ? definitionCapabilities(definition) : [];
+  return [...new Set([...reasons, ...breakGlassCapabilities(capabilities)])];
 }

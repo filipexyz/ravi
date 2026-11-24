@@ -16,6 +16,7 @@ import {
 import { dbFindTagBindings, dbGetTagDefinition } from "./tags/tag-db.js";
 import {
   assertBreakGlassStoreWrite,
+  grantProfileBreakGlassReasons,
   slugBreakGlassReasons,
   warnOperatorBreakGlass,
 } from "./permissions/break-glass.js";
@@ -1252,11 +1253,6 @@ function moveCanonicalContactTagBindings(sourceContactId: string, targetContactI
   for (const binding of searchTagBindingsForSelector({ selector: { target: `contact:${sourceContactId}` } }).bindings) {
     // A break-glass tag is dropped with the source, never moved (#952 review N3).
     const carriesBreakGlass = withoutBreakGlassTags([binding.tagSlug]).length === 0;
-    if (carriesBreakGlass) {
-      process.stderr.write(
-        `warning: contact merge dropped the break-glass tag ${binding.tagSlug} of contact:${sourceContactId}; re-tag contact:${targetContactId} from the operator terminal if it should keep it.\n`,
-      );
-    }
     if (!carriesBreakGlass)
       attachTagSlugsToAsset({
         assetType: "contact",
@@ -1301,7 +1297,7 @@ function contactPolicyBreakGlassReasons(
     ...new Set([
       ...tags.flatMap((tag) => slugBreakGlassReasons(tag, dbGetTagDefinition)),
       ...dbListContactChatGrants({ contactId }).flatMap((grant) =>
-        slugBreakGlassReasons(grant.profileSlug, dbGetTagDefinition),
+        grantProfileBreakGlassReasons(grant.profileSlug, dbGetTagDefinition),
       ),
     ]),
   ];
@@ -10708,6 +10704,13 @@ export function mergeContacts(targetId: string, sourceId: string): { merged: num
       // The source's break-glass tags are dropped, not carried (#952 N3; review N10: tags_json is
       // written directly here, so it never receives what the sinks would refuse).
       const sourceTags = withoutBreakGlassTags(source.tags);
+      const droppedTags = source.tags.filter((tag) => !sourceTags.includes(tag));
+      if (droppedTags.length > 0) {
+        // Bindings and policy-only tags alike: say what the merge left behind.
+        process.stderr.write(
+          `warning: contact merge dropped the break-glass tag(s) ${droppedTags.join(", ")} of contact:${sourceId}; re-tag contact:${targetId} from the operator terminal if it should keep them.\n`,
+        );
+      }
       const mergedTags = target.tags.length === 0 && sourceTags.length > 0 ? sourceTags : target.tags;
       const mergedNotes =
         Object.keys(target.notes).length === 0 && Object.keys(source.notes).length > 0 ? source.notes : target.notes;

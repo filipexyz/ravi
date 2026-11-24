@@ -8,7 +8,7 @@ import {
 } from "./contact-chat-grants.js";
 import { dbGetTagDefinition } from "../tags/tag-db.js";
 import { logger } from "../utils/logger.js";
-import { slugBreakGlassReasons } from "./break-glass.js";
+import { grantProfileBreakGlassReasons } from "./break-glass.js";
 import { formatContactGrantScope } from "./contact-policy-permissions-provider.js";
 
 const log = logger.child("permissions:contact-merge-grants");
@@ -49,9 +49,9 @@ export interface ReassignResult {
   grants: MergedGrantOutcome[];
 }
 
-/** One rule for break-glass (spec permissions/break-glass), the same the sinks use (#952 review N6). */
+/** One rule for break-glass (spec permissions/break-glass), read like the provider reads grants (#952 review N6). */
 export function profileCarriesBreakGlass(profileSlug: string): boolean {
-  return slugBreakGlassReasons(profileSlug, dbGetTagDefinition).length > 0;
+  return grantProfileBreakGlassReasons(profileSlug, dbGetTagDefinition).length > 0;
 }
 
 function grantScopeLabel(grant: ContactChatGrant): string {

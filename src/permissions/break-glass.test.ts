@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs";
 import { ADMIN_PERMISSION_PROFILES } from "./apply-grant.js";
 import {
   ADMIN_PROFILE_SLUGS,
+  agentConfigBreakGlassReasons,
+  assertBreakGlassStoreWrite,
+  grantProfileBreakGlassReasons,
   assertAgentBreakGlassRaiseAllowed,
   runApprovedBreakGlassGrant,
   isAdminProfileSlug,
@@ -116,5 +119,67 @@ describe("break-glass power", () => {
     const output = stderr.join("");
     expect(output).toContain("waking dormant break-glass on agent dormant-agent");
     expect(output).not.toContain("deliberate-agent");
+  });
+
+  it("keeps a narrow executable pattern narrow, whatever follows the wildcard", () => {
+    const definition = {
+      slug: "permission-report",
+      label: "report",
+      createdAt: 0,
+      updatedAt: 0,
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["execute:executable:*:report"] } },
+    } as never;
+    expect(tagDefinitionBreakGlassReasons("permission-report", definition)).toEqual([]);
+    expect(grantProfileBreakGlassReasons("permission-report", () => definition)).toEqual([]);
+    expect(
+      agentConfigBreakGlassReasons(
+        { profile: "explicit-only", capabilities: ["execute:executable:*:report"] },
+        "stored",
+      ),
+    ).toEqual([]);
+  });
+
+  it("reads a grant profile by the exact stored slug", () => {
+    const rootDefinition = {
+      slug: "permission-root",
+      label: "root",
+      createdAt: 0,
+      updatedAt: 0,
+      kind: "system",
+      source: "permissions",
+      metadata: { permissions: { capabilities: ["admin:system:*"] } },
+    } as never;
+    const lookup = (slug: string) => (slug === "permission-root" ? rootDefinition : null);
+    expect(grantProfileBreakGlassReasons("permission-root", lookup)).toEqual(["admin:system:*"]);
+    expect(grantProfileBreakGlassReasons("permission.root", lookup)).toEqual([]);
+    expect(grantProfileBreakGlassReasons("permission-admin", () => null)).toEqual(["permission-admin (admin profile)"]);
+  });
+
+  it("closes the approval when the body returns, even for continuations it scheduled", async () => {
+    const previous = process.env.RAVI_AGENT_ID;
+    process.env.RAVI_AGENT_ID = "scheduled-agent";
+    let later: unknown = "not-run";
+    try {
+      runApprovedBreakGlassGrant("test", () => {
+        assertBreakGlassStoreWrite("inside", ["admin:system:*"]);
+        void Promise.resolve().then(() => {
+          try {
+            assertBreakGlassStoreWrite("after return", ["admin:system:*"]);
+            later = null;
+          } catch (error) {
+            later = error;
+          }
+        });
+        return 1;
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    } finally {
+      if (previous === undefined) delete process.env.RAVI_AGENT_ID;
+      else process.env.RAVI_AGENT_ID = previous;
+    }
+    expect(later).toMatchObject({ code: "FULL_ACCESS_APPROVAL_REQUIRED" });
   });
 });
