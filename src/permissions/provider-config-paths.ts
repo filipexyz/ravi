@@ -200,7 +200,8 @@ function alwaysDeniedRoots(): string[] {
  * through `realpath` (which returns the on-disk casing on case-insensitive
  * volumes), the not-yet-existing suffix is kept as given.
  */
-function canonicalCase(path: string): string {
+/** Exported for tests. */
+export function canonicalCase(path: string): string {
   let prefix = path;
   const suffix: string[] = [];
   while (prefix && prefix !== parse(prefix).root) {
@@ -219,7 +220,8 @@ function canonicalCase(path: string): string {
 }
 
 /** A regular file with more than one name can be the protected file under another name. */
-function isHardlinkedFile(path: string): boolean {
+/** Exported for tests. */
+export function isHardlinkedFile(path: string): boolean {
   try {
     const stat = statSync(path);
     return stat.isFile() && stat.nlink > 1;

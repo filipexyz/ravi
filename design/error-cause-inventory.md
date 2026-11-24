@@ -562,12 +562,12 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | channels-slack | src/cli/commands/channels.ts | 550 | triaged-follow-up | catch-without-binding | src/cli/commands/channels.ts:b4681858e5bdb92bed276127 |
 | channels-slack | src/cli/commands/channels.ts | 696 | triaged-follow-up | catch-without-binding | src/cli/commands/channels.ts:179e40b20adef544b5509d39 |
 | cli | src/cli/commands/chats.ts | 424 | fixed | binding retained / no recognized error surface | src/cli/commands/chats.ts:de62e9ea3db3583465c19e5f |
-| cli | src/cli/commands/cloud-agents.ts | 918 | fixed | binding retained / no recognized error surface | src/cli/commands/cloud-agents.ts:f2ca8acac595890ebfc82fc3 |
-| cli | src/cli/commands/cloud-agents.ts | 949 | fixed | binding retained / no recognized error surface | src/cli/commands/cloud-agents.ts:078844d20137686de80579a5 |
-| cli | src/cli/commands/cloud-agents.ts | 956 | triaged-follow-up | rejection-without-binding | src/cli/commands/cloud-agents.ts:c4316356760ad8fa08d41e94 |
-| cli | src/cli/commands/cloud-agents.ts | 1469 | triaged-follow-up | catch-without-binding | src/cli/commands/cloud-agents.ts:7d0d0e06ad0cd8d7730b09ea |
-| cli | src/cli/commands/cloud-agents.ts | 1523 | fixed | binding retained / no recognized error surface | src/cli/commands/cloud-agents.ts:64c3735b954be8b06884354f |
-| cli | src/cli/commands/cloud-agents.ts | 1577 | fixed | binding retained / no recognized error surface | src/cli/commands/cloud-agents.ts:5eb3e7de1e0e2eb4c3a4d9bd |
+| cli | src/cli/commands/cloud-agents.ts | 919 | fixed | binding retained / no recognized error surface | src/cli/commands/cloud-agents.ts:f2ca8acac595890ebfc82fc3 |
+| cli | src/cli/commands/cloud-agents.ts | 950 | fixed | binding retained / no recognized error surface | src/cli/commands/cloud-agents.ts:078844d20137686de80579a5 |
+| cli | src/cli/commands/cloud-agents.ts | 957 | triaged-follow-up | rejection-without-binding | src/cli/commands/cloud-agents.ts:c4316356760ad8fa08d41e94 |
+| cli | src/cli/commands/cloud-agents.ts | 1470 | triaged-follow-up | catch-without-binding | src/cli/commands/cloud-agents.ts:7d0d0e06ad0cd8d7730b09ea |
+| cli | src/cli/commands/cloud-agents.ts | 1526 | fixed | binding retained / no recognized error surface | src/cli/commands/cloud-agents.ts:64c3735b954be8b06884354f |
+| cli | src/cli/commands/cloud-agents.ts | 1583 | fixed | binding retained / no recognized error surface | src/cli/commands/cloud-agents.ts:5eb3e7de1e0e2eb4c3a4d9bd |
 | cli | src/cli/commands/cloud-auth.ts | 88 | triaged-follow-up | catch-without-binding | src/cli/commands/cloud-auth.ts:0ba48b57c0c650d9c79f9bba |
 | cli | src/cli/commands/cloud-auth.ts | 170 | fixed | binding retained / no recognized error surface | src/cli/commands/cloud-auth.ts:861dc6bd4366c3d42553b2c5 |
 | cli | src/cli/commands/cloud-auth.ts | 212 | fixed | binding retained / no recognized error surface | src/cli/commands/cloud-auth.ts:fb92d9f27bc65d6a546301a6 |
@@ -725,15 +725,15 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | media-send | src/cli/commands/media.ts | 156 | fixed | binding retained / no recognized error surface | src/cli/commands/media.ts:b191129d3188910a8ba20ff6 |
 | cli | src/cli/commands/meetings.ts | 165 | triaged-follow-up | catch-without-binding | src/cli/commands/meetings.ts:3886f15a9a291adc16ff9b18 |
 | cli | src/cli/commands/meetings.ts | 174 | triaged-follow-up | catch-without-binding | src/cli/commands/meetings.ts:3e71f8217f7147abff10ee13 |
-| cli | src/cli/commands/meetings.ts | 602 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:b693eeea9403e4c38839c931 |
-| cli | src/cli/commands/meetings.ts | 746 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:9d60373d7fea62955d57784e |
-| cli | src/cli/commands/meetings.ts | 945 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:9f65cb22214586c61e160505 |
-| cli | src/cli/commands/meetings.ts | 1026 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:001b57184e6e403245cac1d6 |
-| cli | src/cli/commands/meetings.ts | 1428 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:66198c1ba051c5c537e96a16 |
-| cli | src/cli/commands/meetings.ts | 1622 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:6416d478fb9a7d66e0248c43 |
-| cli | src/cli/commands/meetings.ts | 1656 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:833831d8a614f3d7cde60b34 |
-| cli | src/cli/commands/meetings.ts | 1849 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:886ed0f5b26b083bf98db0d6 |
-| cli | src/cli/commands/meetings.ts | 1890 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:8cc4d2bb46d79c4e63627281 |
+| cli | src/cli/commands/meetings.ts | 605 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:b693eeea9403e4c38839c931 |
+| cli | src/cli/commands/meetings.ts | 749 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:9d60373d7fea62955d57784e |
+| cli | src/cli/commands/meetings.ts | 948 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:9f65cb22214586c61e160505 |
+| cli | src/cli/commands/meetings.ts | 1029 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:001b57184e6e403245cac1d6 |
+| cli | src/cli/commands/meetings.ts | 1431 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:66198c1ba051c5c537e96a16 |
+| cli | src/cli/commands/meetings.ts | 1625 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:6416d478fb9a7d66e0248c43 |
+| cli | src/cli/commands/meetings.ts | 1659 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:833831d8a614f3d7cde60b34 |
+| cli | src/cli/commands/meetings.ts | 1852 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:886ed0f5b26b083bf98db0d6 |
+| cli | src/cli/commands/meetings.ts | 1893 | fixed | binding retained / no recognized error surface | src/cli/commands/meetings.ts:8cc4d2bb46d79c4e63627281 |
 | cli | src/cli/commands/observers.ts | 73 | fixed | binding retained / no recognized error surface | src/cli/commands/observers.ts:519804ad35a11d337d7f1665 |
 | cli | src/cli/commands/observers.ts | 1009 | fixed | binding retained / no recognized error surface | src/cli/commands/observers.ts:8bfec284091984f85b4600dc |
 | cli | src/cli/commands/pages.ts | 518 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:90f0a2961f7492d920025729 |
@@ -766,9 +766,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/runtime-providers.ts | 368 | fixed | binding retained / no recognized error surface | src/cli/commands/runtime-providers.ts:0161b411cb92779685e74131 |
 | cli | src/cli/commands/sandbox.ts | 51 | fixed | binding retained / no recognized error surface | src/cli/commands/sandbox.ts:dddb04b867a74075b6006fa9 |
 | cli | src/cli/commands/sandbox.ts | 140 | fixed | binding retained / no recognized error surface | src/cli/commands/sandbox.ts:53ae5327afa7e793c190e979 |
-| cli | src/cli/commands/sandbox.ts | 160 | fixed | binding retained / no recognized error surface | src/cli/commands/sandbox.ts:53ae5327afa7e793c190e979 |
-| cli | src/cli/commands/sandbox.ts | 219 | fixed | binding retained / no recognized error surface | src/cli/commands/sandbox.ts:d1c350b5a498057704cbdb8c |
-| cli | src/cli/commands/sandbox.ts | 238 | fixed | binding retained / no recognized error surface | src/cli/commands/sandbox.ts:d1c350b5a498057704cbdb8c |
+| cli | src/cli/commands/sandbox.ts | 161 | fixed | binding retained / no recognized error surface | src/cli/commands/sandbox.ts:53ae5327afa7e793c190e979 |
+| cli | src/cli/commands/sandbox.ts | 220 | fixed | binding retained / no recognized error surface | src/cli/commands/sandbox.ts:d1c350b5a498057704cbdb8c |
+| cli | src/cli/commands/sandbox.ts | 239 | fixed | binding retained / no recognized error surface | src/cli/commands/sandbox.ts:d1c350b5a498057704cbdb8c |
 | cli | src/cli/commands/sdk-returns.ts | 240 | fixed | binding retained / no recognized error surface | src/cli/commands/sdk-returns.ts:e4416ba4cfa70be477ac9a1c |
 | cli | src/cli/commands/sdk-returns.ts | 262 | fixed | binding retained / no recognized error surface | src/cli/commands/sdk-returns.ts:703f3029f43669be19183edf |
 | cli | src/cli/commands/sdk-returns.ts | 328 | fixed | binding retained / no recognized error surface | src/cli/commands/sdk-returns.ts:48f62e053c84ff762065e484 |
@@ -1761,8 +1761,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | permissions | src/permissions/grant-requests/store.ts | 290 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/store.ts:4d2c02c75762345efbd4df15 |
 | permissions | src/permissions/grant-requests/store.ts | 301 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/store.ts:0f6e90634e8a1fecf83e5e95 |
 | permissions | src/permissions/provider-config-paths.ts | 59 | fixed | binding retained / no recognized error surface | src/permissions/provider-config-paths.ts:478e4cc0b615ab3752dae1ed |
-| permissions | src/permissions/provider-config-paths.ts | 210 | fixed | binding retained / no recognized error surface | src/permissions/provider-config-paths.ts:e44c5de6b99a60464eebe4c5 |
-| permissions | src/permissions/provider-config-paths.ts | 226 | fixed | binding retained / no recognized error surface | src/permissions/provider-config-paths.ts:3442f99caf6715549761cb75 |
+| permissions | src/permissions/provider-config-paths.ts | 211 | fixed | binding retained / no recognized error surface | src/permissions/provider-config-paths.ts:e44c5de6b99a60464eebe4c5 |
+| permissions | src/permissions/provider-config-paths.ts | 228 | fixed | binding retained / no recognized error surface | src/permissions/provider-config-paths.ts:3442f99caf6715549761cb75 |
 | permissions | src/permissions/provider-registry.ts | 87 | triaged-follow-up | catch-without-binding | src/permissions/provider-registry.ts:889e0d30290d42d5f24cfbd0 |
 | permissions | src/permissions/provider-runtime.ts | 269 | fixed | binding retained / no recognized error surface | src/permissions/provider-runtime.ts:4188512b146e747da91b7fc8 |
 | plugins | src/plugins/codex-skills.ts | 153 | fixed | binding retained / no recognized error surface | src/plugins/codex-skills.ts:26b87a841fbac9cb8ba31bc0 |
@@ -2028,13 +2028,13 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/observation-plane.ts | 531 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:e11628eb1279fac1afdd8f38 |
 | runtime-chat | src/runtime/observation-plane.ts | 540 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:36058302af01275a6693381c |
 | runtime-chat | src/runtime/observation-plane.ts | 713 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:3fe0cc39ce1af907e7e2487e |
-| runtime-chat | src/runtime/observation-plane.ts | 1293 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:690f4485fca97753b92a891f |
-| runtime-chat | src/runtime/observation-plane.ts | 1451 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:c2e1a15e69233693dd5197e7 |
-| runtime-chat | src/runtime/observation-plane.ts | 1632 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:2430258265090179f2f0b4f8 |
-| runtime-chat | src/runtime/observation-plane.ts | 1776 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:b5fdcb30b90cdc1f4bccfac7 |
-| runtime-chat | src/runtime/observation-plane.ts | 1897 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:b5c1a91072ca61082c76140e |
-| runtime-chat | src/runtime/observation-plane.ts | 1941 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:540d0526f217895b3167d71a |
-| runtime-chat | src/runtime/observation-plane.ts | 1989 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:5510399926eaeeaf9db57d52 |
+| runtime-chat | src/runtime/observation-plane.ts | 1278 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:690f4485fca97753b92a891f |
+| runtime-chat | src/runtime/observation-plane.ts | 1436 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:c2e1a15e69233693dd5197e7 |
+| runtime-chat | src/runtime/observation-plane.ts | 1617 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:2430258265090179f2f0b4f8 |
+| runtime-chat | src/runtime/observation-plane.ts | 1761 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:b5fdcb30b90cdc1f4bccfac7 |
+| runtime-chat | src/runtime/observation-plane.ts | 1882 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:b5c1a91072ca61082c76140e |
+| runtime-chat | src/runtime/observation-plane.ts | 1926 | triaged-follow-up | catch-without-binding | src/runtime/observation-plane.ts:540d0526f217895b3167d71a |
+| runtime-chat | src/runtime/observation-plane.ts | 1974 | fixed | binding retained / no recognized error surface | src/runtime/observation-plane.ts:5510399926eaeeaf9db57d52 |
 | runtime-chat | src/runtime/observation-profiles.ts | 403 | fixed | binding retained / no recognized error surface | src/runtime/observation-profiles.ts:a7b3c1ecbf0239f7ccee0b6c |
 | runtime-chat | src/runtime/observation-profiles.ts | 1282 | fixed | binding retained / no recognized error surface | src/runtime/observation-profiles.ts:2ecb316d9df440514ba0494c |
 | runtime-chat | src/runtime/observation-profiles.ts | 1294 | triaged-follow-up | surface-bypasses-constructor | src/runtime/observation-profiles.ts:05b3823fa50b92445eb38e95 |
@@ -2098,7 +2098,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/ravi-env-file.ts | 377 | no-cause | A preexisting lock is busy/unsafe, never followed or stolen; OS diagnostics may include paths. | src/runtime/ravi-env-file.ts:9d7018904c277b688ee98b91 |
 | runtime-chat | src/runtime/ravi-env-file.ts | 431 | no-cause | No raw OS error/cause or env bytes cross the writer boundary. Post-rename failures are uncertain. | src/runtime/ravi-env-file.ts:a017511db09a91335a72ffe8 |
 | runtime-chat | src/runtime/ravi-env-file.ts | 441 | no-cause | Descriptor cleanup cannot change the known write result or leak secret-bearing OS diagnostics. | src/runtime/ravi-env-file.ts:c9470c9b2467433f9ffb2ed0 |
-| runtime-chat | src/runtime/ravi-rules.ts | 289 | triaged-follow-up | catch-without-binding | src/runtime/ravi-rules.ts:d1548e705d2c1cc203c2b699 |
+| runtime-chat | src/runtime/ravi-rules.ts | 296 | triaged-follow-up | catch-without-binding | src/runtime/ravi-rules.ts:d1548e705d2c1cc203c2b699 |
 | runtime-chat | src/runtime/runtime-defaults.ts | 47 | triaged-follow-up | catch-without-binding | src/runtime/runtime-defaults.ts:19599e9fe08de7d2a93a5188 |
 | runtime-chat | src/runtime/runtime-defaults.ts | 88 | triaged-follow-up | catch-without-binding | src/runtime/runtime-defaults.ts:8cdcd933953e255901103de8 |
 | runtime-chat | src/runtime/runtime-probe.ts | 148 | fixed | binding retained / no recognized error surface | src/runtime/runtime-probe.ts:08c59af4134df02f4a00727c |

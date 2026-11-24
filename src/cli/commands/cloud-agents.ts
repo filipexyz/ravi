@@ -10,7 +10,7 @@ import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 
 import "reflect-metadata";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 
 import { dbMarkCloudChatQuestionAnswered } from "../../cloud-agents/chat-db.js";
@@ -71,6 +71,7 @@ import {
   type OpenCloudAgentsSession,
 } from "../cloud-agents-contract.js";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { assertCallerFileAccess, resolveCallerPath } from "../caller-cwd.js";
 import { getContext } from "../context.js";
 import { runtimeLibraryCaller, runtimeLibrarySession } from "../library-contract.js";
 import { readNonInteractiveSecret } from "../secret-input.js";
@@ -1509,12 +1510,14 @@ export class CloudRunsCommands {
       op,
       asJson,
       async () => {
+        // Checked before contacting the cloud, against the caller's cwd (not the daemon's).
+        const requested = download?.trim() ? resolveCallerPath(download, "write") : null;
         const session = await sessionFor(this.deps, undefined, false);
         const run = await session.client.getRun(id);
         const downloaded: Array<{ id: string; name: string; path: string; bytes: number }> = [];
         let directory: string | null = null;
-        if (download?.trim()) {
-          directory = resolve(download.trim());
+        if (requested) {
+          directory = requested;
           const folder = directory;
           const targets = run.outputs.map((output) => {
             let relative: string;
@@ -1529,7 +1532,10 @@ export class CloudRunsCommands {
                 diagnostic: errorDiagnostic(caughtError, { operation: op }),
               });
             }
-            return { output, relative, key: relative.toLowerCase(), path: join(folder, relative) };
+            const path = join(folder, relative);
+            // Each file too: a folder link inside the target must not lead out of the workspace.
+            assertCallerFileAccess(path, "write");
+            return { output, relative, key: relative.toLowerCase(), path };
           });
           // Two outputs on one path (also when only the case differs), or a file where another needs a folder.
           const clash = targets.find(
