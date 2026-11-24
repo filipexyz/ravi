@@ -105,3 +105,38 @@ RAVI_CONTEXT_KEY=<viewer-ctx> ravi cron disable <other-agent-job-id> --json
 - `bun test src/cron/runner.test.ts` MUST show startup failure reconciliation off the readiness path: `start()` returns while failure delivery is held (channel online and offline); `stop()` admits no further report; `stop()` returns after about a second while a delivery is stalled, leaving the report pending for a fresh start to retry; the loop yields the event loop between reports that settle locally; a report whose stored notice does not parse is recorded once in the inbox and settled, neither retried nor raised by `stop()`; a report whose mark the database refuses (after the delivery) does not stop the reports behind it, its failure being raised by `stop()` up to the recorded bound; and a `stop()` that raised stays failed on later stops, as the shutdown latch requires (also pinned by `src/cron/runner-shutdown.test.ts`).
 - `bun test src/runtime/delivery-queue.test.ts src/runtime/turn-provenance.test.ts src/runtime/prompt-subscription.test.ts` verifies run separation, continuation identity and pre-turn failure provenance.
 - `bun test src/runtime/intake-failure.test.ts` MUST pass a persisted cron run through the real cold launcher with an incompatible model and with a missing agent, then recreate the runner and verify the terminal state and retained one-shot. A permanent intake drop MUST preserve the original run identity.
+
+## Failure Acknowledgement MUST Only Settle
+
+- `bun test src/cron/failure-ack.test.ts` MUST prove `cron ack-failures` groups pending
+  failed runs by job, never selects runs of jobs the caller may not modify (they are
+  counted as denied), narrows to one job with `--job`, and marks exactly the selected
+  runs reported without sending anything.
+
+## Failure Notices MUST Aggregate And Stop Retrying
+
+- `bun test src/cron/failure-notification.test.ts` MUST reproduce the pile-up: 42 failed runs of
+  3 jobs with the owner's WhatsApp offline produce one digest on the owner's next chat with a
+  line per job ("31 falhas", "10 falhas", "1 falha"), the offline chat is never tried, and every
+  run settles. It MUST also prove: every owner chat offline → no send, settled undeliverable
+  (`owner_chats_offline`) at once; no owner chat → undeliverable (`no_owner_chat`); an erroring
+  delivery settles after 3 attempts and is not tried again; a second live failure of a job
+  inside the window sends nothing and one after it sends; a failure older than the window
+  settles as stale without a message. The window MUST hold with 60 newer items of other jobs and
+  after the owner marks the notice done; the next notice MUST count failures since the last one;
+  a connected chat MUST be tried before one whose state is unknown; a digest MUST cap at 20 lines.
+- `bun test src/cron/runner.test.ts` MUST prove a report acknowledged while the start gathers the
+  backlog is not sent.
+- `bun test src/cli/commands/cron-commands.test.ts` MUST prove `cron ack-failures` rejects a blank
+  `--job` (exit 2), is a dry-run without `--execute` (exit 3), and settles only jobs the caller can
+  both see and modify.
+- `bun test src/cron/runner.test.ts` MUST prove failed runs drained at start go out as one
+  digest ("falhou 2 vezes" for one job), online and offline, and that a run whose report was
+  delivered but cannot be marked stays pending while the others settle.
+
+## Thread mode
+
+- `bun test src/cron/runner-thread.test.ts` MUST cover: a fresh child per run, named after the run id, with the job's authority and no source; silent close and runtime release; one automatic return read from the run's own history; `@@SILENT@@` closing silently; no second return after an explicit close; one classified error return on failure (raw provider text absent); another agent's parent refused with no child; the main-session fallback; a scheduled run skipped while the previous one is open; a stale run closed as failed; pruning removing sessions too.
+- `bun test src/cli/commands/sessions-automation-run.test.ts` MUST cover `close-thread --return` (delivered once, `THREAD_CLOSED` after), the silent close, `report` keeping the run open, and the Slack-only wait flags refused.
+- `bun test src/cli/commands/cron-commands.test.ts` MUST cover `--thread`, `--report-to`, the refused pairs on `cron add` and on `cron set agent|reply-session`, the usage errors, and the `--isolated` warning.
+- `bun test src/router/router.test.ts -t "automation child-run"` MUST create the child-run table on reopen and refuse unknown states.

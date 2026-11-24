@@ -3425,6 +3425,30 @@ function initializeRouterSchema(db: Database, nextDbPath: string): void {
     );
     CREATE INDEX IF NOT EXISTS idx_cron_runs_job ON cron_runs(job_id);
 
+    -- One automation run in a child session of its own ("thread mode"), parented to the session it reports to.
+    CREATE TABLE IF NOT EXISTS automation_child_runs (
+      id TEXT PRIMARY KEY,
+      origin_kind TEXT NOT NULL CHECK(origin_kind IN ('cron', 'trigger')),
+      origin_id TEXT NOT NULL,
+      origin_name TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      parent_session_key TEXT NOT NULL,
+      parent_session_name TEXT NOT NULL,
+      child_session_key TEXT NOT NULL UNIQUE,
+      child_session_name TEXT NOT NULL,
+      surface TEXT NOT NULL CHECK(surface IN ('headless')),
+      status TEXT NOT NULL CHECK(status IN ('open', 'closed')),
+      return_state TEXT NOT NULL CHECK(return_state IN ('none', 'pending', 'returned', 'silent', 'error')),
+      return_kind TEXT CHECK(return_kind IS NULL OR return_kind IN ('result', 'auto', 'error')),
+      return_text TEXT,
+      closed_at INTEGER,
+      parent_notified_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_automation_child_runs_origin ON automation_child_runs(origin_kind, origin_id);
+    CREATE INDEX IF NOT EXISTS idx_automation_child_runs_open ON automation_child_runs(status) WHERE status = 'open';
+
     -- Durable idempotency ledger for reactions whose target may later be deleted.
     CREATE TABLE IF NOT EXISTS reaction_actions (
       idempotency_key_hash TEXT PRIMARY KEY,

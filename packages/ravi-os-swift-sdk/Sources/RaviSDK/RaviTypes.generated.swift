@@ -15491,6 +15491,57 @@ public struct CrmTaskSnoozeReturn: Codable, Sendable {
   }
 }
 
+public struct CronAckFailuresOptions: Codable, Sendable {
+  public var execute: Bool?
+  public var job: String?
+
+  public init(execute: Bool? = nil, job: String? = nil) {
+    self.execute = execute
+    self.job = job
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case execute = "execute"
+    case job = "job"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.job {
+      body["job"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct CronAckFailuresReturn: Codable, Sendable {
+  public var changedCount: Double
+  public var denied: Double
+  public var jobs: [RaviJSON]
+  public var pending: Double
+  public var status: String
+  public var target: RaviJSON
+
+  public init(changedCount: Double, denied: Double, jobs: [RaviJSON], pending: Double, status: String, target: RaviJSON) {
+    self.changedCount = changedCount
+    self.denied = denied
+    self.jobs = jobs
+    self.pending = pending
+    self.status = status
+    self.target = target
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case changedCount = "changedCount"
+    case denied = "denied"
+    case jobs = "jobs"
+    case pending = "pending"
+    case status = "status"
+    case target = "target"
+  }
+}
+
 public struct CronAddOptions: Codable, Sendable {
   public var account: String?
   public var agent: String?
@@ -15505,11 +15556,13 @@ public struct CronAddOptions: Codable, Sendable {
   public var isolated: Bool?
   public var message: String?
   public var onError: String?
+  public var reportTo: String?
   public var shell: String?
+  public var thread: Bool?
   public var timeout: String?
   public var tz: String?
 
-  public init(account: String? = nil, agent: String? = nil, at: String? = nil, cron: String? = nil, deleteAfter: Bool? = nil, description: String? = nil, envFile: String? = nil, every: String? = nil, exec: String? = nil, idempotencyKey: String? = nil, isolated: Bool? = nil, message: String? = nil, onError: String? = nil, shell: String? = nil, timeout: String? = nil, tz: String? = nil) {
+  public init(account: String? = nil, agent: String? = nil, at: String? = nil, cron: String? = nil, deleteAfter: Bool? = nil, description: String? = nil, envFile: String? = nil, every: String? = nil, exec: String? = nil, idempotencyKey: String? = nil, isolated: Bool? = nil, message: String? = nil, onError: String? = nil, reportTo: String? = nil, shell: String? = nil, thread: Bool? = nil, timeout: String? = nil, tz: String? = nil) {
     self.account = account
     self.agent = agent
     self.at = at
@@ -15523,7 +15576,9 @@ public struct CronAddOptions: Codable, Sendable {
     self.isolated = isolated
     self.message = message
     self.onError = onError
+    self.reportTo = reportTo
     self.shell = shell
+    self.thread = thread
     self.timeout = timeout
     self.tz = tz
   }
@@ -15542,7 +15597,9 @@ public struct CronAddOptions: Codable, Sendable {
     case isolated = "isolated"
     case message = "message"
     case onError = "onError"
+    case reportTo = "reportTo"
     case shell = "shell"
+    case thread = "thread"
     case timeout = "timeout"
     case tz = "tz"
   }
@@ -15587,8 +15644,14 @@ public struct CronAddOptions: Codable, Sendable {
     if let value = self.onError {
       body["onError"] = try RaviJSON.fromEncodable(value)
     }
+    if let value = self.reportTo {
+      body["reportTo"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.shell {
       body["shell"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.thread {
+      body["thread"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.timeout {
       body["timeout"] = try RaviJSON.fromEncodable(value)
@@ -28036,44 +28099,7 @@ public struct SessionsCloseThreadOptions: Codable, Sendable {
   }
 }
 
-public struct SessionsCloseThreadReturn: Codable, Sendable {
-  public var actionId: String
-  public var changed: Bool
-  public var childSession: RaviJSON
-  public var closeSequence: Int
-  public var closed: Bool
-  public var parentReturn: RaviJSON
-  public var parentSession: RaviJSON
-  public var requestId: String
-  public var slack: RaviJSON
-  public var status: String
-
-  public init(actionId: String, changed: Bool, childSession: RaviJSON, closeSequence: Int, closed: Bool, parentReturn: RaviJSON, parentSession: RaviJSON, requestId: String, slack: RaviJSON, status: String) {
-    self.actionId = actionId
-    self.changed = changed
-    self.childSession = childSession
-    self.closeSequence = closeSequence
-    self.closed = closed
-    self.parentReturn = parentReturn
-    self.parentSession = parentSession
-    self.requestId = requestId
-    self.slack = slack
-    self.status = status
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case actionId = "actionId"
-    case changed = "changed"
-    case childSession = "childSession"
-    case closeSequence = "closeSequence"
-    case closed = "closed"
-    case parentReturn = "parentReturn"
-    case parentSession = "parentSession"
-    case requestId = "requestId"
-    case slack = "slack"
-    case status = "status"
-  }
-}
+public typealias SessionsCloseThreadReturn = RaviJSON
 
 public typealias SessionsConversationsAgentsReturn = [RaviJSON]
 
@@ -29262,38 +29288,7 @@ public struct SessionsReportOptions: Codable, Sendable {
   }
 }
 
-public struct SessionsReportReturn: Codable, Sendable {
-  public var actionId: String
-  public var handoff: RaviJSON?
-  public var handoffError: String?
-  public var messageId: String
-  public var parentSession: RaviJSON
-  public var requestId: String
-  public var reviewDispatch: RaviJSON?
-  public var status: String
-
-  public init(actionId: String, handoff: RaviJSON? = nil, handoffError: String? = nil, messageId: String, parentSession: RaviJSON, requestId: String, reviewDispatch: RaviJSON? = nil, status: String) {
-    self.actionId = actionId
-    self.handoff = handoff
-    self.handoffError = handoffError
-    self.messageId = messageId
-    self.parentSession = parentSession
-    self.requestId = requestId
-    self.reviewDispatch = reviewDispatch
-    self.status = status
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case actionId = "actionId"
-    case handoff = "handoff"
-    case handoffError = "handoffError"
-    case messageId = "messageId"
-    case parentSession = "parentSession"
-    case requestId = "requestId"
-    case reviewDispatch = "reviewDispatch"
-    case status = "status"
-  }
-}
+public typealias SessionsReportReturn = RaviJSON
 
 public struct SessionsResetOptions: Codable, Sendable {
   public var execute: Bool?

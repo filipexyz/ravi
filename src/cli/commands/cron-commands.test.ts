@@ -128,9 +128,12 @@ mock.module("../../router/session-key.js", () => ({
   deriveSourceFromSessionKey: () => undefined,
 }));
 
+/** Sessions `resolveSession` finds, by name or key; empty unless a test fills it. */
+let mockSessions: Record<string, { sessionKey: string; name: string; agentId: string }> = {};
+
 mock.module("../../router/sessions.js", () => ({
   ...actualSessionsModule,
-  resolveSession: () => null,
+  resolveSession: (ref: string) => mockSessions[ref] ?? null,
 }));
 
 mock.module("../../router/router-db.js", () => ({
@@ -192,6 +195,38 @@ mock.module("../../cron/index.js", () => ({
     return match[2] === "s" ? n * 1000 : match[2] === "m" ? n * 60_000 : n * 3_600_000;
   },
   isValidCronExpression: () => true,
+}));
+
+// Only armed by the ack-failures tests; otherwise calls through, so other files sharing the process see the real module.
+const actualFailureAck = await import("../../cron/failure-ack.js");
+let ackOwners: string[] | null = null;
+let ackDecisions: Array<{ owner: string; allowed: boolean }> = [];
+let ackApplied = 0;
+mock.module("../../cron/failure-ack.js", () => ({
+  ...actualFailureAck,
+  planCronFailureAck: (filter: Parameters<typeof actualFailureAck.planCronFailureAck>[0]) => {
+    if (!ackOwners) return actualFailureAck.planCronFailureAck(filter);
+    ackDecisions = ackOwners.map((owner) => ({ owner, allowed: filter.canAck(owner) }));
+    const allowed = ackDecisions.filter((decision) => decision.allowed);
+    return {
+      pending: ackOwners.length,
+      selected: allowed.length,
+      denied: ackOwners.length - allowed.length,
+      jobs: allowed.map((decision) => ({
+        jobId: `job-${decision.owner}`,
+        name: `Job ${decision.owner}`,
+        ownerAgentId: decision.owner,
+        runIds: [`run-${decision.owner}`],
+        oldestAt: 1,
+        newestAt: 2,
+      })),
+    };
+  },
+  applyCronFailureAck: (plan: Parameters<typeof actualFailureAck.applyCronFailureAck>[0]) => {
+    if (!ackOwners) return actualFailureAck.applyCronFailureAck(plan);
+    ackApplied += plan.selected;
+    return plan.selected;
+  },
 }));
 
 const { CronCommands } = await import("./cron.js");
@@ -1692,5 +1727,186 @@ describe("CronCommands owner principal", () => {
     const payload = await captureJson(() => new CronCommands().set("cron-1", "message", "new text", true));
 
     expect(payload).toMatchObject({ warnings: [], job: { runsAsOperator: true } });
+  });
+});
+
+describe("CronCommands --thread", () => {
+  const MAIN_DM = { sessionKey: "agent:main:slack:ravi-slack:dm:d1", name: "main-dm", agentId: "main" };
+  const GROUP = { sessionKey: "agent:ravi-updates:whatsapp:main:group:120363", name: "grupo", agentId: "ravi-updates" };
+
+  function addJob(opts: { isolated?: boolean; thread?: boolean; reportTo?: string; agent?: string }) {
+    return new CronCommands().add(
+      "Updates",
+      undefined,
+      "30m",
+      undefined,
+      undefined,
+      "Read the blog and post what matters",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      opts.isolated,
+      undefined,
+      opts.agent,
+      undefined,
+      undefined,
+      true,
+      undefined,
+      opts.thread,
+      opts.reportTo,
+    );
+  }
+
+  beforeEach(() => {
+    mockSessions = {
+      [MAIN_DM.sessionKey]: MAIN_DM,
+      [MAIN_DM.name]: MAIN_DM,
+      [GROUP.sessionKey]: GROUP,
+      [GROUP.name]: GROUP,
+    };
+    mockCliContext = undefined;
+    mockScopeContext = undefined;
+    mockScopeEnforced = false;
+    cronJob = null;
+  });
+
+  afterEach(() => {
+    mockSessions = {};
+    mockCliContext = undefined;
+  });
+
+  it("runs in thread mode and reports to the creating session by default", async () => {
+    mockCliContext = { sessionKey: MAIN_DM.sessionKey, agentId: "main" };
+    const payload = await captureJson(() => addJob({ thread: true }));
+
+    expect(cronJob).toMatchObject({ sessionTarget: "thread", replySession: MAIN_DM.sessionKey, agentId: "main" });
+    expect(payload.warnings).toEqual([]);
+  });
+
+  it("reports to the --report-to session when it belongs to the job's agent", async () => {
+    mockCliContext = { sessionKey: MAIN_DM.sessionKey, agentId: "main" };
+    await captureJson(() => addJob({ thread: true, agent: "ravi-updates", reportTo: "grupo" }));
+
+    expect(cronJob).toMatchObject({ sessionTarget: "thread", replySession: GROUP.sessionKey, agentId: "ravi-updates" });
+  });
+
+  it("refuses a report-to session of another agent, including the creating one by default", async () => {
+    mockCliContext = { sessionKey: MAIN_DM.sessionKey, agentId: "main" };
+
+    await expect(addJob({ thread: true, agent: "ravi-updates", reportTo: "main-dm" })).rejects.toThrow(
+      /report to a session of its own agent \(ravi-updates\)/,
+    );
+    await expect(addJob({ thread: true, agent: "ravi-updates" })).rejects.toThrow(/belongs to main/);
+    expect(cronJob).toBeNull();
+  });
+
+  it("refuses a report-to session that does not exist", async () => {
+    await expect(addJob({ thread: true, reportTo: "nowhere" })).rejects.toThrow("Report-to session not found: nowhere");
+  });
+
+  it("refuses --report-to without --thread and --thread with --isolated", async () => {
+    await expect(addJob({ reportTo: "grupo" })).rejects.toThrow("--report-to only applies with --thread");
+    await expect(addJob({ thread: true, isolated: true })).rejects.toThrow(/cannot be combined/);
+  });
+
+  it("keeps a thread job's agent and report-to session paired on cron set", async () => {
+    cronJob = {
+      id: "cron-1",
+      name: "Updates",
+      agentId: "main",
+      enabled: true,
+      deleteAfterRun: false,
+      sessionTarget: "thread",
+      replySession: MAIN_DM.sessionKey,
+      executionType: "agent",
+      schedule: { type: "every", every: 1_800_000 },
+      message: "Read the blog",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    await expect(new CronCommands().set("cron-1", "agent", "ravi-updates", true)).rejects.toThrow(/belongs to main/);
+    await expect(new CronCommands().set("cron-1", "reply-session", "grupo", true)).rejects.toThrow(
+      /belongs to ravi-updates/,
+    );
+    expect(cronJob).toMatchObject({ agentId: "main", replySession: MAIN_DM.sessionKey });
+
+    await captureJson(() => new CronCommands().set("cron-1", "reply-session", "main-dm", true));
+    expect(cronJob).toMatchObject({ replySession: MAIN_DM.sessionKey });
+  });
+
+  it("still creates an --isolated job, with a deprecation warning", async () => {
+    const payload = await captureJson(() => addJob({ isolated: true }));
+
+    expect(cronJob).toMatchObject({ sessionTarget: "isolated" });
+    expect(payload.warnings).toEqual([expect.stringContaining("--isolated is deprecated")]);
+  });
+});
+
+describe("CronCommands ack-failures", () => {
+  beforeEach(() => {
+    ackOwners = ["agent-a", "agent-b"];
+    ackDecisions = [];
+    ackApplied = 0;
+    mockScopeEnforced = true;
+    mockScopeContext = { agentId: "agent-a" };
+    mockGrants = [];
+  });
+  afterEach(() => {
+    ackOwners = null;
+    mockScopeEnforced = false;
+    mockScopeContext = undefined;
+    mockGrants = [];
+  });
+
+  async function contractErrorOf(run: () => Promise<unknown>) {
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      await run();
+    } catch (error) {
+      return error as InstanceType<typeof ContractError>;
+    } finally {
+      console.log = originalLog;
+    }
+    throw new Error("expected a contract error");
+  }
+
+  it("rejects a blank --job with a usage error (exit 2) before planning", async () => {
+    const error = await contractErrorOf(() => new CronCommands().ackFailures("  ", true, true));
+    expect(error).toBeInstanceOf(ContractError);
+    expect(error.exitCode).toBe(2);
+    expect(error.envelope().error.code).toBe("USAGE_ERROR");
+    expect(ackDecisions).toEqual([]);
+    expect(ackApplied).toBe(0);
+  });
+
+  it("is a dry-run without --execute (exit 3) and settles nothing", async () => {
+    const error = await contractErrorOf(() => new CronCommands().ackFailures(undefined, true));
+    expect(error).toBeInstanceOf(ContractError);
+    expect(error.exitCode).toBe(3);
+    expect(error.envelope().error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(ackApplied).toBe(0);
+  });
+
+  it("settles only jobs the caller can both see and modify", async () => {
+    // Modify without view on agent-b is not enough: the plan would show its job names.
+    mockGrants = [{ permission: "modify", objectType: "agent", objectId: "agent-b" }];
+    const payload = await captureJson(() => new CronCommands().ackFailures(undefined, true, true));
+    expect(ackDecisions).toEqual([
+      { owner: "agent-a", allowed: true },
+      { owner: "agent-b", allowed: false },
+    ]);
+    expect(payload).toMatchObject({ status: "acknowledged", changedCount: 1, denied: 1 });
+    expect(JSON.stringify(payload)).not.toContain("Job agent-b");
+
+    mockGrants = [
+      { permission: "modify", objectType: "agent", objectId: "agent-b" },
+      { permission: "view", objectType: "agent", objectId: "agent-b" },
+    ];
+    await captureJson(() => new CronCommands().ackFailures(undefined, true, true));
+    expect(ackDecisions.every((decision) => decision.allowed)).toBe(true);
   });
 });

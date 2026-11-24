@@ -16,7 +16,13 @@ import {
 import { fail, getContext } from "../context.js";
 import { isTriggerOwnSessionKey } from "../../triggers/authority.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
-import { cronListReturnSchema, cronMutationReturnSchema, cronShowReturnSchema } from "./operational-return-schemas.js";
+import {
+  cronFailureAckReturnSchema,
+  cronListReturnSchema,
+  cronMutationReturnSchema,
+  cronShowReturnSchema,
+} from "./operational-return-schemas.js";
+import { applyCronFailureAck, planCronFailureAck } from "../../cron/failure-ack.js";
 import { nats } from "../../nats.js";
 import {
   getScopeContext,
@@ -84,6 +90,16 @@ function assertValidCronShellTimeout(op: string, value: string, asJson?: boolean
     details: { suggestedAction },
     diagnostic: errorDiagnostic(invalid, { operation: op }),
   });
+}
+
+function failCronUsage(op: string, message: string, suggestedAction: string, asJson?: boolean): never {
+  contractFail(op, "USAGE_ERROR", message, {
+    asJson,
+    exitCode: CONTRACT_EXIT_USAGE,
+    details: { suggestedAction },
+    diagnostic: errorDiagnostic(message, { operation: op }),
+  });
+  throw new Error(message);
 }
 
 function parseCronShellTimeout(value: string | undefined): number | undefined {
@@ -280,6 +296,33 @@ function assertCronJobMutable(op: string, id: string, job: CronJob, asJson?: boo
  * the session. Without it an agent with cron grants could aim automation at
  * another agent and run under that agent's ceiling.
  */
+/**
+ * The session a `--thread` job's runs report to: `--report-to`, else the
+ * creating session. It must exist and belong to the job's agent, since the
+ * run's return is an internal turn of that agent. Returns its key, or
+ * undefined when there is no creating session (the agent's main session then).
+ */
+function resolveThreadReportTo(
+  reportTo: string | undefined,
+  creatingSession: string | undefined,
+  agentId: string,
+  asJson?: boolean,
+): string | undefined {
+  const ref = reportTo?.trim() || creatingSession;
+  if (!ref) return undefined;
+  const session = resolveSession(ref);
+  if (!session || isTriggerOwnSessionKey(session.sessionKey)) {
+    fail(`Report-to session not found: ${ref}`);
+  }
+  if (session!.agentId !== agentId) {
+    fail(
+      `The runs of a --thread job report to a session of its own agent (${agentId}); ${session!.name ?? session!.sessionKey} belongs to ${session!.agentId}. Pass --report-to <a session of ${agentId}>`,
+    );
+  }
+  if (reportTo?.trim()) assertCronTargetAuthorized("cron add", { agentId, replySession: session!.sessionKey }, asJson);
+  return session!.sessionKey;
+}
+
 function assertCronTargetAuthorized(
   op: string,
   target: { agentId?: string; replySession?: string },
@@ -670,7 +713,11 @@ export class CronCommands {
     @Option({ flags: "--timeout <seconds|duration>", description: "Shell timeout, e.g. 60 or 5m" })
     timeout?: string,
     @Option({ flags: "--env-file <path>", description: "Env file loaded for shell jobs" }) envFile?: string,
-    @Option({ flags: "--isolated", description: "Run in isolated session" }) isolated?: boolean,
+    @Option({
+      flags: "--isolated",
+      description: "Deprecated: use --thread. Runs every execution in one shared session that keeps growing",
+    })
+    isolated?: boolean,
     @Option({ flags: "--delete-after", description: "Delete job after first run" }) deleteAfter?: boolean,
     @Option({ flags: "--agent <id>", description: "Agent ID (default: default agent)" }) agent?: string,
     @Option({ flags: "--account <name>", description: "Account for channel delivery (auto-detected from agent)" })
@@ -679,6 +726,18 @@ export class CronCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--idempotency-key <key>", description: "Durable create idempotency key" })
     idempotencyKey?: string,
+    @Option({
+      flags: "--thread",
+      description:
+        "Run each execution in a fresh session of its own that returns its result once to the report-to session (agent jobs)",
+    })
+    thread?: boolean,
+    @Option({
+      flags: "--report-to <session>",
+      description:
+        "With --thread: the session each run reports to, of the job's agent (default: the creating session, else the agent's main session)",
+    })
+    reportTo?: string,
   ) {
     const warnings: string[] = [];
     const shellCommand = shell?.trim() || exec?.trim();
@@ -696,6 +755,30 @@ export class CronCommands {
     }
     if (isShellJob && isolated) {
       fail("--isolated is only valid for agent cron jobs");
+    }
+    if (isShellJob && (thread || reportTo)) {
+      failCronUsage(
+        "cron add",
+        "--thread and --report-to are only valid for agent cron jobs",
+        "drop --thread/--report-to, or use --message instead of --shell",
+        asJson,
+      );
+    }
+    if (thread && isolated) {
+      failCronUsage(
+        "cron add",
+        "--thread and --isolated cannot be combined; --isolated is deprecated, use --thread",
+        "drop --isolated",
+        asJson,
+      );
+    }
+    if (reportTo !== undefined && !thread) {
+      failCronUsage("cron add", "--report-to only applies with --thread", "add --thread, or drop --report-to", asJson);
+    }
+    if (isolated) {
+      const warning = `Warning: --isolated is deprecated: every run shares one session that keeps growing. Use --thread: each run gets a session of its own and returns its result to the session that creates the job.`;
+      if (asJson) warnings.push(warning);
+      else console.log(warning);
     }
     if (!isShellJob && (onError || timeout || envFile)) {
       fail("--on-error, --timeout and --env-file are only valid with --shell/--exec");
@@ -777,7 +860,9 @@ export class CronCommands {
     // Capture reply session from caller context (e.g., agent:comm:whatsapp:main:group:123).
     // A trigger's own session runs that trigger's fires only, so a job created
     // during one of its turns has no reply session and runs in the main one.
-    const replySession = isShellJob || isTriggerOwnSessionKey(ctx?.sessionKey) ? undefined : ctx?.sessionKey;
+    let replySession = isShellJob || isTriggerOwnSessionKey(ctx?.sessionKey) ? undefined : ctx?.sessionKey;
+    if (thread)
+      replySession = resolveThreadReportTo(reportTo, replySession, resolvedAgent ?? getDefaultAgentId(), asJson);
 
     // Invalid input fails before the owner refusal (exit 3).
     const shellTimeoutMs = isShellJob ? parseCronShellTimeout(timeout) : undefined;
@@ -794,7 +879,7 @@ export class CronCommands {
       accountId: resolvedAccount,
       replySession,
       description,
-      sessionTarget: isShellJob ? "main" : isolated ? "isolated" : "main",
+      sessionTarget: isShellJob ? "main" : thread ? "thread" : isolated ? "isolated" : "main",
       deleteAfterRun: deleteAfter,
       executionType: isShellJob ? "shell" : "agent",
       shellCommand: isShellJob ? shellCommand : undefined,
@@ -1116,6 +1201,10 @@ export class CronCommands {
               fail(`Agent not found: ${agentId}`);
             }
           }
+          if (job.sessionTarget === "thread" && job.replySession) {
+            // A thread job's runs report to a session of its own agent: the pair stays valid.
+            resolveThreadReportTo(undefined, job.replySession, agentId ?? getDefaultAgentId(), asJson);
+          }
           update({ agentId });
           normalizedValue = agentId ?? null;
           logHuman(`✓ Agent set: ${id} -> ${agentId ?? "(default)"}`);
@@ -1137,17 +1226,31 @@ export class CronCommands {
           break;
 
         case "session": {
-          const validValues = ["main", "isolated"];
+          const validValues = ["main", "thread", "isolated"];
           if (!validValues.includes(value)) {
-            fail(`Invalid session value: ${value}. Valid: ${validValues.join(", ")}`);
+            fail(`Invalid session value: ${value}. Valid: main, thread (isolated is deprecated)`);
           }
-          update({ sessionTarget: value as "main" | "isolated" });
+          if (value !== "main" && job.executionType === "shell") {
+            fail(`session ${value} is only valid for agent cron jobs`);
+          }
+          if (value === "thread" && job.replySession) {
+            // The runs report to the job's reply session, which must be one of the job agent's own.
+            resolveThreadReportTo(undefined, job.replySession, job.agentId ?? getDefaultAgentId(), asJson);
+          }
+          if (value === "isolated") {
+            logHuman("Warning: session isolated is deprecated: every run shares one session. Use: session thread");
+          }
+          update({ sessionTarget: value as "main" | "isolated" | "thread" });
           logHuman(`✓ Session set: ${id} -> ${value}`);
           break;
         }
 
         case "reply-session": {
-          const replySession = value === "null" || value === "-" ? undefined : value;
+          let replySession = value === "null" || value === "-" ? undefined : value;
+          if (job.sessionTarget === "thread" && replySession) {
+            // Stored by key, and only a session of the job's own agent: its runs report there.
+            replySession = resolveThreadReportTo(undefined, replySession, job.agentId ?? getDefaultAgentId(), asJson);
+          }
           update({ replySession });
           normalizedValue = replySession ?? null;
           logHuman(`✓ Reply session set: ${id} -> ${replySession ?? "(auto)"}`);
@@ -1319,5 +1422,81 @@ export class CronCommands {
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
+  }
+
+  @Command({
+    name: "ack-failures",
+    description: "Mark failed runs as reported without notifying the owner (dry-run by default)",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "cron",
+    action: "ack-failures",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
+  @Returns(cronFailureAckReturnSchema)
+  async ackFailures(
+    @Option({ flags: "--job <id>", description: "Only this job's failed runs" }) jobId?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually mark the runs reported; default is a dry-run that lists them (exit 3)",
+    })
+    execute?: boolean,
+  ) {
+    if (jobId !== undefined && !jobId.trim()) {
+      // A blank filter must never widen into "every job".
+      contractFail("cron ack-failures", "USAGE_ERROR", "--job needs a job id", {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: { suggestedAction: "omit --job to settle every job you can modify, or pass one job id" },
+        diagnostic: errorDiagnostic("--job needs a job id", { operation: "cron ack-failures" }),
+      });
+    }
+    const scopeCtx = getScopeContext();
+    const plan = planCronFailureAck({
+      jobId: jobId?.trim() || undefined,
+      // Settling needs modify authority, and the caller must also be able to see the job:
+      // the plan lists job names and failure history.
+      canAck: (owner) => {
+        const ownerId = cronJobOwnerId({ agentId: owner ?? undefined });
+        return canAccessResource(scopeCtx, ownerId, "read") && canAccessResource(scopeCtx, ownerId, "mutate");
+      },
+    });
+    const jobs = plan.jobs.map((job) => ({
+      jobId: job.jobId,
+      name: job.name,
+      ownerAgentId: job.ownerAgentId,
+      runs: job.runIds.length,
+      oldestAt: new Date(job.oldestAt).toISOString(),
+      newestAt: new Date(job.newestAt).toISOString(),
+    }));
+
+    if (execute !== true) {
+      // Write brake: settling a report means the owner never hears about that failure.
+      contractDryRun(
+        "cron ack-failures",
+        { pending: plan.pending, selected: plan.selected, denied: plan.denied, jobs },
+        { asJson },
+      );
+    }
+
+    const settled = applyCronFailureAck(plan);
+    const payload = {
+      status: "acknowledged" as const,
+      target: { type: "cron" as const, id: jobId?.trim() || "*" },
+      changedCount: settled,
+      pending: plan.pending,
+      denied: plan.denied,
+      jobs,
+    };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ Marked ${settled} failed run(s) as reported; nothing was sent.`);
+      if (plan.denied > 0) console.log(`  ${plan.denied} run(s) of jobs you cannot modify were left pending.`);
+    }
+    return payload;
   }
 }
