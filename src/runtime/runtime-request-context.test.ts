@@ -2231,7 +2231,7 @@ describe("runtime request context chat-scoped user overlay", () => {
     expect(canWithCapabilities(strangerContext.capabilities, "admin", "system", "*")).toBe(false);
     expect(canWithCapabilities(strangerContext.capabilities, "execute", "executable", "rm")).toBe(false);
     expect(canWithCapabilities(strangerContext.capabilities, "mutate", "image", "generate")).toBe(true);
-    expect(strangerContext.metadata?.actorBreakGlassWithheld).toBe(2);
+    expect(strangerContext.metadata?.actorBreakGlassWithheld).toEqual(["admin:system:*", "execute:executable:*"]);
 
     const ownerContext = contextFor(owner.id, chat);
     expect(canWithCapabilities(ownerContext.capabilities, "admin", "system", "*")).toBe(true);

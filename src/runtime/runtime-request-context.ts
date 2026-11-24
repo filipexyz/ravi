@@ -33,7 +33,7 @@ import {
   type ContactChatOverlay,
 } from "../permissions/contact-policy-permissions-provider.js";
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
-import { narrowAgentBreakGlassToContact } from "../permissions/actor-break-glass.js";
+import { breakGlassDeniesForContact } from "../permissions/actor-break-glass.js";
 import { consoleIdentityFromBinding, readActorBindingForActiveLogin } from "../cloud-auth/actor-bindings.js";
 import { dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
@@ -590,25 +590,24 @@ function buildAgentIdentityRuntimeContextInput(options: {
   const relayNarrowing = relayCaller.narrowing;
   const turnCapabilities =
     relayNarrowing ?? (hasAnyCapability(observationCapabilities) ? observationCapabilities : undefined);
-  // A person's turn in a chat with no contact grants acts through the agent
-  // identity, but never above that person on break-glass (admin:system,
-  // execute:executable:*). Autonomous turns (no contact actor) keep the agent's.
-  const contactActorId =
-    !userOverlay && options.actorPrincipal?.subjectType === "contact" ? options.actorPrincipal.subjectId : null;
-  const actorNarrowing = contactActorId
-    ? narrowAgentBreakGlassToContact(agentIdentityCapabilities, contactActorId)
-    : null;
   const effectiveCapabilities = buildEffectiveCapabilities({
     agentCapabilities: agentIdentityCapabilities,
-    actorCapabilities: userOverlay
-      ? userOverlay.capabilities
-      : (actorNarrowing?.capabilities ?? agentIdentityCapabilities),
+    actorCapabilities: userOverlay ? userOverlay.capabilities : agentIdentityCapabilities,
     ...(userOverlay ? { actorOverrideCapabilities: options.capabilities.filter(isTaskSelfCapability) } : {}),
     turnCapabilities,
   });
 
+  // A person's turn in a chat with no contact grants: everything of the agent
+  // except break-glass the person does not hold. Autonomous turns are unchanged.
+  const breakGlassDenies =
+    !userOverlay && options.actorPrincipal?.subjectType === "contact"
+      ? breakGlassDeniesForContact(effectiveCapabilities, options.actorPrincipal.subjectId)
+      : [];
+  const turnScopedCapabilities =
+    breakGlassDenies.length > 0 ? [...effectiveCapabilities, ...breakGlassDenies] : effectiveCapabilities;
+
   return {
-    capabilities: effectiveCapabilities,
+    capabilities: turnScopedCapabilities,
     metadata: {
       authorityMode: AGENT_IDENTITY_AUTHORITY_MODE,
       authorityResolver: AGENT_IDENTITY_AUTHORITY_RESOLVER,
@@ -628,7 +627,13 @@ function buildAgentIdentityRuntimeContextInput(options: {
       agentIdentityPrincipal: formatPrincipal(agentIdentityPrincipal),
       agentIdentityCompartment: `${compartment.type}:${compartment.id}`,
       agentIdentityCapabilityCount: agentIdentityCapabilities.length,
-      ...(actorNarrowing && actorNarrowing.withheld > 0 ? { actorBreakGlassWithheld: actorNarrowing.withheld } : {}),
+      ...(breakGlassDenies.length > 0
+        ? {
+            actorBreakGlassWithheld: breakGlassDenies.map(
+              (deny) => `${deny.permission.slice("deny_".length)}:${deny.objectType}:${deny.objectId}`,
+            ),
+          }
+        : {}),
       ...(taskSelfCapabilityCount > 0 ? { taskSelfCapabilityCount } : {}),
       ...(taskSelfTaskId ? { taskSelfTaskId } : {}),
       actorCapabilityCount: userOverlay ? userOverlay.capabilities.length : 0,

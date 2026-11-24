@@ -2,42 +2,37 @@ import type { ContextCapability } from "../router/router-db.js";
 import { canWithCapabilities, materializeSubjectCapabilities } from "./provider-runtime.js";
 
 /**
- * Break-glass = power that can change who has power or run anything:
- * any admin over the system, the whole executable wildcard, or a bare wildcard
- * permission. Mirrors the definition in permissions/break-glass (#950).
+ * Break-glass = power that can change who has power or run anything: any admin
+ * over the system or the whole executable wildcard. Mirrors the definition in
+ * permissions/break-glass (#950).
  */
-export function isActorBreakGlassCapability(
-  capability: Pick<ContextCapability, "permission" | "objectType" | "objectId">,
-): boolean {
-  const permission = capability.permission.trim().toLowerCase();
-  const objectType = capability.objectType.trim().toLowerCase();
-  const objectId = capability.objectId.trim();
-  if (permission === "*") return true;
-  if (permission === "admin" && (objectType === "system" || objectType === "*")) return true;
-  if (permission === "execute" && (objectType === "executable" || objectType === "*") && objectId === "*") return true;
-  return false;
-}
+const BREAK_GLASS_TARGETS: ReadonlyArray<Pick<ContextCapability, "permission" | "objectType" | "objectId">> = [
+  { permission: "admin", objectType: "system", objectId: "*" },
+  { permission: "execute", objectType: "executable", objectId: "*" },
+];
 
 /**
  * A turn a person triggered in a chat with no contact grants acts through the
- * agent identity, but never above the person on break-glass: the agent's
- * admin/system and executable wildcard reach the turn only when the contact
- * holds that same capability. Absence of a grant means the least, not the
- * agent's most. Non break-glass agent capabilities are unchanged.
+ * agent identity as "everything of the agent except break-glass": for each
+ * break-glass power the agent holds and the contact does not, the turn carries
+ * a `deny_<permission>` entry. The snapshot matcher and the shell hook honor
+ * it, so the admin shortcut keeps every ordinary capability (images, web, ...)
+ * while system admin and arbitrary commands stay closed. The contact's own
+ * capabilities still count in full.
  */
-export function narrowAgentBreakGlassToContact(
+export function breakGlassDeniesForContact(
   agentCapabilities: ContextCapability[],
   contactId: string,
   contactCapabilities: ContextCapability[] = materializeSubjectCapabilities("contact", contactId),
-): { capabilities: ContextCapability[]; withheld: number } {
-  let withheld = 0;
-  const capabilities = agentCapabilities.filter((capability) => {
-    if (!isActorBreakGlassCapability(capability)) return true;
-    if (canWithCapabilities(contactCapabilities, capability.permission, capability.objectType, capability.objectId)) {
-      return true;
-    }
-    withheld += 1;
-    return false;
-  });
-  return { capabilities, withheld };
+): ContextCapability[] {
+  return BREAK_GLASS_TARGETS.filter(
+    (target) =>
+      canWithCapabilities(agentCapabilities, target.permission, target.objectType, target.objectId) &&
+      !canWithCapabilities(contactCapabilities, target.permission, target.objectType, target.objectId),
+  ).map((target) => ({
+    permission: `deny_${target.permission}`,
+    objectType: target.objectType,
+    objectId: target.objectId,
+    source: "actor-break-glass",
+  }));
 }

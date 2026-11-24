@@ -81,17 +81,22 @@ effective_capabilities =
 A chat is governed when at least one chat or chat-tag contact grant covers it.
 Ungoverned chats keep `agent_identity ∩ turn_caps`, with one exception:
 
-- Break-glass never reaches a person through the agent. When the actor of a
-  turn is a contact and the chat is ungoverned, every break-glass capability
-  of the agent identity (any `admin:system:*`, `execute:executable:*`, or a
-  bare `*` permission) is withheld from the actor branch unless the contact
-  itself holds that capability. Absence of a grant means the least for
-  break-glass, not the agent's most. Non break-glass capabilities are
-  unchanged, and turns with no contact actor (cron, trigger, agent-to-agent)
-  keep the agent's full identity. The count of withheld capabilities is
-  recorded as `actorBreakGlassWithheld`.
-- Consequence: revoking the last grant of a chat can never widen a
-  participant to the agent's break-glass.
+- Break-glass never reaches a person through the agent ("full-access minus
+  break-glass" for the actor). When the actor of a turn is a contact and the
+  chat is ungoverned, the turn keeps everything of the agent identity, including
+  what the `admin:system:*` shortcut grants (images, web, tools), but carries a
+  `deny_<permission>` entry for each break-glass power the agent holds and the
+  contact does not: `admin:system:*` and `execute:executable:*`. The snapshot
+  matcher honors `deny_*` before the admin shortcut and wildcards (an explicit,
+  non-wildcard capability for the exact object still allows it), and the Bash
+  PreToolUse hook honors it before the live executor ceiling, so the person gets
+  neither system admin nor arbitrary commands. The contact's own capabilities
+  count in full; turns with no contact actor (cron, trigger, agent-to-agent)
+  are unchanged. The withheld list is recorded as `actorBreakGlassWithheld`.
+- A denial born from that rule resolves to a chat-scoped grant for the contact
+  (`permissions resolve`), not to the executor agent.
+- Consequence: revoking the last grant of a chat can never widen a participant
+  to the agent's break-glass.
 
 ## Compartments
 

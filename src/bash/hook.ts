@@ -31,6 +31,7 @@ import {
   canWithCapabilityContext,
   materializeSubjectCapabilities,
 } from "../permissions/provider-runtime.js";
+import { isWithheldByDeny } from "../permissions/capability-snapshot.js";
 import { emitPermissionDeniedAudit, recordAndEmitPermissionDenial } from "../permissions/denials.js";
 import { buildAuditContextProvenance, type AuditContextProvenance } from "../permissions/audit-provenance.js";
 import { SDK_TOOLS } from "../cli/tool-registry.js";
@@ -379,6 +380,12 @@ function canWithBashContext(
   // turns need both: the snapshot holds agent ∩ contact chat grants, and the
   // live ceiling may only narrow it further.
   if (canUseLiveExecutorCeiling(ctx)) {
+    // A person's turn in an ungoverned chat carries `deny_*` entries for the
+    // agent's break-glass the person does not hold; the live ceiling must not
+    // reopen them (no system admin, no arbitrary commands).
+    if (hasContextCapabilities(ctx) && isWithheldByDeny(ctx.capabilities, permission, objectType, objectId)) {
+      return false;
+    }
     if (isUserOverlayTurn(ctx)) {
       return (
         hasContextCapabilities(ctx) &&
