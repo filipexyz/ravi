@@ -45,6 +45,11 @@ export interface CronJob {
   sessionTarget: SessionTarget;
   /** Session key to emit prompt to (e.g., agent:comm:whatsapp:main:group:123) */
   replySession?: string;
+  /**
+   * `thread` jobs only: each run shows where the session it reports to answers (a thread in its
+   * Slack chat). Off by default: a visible run's replies are seen by that chat.
+   */
+  threadVisible?: boolean;
   /** Execution mode. Existing rows default to agent. */
   executionType: CronExecutionType;
   /** The prompt text to send to the agent */
@@ -95,6 +100,7 @@ export interface CronJobInput {
   sessionTarget?: SessionTarget;
   /** Session key to emit prompt to (captured from caller context) */
   replySession?: string;
+  threadVisible?: boolean;
   /** Execution mode. Defaults to agent. */
   executionType?: CronExecutionType;
   /** The prompt text to send to the agent */

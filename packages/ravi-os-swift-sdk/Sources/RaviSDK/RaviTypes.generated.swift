@@ -15561,8 +15561,9 @@ public struct CronAddOptions: Codable, Sendable {
   public var thread: Bool?
   public var timeout: String?
   public var tz: String?
+  public var visible: Bool?
 
-  public init(account: String? = nil, agent: String? = nil, at: String? = nil, cron: String? = nil, deleteAfter: Bool? = nil, description: String? = nil, envFile: String? = nil, every: String? = nil, exec: String? = nil, idempotencyKey: String? = nil, isolated: Bool? = nil, message: String? = nil, onError: String? = nil, reportTo: String? = nil, shell: String? = nil, thread: Bool? = nil, timeout: String? = nil, tz: String? = nil) {
+  public init(account: String? = nil, agent: String? = nil, at: String? = nil, cron: String? = nil, deleteAfter: Bool? = nil, description: String? = nil, envFile: String? = nil, every: String? = nil, exec: String? = nil, idempotencyKey: String? = nil, isolated: Bool? = nil, message: String? = nil, onError: String? = nil, reportTo: String? = nil, shell: String? = nil, thread: Bool? = nil, timeout: String? = nil, tz: String? = nil, visible: Bool? = nil) {
     self.account = account
     self.agent = agent
     self.at = at
@@ -15581,6 +15582,7 @@ public struct CronAddOptions: Codable, Sendable {
     self.thread = thread
     self.timeout = timeout
     self.tz = tz
+    self.visible = visible
   }
 
   enum CodingKeys: String, CodingKey {
@@ -15602,6 +15604,7 @@ public struct CronAddOptions: Codable, Sendable {
     case thread = "thread"
     case timeout = "timeout"
     case tz = "tz"
+    case visible = "visible"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
@@ -15658,6 +15661,9 @@ public struct CronAddOptions: Codable, Sendable {
     }
     if let value = self.tz {
       body["tz"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.visible {
+      body["visible"] = try RaviJSON.fromEncodable(value)
     }
   }
 }
@@ -39221,8 +39227,9 @@ public struct TriggersAddOptions: Codable, Sendable {
   public var thread: Bool?
   public var timeout: String?
   public var topic: String?
+  public var visible: Bool?
 
-  public init(account: String? = nil, agent: String? = nil, cooldown: String? = nil, debounce: String? = nil, envFile: String? = nil, exec: String? = nil, filter: String? = nil, message: String? = nil, onError: String? = nil, replySession: String? = nil, reportTo: String? = nil, session: String? = nil, shell: String? = nil, thread: Bool? = nil, timeout: String? = nil, topic: String? = nil) {
+  public init(account: String? = nil, agent: String? = nil, cooldown: String? = nil, debounce: String? = nil, envFile: String? = nil, exec: String? = nil, filter: String? = nil, message: String? = nil, onError: String? = nil, replySession: String? = nil, reportTo: String? = nil, session: String? = nil, shell: String? = nil, thread: Bool? = nil, timeout: String? = nil, topic: String? = nil, visible: Bool? = nil) {
     self.account = account
     self.agent = agent
     self.cooldown = cooldown
@@ -39239,6 +39246,7 @@ public struct TriggersAddOptions: Codable, Sendable {
     self.thread = thread
     self.timeout = timeout
     self.topic = topic
+    self.visible = visible
   }
 
   enum CodingKeys: String, CodingKey {
@@ -39258,6 +39266,7 @@ public struct TriggersAddOptions: Codable, Sendable {
     case thread = "thread"
     case timeout = "timeout"
     case topic = "topic"
+    case visible = "visible"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
@@ -39308,6 +39317,9 @@ public struct TriggersAddOptions: Codable, Sendable {
     }
     if let value = self.topic {
       body["topic"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.visible {
+      body["visible"] = try RaviJSON.fromEncodable(value)
     }
   }
 }

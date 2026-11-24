@@ -454,6 +454,7 @@ const CRON_SET_KEYS = new Set([
   "description",
   "session",
   "reply-session",
+  "visible",
   "delete-after",
 ]);
 
@@ -759,6 +760,12 @@ export class CronCommands {
         "With --thread: the session each run reports to, of the job's agent (default: the creating session, else the agent's main session)",
     })
     reportTo?: string,
+    @Option({
+      flags: "--visible",
+      description:
+        "With --thread: show each run where the report-to session answers (a thread in its Slack chat), seen by everyone in that chat; elsewhere runs stay unseen. Off by default",
+    })
+    visible?: boolean,
   ) {
     const warnings: string[] = [];
     const shellCommand = shell?.trim() || exec?.trim();
@@ -795,6 +802,9 @@ export class CronCommands {
     }
     if (reportTo !== undefined && !thread) {
       failCronUsage("cron add", "--report-to only applies with --thread", "add --thread, or drop --report-to", asJson);
+    }
+    if (visible && !thread) {
+      failCronUsage("cron add", "--visible only applies with --thread", "add --thread, or drop --visible", asJson);
     }
     if (isolated) {
       const warning = `Warning: --isolated is deprecated: every run shares one session that keeps growing. Use --thread: each run gets a session of its own and returns its result to the session that creates the job.`;
@@ -916,6 +926,8 @@ export class CronCommands {
       replySession,
       description,
       sessionTarget: isShellJob ? "main" : thread ? "thread" : isolated ? "isolated" : "main",
+      // Absent unless asked: the idempotency fingerprint of every other job stays as it was.
+      ...(thread && visible ? { threadVisible: true } : {}),
       deleteAfterRun: deleteAfter,
       executionType: isShellJob ? "shell" : "agent",
       shellCommand: isShellJob ? shellCommand : undefined,
@@ -1068,7 +1080,7 @@ export class CronCommands {
     @Arg("id", { description: "Job ID" }) id: string,
     @Arg("key", {
       description:
-        "Property: name, message, shell, exec, timeout, env-file, on-error, cron, every, tz, agent, account, description, session, reply-session, delete-after",
+        "Property: name, message, shell, exec, timeout, env-file, on-error, cron, every, tz, agent, account, description, session, reply-session, visible, delete-after",
     })
     key: string,
     @Arg("value", { description: "Property value" }) value: string,
@@ -1276,8 +1288,31 @@ export class CronCommands {
           if (value === "isolated") {
             logHuman("Warning: session isolated is deprecated: every run shares one session. Use: session thread");
           }
-          update({ sessionTarget: value as "main" | "isolated" | "thread" });
+          // Visible runs are a thread job's: leaving thread mode turns them off.
+          update({
+            sessionTarget: value as "main" | "isolated" | "thread",
+            ...(value !== "thread" && job.threadVisible ? { threadVisible: false } : {}),
+          });
           logHuman(`✓ Session set: ${id} -> ${value}`);
+          break;
+        }
+
+        case "visible": {
+          const normalizedBooleanInput = value.toLowerCase();
+          if (!["true", "false", "yes", "no", "on", "off", "1", "0"].includes(normalizedBooleanInput)) {
+            fail(`Invalid boolean value: ${value}. Use: true, false, yes, no, on, off, 1, 0`);
+          }
+          const visible = ["true", "yes", "on", "1"].includes(normalizedBooleanInput);
+          if (visible && job.sessionTarget !== "thread") {
+            fail(`visible applies to thread jobs only. Set it with: ravi cron set ${id} session thread`);
+          }
+          update({ threadVisible: visible });
+          normalizedValue = visible;
+          logHuman(
+            visible
+              ? `✓ Visible set: ${id} -> yes (each run shows where its report-to session answers, seen by that chat)`
+              : `✓ Visible set: ${id} -> no (runs stay unseen; only their return reaches the report-to session)`,
+          );
           break;
         }
 

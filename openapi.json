@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "97a28efc3919e0f6"
+    "version": "a344b26c368c3d1a"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -73553,6 +73553,10 @@
                   "tz": {
                     "description": "Timezone (e.g., America/Sao_Paulo)",
                     "type": "string"
+                  },
+                  "visible": {
+                    "description": "With --thread: show each run where the report-to session answers (a thread in its Slack chat), seen by everyone in that chat; elsewhere runs stay unseen. Off by default",
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -74231,7 +74235,7 @@
                     "type": "string"
                   },
                   "key": {
-                    "description": "Property: name, message, shell, exec, timeout, env-file, on-error, cron, every, tz, agent, account, description, session, reply-session, delete-after",
+                    "description": "Property: name, message, shell, exec, timeout, env-file, on-error, cron, every, tz, agent, account, description, session, reply-session, visible, delete-after",
                     "type": "string"
                   },
                   "value": {
@@ -155331,6 +155335,10 @@
                   "topic": {
                     "description": "Notif topic pattern to subscribe to",
                     "type": "string"
+                  },
+                  "visible": {
+                    "description": "With --thread: show each fire's run where the report-to session answers (a thread in its Slack chat), seen by everyone in that chat; elsewhere runs stay unseen. Off by default",
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -155870,7 +155878,7 @@
                     "type": "string"
                   },
                   "key": {
-                    "description": "Property: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, debounce, filter, replySession",
+                    "description": "Property: name, message, shell, exec, timeout, env-file, on-error, topic, agent, account, session, cooldown, debounce, filter, replySession, visible",
                     "type": "string"
                   },
                   "value": {

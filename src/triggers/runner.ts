@@ -15,14 +15,22 @@ import {
   CHILD_RUN_STALE_MS,
   childRunParentRefusal,
   childRunPromptNote,
+  childRunSurfaceFor,
+  childRunSurfaceRef,
   closeChildRunAfterTurn,
+  findChildRunByChildSession,
   findChildRunByChildSessionName,
+  getChildRun,
   listOpenChildRuns,
   openChildRun,
+  pendingChildRunSession,
+  setChildRunLaunch,
+  type ChildRunSurfaceAdapter,
 } from "../automation/child-runs.js";
 import { describeCronFailure } from "../cron/failure-notification.js";
 import { CRON_RUNTIME_EVENTS_TOPIC, parseCronTurnOutcome } from "../cron/turn-outcome.js";
 import { slugify } from "../router/session-name.js";
+import type { SessionEntry } from "../router/types.js";
 import type { Subscription } from "nats";
 import { followFingerprint, followHealthTopic } from "../pr/follow-health.js";
 import { getLocalWatchRunner } from "../watch/local-runner.js";
@@ -282,10 +290,10 @@ export function isTriggerOriginatedEvent(topic: string, data: unknown): boolean 
   // record. What such a turn does is not another trigger's to act on.
   const invocation = record.cliInvocation as { raviContext?: { sessionKey?: unknown } } | undefined;
   const invocationSession = invocation?.raviContext?.sessionKey;
-  return (
-    typeof invocationSession === "string" &&
-    (isTriggerOwnSessionKey(invocationSession) || TRIGGER_RUN_SESSION_KEY.test(invocationSession))
-  );
+  if (typeof invocationSession !== "string") return false;
+  if (isTriggerOwnSessionKey(invocationSession) || TRIGGER_RUN_SESSION_KEY.test(invocationSession)) return true;
+  // A visible fire's session is its surface's (a Slack thread key): the core row names its origin.
+  return findChildRunByChildSession(invocationSession)?.originKind === "trigger";
 }
 
 /** The session of one fire of a `--thread` trigger: like its own session, nothing else enters it. */
@@ -781,8 +789,9 @@ export class TriggerRunner {
     // The key of the trigger's own session, when this fire runs there. Only an
     // `isolated` trigger a person owns has one; nothing else enters it.
     let ownSessionKey: string | null = null;
-    // Set for a `--thread` fire: the session its run reports to.
+    // Set for a `--thread` fire: the session its run reports to, and its visible surface if any.
     let threadParentName: string | null = null;
+    let threadSurface: { adapter: ChildRunSurfaceAdapter; runId: string; parent: SessionEntry } | null = null;
 
     if (trigger.session === "main") {
       // If replySession is set, resolve it for session name + source routing
@@ -849,8 +858,9 @@ export class TriggerRunner {
           undefined;
       }
     } else if (trigger.session === "thread") {
-      // One fire, one run in a session of its own; its replies reach no chat (no source) and only its
-      // return reaches the parent. It never lends the owner's authority: what it reads goes back up.
+      // One fire, one run in a session of its own; only its return reaches the parent, and its replies
+      // reach no chat unless the trigger asked for visible runs (a thread in the parent's chat). It
+      // never lends the owner's authority: what it reads goes back up.
       if ((trigger.executionType ?? "agent") === "shell") {
         log.warn("Skipping trigger fire; a shell trigger cannot run in thread mode", { triggerId: trigger.id });
         return;
@@ -859,6 +869,7 @@ export class TriggerRunner {
       if (!run) return;
       sessionName = run.sessionName;
       threadParentName = run.parentName;
+      threadSurface = run.surfaced ?? null;
     } else {
       const targetName = opts.test
         ? resolveSessionTargetName(trigger.session, event, { fillUnresolved: "test" })
@@ -948,7 +959,10 @@ export class TriggerRunner {
     }
 
     const basePrompt = buildTriggerPrompt(trigger, event, opts.batch);
-    const prompt = threadParentName === null ? basePrompt : `${basePrompt}\n\n${childRunPromptNote(threadParentName)}`;
+    const prompt =
+      threadParentName === null
+        ? basePrompt
+        : `${basePrompt}\n\n${childRunPromptNote(threadParentName, { visible: threadSurface !== null })}`;
 
     log.info("Firing trigger", {
       triggerId: trigger.id,
@@ -958,15 +972,55 @@ export class TriggerRunner {
       hasSource: !!source,
     });
 
-    await publishSessionPrompt(sessionName, {
-      prompt,
-      source,
-      _trigger: true,
-      _triggerId: trigger.id,
-      _triggerAuthority: captureTriggerRunAuthority(ownerFire && stored ? stored : { id: trigger.id }, {
-        ownSessionKey,
-      }),
+    const authority = captureTriggerRunAuthority(ownerFire && stored ? stored : { id: trigger.id }, {
+      ownSessionKey,
     });
+    if (threadSurface) {
+      // Published by the surface once it binds the run's session; never here, never with a source.
+      setChildRunLaunch(threadSurface.runId, {
+        prompt,
+        _trigger: true,
+        _triggerId: trigger.id,
+        _triggerAuthority: authority,
+      });
+      const run = getChildRun(threadSurface.runId)!;
+      try {
+        await threadSurface.adapter.open({
+          run,
+          parent: threadSurface.parent,
+          title: `Execução do trigger “${trigger.name}”`,
+        });
+      } catch (error) {
+        log.warn("Trigger thread run could not open its surface; closed as failed", {
+          triggerId: trigger.id,
+          runId: run.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        await closeChildRunAfterTurn(
+          run,
+          { failed: true, error: error instanceof Error ? error.message : String(error) },
+          {
+            describeFailure: describeCronFailure,
+            details: `Detalhes para o operador: ravi triggers show ${trigger.id}`,
+            releaseSource: "trigger-runner",
+          },
+        ).catch((closeError) =>
+          log.warn("Failed to close a trigger run whose surface did not open", {
+            runId: run.id,
+            error: closeError instanceof Error ? closeError.message : String(closeError),
+          }),
+        );
+        return;
+      }
+    } else {
+      await publishSessionPrompt(sessionName, {
+        prompt,
+        source,
+        _trigger: true,
+        _triggerId: trigger.id,
+        _triggerAuthority: authority,
+      });
+    }
 
     dbUpdateTriggerState(trigger.id, {
       lastFiredAt: Date.now(),
@@ -989,7 +1043,11 @@ export class TriggerRunner {
     trigger: Trigger,
     agentId: string,
     agentCwd: string,
-  ): { sessionName: string; parentName: string } | null {
+  ): {
+    sessionName: string;
+    parentName: string;
+    surfaced?: { adapter: ChildRunSurfaceAdapter; runId: string; parent: SessionEntry };
+  } | null {
     const now = Date.now();
     if (listOpenChildRuns("trigger", trigger.id).some((run) => now - run.createdAt < CHILD_RUN_STALE_MS)) {
       log.info("Skipping trigger fire; its previous thread run is still open", { triggerId: trigger.id });
@@ -1013,11 +1071,33 @@ export class TriggerRunner {
       return null;
     }
     const runId = randomUUID();
+    const parentName = parent.name ?? parent.sessionKey;
+    // Shown only when asked (`--visible`): a run seen in a chat answers to that chat's audience.
+    const adapter = trigger.threadVisible ? childRunSurfaceFor(parent) : null;
+    if (adapter) {
+      // A visible run (a Slack thread under the parent's chat): its session is made when the thread
+      // lands; the fire's launch is stored on the row and published there then.
+      const pending = pendingChildRunSession(runId);
+      openChildRun({
+        id: runId,
+        originKind: "trigger",
+        originId: trigger.id,
+        originName: trigger.name,
+        agentId,
+        parentSessionKey: parent.sessionKey,
+        parentSessionName: parentName,
+        childSessionKey: pending,
+        childSessionName: pending,
+        surface: adapter.id,
+        surfaceRef: childRunSurfaceRef(runId),
+        now,
+      });
+      return { sessionName: pending, parentName, surfaced: { adapter, runId, parent } };
+    }
     const childKey = `agent:${agentId}:trigger:${trigger.id}:run:${runId}`;
     const childName = ensureUniqueName(`${slugify(agentId).slice(0, 24)}-run-${runId}`);
     const session = getOrCreateSession(childKey, agentId, agentCwd, { name: childName }, { triggerRunner: true });
     if (!session.name) updateSessionName(session.sessionKey, childName);
-    const parentName = parent.name ?? parent.sessionKey;
     openChildRun({
       id: runId,
       originKind: "trigger",

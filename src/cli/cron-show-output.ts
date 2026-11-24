@@ -91,7 +91,9 @@ function buildCronExecutionLines(job: CronJob, agentId: string, routing: CronRou
     }
   } else if (job.sessionTarget === "thread") {
     lines.push(
-      `\`sessionTarget=thread\` runs each execution in a fresh session of its own (\`agent:${agentId}:cron:${job.id}:run:<runId>\`), one at a time; its replies reach no chat.`,
+      job.threadVisible
+        ? "`sessionTarget=thread` runs each execution in a fresh session of its own, one at a time; with `visible`, each run shows where the report-to session answers (a thread in its Slack chat, seen by that chat; elsewhere unseen)."
+        : `\`sessionTarget=thread\` runs each execution in a fresh session of its own (\`agent:${agentId}:cron:${job.id}:run:<runId>\`), one at a time; its replies reach no chat.`,
     );
     lines.push(
       routing.kind === "resolved-session"
