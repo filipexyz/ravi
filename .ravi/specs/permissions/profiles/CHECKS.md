@@ -35,7 +35,11 @@ capability: profiles
   decided twice (the claim is single-use even when both read it as pending) or
   after it expired; the sweep expires it; and the core directory has no channel
   import (static, multiline, side-effect or dynamic `import(`) or channel-name
-  literal.
+  literal. A contact whose turns in that chat already hold full access (admin
+  tag in a chat with no grants, or a governed chat whose overlay covers it) is
+  refused with `already_held` before any adapter is asked, also over an open
+  identical request, which is closed and can no longer be approved; a governed
+  chat whose overlay does not cover it still asks.
 - `bun test src/channels/slack/grant-request-adapter.test.ts` covers the Slack
   adapter: it reaches only human Slack identities on enabled instances, sends a
   private card naming contact and chat with ids and offering one intent, turns an
@@ -63,7 +67,9 @@ capability: profiles
   resolver registered for the channel and uses the generic lookup for the rest.
 - `bun test src/cli/commands/permissions-request.test.ts` covers the command: it
   returns `pending` at once from a Slack, WhatsApp or terminal turn, only plans
-  without `--execute`, fails closed with the three codes, accepts only full-access
+  without `--execute`, fails closed with the three codes, refuses a contact that
+  already holds full access in that chat (`FULL_ACCESS_ALREADY_HELD`, exit 3,
+  nobody asked, also in the plan), accepts only full-access
   / one contact / one chat / an executor that already holds admin, reads the
   request back with `request-status` (`applied` only when the grant is in place)
   and the printed revoke command removes it.

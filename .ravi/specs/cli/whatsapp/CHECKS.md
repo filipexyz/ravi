@@ -19,4 +19,8 @@
 - `dm read` MUST always read immediately without any NATS emit, including when history contains an inbound message id. Every `dm ack` MUST exit 3 without `--execute`, before any NATS emit; the matching `--execute` call MUST emit the receipt.
 - A braked op invoked with `RAVI_*` envs present (agent context) MUST still exit 3 with the envelope — the registry dispatcher MUST preserve `ContractError.exitCode`.
 - `whatsapp group list --fields a,b --json` and `whatsapp dm read <contact> --fields a,b --json` MUST return items containing only the requested fields.
-- `bun test src/cli/commands/group.test.ts src/cli/commands/channels-json.test.ts` SHOULD pass after any change to the whatsapp contract surface.
+- From a Slack (or any non-WhatsApp) turn, `whatsapp group send|info` and `whatsapp dm send|ack` MUST use the single enabled WhatsApp account, MUST fail naming the accounts when there are several, and MUST refuse `--account` naming a non-WhatsApp account. A WhatsApp turn published as `whatsapp-baileys` MUST use its own account.
+- `whatsapp group send here` from a non-WhatsApp turn MUST fail before the plan; from a WhatsApp turn it MUST plan on that chat.
+- `whatsapp group info <subject>` MUST request the live members with the JID of the matched group, and a fallback list MUST report `participantsComplete: false` with a `participantsNote`.
+- `whatsapp group send <group> "@<phone> ..." --mention <phone>` MUST send one mention and one `@<phone>` in the text.
+- `bun test src/cli/whatsapp-account.test.ts src/cli/commands/group.test.ts src/cli/commands/channels-json.test.ts src/omni/mentions.test.ts src/omni/client.test.ts` SHOULD pass after any change to the whatsapp contract surface.

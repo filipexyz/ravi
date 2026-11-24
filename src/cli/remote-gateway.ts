@@ -57,6 +57,7 @@ import {
 import { turnLinkContract } from "../identity-link/turn-link-copy.js";
 import { isSafeLocalPayloadMessage, looksLikeProviderDump } from "./payload-error-message.js";
 import { projectPublicIssues, sanitizePublicValue } from "./redaction.js";
+import { AUTOMATION_HOLD_SUGGESTED_ACTION, isAutomationHoldCause } from "../permissions/automation-hold.js";
 import { projectPublicationDetails, publicationRecoveryAction } from "../pr/contracts.js";
 
 export { CALLER_CWD_HEADER } from "./caller-cwd.js";
@@ -1252,7 +1253,16 @@ function projectRemoteContractDetails(
     isConnectorOp(op) && (body.outcome === "failed" || remote.code.startsWith("CONNECTOR_"))
       ? cloudContractCatalogCopy(remote.code)
       : undefined;
-  if (op === PAGES_DOMAINS_OP && remote.code === "DOMAIN_SETUP_REQUIRED") {
+  // An automation guard refusal names its cause; its advice is fixed copy, never the generic
+  // "request the permission", which sent an agent to ask full access for the operator (24/11).
+  const automationHold =
+    body.outcome === "denied" && remote.code === "PERMISSION_DENIED" && isAutomationHoldCause(remote.automationHold)
+      ? remote.automationHold
+      : undefined;
+  if (automationHold) {
+    details.automationHold = automationHold;
+    details.suggestedAction = AUTOMATION_HOLD_SUGGESTED_ACTION[automationHold];
+  } else if (op === PAGES_DOMAINS_OP && remote.code === "DOMAIN_SETUP_REQUIRED") {
     details.suggestedAction = DOMAIN_SETUP_SUGGESTED_ACTION;
     const domainSetup = projectPageDomainSetups(remote.domainSetup);
     if (domainSetup) details.domainSetup = domainSetup;

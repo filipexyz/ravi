@@ -106,6 +106,10 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/omni/session-stream.test.ts",
     // Headless Omni stub: presence/renew no-ops when Omni is not installed.
     "src/omni/stub-consumer.test.ts",
+    // Outbound mentions: one mention per person, and an explicit target already written in the text is not prefixed again.
+    "src/omni/mentions.test.ts",
+    // Omni REST client: request timeouts and the live group members endpoint behind `group info`.
+    "src/omni/client.test.ts",
   ],
   "src/db.ts": ["src/db.test.ts", "src/db/journal-mode-retry.test.ts"],
   "src/db/schema-owner.ts": ["src/db/schema-owner.test.ts", "src/db/schema-lock.test.ts"],

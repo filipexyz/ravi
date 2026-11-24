@@ -9,6 +9,9 @@ description: |
   - Alterar configurações de grupo (anúncio, locked)
   - Entrar em grupo via link de convite
   - Listar todos os grupos que o bot participa
+  - Achar um grupo (inclusive um em que acabaram de te adicionar) e ver quem está nele
+  - Mandar texto num grupo, marcando uma ou mais pessoas
+  - Ligar um grupo que já existe a um agent
 ---
 
 # WhatsApp Manager
@@ -49,6 +52,73 @@ Checklist antes de responder sobre WhatsApp:
 
 - Tratei exit 3 como freio (revisei o `plan`) e só repeti com `--execute` quando o efeito sobre pessoas reais era realmente desejado?
 - Consultei `suggestions` do envelope (`GROUP_NOT_FOUND`/`CONTACT_NOT_FOUND`) antes de declarar que o grupo/contato não existe?
+- Rodei o dry-run (exit 3) e conferi alvo e conta antes do `--execute`? Mensagem em grupo real não se desfaz.
+- Confirmei QUEM é a pessoa antes de marcar (homônimos)? Em dúvida, pergunte nome completo ou final do número.
+- Uma lista de membros não confirmada (`participantsComplete: false`) não prova que alguém "não está no grupo".
+
+## Receitas do dia a dia
+
+### Achar um grupo, inclusive um recém-adicionado
+
+```bash
+ravi whatsapp group list --account <conta> --limit 500 --fields id,subject,size --json
+```
+
+`group list` pagina em 50 e a primeira página **não** vem ordenada por atividade: com ~190 grupos, o que acabou de te adicionarem costuma ficar de fora. Use `--limit 500` e filtre por nome (`jq`), ou siga `pagination.nextCommand`.
+
+Já ordenado por atividade, direto no Omni: `omni chats list --type group --sort activity --limit 5`. O `ID` dali é UUID do Omni; `omni chats get <uuid>` mostra o `externalId`, que é o JID `...@g.us` que o `ravi` aceita.
+
+### Ver quem está no grupo
+
+```bash
+ravi whatsapp group info <jid> --account <conta> --json
+```
+
+- `participants` vem da lista ao vivo do WhatsApp (`participantsSource: "omni.group-members"`). Em grupo novo os ids são `<dígitos>@lid`; o nome só aparece para quem o Omni já viu falar no chat.
+- `participantsComplete: false` e `participantsNote` dizem que a lista não foi confirmada pelo WhatsApp (a lista ao vivo falhou e sobrou só quem o Omni viu falar, que pode estar incompleta ou desatualizada, mesmo com a contagem batendo). Não conclua "fulano não está no grupo" por ela.
+- Versões do CLI sem a lista ao vivo mostram só quem o Omni viu falar: `size` 7 com 1 participante é isso, não um grupo quase vazio.
+- Direto no Omni: `omni instances group-members <instance-id> <jid>` (o `instanceId` sai do próprio `group info --json`).
+
+### Achar a pessoa certa
+
+```bash
+ravi contacts find "Gustavo" --json
+```
+
+É `contacts find <consulta>`; não existe `contacts list --search`. Mais de um resultado: não adivinhe.
+
+### Mandar texto no grupo, marcando alguém
+
+`here` (o chat do turno) só vale em turno de WhatsApp; de outro canal passe o JID do grupo.
+
+```bash
+# 1. dry-run: sai com exit 3 e não envia nada
+ravi whatsapp group send <jid> "oi, Gustavo! ..." --mention 5511987860700 --account <conta>
+# 2. conferiu alvo e conta? repete com --execute
+ravi whatsapp group send <jid> "oi, Gustavo! ..." --mention 5511987860700 --account <conta> --execute --json
+```
+
+- `--mention` aceita telefone (DDI + número, só dígitos), JID ou nome. Nome só funciona para quem o Omni conhece nesse chat. Pode repetir ou separar por vírgula.
+- Não precisa escrever o `@` no texto: o comando põe `@<número>` na frente. Se você escrever (`@5511987860700 oi`), ele reconhece e não repete.
+- O dry-run esconde o texto de propósito (só mostra tamanho e quantidade de menções): revise a mensagem antes de rodar com `--execute`. O resultado traz `messageId`, `mentionCount` e `resolvedMentions`.
+- Marcou por telefone num grupo `@lid`? O envio usa o JID de telefone. Confirme no grupo, ou com a pessoa, que a marcação apareceu como menção e não como texto solto.
+- Escreva a mensagem final, no tom de quem pediu, e envie uma vez. Não existe desfazer.
+
+### Ligar um grupo que já existe a um agent
+
+```bash
+ravi instances routes list <instancia>                                   # quem atende o grupo hoje
+ravi instances routes add <instancia> "group:<id-sem-@g.us>" <agent> --channel whatsapp
+```
+
+`group send` só manda a mensagem; não cria rota. Grupo do zero com agent é `group create ... --agent <id> --execute` (cria grupo, rota e sessão numa chamada).
+
+### `ravi` ou `omni`?
+
+- Texto, menção, membros, rota e conta: `ravi whatsapp ...`. É o que tem o freio de dry-run, a resolução de conta e de menção e o audit.
+- Mídia (imagem, áudio, documento): `group send` não envia arquivo. Use `ravi media send <arquivo> --to <chat> --account <conta> --execute`, ou `omni send --media` se a regra do seu workspace pedir o `omni` direto.
+- Leitura de baixo nível (UUID de chat, histórico, `group-members`): `omni chats ...` / `omni instances ...`.
+- Não mande texto de grupo por `omni send`: perde o freio e a resolução de menção.
 
 ## Gerenciamento de Grupos
 
@@ -180,7 +250,14 @@ Settings disponíveis:
 
 ## Multi-account
 
-Todos os comandos aceitam `--account <id>` pra especificar qual conta WhatsApp usar. Default: primeira instância.
+Todos os comandos aceitam `--account <id>` pra especificar qual conta WhatsApp usar. Sem ele:
+
+- turno que veio do WhatsApp (o canal do turno pode vir como `whatsapp-baileys`; é o mesmo canal): a conta do próprio turno;
+- turno de outro canal (Slack, por exemplo) ou terminal, com **uma** conta WhatsApp habilitada: essa conta;
+- turno de outro canal com **várias** contas WhatsApp: erro que lista as contas (`WhatsApp accounts: main, luis. Pass --account <id>`); passe `--account`;
+- sem turno nenhum (terminal, cron, script) e várias contas: a primeira conta WhatsApp habilitada.
+
+`--account` apontando para uma conta que não é WhatsApp (`ravi-slack`, por exemplo) é recusado com a lista das contas WhatsApp. Versões antigas usavam a conta do turno de qualquer canal e falhavam com `No omni instance mapped for account "ravi-slack"`: passe `--account <conta-whatsapp>`.
 
 ```bash
 ravi whatsapp group list --account business

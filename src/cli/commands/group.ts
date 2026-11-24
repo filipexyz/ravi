@@ -18,7 +18,6 @@ import {
   dbListChats,
   dbUpsertChat,
   dbUpsertChatParticipant,
-  getFirstAccountName,
 } from "../../router/router-db.js";
 import { publishChannelSessionPrompt } from "../../channels/session-prompt.js";
 import { resolveOmniGroupMetadata } from "../../omni/group-metadata-cache.js";
@@ -37,6 +36,7 @@ import { generateSessionName, ensureUniqueName } from "../../router/session-name
 import { getAgent } from "../../router/config.js";
 import { expandHome } from "../../router/resolver.js";
 import { ensureChannelAgent } from "../channel-agent.js";
+import { currentWhatsAppAccountsHint, isWhatsAppChannel, resolveWhatsAppAccount } from "../whatsapp-account.js";
 import { buildRuntimeCallerPrincipal } from "../../runtime/turn-origin.js";
 import { nats } from "../../nats.js";
 
@@ -55,16 +55,11 @@ function emitConfigChanged() {
 }
 
 function resolveGroupAccount(account?: string): string {
-  return account ?? getContextAccountId() ?? getFirstAccountName() ?? "";
+  return resolveWhatsAppAccount(account);
 }
 
 function resolveGroupSendAccount(account?: string): string {
   return resolveGroupAccount(account);
-}
-
-function getContextAccountId(): string | undefined {
-  const accountId = getContext()?.source?.accountId?.trim();
-  return accountId || undefined;
 }
 
 function normalizeGroupJid(groupId: string): string {
@@ -85,9 +80,16 @@ function pseudonymousTargetRef(value: string): string {
 function resolveGroupSendChatId(groupId: string): string {
   const trimmed = groupId.trim();
   if (trimmed === "." || trimmed === "here" || trimmed === "current") {
-    const chatId = getContext()?.source?.chatId;
-    if (!chatId) fail("No current chat context available. Pass a group ID or JID.");
-    return chatId;
+    const source = getContext()?.source;
+    if (!source?.chatId) fail("No current chat context available. Pass a group ID or JID.");
+    if (!isWhatsAppChannel(source.channel)) {
+      // `here` is the chat of the turn. In a Slack or Telegram turn that is not a WhatsApp group, and sending to
+      // `<slack-id>@g.us` would plan a write to a destination that cannot exist.
+      fail(
+        `"${trimmed}" means the chat of the current turn, which is a ${source.channel} chat, not a WhatsApp group. Pass a group ID or JID.`,
+      );
+    }
+    return source.chatId;
   }
   return trimmed;
 }
@@ -329,7 +331,7 @@ function resolveGroupInstance(account?: string): { accountId: string; instanceId
 
   const instance = dbGetInstance(accountId);
   const instanceId = instance?.instanceId ?? (UUID_RE.test(accountId) ? accountId : "");
-  if (!instanceId) fail(`No omni instance mapped for account "${accountId}".`);
+  if (!instanceId) fail(`No omni instance mapped for account "${accountId}".${currentWhatsAppAccountsHint()}`);
 
   return { accountId, instanceId };
 }
@@ -453,13 +455,96 @@ async function listGroupsViaOmni(account?: string): Promise<{
   }
 }
 
+type GroupInfoParticipant = { id: string; admin: string | null; displayName?: string };
+
+function memberIdentityKey(value: string | null | undefined): string {
+  const base = (value ?? "").trim().replace(/^@+/, "").split("@")[0] ?? "";
+  return base.replace(/\D/g, "");
+}
+
+/**
+ * Participants of a group for `group info`.
+ *
+ * Omni's chat model (`/chats/:id/participants`) only knows the people it has seen in the chat, so a group that was
+ * just created or joined lists one or two names out of many. The live member list from WhatsApp is the source of
+ * truth for who is in the group; the chat model only adds display names.
+ */
+async function resolveGroupInfoParticipants(input: {
+  client: ReturnType<typeof createOmniClient>;
+  instanceId: string;
+  groupJid: string;
+  size: number;
+  known: Array<{ id: string; admin: string | null; displayName?: string; aliases: string[] }> | undefined;
+}): Promise<{
+  participants: GroupInfoParticipant[] | undefined;
+  source: "omni.group-members" | "omni.chat-model" | "none";
+  complete: boolean;
+  note?: string;
+}> {
+  const names = new Map<string, string>();
+  for (const participant of input.known ?? []) {
+    if (!participant.displayName) continue;
+    for (const alias of participant.aliases) {
+      const key = memberIdentityKey(alias);
+      if (key) names.set(key, participant.displayName);
+    }
+  }
+
+  let liveError: string | undefined;
+  try {
+    const members = await input.client.instances.listGroupMembers(input.instanceId, input.groupJid);
+    if (members.length > 0) {
+      const participants = members.map((member): GroupInfoParticipant => {
+        const displayName = names.get(memberIdentityKey(member.id));
+        return {
+          id: member.id,
+          admin:
+            member.role === "admin" || member.role === "superadmin" || member.role === "owner" ? member.role : null,
+          ...(displayName ? { displayName } : {}),
+        };
+      });
+      return {
+        participants,
+        source: "omni.group-members",
+        complete: input.size <= 0 || participants.length >= input.size,
+      };
+    }
+    liveError = "the live member list came back empty";
+  } catch (error) {
+    liveError = errorMessage(error);
+  }
+
+  const known = input.known?.map(({ id, admin, displayName }) => ({
+    id,
+    admin,
+    ...(displayName ? { displayName } : {}),
+  }));
+  if (!known) {
+    return {
+      participants: undefined,
+      source: "none",
+      complete: false,
+      note: `Live member list unavailable: ${liveError}`,
+    };
+  }
+  // The chat model is who Omni has seen, never who WhatsApp says is in the group: equal counts do not prove it (a new
+  // member can be missing while one who left is still listed), so a fallback list is never reported as complete.
+  return {
+    participants: known,
+    source: "omni.chat-model",
+    complete: false,
+    note:
+      known.length < input.size
+        ? `Only the ${known.length} of ${input.size} members Omni has seen in this chat. Live member list unavailable: ${liveError}`
+        : `These are the members Omni has seen in this chat, not confirmed by WhatsApp, so they may be out of date. Live member list unavailable: ${liveError}`,
+  };
+}
+
 async function getGroupInfoViaOmni(
   groupId: string,
   account: string | undefined,
   contract: { op: string; asJson?: boolean },
-): Promise<
-  Record<string, unknown> & { id: string; subject: string; participants?: Array<{ id: string; admin: string | null }> }
-> {
+): Promise<Record<string, unknown> & { id: string; subject: string; participants?: GroupInfoParticipant[] }> {
   const connection = resolveOmniConnection();
   if (!connection) fail("Omni API is not configured. Set OMNI_API_URL/OMNI_API_KEY or ~/.omni/config.json.");
 
@@ -501,18 +586,38 @@ async function getGroupInfoViaOmni(
     });
   }
 
-  const participants = metadata?.participants.map((participant) => ({
+  const known = metadata?.participants.map((participant) => ({
     id: participant.platformUserId,
     admin: participant.role === "admin" || participant.role === "owner" ? participant.role : null,
+    ...(participant.displayName ? { displayName: participant.displayName } : {}),
+    aliases: [
+      participant.platformUserId,
+      participant.normalizedPlatformUserId,
+      participant.mentionUserId,
+      participant.phoneJid,
+      participant.phoneNumber,
+    ].filter((value): value is string => Boolean(value)),
   }));
+  const size = group?.size ?? metadata?.participantCount ?? known?.length ?? 0;
+  const roster = await resolveGroupInfoParticipants({
+    client: createOmniClient({ baseUrl: connection.apiUrl, apiKey: connection.apiKey }),
+    instanceId,
+    // The input may be the group subject; the roster endpoint needs the JID of the group that matched.
+    groupJid: normalizeGroupJid(group?.id ?? metadata?.externalId ?? groupJid),
+    size,
+    known,
+  });
   return {
     ...(group?.raw ?? {}),
     id: group?.id ?? metadata?.externalId ?? groupJid,
     subject: group?.subject ?? metadata?.name ?? groupJid,
     owner: (group?.raw.owner as unknown) ?? undefined,
-    size: group?.size ?? metadata?.participantCount ?? participants?.length ?? 0,
+    size,
     isCommunity: group?.isCommunity ?? false,
-    ...(participants ? { participants } : {}),
+    ...(roster.participants ? { participants: roster.participants } : {}),
+    participantsSource: roster.source,
+    participantsComplete: roster.complete,
+    ...(roster.note ? { participantsNote: roster.note } : {}),
     accountId,
     instanceId,
     source: "omni.rest",
@@ -885,21 +990,26 @@ export class GroupCommands {
       console.log(`  Ephemeral:    ${hours}h`);
     }
 
-    const participants = result.participants as { id: string; admin: string | null }[] | undefined;
+    const participants = result.participants as GroupInfoParticipant[] | undefined;
     if (participants) {
+      const label = (p: GroupInfoParticipant) => (p.displayName ? `${p.id} (${p.displayName})` : p.id);
       const admins = participants.filter((p) => p.admin);
       const members = participants.filter((p) => !p.admin);
+      console.log(`  Listed:       ${participants.length} of ${result.size} (${String(result.participantsSource)})`);
+      if (result.participantsNote) console.log(`  Note:         ${String(result.participantsNote)}`);
       console.log(`\n  Admins (${admins.length}):`);
       for (const a of admins) {
-        console.log(`    ${a.id} [${a.admin}]`);
+        console.log(`    ${label(a)} [${a.admin}]`);
       }
       console.log(`  Members (${members.length}):`);
       for (const m of members.slice(0, 20)) {
-        console.log(`    ${m.id}`);
+        console.log(`    ${label(m)}`);
       }
       if (members.length > 20) {
         console.log(`    ... and ${members.length - 20} more`);
       }
+    } else if (result.participantsNote) {
+      console.log(`  Note:         ${String(result.participantsNote)}`);
     }
 
     return result;
@@ -935,7 +1045,7 @@ export class GroupCommands {
     if (!accountId) fail("No WhatsApp account configured.");
 
     const instanceId = resolveGroupSendInstanceId(accountId);
-    if (!instanceId) fail(`No omni instance mapped for account "${accountId}".`);
+    if (!instanceId) fail(`No omni instance mapped for account "${accountId}".${currentWhatsAppAccountsHint()}`);
 
     const connection = resolveOmniConnection();
     if (!connection) fail("Omni API is not configured. Set OMNI_API_URL/OMNI_API_KEY or ~/.omni/config.json.");
