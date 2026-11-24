@@ -351,6 +351,13 @@ describe("describeSecret path containment (B1, #968)", () => {
     );
   });
 
+  it("fails closed when valid segments still produce a URL that is not exactly the metadata path", () => {
+    // Segments pass the allowlist; only the final normalized-URL check sees the address swallowing the path.
+    expect(vaultMetadataUrl("https://bao.test:8200?x=1", "secret", "ravi/credentials/a/b")).toBeNull();
+    expect(vaultMetadataUrl("https://bao.test:8200#frag", "secret", "ravi/credentials/a/b")).toBeNull();
+    expect(vaultMetadataUrl("not a url", "secret", "ravi/credentials/a/b")).toBeNull();
+  });
+
   it("compares the normalized URL, not the raw string", () => {
     const addr = "https://bao.test:8200";
     // Built from the same segments, so a raw-string comparison would accept it.
