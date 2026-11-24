@@ -1570,6 +1570,7 @@ SOURCES
         id,
         getAgentRuntimePermissionsConfigFromDefaults(agent.defaults),
         getAgentRuntimePermissionsConfigFromDefaults(parsedValue as Record<string, unknown>),
+        { warnOperator: false },
       );
     }
 
@@ -1735,7 +1736,7 @@ SOURCES
       nextConfig && Object.keys(nextConfig).length > 0 ? nextConfig : null;
 
     // Spec permissions/break-glass: an agent never raises ANOTHER agent to break-glass.
-    assertAgentBreakGlassRaiseAllowed("agents permissions", id, before, after);
+    assertAgentBreakGlassRaiseAllowed("agents permissions", id, before, after, { warnOperator: false });
 
     if (execute !== true && expandsRuntimePermissionAuthority(before, after)) {
       // A brake protects only authority expansion. Revocation, capability
