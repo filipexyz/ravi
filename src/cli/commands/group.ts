@@ -36,7 +36,7 @@ import { generateSessionName, ensureUniqueName } from "../../router/session-name
 import { getAgent } from "../../router/config.js";
 import { expandHome } from "../../router/resolver.js";
 import { ensureChannelAgent } from "../channel-agent.js";
-import { currentWhatsAppAccountsHint, resolveWhatsAppAccount } from "../whatsapp-account.js";
+import { currentWhatsAppAccountsHint, isWhatsAppChannel, resolveWhatsAppAccount } from "../whatsapp-account.js";
 import { buildRuntimeCallerPrincipal } from "../../runtime/turn-origin.js";
 import { nats } from "../../nats.js";
 
@@ -80,9 +80,16 @@ function pseudonymousTargetRef(value: string): string {
 function resolveGroupSendChatId(groupId: string): string {
   const trimmed = groupId.trim();
   if (trimmed === "." || trimmed === "here" || trimmed === "current") {
-    const chatId = getContext()?.source?.chatId;
-    if (!chatId) fail("No current chat context available. Pass a group ID or JID.");
-    return chatId;
+    const source = getContext()?.source;
+    if (!source?.chatId) fail("No current chat context available. Pass a group ID or JID.");
+    if (!isWhatsAppChannel(source.channel)) {
+      // `here` is the chat of the turn. In a Slack or Telegram turn that is not a WhatsApp group, and sending to
+      // `<slack-id>@g.us` would plan a write to a destination that cannot exist.
+      fail(
+        `"${trimmed}" means the chat of the current turn, which is a ${source.channel} chat, not a WhatsApp group. Pass a group ID or JID.`,
+      );
+    }
+    return source.chatId;
   }
   return trimmed;
 }
@@ -520,14 +527,16 @@ async function resolveGroupInfoParticipants(input: {
       note: `Live member list unavailable: ${liveError}`,
     };
   }
-  const complete = input.size <= 0 || known.length >= input.size;
+  // The chat model is who Omni has seen, never who WhatsApp says is in the group: equal counts do not prove it (a new
+  // member can be missing while one who left is still listed), so a fallback list is never reported as complete.
   return {
     participants: known,
     source: "omni.chat-model",
-    complete,
-    note: complete
-      ? undefined
-      : `Only the ${known.length} of ${input.size} members Omni has seen in this chat. Live member list unavailable: ${liveError}`,
+    complete: false,
+    note:
+      known.length < input.size
+        ? `Only the ${known.length} of ${input.size} members Omni has seen in this chat. Live member list unavailable: ${liveError}`
+        : `These are the members Omni has seen in this chat, not confirmed by WhatsApp, so they may be out of date. Live member list unavailable: ${liveError}`,
   };
 }
 
@@ -593,7 +602,8 @@ async function getGroupInfoViaOmni(
   const roster = await resolveGroupInfoParticipants({
     client: createOmniClient({ baseUrl: connection.apiUrl, apiKey: connection.apiKey }),
     instanceId,
-    groupJid,
+    // The input may be the group subject; the roster endpoint needs the JID of the group that matched.
+    groupJid: normalizeGroupJid(group?.id ?? metadata?.externalId ?? groupJid),
     size,
     known,
   });

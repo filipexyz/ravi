@@ -6,8 +6,17 @@
  * "first enabled instance" fallback could be a non-WhatsApp instance too. The account of the turn only says which
  * WhatsApp account to use when the turn itself comes from WhatsApp.
  */
+import { canonicalChannelId } from "../channels/capabilities.js";
 import { fail, getContext } from "./context.js";
 import { dbListInstances } from "../router/router-db.js";
+
+/**
+ * Channel names differ by layer: instances are stored as `whatsapp`, while the Omni consumer publishes the turn with the
+ * Omni channel type (`whatsapp-baileys`). `canonicalChannelId` is the one place that equates them.
+ */
+export function isWhatsAppChannel(channel: string | undefined): boolean {
+  return canonicalChannelId(channel) === "whatsapp";
+}
 
 export interface WhatsAppAccountInstance {
   name: string;
@@ -33,7 +42,7 @@ export type PickWhatsAppAccountResult =
 
 function whatsappCandidates(instances: readonly WhatsAppAccountInstance[]): string[] {
   return instances
-    .filter((instance) => instance.channel === "whatsapp" && instance.enabled !== false && !instance.deletedAt)
+    .filter((instance) => isWhatsAppChannel(instance.channel) && instance.enabled !== false && !instance.deletedAt)
     .map((instance) => instance.name);
 }
 
@@ -50,7 +59,7 @@ export function pickWhatsAppAccount(input: PickWhatsAppAccountInput): PickWhatsA
   const flag = input.account?.trim();
   if (flag) {
     const named = input.instances.find((instance) => instance.name === flag);
-    if (named?.channel && named.channel !== "whatsapp") {
+    if (named?.channel && !isWhatsAppChannel(named.channel)) {
       return {
         ok: false,
         code: "ACCOUNT_NOT_WHATSAPP",
@@ -63,7 +72,7 @@ export function pickWhatsAppAccount(input: PickWhatsAppAccountInput): PickWhatsA
   }
 
   const turnAccount = input.source?.accountId?.trim();
-  if (input.source?.channel === "whatsapp" && turnAccount) {
+  if (isWhatsAppChannel(input.source?.channel) && turnAccount) {
     return { ok: true, accountId: turnAccount, via: "turn" };
   }
 

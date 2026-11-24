@@ -680,11 +680,11 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/gmail.ts | 309 | triaged-follow-up | catch-without-binding | src/cli/commands/gmail.ts:265d7080900861492dfc45b5 |
 | cli | src/cli/commands/gmail.ts | 434 | fixed | binding retained / no recognized error surface | src/cli/commands/gmail.ts:b773051ef67421229578e89b |
 | cli | src/cli/commands/group.ts | 54 | triaged-follow-up | rejection-without-binding | src/cli/commands/group.ts:32a249c09f5ef6714225e9d5 |
-| cli | src/cli/commands/group.ts | 420 | fixed | binding retained / no recognized error surface | src/cli/commands/group.ts:772cba0a681b317b7b6c9425 |
-| cli | src/cli/commands/group.ts | 506 | fixed | binding retained / no recognized error surface | src/cli/commands/group.ts:1a77084248c71e1d4c151c11 |
-| cli | src/cli/commands/group.ts | 559 | triaged-follow-up | rejection-without-binding | src/cli/commands/group.ts:bd7e4a33b95006633e8bef5f |
-| cli | src/cli/commands/group.ts | 1273 | fixed | binding retained / no recognized error surface | src/cli/commands/group.ts:fb053ad3b36d981e3d46114e |
-| cli | src/cli/commands/group.ts | 1330 | fixed | binding retained / no recognized error surface | src/cli/commands/group.ts:3c701d1bbc45d77b90d9e492 |
+| cli | src/cli/commands/group.ts | 427 | fixed | binding retained / no recognized error surface | src/cli/commands/group.ts:772cba0a681b317b7b6c9425 |
+| cli | src/cli/commands/group.ts | 513 | fixed | binding retained / no recognized error surface | src/cli/commands/group.ts:1a77084248c71e1d4c151c11 |
+| cli | src/cli/commands/group.ts | 568 | triaged-follow-up | rejection-without-binding | src/cli/commands/group.ts:bd7e4a33b95006633e8bef5f |
+| cli | src/cli/commands/group.ts | 1283 | fixed | binding retained / no recognized error surface | src/cli/commands/group.ts:fb053ad3b36d981e3d46114e |
+| cli | src/cli/commands/group.ts | 1340 | fixed | binding retained / no recognized error surface | src/cli/commands/group.ts:3c701d1bbc45d77b90d9e492 |
 | cli | src/cli/commands/heartbeat.ts | 281 | fixed | binding retained / no recognized error surface | src/cli/commands/heartbeat.ts:e88da430220de17dab932ea9 |
 | cli | src/cli/commands/heartbeat.ts | 313 | fixed | binding retained / no recognized error surface | src/cli/commands/heartbeat.ts:197374cc9ccbce3826d154ce |
 | cli | src/cli/commands/heartbeat.ts | 393 | fixed | binding retained / no recognized error surface | src/cli/commands/heartbeat.ts:9ef7da30c3aed2e84880bf5c |

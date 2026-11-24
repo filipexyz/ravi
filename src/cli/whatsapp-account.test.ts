@@ -56,6 +56,41 @@ describe("pickWhatsAppAccount", () => {
     });
   });
 
+  // The Omni consumer publishes a WhatsApp turn with the Omni channel type (`whatsapp-baileys`) as source channel,
+  // while instances are stored as `whatsapp`.
+  it("treats a turn published as whatsapp-baileys as a WhatsApp turn and uses its own account", () => {
+    expect(
+      pickWhatsAppAccount({
+        source: { channel: "whatsapp-baileys", accountId: "luis" },
+        instances: [slack, main, luis],
+      }),
+    ).toEqual({ ok: true, accountId: "luis", via: "turn" });
+  });
+
+  it("treats instances stored as whatsapp-baileys as WhatsApp accounts", () => {
+    const baileys = { name: "legacy", channel: "whatsapp-baileys", enabled: true };
+
+    expect(pickWhatsAppAccount({ source: slackTurn, instances: [slack, baileys] })).toMatchObject({
+      ok: true,
+      accountId: "legacy",
+      via: "single-account",
+    });
+    expect(pickWhatsAppAccount({ account: "legacy", instances: [slack, baileys] })).toMatchObject({ ok: true });
+  });
+
+  it("does not treat twilio-whatsapp as a WhatsApp group account", () => {
+    const twilio = { name: "twilio", channel: "twilio-whatsapp", enabled: true };
+
+    expect(pickWhatsAppAccount({ source: slackTurn, instances: [twilio, main] })).toMatchObject({
+      ok: true,
+      accountId: "main",
+    });
+    expect(pickWhatsAppAccount({ account: "twilio", instances: [twilio, main] })).toMatchObject({
+      ok: false,
+      code: "ACCOUNT_NOT_WHATSAPP",
+    });
+  });
+
   it("asks for --account when a non-WhatsApp turn cannot tell which of several WhatsApp accounts to use", () => {
     const result = pickWhatsAppAccount({ source: slackTurn, instances: [slack, main, luis] });
 

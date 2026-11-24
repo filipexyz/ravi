@@ -54,7 +54,7 @@ Checklist antes de responder sobre WhatsApp:
 - Consultei `suggestions` do envelope (`GROUP_NOT_FOUND`/`CONTACT_NOT_FOUND`) antes de declarar que o grupo/contato não existe?
 - Rodei o dry-run (exit 3) e conferi alvo e conta antes do `--execute`? Mensagem em grupo real não se desfaz.
 - Confirmei QUEM é a pessoa antes de marcar (homônimos)? Em dúvida, pergunte nome completo ou final do número.
-- Uma lista de membros marcada como parcial (`participantsComplete: false`) não prova que alguém "não está no grupo".
+- Uma lista de membros não confirmada (`participantsComplete: false`) não prova que alguém "não está no grupo".
 
 ## Receitas do dia a dia
 
@@ -75,7 +75,7 @@ ravi whatsapp group info <jid> --account <conta> --json
 ```
 
 - `participants` vem da lista ao vivo do WhatsApp (`participantsSource: "omni.group-members"`). Em grupo novo os ids são `<dígitos>@lid`; o nome só aparece para quem o Omni já viu falar no chat.
-- `participantsComplete: false` e `participantsNote` dizem que a lista é parcial (a lista ao vivo falhou e sobrou só quem o Omni viu falar). Não conclua "fulano não está no grupo" por ela.
+- `participantsComplete: false` e `participantsNote` dizem que a lista não foi confirmada pelo WhatsApp (a lista ao vivo falhou e sobrou só quem o Omni viu falar, que pode estar incompleta ou desatualizada, mesmo com a contagem batendo). Não conclua "fulano não está no grupo" por ela.
 - Versões do CLI sem a lista ao vivo mostram só quem o Omni viu falar: `size` 7 com 1 participante é isso, não um grupo quase vazio.
 - Direto no Omni: `omni instances group-members <instance-id> <jid>` (o `instanceId` sai do próprio `group info --json`).
 
@@ -88,6 +88,8 @@ ravi contacts find "Gustavo" --json
 É `contacts find <consulta>`; não existe `contacts list --search`. Mais de um resultado: não adivinhe.
 
 ### Mandar texto no grupo, marcando alguém
+
+`here` (o chat do turno) só vale em turno de WhatsApp; de outro canal passe o JID do grupo.
 
 ```bash
 # 1. dry-run: sai com exit 3 e não envia nada
@@ -250,7 +252,7 @@ Settings disponíveis:
 
 Todos os comandos aceitam `--account <id>` pra especificar qual conta WhatsApp usar. Sem ele:
 
-- turno que veio do WhatsApp: a conta do próprio turno;
+- turno que veio do WhatsApp (o canal do turno pode vir como `whatsapp-baileys`; é o mesmo canal): a conta do próprio turno;
 - turno de outro canal (Slack, por exemplo) ou terminal, com **uma** conta WhatsApp habilitada: essa conta;
 - turno de outro canal com **várias** contas WhatsApp: erro que lista as contas (`WhatsApp accounts: main, luis. Pass --account <id>`); passe `--account`;
 - sem turno nenhum (terminal, cron, script) e várias contas: a primeira conta WhatsApp habilitada.
