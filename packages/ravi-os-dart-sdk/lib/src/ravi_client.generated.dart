@@ -8102,6 +8102,18 @@ class SessionsNamespace {
     );
   }
 
+  Future<SessionsCloneReturn> clone(String name, [SessionsCloneOptions options = const SessionsCloneOptions()]) async {
+    final requestBody = <String, RaviJson>{};
+    requestBody["name"] = RaviJson.from(name);
+    options.encodeBody(requestBody);
+    return _transport.callJson(
+      groupSegments: const ["sessions"],
+      command: "clone",
+      body: requestBody,
+      decode: sessionsCloneReturnFromJson,
+    );
+  }
+
   Future<SessionsCloseThreadReturn> closeThread([SessionsCloseThreadOptions options = const SessionsCloseThreadOptions()]) async {
     final requestBody = <String, RaviJson>{};
     options.encodeBody(requestBody);

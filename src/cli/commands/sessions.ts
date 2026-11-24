@@ -48,6 +48,15 @@ import {
   sessionRecapReturnSchema,
 } from "./operational-return-schemas.js";
 import { buildSessionRecap, formatSessionRecap, parseSessionRecapTailCount } from "../../sessions/recap.js";
+import {
+  parseSessionCloneMessages,
+  runSessionClone,
+  SESSION_CLONE_DEFAULT_MESSAGES,
+  SESSION_CLONE_MAX_MESSAGES,
+  SessionCloneError,
+  type SessionClonePlan,
+} from "../../sessions/clone.js";
+import { ensureSessionCloneProvisioners } from "../../channels/session-clone-provisioners.js";
 import { nats } from "../../nats.js";
 import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "../../session-control.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
@@ -69,6 +78,7 @@ import {
   deleteSession,
   resetSession,
   getOrCreateSession,
+  getSessionByName,
   isReservedSessionKey,
   updateSessionDisplayName,
   renameSessionName,
@@ -120,7 +130,9 @@ import type {
   ResponseMessage,
   SessionRelayAction,
 } from "../../runtime/message-types.js";
-import { buildSessionRelayTurnOrigin } from "../../runtime/turn-origin.js";
+import { buildRuntimeCallerPrincipal, buildSessionRelayTurnOrigin } from "../../runtime/turn-origin.js";
+import type { RuntimeTurnOriginPrincipal } from "../../runtime/message-types.js";
+import { publishChannelSessionPrompt } from "../../channels/session-prompt.js";
 import { toPersistedChannelContext } from "../../channels/context.js";
 import {
   CHAT_ACTION_DESCRIPTORS,
@@ -533,6 +545,27 @@ const sessionReadMessageReturnSchema = z
   })
   .passthrough();
 const sessionReadReturnSchema = z.union([sessionReadHistoryReturnSchema, sessionReadMessageReturnSchema]);
+/** `sessions clone`: the plan (dry-run) or what was created. */
+export const sessionCloneReturnSchema = z
+  .object({
+    status: z.enum(["planned", "cloned"]),
+    name: z.string(),
+    origin: z.object({ sessionKey: z.string(), sessionName: z.string(), channel: z.string() }).strict(),
+    agentId: z.string(),
+    seed: z.object({ messages: z.number(), redacted: z.boolean(), truncated: z.boolean() }).strict(),
+    clone: z
+      .object({
+        chatId: z.string(),
+        sessionKey: z.string(),
+        sessionName: z.string(),
+        invited: z.number(),
+        inviteFailed: z.boolean(),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+
 export const sessionCreateThreadReturnSchema = z
   .object({
     status: z.literal("queued"),
@@ -1972,6 +2005,71 @@ function loadSessionReadTranscript(session: SessionEntry, maxMessages: number): 
       runtimeProvider: session.runtimeProvider ?? null,
     },
   };
+}
+
+/**
+ * `sessions clone` with the real stores: the recap the way `sessions recap` reads it, the
+ * session row, and the seed published as the new session's first prompt. Also the chat
+ * command's default (`/ravi clone`), so the two cannot drift.
+ */
+export async function runSessionCloneFromCli(
+  origin: SessionEntry,
+  input: {
+    name: string;
+    messages: number;
+    inviteActorIds: readonly string[];
+    execute: boolean;
+    /** Who asked. A CLI caller is resolved from its context; the chat command names the contact. */
+    principal?: RuntimeTurnOriginPrincipal;
+  },
+): Promise<SessionClonePlan> {
+  ensureSessionCloneProvisioners();
+  const context = getContext();
+  const principal = input.principal ?? buildRuntimeCallerPrincipal(context);
+  // The seed turn can only be narrowed by the caller's own turn, never widened.
+  const callerContextId = input.principal ? undefined : context?.contextId;
+  return runSessionClone(
+    {
+      origin,
+      name: input.name,
+      messages: input.messages,
+      inviteActorIds: input.inviteActorIds,
+      execute: input.execute,
+    },
+    {
+      loadRecap: (session, count) => {
+        const loaded = loadSessionReadTranscript(session, count);
+        return buildSessionRecap({
+          session,
+          goal: loadSessionGoalSafe(session.sessionKey),
+          tailLimit: count,
+          history: {
+            available: loaded.transcript.available,
+            ...(loaded.transcript.source ? { source: loaded.transcript.source } : {}),
+            ...(loaded.transcript.reason ? { reason: loaded.transcript.reason } : {}),
+            totalMessages: loaded.totalMessages,
+            messages: loaded.messages.map((message) => ({
+              role: message.role,
+              text: message.text,
+              time: message.time,
+            })),
+          },
+        });
+      },
+      sessionNameTaken: (name) => getSessionByName(name) !== null,
+      createSession: ({ sessionKey, agentId, agentCwd, name }) =>
+        getOrCreateSession(sessionKey, agentId, agentCwd, { name }),
+      publishSeed: async ({ sessionName, prompt, source }) => {
+        await publishChannelSessionPrompt({
+          sessionName,
+          action: "session.bootstrap",
+          principal,
+          ...(callerContextId ? { callerContextId } : {}),
+          payload: { prompt, source, deliveryBarrier: "after_response" },
+        });
+      },
+    },
+  );
 }
 
 function loadSessionGoalSafe(sessionKey: string): ReturnType<typeof getSessionGoal> {
@@ -6518,6 +6616,95 @@ export class SessionCommands {
     return recap;
   }
 
+  @Command({
+    name: "clone",
+    description:
+      "Clone a session into a new chat with the chosen name: same agent, new session seeded with the recap; dry-run unless --execute",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "clone",
+    risk: "high",
+    requiresConfirmation: true,
+  })
+  async clone(
+    @Arg("name", { description: "Name of the new chat and session (lowercase, digits, - or _)" })
+    name: string,
+    @Option({
+      flags: "--session <nameOrKey>",
+      description: "Session to clone (defaults to current session)",
+    })
+    sessionOverride?: string,
+    @Option({
+      flags: "-n, --messages <count>",
+      description: `Recent messages copied as context (default: ${SESSION_CLONE_DEFAULT_MESSAGES}, max: ${SESSION_CLONE_MAX_MESSAGES})`,
+    })
+    messages?: string,
+    @Option({
+      flags: "--invite <ids>",
+      description: "Comma-separated platform user ids to invite to the new chat (the channel decides which it accepts)",
+    })
+    invite?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Create the chat and the session; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
+  ) {
+    const op = "sessions clone";
+    const target = sessionOverride?.trim() || resolveCurrentSessionRef();
+    if (!target) {
+      fail("No current session context found. Use ravi sessions clone <name> inside a session, or pass --session.");
+      return;
+    }
+    const origin = this.resolveCloneOrigin(target, op, asJson);
+    if (!origin) return;
+    const inviteActorIds = invite
+      ? invite
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean)
+      : [];
+    let plan: SessionClonePlan;
+    try {
+      plan = await runSessionCloneFromCli(origin, {
+        name,
+        messages: parseSessionCloneMessages(messages),
+        inviteActorIds,
+        execute: execute === true,
+      });
+    } catch (error) {
+      if (error instanceof SessionCloneError) {
+        throw new CliExpectedError(error.message, error.code, error.code === "CLONE_PROVISION_FAILED" ? 1 : 2);
+      }
+      throw error;
+    }
+    if (execute !== true) {
+      contractDryRun(op, plan as unknown as Record<string, unknown>, { asJson });
+    }
+    if (asJson) printJson(plan);
+    else {
+      console.log(`Cloned ${plan.origin.sessionName} → ${plan.clone?.sessionName} (chat ${plan.clone?.chatId})`);
+      console.log(`  context: ${plan.seed.messages} messages${plan.seed.redacted ? ", secrets masked" : ""}`);
+      if (plan.clone?.inviteFailed) console.log("  invite: failed (add the people to the chat by hand)");
+    }
+    return plan;
+  }
+
+  /** The origin of a clone: a session the caller may read (what is copied is what `sessions recap` shows them). */
+  private resolveCloneOrigin(nameOrKey: string, op: string, asJson?: boolean): SessionEntry | null {
+    const session = resolveSession(nameOrKey);
+    const scopeCtx = getScopeContext();
+    if (!session || (isScopeEnforced(scopeCtx) && !canAccessSession(scopeCtx, session.name ?? session.sessionKey))) {
+      failSessionNotFound(op, nameOrKey, asJson);
+      return null;
+    }
+    return session;
+  }
+
   private resolveRecapTarget(nameOrKey: string, asJson?: boolean): SessionEntry | null {
     let session = resolveSession(nameOrKey);
     if (!session) {
@@ -9154,6 +9341,7 @@ declareCommandReturns(SessionCommands, {
   answer: commandEnvelopeReturnSchema,
   ask: commandEnvelopeReturnSchema,
   attach: commandEnvelopeReturnSchema,
+  clone: sessionCloneReturnSchema,
   closeThread: sessionCloseThreadReturnSchema,
   createThread: sessionCreateThreadReturnSchema,
   delete: commandEnvelopeReturnSchema,

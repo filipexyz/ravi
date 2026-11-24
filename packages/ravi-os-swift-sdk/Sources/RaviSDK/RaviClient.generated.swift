@@ -5776,6 +5776,13 @@ public struct SessionsNamespace: Sendable {
     return try await transport.call(groupSegments: ["sessions"], command: "attach", body: requestBody, as: SessionsAttachReturn.self)
   }
 
+  public func clone(_ name: String, _ options: SessionsCloneOptions = .init()) async throws -> SessionsCloneReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["name"] = try RaviJSON.fromEncodable(name)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions"], command: "clone", body: requestBody, as: SessionsCloneReturn.self)
+  }
+
   public func closeThread(_ options: SessionsCloseThreadOptions = .init()) async throws -> SessionsCloseThreadReturn {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)

@@ -28081,6 +28081,69 @@ public struct SessionsAttachOptions: Codable, Sendable {
 
 public typealias SessionsAttachReturn = [String: RaviJSON]
 
+public struct SessionsCloneOptions: Codable, Sendable {
+  public var execute: Bool?
+  public var invite: String?
+  public var messages: String?
+  public var session: String?
+
+  public init(execute: Bool? = nil, invite: String? = nil, messages: String? = nil, session: String? = nil) {
+    self.execute = execute
+    self.invite = invite
+    self.messages = messages
+    self.session = session
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case execute = "execute"
+    case invite = "invite"
+    case messages = "messages"
+    case session = "session"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.invite {
+      body["invite"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.messages {
+      body["messages"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.session {
+      body["session"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SessionsCloneReturn: Codable, Sendable {
+  public var agentId: String
+  public var clone: RaviJSON
+  public var name: String
+  public var origin: RaviJSON
+  public var seed: RaviJSON
+  public var status: String
+
+  public init(agentId: String, clone: RaviJSON, name: String, origin: RaviJSON, seed: RaviJSON, status: String) {
+    self.agentId = agentId
+    self.clone = clone
+    self.name = name
+    self.origin = origin
+    self.seed = seed
+    self.status = status
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agentId = "agentId"
+    case clone = "clone"
+    case name = "name"
+    case origin = "origin"
+    case seed = "seed"
+    case status = "status"
+  }
+}
+
 public struct SessionsCloseThreadOptions: Codable, Sendable {
   public var return_: String?
   public var session: String?

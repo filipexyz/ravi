@@ -19857,6 +19857,39 @@ export type SessionsAttachInput = {
 /** Return shape for `sessions.attach`. */
 export type SessionsAttachReturn = Record<string, unknown>;
 
+/** Input shape for `sessions.clone`. */
+export type SessionsCloneInput = {
+  execute?: boolean;
+  invite?: string;
+  messages?: string;
+  name: string;
+  session?: string;
+};
+
+/** Return shape for `sessions.clone`. */
+export type SessionsCloneReturn = {
+  agentId: string;
+  clone: ({
+    chatId: string;
+    inviteFailed: boolean;
+    invited: number;
+    sessionKey: string;
+    sessionName: string;
+  }) | null;
+  name: string;
+  origin: {
+    channel: string;
+    sessionKey: string;
+    sessionName: string;
+  };
+  seed: {
+    messages: number;
+    redacted: boolean;
+    truncated: boolean;
+  };
+  status: "planned" | "cloned";
+};
+
 /** Input shape for `sessions.close-thread`. */
 export type SessionsCloseThreadInput = {
   return?: string;

@@ -1,6 +1,6 @@
 /**
  * The grammar of a chat command, whichever channel it was typed in:
- * `help | status [thread] | threads | close <thread> | close idle [12h] | stop [thread]`.
+ * `help | status [thread] | threads | close <thread> | close idle [12h] | stop [thread] | clone <name>`.
  *
  * Pure: no channel, no I/O. A channel adapter hands over the text that follows
  * its own command word and gets back what was asked.
@@ -12,7 +12,7 @@ export const CHAT_COMMAND_DEFAULT_IDLE_HOURS = 12;
 export const CHAT_COMMAND_MAX_IDLE_HOURS = 24 * 30;
 
 /** The subcommands that act: each needs a person with authority over the session of the chat. */
-export type ChatCommandAction = "status" | "threads" | "close" | "close_idle" | "stop";
+export type ChatCommandAction = "status" | "threads" | "close" | "close_idle" | "stop" | "clone";
 
 export type ChatCommandParse =
   /** `status` is who answers in the chat; `status <thread>` is that thread's own state. */
@@ -22,8 +22,10 @@ export type ChatCommandParse =
   | { readonly kind: "stop"; readonly threadRef?: string }
   | { readonly kind: "close"; readonly threadRef: string }
   | { readonly kind: "close_idle"; readonly hours: number }
+  /** `clone <name>`: a copy of the chat's session in a new chat with that name. */
+  | { readonly kind: "clone"; readonly name: string }
   | { readonly kind: "help" }
-  | { readonly kind: "usage"; readonly command: "close" }
+  | { readonly kind: "usage"; readonly command: "close" | "clone" }
   | { readonly kind: "unknown"; readonly word: string };
 
 export type ChatCommandStaticParse = Extract<ChatCommandParse, { kind: "help" | "usage" | "unknown" }>;
@@ -66,6 +68,11 @@ export function parseChatCommandText(text: string): ChatCommandParse {
       if (!target) return { kind: "usage", command: "close" };
       if (foldWord(target) === "idle") return parseIdleClose(tokens[2]);
       return { kind: "close", threadRef: target };
+    }
+    case "clone": {
+      const target = tokens[1];
+      if (!target || tokens.length > 2) return { kind: "usage", command: "clone" };
+      return { kind: "clone", name: target.slice(0, 120) };
     }
     default:
       return { kind: "unknown", word: first.slice(0, 40) };
