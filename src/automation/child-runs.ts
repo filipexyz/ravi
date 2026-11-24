@@ -29,7 +29,7 @@ import { CliExpectedError } from "../cli/expected-error.js";
 import { getDb as getChatDb } from "../db.js";
 import { getDb } from "../router/router-db.js";
 import { nats } from "../nats.js";
-import { deleteSession, getSession } from "../router/index.js";
+import { deleteSession, getSession, getSessionByName } from "../router/index.js";
 import type { SessionEntry } from "../router/types.js";
 import { logger } from "../utils/logger.js";
 
@@ -432,8 +432,11 @@ export function pruneClosedChildRuns(
   const pruned: string[] = [];
   for (const row of stale) {
     deleteSession(row.child_session_key);
-    // The run's transcript goes with it: it is keyed by the run session's name, used by no other session.
-    getChatDb().query("DELETE FROM messages WHERE session_id = ?").run(row.child_session_name);
+    // The run's transcript goes with it, keyed by the name the run had. Never when a live session goes by
+    // that name now (the run renamed, its old name taken): those messages are that session's.
+    if (!getSessionByName(row.child_session_name)) {
+      getChatDb().query("DELETE FROM messages WHERE session_id = ?").run(row.child_session_name);
+    }
     db().query("DELETE FROM automation_child_runs WHERE id = ?").run(row.id);
     pruned.push(row.child_session_key);
   }
@@ -546,7 +549,11 @@ export async function reconcileChildRuns(options: {
     }
     try {
       const closed = await closeChildRun(run, null);
-      if (closed.parentReturnDelivered) result.redelivered += 1;
+      if (closed.parentReturnDelivered) {
+        result.redelivered += 1;
+        // Delivered at last, it counts against its origin's retention like any closed run.
+        pruneClosedChildRuns(run.originKind, run.originId);
+      }
     } catch (error) {
       log.warn("Run return still undelivered; retried on the next tick", {
         runId: run.id,

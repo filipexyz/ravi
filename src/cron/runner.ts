@@ -175,10 +175,12 @@ export class CronRunner {
       releaseSource: "cron-runner",
       onAbandoned: async (run) => {
         if (run.originKind !== "cron") return;
-        const job = dbGetCronJob(run.originId);
-        if (!job) return;
+        // The run's admitted notice: its owner even after the job changed hands or a one-shot was deleted.
+        // Dated now, when the return was given up, so the notice is not treated as a stale failure.
+        const admitted = getCronRun(run.id);
+        if (!admitted) return;
         await notifyCronFailure(
-          { ...job, ownerPrincipal: job.ownerPrincipal ?? "unknown", lastRunAt: run.createdAt, runId: run.id },
+          { ...cronRunNotification(admitted), lastRunAt: Date.now() },
           "The run's result never reached the session it reports to",
         );
       },

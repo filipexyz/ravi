@@ -1047,7 +1047,8 @@ export class TriggerRunner {
         const outcome = parseCronTurnOutcome(event);
         if (!outcome) continue;
         const run = findChildRunByChildSessionName(outcome.sessionName);
-        if (!run || run.originKind !== "trigger" || run.status !== "open") continue;
+        // A run its child already closed still gets its runtime released and its origin pruned.
+        if (!run || run.originKind !== "trigger") continue;
         try {
           await closeChildRunAfterTurn(
             run,

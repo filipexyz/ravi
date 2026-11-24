@@ -184,10 +184,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | audio | src/audio/tts.ts | 364 | fixed | binding retained / no recognized error surface | src/audio/tts.ts:9e3918019dc3a93e1ff1e4fd |
 | audio | src/audio/tts.ts | 390 | fixed | binding retained / no recognized error surface | src/audio/tts.ts:7608dd43bec079757a020b68 |
 | audio | src/audio/tts.ts | 567 | triaged-follow-up | catch-without-binding | src/audio/tts.ts:faf8f42aa213c2fee5e89253 |
-| automation | src/automation/child-runs.ts | 454 | fixed | binding retained / no recognized error surface | src/automation/child-runs.ts:caff15965563a7f504b2597c |
-| automation | src/automation/child-runs.ts | 538 | fixed | binding retained / no recognized error surface | src/automation/child-runs.ts:755bddab58b0703b928ae272 |
-| automation | src/automation/child-runs.ts | 550 | fixed | binding retained / no recognized error surface | src/automation/child-runs.ts:2b488fe6d2539bd985c06dc3 |
-| automation | src/automation/child-runs.ts | 569 | fixed | binding retained / no recognized error surface | src/automation/child-runs.ts:7e0b542f37a20aa655e428c5 |
+| automation | src/automation/child-runs.ts | 457 | fixed | binding retained / no recognized error surface | src/automation/child-runs.ts:caff15965563a7f504b2597c |
+| automation | src/automation/child-runs.ts | 541 | fixed | binding retained / no recognized error surface | src/automation/child-runs.ts:755bddab58b0703b928ae272 |
+| automation | src/automation/child-runs.ts | 557 | fixed | binding retained / no recognized error surface | src/automation/child-runs.ts:2b488fe6d2539bd985c06dc3 |
+| automation | src/automation/child-runs.ts | 576 | fixed | binding retained / no recognized error surface | src/automation/child-runs.ts:7e0b542f37a20aa655e428c5 |
 | bases | src/bases/client.ts | 486 | fixed | binding retained / no recognized error surface | src/bases/client.ts:6b95d1447e179c1e96dacf9e |
 | bases | src/bases/import.ts | 75 | fixed | binding retained / no recognized error surface | src/bases/import.ts:92597402f1ae35d4e149a26f |
 | bases | src/bases/input.ts | 30 | triaged-follow-up | catch-without-binding | src/bases/input.ts:ebe3ebed142463865ba4146c |
@@ -617,14 +617,14 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/crm.ts | 2754 | fixed | binding retained / no recognized error surface | src/cli/commands/crm.ts:407e90df9c7a840dd0de89eb |
 | cli | src/cli/commands/cron.ts | 79 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:02e8ddab66adf503f54297f1 |
 | cli | src/cli/commands/cron.ts | 119 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:d006d9f3a12597bf174620eb |
-| cli | src/cli/commands/cron.ts | 851 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:b529774125801ecee3a7cfad |
-| cli | src/cli/commands/cron.ts | 959 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:24888fc922bd2f71e6b1c336 |
-| cli | src/cli/commands/cron.ts | 1002 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:e0db278d36dfc386af0f7691 |
-| cli | src/cli/commands/cron.ts | 1034 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:912597df63282d8eee95b7b3 |
-| cli | src/cli/commands/cron.ts | 1196 | triaged-follow-up | catch-without-binding | src/cli/commands/cron.ts:497034230d0a93cb39f7ca5c |
-| cli | src/cli/commands/cron.ts | 1307 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:10725bbda2d8d00ddfc406e9 |
-| cli | src/cli/commands/cron.ts | 1381 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:c60fd754bccf5a1a48321971 |
-| cli | src/cli/commands/cron.ts | 1433 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:004cb83b0ddf423fe9af5476 |
+| cli | src/cli/commands/cron.ts | 856 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:b529774125801ecee3a7cfad |
+| cli | src/cli/commands/cron.ts | 964 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:24888fc922bd2f71e6b1c336 |
+| cli | src/cli/commands/cron.ts | 1007 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:e0db278d36dfc386af0f7691 |
+| cli | src/cli/commands/cron.ts | 1039 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:912597df63282d8eee95b7b3 |
+| cli | src/cli/commands/cron.ts | 1201 | triaged-follow-up | catch-without-binding | src/cli/commands/cron.ts:497034230d0a93cb39f7ca5c |
+| cli | src/cli/commands/cron.ts | 1312 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:10725bbda2d8d00ddfc406e9 |
+| cli | src/cli/commands/cron.ts | 1386 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:c60fd754bccf5a1a48321971 |
+| cli | src/cli/commands/cron.ts | 1438 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:004cb83b0ddf423fe9af5476 |
 | cli | src/cli/commands/daemon.ts | 111 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:83e88e29b98541a715ba95c9 |
 | cli | src/cli/commands/daemon.ts | 114 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:5c67dde5c37f215d912cdf0d |
 | cli | src/cli/commands/daemon.ts | 149 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:3252e4a28013452b12c3c4af |
@@ -904,15 +904,15 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/tools.ts | 364 | triaged-follow-up | catch-without-binding | src/cli/commands/tools.ts:5c5b39b59d2edaedf71adbfb |
 | cli | src/cli/commands/tools.ts | 437 | triaged-follow-up | catch-without-binding | src/cli/commands/tools.ts:3a90a53358669b24202da9d4 |
 | transcription | src/cli/commands/transcribe.ts | 82 | fixed | binding retained / no recognized error surface | src/cli/commands/transcribe.ts:41b5a4da5f06e871f38715e8 |
-| cli | src/cli/commands/triggers.ts | 563 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:e68c5b3d4bddc89d5bc957b0 |
-| cli | src/cli/commands/triggers.ts | 920 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:c18580878ea50cac91acd6fc |
-| cli | src/cli/commands/triggers.ts | 928 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:f639b4ea593dffb1f7546781 |
-| cli | src/cli/commands/triggers.ts | 1058 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:78108f66cba5148f81d7a228 |
-| cli | src/cli/commands/triggers.ts | 1099 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:57833e751b92db2057cf6212 |
-| cli | src/cli/commands/triggers.ts | 1131 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:123958521b195f02ca075b66 |
-| cli | src/cli/commands/triggers.ts | 1363 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:f45789305da03b5f801eb2b5 |
-| cli | src/cli/commands/triggers.ts | 1426 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:6afdd45893577312faf8ac24 |
-| cli | src/cli/commands/triggers.ts | 1487 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:7a08226adeb271f19ef0aac9 |
+| cli | src/cli/commands/triggers.ts | 568 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:e68c5b3d4bddc89d5bc957b0 |
+| cli | src/cli/commands/triggers.ts | 932 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:c18580878ea50cac91acd6fc |
+| cli | src/cli/commands/triggers.ts | 940 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:f639b4ea593dffb1f7546781 |
+| cli | src/cli/commands/triggers.ts | 1070 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:78108f66cba5148f81d7a228 |
+| cli | src/cli/commands/triggers.ts | 1111 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:57833e751b92db2057cf6212 |
+| cli | src/cli/commands/triggers.ts | 1143 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:123958521b195f02ca075b66 |
+| cli | src/cli/commands/triggers.ts | 1402 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:f45789305da03b5f801eb2b5 |
+| cli | src/cli/commands/triggers.ts | 1465 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:6afdd45893577312faf8ac24 |
+| cli | src/cli/commands/triggers.ts | 1526 | fixed | binding retained / no recognized error surface | src/cli/commands/triggers.ts:7a08226adeb271f19ef0aac9 |
 | cli | src/cli/commands/update.ts | 261 | triaged-follow-up | catch-without-binding | src/cli/commands/update.ts:35bb94b5f65dda0c3dc10610 |
 | cli | src/cli/commands/update.ts | 275 | triaged-follow-up | catch-without-binding | src/cli/commands/update.ts:5595b1c0101d56d7095f155e |
 | cli | src/cli/commands/update.ts | 320 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/update.ts:c3087cc8cd175cfa03f6a954 |
@@ -1138,24 +1138,24 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cron | src/cron/failure-notification.ts | 311 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:98c131f44f660ecbd2faaadd |
 | cron | src/cron/failure-notification.ts | 378 | fixed | binding retained / no recognized error surface | src/cron/failure-notification.ts:872eccb90cc73e208afc46cb |
 | cron | src/cron/runner.ts | 157 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:a67e22487d87b0d4e3fabe92 |
-| cron | src/cron/runner.ts | 194 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:e319db265d99dc0086b354de |
-| cron | src/cron/runner.ts | 218 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:d15c97abfdc45d2e8fa9a5ee |
-| cron | src/cron/runner.ts | 230 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:db0192ab475d119642c64e2e |
-| cron | src/cron/runner.ts | 238 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:eddfbc2ef9930771925de5f2 |
-| cron | src/cron/runner.ts | 250 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:742bfb3b5d8d5d82856f4eec |
-| cron | src/cron/runner.ts | 306 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:fc2cdecb2aeccf630df7a4a8 |
-| cron | src/cron/runner.ts | 356 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:c797d567e8c78c6703f0019a |
-| cron | src/cron/runner.ts | 437 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:f46da2fce5ae9ed844b1e742 |
-| cron | src/cron/runner.ts | 488 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:bbcdac1e2615db6d8dec1a38 |
-| cron | src/cron/runner.ts | 635 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:5330acdaef56e91c95ddf82c |
-| cron | src/cron/runner.ts | 656 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:c47c8a50008567bd304f8d72 |
-| cron | src/cron/runner.ts | 686 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:84c8fe96035d9d18e92887dc |
-| cron | src/cron/runner.ts | 736 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:14decf9d11378a3b03305156 |
-| cron | src/cron/runner.ts | 985 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:14deef8e6d72ff49512fc0bf |
-| cron | src/cron/runner.ts | 1088 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:a2be358361197f4a1e5cef9a |
-| cron | src/cron/runner.ts | 1113 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:744bbd117084af26649ef29c |
-| cron | src/cron/runner.ts | 1137 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:5a991c30aac091d8da223934 |
-| cron | src/cron/runner.ts | 1143 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:eaecf8e2bd7d2885c9130909 |
+| cron | src/cron/runner.ts | 196 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:e319db265d99dc0086b354de |
+| cron | src/cron/runner.ts | 220 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:d15c97abfdc45d2e8fa9a5ee |
+| cron | src/cron/runner.ts | 232 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:db0192ab475d119642c64e2e |
+| cron | src/cron/runner.ts | 240 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:eddfbc2ef9930771925de5f2 |
+| cron | src/cron/runner.ts | 252 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:742bfb3b5d8d5d82856f4eec |
+| cron | src/cron/runner.ts | 308 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:fc2cdecb2aeccf630df7a4a8 |
+| cron | src/cron/runner.ts | 358 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:c797d567e8c78c6703f0019a |
+| cron | src/cron/runner.ts | 439 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:f46da2fce5ae9ed844b1e742 |
+| cron | src/cron/runner.ts | 490 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:bbcdac1e2615db6d8dec1a38 |
+| cron | src/cron/runner.ts | 637 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:5330acdaef56e91c95ddf82c |
+| cron | src/cron/runner.ts | 658 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:c47c8a50008567bd304f8d72 |
+| cron | src/cron/runner.ts | 688 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:84c8fe96035d9d18e92887dc |
+| cron | src/cron/runner.ts | 738 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:14decf9d11378a3b03305156 |
+| cron | src/cron/runner.ts | 987 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:14deef8e6d72ff49512fc0bf |
+| cron | src/cron/runner.ts | 1090 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:a2be358361197f4a1e5cef9a |
+| cron | src/cron/runner.ts | 1115 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:744bbd117084af26649ef29c |
+| cron | src/cron/runner.ts | 1139 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:5a991c30aac091d8da223934 |
+| cron | src/cron/runner.ts | 1145 | fixed | binding retained / no recognized error surface | src/cron/runner.ts:eaecf8e2bd7d2885c9130909 |
 | cron | src/cron/schedule.ts | 42 | triaged-follow-up | catch-without-binding | src/cron/schedule.ts:2b46c8ca013c56a26edd2e09 |
 | cron | src/cron/schedule.ts | 63 | triaged-follow-up | catch-without-binding | src/cron/schedule.ts:613ff03ae8445d303ad9e180 |
 | cron | src/cron/shell-context.ts | 98 | fixed | binding retained / no recognized error surface | src/cron/shell-context.ts:e7576672a6981834ff9e1aa0 |
@@ -2364,15 +2364,15 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | triggers | src/triggers/runner.ts | 646 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:cee3b0f994ca17f85eee5244 |
 | triggers | src/triggers/runner.ts | 654 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:b090483fd14e6839c04b29a3 |
 | triggers | src/triggers/runner.ts | 725 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:ebee8337f2dc263d32e180e8 |
-| triggers | src/triggers/runner.ts | 1061 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:c1c1d21b8891b641b4aa81aa |
-| triggers | src/triggers/runner.ts | 1068 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:5224d882677d963992e3c28e |
-| triggers | src/triggers/runner.ts | 1161 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:09388027ac2df7f2cec67567 |
-| triggers | src/triggers/runner.ts | 1353 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:d14c664694286369de3e6fbe |
-| triggers | src/triggers/runner.ts | 1377 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:aa360b558f3a8f49f5481484 |
-| triggers | src/triggers/runner.ts | 1491 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:f8c23e28c45f28fab923300a |
-| triggers | src/triggers/runner.ts | 1508 | triaged-follow-up | rejection-without-binding | src/triggers/runner.ts:2a64131ac5e4f6832e8265d6 |
-| triggers | src/triggers/runner.ts | 1544 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:50ee05b1b307f84258692b5e |
-| triggers | src/triggers/runner.ts | 1588 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:98d070593ad0a160c67acebc |
+| triggers | src/triggers/runner.ts | 1062 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:c1c1d21b8891b641b4aa81aa |
+| triggers | src/triggers/runner.ts | 1069 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:5224d882677d963992e3c28e |
+| triggers | src/triggers/runner.ts | 1162 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:09388027ac2df7f2cec67567 |
+| triggers | src/triggers/runner.ts | 1354 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:d14c664694286369de3e6fbe |
+| triggers | src/triggers/runner.ts | 1378 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:aa360b558f3a8f49f5481484 |
+| triggers | src/triggers/runner.ts | 1492 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:f8c23e28c45f28fab923300a |
+| triggers | src/triggers/runner.ts | 1509 | triaged-follow-up | rejection-without-binding | src/triggers/runner.ts:2a64131ac5e4f6832e8265d6 |
+| triggers | src/triggers/runner.ts | 1545 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:50ee05b1b307f84258692b5e |
+| triggers | src/triggers/runner.ts | 1589 | fixed | binding retained / no recognized error surface | src/triggers/runner.ts:98d070593ad0a160c67acebc |
 | triggers | src/triggers/shell-env-file.ts | 52 | fixed | binding retained / no recognized error surface | src/triggers/shell-env-file.ts:d1d19eafa3e41c1a6f2e98b1 |
 | triggers | src/triggers/shell-env-file.ts | 196 | fixed | binding retained / no recognized error surface | src/triggers/shell-env-file.ts:38a87581adb392a895da7126 |
 | triggers | src/triggers/triggers-db.ts | 67 | triaged-follow-up | catch-without-binding | src/triggers/triggers-db.ts:18050dd160921a6db0880e71 |

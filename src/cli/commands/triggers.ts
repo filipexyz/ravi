@@ -421,6 +421,11 @@ function resolveTriggerThreadReportTo(
 ): string | undefined {
   const ref = reportTo?.trim() || creatingSession;
   if (!ref) return undefined;
+  // Checked before anything about the session is said: one the caller may not touch reads as missing.
+  const scopeCtx = getScopeContext();
+  if (reportTo?.trim() && isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, ref)) {
+    fail(`Report-to session not found: ${ref}`);
+  }
   let target = resolveSession(ref);
   if (!target || isTriggerOwnSessionKey(target.sessionKey)) fail(`Report-to session not found: ${ref}`);
   const creatingRun = reportTo?.trim() ? null : findChildRunByChildSession(target!.sessionKey);
@@ -880,6 +885,13 @@ export class TriggersCommands {
     if (reportTo !== undefined && !thread) {
       failTriggerUsage("--report-to only applies with --thread", "add --thread, or drop --report-to", asJson);
     }
+    if (thread && replySessionOverride !== undefined) {
+      failTriggerUsage(
+        "--reply-session does not apply with --thread: a thread trigger's fires reach no chat and report to --report-to",
+        "replace --reply-session with --report-to",
+        asJson,
+      );
+    }
     if (session?.trim() === "thread") {
       failTriggerUsage(
         "Use --thread for a session per fire; thread is not a session name",
@@ -1211,6 +1223,11 @@ export class TriggersCommands {
           if (!shellCommand) {
             fail("Shell command cannot be empty");
           }
+          if (trigger!.session === "thread") {
+            fail(
+              `A thread trigger runs agent fires only: set its session first (ravi triggers set ${id} session main)`,
+            );
+          }
           updated = update({
             executionType: "shell",
             shellCommand,
@@ -1271,6 +1288,10 @@ export class TriggersCommands {
               fail(`Agent not found: ${agentId}`);
             }
           }
+          if (trigger!.session === "thread" && trigger!.replySession) {
+            // A thread trigger's fires report to a session of its own agent: the pair stays valid.
+            resolveTriggerThreadReportTo(undefined, trigger!.replySession, agentId ?? getDefaultAgentId());
+          }
           updated = update({ agentId });
           normalizedValue = agentId ?? null;
           logHuman(`✓ Agent set: ${id} -> ${agentId ?? "(default)"}`);
@@ -1289,6 +1310,19 @@ export class TriggersCommands {
           const error = sessionTargetError(value) ?? triggerSessionTargetError(value);
           if (error) fail(error);
           const session = value.trim();
+          if (session === "thread") {
+            if ((trigger!.executionType ?? "agent") === "shell") {
+              fail("A shell trigger cannot run in thread mode: thread runs are agent fires");
+            }
+            if (trigger!.replySession) {
+              resolveTriggerThreadReportTo(undefined, trigger!.replySession, trigger!.agentId ?? getDefaultAgentId());
+            }
+          }
+          if (session === "isolated") {
+            logHuman(
+              "Warning: session isolated is deprecated: use thread. Keep isolated only for a trigger that reads Bases as its owner.",
+            );
+          }
           updated = update({ session });
           normalizedValue = session;
           logHuman(`✓ Session set: ${id} -> ${session}`);
@@ -1326,7 +1360,12 @@ export class TriggersCommands {
           // for a clear request would leave the column unchanged. Use `null`
           // to force the SQL UPDATE to set reply_session = NULL.
           const cleared = value === "null" || value === "-";
-          const replySession: string | null = cleared ? null : value.trim();
+          let replySession: string | null = cleared ? null : value.trim();
+          if (trigger!.session === "thread" && replySession) {
+            // Stored by key, and only a lasting session of the trigger's own agent: its fires report there.
+            replySession =
+              resolveTriggerThreadReportTo(replySession, undefined, trigger!.agentId ?? getDefaultAgentId()) ?? null;
+          }
           updated = update({ replySession });
           normalizedValue = replySession;
           logHuman(`✓ Reply session set: ${id} -> ${replySession ?? "(none)"}`);

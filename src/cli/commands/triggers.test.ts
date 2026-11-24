@@ -1803,6 +1803,49 @@ describe("TriggersCommands --thread", () => {
     expect(warnings.join("\n")).toContain("reads Bases as its owner");
   });
 
+  it("refuses --reply-session with --thread", async () => {
+    const withReplySession = () =>
+      new TriggersCommands().add(
+        "watch",
+        "ravi.test.thread",
+        "hello",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "some-session",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+    await expect(withReplySession()).rejects.toThrow(/--reply-session does not apply with --thread/);
+    expect(createdTriggers).toHaveLength(0);
+  });
+
+  it("keeps a thread trigger runnable on set: no report-to of another agent", async () => {
+    const { getOrCreateSession } = await import("../../router/sessions.js");
+    getOrCreateSession("agent:main:slack:dm:set-parent", "main", "/tmp/main", { name: "set-parent" });
+    getOrCreateSession("agent:other:slack:dm:set-other", "other", "/tmp/other", { name: "set-other" });
+
+    triggerRecord = {
+      ...buildTriggerRecord(),
+      executionType: "agent",
+      agentId: "main",
+      session: "thread",
+      replySession: "agent:main:slack:dm:set-parent",
+    };
+    await expect(new TriggersCommands().set("trg_1", "replySession", "set-other", true)).rejects.toThrow(
+      /belongs to other/,
+    );
+    triggerRecord = buildTriggerRecord();
+  });
+
   it("stores thread mode reporting to a lasting session of the trigger's agent", async () => {
     const { getOrCreateSession } = await import("../../router/sessions.js");
     getOrCreateSession("agent:main:slack:dm:thread-parent", "main", "/tmp/main", { name: "thread-parent" });

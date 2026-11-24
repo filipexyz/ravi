@@ -214,6 +214,25 @@ describe("trigger thread mode", () => {
     expect(fires()[1]!.sessionName).not.toBe(first.sessionName);
   });
 
+  it("releases the runtime of a run its child already closed, when its turn ends", async () => {
+    const { closeChildRun, getChildRun: readRun } = await import("../../automation/child-runs.js");
+    const trigger = createThreadTrigger();
+    await startRunner();
+    emit({ id: 1 });
+    await waitFor(() => fires().length === 1);
+    const fire = fires()[0]!;
+    const [run] = listChildRunsForOrigin("trigger", trigger.id);
+    await closeChildRun(readRun(run!.id)!, { kind: "result", text: "resultado explícito" });
+
+    endTurn(fire.sessionName, { type: "turn.complete" });
+    await waitFor(() =>
+      emittedEvents.some(
+        (event) => event.topic === "ravi.session.abort" && event.data.sessionName === fire.sessionName,
+      ),
+    );
+    expect(returns()).toHaveLength(1);
+  });
+
   it("sends one classified error when the run's turn fails", async () => {
     createThreadTrigger();
     await startRunner();

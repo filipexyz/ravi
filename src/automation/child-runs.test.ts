@@ -131,6 +131,25 @@ describe("pruning", () => {
   });
 });
 
+describe("pruning a renamed run", () => {
+  it("keeps the messages of a live session that now goes by the run's old name", async () => {
+    const { updateSessionName } = await import("../router/sessions.js");
+    const run = openRun("r-renamed");
+    updateSessionName(run.childSessionKey, "agent-a-renamed-run");
+    getOrCreateSession("agent:agent-a:other", "agent-a", stateDir!, { name: run.childSessionName });
+    saveMessage(run.childSessionName, "assistant", "do outro dono do nome", null, { utteranceClass: "final" });
+    await closeChildRun(run, null);
+
+    expect(pruneClosedChildRuns("cron", "job-1", 0)).toEqual([run.childSessionKey]);
+    const kept = getChatDb()
+      .query("SELECT COUNT(*) AS n FROM messages WHERE session_id = ?")
+      .get(run.childSessionName) as {
+      n: number;
+    };
+    expect(kept.n).toBe(1);
+  });
+});
+
 describe("reconciliation", () => {
   it("delivers a pending return again", async () => {
     const run = openRun("r-pending");

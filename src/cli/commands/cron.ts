@@ -311,6 +311,11 @@ function resolveThreadReportTo(
 ): string | undefined {
   const ref = reportTo?.trim() || creatingSession;
   if (!ref) return undefined;
+  // Checked before anything about the session is said: one the caller may not touch reads as missing.
+  const scopeCtx = getScopeContext();
+  if (reportTo?.trim() && isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, ref)) {
+    fail(`Report-to session not found: ${ref}`);
+  }
   let session = resolveSession(ref);
   if (!session || isTriggerOwnSessionKey(session.sessionKey)) {
     fail(`Report-to session not found: ${ref}`);
