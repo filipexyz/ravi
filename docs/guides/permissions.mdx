@@ -143,6 +143,8 @@ As of 19 Nov 2026, app composition is in `@next` and not yet in `@latest`. Compo
 
 Three contact tags grant `admin:system:*`: `permission-admin`, `permission-owner` and `permission-superadmin`. They count only while the contact's status is `allowed` and the contact has not opted out.
 
+These tags, and any profile that carries `admin:system:*` or `execute:executable:*`, are break-glass. Only your terminal can add them to a contact; an agent turn is refused even at `full-access`. `ravi permissions allow --apply` refuses any break-glass profile, whatever its name, for everyone: a contact gets full access only through `ravi permissions request full-access` and your approval. A permission profile definition cannot carry break-glass capabilities.
+
 ```bash
 ravi contacts tag <contact-id> permission-owner     # applies immediately, no dry-run
 ravi permissions materialize --subject-type contact --subject-id <contact-id>
@@ -173,16 +175,14 @@ A chat becomes governed as soon as any contact holds a grant scoped to it. In a 
   </Step>
   <Step title="Plan the grant">
     ```bash
-    ravi permissions allow chat-admin --to contact:<owner-id> --chat <chat-id> \
-      --agent main --capabilities 'admin:system:*'
+    ravi permissions allow chat-only --to contact:<owner-id> --chat <chat-id>
     ```
 
-    Without `--apply` this prints a plan (`permission allow plan`) and the exact apply command. Nothing is written.
+    Any grant governs the chat, and the owner's admin tag keeps full power inside it, so the grant needs no power of its own. Without `--apply` this prints a plan (`permission allow plan`) and the exact apply command. Nothing is written. A profile carrying `admin:system:*` or `execute:executable:*` gets no apply command: it is break-glass and goes through `ravi permissions request full-access`.
   </Step>
   <Step title="Apply and check">
     ```bash
-    ravi permissions allow chat-admin --to contact:<owner-id> --chat <chat-id> \
-      --agent main --capabilities 'admin:system:*' --apply
+    ravi permissions allow chat-only --to contact:<owner-id> --chat <chat-id> --apply
     ravi permissions list --chat <chat-id>
     ```
   </Step>
@@ -191,7 +191,7 @@ A chat becomes governed as soon as any contact holds a grant scoped to it. In a 
 Grant other members their own profiles the same way, with only the capabilities they need. Revoke with `deny`; when the last grant in a chat is gone, the chat is no longer governed:
 
 ```bash
-ravi permissions deny chat-admin --to contact:<id> --chat <chat-id> --apply
+ravi permissions deny chat-only --to contact:<id> --chat <chat-id> --apply
 ```
 
 <Warning>
