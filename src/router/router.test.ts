@@ -34,6 +34,7 @@ import {
   dbUpsertChatMessage,
   dbUpsertInstance,
   closeRouterDb,
+  ensureAgentDefaultsCapability,
   getDb,
   warnBackfilledSlackChannelsWithoutConnection,
 } from "./router-db.js";
@@ -972,5 +973,61 @@ describe("agent defaults break-glass sink", () => {
 
     dbUpdateAgent("sink-victim", { defaults: { runtimePermissions: { profile: "full-access" } } });
     expect(JSON.stringify(dbGetAgent("sink-victim")?.defaults ?? {})).toContain("full-access");
+  });
+});
+
+// Review N9: ensureAgentDefaultsCapability writes agents.defaults by SQL,
+// outside dbUpdateAgent, so it runs the same break-glass rule.
+describe("agent defaults capability writer keeps the break-glass rule", () => {
+  let writerStateDir: string | null = null;
+
+  beforeEach(async () => {
+    writerStateDir = await createIsolatedRaviState("ravi-router-defaults-writer-");
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(writerStateDir);
+    writerStateDir = null;
+  });
+
+  it("refuses a break-glass capability from an agent turn and keeps view capabilities", () => {
+    dbCreateAgent({ id: "writer-victim", cwd: "/tmp" });
+    const agentTurn: ToolContext = {
+      contextId: "ctx_writer",
+      agentId: "writer-admin",
+      sessionKey: "agent:writer-admin:main",
+      sessionName: "writer-admin-main",
+      context: {
+        contextId: "ctx_writer",
+        contextKey: "rctx_writer",
+        kind: "agent-runtime",
+        agentId: "writer-admin",
+        sessionKey: "agent:writer-admin:main",
+        sessionName: "writer-admin-main",
+        capabilities: [{ permission: "admin", objectType: "system", objectId: "*", source: "test" }],
+        createdAt: 0,
+      },
+    };
+    runWithContext(agentTurn, () => {
+      let error: unknown = null;
+      try {
+        ensureAgentDefaultsCapability(getDb(), "writer-victim", {
+          permission: "admin",
+          objectType: "system",
+          objectId: "*",
+        });
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error).toMatchObject({ code: "FULL_ACCESS_APPROVAL_REQUIRED" });
+      expect(
+        ensureAgentDefaultsCapability(getDb(), "writer-victim", {
+          permission: "view",
+          objectType: "agent",
+          objectId: "*",
+        }),
+      ).toBe(true);
+    });
+    expect(JSON.stringify(dbGetAgent("writer-victim")?.defaults ?? {})).not.toContain("admin");
   });
 });

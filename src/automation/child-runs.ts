@@ -346,14 +346,18 @@ export function clipChildRunReturn(text: string): string {
 
 const clip = clipChildRunReturn;
 
-/** Every line break a reader may honour: \r\n, \r, \n, NEL, LS and PS. */
-const LINE_BREAKS = /\r\n|[\r\n\u0085\u2028\u2029]/;
+/**
+ * Anything a reader may take for the end of a line: every control character but tab (C0, DEL and C1,
+ * which include LF, CR, VT, FF, the FS/GS/RS separators and NEL) and the Unicode line and paragraph
+ * separators.
+ */
+const LINE_BREAKS = /\r\n|(?!\t)[\p{Cc}\p{Zl}\p{Zp}]/u;
 
 function runLabel(run: AutomationChildRun): string {
-  // The name is free text: quoted as JSON on the notice's first line, with the separators JSON leaves
-  // raw (NEL, LS, PS) escaped too, so no reader can see it start a new line.
+  // The name is free text: quoted as JSON on the notice's first line, with what JSON leaves raw
+  // (DEL, the C1 controls with NEL, LS, PS) escaped too, so no reader can see it start a new line.
   const quoted = JSON.stringify(run.originName).replace(
-    /[\u0085\u2028\u2029]/g,
+    /[\p{Cc}\p{Zl}\p{Zp}]/gu,
     (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`,
   );
   return `${run.originKind} ${quoted} (${run.childSessionName})`;
