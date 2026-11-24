@@ -215,6 +215,15 @@ export interface RuntimeAbortProvenance {
   request?: unknown;
 }
 
+/**
+ * Prompts whose turn runs their own text only: a trigger fire that lends its owner's authority, and
+ * an observation notice (its turn is observer-originated, so a person's text riding along would go
+ * unobserved). Held `!!` text never joins them.
+ */
+function promptRunsOnlyItsOwnText(prompt: RuntimeLaunchPrompt): boolean {
+  return triggerAuthorityLendsOwner(prompt._triggerAuthority) || prompt._observationNotice !== undefined;
+}
+
 export class RuntimeSessionDispatcher {
   readonly streamingSessions = new Map<string, RuntimeHostStreamingSession>();
   readonly debounceStates = new Map<string, DebounceState>();
@@ -2654,8 +2663,9 @@ export class RuntimeSessionDispatcher {
   ): void {
     const debounce = this.debounceStates.get(sessionName);
     const lastDebounced = debounce?.messages.at(-1);
-    // Never onto a trigger fire that lends its owner's authority: `!!` text is someone else's.
-    if (debounce && lastDebounced && !triggerAuthorityLendsOwner(lastDebounced._triggerAuthority)) {
+    // Never onto a trigger fire that lends its owner's authority, nor onto an observation notice
+    // (an observer turn emits no observation events): `!!` text is someone else's.
+    if (debounce && lastDebounced && !promptRunsOnlyItsOwnText(lastDebounced)) {
       // Ride along with the batch that is already waiting so arrival order
       // holds, without extending its window.
       debounce.messages[debounce.messages.length - 1] = appendSkipTurnText(lastDebounced, prompt);
@@ -2699,9 +2709,9 @@ export class RuntimeSessionDispatcher {
     if (prompt._deferRuntimeStart || prompt._resumeStashedMessages || prompt._daemonRestartResume) {
       return prompt;
     }
-    // A trigger fire that lends its owner's authority runs its own text only;
-    // the held `!!` text waits for the next turn.
-    if (triggerAuthorityLendsOwner(prompt._triggerAuthority)) {
+    // A trigger fire that lends its owner's authority, and an observation notice, run their own
+    // text only; the held `!!` text waits for the next turn.
+    if (promptRunsOnlyItsOwnText(prompt)) {
       return prompt;
     }
     const held = this.heldSkipTurnMessages.get(sessionName);

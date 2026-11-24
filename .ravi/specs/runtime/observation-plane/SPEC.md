@@ -144,8 +144,8 @@ Every way a source turn ends MUST reach end-of-turn observers with a terminal ev
 A binding MAY carry `metadata.when`, a list of conditions from `src/runtime/observation-conditions.ts`. Such a binding delivers only at end of turn and only when one of its conditions holds for the finished turn; it is skipped otherwise (`no_condition`), and never evaluated on a realtime, debounce or pulse view of a turn. Conditions are computed by the daemon from event types and runtime-set payload fields, never from message text:
 
 - `turn.no_final_reply`: the turn ended with no agent reply after the person's message, or the agent worked (tool events) after its last reply. An intentional silence (`turn.complete` with `silent: true`) does not count.
-- `chat.narration`: two or more agent replies (commentary excluded) in one turn.
-- `turn.failed`, `turn.interrupt`: the terminal type, with the runtime reason.
+- `chat.narration`: two or more agent replies in one turn that a chat could see (commentary and replies of a turn whose chat emit is suppressed, such as a work thread, are excluded; `message.assistant` carries `chatEmitted`).
+- `turn.failed`, `turn.interrupt`: the terminal type, with the runtime reason code (`reason` or `abortReason`), never provider error text, because condition lines sit outside the data boundary.
 - `tool.idle`: a `tool.inactive` event in the turn.
 
 The delivery carries the condition lines (`⚠ <condition> (turn <id>): <detail>`) outside the data boundary and the condition names in its metadata. A rule with `metadata.when` MUST use `end_of_turn` delivery; unknown condition names are rejected. A condition-gated binding MUST NOT arm a pulse. When the binding's profile has no `{{delivery.conditions}}` placeholder (another profile or an older snapshot), the condition lines MUST be prepended to the prompt.
