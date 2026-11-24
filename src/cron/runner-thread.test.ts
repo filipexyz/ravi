@@ -32,16 +32,6 @@ mock.module("../omni/session-stream.js", () => ({
   }),
 }));
 
-const undeliveredNotices: Array<Record<string, unknown>> = [];
-const actualFailureNotification = await import("./failure-notification.js");
-mock.module("./failure-notification.js", () => ({
-  ...actualFailureNotification,
-  notifyUndeliveredRunReturn: mock(async (run: Record<string, unknown>) => {
-    undeliveredNotices.push(run);
-    return true;
-  }),
-}));
-
 const { CronRunner, THREAD_RUN_STALE_MS } = await import("./runner.js");
 const { getDb } = await import("../router/router-db.js");
 const { dbCreateCronJob, dbGetCronJob } = await import("./cron-db.js");
@@ -338,26 +328,25 @@ describe("cron thread mode", () => {
         "UPDATE automation_child_runs SET status = 'closed', return_state = 'pending', return_kind = 'result', return_text = 'x', closed_at = ? WHERE id = 'tr-1'",
       )
       .run(Date.now() - 25 * 60 * 60_000);
-    undeliveredNotices.length = 0;
+    const { listLocalInboxItems } = await import("../inbox/local-db.js");
+    const notice = () =>
+      listLocalInboxItems().find(
+        (item) => item.sourceType === "run_return_undelivered" && item.sourceId === trigger.id,
+      );
     const runner = new CronRunner();
 
+    // The real notice, no module mock (one would leak into other files of the same process): with no
+    // owner chat here, it is recorded in the inbox and settled.
     await runner.start();
     try {
       const deadline = Date.now() + 3_000;
-      while (undeliveredNotices.length === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+      while (!notice() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
     } finally {
       await runner.stop();
     }
 
-    expect(undeliveredNotices).toEqual([
-      expect.objectContaining({
-        originKind: "trigger",
-        originId: trigger.id,
-        ownerPrincipal: "operator",
-        runId: "tr-1",
-        parentSessionName: "grupo-updates",
-      }),
-    ]);
+    expect(notice()).toMatchObject({ sourceDomain: "triggers", sourceId: trigger.id });
+    expect(notice()!.metadata).toMatchObject({ runId: "tr-1", originKind: "trigger", ownerPrincipal: "operator" });
     expect(getChildRun("tr-1")).toMatchObject({ returnState: "error" });
   });
 
