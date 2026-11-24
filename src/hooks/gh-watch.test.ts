@@ -1342,6 +1342,8 @@ describe("durable PR follow owner", () => {
     expect(message).toContain("`ravi sessions report`");
     expect(message).toContain("the CI conclusion on the head SHA");
     expect(message).toContain("if you are not a thread, ignore this sentence");
+    // A thread whose gate just passed reports again with --pr, so the runtime opens the review once the gate closes.
+    expect(message).toContain("`ravi sessions report --awaiting review --ref <full head SHA> --pr o/r#7");
   });
 
   it("keeps an open thread's follow with the thread when another session observes the PR", async () => {
