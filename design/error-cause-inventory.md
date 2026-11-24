@@ -741,8 +741,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/pages.ts | 1533 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:23b402e772b919537c1430af |
 | cli | src/cli/commands/pages.ts | 2405 | fixed | binding retained / no recognized error surface | src/cli/commands/pages.ts:3782eede5f9231e775e0fc9c |
 | cli | src/cli/commands/pages.ts | 2835 | triaged-follow-up | surface-bypasses-constructor | src/cli/commands/pages.ts:e2474b6819dd57cf210efcfa |
-| permissions | src/cli/commands/permissions.ts | 1176 | fixed | binding retained / no recognized error surface | src/cli/commands/permissions.ts:50df5461a8d7f99878a3460b |
-| permissions | src/cli/commands/permissions.ts | 1213 | fixed | binding retained / no recognized error surface | src/cli/commands/permissions.ts:50df5461a8d7f99878a3460b |
+| permissions | src/cli/commands/permissions.ts | 1183 | fixed | binding retained / no recognized error surface | src/cli/commands/permissions.ts:50df5461a8d7f99878a3460b |
+| permissions | src/cli/commands/permissions.ts | 1220 | fixed | binding retained / no recognized error surface | src/cli/commands/permissions.ts:50df5461a8d7f99878a3460b |
 | cli | src/cli/commands/pr.ts | 124 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:6dc250c56e86cef1e8a12b0a |
 | cli | src/cli/commands/pr.ts | 191 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:f2cfbe4db8427d9da814ffde |
 | cli | src/cli/commands/pr.ts | 211 | fixed | binding retained / no recognized error surface | src/cli/commands/pr.ts:5542d2a05595df529681fc30 |
@@ -1762,9 +1762,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | permissions | src/permissions/external-authority-provider.ts | 279 | triaged-follow-up | catch-without-binding | src/permissions/external-authority-provider.ts:ea3cce06a9b84d07571d739f |
 | permissions | src/permissions/external-authority-provider.ts | 324 | fixed | binding retained / no recognized error surface | src/permissions/external-authority-provider.ts:246ebf20a63fb8171d85dfd7 |
 | permissions | src/permissions/grant-requests/runner.ts | 15 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/runner.ts:0af4833007804829812bb722 |
-| permissions | src/permissions/grant-requests/service.ts | 224 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:97faa890175ca9178433118e |
-| permissions | src/permissions/grant-requests/service.ts | 336 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:f40c7396592b295b1f24760b |
-| permissions | src/permissions/grant-requests/service.ts | 366 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:463fd044a194df89861eef7a |
+| permissions | src/permissions/grant-requests/service.ts | 256 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:97faa890175ca9178433118e |
+| permissions | src/permissions/grant-requests/service.ts | 368 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:f40c7396592b295b1f24760b |
+| permissions | src/permissions/grant-requests/service.ts | 398 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/service.ts:463fd044a194df89861eef7a |
 | permissions | src/permissions/grant-requests/store.ts | 290 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/store.ts:4d2c02c75762345efbd4df15 |
 | permissions | src/permissions/grant-requests/store.ts | 301 | fixed | binding retained / no recognized error surface | src/permissions/grant-requests/store.ts:0f6e90634e8a1fecf83e5e95 |
 | permissions | src/permissions/provider-config-paths.ts | 59 | fixed | binding retained / no recognized error surface | src/permissions/provider-config-paths.ts:478e4cc0b615ab3752dae1ed |
