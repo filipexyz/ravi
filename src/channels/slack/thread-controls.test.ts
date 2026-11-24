@@ -23,7 +23,7 @@ import {
   stopSlackThreadControls,
 } from "./thread-controls.js";
 import { findSlackThreadForParent, findSlackThreadForParentInChat } from "./thread-lifecycle.js";
-import { registerInboundSlackThread } from "./thread-lifecycle-store.js";
+import { getSlackThreadLifecycle, registerInboundSlackThread } from "./thread-lifecycle-store.js";
 
 const NOW = 1_800_000_000_000;
 const ACCOUNT = "ravi-slack";
@@ -352,6 +352,18 @@ describe("a click becomes the same command, with the authority of the person who
         code: "thread_not_found",
       });
       expect(h.calls.interrupted).toEqual([]);
+    });
+
+    it("closes the thread of the clicked chat through the real close, and leaves the other chat's open (review N2 of #945)", async () => {
+      registerCard();
+      registerInOtherChat(NOW - 60_000);
+      const h = harness();
+
+      const outcome = await handleSlackThreadControlClick(click(), { ...h.deps, closeThread: undefined });
+
+      expect(outcome).toEqual({ decision: "allowed", code: "ok" });
+      expect(getSlackThreadLifecycle("req-card")?.status).toBe("closed");
+      expect(getSlackThreadLifecycle("req-other-chat")?.status).not.toBe("closed");
     });
 
     it("closes under the clicked chat too: the lookup is asked for that chat", async () => {
