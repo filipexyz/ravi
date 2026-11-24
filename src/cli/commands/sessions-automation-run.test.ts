@@ -142,6 +142,37 @@ describe("sessions report / close-thread inside an automation run", () => {
     expect(publishCalls).toHaveLength(0);
   });
 
+  it("refuses another return when, after the command read the run, the runner closed it with its own pending return", async () => {
+    const stale = openRun();
+    // The runner's automatic return A could not be published: the run is closed with A pending.
+    await expect(
+      closeChildRun(
+        getChildRun("run-1")!,
+        { kind: "auto", text: "A" },
+        {
+          dependencies: {
+            publishPrompt: async () => {
+              throw new Error("nats down");
+            },
+          },
+        },
+      ),
+    ).rejects.toThrow("nats down");
+    expect(getChildRun("run-1")).toMatchObject({ status: "closed", returnState: "pending", returnText: "A" });
+
+    // The command still holds the open snapshot: B is refused, and A is not published in its name.
+    await expect(quietly(() => new SessionCommands()["closeAutomationRun"](stale, "B", true))).rejects.toThrow(
+      /already closed; this return was not delivered/,
+    );
+    expect(publishCalls).toHaveLength(0);
+
+    // Retrying the very pending return delivers it.
+    const retried = await quietly(() => new SessionCommands()["closeAutomationRun"](stale, "A", true));
+    expect(retried).toMatchObject({ changed: false, parentReturn: { delivered: true, pending: false } });
+    expect(publishCalls).toHaveLength(1);
+    expect(String(publishCalls[0]!.payload.prompt)).toContain("Resultado: A");
+  });
+
   it("refuses the Slack-only wait flags inside a run", async () => {
     openRun();
     await expect(

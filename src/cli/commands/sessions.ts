@@ -156,7 +156,6 @@ import {
 } from "../../channels/slack/thread-lifecycle.js";
 import { resolveSlackThreadRequester } from "../../channels/slack/thread-requester.js";
 import {
-  clipChildRunReturn,
   closeChildRun,
   findChildRunByChildSession,
   reportChildRunProgress,
@@ -7728,27 +7727,18 @@ export class SessionCommands {
 
   /** `close-thread` inside an automation run's child session: close it, returning once when asked. */
   private async closeAutomationRun(run: AutomationChildRun, returnText: string | undefined, asJson?: boolean) {
-    // Never report a return as sent when it was dropped: a closed run takes no new return,
-    // only a retry of the very return still pending.
-    const refuse = (): never => {
+    const result = await closeChildRun(run, returnText ? { kind: "result", text: returnText } : null, {
+      callerContextId: getContext({ localOnly: true })?.contextId,
+    });
+    // Never report a return as sent when it was dropped: a closed run takes no new return, only a retry
+    // of the very return still pending. Decided against the stored run, not the snapshot read above.
+    if (result.refused) {
       throw new CliExpectedError(
         `Run ${run.childSessionName} is already closed; this return was not delivered to ${run.parentSessionName}`,
         "THREAD_CLOSED",
         1,
       );
-    };
-    if (
-      run.status === "closed" &&
-      returnText &&
-      !(run.returnState === "pending" && run.returnText === clipChildRunReturn(returnText))
-    ) {
-      refuse();
     }
-    const result = await closeChildRun(run, returnText ? { kind: "result", text: returnText } : null, {
-      callerContextId: getContext({ localOnly: true })?.contextId,
-    });
-    // The runner may have closed the run between the read above and this close.
-    if (returnText && !result.changed && !result.parentReturnDelivered) refuse();
     const pending = result.run.returnState === "pending";
     const payload = {
       status: result.run.status,

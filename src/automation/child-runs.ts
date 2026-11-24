@@ -295,12 +295,21 @@ export interface CloseChildRunResult {
   run: AutomationChildRun;
   changed: boolean;
   parentReturnDelivered: boolean;
+  /**
+   * The run was already closed (by its child or by the runner) with another
+   * return, or none, than the one requested: nothing was published for this
+   * request, which callers must not report as delivered.
+   */
+  refused: boolean;
 }
 
 /**
  * Close a run. With `returnText` the parent gets it once (kind `result`,
- * `auto` or `error`); without it the run closes silently. Closing a closed run
- * changes nothing, except that a return still pending is delivered again.
+ * `auto` or `error`); without it the run closes silently. A run that is already
+ * closed changes nothing: it only delivers again its own return still pending,
+ * and only when the request is that very return (or asks for none). A request
+ * for any other return on a closed run is `refused`, decided against the row
+ * here and never against the caller's earlier read of it.
  */
 export async function closeChildRun(
   run: AutomationChildRun,
@@ -317,6 +326,9 @@ export async function closeChildRun(
         WHERE id = ? AND status = 'open'`)
       .run(nextState, text ? close!.kind : null, text ?? null, now, now, run.id).changes > 0;
   let current = getChildRun(run.id)!;
+  if (!changed && text !== undefined && current.returnText !== text) {
+    return { run: current, changed, parentReturnDelivered: false, refused: true };
+  }
   let parentReturnDelivered = false;
   if (current.returnState === "pending" && current.returnText && current.returnKind) {
     const messageId = `automation-run-return:${current.id}`;
@@ -330,7 +342,7 @@ export async function closeChildRun(
     parentReturnDelivered = true;
     current = getChildRun(run.id)!;
   }
-  return { run: current, changed, parentReturnDelivered };
+  return { run: current, changed, parentReturnDelivered, refused: false };
 }
 
 /**
