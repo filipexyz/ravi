@@ -286,10 +286,19 @@ The daemon publishes the inventory through the Console sync bridge
   the sync redactor blanks every key ending in "secret". The payload MUST be a
   fixed point of `sanitizeSyncPayload` (nothing for the redactor to remove) and
   MUST NOT contain a secret value, Vault path, key or actor id.
-- A changed inventory is enqueued at most every 15 minutes; an unchanged one
-  every 6 hours as a heartbeat. The content hash ignores `generatedAt`.
-- A snapshot failure never blocks the rest of the tick and logs only the
-  sanitized error.
+- The inventory is built (and the Vault asked) at most every 15 minutes: the
+  throttle runs before the build, on a check cursor written before it, so a
+  failing build also waits. A change goes up at the next check; an unchanged
+  inventory goes up every 6 hours as a heartbeat. The hash ignores
+  `generatedAt`.
+- The runner starts the snapshot in the background, one at a time: push and
+  pull of every domain never wait on the Vault, and a throw or rejection is
+  logged with `sanitizeSyncError` and retried on a later tick.
+- Person-typed text (`label`, `owner`, `purpose`, `scopes`) is capped (200 and
+  100 characters) and token-shaped values (Vault/OpenBao, Slack, GitHub,
+  `sk-`, AWS key ids, JWTs, any unbroken run of 40+ key characters) are
+  replaced with `[redacted]` before the payload is built. These fields are
+  visible to the Console; the Console MUST render them as plain text.
 
 The default `file` backend MUST keep secret bytes in broker-owned private files
 (0700 directory, 0600 files) with atomic writes and strict opaque references.
