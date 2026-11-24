@@ -232,6 +232,8 @@ mock.module("../../router/router-db.js", () => ({
     }),
   }),
   getFirstAccountName: () => firstAccountName,
+  // The WhatsApp account resolver lists the instances: the single WhatsApp account is the one the tests set up.
+  dbListInstances: () => [{ name: firstAccountName, channel: "whatsapp", enabled: true }],
   dbGetInstance: (accountId: string) => ({ instanceId: `instance-${accountId}` }),
   dbGetAgent: (id: string) => knownAgents.get(id) ?? null,
   dbFindChat: () => ({
