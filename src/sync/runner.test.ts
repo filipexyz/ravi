@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { SyncRunner } from "./runner.js";
+import { listPendingOutboxBatch } from "./db.js";
+import { writeCloudCredentials } from "../cloud-auth/storage.js";
+import { closeCredentialsDb, upsertCredentialConnection } from "../credentials/store.js";
 
 let stateDir: string;
 let originalSyncRunnerEnabled: string | undefined;
@@ -125,5 +128,72 @@ describe("SyncRunner", () => {
       { domain: "rules", scope: "organization" },
       { domain: "contacts", scope: "organization" },
     ]);
+  });
+});
+
+describe("SyncRunner credential inventory", () => {
+  const noopBridge = {
+    isLinked: () => false,
+    push: async () => ({ linked: true, status: "noop", attempted: 0, sent: 0, acked: 0, failed: 0 }),
+    pull: async () => ({
+      linked: true,
+      status: "noop",
+      downloaded: 0,
+      enqueued: 0,
+      applied: 0,
+      skipped: 0,
+      failed: 0,
+      cursor: null,
+    }),
+  };
+  let originalInventoryFlag: string | undefined;
+
+  beforeEach(() => {
+    originalInventoryFlag = process.env.RAVI_SYNC_CREDENTIALS_INVENTORY;
+    writeCloudCredentials({
+      version: 1,
+      consoleUrl: "https://console.ravi.bot",
+      installationId: "ins_1",
+      accessToken: "access-test",
+      refreshToken: "refresh-test",
+      accessTokenExpiresAt: null,
+      refreshTokenExpiresAt: null,
+      scopes: ["console.sync.write"],
+      organization: { id: "org_1" },
+      user: { id: "user_1" },
+      createdAt: "2026-11-24T12:00:00.000Z",
+      updatedAt: "2026-11-24T12:00:00.000Z",
+    } as never);
+    upsertCredentialConnection({
+      provider: "github",
+      connection: "ci",
+      backend: "file",
+      secretRef: "file:github/ci",
+      status: "active",
+    });
+  });
+
+  afterEach(() => {
+    if (originalInventoryFlag === undefined) delete process.env.RAVI_SYNC_CREDENTIALS_INVENTORY;
+    else process.env.RAVI_SYNC_CREDENTIALS_INVENTORY = originalInventoryFlag;
+    closeCredentialsDb();
+  });
+
+  async function tickOnce(): Promise<void> {
+    const runner = new SyncRunner({ bridge: noopBridge as never, intervalMs: 60_000, enabled: true });
+    (runner as unknown as { running: boolean }).running = true;
+    await runner.tick();
+  }
+
+  it("enqueues the inventory on a linked tick only when RAVI_SYNC_CREDENTIALS_INVENTORY=1", async () => {
+    delete process.env.RAVI_SYNC_CREDENTIALS_INVENTORY;
+    await tickOnce();
+    expect(listPendingOutboxBatch({ domain: "credentials", limit: 10 }).items).toHaveLength(0);
+
+    process.env.RAVI_SYNC_CREDENTIALS_INVENTORY = "1";
+    await tickOnce();
+    const rows = listPendingOutboxBatch({ domain: "credentials", limit: 10 }).items;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.eventType).toBe("credentials.inventory");
   });
 });

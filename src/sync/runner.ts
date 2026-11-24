@@ -3,6 +3,8 @@ import { readCloudCredentials } from "../cloud-auth/storage.js";
 import { enqueueTraceExportBatch, pushTraceExportBatch } from "../session-trace/cloud-trace-export.js";
 import { createConsoleSyncBridge, type ConsoleSyncBridge } from "./console-bridge.js";
 import { getSyncRuntimeConfig, numberEnv, SYNC_RUNNER_INTERVAL_ENV } from "./config.js";
+import { sanitizeSyncError } from "./redaction.js";
+import { enqueueCredentialInventorySnapshot, isCredentialInventorySyncEnabled } from "../credentials/inventory-sync.js";
 
 const log = logger.child("sync:runner");
 const DEFAULT_INTERVAL_MS = 60_000;
@@ -108,6 +110,15 @@ export class SyncRunner {
             failed: tracePush.failed,
             errorCode: tracePush.errorCode,
           });
+        }
+        if (isCredentialInventorySyncEnabled()) {
+          try {
+            const inventory = await enqueueCredentialInventorySnapshot();
+            if (inventory.status === "enqueued") log.info("Credential inventory enqueued", { hash: inventory.hash });
+          } catch (error) {
+            // The snapshot never blocks the rest of the tick; the reason is fixed text without paths or values.
+            log.warn("Credential inventory snapshot failed", { error: sanitizeSyncError(error) });
+          }
         }
       }
       const push = await this.bridge.push();
