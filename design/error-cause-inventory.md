@@ -881,11 +881,11 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/tag-rules.ts | 260 | fixed | binding retained / no recognized error surface | src/cli/commands/tag-rules.ts:2c45b619b455ce9d7cb8d32f |
 | cli | src/cli/commands/tag-rules.ts | 348 | fixed | binding retained / no recognized error surface | src/cli/commands/tag-rules.ts:d329bd9938b3ecd0ddfca061 |
 | cli | src/cli/commands/tag-rules.ts | 376 | fixed | binding retained / no recognized error surface | src/cli/commands/tag-rules.ts:d8d7d8106e3aa4d6e4f3452e |
-| cli | src/cli/commands/tags.ts | 94 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:c2c2f86e21aa1c638a81631b |
-| cli | src/cli/commands/tags.ts | 649 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:801345fe6d3f37a500ff402f |
-| cli | src/cli/commands/tags.ts | 831 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:78cedc1c19b2ab730c104a5e |
-| cli | src/cli/commands/tags.ts | 972 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:28147ffb7304c1450dd98a2c |
-| cli | src/cli/commands/tags.ts | 1150 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:229582d3d997f2d38df16761 |
+| cli | src/cli/commands/tags.ts | 95 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:c2c2f86e21aa1c638a81631b |
+| cli | src/cli/commands/tags.ts | 667 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:801345fe6d3f37a500ff402f |
+| cli | src/cli/commands/tags.ts | 849 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:78cedc1c19b2ab730c104a5e |
+| cli | src/cli/commands/tags.ts | 990 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:28147ffb7304c1450dd98a2c |
+| cli | src/cli/commands/tags.ts | 1169 | fixed | binding retained / no recognized error surface | src/cli/commands/tags.ts:229582d3d997f2d38df16761 |
 | cli | src/cli/commands/tasks-automations.ts | 103 | fixed | binding retained / no recognized error surface | src/cli/commands/tasks-automations.ts:6a335c9738033cdffcb052e1 |
 | cli | src/cli/commands/tasks-automations.ts | 330 | fixed | binding retained / no recognized error surface | src/cli/commands/tasks-automations.ts:5579a2d508e744aa0948b224 |
 | cli | src/cli/commands/tasks-profiles.ts | 214 | fixed | binding retained / no recognized error surface | src/cli/commands/tasks-profiles.ts:da08d6b34d6512303bf96a14 |
@@ -1090,11 +1090,11 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | contacts.ts | src/contacts.ts | 1148 | triaged-follow-up | catch-without-binding | src/contacts.ts:bc40ffa467953d2c90f39f07 |
 | contacts.ts | src/contacts.ts | 1160 | triaged-follow-up | catch-without-binding | src/contacts.ts:b6278988ca184d6ae82bbb14 |
 | contacts.ts | src/contacts.ts | 1169 | triaged-follow-up | catch-without-binding | src/contacts.ts:402303927ca64a8e633e3c46 |
-| contacts.ts | src/contacts.ts | 3142 | triaged-follow-up | catch-without-binding | src/contacts.ts:c567a6d3c533a136996009c0 |
-| contacts.ts | src/contacts.ts | 3959 | triaged-follow-up | rejection-without-binding | src/contacts.ts:d4f8d1b6c70156e1ac59e37f |
-| contacts.ts | src/contacts.ts | 3960 | triaged-follow-up | rejection-without-binding | src/contacts.ts:d4f8d1b6c70156e1ac59e37f |
-| contacts.ts | src/contacts.ts | 8321 | triaged-follow-up | catch-without-binding | src/contacts.ts:5b9c872cdee5fe8960c2260f |
-| contacts.ts | src/contacts.ts | 10813 | fixed | binding retained / no recognized error surface | src/contacts.ts:c3930ad476d1db3de4357dad |
+| contacts.ts | src/contacts.ts | 3152 | triaged-follow-up | catch-without-binding | src/contacts.ts:c567a6d3c533a136996009c0 |
+| contacts.ts | src/contacts.ts | 3969 | triaged-follow-up | rejection-without-binding | src/contacts.ts:d4f8d1b6c70156e1ac59e37f |
+| contacts.ts | src/contacts.ts | 3970 | triaged-follow-up | rejection-without-binding | src/contacts.ts:d4f8d1b6c70156e1ac59e37f |
+| contacts.ts | src/contacts.ts | 8331 | triaged-follow-up | catch-without-binding | src/contacts.ts:5b9c872cdee5fe8960c2260f |
+| contacts.ts | src/contacts.ts | 10823 | fixed | binding retained / no recognized error surface | src/contacts.ts:c3930ad476d1db3de4357dad |
 | costs | src/costs/pricing-catalog.ts | 255 | triaged-follow-up | catch-without-binding | src/costs/pricing-catalog.ts:6313c80f0e29a2794c3fc323 |
 | costs | src/costs/pricing-catalog.ts | 306 | triaged-follow-up | catch-without-binding | src/costs/pricing-catalog.ts:e2413b21d59a5ab0b644dddc |
 | credentials | src/credentials/backends.ts | 108 | no-cause | Process errors may echo secret stdin or arguments; only the fixed Keychain failure may escape. | src/credentials/backends.ts:167696ef3f8aa5396bfd9bae |
