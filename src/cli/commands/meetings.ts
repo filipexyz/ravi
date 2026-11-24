@@ -1,4 +1,5 @@
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
+import { assertCallerFileAccess, resolveCallerPath } from "../caller-cwd.js";
 import "reflect-metadata";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -221,6 +222,7 @@ function buildGoogleMeetJoinArgs(input: {
   capture?: string;
   skipFinalize?: boolean;
 }): string[] {
+  if (input.out?.trim()) assertCallerFileAccess(resolveCallerPath(input.out, "write"), "write");
   const args = ["--url", input.url, "--until-empty", "--out", input.out?.trim() || "~/.ravi/meetings/runs"];
   pushOption(args, "--name", input.name);
   pushOption(args, "--profile-dir", input.profileDir);
@@ -252,6 +254,7 @@ function buildGoogleMeetJoinWorkerArgs(input: {
 }): string[] {
   const args = ["meetings", "join", "--provider", input.provider, "--url", input.url];
   pushOption(args, "--name", input.name);
+  if (input.out?.trim()) assertCallerFileAccess(resolveCallerPath(input.out, "write"), "write");
   pushOption(args, "--out", input.out);
   pushOption(args, "--profile-dir", input.profileDir);
   pushOption(args, "--duration", input.duration);
@@ -1707,6 +1710,7 @@ export class MeetingsCommands {
     noNotify?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    if (out?.trim()) assertCallerFileAccess(resolveCallerPath(out, "write"), "write");
     const op = "meetings fetch";
     const client = await openCloudClient(op, project, asJson);
     const ctx = contextDefaults();
