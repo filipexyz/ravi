@@ -1001,6 +1001,40 @@ describe("RuntimeSessionDispatcher debounce", () => {
       }
     });
 
+    it("never join a `!!` message to an observation notice", async () => {
+      const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-skip-turn-notice-");
+      try {
+        const { dispatcher, prompts } = capturingDispatcher();
+        const notice = (text: string): RuntimeLaunchPrompt => ({
+          prompt: `[System] Inform: [from: ravi observer] ${text}`,
+          _agentId: "main",
+          _observationNotice: { bindingId: "ob_1", sourceSessionKey: "agent:client:main" },
+        });
+
+        // Waiting in the debounce batch: the `!!` text is held instead of riding along.
+        dispatcher.handlePromptWithDebounce("session", notice("turn ended without a reply"), 60_000);
+        await dispatcher.handlePrompt("session", { prompt: "anota isso", source, _agentId: "main", _skipTurn: true });
+        await dispatcher.flushDebounce("session");
+        expect(prompts.map((prompt) => prompt.prompt)).toEqual([
+          "[System] Inform: [from: ravi observer] turn ended without a reply",
+        ]);
+        expect(dispatcher.heldSkipTurnMessages.get("session")).toEqual(["anota isso"]);
+
+        // Held text is not joined to a notice either; it waits for the next turn.
+        const consume = (prompt: RuntimeLaunchPrompt) =>
+          (
+            dispatcher as unknown as {
+              consumeHeldSkipTurnMessages(sessionName: string, prompt: RuntimeLaunchPrompt): RuntimeLaunchPrompt;
+            }
+          ).consumeHeldSkipTurnMessages("session", prompt);
+        const pending = notice("second notice");
+        expect(consume(pending)).toBe(pending);
+        expect(dispatcher.heldSkipTurnMessages.get("session")).toEqual(["anota isso"]);
+      } finally {
+        await cleanupIsolatedRaviState(stateDir);
+      }
+    });
+
     it("never take the session bootstrap that was waiting for the first turn", () => {
       const { dispatcher } = capturingDispatcher();
       const consume = (prompt: RuntimeLaunchPrompt) =>

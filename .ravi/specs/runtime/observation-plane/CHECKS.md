@@ -15,3 +15,5 @@
 - Verify task reporter observer can call `tasks.report` while the worker session cannot, when configured that way.
 - Verify redaction prevents unrelated chat/contact/session metadata from leaking into observation payloads.
 - Verify event replay can explain why a binding matched or did not match a source event.
+- Run a turn with two agent replies and no chat target (no source, not a sentinel). `chat.narration` MUST NOT fire; with a resolved chat target it MUST fire (`message.assistant` carries `chatEmitted` from the resolved emit target, `session-trace.test.ts`, "counts narration only for replies that reach a chat").
+- End a turn with a provider failure whose payload carries both `error` text and `abortReason`. The condition line MUST show only the runtime code (`abortReason`/`reason`), never the error text (`observation-plane.test.ts`, N3).

@@ -1,4 +1,5 @@
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
+import { resolveCallerPath } from "../caller-cwd.js";
 import "reflect-metadata";
 import { execSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -28,7 +29,8 @@ function buildSpecJson(): string {
 }
 
 function writeFileSafe(target: string, body: string): string {
-  const absolute = resolve(target);
+  // The caller's turn must be allowed to write there (a limited person only in its workspace).
+  const absolute = resolve(resolveCallerPath(target, "write"));
   mkdirSync(dirname(absolute), { recursive: true });
   writeFileSync(absolute, body, "utf8");
   return absolute;

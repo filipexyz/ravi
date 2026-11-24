@@ -934,7 +934,10 @@ export function dbGetObserverRule(id: string): ObserverRule | null {
 export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
   // An observer rule makes the agent take turns later; a limited turn cannot
   // write one (disabling is a reduction and stays allowed).
-  assertAutomationStoreWrite("observer rule", { disablesOnly: input.enabled === false });
+  // Disabling is a reduction only for an existing rule whose other fields stay
+  // as they are: creating a disabled rule, or changing observer, scope or
+  // grants while passing `enabled: false`, is a write like any other.
+  assertAutomationStoreWrite("observer rule", { disablesOnly: isObserverRuleDisableOnly(input) });
   ensureObservationSchema();
   const id = normalizeId(input.id, "observer rule id");
   const existing = dbGetObserverRule(id);
@@ -2014,4 +2017,15 @@ export function createObservationEvent(
 
 export function logObservationDeliveryFailure(error: unknown, context: Record<string, unknown>): void {
   log.warn("Observation delivery failed", { ...context, error });
+}
+
+function isObserverRuleDisableOnly(input: ObserverRuleInput): boolean {
+  if (input.enabled !== false) return false;
+  const existing = dbGetObserverRule(input.id);
+  if (!existing) return false;
+  const current = existing as unknown as Record<string, unknown>;
+  return Object.entries(input as unknown as Record<string, unknown>).every(([key, value]) => {
+    if (key === "id" || key === "enabled" || value === undefined) return true;
+    return JSON.stringify(value) === JSON.stringify(current[key]);
+  });
 }
