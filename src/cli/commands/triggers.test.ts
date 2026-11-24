@@ -444,7 +444,7 @@ describe("TriggersCommands topic guidance", () => {
     });
   });
 
-  it("gives a shell trigger no default debounce: a script that reads one event would lose the rest of a batch", async () => {
+  it("gives a shell trigger no default debounce and keeps its 5s cooldown, so a burst is capped", async () => {
     const commands = new TriggersCommands();
     mockToolContext = { transport: "gateway" };
     await captureJson(() =>
@@ -463,7 +463,7 @@ describe("TriggersCommands topic guidance", () => {
       ),
     );
     expect(createdTriggers).toContainEqual(
-      expect.objectContaining({ name: "shell default", executionType: "shell", cooldownMs: 0, debounceMs: 0 }),
+      expect.objectContaining({ name: "shell default", executionType: "shell", cooldownMs: 5000, debounceMs: 0 }),
     );
   });
 

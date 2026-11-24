@@ -57,9 +57,22 @@ function isWatchEnvelope(data: unknown): data is Record<string, unknown> & {
   );
 }
 
+/**
+ * Every line break a reader could take for a new line (`\n`, `\r`, vertical tab,
+ * form feed, NEL, U+2028, U+2029), with the blanks around it.
+ */
+const LINE_BREAKS = /\s*[\n\r\v\f\u0085\u2028\u2029]+\s*/g;
+/** Other control characters: they carry nothing a reader needs and can redraw a terminal. */
+const OTHER_CONTROLS = /[\u0000-\u0008\u000e-\u001f\u007f]/g;
+
+/**
+ * Text from the event on one line, cut at the value cap. Keys and values both
+ * go through here: event data must never start a line of its own in the
+ * prompt, where it could pass for a header such as `[System] ...`.
+ */
 function compactScalar(value: unknown): string {
-  const text = typeof value === "string" ? value : JSON.stringify(value);
-  const oneLine = text.replace(/\s*\n\s*/g, " ⏎ ");
+  const text = typeof value === "string" ? value : (JSON.stringify(value) ?? String(value));
+  const oneLine = text.replace(LINE_BREAKS, " ⏎ ").replace(OTHER_CONTROLS, "");
   return oneLine.length > COMPACT_VALUE_MAX ? `${oneLine.slice(0, COMPACT_VALUE_MAX)}…` : oneLine;
 }
 
@@ -67,7 +80,8 @@ function flattenLines(value: unknown, prefix: string, depth: number, out: string
   if (value === undefined || value === null || value === "") return;
   if (isPlainObject(value) && depth < COMPACT_MAX_DEPTH) {
     for (const [key, child] of Object.entries(value)) {
-      flattenLines(child, prefix ? `${prefix}.${key}` : key, depth + 1, out);
+      const safeKey = compactScalar(key);
+      flattenLines(child, prefix ? `${prefix}.${safeKey}` : safeKey, depth + 1, out);
     }
     return;
   }
@@ -164,7 +178,7 @@ export function buildTriggerPrompt(
     ? [
         "Events:",
         ...batch.events.flatMap((item, index) => {
-          const entry = `- ${index + 1}. ${item.topic}`;
+          const entry = `- ${index + 1}. ${compactScalar(item.topic)}`;
           // With `{{data}}` the last event is in the message as JSON: list it once.
           if (wantsFullEvent && index === batch.events.length - 1)
             return [`${entry} (full event below, in the message)`];

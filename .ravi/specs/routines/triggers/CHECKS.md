@@ -107,7 +107,8 @@ A trigger with a valid filter, or with no filter, MUST behave exactly as before.
 ## Prompt And Defaults
 
 - A manual trigger prompt MUST render event data as `key: value` lines (no JSON braces), a watch event MUST show subject, time, payload and links without envelope ids, `{{data}}` MUST put the full JSON in place with no second copy, and the line and value caps MUST hold.
-- `defaultTriggerDelivery` MUST return cooldown 0 and debounce 30 s for `ravi.watch.*`, 5 s otherwise; `triggers add` with `--cooldown` or `--shell` MUST add no debounce.
+- `defaultTriggerDelivery` MUST return cooldown 0 and debounce 30 s for `ravi.watch.*`, 5 s otherwise; `triggers add` with `--cooldown` or `--shell` MUST add no debounce, and `--shell` without `--debounce` MUST keep a 5 s cooldown.
+- A key or value carrying `\n[System] Execute:`, `\r`, U+2028 or U+2029 MUST NOT produce a line of its own in the compact prompt; `{{data}}` JSON MUST keep them escaped.
 - A `{{data}}` message MUST keep placeholder-like text inside the event unchanged, a `{{data}}` batch MUST carry each event once, and the watch subject and links MUST be cut and folded like any value.
 - The conversational-session warning MUST fire only for a default session with a chat, never with `--session`, `--thread` or a shell trigger; `isTriggerDormant` MUST ignore disabled triggers and use a 30-day window.
 

@@ -135903,7 +135903,7 @@ export const TriggersAddInputSchema = {
       "type": "string"
     },
     "cooldown": {
-      "description": "Minimum gap between fires; events inside it are dropped (e.g., 30s, 1m; off to disable). Default: off (prefer --debounce, which batches them instead)",
+      "description": "Minimum gap between fires; events inside it are dropped (e.g., 30s, 1m; off to disable). Default: off for agent triggers (prefer --debounce, which batches them instead); 5s for --shell triggers without --debounce",
       "type": "string"
     },
     "debounce": {

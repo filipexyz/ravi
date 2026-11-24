@@ -65,8 +65,8 @@ Ravi publishes events on its event bus (NATS, `nats://127.0.0.1:4222` by default
 | `--session <name>` | Session to run in. See [Sessions](#sessions). |
 | `--reply-session <name>` | Session whose chat receives the answer. See [Where the answer goes](#where-the-answer-goes). |
 | `--filter <expression>` | Only fire when the event matches. See [Filters](#filters). |
-| `--cooldown <duration>` | Minimum time between fires; events inside it are dropped. Default `5s`; `off` disables it. See [Cooldown](#cooldown). |
-| `--debounce <duration>` | Batch a burst of events into one fire, this long after the last event, carrying every event. Default off. See [Debounce](#debounce). |
+| `--cooldown <duration>` | Minimum time between fires; events inside it are dropped. Default off for agent triggers, `5s` for shell triggers without `--debounce`; `off` disables it. See [Cooldown](#cooldown). |
+| `--debounce <duration>` | Batch a burst of events into one fire, this long after the last event, carrying the burst (its last 200 events; a burst pending when the daemon stops is lost). Default for agent triggers: `30s` on `ravi.watch.*`, `5s` elsewhere; none for shell triggers or with `--cooldown`. See [Debounce](#debounce). |
 | `--account <name>` | Account set on the reply source, when you have more than one. It does not route the answer to another chat, and it applies only where that account delivers: an answer in a chat on another channel keeps the account of that chat. |
 | `--timeout`, `--env-file`, `--on-error` | Shell triggers only. |
 | `--json` | Machine-readable output. |
@@ -194,7 +194,7 @@ Change the reply session with `ravi triggers set <id> replySession <name>` (`-` 
 
 ## Cooldown
 
-- Default `off`. The value is a positive integer and a unit: `s`, `m`, `h` or `d`. `off` (or `0s`) disables the cooldown: every event that passes the filter fires. A new agent trigger that sets neither `--cooldown` nor `--debounce` batches with a [debounce](#debounce) instead (30 s on `ravi.watch.*`, 5 s elsewhere).
+- Default `off` for agent triggers, which batch with a [debounce](#debounce) instead (30 s on `ravi.watch.*`, 5 s elsewhere); `5s` for a shell trigger without `--debounce`, so a burst does not run the script once per event without limit. The value is a positive integer and a unit: `s`, `m`, `h` or `d`. `off` (or `0s`) disables the cooldown: every event that passes the filter fires.
 - The cooldown is checked before the filter. An event that arrives during the cooldown is **dropped**, not queued.
 - The clock starts only when an event passes the filter. Events the filter rejects do not use up the cooldown.
 - With a named or templated session, the cooldown counts per resolved session. With `main` or `isolated`, it counts for the whole trigger.
@@ -206,7 +206,7 @@ Because events can be dropped, write the prompt to handle everything that is pen
 
 `--debounce <duration>` turns a burst of events into one fire. Each event that passes the filter joins the burst and restarts the quiet window; the trigger fires once the window passes with no new event.
 
-A new **agent** trigger with neither `--cooldown` nor `--debounce` gets a debounce by default: 30 s on `ravi.watch.*` topics (one push yields several workflow runs) and 5 s elsewhere. A shell trigger, or one given `--cooldown`, gets none; pass `--debounce` when the script reads `$RAVI_TRIGGER_EVENTS_FILE`.
+A new **agent** trigger with neither `--cooldown` nor `--debounce` gets a debounce by default: 30 s on `ravi.watch.*` topics (one push yields several workflow runs) and 5 s elsewhere. A shell trigger, or one given `--cooldown`, gets none (a shell trigger keeps a 5 s cooldown instead); pass `--debounce` when the script reads `$RAVI_TRIGGER_EVENTS_FILE`.
 
 ```bash
 ravi triggers add "inbox batch" --topic ravi.inbox.mail.received \

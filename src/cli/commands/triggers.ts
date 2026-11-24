@@ -36,7 +36,11 @@ import { resolveSession } from "../../router/sessions.js";
 import { getAgent } from "../../router/config.js";
 import { getAccountForAgent, getDefaultAgentId } from "../../router/router-db.js";
 import { parseDurationMs, formatDurationMs } from "../../cron/schedule.js";
-import { defaultTriggerDelivery, parseOptionalDurationMs } from "../../triggers/debounce.js";
+import {
+  defaultTriggerDelivery,
+  parseOptionalDurationMs,
+  SHELL_TRIGGER_DEFAULT_COOLDOWN_MS,
+} from "../../triggers/debounce.js";
 import { isTriggerDormant, triggerDefaultsToConversationalSession } from "../../triggers/advice.js";
 import { DEFAULT_CRON_SHELL_TIMEOUT_MS } from "../../cron/shell-executor.js";
 import { assertShellAutomationAuthorized } from "../../permissions/shell-automation.js";
@@ -814,7 +818,7 @@ export class TriggersCommands {
     @Option({
       flags: "--cooldown <duration>",
       description:
-        "Minimum gap between fires; events inside it are dropped (e.g., 30s, 1m; off to disable). Default: off (prefer --debounce, which batches them instead)",
+        "Minimum gap between fires; events inside it are dropped (e.g., 30s, 1m; off to disable). Default: off for agent triggers (prefer --debounce, which batches them instead); 5s for --shell triggers without --debounce",
     })
     cooldown?: string,
     @Option({
@@ -947,7 +951,9 @@ export class TriggersCommands {
     // Parse cooldown and debounce (`off` disables either). Neither given: cooldown off
     // (it drops events) and a debounce that batches them; watch topics get a longer one.
     const deliveryDefaults = defaultTriggerDelivery(topic);
-    let cooldownMs = deliveryDefaults.cooldownMs;
+    // A shell script runs on the host once per fire: without --debounce it keeps
+    // the old 5 s cooldown, so a burst cannot run it once per event without limit.
+    let cooldownMs = isShellTrigger && !debounce ? SHELL_TRIGGER_DEFAULT_COOLDOWN_MS : deliveryDefaults.cooldownMs;
     if (cooldown) {
       try {
         cooldownMs = parseOptionalDurationMs(cooldown, parseDurationMs);

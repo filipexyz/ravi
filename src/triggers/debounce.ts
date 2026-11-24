@@ -138,9 +138,14 @@ export const DEFAULT_TRIGGER_DEBOUNCE_MS = 5_000;
  * Delivery defaults for a new agent trigger that sets neither `--cooldown` nor
  * `--debounce`. Cooldown is off because it drops every event inside its window;
  * debounce batches them (up to DEBOUNCE_MAX_EVENTS, in memory) and fires once.
- * Shell triggers take no default debounce (the CLI decides that).
+ * Shell triggers take no default debounce (the CLI decides that) and keep the
+ * old 5 s cooldown instead: a script runs on the host for each fire, so a burst
+ * must not run it once per event without any limit.
  */
 export function defaultTriggerDelivery(topic: string): { cooldownMs: number; debounceMs: number } {
   const watchTopic = topic.trim().startsWith("ravi.watch.");
   return { cooldownMs: 0, debounceMs: watchTopic ? WATCH_TOPIC_DEFAULT_DEBOUNCE_MS : DEFAULT_TRIGGER_DEBOUNCE_MS };
 }
+
+/** A shell trigger with no delivery flags: one run per event is never batched, but bursts are capped. */
+export const SHELL_TRIGGER_DEFAULT_COOLDOWN_MS = 5_000;
