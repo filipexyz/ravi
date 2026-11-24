@@ -38,7 +38,7 @@
   `watch trigger` MUST refuse even as a dry-run (`watch.test.ts`).
 - The operator's own relay (a thread they asked for) MUST write a trigger, a cron
   job and the CI follow of `pr publish`; a relay of an overlay turn, of a turn
-  holding `deny_*`, of a held relay, or one without the `relayCallerUnrestricted`
+  holding `deny_*`, of a held relay, a relay to an agent with more authority than the caller's ceiling, or one without the `relayCallerUnrestricted`
   stamp MUST still be refused (`runtime-request-context.test.ts`,
   `user-overlay-automation.test.ts`, `automation-store-guard.test.ts`,
   `gh-watch.test.ts`, `cron-commands.test.ts`).

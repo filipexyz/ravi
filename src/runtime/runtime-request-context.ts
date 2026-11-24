@@ -624,6 +624,16 @@ function buildAgentIdentityRuntimeContextInput(options: {
     turnCapabilities,
   });
 
+  // The stamp says the relay narrows lineage, not power. A caller whose ceiling does not cover the
+  // target agent's own authority (a plain contact relaying to a full-access agent) reduces it: held.
+  const relayReducesAgent =
+    Boolean(relayNarrowing) &&
+    buildEffectiveCapabilities({
+      agentCapabilities: agentIdentityCapabilities,
+      actorCapabilities: userOverlay ? userOverlay.capabilities : agentIdentityCapabilities,
+      ...(userOverlay ? { actorOverrideCapabilities: options.capabilities.filter(isTaskSelfCapability) } : {}),
+    }).length > effectiveCapabilities.length;
+
   // A person's turn in a chat with no contact grants: everything of the agent
   // except break-glass the person does not hold. Autonomous turns are unchanged.
   const breakGlassDenies = dedupeBreakGlassDenies([
@@ -670,7 +680,7 @@ function buildAgentIdentityRuntimeContextInput(options: {
       turnCapabilityCount: turnCapabilities?.length ?? 0,
       ...(turnCapabilities && turnCapabilities.length > 0 ? { turnCapabilities } : {}),
       ...(relayNarrowing ? { relayNarrowing: true } : {}),
-      ...(relayNarrowing && relayCaller.unrestricted ? { relayCallerUnrestricted: true } : {}),
+      ...(relayNarrowing && relayCaller.unrestricted && !relayReducesAgent ? { relayCallerUnrestricted: true } : {}),
       ...(relayCaller.contactId ? { relayCallerContactId: relayCaller.contactId } : {}),
       effectiveCapabilityCount: effectiveCapabilities.length,
       ...(options.consoleBinding?.consoleUserId ? { consoleUserId: options.consoleBinding.consoleUserId } : {}),

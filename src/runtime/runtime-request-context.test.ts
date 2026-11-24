@@ -2696,6 +2696,22 @@ describe("verified human work handoffs", () => {
     expect(isRelayHeldBelowAgent(handoff(overlayThread, "execute").metadata)).toBe(true);
   });
 
+  it("a relay to an agent with more authority than the caller's ceiling is held, not stamped", () => {
+    // A plain contact in the origin agent's chat relays to a full-access agent: the turn is
+    // narrowed to the caller's ceiling, so automation written there would run later as the
+    // worker's full authority. It must not be stamped unrestricted.
+    dbUpdateAgent(workerAgent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+    const { caller } = humanTurn();
+    for (const action of ["execute", "session.bootstrap"] as const) {
+      const toStronger = handoff(caller, action);
+      expect(toStronger.metadata?.relayNarrowing).toBe(true);
+      expect(toStronger.metadata?.relayCallerUnrestricted).toBeUndefined();
+      expect(isRelayHeldBelowAgent(toStronger.metadata)).toBe(true);
+      // And a chain through it stays held.
+      expect(isRelayHeldBelowAgent(handoff(toStronger, "execute").metadata)).toBe(true);
+    }
+  });
+
   it.each(["inform", "answer", "session.return"] as const)(
     "%s never turns a notification into a human request",
     (action) => {
