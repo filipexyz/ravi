@@ -518,9 +518,9 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/agents.ts | 1499 | triaged-follow-up | catch-without-binding | src/cli/commands/agents.ts:9edb6d73818d2f25eb2d4d8e |
 | cli | src/cli/commands/agents.ts | 1550 | triaged-follow-up | catch-without-binding | src/cli/commands/agents.ts:0369e92915b4e3c28ca7d06e |
 | cli | src/cli/commands/agents.ts | 1562 | triaged-follow-up | catch-without-binding | src/cli/commands/agents.ts:a4f7328e2cfe98918343fddb |
-| cli | src/cli/commands/agents.ts | 1622 | fixed | binding retained / no recognized error surface | src/cli/commands/agents.ts:34a19c22fdc045c2ea27c0f8 |
-| cli | src/cli/commands/agents.ts | 2042 | fixed | binding retained / no recognized error surface | src/cli/commands/agents.ts:68881934128c225519344b9c |
-| cli | src/cli/commands/agents.ts | 2106 | fixed | binding retained / no recognized error surface | src/cli/commands/agents.ts:350e6a663d6b358f6d413595 |
+| cli | src/cli/commands/agents.ts | 1623 | fixed | binding retained / no recognized error surface | src/cli/commands/agents.ts:34a19c22fdc045c2ea27c0f8 |
+| cli | src/cli/commands/agents.ts | 2043 | fixed | binding retained / no recognized error surface | src/cli/commands/agents.ts:68881934128c225519344b9c |
+| cli | src/cli/commands/agents.ts | 2107 | fixed | binding retained / no recognized error surface | src/cli/commands/agents.ts:350e6a663d6b358f6d413595 |
 | cli | src/cli/commands/apps.ts | 392 | fixed | binding retained / no recognized error surface | src/cli/commands/apps.ts:821d4d732fcd2bae6871cff4 |
 | cli | src/cli/commands/apps.ts | 429 | fixed | binding retained / no recognized error surface | src/cli/commands/apps.ts:e6ce4ce7baa536e660c26940 |
 | cli | src/cli/commands/apps.ts | 476 | fixed | binding retained / no recognized error surface | src/cli/commands/apps.ts:86d4d1fb9951bd26651dd580 |
@@ -1086,15 +1086,15 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | console-scope | src/console-scope/resolver.ts | 651 | triaged-follow-up | catch-without-binding | src/console-scope/resolver.ts:7d505a740f494987192eac71 |
 | console-scope | src/console-scope/resolver.ts | 660 | triaged-follow-up | catch-without-binding | src/console-scope/resolver.ts:9ba9fe26cc184461a244ed67 |
 | console-scope | src/console-scope/store.ts | 336 | triaged-follow-up | catch-without-binding | src/console-scope/store.ts:dd82a6eab9a7e31ea3ac4859 |
-| contacts.ts | src/contacts.ts | 137 | fixed | binding retained / no recognized error surface | src/contacts.ts:950c70fb9a288d9c71024728 |
-| contacts.ts | src/contacts.ts | 1147 | triaged-follow-up | catch-without-binding | src/contacts.ts:bc40ffa467953d2c90f39f07 |
-| contacts.ts | src/contacts.ts | 1159 | triaged-follow-up | catch-without-binding | src/contacts.ts:b6278988ca184d6ae82bbb14 |
-| contacts.ts | src/contacts.ts | 1168 | triaged-follow-up | catch-without-binding | src/contacts.ts:402303927ca64a8e633e3c46 |
-| contacts.ts | src/contacts.ts | 3146 | triaged-follow-up | catch-without-binding | src/contacts.ts:c567a6d3c533a136996009c0 |
-| contacts.ts | src/contacts.ts | 3963 | triaged-follow-up | rejection-without-binding | src/contacts.ts:d4f8d1b6c70156e1ac59e37f |
-| contacts.ts | src/contacts.ts | 3964 | triaged-follow-up | rejection-without-binding | src/contacts.ts:d4f8d1b6c70156e1ac59e37f |
-| contacts.ts | src/contacts.ts | 8325 | triaged-follow-up | catch-without-binding | src/contacts.ts:5b9c872cdee5fe8960c2260f |
-| contacts.ts | src/contacts.ts | 10810 | fixed | binding retained / no recognized error surface | src/contacts.ts:c3930ad476d1db3de4357dad |
+| contacts.ts | src/contacts.ts | 138 | fixed | binding retained / no recognized error surface | src/contacts.ts:950c70fb9a288d9c71024728 |
+| contacts.ts | src/contacts.ts | 1148 | triaged-follow-up | catch-without-binding | src/contacts.ts:bc40ffa467953d2c90f39f07 |
+| contacts.ts | src/contacts.ts | 1160 | triaged-follow-up | catch-without-binding | src/contacts.ts:b6278988ca184d6ae82bbb14 |
+| contacts.ts | src/contacts.ts | 1169 | triaged-follow-up | catch-without-binding | src/contacts.ts:402303927ca64a8e633e3c46 |
+| contacts.ts | src/contacts.ts | 3142 | triaged-follow-up | catch-without-binding | src/contacts.ts:c567a6d3c533a136996009c0 |
+| contacts.ts | src/contacts.ts | 3959 | triaged-follow-up | rejection-without-binding | src/contacts.ts:d4f8d1b6c70156e1ac59e37f |
+| contacts.ts | src/contacts.ts | 3960 | triaged-follow-up | rejection-without-binding | src/contacts.ts:d4f8d1b6c70156e1ac59e37f |
+| contacts.ts | src/contacts.ts | 8321 | triaged-follow-up | catch-without-binding | src/contacts.ts:5b9c872cdee5fe8960c2260f |
+| contacts.ts | src/contacts.ts | 10813 | fixed | binding retained / no recognized error surface | src/contacts.ts:c3930ad476d1db3de4357dad |
 | costs | src/costs/pricing-catalog.ts | 255 | triaged-follow-up | catch-without-binding | src/costs/pricing-catalog.ts:6313c80f0e29a2794c3fc323 |
 | costs | src/costs/pricing-catalog.ts | 306 | triaged-follow-up | catch-without-binding | src/costs/pricing-catalog.ts:e2413b21d59a5ab0b644dddc |
 | credentials | src/credentials/backends.ts | 108 | no-cause | Process errors may echo secret stdin or arguments; only the fixed Keychain failure may escape. | src/credentials/backends.ts:167696ef3f8aa5396bfd9bae |
@@ -1480,8 +1480,8 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | library | src/library/agent-definitions.ts | 252 | triaged-follow-up | catch-without-binding | src/library/agent-definitions.ts:61158d95b3395a4880fed200 |
 | library | src/library/agent-definitions.ts | 296 | triaged-follow-up | cause-not-forwarded-at-surface | src/library/agent-definitions.ts:7891cfc32d8f856bda3038a2 |
 | library | src/library/agent-definitions.ts | 377 | fixed | binding retained / no recognized error surface | src/library/agent-definitions.ts:b28a648abbc1e1ec111aa862 |
-| library | src/library/agent-definitions.ts | 630 | triaged-follow-up | catch-without-binding | src/library/agent-definitions.ts:72696a636a3f403f5422aca0 |
-| library | src/library/agent-definitions.ts | 988 | fixed | binding retained / no recognized error surface | src/library/agent-definitions.ts:4b2dd25e376f184d623bbe57 |
+| library | src/library/agent-definitions.ts | 636 | triaged-follow-up | catch-without-binding | src/library/agent-definitions.ts:72696a636a3f403f5422aca0 |
+| library | src/library/agent-definitions.ts | 1000 | fixed | binding retained / no recognized error surface | src/library/agent-definitions.ts:4b2dd25e376f184d623bbe57 |
 | library | src/library/agents-db.ts | 62 | triaged-follow-up | catch-without-binding | src/library/agents-db.ts:b3ce913acf4d8fd34b4a9ccb |
 | library | src/library/agents-db.ts | 101 | triaged-follow-up | catch-without-binding | src/library/agents-db.ts:49644cf46ddf3fffdbaeb28b |
 | library | src/library/cache.ts | 93 | triaged-follow-up | catch-without-binding | src/library/cache.ts:ad1bf27c3fb8df4611044deb |
