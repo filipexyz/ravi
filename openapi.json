@@ -86,7 +86,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "4edbc512acc67bf8"
+    "version": "d9e24d95633891b4"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -146741,14 +146741,14 @@
                         "orphanBindings": {
                           "type": "number"
                         },
-                        "unusedDefinitions": {
+                        "unboundDefinitions": {
                           "type": "number"
                         }
                       },
                       "required": [
                         "definitions",
                         "bindings",
-                        "unusedDefinitions",
+                        "unboundDefinitions",
                         "orphanBindings",
                         "boundTagsWithoutConsumer",
                         "contactsWithCapabilities",
@@ -146802,7 +146802,7 @@
                       },
                       "type": "array"
                     },
-                    "unusedDefinitions": {
+                    "unboundDefinitions": {
                       "items": {
                         "additionalProperties": false,
                         "properties": {
@@ -146834,7 +146834,7 @@
                     "generatedAt",
                     "summary",
                     "bindingsByAssetType",
-                    "unusedDefinitions",
+                    "unboundDefinitions",
                     "orphanBindings",
                     "consumers",
                     "tagsWithoutConsumer",

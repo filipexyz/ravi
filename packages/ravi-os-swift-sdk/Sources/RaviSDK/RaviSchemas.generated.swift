@@ -130489,14 +130489,14 @@ public enum RaviSchemas {
           "orphanBindings": {
             "type": "number"
           },
-          "unusedDefinitions": {
+          "unboundDefinitions": {
             "type": "number"
           }
         },
         "required": [
           "definitions",
           "bindings",
-          "unusedDefinitions",
+          "unboundDefinitions",
           "orphanBindings",
           "boundTagsWithoutConsumer",
           "contactsWithCapabilities",
@@ -130550,7 +130550,7 @@ public enum RaviSchemas {
         },
         "type": "array"
       },
-      "unusedDefinitions": {
+      "unboundDefinitions": {
         "items": {
           "additionalProperties": false,
           "properties": {
@@ -130582,7 +130582,7 @@ public enum RaviSchemas {
       "generatedAt",
       "summary",
       "bindingsByAssetType",
-      "unusedDefinitions",
+      "unboundDefinitions",
       "orphanBindings",
       "consumers",
       "tagsWithoutConsumer",

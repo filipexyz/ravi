@@ -21,10 +21,14 @@
   code through the registry dispatcher.
 - `tags doctor` MUST leave `tag_definitions`, `tag_bindings` and `tag_events`
   row counts unchanged (`src/tags/doctor.test.ts`, "never writes").
-- `tags doctor` MUST list a never-bound definition, count a binding to a
-  missing agent as orphan, keep tags read by a tag rule or by the permission
-  provider (any spelling of `permission.*`) out of "without consumer", and
-  flag a contact whose tags materialize `admin:system:*` as break-glass. Each
-  rule is pinned by a mutation that makes `src/tags/doctor.test.ts` fail.
+- `tags doctor` MUST list a definition with no current binding, count a
+  binding to a missing agent as orphan (and a session bound by key as not
+  orphan), keep tags read by a tag rule (apply or condition, any spelling),
+  by the permission provider (any `permission.*` spelling) or by a chat-tag
+  grant scope out of "without consumer", flag a contact whose tags (registry
+  or policy only) materialize `admin:system:*` as break-glass, and apply
+  `--limit` to every list section. Each rule is pinned by a mutation that
+  makes `src/tags/doctor.test.ts` fail.
+- `tags doctor --limit 0` MUST exit 2 with `USAGE_ERROR`.
 - `bun test src/cli/commands/tags.test.ts` SHOULD pass after any change to the
   tags contract surface.

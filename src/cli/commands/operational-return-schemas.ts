@@ -2994,7 +2994,7 @@ export const tagsDoctorReturnSchema = z
       .object({
         definitions: z.number(),
         bindings: z.number(),
-        unusedDefinitions: z.number(),
+        unboundDefinitions: z.number(),
         orphanBindings: z.number(),
         boundTagsWithoutConsumer: z.number(),
         contactsWithCapabilities: z.number(),
@@ -3005,7 +3005,7 @@ export const tagsDoctorReturnSchema = z
     bindingsByAssetType: z.array(
       z.object({ assetType: z.string(), bindings: z.number(), assets: z.number(), tags: z.number() }).strict(),
     ),
-    unusedDefinitions: z.array(
+    unboundDefinitions: z.array(
       z.object({ slug: z.string(), kind: z.string(), source: z.string(), createdAt: z.number() }).strict(),
     ),
     orphanBindings: z

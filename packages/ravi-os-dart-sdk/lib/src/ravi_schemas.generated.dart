@@ -130489,14 +130489,14 @@ class RaviSchemas {
         "orphanBindings": {
           "type": "number"
         },
-        "unusedDefinitions": {
+        "unboundDefinitions": {
           "type": "number"
         }
       },
       "required": [
         "definitions",
         "bindings",
-        "unusedDefinitions",
+        "unboundDefinitions",
         "orphanBindings",
         "boundTagsWithoutConsumer",
         "contactsWithCapabilities",
@@ -130550,7 +130550,7 @@ class RaviSchemas {
       },
       "type": "array"
     },
-    "unusedDefinitions": {
+    "unboundDefinitions": {
       "items": {
         "additionalProperties": false,
         "properties": {
@@ -130582,7 +130582,7 @@ class RaviSchemas {
     "generatedAt",
     "summary",
     "bindingsByAssetType",
-    "unusedDefinitions",
+    "unboundDefinitions",
     "orphanBindings",
     "consumers",
     "tagsWithoutConsumer",

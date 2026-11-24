@@ -1,7 +1,7 @@
 import { errorDiagnostic } from "../../utils/error-diagnostic.js";
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
-import { ContractError, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { CONTRACT_EXIT_USAGE, ContractError, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import {
   declareCommandReturns,
@@ -31,6 +31,7 @@ import {
 import { attachTagToSelector, detachTagFromSelector, resolveTagTarget } from "../../tags/service.js";
 import { buildTagDoctorReport, type TagDoctorReport } from "../../tags/doctor.js";
 import { materializeContactPolicyCapabilities } from "../../permissions/contact-policy-permissions-provider.js";
+import { listContactIdsWithPolicyTags } from "../../contacts.js";
 import {
   assertBreakGlassTagWriteAllowed,
   assertPermissionDefinitionWithoutBreakGlass,
@@ -372,10 +373,27 @@ function isPermissionDefinition(kind: string | null | undefined, source: string 
   return isPermissionProfileDefinition({ kind, source });
 }
 
+function parseDoctorLimit(value: string | undefined, asJson?: boolean): number {
+  if (value === undefined) return 50;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_TAG_LIST_LIMIT) {
+    const message = `--limit must be an integer between 1 and ${MAX_TAG_LIST_LIMIT}.`;
+    contractFail("tags doctor", "USAGE_ERROR", message, {
+      ...{
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: { suggestedAction: `Pass --limit between 1 and ${MAX_TAG_LIST_LIMIT} (default 50).` },
+      },
+      diagnostic: errorDiagnostic(message, { operation: "tags doctor" }),
+    });
+  }
+  return parsed;
+}
+
 function printTagDoctorReport(report: TagDoctorReport): void {
   const s = report.summary;
   console.log("Tag doctor (read-only)");
-  console.log(`Definitions: ${s.definitions} (${s.unusedDefinitions} never bound)`);
+  console.log(`Definitions: ${s.definitions} (${s.unboundDefinitions} with no current binding)`);
   console.log(`Bindings:    ${s.bindings} (${s.orphanBindings} orphan in checked types)`);
   console.log(`Bound tags without a behavior consumer: ${s.boundTagsWithoutConsumer}`);
   console.log(
@@ -395,7 +413,7 @@ function printTagDoctorReport(report: TagDoctorReport): void {
   if (report.orphanBindings.uncheckedAssetTypes.length > 0) {
     console.log(`  (not checked: ${report.orphanBindings.uncheckedAssetTypes.join(", ")})`);
   }
-  console.log("\nTags that grant power (contact tags read by the permission provider):");
+  console.log(`\nContacts with capabilities from tags (top ${report.limit}, break-glass first):`);
   if (report.powerTags.length === 0) console.log("  - none");
   for (const row of report.powerTags) {
     const flag = row.breakGlass.length > 0 ? ` BREAK-GLASS ${row.breakGlass.join(",")}` : "";
@@ -405,8 +423,8 @@ function printTagDoctorReport(report: TagDoctorReport): void {
   for (const row of report.tagsWithoutConsumer) {
     console.log(`  - ${row.slug}: ${row.bindings} (${row.assetTypes.join(",")})`);
   }
-  console.log(`\nNever-bound definitions (first ${report.limit}):`);
-  for (const row of report.unusedDefinitions) {
+  console.log(`\nDefinitions with no current binding (first ${report.limit}):`);
+  for (const row of report.unboundDefinitions) {
     console.log(`  - ${row.slug} [${row.kind}/${row.source}]`);
   }
   console.log("\nLegacy mirrors:");
@@ -1012,10 +1030,11 @@ export class TagCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
-    const parsedLimit = parseListLimit(limit, { defaultValue: 50, maxValue: MAX_TAG_LIST_LIMIT, flag: "--limit" });
+    const parsedLimit = parseDoctorLimit(limit, asJson);
     const report = buildTagDoctorReport({
       limit: parsedLimit,
       materializeContact: materializeContactPolicyCapabilities,
+      listPolicyContactIds: listContactIdsWithPolicyTags,
     });
     if (asJson) {
       printJson(report);

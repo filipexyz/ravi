@@ -30742,7 +30742,7 @@ class TagsDoctorOptions {
 }
 
 class TagsDoctorReturn {
-  const TagsDoctorReturn({required this.bindingsByAssetType, required this.consumers, required this.generatedAt, required this.legacyMirrors, required this.limit, required this.orphanBindings, required this.powerTags, required this.summary, required this.tagRuleErrors, required this.tagsWithoutConsumer, required this.unusedDefinitions});
+  const TagsDoctorReturn({required this.bindingsByAssetType, required this.consumers, required this.generatedAt, required this.legacyMirrors, required this.limit, required this.orphanBindings, required this.powerTags, required this.summary, required this.tagRuleErrors, required this.tagsWithoutConsumer, required this.unboundDefinitions});
 
   final List<RaviJson> bindingsByAssetType;
   final List<RaviJson> consumers;
@@ -30754,7 +30754,7 @@ class TagsDoctorReturn {
   final RaviJson summary;
   final List<RaviJson> tagRuleErrors;
   final List<RaviJson> tagsWithoutConsumer;
-  final List<RaviJson> unusedDefinitions;
+  final List<RaviJson> unboundDefinitions;
 
   factory TagsDoctorReturn.fromJson(Map<String, Object?> json) {
     return TagsDoctorReturn(
@@ -30768,7 +30768,7 @@ class TagsDoctorReturn {
       summary: RaviJson.from(json["summary"]),
       tagRuleErrors: raviJsonAsList(json["tagRuleErrors"], RaviJson.from),
       tagsWithoutConsumer: raviJsonAsList(json["tagsWithoutConsumer"], RaviJson.from),
-      unusedDefinitions: raviJsonAsList(json["unusedDefinitions"], RaviJson.from),
+      unboundDefinitions: raviJsonAsList(json["unboundDefinitions"], RaviJson.from),
     );
   }
 

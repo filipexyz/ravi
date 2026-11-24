@@ -36168,9 +36168,9 @@ public struct TagsDoctorReturn: Codable, Sendable {
   public var summary: RaviJSON
   public var tagRuleErrors: [RaviJSON]
   public var tagsWithoutConsumer: [RaviJSON]
-  public var unusedDefinitions: [RaviJSON]
+  public var unboundDefinitions: [RaviJSON]
 
-  public init(bindingsByAssetType: [RaviJSON], consumers: [RaviJSON], generatedAt: Double, legacyMirrors: [RaviJSON], limit: Double, orphanBindings: RaviJSON, powerTags: [RaviJSON], summary: RaviJSON, tagRuleErrors: [RaviJSON], tagsWithoutConsumer: [RaviJSON], unusedDefinitions: [RaviJSON]) {
+  public init(bindingsByAssetType: [RaviJSON], consumers: [RaviJSON], generatedAt: Double, legacyMirrors: [RaviJSON], limit: Double, orphanBindings: RaviJSON, powerTags: [RaviJSON], summary: RaviJSON, tagRuleErrors: [RaviJSON], tagsWithoutConsumer: [RaviJSON], unboundDefinitions: [RaviJSON]) {
     self.bindingsByAssetType = bindingsByAssetType
     self.consumers = consumers
     self.generatedAt = generatedAt
@@ -36181,7 +36181,7 @@ public struct TagsDoctorReturn: Codable, Sendable {
     self.summary = summary
     self.tagRuleErrors = tagRuleErrors
     self.tagsWithoutConsumer = tagsWithoutConsumer
-    self.unusedDefinitions = unusedDefinitions
+    self.unboundDefinitions = unboundDefinitions
   }
 
   enum CodingKeys: String, CodingKey {
@@ -36195,7 +36195,7 @@ public struct TagsDoctorReturn: Codable, Sendable {
     case summary = "summary"
     case tagRuleErrors = "tagRuleErrors"
     case tagsWithoutConsumer = "tagsWithoutConsumer"
-    case unusedDefinitions = "unusedDefinitions"
+    case unboundDefinitions = "unboundDefinitions"
   }
 }
 

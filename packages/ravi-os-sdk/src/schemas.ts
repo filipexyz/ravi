@@ -128971,14 +128971,14 @@ export const TagsDoctorReturnSchema = {
         "orphanBindings": {
           "type": "number"
         },
-        "unusedDefinitions": {
+        "unboundDefinitions": {
           "type": "number"
         }
       },
       "required": [
         "definitions",
         "bindings",
-        "unusedDefinitions",
+        "unboundDefinitions",
         "orphanBindings",
         "boundTagsWithoutConsumer",
         "contactsWithCapabilities",
@@ -129032,7 +129032,7 @@ export const TagsDoctorReturnSchema = {
       },
       "type": "array"
     },
-    "unusedDefinitions": {
+    "unboundDefinitions": {
       "items": {
         "additionalProperties": false,
         "properties": {
@@ -129064,7 +129064,7 @@ export const TagsDoctorReturnSchema = {
     "generatedAt",
     "summary",
     "bindingsByAssetType",
-    "unusedDefinitions",
+    "unboundDefinitions",
     "orphanBindings",
     "consumers",
     "tagsWithoutConsumer",

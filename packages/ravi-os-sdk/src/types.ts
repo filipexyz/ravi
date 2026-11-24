@@ -25021,7 +25021,7 @@ export type TagsDoctorReturn = {
     definitions: number;
     legacyMirrorBindings: number;
     orphanBindings: number;
-    unusedDefinitions: number;
+    unboundDefinitions: number;
   };
   tagRuleErrors: Array<{
     error: string;
@@ -25032,7 +25032,7 @@ export type TagsDoctorReturn = {
     bindings: number;
     slug: string;
   }>;
-  unusedDefinitions: Array<{
+  unboundDefinitions: Array<{
     createdAt: number;
     kind: string;
     slug: string;
