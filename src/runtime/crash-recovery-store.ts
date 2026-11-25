@@ -1510,6 +1510,90 @@ export function terminalizeRuntimeTurnAttempt(input: {
   );
 }
 
+/**
+ * Restart recovery outcome recorded on one interrupted attempt. The marker is
+ * written at most once per attempt, before anything is published, so a turn
+ * interrupted by a daemon restart is resumed at most once no matter how many
+ * boots, passes, or daemons look at it.
+ */
+export const RUNTIME_TURN_ATTEMPT_RESTART_RECOVERY_STATUSES = [
+  "restart_resumed",
+  "restart_noticed",
+  "restart_skipped",
+] as const;
+export type RuntimeTurnAttemptRestartRecoveryStatus = (typeof RUNTIME_TURN_ATTEMPT_RESTART_RECOVERY_STATUSES)[number];
+
+export function markRuntimeTurnAttemptRestartRecovery(input: {
+  attemptId: string;
+  status: RuntimeTurnAttemptRestartRecoveryStatus;
+  reason: string;
+  recoveredAt?: number;
+}): boolean {
+  const attemptId = requiredText(input.attemptId, "attemptId");
+  const reason = requiredText(input.reason, "reason");
+  if (!RUNTIME_TURN_ATTEMPT_RESTART_RECOVERY_STATUSES.includes(input.status)) {
+    throw new Error(`Unsupported restart recovery status: ${String(input.status)}`);
+  }
+  const recoveredAt = assertTimestamp(input.recoveredAt ?? Date.now(), "recoveredAt");
+  return executeWrite(
+    getDb(),
+    (database) => {
+      // Only a terminal attempt can carry the marker: a running attempt still
+      // belongs to a live owner, and a recovery claim belongs to the claim ledger.
+      const result = database
+        .prepare(
+          `UPDATE runtime_turn_attempts
+           SET recovery_status = ?, recovery_reason = ?, recovered_at = ?, updated_at = MAX(updated_at, ?)
+           WHERE attempt_id = ? AND status <> 'running' AND recovery_status IS NULL AND recovery_claim_id IS NULL`,
+        )
+        .run(input.status, reason, recoveredAt, recoveredAt, attemptId);
+      return result.changes === 1;
+    },
+    { label: "runtime-crash-recovery-mark-restart-recovery" },
+  );
+}
+
+/** The attempt of the same session that started immediately before `attempt`. */
+export function getPreviousRuntimeTurnAttempt(
+  attempt: Pick<RuntimeTurnAttemptRecord, "attemptId" | "sessionKey" | "startedAt">,
+): RuntimeTurnAttemptRecord | null {
+  const row = getDb()
+    .prepare(
+      `SELECT * FROM runtime_turn_attempts
+       WHERE session_key = ? AND attempt_id <> ? AND (started_at < ? OR (started_at = ? AND attempt_id < ?))
+       ORDER BY started_at DESC, attempt_id DESC
+       LIMIT 1`,
+    )
+    .get(
+      requiredText(attempt.sessionKey, "sessionKey"),
+      attempt.attemptId,
+      attempt.startedAt,
+      attempt.startedAt,
+      attempt.attemptId,
+    ) as RuntimeTurnAttemptRow | null;
+  return row ? rowToTurnAttempt(row) : null;
+}
+
+/** Whether the session started any attempt after `attempt` (in any boot). */
+export function hasLaterRuntimeTurnAttempt(
+  attempt: Pick<RuntimeTurnAttemptRecord, "attemptId" | "sessionKey" | "startedAt">,
+): boolean {
+  const row = getDb()
+    .prepare(
+      `SELECT 1 AS found FROM runtime_turn_attempts
+       WHERE session_key = ? AND attempt_id <> ? AND (started_at > ? OR (started_at = ? AND attempt_id > ?))
+       LIMIT 1`,
+    )
+    .get(
+      requiredText(attempt.sessionKey, "sessionKey"),
+      attempt.attemptId,
+      attempt.startedAt,
+      attempt.startedAt,
+      attempt.attemptId,
+    ) as { found: number } | null;
+  return Boolean(row);
+}
+
 function promptQueueFingerprint(input: {
   dedupeKey: string;
   sessionKey: string;

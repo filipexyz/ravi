@@ -459,3 +459,131 @@ describe("daemon restart session event delivery", () => {
     expect(published).toHaveLength(1);
   });
 });
+
+describe("daemon restart verify-and-continue for turns interrupted mid-action", () => {
+  const INTERRUPTED_SNAPSHOT_METADATA = {
+    ...UNSAFE_SNAPSHOT_METADATA,
+    turnActive: true,
+    crashRecoveryAttemptId: "attempt-interrupted",
+  };
+  const interruptedAttempt = { attemptId: "attempt-interrupted" } as never;
+
+  it("resumes an unsafe live snapshot with a verify note once its attempt is claimed", async () => {
+    const { deps, published, marked } = restartEventHarness();
+    const claims: string[] = [];
+    deps.claimInterruptedAttempt = ({ attemptId }) => {
+      claims.push(attemptId);
+      return { kind: "resume", attempt: interruptedAttempt };
+    };
+
+    const outcome = await deliverDaemonRestartSessionEvent(
+      { ...RESTART_EVENT_BASE, kind: "active", snapshot: snapshotRecord({ metadata: INTERRUPTED_SNAPSHOT_METADATA }) },
+      deps,
+    );
+
+    expect(claims).toEqual(["attempt-interrupted"]);
+    expect(outcome).toMatchObject({
+      status: "delivered",
+      deliveryKind: "resume",
+      decision: { mode: "verify_continue", reason: "verify_continue" },
+    });
+    const payload = published[0]?.payload;
+    expect(payload?.prompt).toContain("no meio do teu turno");
+    expect(payload?.prompt).toContain("ferramenta Bash já iniciada");
+    expect(payload?.prompt).toContain("confira o estado real");
+    expect(payload?.prompt).toContain("Depois continue o trabalho de onde parou.");
+    expect(payload?._daemonRestartResume).toEqual({
+      restartEpoch: "epoch-deliver",
+      sessionKey: "agent:main:main",
+      runtimeProvider: "claude",
+    });
+    expect(marked).toEqual([
+      {
+        restartEpoch: "epoch-deliver",
+        sessionKey: "agent:main:main",
+        sessionName: "main",
+        deliveryKind: "resume",
+        decisionReason: "verify_continue",
+      },
+    ]);
+  });
+
+  it("carries durable successors along with the verify note instead of a pending-only resume", async () => {
+    const { deps, published } = restartEventHarness();
+    deps.claimInterruptedAttempt = () => ({ kind: "resume", attempt: interruptedAttempt });
+
+    const outcome = await deliverDaemonRestartSessionEvent(
+      {
+        ...RESTART_EVENT_BASE,
+        kind: "active",
+        snapshot: snapshotRecord({
+          pendingMessageCount: 2,
+          metadata: {
+            ...INTERRUPTED_SNAPSHOT_METADATA,
+            [CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY]: "pending_only",
+          },
+        }),
+      },
+      deps,
+    );
+
+    expect(outcome).toMatchObject({ deliveryKind: "resume", decision: { mode: "verify_continue" } });
+    expect(published[0]?.payload._daemonRestartResume).not.toHaveProperty("pendingOnly");
+  });
+
+  it("only notifies when the interrupted turn was itself a restart resume", async () => {
+    const { deps, published, marked } = restartEventHarness();
+    deps.claimInterruptedAttempt = () => ({ kind: "loop", attempt: interruptedAttempt });
+
+    const outcome = await deliverDaemonRestartSessionEvent(
+      { ...RESTART_EVENT_BASE, kind: "active", snapshot: snapshotRecord({ metadata: INTERRUPTED_SNAPSHOT_METADATA }) },
+      deps,
+    );
+
+    expect(outcome).toMatchObject({ deliveryKind: "notice", decision: { reason: "resume_loop" } });
+    expect(published[0]?.payload.prompt).toContain("já era uma retomada automática");
+    expect(published[0]?.payload.prompt).not.toContain("continue o trabalho");
+    expect(marked[0]?.decisionReason).toBe("resume_loop");
+  });
+
+  it("keeps the notice when the attempt cannot be claimed", async () => {
+    const { deps } = restartEventHarness();
+    deps.claimInterruptedAttempt = () => ({ kind: "skip", reason: "already_recovered" });
+
+    const outcome = await deliverDaemonRestartSessionEvent(
+      { ...RESTART_EVENT_BASE, kind: "active", snapshot: snapshotRecord({ metadata: INTERRUPTED_SNAPSHOT_METADATA }) },
+      deps,
+    );
+
+    expect(outcome).toMatchObject({ deliveryKind: "notice", decision: { reason: "unsafe_snapshot" } });
+  });
+
+  it("does not claim anything for a snapshot without a recorded interrupted attempt", async () => {
+    const { deps } = restartEventHarness();
+    let claimed = false;
+    deps.claimInterruptedAttempt = () => {
+      claimed = true;
+      return { kind: "resume", attempt: interruptedAttempt };
+    };
+
+    const outcome = await deliverDaemonRestartSessionEvent(
+      { ...RESTART_EVENT_BASE, kind: "active", snapshot: snapshotRecord({ metadata: UNSAFE_SNAPSHOT_METADATA }) },
+      deps,
+    );
+
+    expect(claimed).toBe(false);
+    expect(outcome).toMatchObject({ deliveryKind: "notice", decision: { reason: "unsafe_snapshot" } });
+  });
+
+  it("tells the caller which sessions already resumed on their own", async () => {
+    const { deps, published } = restartEventHarness();
+
+    await deliverDaemonRestartSessionEvent(
+      { ...RESTART_EVENT_BASE, kind: "caller", resumedSessionNames: ["main-t-1", "main-t-2"] },
+      deps,
+    );
+
+    expect(published[0]?.payload.prompt).toContain("são retomados automaticamente");
+    expect(published[0]?.payload.prompt).toContain("main-t-1, main-t-2");
+  });
+});

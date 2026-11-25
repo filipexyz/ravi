@@ -1,6 +1,7 @@
 import type { DaemonRestartDeliveryKind, DaemonRestartSessionSnapshotRecord } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
 import type { MessageTarget, RuntimeLaunchPrompt } from "./message-types.js";
+import type { RestartAttemptClaim } from "./restart-turn-recovery.js";
 import type { RuntimeProviderId } from "./types.js";
 
 const log = logger.child("daemon");
@@ -9,11 +10,23 @@ export const CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY = "crashRecoveryRes
 
 export type CrashRecoveryRestartResumeMode = "continue" | "pending_only" | "skip";
 
-export type DaemonRestartResumeFenceReason = "unsafe_snapshot" | "missing_snapshot" | "ineligible_snapshot";
+/**
+ * `verify_continue` resumes a turn that was interrupted after it started
+ * acting. It never replays the original input: the session is told the daemon
+ * restarted mid-turn and must check the real state before repeating anything.
+ */
+export type DaemonRestartResumeMode = CrashRecoveryRestartResumeMode | "verify_continue";
+
+export type DaemonRestartResumeFenceReason =
+  | "unsafe_snapshot"
+  | "missing_snapshot"
+  | "ineligible_snapshot"
+  | "resume_loop";
 
 export type CrashRecoveryRestartResumeDecision =
   | { mode: "continue"; publish: true; reason: "continue" }
   | { mode: "pending_only"; publish: true; reason: "pending_only" }
+  | { mode: "verify_continue"; publish: true; reason: "verify_continue" }
   | { mode: "skip"; publish: false; reason: DaemonRestartResumeFenceReason };
 
 type DaemonRestartPrompt = RuntimeLaunchPrompt & Record<string, unknown>;
@@ -63,16 +76,18 @@ interface DaemonRestartResumePromptInput {
   reason: string;
   sessionKey: string;
   runtimeProvider?: RuntimeProviderId;
+  /** For `verify_continue`: what the interrupted turn had already done. */
+  evidence?: string[];
 }
 
 export function buildDaemonRestartResumePrompt(
-  input: DaemonRestartResumePromptInput & { mode: "continue" | "pending_only" },
+  input: DaemonRestartResumePromptInput & { mode: "continue" | "pending_only" | "verify_continue" },
 ): DaemonRestartPrompt;
 export function buildDaemonRestartResumePrompt(
-  input: DaemonRestartResumePromptInput & { mode: CrashRecoveryRestartResumeMode },
+  input: DaemonRestartResumePromptInput & { mode: DaemonRestartResumeMode },
 ): DaemonRestartPrompt | null;
 export function buildDaemonRestartResumePrompt(
-  input: DaemonRestartResumePromptInput & { mode: CrashRecoveryRestartResumeMode },
+  input: DaemonRestartResumePromptInput & { mode: DaemonRestartResumeMode },
 ): DaemonRestartPrompt | null {
   if (input.mode === "skip") {
     return null;
@@ -83,7 +98,9 @@ export function buildDaemonRestartResumePrompt(
   return {
     prompt: pendingOnly
       ? `[System] Daemon reiniciou (${input.reason}). Processe somente as mensagens pendentes duráveis anexadas; não continue o turn interrompido.`
-      : `[System] Daemon reiniciou (${input.reason}). Continue de onde parou.`,
+      : input.mode === "verify_continue"
+        ? buildVerifyContinueText(input.reason, input.evidence ?? [])
+        : `[System] Daemon reiniciou (${input.reason}). Continue de onde parou.`,
     deliveryBarrier: "after_response",
     deliveryBarrierSource: "default",
     _daemonRestartResume: {
@@ -93,6 +110,16 @@ export function buildDaemonRestartResumePrompt(
       ...(runtimeProvider ? { runtimeProvider: runtimeProvider as RuntimeProviderId } : {}),
     },
   };
+}
+
+function buildVerifyContinueText(reason: string, evidence: string[]): string {
+  return [
+    `[System] Daemon reiniciou (${reason}) no meio do teu turno, que foi interrompido${
+      evidence.length > 0 ? ` (${evidence.join("; ")})` : ""
+    }.`,
+    "Antes de repetir qualquer ação, confira o estado real (arquivos, git, PRs, mensagens enviadas, comandos e jobs) e não repita efeito que já aconteceu.",
+    "Depois continue o trabalho de onde parou.",
+  ].join(" ");
 }
 
 /**
@@ -107,13 +134,21 @@ export function buildDaemonRestartNoticePrompt(input: {
   fenceReason: DaemonRestartResumeFenceReason;
   snapshotMetadata?: Record<string, unknown>;
   runtimeProvider?: RuntimeProviderId;
+  /** Other sessions this restart already resumed on their own. */
+  resumedSessionNames?: string[];
 }): DaemonRestartPrompt {
   const runtimeProvider = input.runtimeProvider?.trim() || undefined;
+  const resumedSessionNames = input.resumedSessionNames ?? [];
   return {
     prompt: [
       `[System] Daemon reiniciou (${input.reason}).`,
       describeRestartResumeFence(input.fenceReason, input.snapshotMetadata),
       "Não continue nem repita trabalho interrompido por conta própria: avise o operador sobre o restart e o que ficou pendente, e aguarde instrução.",
+      ...(resumedSessionNames.length > 0
+        ? [
+            `Turnos interrompidos destas sessões são retomados automaticamente (agora ou em até ~2 min, quando o lease do boot anterior expirar), com nota para conferir o estado antes de repetir: ${resumedSessionNames.join(", ")}. Não mande retomar essas de novo.`,
+          ]
+        : []),
     ].join(" "),
     deliveryBarrier: "after_response",
     deliveryBarrierSource: "default",
@@ -141,6 +176,8 @@ function describeRestartResumeFence(
       return "Não há snapshot de restart desta sessão, então nenhum trabalho interrompido foi retomado automaticamente.";
     case "ineligible_snapshot":
       return "O snapshot de restart desta sessão está fora da janela de retomada, então nenhum trabalho interrompido foi retomado automaticamente.";
+    case "resume_loop":
+      return "O turn interrompido já era uma retomada automática de um restart anterior, então não foi retomado de novo, para não entrar em laço.";
   }
 }
 
@@ -172,6 +209,8 @@ export interface DaemonRestartSessionEventInput {
   kind: "caller" | "active";
   snapshot?: DaemonRestartSessionSnapshotRecord;
   snapshotEligible?: boolean;
+  /** Sessions this restart already resumed from the crash-recovery ledger. */
+  resumedSessionNames?: string[];
 }
 
 export interface DaemonRestartSessionEventDeps {
@@ -186,6 +225,25 @@ export interface DaemonRestartSessionEventDeps {
   publish(sessionName: string, payload: DaemonRestartPrompt): Promise<void>;
   isTerminalTaskSession(sessionName: string, snapshot?: DaemonRestartSessionSnapshotRecord): boolean;
   resolveSource(snapshot?: DaemonRestartSessionSnapshotRecord): MessageTarget | undefined;
+  /**
+   * Claim the durable attempt a snapshot recorded as interrupted mid-action,
+   * at most once. Without it, an unsafe snapshot keeps the notice-only path.
+   */
+  claimInterruptedAttempt?(input: { attemptId: string }): RestartAttemptClaim;
+}
+
+export const DAEMON_RESTART_INTERRUPTED_ATTEMPT_METADATA_KEY = "crashRecoveryAttemptId";
+
+/**
+ * The durable attempt a live snapshot recorded as interrupted after it started
+ * acting. The dispatcher only records it for an active, non-replayable turn
+ * that the provider had not finished and that is not a scheduled capacity
+ * retry; replayable turns keep `continue`.
+ */
+function snapshotInterruptedAttemptId(snapshot?: DaemonRestartSessionSnapshotRecord): string | undefined {
+  const metadata = snapshot?.metadata;
+  if (!metadata || metadata.live !== true) return undefined;
+  return cleanString(metadata[DAEMON_RESTART_INTERRUPTED_ATTEMPT_METADATA_KEY]);
 }
 
 export type DaemonRestartSessionEventOutcome =
@@ -222,12 +280,31 @@ export async function deliverDaemonRestartSessionEvent(
     return { status: "skipped_terminal_task" };
   }
 
-  const decision = resolveCrashRecoveryRestartResumeDecision({
+  let decision = resolveCrashRecoveryRestartResumeDecision({
     metadata: snapshot?.metadata,
     snapshotPresent: Boolean(snapshot),
     snapshotEligible: input.snapshotEligible ?? true,
     pendingMessageCount: snapshot?.pendingMessageCount,
   });
+  let evidence: string[] = [];
+  const interruptedAttemptId =
+    decision.reason === "unsafe_snapshot" || decision.reason === "pending_only"
+      ? snapshotInterruptedAttemptId(snapshot)
+      : undefined;
+  if (interruptedAttemptId && deps.claimInterruptedAttempt) {
+    const claim = deps.claimInterruptedAttempt({ attemptId: interruptedAttemptId });
+    log.info("Restart snapshot interrupted attempt claim", {
+      ...logContext,
+      attemptId: interruptedAttemptId,
+      claim: claim.kind === "skip" ? `skip:${claim.reason}` : claim.kind,
+    });
+    if (claim.kind === "resume") {
+      decision = { mode: "verify_continue", publish: true, reason: "verify_continue" };
+      evidence = describeUnsafeSnapshotEvidence(snapshot?.metadata);
+    } else if (claim.kind === "loop" && !decision.publish) {
+      decision = { mode: "skip", publish: false, reason: "resume_loop" };
+    }
+  }
   const runtimeProvider = snapshot?.runtimeProvider as RuntimeProviderId | undefined;
   let deliveryKind: DaemonRestartDeliveryKind;
   let payload: DaemonRestartPrompt;
@@ -239,6 +316,7 @@ export async function deliverDaemonRestartSessionEvent(
       sessionKey,
       mode: decision.mode,
       runtimeProvider,
+      evidence,
     });
   } else {
     deliveryKind = "notice";
@@ -253,6 +331,7 @@ export async function deliverDaemonRestartSessionEvent(
       fenceReason: decision.reason,
       snapshotMetadata: snapshot?.metadata,
       runtimeProvider,
+      resumedSessionNames: input.resumedSessionNames,
     });
   }
 

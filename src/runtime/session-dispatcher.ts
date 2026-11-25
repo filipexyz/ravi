@@ -62,6 +62,7 @@ import { triggerAuthorityLendsOwner, triggerOwnSessionAdmitsPrompt } from "../tr
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import {
   CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY,
+  DAEMON_RESTART_INTERRUPTED_ATTEMPT_METADATA_KEY,
   resolveCrashRecoveryRestartResumeMode,
 } from "./daemon-restart-resume.js";
 import {
@@ -417,6 +418,12 @@ export class RuntimeSessionDispatcher {
             ? "pending_only"
             : "skip";
       const nonIdle = !replaySafety.replayable || isDaemonRestartNonIdleSession(session) || pendingMessages.length > 0;
+      // A turn cut off after it started acting is resumed at boot with a note
+      // to verify state first (never a replay), once per durable attempt.
+      const interruptedAttemptId =
+        session.turnActive && !replaySafety.replayable && !terminalTurnConsumed && !hasScheduledCapacityRetry
+          ? (session.currentCrashRecoveryAttemptId ?? null)
+          : null;
       const snapshot = getAccumulator(sessionName, {
         agentId: session.agentId,
         runtimeProvider: session.queryHandle.provider,
@@ -437,6 +444,7 @@ export class RuntimeSessionDispatcher {
           currentTurnPendingIds: session.currentTurnPendingIds ?? [],
           currentTurnSuperseded: Boolean(session.currentTurnSuperseded),
           [CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY]: restartResumeMode,
+          [DAEMON_RESTART_INTERRUPTED_ATTEMPT_METADATA_KEY]: interruptedAttemptId,
           crashRecoveryReplaySafety: replaySafety,
           crashRecoveryTerminalStatus: session.currentCrashRecoveryTerminal?.status ?? null,
         },
