@@ -95,6 +95,15 @@ Attempt terminalization MUST be independent of the historical trace's terminal g
 
 Existing bounded retry and graceful-restart paths MUST consume that durable safety evidence. A physical turn with `started_tool`, `materialized_output`, an `inputMutated` safety marker, or `toolEffectFence=provider_event_only` MUST NOT be stashed or continued by a generic restart prompt. A physical turn already terminal at snapshot time is consumed regardless of its markers. A restart MAY continue a replay-safe current turn, MAY resume only independently queued durable successors, or MUST suppress continuation entirely; these cases are represented explicitly as `continue`, `pending_only`, and `skip` rather than inferred from prose. A caller restart reason/epoch without its expected session snapshot MUST resolve to `skip`; snapshot absence is not evidence that no physical turn existed.
 
+A restart MAY instead hand an interrupted unsafe turn back to its session as `verify_continue`. It is not a generic restart prompt: the original input is never re-sent or replayed. The session receives one restart input that names the evidence (tool started, output emitted), tells the agent to check the real state before repeating any action and not to repeat an effect that already happened, and only then to continue. Durable successors are hydrated with it. `verify_continue` applies only when all of these hold:
+
+- the restart snapshot recorded the interrupted durable attempt (`crashRecoveryAttemptId`) of an active, non-replayable turn that the provider had not finished and that is not a scheduled capacity retry, or the attempt was recovered from an abandoned boot (Recovery Policy);
+- the attempt is not `complete`, `failed` or `timeout`, and its session started no later attempt;
+- its origin is conversational: `human`, `agent`, `task` or `unknown`. Scheduled origins defer to their next run, and other origins are only reconciled;
+- the attempt is not itself a restart resume (origin `daemon-restart`, or attempt metadata `restartResume=true`, which the request builder writes for every turn started from a `_daemonRestartResume` input). Such a turn resolves to a `resume_loop` notice instead, so a turn that brings the daemon down cannot loop.
+
+A `verify_continue` input of a still-active task carries that task id, so the resumed turn keeps the task binding. It is delivered at most once per restart epoch and session by the restart delivery ledger.
+
 An explicit capacity retry authorized by the host after its replay-safety and
 broker checks is a separate pending attempt, not generic terminal replay. While
 that retry waits, a snapshot MAY retain its exact input cohort as `pending_only`
@@ -103,7 +112,7 @@ attempt stays terminal. Historical retry state alone MUST NOT grant this
 exception; the live scheduling checkpoint must match the failed input cohort
 and remain free of abort, supersession, tool, output, or input-mutation fences.
 
-Suppressing continuation MUST NOT suppress the restart notice. A `skip` decision (`unsafe_snapshot`, `missing_snapshot`, or `ineligible_snapshot`) MUST still deliver one notice-only session input, marked `_daemonRestartResume.noticeOnly`, that carries the restart reason, says why the interrupted work was not resumed, and tells the agent not to continue or repeat that work on its own. The dispatcher MUST NOT hydrate a snapshot's persisted pending work into a notice-only input. A dedicated task session whose task is no longer active receives neither a resume nor a notice.
+Suppressing continuation MUST NOT suppress the restart notice. A `skip` decision (`unsafe_snapshot`, `missing_snapshot`, `ineligible_snapshot`, or `resume_loop`) MUST still deliver one notice-only session input, marked `_daemonRestartResume.noticeOnly`, that carries the restart reason, says why the interrupted work was not resumed, and tells the agent not to continue or repeat that work on its own. The dispatcher MUST NOT hydrate a snapshot's persisted pending work into a notice-only input. A dedicated task session whose task is no longer active receives neither a resume nor a notice. A caller whose own interrupted attempt is still waiting for the previous boot's lease to expire gets its notice only after the orphaned-turn pass, and only if that pass delivered nothing to it. The notice also lists the sessions that resume on their own.
 
 Provider-owned ambiguous-turn reconciliation is distinct from generic replay. The host MAY retain an unsafe current turn solely for a live provider handle that advertises `reconcile_by_client_message_id`; the adapter MUST reattach or hydrate the matching native turn and MUST NOT issue another provider start after a failed/interrupted match without separate terminal replay authority. A provider without that advertised strategy MUST receive only replay-safe current input or independent successors.
 
@@ -144,11 +153,24 @@ Acquiring a recovery claim fences the underlying attempt or queue row immediatel
 The classifier and sweeper are later phases, but their contract is fixed here:
 
 - candidates MUST come from expired non-terminal attempts owned by an abandoned boot or durable queued work without a live owner;
-- ambiguous ownership, missing checkpoint/request data, unsafe tool execution, or materialized output MUST fail closed;
+- ambiguous ownership or missing checkpoint/request data MUST fail closed. An attempt with unsafe tool execution or materialized output MUST NOT be replayed; it MAY only be resumed as `verify_continue` (no input replay, verify-first note), through a claimed candidate;
 - recurring cron, heartbeat, follow-up, and sweep work SHOULD defer to the next schedule unless the producer explicitly opts into crash resume;
 - stable decisions are `resume`, `requeue`, `reconcile_interrupted`, `defer_next_schedule`, `ignore_stale`, and `manual_review`;
 - recovery MUST NOT promise exactly-once external effects without a producer-owned durable idempotency key;
 - resumed or requeued work MUST NOT call a provider directly.
+
+The daemon-restart sweep is implemented for turn attempts (`src/runtime/restart-turn-recovery.ts`):
+
+- It runs at boot, before the restart notices. When a previous boot was still inside its lease, it runs once more after that lease expires.
+- It runs even without a restart reason file or a main session, whenever a recent boot left a turn running.
+- It considers boots within the restart resume window (1 h since their last heartbeat). An `active` boot is fenced to `abandoned` only by compare-and-set on its observed heartbeat and lease, after that lease expired. An `abandoned` boot, including one an earlier pass fenced before it died, still yields its unclaimed attempts.
+- It records one `apply` recovery run owned by the current boot. For every expired, unclaimed `running` attempt it records a candidate and acquires that candidate's claim before acting:
+  - the newest attempt of a session gets `resume` / `verify_continue`;
+  - a restart resume gets `reconcile_interrupted` / `resume_loop` and publishes that notice;
+  - scheduled origins get `defer_next_schedule`;
+  - other origins get `reconcile_interrupted` without publishing;
+  - a superseded attempt, a missing session, a finished task, or a session that already received a restart event in this restart epoch gets `ignore_stale`.
+- A failed publish completes the claim as `failed` and is not retried.
 
 ## First Delivery Cut: Contract And Ledger
 

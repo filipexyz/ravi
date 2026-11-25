@@ -2,29 +2,27 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   createRuntimeBootEpoch,
+  createRuntimeTurnAttempt,
   getRuntimeBootEpoch,
   getRuntimeTurnAttempt,
   hasLaterRuntimeTurnAttempt,
-  listRuntimeBootEpochs,
-  listRuntimeTurnAttempts,
+  listRuntimeRecoveryCandidates,
+  listRuntimeRecoveryRuns,
   markRuntimeBootEpochAbandoned,
-  markRuntimeTurnAttemptRestartRecovery,
   markRuntimeTurnAttemptSafety,
-  createRuntimeTurnAttempt,
-  terminalizeRuntimeTurnAttempt,
 } from "./crash-recovery-store.js";
 import type { TurnOrigin } from "./turn-provenance.js";
 import {
-  claimRestartInterruptedAttempt,
+  createLedgerOrphanedRestartTurnDeps,
+  hasOrphanedRestartTurns,
+  judgeRestartInterruptedAttempt,
   type OrphanedRestartTurnDeps,
-  type RestartAttemptStore,
+  RESTART_RESUME_ATTEMPT_METADATA_KEY,
   recoverOrphanedRestartTurns,
 } from "./restart-turn-recovery.js";
 
 const NOW = 10_000_000;
 const WINDOW_MS = 60 * 60 * 1000;
-const DEAD_PID = 4242;
-const LIVE_PID = 5151;
 
 let stateDir: string | null = null;
 
@@ -37,16 +35,21 @@ afterEach(async () => {
   stateDir = null;
 });
 
-function createBoot(bootEpoch: string, input: { pid?: number; lastHeartbeatAt?: number; leaseMs?: number } = {}) {
+/** Defaults to a boot that died: its last heartbeat is older than its 120 s lease. */
+function createBoot(bootEpoch: string, input: { lastHeartbeatAt?: number } = {}) {
   const lastHeartbeatAt = input.lastHeartbeatAt ?? NOW - 130_000;
   return createRuntimeBootEpoch({
     bootEpoch,
     instanceId: `instance-${bootEpoch}`,
-    pid: input.pid ?? DEAD_PID,
+    pid: 4242,
     startedAt: lastHeartbeatAt - 600_000,
     lastHeartbeatAt,
-    leaseExpiresAt: lastHeartbeatAt + (input.leaseMs ?? 120_000),
+    leaseExpiresAt: lastHeartbeatAt + 120_000,
   });
+}
+
+function createLiveBoot() {
+  return createBoot("boot-live", { lastHeartbeatAt: NOW });
 }
 
 function createAttempt(input: {
@@ -56,7 +59,8 @@ function createAttempt(input: {
   sessionName?: string;
   startedAt?: number;
   originKind?: TurnOrigin;
-  startedTool?: boolean;
+  taskBarrierTaskId?: string;
+  metadata?: Record<string, unknown>;
 }) {
   const startedAt = input.startedAt ?? NOW - 135_000;
   createRuntimeTurnAttempt({
@@ -75,72 +79,40 @@ function createAttempt(input: {
     requestBlobSha256: `request-${input.attemptId}`,
     originKind: input.originKind ?? "agent",
     source: { channel: "slack", accountId: "ravi-slack", chatId: "D1", threadId: "1" },
+    taskBarrierTaskId: input.taskBarrierTaskId ?? null,
     deliveryBarrier: "after_response",
     pendingIds: [],
+    metadata: input.metadata ?? null,
   });
-  if (input.startedTool ?? true) {
-    markRuntimeTurnAttemptSafety({ attemptId: input.attemptId, startedTool: true, markedAt: startedAt + 1 });
-  }
+  markRuntimeTurnAttemptSafety({ attemptId: input.attemptId, startedTool: true, markedAt: startedAt + 1 });
 }
 
-const realStore: RestartAttemptStore = {
-  getAttempt: getRuntimeTurnAttempt,
-  hasLaterAttempt: hasLaterRuntimeTurnAttempt,
-  terminalizeInterrupted(attempt, completedAt) {
-    try {
-      terminalizeRuntimeTurnAttempt({ attemptId: attempt.attemptId, status: "interrupted", completedAt });
-      return true;
-    } catch {
-      return false;
-    }
-  },
-  markRecovery: (attemptId, status, reason, at) =>
-    markRuntimeTurnAttemptRestartRecovery({ attemptId, status, reason, recoveredAt: at }),
-};
-
-function harness(options: { delivered?: string[]; missingSessions?: string[] } = {}) {
+function harness(
+  options: { delivered?: string[]; missingSessions?: string[]; publishFails?: boolean; currentBootEpoch?: string } = {},
+) {
   const deliveries: Array<{ kind: string; sessionName: string; attemptId: string }> = [];
   const deps: OrphanedRestartTurnDeps = {
-    ...realStore,
-    now: () => NOW,
-    listActiveBootEpochs: () => listRuntimeBootEpochs({ status: "active", limit: 200 }),
-    abandonBootEpoch(boot, at) {
-      try {
-        markRuntimeBootEpochAbandoned({
-          bootEpoch: boot.bootEpoch,
-          abandonedAt: Math.max(at, boot.lastHeartbeatAt, boot.updatedAt),
-          reason: "test",
-          expectedLastHeartbeatAt: boot.lastHeartbeatAt,
-          expectedLeaseExpiresAt: boot.leaseExpiresAt,
-        });
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    listRunningAttempts: (bootEpoch) => listRuntimeTurnAttempts({ bootEpoch, status: "running", limit: 1000 }),
+    ...createLedgerOrphanedRestartTurnDeps(options.currentBootEpoch ?? "boot-live", { now: () => NOW }),
     hasDelivery: (_epoch, sessionKey) => (options.delivered ?? []).includes(sessionKey),
     resolveSessionName: (attempt) =>
       (options.missingSessions ?? []).includes(attempt.sessionKey) ? null : (attempt.sessionName ?? null),
     isTerminalTaskSession: () => false,
-    deliver: async ({ claim, sessionName }) => {
-      deliveries.push({ kind: claim.kind, sessionName, attemptId: claim.attempt.attemptId });
+    deliver: async ({ verdict, sessionName }) => {
+      if (options.publishFails) return false;
+      deliveries.push({ kind: verdict.kind, sessionName, attemptId: verdict.attempt.attemptId });
       return true;
     },
   };
   return { deps, deliveries };
 }
 
-function recover(deps: OrphanedRestartTurnDeps) {
-  return recoverOrphanedRestartTurns(
-    { restartEpoch: "restart-epoch-1", currentBootEpoch: "boot-live", windowMs: WINDOW_MS },
-    deps,
-  );
+function recover(deps: OrphanedRestartTurnDeps, currentBootEpoch: string | null = "boot-live") {
+  return recoverOrphanedRestartTurns({ restartEpoch: "restart-epoch-1", currentBootEpoch, windowMs: WINDOW_MS }, deps);
 }
 
 describe("orphaned turn recovery after an unclean restart", () => {
-  it("resumes the turn a SIGKILLed boot left running, exactly once", async () => {
-    createBoot("boot-live", { pid: 7777, lastHeartbeatAt: NOW });
+  it("resumes the turn a SIGKILLed boot left running, through a claimed apply run, exactly once", async () => {
+    createLiveBoot();
     createBoot("boot-dead");
     createAttempt({ attemptId: "attempt-1", bootEpoch: "boot-dead" });
     const { deps, deliveries } = harness();
@@ -149,50 +121,49 @@ describe("orphaned turn recovery after an unclean restart", () => {
 
     expect(first.resumed).toEqual(["main-t-1"]);
     expect(deliveries).toEqual([{ kind: "resume", sessionName: "main-t-1", attemptId: "attempt-1" }]);
-    expect(getRuntimeTurnAttempt("attempt-1")).toMatchObject({
-      status: "interrupted",
-      recoveryStatus: "restart_resumed",
-      recoveryReason: "verify_continue",
-    });
     expect(getRuntimeBootEpoch("boot-dead")?.status).toBe("abandoned");
     expect(getRuntimeBootEpoch("boot-live")?.status).toBe("active");
+    const attempt = getRuntimeTurnAttempt("attempt-1");
+    expect(attempt?.recoveryClaimId).not.toBeNull();
+    expect(attempt?.recoveryStatus).toBe("resume");
+    const [run] = listRuntimeRecoveryRuns();
+    expect(run).toMatchObject({ mode: "apply", bootEpoch: "boot-live", status: "complete" });
+    expect(listRuntimeRecoveryCandidates(run!.recoveryRunId)).toEqual([
+      expect.objectContaining({
+        attemptId: "attempt-1",
+        decision: "resume",
+        reasonCode: "verify_continue",
+        action: "publish_verify_continue",
+        actionStatus: "applied",
+      }),
+    ]);
 
     const second = await recover(deps);
     expect(second.resumed).toEqual([]);
+    expect(second.recoveryRunId).toBeNull();
     expect(deliveries).toHaveLength(1);
   });
 
-  it("never resumes the same attempt twice, even when claimed again directly", () => {
+  it("lets only one of two racing passes act, even when the loser listed the attempt before the winner claimed it", async () => {
+    createLiveBoot();
     createBoot("boot-dead");
     createAttempt({ attemptId: "attempt-1", bootEpoch: "boot-dead" });
+    const winner = harness();
+    const loser = harness();
+    const staleListing = loser.deps.listRunningAttempts("boot-dead");
+    loser.deps.listRunningAttempts = () => staleListing;
+    loser.deps.listBootEpochs = () => [getRuntimeBootEpoch("boot-dead")!].map((boot) => ({ ...boot }));
 
-    const first = claimRestartInterruptedAttempt({ attemptId: "attempt-1", now: NOW }, realStore);
-    const second = claimRestartInterruptedAttempt({ attemptId: "attempt-1", now: NOW + 1 }, realStore);
+    await recover(winner.deps);
+    const lost = await recover(loser.deps);
 
-    expect(first.kind).toBe("resume");
-    expect(second).toMatchObject({ kind: "skip", reason: "already_recovered" });
-  });
-
-  it("lets only one of two racing claims resume, even when the loser read the attempt before the winner marked it", () => {
-    createBoot("boot-dead");
-    createAttempt({ attemptId: "attempt-1", bootEpoch: "boot-dead" });
-    const staleRead = getRuntimeTurnAttempt("attempt-1");
-    expect(staleRead?.recoveryStatus).toBeNull();
-
-    const winner = claimRestartInterruptedAttempt({ attemptId: "attempt-1", now: NOW }, realStore);
-    let reads = 0;
-    const loserStore: RestartAttemptStore = {
-      ...realStore,
-      getAttempt: (attemptId) => (reads++ === 0 ? staleRead : getRuntimeTurnAttempt(attemptId)),
-    };
-    const loser = claimRestartInterruptedAttempt({ attemptId: "attempt-1", now: NOW + 1 }, loserStore);
-
-    expect(winner.kind).toBe("resume");
-    expect(loser).toMatchObject({ kind: "skip", reason: "already_recovered" });
+    expect(winner.deliveries).toHaveLength(1);
+    expect(loser.deliveries).toEqual([]);
+    expect(lost.skipped).toEqual([expect.objectContaining({ attemptId: "attempt-1", reason: "claimed_elsewhere" })]);
   });
 
   it("only notifies a turn that was itself a restart resume, so a crashing turn cannot loop", async () => {
-    createBoot("boot-live", { pid: 7777, lastHeartbeatAt: NOW });
+    createLiveBoot();
     createBoot("boot-dead");
     createAttempt({ attemptId: "attempt-resumed", bootEpoch: "boot-dead", originKind: "daemon-restart" });
     const { deps, deliveries } = harness();
@@ -202,11 +173,28 @@ describe("orphaned turn recovery after an unclean restart", () => {
     expect(outcome.resumed).toEqual([]);
     expect(outcome.noticed).toEqual(["main-t-1"]);
     expect(deliveries).toEqual([{ kind: "loop", sessionName: "main-t-1", attemptId: "attempt-resumed" }]);
-    expect(getRuntimeTurnAttempt("attempt-resumed")?.recoveryStatus).toBe("restart_noticed");
+    expect(getRuntimeTurnAttempt("attempt-resumed")?.recoveryStatus).toBe("reconcile_interrupted");
+  });
+
+  it("recognizes a task turn that was a restart resume by its attempt marker, not only its origin", async () => {
+    createLiveBoot();
+    createBoot("boot-dead");
+    createAttempt({
+      attemptId: "attempt-task-resume",
+      bootEpoch: "boot-dead",
+      originKind: "task",
+      taskBarrierTaskId: "task-1",
+      metadata: { [RESTART_RESUME_ATTEMPT_METADATA_KEY]: true },
+    });
+    const { deps, deliveries } = harness();
+
+    await recover(deps);
+
+    expect(deliveries).toEqual([{ kind: "loop", sessionName: "main-t-1", attemptId: "attempt-task-resume" }]);
   });
 
   it("resumes only the newest interrupted turn of a session", async () => {
-    createBoot("boot-live", { pid: 7777, lastHeartbeatAt: NOW });
+    createLiveBoot();
     createBoot("boot-dead");
     createAttempt({ attemptId: "attempt-old", bootEpoch: "boot-dead", startedAt: NOW - 140_000 });
     createAttempt({ attemptId: "attempt-new", bootEpoch: "boot-dead", startedAt: NOW - 135_000 });
@@ -215,46 +203,51 @@ describe("orphaned turn recovery after an unclean restart", () => {
     await recover(deps);
 
     expect(deliveries.map((delivery) => delivery.attemptId)).toEqual(["attempt-new"]);
-    expect(getRuntimeTurnAttempt("attempt-old")).toMatchObject({
-      status: "interrupted",
-      recoveryStatus: "restart_skipped",
-      recoveryReason: "superseded",
-    });
+    expect(getRuntimeTurnAttempt("attempt-old")?.recoveryStatus).toBe("ignore_stale");
   });
 
   it("leaves a session alone when it already started a turn after the interrupted one", async () => {
-    createBoot("boot-live", { pid: 7777, lastHeartbeatAt: NOW });
+    createLiveBoot();
     createBoot("boot-dead");
     createAttempt({ attemptId: "attempt-dead", bootEpoch: "boot-dead", startedAt: NOW - 135_000 });
     createAttempt({ attemptId: "attempt-live", bootEpoch: "boot-live", startedAt: NOW - 1_000 });
     const { deps, deliveries } = harness();
 
-    await recover(deps);
+    const outcome = await recover(deps);
 
     expect(deliveries).toEqual([]);
-    expect(getRuntimeTurnAttempt("attempt-dead")?.recoveryReason).toBe("superseded");
-    expect(getRuntimeTurnAttempt("attempt-live")?.status).toBe("running");
+    expect(outcome.skipped).toEqual([expect.objectContaining({ attemptId: "attempt-dead", reason: "superseded" })]);
+    expect(getRuntimeTurnAttempt("attempt-live")?.recoveryClaimId).toBeNull();
   });
 
-  it("does not touch a previous boot still inside its lease, and asks to look again at its expiry", async () => {
-    createBoot("boot-live", { pid: 7777, lastHeartbeatAt: NOW });
-    const maybeAlive = createBoot("boot-maybe-alive", { pid: LIVE_PID, lastHeartbeatAt: NOW - 5_000 });
-    createAttempt({ attemptId: "attempt-1", bootEpoch: "boot-maybe-alive", startedAt: NOW - 10_000 });
+  it("does not touch a previous boot still inside its lease, and reports what waits for its expiry", async () => {
+    createLiveBoot();
+    const leased = createBoot("boot-leased", { lastHeartbeatAt: NOW - 5_000 });
+    createAttempt({ attemptId: "attempt-1", bootEpoch: "boot-leased", startedAt: NOW - 10_000 });
     const { deps, deliveries } = harness();
 
     const outcome = await recover(deps);
 
     expect(deliveries).toEqual([]);
-    expect(outcome.retryAt).toBe(maybeAlive.leaseExpiresAt);
+    expect(outcome.retryAt).toBe(leased.leaseExpiresAt);
     expect(outcome.pending).toEqual(["main-t-1"]);
-    expect(getRuntimeBootEpoch("boot-maybe-alive")?.status).toBe("active");
-    expect(getRuntimeTurnAttempt("attempt-1")?.status).toBe("running");
+    expect(outcome.pendingSessionKeys).toEqual(["agent:main:main:thread:1"]);
+    expect(getRuntimeBootEpoch("boot-leased")?.status).toBe("active");
+    expect(getRuntimeTurnAttempt("attempt-1")?.recoveryClaimId).toBeNull();
+    expect(hasOrphanedRestartTurns({ currentBootEpoch: "boot-live", windowMs: WINDOW_MS }, deps)).toBe(true);
   });
 
-  it("recovers once the previous boot's lease expired, whatever its pid", async () => {
-    createBoot("boot-live", { pid: 7777, lastHeartbeatAt: NOW });
-    createBoot("boot-expired", { pid: LIVE_PID, lastHeartbeatAt: NOW - 130_000 });
-    createAttempt({ attemptId: "attempt-1", bootEpoch: "boot-expired", startedAt: NOW - 140_000 });
+  it("picks up unclaimed turns of a boot an earlier pass abandoned before it died", async () => {
+    createLiveBoot();
+    const dead = createBoot("boot-dead");
+    createAttempt({ attemptId: "attempt-1", bootEpoch: "boot-dead" });
+    markRuntimeBootEpochAbandoned({
+      bootEpoch: "boot-dead",
+      abandonedAt: NOW - 1_000,
+      reason: "earlier pass",
+      expectedLastHeartbeatAt: dead.lastHeartbeatAt,
+      expectedLeaseExpiresAt: dead.leaseExpiresAt,
+    });
     const { deps, deliveries } = harness();
 
     await recover(deps);
@@ -263,7 +256,7 @@ describe("orphaned turn recovery after an unclean restart", () => {
   });
 
   it("ignores boots that died outside the resume window", async () => {
-    createBoot("boot-live", { pid: 7777, lastHeartbeatAt: NOW });
+    createLiveBoot();
     createBoot("boot-ancient", { lastHeartbeatAt: NOW - WINDOW_MS - 1 });
     createAttempt({ attemptId: "attempt-1", bootEpoch: "boot-ancient", startedAt: NOW - WINDOW_MS - 10_000 });
     const { deps, deliveries } = harness();
@@ -272,13 +265,14 @@ describe("orphaned turn recovery after an unclean restart", () => {
 
     expect(deliveries).toEqual([]);
     expect(getRuntimeBootEpoch("boot-ancient")?.status).toBe("active");
-    expect(getRuntimeTurnAttempt("attempt-1")?.status).toBe("running");
+    expect(hasOrphanedRestartTurns({ currentBootEpoch: "boot-live", windowMs: WINDOW_MS }, deps)).toBe(false);
   });
 
-  it("skips background origins, missing sessions and sessions the restart snapshot already handled", async () => {
-    createBoot("boot-live", { pid: 7777, lastHeartbeatAt: NOW });
+  it("claims without resuming scheduled and background origins, missing sessions and sessions already handled", async () => {
+    createLiveBoot();
     createBoot("boot-dead");
     createAttempt({ attemptId: "attempt-observer", bootEpoch: "boot-dead", sessionKey: "obs", originKind: "observer" });
+    createAttempt({ attemptId: "attempt-cron", bootEpoch: "boot-dead", sessionKey: "cron", originKind: "cron" });
     createAttempt({ attemptId: "attempt-gone", bootEpoch: "boot-dead", sessionKey: "gone" });
     createAttempt({ attemptId: "attempt-snap", bootEpoch: "boot-dead", sessionKey: "snap" });
     const { deps, deliveries } = harness({ missingSessions: ["gone"], delivered: ["snap"] });
@@ -287,16 +281,29 @@ describe("orphaned turn recovery after an unclean restart", () => {
 
     expect(deliveries).toEqual([]);
     expect(Object.fromEntries(outcome.skipped.map((entry) => [entry.attemptId, entry.reason]))).toEqual({
-      "attempt-observer": "origin_not_resumable",
+      "attempt-observer": "origin_observer",
+      "attempt-cron": "origin_scheduled",
       "attempt-gone": "session_missing",
       "attempt-snap": "restart_event_delivered",
     });
+    expect(getRuntimeTurnAttempt("attempt-cron")?.recoveryStatus).toBe("defer_next_schedule");
     for (const attemptId of ["attempt-observer", "attempt-gone", "attempt-snap"]) {
-      expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
-        status: "interrupted",
-        recoveryStatus: "restart_skipped",
-      });
+      expect(getRuntimeTurnAttempt(attemptId)?.recoveryClaimId).not.toBeNull();
     }
+  });
+
+  it("records a failed publish on the claim and does not retry it on the next pass", async () => {
+    createLiveBoot();
+    createBoot("boot-dead");
+    createAttempt({ attemptId: "attempt-1", bootEpoch: "boot-dead" });
+
+    const failed = await recover(harness({ publishFails: true }).deps);
+    const retry = harness();
+    await recover(retry.deps);
+
+    expect(failed.skipped).toEqual([expect.objectContaining({ attemptId: "attempt-1", reason: "publish_failed" })]);
+    expect(getRuntimeTurnAttempt("attempt-1")?.recoveryStatus).toBe("action_failed");
+    expect(retry.deliveries).toEqual([]);
   });
 
   it("does nothing without its own boot epoch", async () => {
@@ -304,13 +311,27 @@ describe("orphaned turn recovery after an unclean restart", () => {
     createAttempt({ attemptId: "attempt-1", bootEpoch: "boot-dead" });
     const { deps, deliveries } = harness();
 
-    const outcome = await recoverOrphanedRestartTurns(
-      { restartEpoch: "restart-epoch-1", currentBootEpoch: null, windowMs: WINDOW_MS },
-      deps,
-    );
+    const outcome = await recover(deps, null);
 
     expect(outcome.resumed).toEqual([]);
     expect(deliveries).toEqual([]);
-    expect(getRuntimeTurnAttempt("attempt-1")?.status).toBe("running");
+    expect(getRuntimeBootEpoch("boot-dead")?.status).toBe("active");
+  });
+});
+
+describe("judging an attempt a graceful restart interrupted", () => {
+  const reader = { hasLaterAttempt: hasLaterRuntimeTurnAttempt };
+
+  it("resumes an aborted conversational turn and refuses a finished one", () => {
+    createLiveBoot();
+    createAttempt({ attemptId: "attempt-1", bootEpoch: "boot-live", startedAt: NOW - 1_000 });
+    const attempt = getRuntimeTurnAttempt("attempt-1")!;
+
+    expect(judgeRestartInterruptedAttempt({ ...attempt, status: "aborted" }, reader).kind).toBe("resume");
+    expect(judgeRestartInterruptedAttempt({ ...attempt, status: "complete" }, reader)).toMatchObject({
+      kind: "skip",
+      reason: "turn_completed",
+    });
+    expect(judgeRestartInterruptedAttempt(null, reader)).toMatchObject({ kind: "skip", reason: "attempt_missing" });
   });
 });

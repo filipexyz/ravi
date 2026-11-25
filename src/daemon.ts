@@ -96,20 +96,15 @@ import {
   buildDaemonRestartResumePrompt,
   deliverDaemonRestartSessionEvent,
 } from "./runtime/daemon-restart-resume.js";
-import {
-  getRuntimeTurnAttempt,
-  hasLaterRuntimeTurnAttempt,
-  listRuntimeBootEpochs,
-  listRuntimeTurnAttempts,
-  markRuntimeBootEpochAbandoned,
-  markRuntimeTurnAttemptRestartRecovery,
-  terminalizeRuntimeTurnAttempt,
-} from "./runtime/crash-recovery-store.js";
+import { getRuntimeTurnAttempt, hasLaterRuntimeTurnAttempt } from "./runtime/crash-recovery-store.js";
 import type { RuntimeProviderId } from "./runtime/types.js";
 import {
-  claimRestartInterruptedAttempt,
+  createLedgerOrphanedRestartTurnDeps,
   describeInterruptedAttemptEvidence,
-  type RestartAttemptStore,
+  hasOrphanedRestartTurns,
+  judgeRestartInterruptedAttempt,
+  type OrphanedRestartTurnDeps,
+  type OrphanedRestartTurnOutcome,
   recoverOrphanedRestartTurns,
 } from "./runtime/restart-turn-recovery.js";
 import { dbHasActiveAssignedTaskForSession } from "./tasks/task-db.js";
@@ -797,7 +792,7 @@ function createStubSender(): OmniSender {
  * no session to tell) nothing was restarted, so the boot returns quietly.
  */
 async function notifyRestartReason() {
-  const restartInfo = resolveBootRestartReason<RestartReasonInfo>({
+  let restartInfo = resolveBootRestartReason<RestartReasonInfo>({
     fromFile: readRestartReasonInfo({ consume: true }),
     fallbackSessionExists: Boolean(getMainSession(dbGetSetting("defaultAgent") || "main")),
     synthesize: () => ({
@@ -806,9 +801,15 @@ async function notifyRestartReason() {
       createdAt: Date.now(),
     }),
   });
+  // Without a reason file and a main session there is nobody to notify, but a
+  // hard stop may still have left turns running in the crash-recovery ledger.
+  const recoverOnly = !restartInfo;
   if (!restartInfo) {
-    log.info("First boot: no restart reason and no main session; skipping the restart notice");
-    return;
+    if (!hasOrphanedRestartTurns(orphanedTurnScope(), orphanedTurnDeps(undefined))) {
+      log.info("First boot: no restart reason, no main session and no interrupted turns; skipping the restart notice");
+      return;
+    }
+    restartInfo = { reason: "supervised_restart", restartEpoch: newRestartEpoch(), createdAt: Date.now() };
   }
 
   dbUpsertDaemonRestartEpoch({
@@ -819,16 +820,20 @@ async function notifyRestartReason() {
     updatedAt: Date.now(),
   });
 
+  // Turns cut off without a graceful snapshot (SIGKILL, exit, crash) are only
+  // in the crash-recovery ledger. Resume them first, so the caller notice below
+  // can say which sessions resume on their own and skip a session it resumed.
+  const orphaned = await recoverOrphanedRestartTurnsNow(restartInfo);
+  if (recoverOnly) {
+    scheduleDeferredOrphanedTurnRecovery(restartInfo, orphaned, undefined);
+    return;
+  }
+
   const snapshots = dbListEligibleDaemonRestartSessionSnapshots({
     restartEpoch: restartInfo.restartEpoch,
     now: Date.now(),
     windowMs: RESTART_RESUME_WINDOW_MS,
   });
-
-  // Turns cut off without a graceful snapshot (SIGKILL, exit, crash) are only
-  // in the crash-recovery ledger. Resume them first, so the caller notice below
-  // can say which sessions already resumed and skip a session it resumed.
-  const orphaned = await recoverOrphanedRestartTurnsNow(restartInfo);
 
   const callerSessionName = restartInfo.sessionName ?? resolveFallbackRestartSessionName();
   log.info("Delivering daemon restart events", {
@@ -845,12 +850,23 @@ async function notifyRestartReason() {
     eligibleCallerSnapshot ??
     (callerSessionKey ? dbGetDaemonRestartSessionSnapshot(restartInfo.restartEpoch, callerSessionKey) : null) ??
     undefined;
-  if (callerSessionName) {
-    await publishRestartResumeEvent(callerSessionName, restartInfo, {
+  const callerEvent = callerSessionName
+    ? {
+        sessionName: callerSessionName,
+        snapshot: callerSnapshot,
+        snapshotEligible: !callerSnapshot || Boolean(eligibleCallerSnapshot),
+      }
+    : undefined;
+  // A caller whose own interrupted turn waits for the previous boot's lease is
+  // resumed by the deferred pass; a notice now would record a delivery for it
+  // and tell it to stop, so its notice waits for that pass instead.
+  const callerAwaitsRecovery = Boolean(callerSessionKey && orphaned.pendingSessionKeys.includes(callerSessionKey));
+  if (callerEvent && !callerAwaitsRecovery) {
+    await publishRestartResumeEvent(callerEvent.sessionName, restartInfo, {
       kind: "caller",
-      snapshot: callerSnapshot,
-      snapshotEligible: !callerSnapshot || Boolean(eligibleCallerSnapshot),
-      resumedSessionNames: orphaned.resumed,
+      snapshot: callerEvent.snapshot,
+      snapshotEligible: callerEvent.snapshotEligible,
+      resumedSessionNames: [...orphaned.resumed, ...orphaned.pending],
     });
   }
 
@@ -861,116 +877,111 @@ async function notifyRestartReason() {
     await publishRestartResumeEvent(snapshot.sessionName, restartInfo, { kind: "active", snapshot });
   }
 
-  if (orphaned.retryAt !== null) {
-    // A previous boot was not provably dead yet (live pid, unexpired lease).
-    // Look again once its lease runs out; the ledger keeps this idempotent.
-    const delayMs = Math.max(0, orphaned.retryAt - Date.now()) + ORPHANED_TURN_RETRY_MARGIN_MS;
-    log.info("Deferring orphaned turn recovery until the previous boot lease expires", { delayMs });
-    setTimeout(() => {
-      void recoverOrphanedRestartTurnsNow(restartInfo);
-    }, delayMs).unref?.();
-  }
+  scheduleDeferredOrphanedTurnRecovery(restartInfo, orphaned, callerAwaitsRecovery ? callerEvent : undefined);
 }
 
 const ORPHANED_TURN_RETRY_MARGIN_MS = 2_000;
 
-const restartAttemptStore: RestartAttemptStore = {
-  getAttempt: getRuntimeTurnAttempt,
-  hasLaterAttempt: hasLaterRuntimeTurnAttempt,
-  terminalizeInterrupted(attempt, completedAt) {
-    try {
-      terminalizeRuntimeTurnAttempt({
-        attemptId: attempt.attemptId,
-        status: "interrupted",
-        completedAt,
-        metadata: { interruptedBy: "daemon_restart" },
-      });
-      return true;
-    } catch (error) {
-      log.warn("Interrupted turn attempt changed before restart recovery claimed it", {
-        attemptId: attempt.attemptId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return false;
-    }
-  },
-  markRecovery(attemptId, status, reason, at) {
-    return markRuntimeTurnAttemptRestartRecovery({ attemptId, status, reason, recoveredAt: at });
-  },
-};
-
-async function recoverOrphanedRestartTurnsNow(
+/**
+ * A previous boot still inside its lease cannot be fenced yet. Look again once
+ * the lease runs out (once: a boot that keeps renewing is alive), then send any
+ * caller notice that was held back for it, unless that pass already delivered
+ * a restart event to the caller.
+ */
+function scheduleDeferredOrphanedTurnRecovery(
   restartInfo: RestartReasonInfo,
-): Promise<{ resumed: string[]; retryAt: number | null }> {
+  orphaned: OrphanedRestartTurnOutcome,
+  deferredCaller:
+    | { sessionName: string; snapshot?: DaemonRestartSessionSnapshotRecord; snapshotEligible: boolean }
+    | undefined,
+): void {
+  if (orphaned.retryAt === null) return;
+  const delayMs = Math.max(0, orphaned.retryAt - Date.now()) + ORPHANED_TURN_RETRY_MARGIN_MS;
+  log.info("Deferring orphaned turn recovery until the previous boot lease expires", {
+    delayMs,
+    pending: orphaned.pending,
+    callerDeferred: deferredCaller?.sessionName ?? null,
+  });
+  setTimeout(() => {
+    void (async () => {
+      const later = await recoverOrphanedRestartTurnsNow(restartInfo);
+      if (deferredCaller) {
+        await publishRestartResumeEvent(deferredCaller.sessionName, restartInfo, {
+          kind: "caller",
+          snapshot: deferredCaller.snapshot,
+          snapshotEligible: deferredCaller.snapshotEligible,
+          resumedSessionNames: later.resumed,
+        });
+      }
+    })().catch((error) => log.error("Deferred orphaned turn recovery failed", { error }));
+  }, delayMs).unref?.();
+}
+
+function orphanedTurnScope() {
+  return { currentBootEpoch: bot?.crashRecoveryBootEpoch ?? null, windowMs: RESTART_RESUME_WINDOW_MS };
+}
+
+function orphanedTurnDeps(restartInfo: RestartReasonInfo | undefined): OrphanedRestartTurnDeps {
+  return {
+    ...createLedgerOrphanedRestartTurnDeps(bot?.crashRecoveryBootEpoch ?? "", {
+      runMetadata: { restartEpoch: restartInfo?.restartEpoch ?? null },
+    }),
+    hasDelivery: dbHasDaemonRestartResumeDelivery,
+    resolveSessionName(attempt) {
+      const session =
+        getSession(attempt.sessionKey) ?? (attempt.sessionName ? getSessionByName(attempt.sessionName) : null);
+      return session?.name ?? null;
+    },
+    isTerminalTaskSession: (sessionName, taskId) =>
+      shouldSkipRestartResumeForTerminalTaskSession(
+        sessionName,
+        taskId
+          ? ({ metadata: { currentTaskBarrierTaskId: taskId } } as unknown as DaemonRestartSessionSnapshotRecord)
+          : undefined,
+      ),
+    deliver: (input) => (restartInfo ? deliverOrphanedRestartTurn(restartInfo, input) : Promise.resolve(false)),
+  };
+}
+
+async function recoverOrphanedRestartTurnsNow(restartInfo: RestartReasonInfo): Promise<OrphanedRestartTurnOutcome> {
   try {
     const outcome = await recoverOrphanedRestartTurns(
-      {
-        restartEpoch: restartInfo.restartEpoch,
-        currentBootEpoch: bot?.crashRecoveryBootEpoch ?? null,
-        windowMs: RESTART_RESUME_WINDOW_MS,
-      },
-      {
-        ...restartAttemptStore,
-        now: Date.now,
-        listActiveBootEpochs: () => listRuntimeBootEpochs({ status: "active", limit: 200 }),
-        abandonBootEpoch(boot, at) {
-          try {
-            markRuntimeBootEpochAbandoned({
-              bootEpoch: boot.bootEpoch,
-              abandonedAt: Math.max(at, boot.lastHeartbeatAt, boot.updatedAt),
-              reason: "daemon_restart_orphaned",
-              expectedLastHeartbeatAt: boot.lastHeartbeatAt,
-              expectedLeaseExpiresAt: boot.leaseExpiresAt,
-            });
-            return true;
-          } catch (error) {
-            log.warn("Previous boot changed before it could be fenced; leaving its turns alone", {
-              bootEpoch: boot.bootEpoch,
-              error: error instanceof Error ? error.message : String(error),
-            });
-            return false;
-          }
-        },
-        listRunningAttempts: (bootEpoch) => listRuntimeTurnAttempts({ bootEpoch, status: "running", limit: 1000 }),
-        hasDelivery: dbHasDaemonRestartResumeDelivery,
-        resolveSessionName(attempt) {
-          const session =
-            getSession(attempt.sessionKey) ?? (attempt.sessionName ? getSessionByName(attempt.sessionName) : null);
-          return session?.name ?? null;
-        },
-        isTerminalTaskSession: (sessionName, taskId) =>
-          shouldSkipRestartResumeForTerminalTaskSession(
-            sessionName,
-            taskId
-              ? ({ metadata: { currentTaskBarrierTaskId: taskId } } as unknown as DaemonRestartSessionSnapshotRecord)
-              : undefined,
-          ),
-        deliver: (input) => deliverOrphanedRestartTurn(restartInfo, input),
-      },
+      { restartEpoch: restartInfo.restartEpoch, ...orphanedTurnScope() },
+      orphanedTurnDeps(restartInfo),
     );
     log.info("Orphaned turn recovery finished", {
       restartEpoch: restartInfo.restartEpoch,
+      recoveryRunId: outcome.recoveryRunId,
       resumed: outcome.resumed,
       noticed: outcome.noticed,
       skipped: outcome.skipped,
+      pending: outcome.pending,
       retryAt: outcome.retryAt,
     });
-    return { resumed: [...outcome.resumed, ...outcome.pending], retryAt: outcome.retryAt };
+    return outcome;
   } catch (error) {
     log.error("Orphaned turn recovery failed", { restartEpoch: restartInfo.restartEpoch, error });
-    return { resumed: [], retryAt: null };
+    return {
+      recoveryRunId: null,
+      resumed: [],
+      noticed: [],
+      skipped: [],
+      retryAt: null,
+      pending: [],
+      pendingSessionKeys: [],
+    };
   }
 }
 
 async function deliverOrphanedRestartTurn(
   restartInfo: RestartReasonInfo,
-  input: Parameters<Parameters<typeof recoverOrphanedRestartTurns>[1]["deliver"]>[0],
+  input: Parameters<OrphanedRestartTurnDeps["deliver"]>[0],
 ): Promise<boolean> {
-  const { claim, sessionName } = input;
-  const attempt = claim.attempt;
+  const { verdict, sessionName } = input;
+  const attempt = verdict.attempt;
   const runtimeProvider = attempt.provider as RuntimeProviderId;
   const payload =
-    claim.kind === "resume"
+    verdict.kind === "resume"
       ? buildDaemonRestartResumePrompt({
           restartEpoch: restartInfo.restartEpoch,
           reason: restartInfo.reason,
@@ -978,6 +989,7 @@ async function deliverOrphanedRestartTurn(
           mode: "verify_continue",
           runtimeProvider,
           evidence: describeInterruptedAttemptEvidence(attempt),
+          taskBarrierTaskId: attempt.taskBarrierTaskId ?? undefined,
         })
       : buildDaemonRestartNoticePrompt({
           restartEpoch: restartInfo.restartEpoch,
@@ -991,8 +1003,8 @@ async function deliverOrphanedRestartTurn(
   if (source) {
     payload.source = source;
   }
-  const deliveryKind = claim.kind === "resume" ? "resume" : "notice";
-  const decisionReason = claim.kind === "resume" ? "verify_continue" : "resume_loop";
+  const deliveryKind = verdict.kind === "resume" ? "resume" : "notice";
+  const decisionReason = verdict.kind === "resume" ? "verify_continue" : "resume_loop";
   const context = {
     restartEpoch: restartInfo.restartEpoch,
     sessionName,
@@ -1068,8 +1080,10 @@ async function publishRestartResumeEvent(
       publish: publishSessionPrompt,
       isTerminalTaskSession: shouldSkipRestartResumeForTerminalTaskSession,
       resolveSource: resolveRestartResumeSource,
-      claimInterruptedAttempt: ({ attemptId }) =>
-        claimRestartInterruptedAttempt({ attemptId, now: Date.now() }, restartAttemptStore),
+      judgeInterruptedAttempt: ({ attemptId }) =>
+        judgeRestartInterruptedAttempt(getRuntimeTurnAttempt(attemptId), {
+          hasLaterAttempt: hasLaterRuntimeTurnAttempt,
+        }),
     },
   );
   return outcome.status === "delivered";

@@ -1,7 +1,7 @@
 import type { DaemonRestartDeliveryKind, DaemonRestartSessionSnapshotRecord } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
 import type { MessageTarget, RuntimeLaunchPrompt } from "./message-types.js";
-import type { RestartAttemptClaim } from "./restart-turn-recovery.js";
+import type { RestartAttemptVerdict } from "./restart-turn-recovery.js";
 import type { RuntimeProviderId } from "./types.js";
 
 const log = logger.child("daemon");
@@ -78,6 +78,8 @@ interface DaemonRestartResumePromptInput {
   runtimeProvider?: RuntimeProviderId;
   /** For `verify_continue`: what the interrupted turn had already done. */
   evidence?: string[];
+  /** For `verify_continue`: the still-active task the interrupted turn ran under. */
+  taskBarrierTaskId?: string;
 }
 
 export function buildDaemonRestartResumePrompt(
@@ -95,7 +97,9 @@ export function buildDaemonRestartResumePrompt(
 
   const pendingOnly = input.mode === "pending_only";
   const runtimeProvider = input.runtimeProvider?.trim() || undefined;
+  const taskBarrierTaskId = input.mode === "verify_continue" ? input.taskBarrierTaskId?.trim() || undefined : undefined;
   return {
+    ...(taskBarrierTaskId ? { taskBarrierTaskId } : {}),
     prompt: pendingOnly
       ? `[System] Daemon reiniciou (${input.reason}). Processe somente as mensagens pendentes duráveis anexadas; não continue o turn interrompido.`
       : input.mode === "verify_continue"
@@ -226,10 +230,11 @@ export interface DaemonRestartSessionEventDeps {
   isTerminalTaskSession(sessionName: string, snapshot?: DaemonRestartSessionSnapshotRecord): boolean;
   resolveSource(snapshot?: DaemonRestartSessionSnapshotRecord): MessageTarget | undefined;
   /**
-   * Claim the durable attempt a snapshot recorded as interrupted mid-action,
-   * at most once. Without it, an unsafe snapshot keeps the notice-only path.
+   * Judge the durable attempt a snapshot recorded as interrupted mid-action.
+   * Without it, an unsafe snapshot keeps the notice-only path. The delivery
+   * ledger keeps this to one event per restart epoch and session.
    */
-  claimInterruptedAttempt?(input: { attemptId: string }): RestartAttemptClaim;
+  judgeInterruptedAttempt?(input: { attemptId: string }): RestartAttemptVerdict;
 }
 
 export const DAEMON_RESTART_INTERRUPTED_ATTEMPT_METADATA_KEY = "crashRecoveryAttemptId";
@@ -291,17 +296,17 @@ export async function deliverDaemonRestartSessionEvent(
     decision.reason === "unsafe_snapshot" || decision.reason === "pending_only"
       ? snapshotInterruptedAttemptId(snapshot)
       : undefined;
-  if (interruptedAttemptId && deps.claimInterruptedAttempt) {
-    const claim = deps.claimInterruptedAttempt({ attemptId: interruptedAttemptId });
-    log.info("Restart snapshot interrupted attempt claim", {
+  if (interruptedAttemptId && deps.judgeInterruptedAttempt) {
+    const verdict = deps.judgeInterruptedAttempt({ attemptId: interruptedAttemptId });
+    log.info("Restart snapshot interrupted attempt verdict", {
       ...logContext,
       attemptId: interruptedAttemptId,
-      claim: claim.kind === "skip" ? `skip:${claim.reason}` : claim.kind,
+      verdict: verdict.kind === "skip" ? `skip:${verdict.reason}` : verdict.kind,
     });
-    if (claim.kind === "resume") {
+    if (verdict.kind === "resume") {
       decision = { mode: "verify_continue", publish: true, reason: "verify_continue" };
       evidence = describeUnsafeSnapshotEvidence(snapshot?.metadata);
-    } else if (claim.kind === "loop" && !decision.publish) {
+    } else if (verdict.kind === "loop" && !decision.publish) {
       decision = { mode: "skip", publish: false, reason: "resume_loop" };
     }
   }
@@ -317,6 +322,7 @@ export async function deliverDaemonRestartSessionEvent(
       mode: decision.mode,
       runtimeProvider,
       evidence,
+      taskBarrierTaskId: cleanString(snapshot?.metadata?.currentTaskBarrierTaskId),
     });
   } else {
     deliveryKind = "notice";

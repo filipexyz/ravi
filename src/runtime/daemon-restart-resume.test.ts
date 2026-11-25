@@ -471,7 +471,7 @@ describe("daemon restart verify-and-continue for turns interrupted mid-action", 
   it("resumes an unsafe live snapshot with a verify note once its attempt is claimed", async () => {
     const { deps, published, marked } = restartEventHarness();
     const claims: string[] = [];
-    deps.claimInterruptedAttempt = ({ attemptId }) => {
+    deps.judgeInterruptedAttempt = ({ attemptId }) => {
       claims.push(attemptId);
       return { kind: "resume", attempt: interruptedAttempt };
     };
@@ -510,7 +510,7 @@ describe("daemon restart verify-and-continue for turns interrupted mid-action", 
 
   it("carries durable successors along with the verify note instead of a pending-only resume", async () => {
     const { deps, published } = restartEventHarness();
-    deps.claimInterruptedAttempt = () => ({ kind: "resume", attempt: interruptedAttempt });
+    deps.judgeInterruptedAttempt = () => ({ kind: "resume", attempt: interruptedAttempt });
 
     const outcome = await deliverDaemonRestartSessionEvent(
       {
@@ -533,7 +533,7 @@ describe("daemon restart verify-and-continue for turns interrupted mid-action", 
 
   it("only notifies when the interrupted turn was itself a restart resume", async () => {
     const { deps, published, marked } = restartEventHarness();
-    deps.claimInterruptedAttempt = () => ({ kind: "loop", attempt: interruptedAttempt });
+    deps.judgeInterruptedAttempt = () => ({ kind: "loop", attempt: interruptedAttempt });
 
     const outcome = await deliverDaemonRestartSessionEvent(
       { ...RESTART_EVENT_BASE, kind: "active", snapshot: snapshotRecord({ metadata: INTERRUPTED_SNAPSHOT_METADATA }) },
@@ -546,9 +546,9 @@ describe("daemon restart verify-and-continue for turns interrupted mid-action", 
     expect(marked[0]?.decisionReason).toBe("resume_loop");
   });
 
-  it("keeps the notice when the attempt cannot be claimed", async () => {
+  it("keeps the notice when the attempt is not resumable", async () => {
     const { deps } = restartEventHarness();
-    deps.claimInterruptedAttempt = () => ({ kind: "skip", reason: "already_recovered" });
+    deps.judgeInterruptedAttempt = () => ({ kind: "skip", reason: "superseded" });
 
     const outcome = await deliverDaemonRestartSessionEvent(
       { ...RESTART_EVENT_BASE, kind: "active", snapshot: snapshotRecord({ metadata: INTERRUPTED_SNAPSHOT_METADATA }) },
@@ -561,7 +561,7 @@ describe("daemon restart verify-and-continue for turns interrupted mid-action", 
   it("does not claim anything for a snapshot without a recorded interrupted attempt", async () => {
     const { deps } = restartEventHarness();
     let claimed = false;
-    deps.claimInterruptedAttempt = () => {
+    deps.judgeInterruptedAttempt = () => {
       claimed = true;
       return { kind: "resume", attempt: interruptedAttempt };
     };
@@ -585,5 +585,23 @@ describe("daemon restart verify-and-continue for turns interrupted mid-action", 
 
     expect(published[0]?.payload.prompt).toContain("são retomados automaticamente");
     expect(published[0]?.payload.prompt).toContain("main-t-1, main-t-2");
+  });
+
+  it("keeps the still-active task binding of an interrupted task turn on its verify resume", async () => {
+    const { deps, published } = restartEventHarness();
+    deps.judgeInterruptedAttempt = () => ({ kind: "resume", attempt: interruptedAttempt });
+
+    await deliverDaemonRestartSessionEvent(
+      {
+        ...RESTART_EVENT_BASE,
+        kind: "active",
+        snapshot: snapshotRecord({
+          metadata: { ...INTERRUPTED_SNAPSHOT_METADATA, currentTaskBarrierTaskId: "task-42" },
+        }),
+      },
+      deps,
+    );
+
+    expect(published[0]?.payload.taskBarrierTaskId).toBe("task-42");
   });
 });
