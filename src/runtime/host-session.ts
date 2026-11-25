@@ -208,6 +208,11 @@ export interface RuntimeHostStreamingSession {
   traceRunId?: string;
   /** Pending message ids yielded to the currently active provider turn. */
   currentTurnPendingIds?: string[];
+  /**
+   * `_correlationId`s of the prompts this physical turn consumed. Runtime events carry
+   * them as `_correlationIds`, so a waiter knows which turn is its own.
+   */
+  currentTurnCorrelationIds?: string[];
   /** Whether a newer prompt intentionally preempted the active provider turn. */
   currentTurnSuperseded?: boolean;
   /** Queued continuation owns the logical channel turn after this physical turn yields. */

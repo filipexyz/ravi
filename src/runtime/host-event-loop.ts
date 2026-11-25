@@ -2305,6 +2305,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     const augmented = {
       ...event,
       ...(streaming.currentBridgeTurnId ? { _bridgeTurnId: streaming.currentBridgeTurnId } : {}),
+      // The waiting producers whose prompts this physical turn carries (voice door ownership).
+      _correlationIds: streaming.currentTurnCorrelationIds ?? [],
       ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
       ...(!streaming.suppressChatEmit && !isObserverRuntimeSessionName(sessionName) && streaming.currentReplyTarget
         ? { _replyTarget: streaming.currentReplyTarget }
