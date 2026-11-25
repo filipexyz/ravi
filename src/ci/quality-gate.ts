@@ -154,6 +154,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/allowed-skills.test.ts",
   ],
   "src/runtime/": [
+    // Person credentials: a relay made with one person's key is that person's turn, never the agent's.
+    "src/runtime/person-credential.test.ts",
     // Agent runtime env: the provider spawn carries no daemon secret (allowlist, per-provider login).
     "src/runtime/agent-env-policy.test.ts",
     // Codex stored-session control spawns through the same env filter.
