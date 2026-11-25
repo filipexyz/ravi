@@ -2647,6 +2647,69 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
+  it("records the interrupted attempt of an unsafe live turn and hydrates its successors with the verify note", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-verify-continue-restart-");
+    try {
+      const now = Date.now();
+      const sessionKey = "agent:dev:test:restart-verify-continue";
+      const sessionName = "restart-verify-continue";
+      getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+      dbUpsertDaemonRestartEpoch({ restartEpoch: "epoch-verify-continue", reason: "test", createdAt: now });
+      const crashRecovery = {
+        acceptingDeliveries: true,
+        getActiveTurnAttempt: (attemptId: string) => ({ attemptId, startedTool: true, materializedOutput: false }),
+      } as unknown as RuntimeCrashRecoveryCoordinator;
+      const dispatcher = createDispatcher(1, 0, crashRecovery);
+      const active = createQueuedRuntimeUserMessage({ prompt: "unsafe current turn" });
+      const successor = createQueuedRuntimeUserMessage({ prompt: "message that arrived during the turn" });
+      dispatcher.streamingSessions.set(
+        sessionName,
+        createActiveSession({
+          turnActive: true,
+          toolRunning: true,
+          currentToolName: "bash",
+          currentTraceTurnId: "turn-verify-continue",
+          currentCrashRecoveryAttemptId: "attempt-verify-continue",
+          currentTurnPendingIds: active.pendingId ? [active.pendingId] : [],
+          pendingMessages: [],
+        }),
+      );
+      dispatcher.stashedMessages.set(sessionName, [successor]);
+
+      dispatcher.recordDaemonRestartSnapshot({ restartEpoch: "epoch-verify-continue", reason: "test", stoppedAt: now });
+
+      const snapshot = dbListEligibleDaemonRestartSessionSnapshots({
+        restartEpoch: "epoch-verify-continue",
+        now: now + 1,
+      })[0];
+      expect(snapshot?.metadata?.crashRecoveryAttemptId).toBe("attempt-verify-continue");
+      const payload = buildDaemonRestartResumePrompt({
+        restartEpoch: "epoch-verify-continue",
+        reason: "test",
+        sessionKey,
+        mode: "verify_continue",
+      });
+      expect(payload._daemonRestartResume?.pendingOnly).toBeUndefined();
+      expect(payload._daemonRestartResume?.noticeOnly).toBeUndefined();
+      const prepared = (
+        dispatcher as unknown as {
+          prepareDaemonRestartResumePrompt(
+            requestedSessionName: string,
+            prompt: RuntimeLaunchPrompt,
+            sessionEntry: null,
+          ): { prompt: RuntimeLaunchPrompt; messages: RuntimeUserMessage[] } | null;
+        }
+      ).prepareDaemonRestartResumePrompt(sessionName, payload, null);
+      expect(prepared?.messages.map((message) => message.message.content)).toEqual([
+        "message that arrived during the turn",
+        expect.stringContaining("confira o estado real"),
+      ]);
+      expect(prepared?.messages.some((message) => message.message.content === "unsafe current turn")).toBe(false);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
   it("resumes durable stashed input after a live unsafe snapshot with a zero pending counter", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-stashed-pending-restart-");
     try {

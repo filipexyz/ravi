@@ -109,7 +109,8 @@ Commands you type in your own shell run as the local operator, with full authori
 Your own terminal runs each command in place, on the state the daemon prepared.
 It never creates or migrates a store itself: when a command answers
 `STATE_SCHEMA_NOT_READY`, the daemon of this release has not started yet, so run
-`ravi daemon restart -m "prepare state"`. The lifecycle commands (`ravi daemon`, `ravi channels`,
+`ravi daemon restart -m "prepare state"`, or `ravi daemon start` on a machine that never ran a daemon:
+it returns once the daemon has created and prepared its state. The lifecycle commands (`ravi daemon`, `ravi channels`,
 `ravi update`) work with no database, so they are always there to recover with.
 A `ravi` run from a source checkout never reaches your real state: give it
 `RAVI_STATE_DIR`.

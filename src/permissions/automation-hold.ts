@@ -7,7 +7,9 @@
  *
  * - `contact-chat-grants`: the turn is narrowed to a contact's chat grants
  *   (`actorAuthorizationMode: user-overlay`); automation written there would
- *   outlive those grants, so no chat grant lifts it.
+ *   outlive those grants, so no chat grant lifts it. A contact whose own power
+ *   (global permission tags) holds full access is never narrowed there: the
+ *   overlay is lifted (`userOverlay: lifted`), so this cause does not name them.
  * - `held-relay`: the turn was relayed (a thread, a thread's return, a session
  *   message) from a turn that does not carry the agent's whole authority: a held
  *   caller, or a relay without the `relayCallerUnrestricted` stamp. It is not

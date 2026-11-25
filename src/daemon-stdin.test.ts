@@ -23,6 +23,7 @@ import {
   isDaemonRunArgv,
   maybeNeuterDaemonStdin,
   PM2_INERT_STDIN_SHELL_COMMAND,
+  PM2_KILL_TIMEOUT_MS,
 } from "./daemon-stdin.js";
 
 const BUN_FILE_READER_CHUNK = 256 * 1024;
@@ -275,11 +276,29 @@ describe("daemon PM2 inert-stdin launch", () => {
       "/bin/sh",
       "--interpreter-args",
       `-c '${PM2_INERT_STDIN_SHELL_COMMAND}'`,
+      "--kill-timeout",
+      "20000",
       "--",
       "daemon",
       "run",
     ]);
     expect(PM2_INERT_STDIN_SHELL_COMMAND).not.toContain(stateDir);
+  });
+
+  it("gives the daemon and the channels runner longer than the shutdown guard before PM2's SIGKILL", () => {
+    // daemon.ts forces exit 15 s into a graceful shutdown; PM2's default kill
+    // timeout (1600 ms) killed it before the restart checkpoint was recorded.
+    const DAEMON_SHUTDOWN_GUARD_MS = 15_000;
+    expect(PM2_KILL_TIMEOUT_MS).toBeGreaterThan(DAEMON_SHUTDOWN_GUARD_MS);
+    const daemonArgs = buildDaemonPm2StartArgs({ bundlePath: join(stateDir, "dist", "bundle", "index.js") });
+    const channelsArgs = buildChannelsPm2StartArgs({ bundlePath: join(stateDir, "dist", "bundle", "index.js") });
+    for (const args of [daemonArgs, channelsArgs]) {
+      const separator = args.indexOf("--");
+      const flag = args.indexOf("--kill-timeout");
+      expect(flag).toBeGreaterThan(-1);
+      expect(flag).toBeLessThan(separator);
+      expect(args[flag + 1]).toBe(String(PM2_KILL_TIMEOUT_MS));
+    }
   });
 
   it("rejects a local Bun-name collision and unsupported canonical binary names before PM2 starts", () => {

@@ -71,8 +71,26 @@ normative: false
 - Unterminated turns with durable tool/output evidence are not stashed by timeout, credential retry, provider interruption, dispatcher restart, or daemon restart snapshot paths.
 - A first-terminal latch retains safety markers after the active attempt binding is removed; daemon restart treats every provider-terminal physical turn as consumed.
 - Graceful restart uses explicit `continue`, `pending_only`, or `skip` mode. `pending_only` contains only durable independent successors and never appends the generic continuation prompt; a caller without its expected snapshot is `skip`.
+- An active, non-replayable, unfinished turn records `crashRecoveryAttemptId` in its restart snapshot. At boot a conversational attempt with no later attempt, which is not itself a restart resume, gets one `verify_continue` resume: verify note, durable successors, still-active task id, and never the original input. A restart resume (origin `daemon-restart` or attempt metadata `restartResume=true`) gets a `resume_loop` notice instead.
+- The request builder writes `restartResume=true` on the attempt of every turn started from a `_daemonRestartResume` input, and on no other attempt.
+- The boot sweep fences a recent dead boot only after its lease expired, records an `apply` recovery run owned by the current boot, and claims every candidate before acting. A second pass, or a racing pass that listed the attempt before the claim, publishes nothing. Unclaimed attempts of an already `abandoned` boot are still recovered. A failed publish is completed as `failed` and not retried.
+- A boot still inside its lease is left alone, and its waiting sessions are reported. The caller notice for a caller in that list is held until the deferred pass, and is sent only if that pass delivered nothing to the caller.
+- PM2 registers the daemon and the channels runner with `--kill-timeout 20000`, above the daemon's 15 s shutdown guard.
+- Every attempt records `restartTurnAuthority`, the turn's `context`, `_turnOrigin` and `_approvalSource`, JSON-safe and marked when the turn ran under automation authority. Every restart snapshot records the same for a live session.
+- A restart input restores that envelope before the recorded `source`, on both the sweep and the graceful path. For a relay narrowed to a contact's capabilities, a relay held below break-glass, and a Slack thread-child relay, the resumed runtime context has exactly the capabilities and break-glass withholding of the original turn (`restart-resume-authority.test.ts`).
+- A `continue` or `verify_continue` whose recorded envelope is missing, unreadable, or automation never continues the turn.
+  - A `continue` with durable queued messages degrades to `pending_only` and redelivers them.
+  - With nothing queued, it gives a notice (`authority_*`).
+- Snapshots of sessions without a live turn record `{ v: 1 }`, and after a graceful restart their queued message is redelivered (`restart-snapshot-redelivery.test.ts`). The sources are `stashed`, `debounce`, `inFlightStart` and `deferredAfterTask`.
+- The restore rejects a `_turnOrigin` the runtime would ignore. The sweep rejects an envelope without `_turnOrigin` when the attempt's provenance came from one.
+- The snapshot records an interrupted attempt only for an active, non-replayable, unfinished turn that is not a scheduled capacity retry (`resolveRestartSnapshotInterruptedAttemptId`).
+- The sweep never touches its own boot, leaves a boot whose fence compare-and-set fails, and claims, without resuming, the turn of a task that is no longer active.
+- The sweep resolves an attempt's session by its key only, with the same agent. When another session takes the deleted session's name, from the same agent or another one, the attempt is not resumed there.
+- The sweep returns what it did, including a deferred retry, even when the recovery run cannot be closed.
 - A `skip` decision MUST still publish one notice-only restart input (`_daemonRestartResume.noticeOnly`) with the restart reason and the fence reason; it never contains "Continue de onde parou" and the dispatcher never hydrates persisted pending work into it.
-- The restart delivery ledger records `notice` for a fenced restart and `resume` only for a published `continue`/`pending_only` resume; a failed publish or a terminal task session skip leaves no delivery record.
+- The restart delivery ledger records `notice` for a notice and `resume` for a `continue`, `pending_only` or `verify_continue` resume.
+  - On the snapshot path the record is written only after a successful publish; a failed publish or a terminal task session skip leaves no record.
+  - The boot sweep writes the record before it publishes, because its attempt is already claimed. A record it could not write means no event, and a record followed by a failed publish still holds the session for the epoch.
 - Persisted pending successors remain separate atoms with their original pending id, source, actor metadata, task barrier, and delivery barrier when hydrated into an existing or starting runtime.
 - Bot startup does not invoke the legacy task-status/recency resume producer; task continuation waits for a durable classifier decision.
 - A durable-preparation failure stashes the still-unconsumed prompt before the failed runtime session releases its slot.
@@ -92,6 +110,7 @@ normative: false
 - The second child does not classify candidates, acquire recovery claims, run startup/reconnect sweeps, or resume work.
 - The second child does not claim crash/reboot E2E coverage.
 - Changes to graceful restart only consume the new safety evidence; they do not add an abrupt-crash classifier, sweep, or resume path.
+- The daemon-restart sweep covers turn attempts only. It does not recover durable prompt-queue rows or legacy session turns, does not replay any input, and does not run outside daemon boot.
 
 ## Commands
 
@@ -102,6 +121,11 @@ ravi specs get daemon/restart/crash-recovery --mode checks --json
 bun test src/runtime/crash-recovery-store.test.ts
 bun test src/runtime/crash-recovery.test.ts src/runtime/prompt-subscription.test.ts src/runtime/delivery-queue.test.ts src/runtime/control-host.test.ts
 bun test src/approval/service.test.ts src/runtime/control-host.test.ts src/runtime/session-trace.test.ts src/runtime/session-dispatcher.test.ts src/runtime/daemon-restart-resume.test.ts src/bot.runtime-guards.test.ts
+bun test src/runtime/restart-turn-recovery.test.ts
+bun test src/runtime/restart-resume-authority.test.ts
+bun test src/runtime/restart-snapshot-redelivery.test.ts
+bun test src/runtime/runtime-request-builder.crash-recovery.test.ts
+bun test src/daemon-stdin.test.ts
 bun run typecheck
 bun run build
 ```

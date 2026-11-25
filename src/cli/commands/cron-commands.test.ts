@@ -363,6 +363,94 @@ describe("CronCommands --json", () => {
     ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
   });
 
+  it("binds a job from an overlay turn or a lifted overlay to its chat; a held relay still binds nothing", async () => {
+    const addJob = (name: string) =>
+      captureJson(() =>
+        new CronCommands().add(
+          name,
+          undefined,
+          "30m",
+          undefined,
+          undefined,
+          "hello",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      );
+
+    // A contact narrowed to a governed chat's grants: the job keeps running under those grants.
+    mockCliContext = {
+      agentId: "dev",
+      context: {
+        metadata: { actorAuthorizationMode: "user-overlay", userOverlay: "active", userOverlayChat: "chat:chat-bob" },
+      },
+    };
+    await addJob("Overlay");
+    expect(cronJob?.creatorChat).toBe("chat-bob");
+
+    // The same chat, a contact whose own full access lifted the overlay: bound too, so each run re-evaluates
+    // the owner and the job stops running as the agent once that full access is withdrawn (review of #990, N3).
+    mockCliContext = {
+      agentId: "dev",
+      context: {
+        metadata: { actorAuthorizationMode: "invoke-only", userOverlay: "lifted", userOverlayChat: "chat:chat-bob" },
+      },
+    };
+    await addJob("Lifted");
+    expect(cronJob?.creatorChat).toBe("chat-bob");
+
+    // An ungoverned chat records its overlay as inactive, with the chat: no binding, as before (review of #991, N1).
+    mockCliContext = {
+      agentId: "dev",
+      context: {
+        metadata: { actorAuthorizationMode: "invoke-only", userOverlay: "inactive", userOverlayChat: "chat:chat-bob" },
+      },
+    };
+    await addJob("Ungoverned");
+    expect(cronJob?.creatorChat).toBeUndefined();
+
+    // A held relay whose own overlay is lifted (a thread to an agent stronger than its caller) still writes no job:
+    // the held-relay guard reads the overlay mode, not the lift.
+    cronJob = null;
+    mockCliContext = {
+      agentId: "dev",
+      context: {
+        metadata: {
+          actorAuthorizationMode: "invoke-only",
+          userOverlay: "lifted",
+          userOverlayChat: "chat:chat-bob",
+          relayNarrowing: true,
+        },
+      },
+    };
+    await expect(
+      new CronCommands().add("Held relay", undefined, "30m", undefined, undefined, "hello"),
+    ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    expect(cronJob).toBeNull();
+  });
+
+  it("binds a job its owner rewrites from a lifted overlay to that chat", async () => {
+    cronJob = { ...cronJob, ownerPrincipal: "operator", creatorChat: undefined };
+    cronUpdatePatches = [];
+    mockCliContext = {
+      agentId: "dev",
+      context: {
+        metadata: { actorAuthorizationMode: "invoke-only", userOverlay: "lifted", userOverlayChat: "chat:chat-bob" },
+      },
+    };
+    await captureJson(() => new CronCommands().set("cron-1", "message", "new text", true));
+    expect(cronUpdatePatches[0]).toMatchObject({ creatorChat: "chat-bob" });
+  });
+
   it("does not make a trigger's own session the reply session of a job created during its turn", async () => {
     const addJob = () =>
       captureJson(() =>
