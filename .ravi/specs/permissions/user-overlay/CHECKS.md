@@ -24,6 +24,19 @@
   capabilities.
 - A thread turn MUST resolve grants from its container chat and record
   `userOverlayThreadChat`.
+- In a governed chat, a contact whose global permission tags cover a
+  full-access agent MUST get `userOverlay=lifted`, `actorAuthorizationMode`
+  other than `user-overlay`, no automation hold, `userOverlayGrants` recorded,
+  and threads (and their return) stamped `relayCallerUnrestricted`
+  (`runtime-request-context.test.ts`, "a contact speaking in a chat governed by
+  contact grants").
+- In a governed chat the overlay MUST stay (`userOverlay=active`, automation
+  held, threads held) for: a partial chat grant, no grant, a partial global
+  tag, full access granted only in that chat, a partial global tag plus full
+  access in that chat, an admin with a `deny_*` grant in that chat, and any
+  contact of a `chat-only` agent (same test block).
+- `deny` of the global grant a lifted turn rests on MUST revoke that live turn,
+  and the next turn without it MUST be narrowed again (same test block).
 - A global (`--force`) grant MUST apply only inside governed chats and MUST NOT
   govern a chat by itself.
 - Blocked contacts MUST receive zero overlay capabilities.

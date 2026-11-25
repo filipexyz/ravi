@@ -150,10 +150,11 @@ describe("permissions request / request-status", () => {
       expect(message).not.toContain("was closed");
       const suggestedAction = (error as { details?: { suggestedAction?: string } }).details?.suggestedAction;
       // In a governed chat their turn is narrowed to those grants: automation stays refused there too,
-      // except a cron job bound to that chat.
+      // except a cron job bound to that chat, unless their own power outside the chat covers the agent.
       expect(suggestedAction).toContain("a chat governed by contact grants");
+      expect(suggestedAction).toContain("unless their own permissions outside that chat cover the agent's");
       expect(suggestedAction).toContain("a cron job bound to that chat is allowed");
-      expect(suggestedAction).toContain("No grant lifts either");
+      expect(suggestedAction).toContain("No chat grant lifts either");
     }
     expect(delivered).toEqual([]);
     expect(dbListContactChatGrants({ contactId: admin.id })).toEqual([]);

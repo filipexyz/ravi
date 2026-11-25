@@ -56,7 +56,10 @@ function automationHoldError(message: string, cause: AutomationHoldCause): CliEx
  * break-glass (`actorBreakGlassWithheld`). Cron jobs record the overlay chat
  * instead (`creatorChat`). The operator's own relay (a thread they asked for)
  * carries `relayNarrowing` too, but holds the agent's authority
- * (`relayCallerUnrestricted`) and writes automation as itself.
+ * (`relayCallerUnrestricted`) and writes automation as itself. The operator
+ * speaking in a governed chat is not narrowed either: a contact whose own
+ * power covers the agent gets a lifted overlay (`userOverlay: lifted`), not an
+ * overlay turn (`permissions/user-overlay`, "Lifted Overlay").
  */
 export function isUserOverlayAutomationTurn(): boolean {
   return automationHoldCause() !== null;
