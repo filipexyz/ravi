@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { runWithContext, type ToolContext } from "../cli/context.js";
+import { buildEffectiveCapabilities } from "../permissions/delegation.js";
 import { listPermissionDenials } from "../permissions/denials.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
 import { dbCreateAgent, dbUpdateAgent } from "../router/router-db.js";
@@ -957,6 +958,22 @@ describe("the subagent tool under both of its names", () => {
       // The agent does not hold it: the chat grant alone does not open it.
       holding("use:tool:Read");
       expect(isDenied(await call("Agent", turnContext([grant("tool", "Agent")], overlay)))).toBe(true);
+    });
+
+    it("applies a governed chat's composed grants and denies to both names, a deny pattern on the other name included", async () => {
+      const overlay = { actorAuthorizationMode: "user-overlay", userOverlay: "active" };
+      holding("use:tool:*");
+      // The snapshot is what the governed-chat builder composes from the agent and the contact's chat grants.
+      const governed = (actor: ContextCapability[]) =>
+        buildEffectiveCapabilities({ agentCapabilities: [grant("tool", "*")], actorCapabilities: actor });
+
+      const open = governed([grant("tool", "Ag*")]);
+      for (const called of names) expect(isDenied(await call(called, turnContext(open, overlay))), called).toBe(false);
+
+      // The chat denies the subagent by a pattern on the name the grant does not use.
+      const withheld = governed([grant("tool", "Ag*"), deny("Task*")]);
+      for (const called of names)
+        expect(isDenied(await call(called, turnContext(withheld, overlay))), called).toBe(true);
     });
 
     it("honours a grantor's approval under either name, past the agent's ceiling", async () => {

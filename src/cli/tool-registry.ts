@@ -252,7 +252,7 @@ export const RUNTIME_BUILTIN_TOOL_HOOK_NAMES = [
  * Only a rename belongs here. `TaskOutput`, `TaskStop` and the task-list tools (`TaskCreate`, `TaskUpdate`, ...) are
  * tools of their own: a grant of `Task` does not cover them.
  */
-const TOOL_NAME_EQUIVALENTS: ReadonlyArray<readonly string[]> = [["Task", "Agent"]];
+export const TOOL_NAME_EQUIVALENTS: ReadonlyArray<readonly string[]> = [["Task", "Agent"]];
 
 /** Every name `toolName` goes by, itself first. A name that has no other name is returned alone. */
 export function getToolNameEquivalents(toolName: string): readonly string[] {

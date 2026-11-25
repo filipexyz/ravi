@@ -1,4 +1,4 @@
-import { getToolNameEquivalents, resolveToolGroup } from "../cli/tool-registry.js";
+import { getToolNameEquivalents, resolveToolGroup, TOOL_NAME_EQUIVALENTS } from "../cli/tool-registry.js";
 import type { ContextCapability } from "../router/router-db.js";
 
 /**
@@ -49,6 +49,17 @@ export function canWithCapabilities(
  */
 function requestedObjectIds(objectType: string, objectId: string): readonly string[] {
   return objectType === "tool" ? getToolNameEquivalents(objectId) : [objectId];
+}
+
+/**
+ * Whether two tool object ids (an exact name, `*` or a trailing pattern) reach one tool through the two names it goes by.
+ * `Ag*` reaches `Agent` and `Task*` reaches `Task`, which are the same tool, though neither pattern covers the other.
+ * The delegated-authority composition asks this to tell that a grant and a deny overlap.
+ */
+export function toolObjectIdsReachOneTool(left: string, right: string): boolean {
+  return TOOL_NAME_EQUIVALENTS.some(
+    (names) => names.some((name) => objectIdMatches(left, name)) && names.some((name) => objectIdMatches(right, name)),
+  );
 }
 
 /**
