@@ -51,6 +51,7 @@ import {
   DEFAULT_VOICE_PROFILE_ID,
   type VoiceAgentState,
   type VoiceCall,
+  type VoiceEventType,
   type VoiceProfile,
   type VoiceSpeaker,
   type VoiceTurn,
@@ -179,7 +180,7 @@ export class VoiceDoorService {
       case "silence":
         // Always emitted (even when already listening) so players stop at once.
         updateVoiceCall(call.id, { agentState: "listening" }, this.now());
-        await emitVoiceEvent(call.id, "agent.state", { state: "listening", reason: "silenced" }, this.sink);
+        await this.emitOpen(call.id, "agent.state", { state: "listening", reason: "silenced" }, this.sink);
         return;
       case "end":
         await this.endCall(call.id, message.reason || "ended");
@@ -214,11 +215,11 @@ export class VoiceDoorService {
       });
     }
     if (!text) return;
-    await emitVoiceEvent(call.id, "user.transcript", { text, speaker, turnId: message.turnId }, this.sink);
+    await this.emitOpen(call.id, "user.transcript", { text, speaker, turnId: message.turnId }, this.sink);
 
     const profile = this.profileFor(call);
     if (speaker.kind === "guest" && !profile.allowGuests) {
-      await emitVoiceEvent(
+      await this.emitOpen(
         call.id,
         "error",
         { code: "VOICE_GUEST_FORBIDDEN", message: "Guest speech ignored: the profile does not accept guests." },
@@ -240,7 +241,7 @@ export class VoiceDoorService {
       if (control === "deny") {
         // A spoken "no" while an approval is open is a deny, handled by the command
         // layer (`calls deny`); the door records the intent for the app.
-        await emitVoiceEvent(call.id, "agent.state", { state: "listening", hint: "spoken_deny" }, this.sink);
+        await this.emitOpen(call.id, "agent.state", { state: "listening", hint: "spoken_deny" }, this.sink);
       }
     }
 
@@ -254,7 +255,7 @@ export class VoiceDoorService {
     });
     const runtime = this.runtime(call.id);
     runtime.queue.push({ turn, ...(delegationId ? { delegationId } : {}) });
-    await emitVoiceEvent(call.id, "work.state", { turnId: turn.id, state: "queued" }, this.sink);
+    await this.emitOpen(call.id, "work.state", { turnId: turn.id, state: "queued" }, this.sink);
     void this.drain(call.id);
   }
 
@@ -289,7 +290,7 @@ export class VoiceDoorService {
     };
     runtime.running = running;
     updateVoiceTurnState(turn.id, "running", this.now());
-    await emitVoiceEvent(call.id, "turn.accepted", { turnId: turn.id, sessionName: call.sessionName }, this.sink);
+    await this.emitOpen(call.id, "turn.accepted", { turnId: turn.id, sessionName: call.sessionName }, this.sink);
     await this.setAgentState(call.id, "thinking");
 
     const sessionName = call.sessionName;
@@ -329,11 +330,11 @@ export class VoiceDoorService {
           }
           const open = this.isOpen(call.id);
           if (type === "turn.started" && running.wait.seenOwnTurnStarted) {
-            if (open) await emitVoiceEvent(call.id, "work.state", { turnId: turn.id, state: "running" }, this.sink);
+            if (open) await this.emitOpen(call.id, "work.state", { turnId: turn.id, state: "running" }, this.sink);
             if (running.cancelRequested) await this.sendAbort(call, running);
           } else if (open && (type === "tool.started" || type === "tool.completed")) {
             const name = typeof event.data.toolName === "string" ? event.data.toolName : event.data.name;
-            await emitVoiceEvent(
+            await this.emitOpen(
               call.id,
               "work.tool",
               {
@@ -382,7 +383,7 @@ export class VoiceDoorService {
       return;
     }
     if (outcome !== "turn.complete") {
-      await emitVoiceEvent(
+      await this.emitOpen(
         call.id,
         "error",
         { code: outcome === "timeout" ? "VOICE_TURN_TIMEOUT" : "VOICE_TURN_FAILED", turnId: turn.id },
@@ -422,10 +423,10 @@ export class VoiceDoorService {
     if (runtime.running === running) runtime.running = null;
     // The reply stays in the session; an ended call gets no more output.
     if (!this.isOpen(call.id)) return;
-    await emitVoiceEvent(call.id, "work.state", { turnId: running.turn.id, state }, this.sink);
+    await this.emitOpen(call.id, "work.state", { turnId: running.turn.id, state }, this.sink);
     if (state === "done") {
       // Stored and published before speech so the screen never waits for audio.
-      await emitVoiceEvent(
+      await this.emitOpen(
         call.id,
         "turn.completed",
         { turnId: running.turn.id, spokenText, fullText, delivery: this.profileFor(call).delivery },
@@ -452,7 +453,7 @@ export class VoiceDoorService {
     if (call.engine === "live") {
       runtime.sideband?.commentary(spokenText, running.delegationId ?? null);
       if (fullText && fullText !== spokenText) runtime.sideband?.thinking(fullText, running.delegationId ?? null);
-      await emitVoiceEvent(call.id, "agent.transcript", { text: spokenText, turnId: running.turn.id }, this.sink);
+      await this.emitOpen(call.id, "agent.transcript", { text: spokenText, turnId: running.turn.id }, this.sink);
       await this.setAgentState(call.id, "listening");
       return;
     }
@@ -475,11 +476,11 @@ export class VoiceDoorService {
         }
       } catch (error) {
         log.warn("Voice synthesis failed", { callId: call.id, error });
-        await emitVoiceEvent(call.id, "error", { code: "VOICE_TTS_FAILED", turnId: running.turn.id }, this.sink);
+        await this.emitOpen(call.id, "error", { code: "VOICE_TTS_FAILED", turnId: running.turn.id }, this.sink);
       }
     }
     if (!this.isOpen(call.id)) return;
-    await emitVoiceEvent(
+    await this.emitOpen(
       call.id,
       "agent.transcript",
       { text: spokenText, turnId: running.turn.id, delivery: profile.delivery, ...(audio ? { audio } : {}) },
@@ -495,7 +496,7 @@ export class VoiceDoorService {
     if (queuedIndex >= 0) {
       runtime.queue.splice(queuedIndex, 1);
       updateVoiceTurnState(turnId, "cancelled", this.now());
-      await emitVoiceEvent(call.id, "work.state", { turnId, state: "cancelled", actor }, this.sink);
+      await this.emitOpen(call.id, "work.state", { turnId, state: "cancelled", actor }, this.sink);
       return;
     }
     const running = runtime.running;
@@ -535,7 +536,7 @@ export class VoiceDoorService {
     if (call.engine !== "live") return;
     const apiKey = liveApiKey(this.deps.env ?? process.env);
     if (!apiKey) {
-      await emitVoiceEvent(call.id, "error", { code: "VOICE_ENGINE_NOT_READY", engine: "live" }, this.sink);
+      await this.emitOpen(call.id, "error", { code: "VOICE_ENGINE_NOT_READY", engine: "live" }, this.sink);
       await this.endCall(call.id, "engine_not_ready");
       return;
     }
@@ -557,10 +558,10 @@ export class VoiceDoorService {
         );
       },
       onUserTranscript: (text) => {
-        void emitVoiceEvent(call.id, "user.transcript", { text, speaker: call.speaker, source: "live" }, this.sink);
+        void this.emitOpen(call.id, "user.transcript", { text, speaker: call.speaker, source: "live" }, this.sink);
       },
       onAgentTranscript: (text) => {
-        void emitVoiceEvent(call.id, "agent.transcript", { text, source: "live" }, this.sink);
+        void this.emitOpen(call.id, "agent.transcript", { text, source: "live" }, this.sink);
       },
       onUsage: ({ seconds, activeSeconds }) => {
         const billed = activeSeconds ?? seconds;
@@ -575,7 +576,7 @@ export class VoiceDoorService {
         void this.endCall(call.id, reason === "closed_by_door" ? "ended" : reason);
       },
       onError: (error) => {
-        void emitVoiceEvent(call.id, "error", { code: "VOICE_LIVE_ERROR", message: error.message }, this.sink);
+        void this.emitOpen(call.id, "error", { code: "VOICE_LIVE_ERROR", message: error.message }, this.sink);
       },
     };
     const sideband = this.deps.createSideband
@@ -586,7 +587,7 @@ export class VoiceDoorService {
     runtime.sideband = sideband;
     sideband.connect();
     updateVoiceCall(call.id, { state: "active", providerRef: providerSessionId }, this.now());
-    await emitVoiceEvent(call.id, "call.state", { state: "active" }, this.sink);
+    await this.emitOpen(call.id, "call.state", { state: "active" }, this.sink);
   }
 
   // -------------------------------------------------------------------------
@@ -643,7 +644,7 @@ export class VoiceDoorService {
       (delta.engineSeconds ?? 0) + (delta.audioInSeconds ?? 0) + (delta.audioOutSeconds ?? 0),
       this.now(),
     );
-    await emitVoiceEvent(callId, "usage", { ...usage }, this.sink);
+    await this.emitOpen(callId, "usage", { ...usage }, this.sink);
     await this.enforceLimits(callId);
   }
 
@@ -662,7 +663,7 @@ export class VoiceDoorService {
             ? "max_daily_cost"
             : null;
     if (!exceeded) return;
-    await emitVoiceEvent(callId, "error", { code: "VOICE_LIMIT_REACHED", limit: exceeded }, this.sink);
+    await this.emitOpen(callId, "error", { code: "VOICE_LIMIT_REACHED", limit: exceeded }, this.sink);
     await this.endCall(callId, "limit");
   }
 
@@ -683,6 +684,21 @@ export class VoiceDoorService {
     }
   }
 
+  /**
+   * Every door event except the call's own end goes through here: the
+   * liveness check and the store append run in the same tick, so nothing is
+   * recorded or published after `call.ended`, whatever awaits came before.
+   */
+  private async emitOpen(
+    callId: string,
+    type: VoiceEventType,
+    data: Record<string, unknown>,
+    sink: VoiceEventSink = this.sink,
+  ): Promise<void> {
+    if (!this.isOpen(callId)) return;
+    await emitVoiceEvent(callId, type, data, sink);
+  }
+
   private isOpen(callId: string): boolean {
     const call = getVoiceCall(callId);
     return Boolean(call && call.state !== "ending" && call.state !== "ended");
@@ -692,7 +708,7 @@ export class VoiceDoorService {
     const call = getVoiceCall(callId);
     if (!call || call.state === "ended" || call.agentState === state) return;
     updateVoiceCall(callId, { agentState: state }, this.now());
-    await emitVoiceEvent(callId, "agent.state", { state }, this.sink);
+    await this.emitOpen(callId, "agent.state", { state }, this.sink);
   }
 
   /**
@@ -705,7 +721,7 @@ export class VoiceDoorService {
       for (const turn of listVoiceTurns(call.id)) {
         if (turn.state === "queued" || turn.state === "running") {
           updateVoiceTurnState(turn.id, "failed", this.now());
-          await emitVoiceEvent(
+          await this.emitOpen(
             call.id,
             "work.state",
             { turnId: turn.id, state: "failed", reason: "door_restart" },

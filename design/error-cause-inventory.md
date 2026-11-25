@@ -2478,15 +2478,15 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | utils | src/utils/media.ts | 148 | fixed | binding retained / no recognized error surface | src/utils/media.ts:8183f7c489bd5f6b712e34e8 |
 | utils | src/utils/request-reply.ts | 65 | fixed | binding retained / no recognized error surface | src/utils/request-reply.ts:57e0cf423f87fcd48a6dc644 |
 | video | src/video/gemini.ts | 158 | fixed | binding retained / no recognized error surface | src/video/gemini.ts:a223573f68c478c385610844 |
-| voice | src/voice/door.ts | 154 | fixed | binding retained / no recognized error surface | src/voice/door.ts:8bb6d0cc53b03bb6e5c464b7 |
-| voice | src/voice/door.ts | 158 | fixed | binding retained / no recognized error surface | src/voice/door.ts:5fd1f6df62796a2c06c019dd |
-| voice | src/voice/door.ts | 352 | fixed | binding retained / no recognized error surface | src/voice/door.ts:c1fd555ad9058a8777d2f5d2 |
-| voice | src/voice/door.ts | 368 | fixed | binding retained / no recognized error surface | src/voice/door.ts:e82d38bed950fa2387752f19 |
-| voice | src/voice/door.ts | 376 | no-cause | the watcher logs its own failure; the outcome below covers it. | src/voice/door.ts:b1f5068d4fe6654884053d78 |
-| voice | src/voice/door.ts | 476 | fixed | binding retained / no recognized error surface | src/voice/door.ts:37b2aa9fadf67abc798eb35d |
-| voice | src/voice/door.ts | 523 | fixed | binding retained / no recognized error surface | src/voice/door.ts:1b66eb0a4e2d9ec1d4744619 |
-| voice | src/voice/door.ts | 613 | fixed | binding retained / no recognized error surface | src/voice/door.ts:84c31200c0720431174f85d7 |
-| voice | src/voice/door.ts | 681 | fixed | binding retained / no recognized error surface | src/voice/door.ts:f3ce27952b7188fffad68e3c |
+| voice | src/voice/door.ts | 155 | fixed | binding retained / no recognized error surface | src/voice/door.ts:8bb6d0cc53b03bb6e5c464b7 |
+| voice | src/voice/door.ts | 159 | fixed | binding retained / no recognized error surface | src/voice/door.ts:5fd1f6df62796a2c06c019dd |
+| voice | src/voice/door.ts | 353 | fixed | binding retained / no recognized error surface | src/voice/door.ts:c1fd555ad9058a8777d2f5d2 |
+| voice | src/voice/door.ts | 369 | fixed | binding retained / no recognized error surface | src/voice/door.ts:e82d38bed950fa2387752f19 |
+| voice | src/voice/door.ts | 377 | no-cause | the watcher logs its own failure; the outcome below covers it. | src/voice/door.ts:b1f5068d4fe6654884053d78 |
+| voice | src/voice/door.ts | 477 | fixed | binding retained / no recognized error surface | src/voice/door.ts:9b53a26d423438a2becc59b8 |
+| voice | src/voice/door.ts | 524 | fixed | binding retained / no recognized error surface | src/voice/door.ts:1b66eb0a4e2d9ec1d4744619 |
+| voice | src/voice/door.ts | 614 | fixed | binding retained / no recognized error surface | src/voice/door.ts:84c31200c0720431174f85d7 |
+| voice | src/voice/door.ts | 682 | fixed | binding retained / no recognized error surface | src/voice/door.ts:f3ce27952b7188fffad68e3c |
 | voice | src/voice/engines/live.ts | 134 | no-cause | best effort; the sideband close below ends the session too. | src/voice/engines/live.ts:131880a16d76feb7670ff646 |
 | voice | src/voice/engines/live.ts | 213 | no-cause | closing a socket that already dropped. | src/voice/engines/live.ts:3367d51f4685a322902cd622 |
 | voice | src/voice/engines/live.ts | 218 | no-cause | closing a socket that already dropped. | src/voice/engines/live.ts:3367d51f4685a322902cd622 |

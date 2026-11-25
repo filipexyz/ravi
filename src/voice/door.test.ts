@@ -101,13 +101,24 @@ function makeCall(mode: VoiceMode = "mock", overrides: Partial<VoiceCall> = {}):
   });
 }
 
-function harness(options: { reply?: string; terminal?: string; clip?: ClipSpeechEngine; inFlightReply?: string } = {}) {
+function harness(
+  options: {
+    reply?: string;
+    terminal?: string;
+    clip?: ClipSpeechEngine;
+    inFlightReply?: string;
+    beforeEmit?: (topic: string, data: Record<string, unknown>) => Promise<void>;
+  } = {},
+) {
   const hub = new Hub();
   const history: Array<{ id: number; role: string; content: string }> = [{ id: 1, role: "user", content: "old" }];
   const prompts: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
   const deps: VoiceDoorDeps = {
     subscribe: hub.subscribe as VoiceDoorDeps["subscribe"],
-    emit: hub.emit,
+    emit: async (topic, data) => {
+      await options.beforeEmit?.(topic, data);
+      await hub.emit(topic, data);
+    },
     publishPrompt: async (sessionName, payload) => {
       prompts.push({ sessionName, payload });
       setTimeout(async () => {
@@ -231,6 +242,36 @@ describe("voice door", () => {
     expect(types.slice(endedAt + 1)).toEqual([]);
     updateVoiceCall(call.id, { state: "active", agentState: "listening" });
     expect(getVoiceCall(call.id)?.state).toBe("ended");
+  });
+
+  it("records nothing after call.ended even when the call ends while an event is being published", async () => {
+    let doorRef: VoiceDoorService | null = null;
+    let callId = "";
+    const { door } = harness({
+      beforeEmit: async (_topic, data) => {
+        const inner = data.data as { state?: string } | undefined;
+        // The call ends while `work.state done` is still being published.
+        if (data.type === "work.state" && inner?.state === "done") {
+          await doorRef?.handleControl({ op: "end", callId, reason: "user" });
+        }
+      },
+    });
+    doorRef = door;
+    const call = makeCall("push");
+    callId = call.id;
+    await door.handleControl({
+      op: "utterance",
+      callId: call.id,
+      turnId: "vt_race",
+      text: "corrida",
+      speaker: { kind: "operator", id: "operator" },
+    });
+    await until(() => listVoiceEvents(call.id).some((event) => event.type === "call.ended"), "ended");
+    await tick();
+    await tick();
+    const types = listVoiceEvents(call.id).map((event) => event.type);
+    expect(types.slice(types.indexOf("call.ended") + 1)).toEqual([]);
+    expect(types).not.toContain("turn.completed");
   });
 
   it("finds a speaker's active call past the newest fifty", () => {
