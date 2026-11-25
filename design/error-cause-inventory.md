@@ -501,10 +501,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | ci | src/ci/quality-gate.ts | 525 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:51a5a6018c77cc4a8a8aac22 |
 | ci | src/ci/quality-gate.ts | 534 | fixed | binding retained / no recognized error surface | src/ci/quality-gate.ts:4ef5158409736ec9a3bee50a |
 | ci | src/ci/run-quality-gate.ts | 37 | triaged-follow-up | catch-without-binding | src/ci/run-quality-gate.ts:5271b06f964c5c57249517e5 |
-| cli | src/cli/audit.ts | 55 | triaged-follow-up | rejection-without-binding | src/cli/audit.ts:66ccfbc7e8e1dda3b8608604 |
-| cli | src/cli/audit.ts | 58 | triaged-follow-up | rejection-without-binding | src/cli/audit.ts:66ccfbc7e8e1dda3b8608604 |
-| cli | src/cli/audit.ts | 100 | triaged-follow-up | catch-without-binding | src/cli/audit.ts:08a16a3a23210326b4039ada |
-| cli | src/cli/audit.ts | 121 | fixed | binding retained / no recognized error surface | src/cli/audit.ts:af01abebdab1195a6f2d8e21 |
+| cli | src/cli/audit.ts | 57 | triaged-follow-up | rejection-without-binding | src/cli/audit.ts:66ccfbc7e8e1dda3b8608604 |
+| cli | src/cli/audit.ts | 61 | triaged-follow-up | rejection-without-binding | src/cli/audit.ts:66ccfbc7e8e1dda3b8608604 |
+| cli | src/cli/audit.ts | 103 | triaged-follow-up | catch-without-binding | src/cli/audit.ts:08a16a3a23210326b4039ada |
+| cli | src/cli/audit.ts | 124 | fixed | binding retained / no recognized error surface | src/cli/audit.ts:af01abebdab1195a6f2d8e21 |
 | cli | src/cli/channel-agent.ts | 119 | fixed | binding retained / no recognized error surface | src/cli/channel-agent.ts:1a54faf1114dac4e09dccd8b |
 | cli | src/cli/cloud-agents-contract.ts | 241 | fixed | binding retained / no recognized error surface | src/cli/cloud-agents-contract.ts:c8dbf439594a6d405bc0f209 |
 | cli | src/cli/codex-hook-transport.ts | 75 | fixed | binding retained / no recognized error surface | src/cli/codex-hook-transport.ts:815eaacac7107596f024c4a0 |
