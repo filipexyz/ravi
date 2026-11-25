@@ -2401,9 +2401,16 @@ describe("runtime request context chat-scoped user overlay", () => {
     const lifted = run();
     expect(lifted.metadata?.actorPrincipal).toBe(`automation:cron:${job.id}`);
     expect(lifted.metadata?.userOverlay).toBe("lifted");
+    expect(lifted.metadata?.userOverlayContact).toBe(`contact:${owner.id}`);
     expect(lifted.metadata?.actorAuthorizationMode).not.toBe("user-overlay");
     expect(canWithCapabilities(lifted.capabilities, "execute", "executable", "curl")).toBe(true);
     expect(automationHoldCause(lifted)).toBeNull();
+
+    // `permissions deny permission-owner --to contact:<owner> --force --apply` finds the live run by
+    // its overlay's owner, though the run acts as the job (Devin on #990).
+    expect(resolveRuntimeContext(lifted.contextKey)?.contextId).toBe(lifted.contextId);
+    expect(revokeLiveRuntimeContextsForContactGrant(owner.id, "permission-owner@global")).toHaveLength(1);
+    expect(resolveRuntimeContext(lifted.contextKey)).toBeNull();
 
     removeContactTag("5511900000016", "permission-owner");
     const narrowed = run();
@@ -3314,6 +3321,7 @@ describe("verified human work handoffs", () => {
         actorAuthorizationMode: "invoke-only",
         userOverlay: "lifted",
         userOverlayChat: `chat:${governedChat}`,
+        userOverlayContact: `contact:${operator.id}`,
         userOverlayGrants: ["permission-owner@global"],
         actorCapabilityCount: 0,
       });
@@ -3400,14 +3408,44 @@ describe("verified human work handoffs", () => {
       expect(automationHoldCause(turn)).toBe("contact-chat-grants");
     });
 
-    it("a contact with no power of its own covers nothing, even an agent that holds nothing", () => {
+    it("a contact without full access of its own is never lifted, even for an agent that holds nothing", () => {
       dbUpdateAgent(originAgent.id, { defaults: { runtimePermissions: { profile: "chat-only" } } });
       const member = person("Member of a chat-only agent's chat");
       grantHere(member.id, "permission-reader");
-      const turn = speak(member, "chat-only");
-      expect(turn.capabilities).toEqual([]);
+      // Devin on #990: any global capability covers an agent that holds nothing; it still does not lift.
+      const reader = person("Reader everywhere, chat-only agent", { tags: ["permission-reader"], status: "allowed" });
+      const cases = [
+        ["chat-only-member", member],
+        ["chat-only-reader", reader],
+      ] as const;
+      for (const [label, who] of cases) {
+        const turn = speak(who, label);
+        expect(turn.capabilities).toEqual([]);
+        expect(turn.metadata).toMatchObject({ actorAuthorizationMode: "user-overlay", userOverlay: "active" });
+        expect(automationHoldCause(turn)).toBe("contact-chat-grants");
+      }
+    });
+
+    it("global tags that cover the agent's effective set without full access keep the overlay", () => {
+      // The agent holds admin and an unrelated deny: the deny drops admin from the agent's effective
+      // set, while the Bash hook's live ceiling keeps the admin shortcut. Covering that effective set
+      // would put a contact without admin on the live ceiling, and the same contact would reach a
+      // stronger agent through an inform relay or a job (Devin on #990). Only full access lifts.
+      dbUpdateAgent(originAgent.id, {
+        defaults: {
+          runtimePermissions: {
+            profile: "explicit-only",
+            capabilities: ["admin:system:*", "read:bases:list", "deny_use:tool:WebSearch"],
+          },
+        },
+      });
+      const reader = person("Reader everywhere", { tags: ["permission-reader"], status: "allowed" });
+      const turn = speak(reader, "reader-global");
       expect(turn.metadata).toMatchObject({ actorAuthorizationMode: "user-overlay", userOverlay: "active" });
+      expect(canWithCapabilities(turn.capabilities, "admin", "system", "*")).toBe(false);
       expect(automationHoldCause(turn)).toBe("contact-chat-grants");
+      const thread = handoff(turn, "session.bootstrap", {}, originAgent);
+      expect(automationHoldCause(thread)).toBe("held-relay");
     });
 
     it("the lift rests on the contact's own power: withdrawing it revokes the live turn and narrows the next", () => {

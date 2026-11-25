@@ -46,7 +46,7 @@
   (`session.return`) MUST be stamped and pass the automation guards; the return of
   a thread opened from a person with no grant MUST stay held
   (`runtime-request-context.test.ts`).
-- In a chat governed by contact grants, the operator (admin tag covering the
+- In a chat governed by contact grants, the operator (admin tag, full access over the
   agent) MUST pass the automation guards, write an unbound cron job, and open
   stamped threads whose return is stamped; a contact whose power there comes
   from a chat grant (full access included), a partial grant, no grant, a

@@ -276,7 +276,7 @@ Rules:
 - A chat is governed when at least one chat or chat-tag contact grant covers
   it. Then `actorAuthorizationMode=user-overlay` and the contact's chat
   capabilities gate the turn (`permissions/user-overlay`), unless the
-  contact's own power (global permission tags) covers the agent: the overlay
+  contact's own power (global permission tags) holds full access: the overlay
   is then lifted and the turn keeps the agent-identity result.
 - `ravi permissions resolve <denial-id>` for an agent-identity denial MUST
   target `agent:<executorAgentId>`. For a `user-overlay` denial it MUST plan a

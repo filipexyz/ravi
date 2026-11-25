@@ -164,7 +164,18 @@ export function startActiveRuntimeRequestContextLease(
         metadata: issued.metadata ?? {},
       });
       const identityFields = ["actorPrincipal", "actorResolution", "actorAuthorizationMode", "agentIdentityPrincipal"];
-      const sameIdentity = identityFields.every((field) => current.metadata[field] === issued.metadata?.[field]);
+      // An overlay turn whose overlay is lifted now (the contact gained full access mid-turn) gained
+      // authority and lost none: it keeps its issued overlay snapshot, mode and holds until it ends,
+      // and the lift applies from the next turn. The reverse (lifted, then the power is withdrawn)
+      // still changes the mode and revokes.
+      const liftedSinceIssued =
+        issued.metadata?.actorAuthorizationMode === USER_OVERLAY_AUTHORIZATION_MODE &&
+        current.metadata.userOverlay === "lifted";
+      const sameIdentity = identityFields.every(
+        (field) =>
+          current.metadata[field] === issued.metadata?.[field] ||
+          (field === "actorAuthorizationMode" && liftedSinceIssued),
+      );
       // `deny_*` (a person held below break-glass) is never fed to the
       // intersection: a deny of the admin shortcut would erase every key.
       const positive = (capabilities: ContextCapability[]) =>
@@ -623,7 +634,7 @@ function buildAgentIdentityRuntimeContextInput(options: {
     });
   // In a chat governed by contact grants the sender's chat caps replace the
   // agent identity as the actor branch: agent_ceiling ∩ contact_chat_caps,
-  // unless the sender's own power covers the agent (`contactPowerCoversAgent`).
+  // unless the sender's own power holds full access (`contactPowerCoversAgent`).
   const governingOverlay = shouldMaterializeIdentity && options.userOverlay?.active ? options.userOverlay : null;
   const overlayLifted = governingOverlay !== null && contactPowerCoversAgent(governingOverlay, authorityThrough);
   const userOverlay = overlayLifted ? null : governingOverlay;
@@ -777,27 +788,28 @@ function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
 
 /**
  * Lifted overlay (`permissions/user-overlay`). A governed chat narrows each sender to their chat
- * grants, but a contact whose own power covers the agent's whole authority loses nothing to that:
- * like the operator relaying a thread, the turn takes the ungoverned path (agent identity, nothing
- * withheld), so automation it writes and the threads it opens are not held. Both sides must cover,
- * by the same rule as the relay stamp (`capabilitySetCovers` over `authorityThrough`):
+ * grants, but a contact whose own power covers the agent loses nothing to that: like the operator
+ * relaying a thread, the turn takes the ungoverned path (agent identity, nothing withheld), so
+ * automation it writes and the threads it opens are not held. Both must hold:
  *
- * - the contact's own power, held wherever it acts (global permission tags). A chat grant never
- *   lifts the overlay, full access included: automation written under it would outlive the grant.
- * - the overlay as this chat reads it, so a grant here that narrows the contact (a deny) keeps it.
- *
- * A contact with no power of its own covers nothing, even an agent that holds nothing.
+ * - The contact's own power, held wherever it acts (global permission tags), holds full access
+ *   (`admin:system:*`, the capability `permissions request full-access` grants). Admin on system
+ *   short-circuits every check of the core matcher, in the issued snapshot and in the Bash hook's
+ *   live executor ceiling alike, so it covers this agent, every agent a relay or a job of this turn
+ *   can reach, and this agent raised later. Covering the agent's current effective set is not
+ *   enough: an agent `deny_*` drops admin from that set while the live ceiling keeps the admin
+ *   shortcut, and an inform relay or a job reaches a stronger agent (Devin on #990). A chat grant
+ *   never counts, full access included: automation written under it would outlive the grant.
+ * - The overlay as this chat reads it covers the agent's authority, by the relay stamp's rule
+ *   (`capabilitySetCovers` over `authorityThrough`), so a grant here that narrows the contact (a
+ *   `deny_*` profile) keeps the overlay.
  */
 function contactPowerCoversAgent(
   overlay: ContactChatOverlay,
   authorityThrough: (actorCapabilities?: ContextCapability[]) => ContextCapability[],
 ): boolean {
-  if (overlay.globalCapabilities.length === 0) return false;
-  const agentAuthority = authorityThrough();
-  return (
-    capabilitySetCovers(authorityThrough(overlay.globalCapabilities), agentAuthority) &&
-    capabilitySetCovers(authorityThrough(overlay.capabilities), agentAuthority)
-  );
+  if (!canWithCapabilities(overlay.globalCapabilities, "admin", "system", "*")) return false;
+  return capabilitySetCovers(authorityThrough(overlay.capabilities), authorityThrough());
 }
 
 function buildUserOverlayMetadata(
@@ -810,9 +822,13 @@ function buildUserOverlayMetadata(
     ...(overlay.scope.threadChatId ? { userOverlayThreadChat: `chat:${overlay.scope.threadChatId}` } : {}),
     ...(state === "active" && !overlay.eligible ? { userOverlayEligible: false } : {}),
     // A lifted overlay rests on the same grants: revoking one (`permissions deny`) or narrowing its
-    // profile revokes the live turn, as it does an applied overlay.
+    // profile revokes the live turn, as it does an applied overlay. The grants' owner is recorded
+    // too: a cron run acts as `automation:cron:<id>`, so revocation finds it by the owner.
     ...(state !== "inactive"
-      ? { userOverlayGrants: overlay.grants.map((grant) => `${grant.profile}@${formatContactGrantScope(grant.scope)}`) }
+      ? {
+          userOverlayContact: `contact:${overlay.contactId}`,
+          userOverlayGrants: overlay.grants.map((grant) => `${grant.profile}@${formatContactGrantScope(grant.scope)}`),
+        }
       : {}),
   };
 }

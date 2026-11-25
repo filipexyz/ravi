@@ -113,15 +113,18 @@ Ungoverned chats keep `agent_identity ∩ turn_caps`, with one exception:
   always allowed; code outside a turn is unaffected; an overlay turn may still
   write a cron job bound to its chat (`creatorChat`). Command guards remain
   for a good error. Binding the job to the creator's ceiling is deferred.
-- A contact whose own power covers the agent in a governed chat (the operator
-  with an admin tag) is not an overlay turn: the overlay is lifted
+- A contact whose own power holds full access, in a governed chat (the
+  operator with an admin tag), is not an overlay turn: the overlay is lifted
   (`permissions/user-overlay`, "Lifted Overlay"), so its automation is not
   held, a cron job it writes is unbound like one from an ungoverned chat, and
   the threads it opens are stamped by the rule below. The lift reads the
   contact's global permission tags, never a chat grant: full access granted
-  in a chat keeps the turn an overlay turn and its automation refused. Before
-  this (25/11), the operator speaking in a chat where someone else held a
-  grant could not write automation, and every thread it opened was held.
+  in a chat keeps the turn an overlay turn and its automation refused, and a
+  global tag short of full access keeps it too, even when it covers the
+  agent's effective set (it would not cover the live ceiling or a stronger
+  agent a relay or job reaches). Before this (25/11), the operator speaking in
+  a chat where someone else held a grant could not write automation, and every
+  thread it opened was held.
 - A relay the operator asked for (a thread the main session opens for a verified
   human request, a session relay of the operator's turn) is not a held turn.
   `relayNarrowing` only says the turn carries its caller's capabilities as a

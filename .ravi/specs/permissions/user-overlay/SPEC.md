@@ -127,17 +127,25 @@ turn also refuses automation and makes every thread it opens a held relay
 (`permissions/agent-identity`). On 25/11 that held the operator (admin tag)
 speaking in a chat where another person had a grant.
 
-- The overlay MUST NOT be applied (it is **lifted**) when both of these cover
-  the agent identity's authority on the turn, by the core matcher
-  (`capabilitySetCovers`), the same rule as the relay stamp
-  `relayCallerUnrestricted`:
-  - the contact's own power, held wherever it acts: its global permission tags
-    (`ContactChatOverlay.globalCapabilities`), never a grant bound to this
-    chat;
-  - the overlay as this chat reads it (chat, chat-tag and global grants), so a
-    grant here that narrows the contact (a `deny_*` profile) keeps the overlay.
-- A contact with no global capability never lifts the overlay, even when the
-  agent holds nothing (`chat-only`).
+- The overlay MUST NOT be applied (it is **lifted**) only when both hold:
+  - the contact's own power, held wherever it acts (its global permission
+    tags, `ContactChatOverlay.globalCapabilities`, never a grant bound to this
+    chat), holds full access: `admin:system:*` by the core matcher, the
+    capability `permissions request full-access` grants;
+  - the overlay as this chat reads it (chat, chat-tag and global grants)
+    covers the agent identity's authority on the turn, by the relay stamp's
+    rule (`capabilitySetCovers` over the same baseline as
+    `relayCallerUnrestricted`), so a grant here that narrows the contact (a
+    `deny_*` profile) keeps the overlay.
+- Covering the agent's current effective set MUST NOT be enough. Admin on
+  system short-circuits every check of the core matcher, in the snapshot and
+  in the Bash hook's live executor ceiling alike, so full access covers this
+  agent, any agent a relay or a job of the turn can reach, and this agent
+  raised later. A narrower global tag does not: an agent `deny_*` drops admin
+  from the agent's effective set while the live ceiling keeps the admin
+  shortcut, an inform relay reaches a stronger agent unnarrowed, and a job
+  can target a stronger agent (Devin on #990). Such a contact keeps the
+  overlay, also for an agent that holds nothing (`chat-only`).
 - A chat or chat-tag grant MUST NOT lift the overlay, full access included
   (what an approved `permissions request full-access` writes): automation
   written under it would run later as the whole agent and outlive the grant.
@@ -155,7 +163,15 @@ speaking in a chat where another person had a grant.
   again once that power is withdrawn.
 - A lifted turn MUST record `userOverlayGrants` like an applied one, so
   `permissions deny` of the grant it rests on (for the admin tag,
-  `<tag>@global`) and a profile narrowing revoke the live turn.
+  `<tag>@global`) and a profile narrowing revoke the live turn. Applied and
+  lifted overlays record their owner as `userOverlayContact`, and
+  `revokeLiveRuntimeContextsForContactGrant` matches it as well as the actor:
+  a cron run acts as `automation:cron:<id>` under its owner's overlay.
+- The active-turn lease MUST NOT revoke an overlay turn whose overlay is lifted
+  at renewal (the contact gained full access mid-turn): that is a gain. The
+  turn keeps its issued snapshot, mode and holds until it ends; the lift
+  applies from the next turn. A lifted turn whose contact loses full access
+  mid-turn changes mode at renewal and is revoked.
 
 ## Enforcement And Freshness
 
@@ -185,6 +201,8 @@ When the actor is a contact on a chat surface, the turn context MUST record:
 - `userOverlayChat`: `chat:<container-chat-id>`;
 - `userOverlayThreadChat`: `chat:<thread-chat-id>` for thread turns;
 - `userOverlayGrants`: `<profile>@<scope>` list when active or lifted;
+- `userOverlayContact`: `contact:<id>` owner of those grants, when active or
+  lifted;
 - `userOverlayEligible=false` when active and the contact is blocked/opted
   out/missing;
 - `actorCapabilityCount`: overlay capability count when active, else `0`.
@@ -298,8 +316,9 @@ Rules:
 - Structured confirmation reports subject, scope, profile, capabilities, and
   force for allow, deny, and list.
 - Ungoverned chats keep the agent-identity result unchanged.
-- In a governed chat, a contact whose global permission tags cover the agent
+- In a governed chat, a contact whose global permission tags hold full access
   (the operator) gets the agent-identity result, `userOverlay=lifted`, no
   automation hold and stamped threads; a contact whose power there comes from
-  a chat grant (full access included), a partial grant, no grant, a partial
-  global tag, or a narrowing grant in the chat keeps the overlay and its holds.
+  a chat grant (full access included), a partial grant, no grant, a global
+  tag without full access (even one covering the agent's effective set), or a
+  narrowing grant in the chat keeps the overlay and its holds.
