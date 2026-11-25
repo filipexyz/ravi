@@ -16,6 +16,7 @@ import {
   type AuthorizationCapability,
 } from "../permissions/authorization-guidance.js";
 import { RAVI_CONTEXT_KEY_ENV } from "../runtime/context-registry.js";
+import { RAVI_AUTOMATION_PRINCIPAL_ENV, readSpawnedAutomationPrincipal } from "../runtime/turn-origin.js";
 import { isRuntimeContextLive } from "../runtime/context-liveness.js";
 import type {
   CapabilityContextLike,
@@ -337,6 +338,27 @@ function resolveCommandAccessAuthority(
         .filter(Boolean)
         .join(". "),
     };
+  }
+
+  // `ravi jobs run` is open to agents, and a job carries the automation marker
+  // and no context key. Without this check `ravi` inside a job resolved to the
+  // local operator and an agent could grant itself full access. Shell cron and
+  // shell triggers are different: they run only when their owner acts as the
+  // operator (CRON_SHELL_NOT_OPERATOR, TRIGGER_SHELL_NOT_OPERATOR), so they
+  // keep the operator. A marker that is not a well-formed cron or trigger
+  // principal fails closed. Removing the marker defeats this: it closes the
+  // easy path, it is not an OS boundary.
+  const automationMarker = process.env[RAVI_AUTOMATION_PRINCIPAL_ENV]?.trim();
+  if (automationMarker) {
+    const automationPrincipal = readSpawnedAutomationPrincipal(process.env);
+    const operatorOwnedAutomation =
+      automationPrincipal?.startsWith("automation:cron:") || automationPrincipal?.startsWith("automation:trigger:");
+    if (!operatorOwnedAutomation) {
+      return {
+        allowed: false,
+        errorMessage: `Permission denied: ${automationPrincipal ?? "an automation process"} is not the local operator; run it with a runtime context key`,
+      };
+    }
   }
 
   return {
