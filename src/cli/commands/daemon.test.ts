@@ -619,6 +619,8 @@ describe("DaemonCommands start on a new installation", () => {
     // Still one JSON document on stdout; the warning goes to stderr.
     expect(JSON.parse(result.stdout)).toMatchObject({ action: "start", changed: true, pm2Status: 0 });
     expect(result.stderr).toContain("The daemon has not finished preparing its state");
+    // ready comes after the NATS connection, so the wait that ran out says where to look first.
+    expect(result.stderr).toContain("nats-server");
     expect(result.stderr).toContain("ravi daemon logs");
   }, 25_000);
 
@@ -631,6 +633,7 @@ describe("DaemonCommands start on a new installation", () => {
     // Well inside the 20 s process bound although the wait bound is 60 s.
     expect(result.status).toBe(0);
     expect(result.stderr).toContain("The daemon stopped before it finished preparing its state");
+    expect(result.stderr).not.toContain("nats-server");
   }, 25_000);
 
   it("does not wait when the state already exists", () => {
