@@ -10,6 +10,8 @@
 import { getContext, type ToolContext } from "../cli/context.js";
 import { canAccessSession, getScopeContext } from "../permissions/scope.js";
 import { isRuntimeContextLive } from "../runtime/context-liveness.js";
+import { revokeRuntimeContext } from "../runtime/context-registry.js";
+import { dbGetContext } from "../router/router-db.js";
 import { getVoiceDeviceByContextId } from "./store.js";
 import type { VoiceCall, VoiceDevice, VoiceSpeaker } from "./types.js";
 
@@ -141,4 +143,12 @@ export function assertGuestMaySpeak(allowGuests: boolean): void {
   if (!allowGuests) {
     throw new VoiceAuthorityError("VOICE_GUEST_FORBIDDEN", "This call's profile does not accept guest speakers.");
   }
+}
+
+/** Revoke a voice device's runtime context unless it already is. Idempotent. */
+export function revokeVoiceDeviceContext(contextId: string): boolean {
+  const record = dbGetContext(contextId);
+  if (!record || record.revokedAt) return false;
+  revokeRuntimeContext(contextId, { reason: "voice_device_revoked" });
+  return true;
 }

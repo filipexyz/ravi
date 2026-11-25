@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { claimApprovalDecision, createApprovalRequest, expireApprovalRequest } from "../approval/store.js";
+import { dbGetContext } from "../router/router-db.js";
+import { createRuntimeContext } from "../runtime/context-registry.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { voiceApprovalMessageId } from "./approvals.js";
+import { VOICE_DEVICE_CAPABILITIES, VOICE_DEVICE_CONTEXT_KIND } from "./authority.js";
 import { VoiceDoorService, type VoiceDoorDeps } from "./door.js";
 import type { ClipSpeechEngine } from "./engines/types.js";
 import {
@@ -17,6 +20,8 @@ import {
   updateVoiceCall,
   findActiveVoiceCall,
   listVoiceCalls,
+  insertVoiceDevice,
+  markVoiceDeviceRevoked,
 } from "./store.js";
 import { emptyVoiceUsage, type VoiceCall, type VoiceMode, voiceSubjects } from "./types.js";
 
@@ -112,8 +117,13 @@ function harness(
     clip?: ClipSpeechEngine;
     inFlightReply?: string;
     beforeEmit?: (topic: string, data: Record<string, unknown>) => Promise<void>;
+    /** Reply per prompt text, for tests with several calls. */
+    replyFor?: (prompt: string) => string;
+    /** The session runs one prompt at a time, in arrival order, like the real queue. */
+    sessionQueue?: boolean;
   } = {},
 ) {
+  let sessionChain: Promise<void> = Promise.resolve();
   const hub = new Hub();
   const history: Array<{ id: number; role: string; content: string }> = [{ id: 1, role: "user", content: "old" }];
   const prompts: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
@@ -125,7 +135,7 @@ function harness(
     },
     publishPrompt: async (sessionName, payload) => {
       prompts.push({ sessionName, payload });
-      setTimeout(async () => {
+      const simulate = async () => {
         // A turn was running when the prompt arrived: the prompt queues, that turn
         // stores its reply and completes, then this turn starts.
         if (options.inFlightReply) {
@@ -140,11 +150,16 @@ function harness(
           history.push({
             id: history.length + 1,
             role: "assistant",
-            content: options.reply ?? "🔊 Feito.\nTudo certo.",
+            content: options.replyFor?.(String(payload.prompt)) ?? options.reply ?? "🔊 Feito.\nTudo certo.",
           });
         }
         await hub.emit(`ravi.session.${sessionName}.runtime`, { type: options.terminal ?? "turn.complete" });
-      }, 10);
+      };
+      if (options.sessionQueue) {
+        sessionChain = sessionChain.then(() => tick()).then(simulate);
+      } else {
+        setTimeout(simulate, 10);
+      }
     },
     readHistory: () => history,
     clipEngines: {
@@ -460,6 +475,69 @@ describe("voice door", () => {
     handlers.onUsage({ seconds: 60 });
     await until(() => (getVoiceCall(call.id)?.usage.engineSeconds ?? 0) === 60, "usage");
     expect(getVoiceCall(call.id)?.usage.estimatedCostUsd).toBeCloseTo(0.05, 5);
+  });
+
+  it("a revoke interrupted after the device record is finished by the sweep", async () => {
+    const context = createRuntimeContext({
+      kind: VOICE_DEVICE_CONTEXT_KIND,
+      capabilities: VOICE_DEVICE_CAPABILITIES.map((capability) => ({ ...capability })),
+      metadata: { voiceDeviceId: "vd_cut" },
+      ttlMs: 60_000,
+    });
+    insertVoiceDevice({
+      id: "vd_cut",
+      label: "phone",
+      contactId: "contact_1",
+      sessions: ["agent:main:main"],
+      contextId: context.contextId,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 60_000,
+    });
+    const call = makeCall("push", { speaker: { kind: "device", id: "vd_cut" } });
+    // `devices revoke` wrote the device record and stopped before the context.
+    markVoiceDeviceRevoked("vd_cut");
+    expect(dbGetContext(context.contextId)?.revokedAt).toBeFalsy();
+    const { door } = harness();
+    await door.sweepNow();
+    expect(dbGetContext(context.contextId)?.revokedAt).toBeTruthy();
+    expect(getVoiceCall(call.id)?.state).toBe("ended");
+    expect(getVoiceCall(call.id)?.endedReason).toBe("device_revoked");
+    // A second sweep finds nothing left to do.
+    await door.sweepNow();
+  });
+
+  it("two calls on one session each speak their own reply", async () => {
+    const { door, prompts } = harness({
+      sessionQueue: true,
+      replyFor: (prompt) => (prompt.includes("primeira") ? "🔊 Resposta um." : "🔊 Resposta dois."),
+    });
+    const first = makeCall("push");
+    const second = makeCall("push", { speaker: { kind: "device", id: "vd_two" } });
+    await Promise.all([
+      door.handleControl({
+        op: "utterance",
+        callId: first.id,
+        turnId: "vt_one",
+        text: "primeira pergunta",
+        speaker: { ...first.speaker },
+      }),
+      door.handleControl({
+        op: "utterance",
+        callId: second.id,
+        turnId: "vt_two",
+        text: "segunda pergunta",
+        speaker: { ...second.speaker },
+      }),
+    ]);
+    const spoken = (callId: string) =>
+      listVoiceEvents(callId)
+        .filter((event) => event.type === "agent.transcript")
+        .map((event) => String(event.data.text));
+    await until(() => spoken(first.id).length > 0 && spoken(second.id).length > 0, "both replies");
+    expect(spoken(first.id)).toEqual(["Resposta um."]);
+    expect(spoken(second.id)).toEqual(["Resposta dois."]);
+    // The second prompt reached the session only after the first turn ended.
+    expect(prompts).toHaveLength(2);
   });
 
   it("publishes an approval the store committed after the tap stopped waiting, approved or denied", async () => {

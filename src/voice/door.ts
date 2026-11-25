@@ -37,6 +37,7 @@ import {
 import { getVoiceEngine } from "./engines/index.js";
 import type { ClipSpeechEngine } from "./engines/types.js";
 import { emitVoiceEvent, type VoiceControlMessage, type VoiceEventSink } from "./events.js";
+import { revokeVoiceDeviceContext } from "./authority.js";
 import { buildVoicePrompt, classifySpokenControl, extractSpokenLead } from "./speech.js";
 import {
   addVoiceDailyUsage,
@@ -48,6 +49,7 @@ import {
   getVoiceTurn,
   insertVoiceTurn,
   listVoiceCalls,
+  listVoiceDevices,
   listVoiceTurns,
   saveVoiceAudio,
   updateVoiceCall,
@@ -119,6 +121,7 @@ interface CallRuntime {
 
 export class VoiceDoorService {
   private readonly calls = new Map<string, CallRuntime>();
+  private readonly sessionTurns = new Map<string, Promise<void>>();
   private readonly abort = new AbortController();
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
   private readonly sink: VoiceEventSink;
@@ -309,12 +312,35 @@ export class VoiceDoorService {
         if (!next) break;
         const call = getVoiceCall(callId);
         if (!call || call.state === "ended") break;
-        const stored = getVoiceTurn(next.turn.id);
-        if (stored?.state === "cancelled") continue;
-        await this.runTurn(call, next.turn, next.delegationId);
+        await this.inSessionOrder(call.sessionKey, async () => {
+          // Re-read after waiting for the session: the call or turn may be gone.
+          const current = getVoiceCall(callId);
+          if (!current || current.state === "ending" || current.state === "ended") return;
+          if (getVoiceTurn(next.turn.id)?.state === "cancelled") return;
+          await this.runTurn(current, next.turn, next.delegationId);
+        });
       }
     } finally {
       runtime.draining = false;
+    }
+  }
+
+  /**
+   * One voice turn at a time per session, across calls. A turn's reply is
+   * read from the session after its own prompt, so a second call's prompt goes
+   * in only when the first call's turn has ended; two calls never read each
+   * other's reply.
+   */
+  private async inSessionOrder(sessionKey: string, work: () => Promise<void>): Promise<void> {
+    const previous = this.sessionTurns.get(sessionKey) ?? Promise.resolve();
+    const current = previous.then(work);
+    // no-cause: the tail only orders the next turn; this turn's error still reaches the caller through `await current`.
+    const tail = current.catch(() => {});
+    this.sessionTurns.set(sessionKey, tail);
+    try {
+      await current;
+    } finally {
+      if (this.sessionTurns.get(sessionKey) === tail) this.sessionTurns.delete(sessionKey);
     }
   }
 
@@ -707,8 +733,17 @@ export class VoiceDoorService {
     await this.endCall(callId, "limit");
   }
 
+  /** One pass of the periodic sweep. Public for tests. */
+  async sweepNow(): Promise<void> {
+    await this.sweepLimits();
+  }
+
   private async sweepLimits(): Promise<void> {
     try {
+      // A revoke that stopped after the device record: finish the context.
+      for (const device of listVoiceDevices({ includeRevoked: true })) {
+        if (device.revokedAt) revokeVoiceDeviceContext(device.contextId);
+      }
       for (const call of listVoiceCalls({ activeOnly: true, limit: "all" })) {
         // The revoked device record is the durable "end its calls" request:
         // `devices revoke` asks right away, and this sweep retries if that ask

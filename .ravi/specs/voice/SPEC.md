@@ -82,7 +82,8 @@ entered the session, and the feature spec `runtime/providers/realtime-voice` (ar
 - The public sanitizer runs before any speech: no code blocks, URLs, paths, secrets or raw tool
   output reach the voice.
 - One active call per (session, speaker). One utterance in flight per call; later utterances queue
-  in the door in order.
+  in the door in order. Across calls on the same session, one voice turn runs at a time, so each
+  call reads only its own reply.
 - Long turns: one acknowledgement, progress only from real session events (`work.state`,
   `work.tool`), completion announced by event.
 - A daemon restart ends `live` calls (the sideband cannot reconnect); `push` and `mock` calls survive
@@ -95,8 +96,8 @@ entered the session, and the feature spec `runtime/providers/realtime-voice` (ar
 - The caller needs the same authority as `sessions send` on the target session: the local operator,
   or a context that can access the session. A paired **device credential** (`voice devices pair`) is
   a person-bound context key (`kind: voice-device`) limited to `voice` commands and the sessions
-  listed at pairing. Device keys last 30 days; `voice devices revoke` revokes the key and ends the
-  device's calls.
+  listed at pairing. Device keys last 30 days; `voice devices revoke` marks the device revoked first, then revokes the key and ends the
+  device's calls; the door's sweep finishes both from the device record if the command stops.
 - The speaker is recorded on every utterance (`speaker.kind`: `operator` | `device` | `guest`;
   `speaker.contactId`). The speaker never adds authority: the session turn runs with the caller's
   authority, exactly as `sessions send`.

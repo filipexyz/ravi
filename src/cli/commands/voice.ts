@@ -14,7 +14,7 @@ import { findContactsByTag, getContactDetails } from "../../contacts.js";
 import { OWNER_CONTACT_TAG } from "../../knowledge/owner.js";
 import { nats } from "../../nats.js";
 import { filterAccessibleSessions, getScopeContext } from "../../permissions/scope.js";
-import { createRuntimeContext, revokeRuntimeContext } from "../../runtime/context-registry.js";
+import { createRuntimeContext } from "../../runtime/context-registry.js";
 import { buildSessionRelayTurnOrigin } from "../../runtime/turn-origin.js";
 import { listSessions, resolveSession } from "../../router/sessions.js";
 import type { SessionEntry } from "../../router/types.js";
@@ -35,6 +35,7 @@ import {
   assertCallerControlsCall,
   assertCallerMayCallSession,
   resolveVoiceCaller,
+  revokeVoiceDeviceContext,
   VOICE_DEVICE_CAPABILITIES,
   VOICE_DEVICE_CONTEXT_KIND,
   VOICE_WORKER_CONTEXT_KIND,
@@ -1351,8 +1352,11 @@ export class VoiceDevicesCommands {
       }
       const device = getVoiceDevice(deviceId);
       if (!device) fail(op, "VOICE_DEVICE_NOT_FOUND", `Device ${deviceId} not found.`, asJson);
-      revokeRuntimeContext(device.contextId, { reason: "voice_device_revoked" });
+      // The device record first: it is what every voice check reads, and the
+      // door's sweep finishes the rest from it (context, calls) if this stops
+      // before the next write. Both writes are idempotent, so a retry is safe.
       const revoked = markVoiceDeviceRevoked(device.id);
+      revokeVoiceDeviceContext(device.contextId);
       // The revoked record is durable: the door's sweep ends any call this
       // loop could not reach. Ask now so they end at once.
       const ended: string[] = [];
