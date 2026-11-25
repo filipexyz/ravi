@@ -1653,6 +1653,36 @@ class AppsPromptsReturn {
 
 AppsPromptsReturn appsPromptsReturnFromJson(Object? json) => AppsPromptsReturn.fromJsonValue(json);
 
+class AppsRefreshReturn {
+  const AppsRefreshReturn({required this.apps, required this.blockSerial, required this.changed, required this.indexSerial, required this.keysSerial, required this.refreshedAt, required this.source});
+
+  final double apps;
+  final double blockSerial;
+  final bool changed;
+  final double indexSerial;
+  final double keysSerial;
+  final RaviJson refreshedAt;
+  final String source;
+
+  factory AppsRefreshReturn.fromJson(Map<String, Object?> json) {
+    return AppsRefreshReturn(
+      apps: raviJsonAsDouble(json["apps"]),
+      blockSerial: raviJsonAsDouble(json["blockSerial"]),
+      changed: raviJsonAsBool(json["changed"]),
+      indexSerial: raviJsonAsDouble(json["indexSerial"]),
+      keysSerial: raviJsonAsDouble(json["keysSerial"]),
+      refreshedAt: RaviJson.from(json["refreshedAt"]),
+      source: raviJsonAsString(json["source"]),
+    );
+  }
+
+  static AppsRefreshReturn fromJsonValue(Object? json) {
+    return AppsRefreshReturn.fromJson(raviJsonObject(json, "AppsRefreshReturn"));
+  }
+}
+
+AppsRefreshReturn appsRefreshReturnFromJson(Object? json) => AppsRefreshReturn.fromJsonValue(json);
+
 class AppsRunOptions {
   const AppsRunOptions({this.execute});
 
@@ -1811,6 +1841,42 @@ class AppsScaffoldReturn {
 
 AppsScaffoldReturn appsScaffoldReturnFromJson(Object? json) => AppsScaffoldReturn.fromJsonValue(json);
 
+class AppsSearchOptions {
+  const AppsSearchOptions({this.refresh});
+
+  final bool? refresh;
+
+  void encodeBody(Map<String, RaviJson> into) {
+    if (refresh != null) {
+      into["refresh"] = RaviJson.from(refresh);
+    }
+  }
+}
+
+class AppsSearchReturn {
+  const AppsSearchReturn({required this.apps, required this.indexSerial, required this.refreshedAt, required this.source});
+
+  final List<RaviJson> apps;
+  final double indexSerial;
+  final RaviJson refreshedAt;
+  final String source;
+
+  factory AppsSearchReturn.fromJson(Map<String, Object?> json) {
+    return AppsSearchReturn(
+      apps: raviJsonAsList(json["apps"], RaviJson.from),
+      indexSerial: raviJsonAsDouble(json["indexSerial"]),
+      refreshedAt: RaviJson.from(json["refreshedAt"]),
+      source: raviJsonAsString(json["source"]),
+    );
+  }
+
+  static AppsSearchReturn fromJsonValue(Object? json) {
+    return AppsSearchReturn.fromJson(raviJsonObject(json, "AppsSearchReturn"));
+  }
+}
+
+AppsSearchReturn appsSearchReturnFromJson(Object? json) => AppsSearchReturn.fromJsonValue(json);
+
 class AppsShowReturn {
   const AppsShowReturn({required this.app});
 
@@ -1828,6 +1894,26 @@ class AppsShowReturn {
 }
 
 AppsShowReturn appsShowReturnFromJson(Object? json) => AppsShowReturn.fromJsonValue(json);
+
+class AppsVerifyReturn {
+  const AppsVerifyReturn({required this.apps, required this.ok});
+
+  final List<RaviJson> apps;
+  final bool ok;
+
+  factory AppsVerifyReturn.fromJson(Map<String, Object?> json) {
+    return AppsVerifyReturn(
+      apps: raviJsonAsList(json["apps"], RaviJson.from),
+      ok: raviJsonAsBool(json["ok"]),
+    );
+  }
+
+  static AppsVerifyReturn fromJsonValue(Object? json) {
+    return AppsVerifyReturn.fromJson(raviJsonObject(json, "AppsVerifyReturn"));
+  }
+}
+
+AppsVerifyReturn appsVerifyReturnFromJson(Object? json) => AppsVerifyReturn.fromJsonValue(json);
 
 class ArtifactsArchiveReturn {
   const ArtifactsArchiveReturn({required this.success});

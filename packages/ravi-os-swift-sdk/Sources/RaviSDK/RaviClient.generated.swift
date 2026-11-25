@@ -678,6 +678,11 @@ public struct AppsNamespace: Sendable {
     return try await transport.call(groupSegments: ["apps"], command: "prompts", body: requestBody, as: AppsPromptsReturn.self)
   }
 
+  public func refresh() async throws -> AppsRefreshReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["apps"], command: "refresh", body: requestBody, as: AppsRefreshReturn.self)
+  }
+
   public func run(_ id: String, _ operation: String? = nil, _ args: [String]? = nil, _ options: AppsRunOptions = .init()) async throws -> AppsRunReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["id"] = try RaviJSON.fromEncodable(id)
@@ -698,10 +703,27 @@ public struct AppsNamespace: Sendable {
     return try await transport.call(groupSegments: ["apps"], command: "scaffold", body: requestBody, as: AppsScaffoldReturn.self)
   }
 
+  public func search(_ query: String? = nil, _ options: AppsSearchOptions = .init()) async throws -> AppsSearchReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let query {
+      requestBody["query"] = try RaviJSON.fromEncodable(query)
+    }
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["apps"], command: "search", body: requestBody, as: AppsSearchReturn.self)
+  }
+
   public func show(_ id: String) async throws -> AppsShowReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["id"] = try RaviJSON.fromEncodable(id)
     return try await transport.call(groupSegments: ["apps"], command: "show", body: requestBody, as: AppsShowReturn.self)
+  }
+
+  public func verify(_ id: String? = nil) async throws -> AppsVerifyReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    if let id {
+      requestBody["id"] = try RaviJSON.fromEncodable(id)
+    }
+    return try await transport.call(groupSegments: ["apps"], command: "verify", body: requestBody, as: AppsVerifyReturn.self)
   }
 }
 

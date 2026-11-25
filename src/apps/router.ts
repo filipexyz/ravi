@@ -53,6 +53,8 @@ import {
   resolveDependencyClosure,
 } from "./composition.js";
 import { logger } from "../utils/logger.js";
+import { assertStoreAppRunnable } from "./store/run-guard.js";
+import { AppStoreError } from "./store/types.js";
 
 interface ResolvedOperation {
   id: string;
@@ -97,6 +99,7 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
     if (!app.manifest) {
       throw new Error(`App manifest is missing for ${app.id}`);
     }
+    assertStoreAppRunnable(app, options.env);
 
     const invocation = resolveOperationInvocation(app, operationName, options.args ?? []);
     result = await dispatchResolvedOperation(app, invocation.resolved, {
@@ -113,17 +116,19 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
   } catch (error) {
     const errorCode = classifyAppRunError(error);
     const message =
-      errorCode === "not_found"
-        ? "Ravi app was not found."
-        : errorCode === "PERMISSION_DENIED"
-          ? "Ravi app operation was denied."
-          : errorCode === "APP_PERMISSION_PROVIDER_FAILED"
-            ? "Ravi app permission provider failed."
-            : errorCode === "APP_DEPENDENCY_UNAVAILABLE"
-              ? "Ravi app dependency is unavailable."
-              : errorCode === "APP_OPERATION_NOT_PROVIDED"
-                ? "Ravi app operation is not offered to this caller."
-                : "Ravi app operation failed.";
+      error instanceof AppStoreError
+        ? error.message
+        : errorCode === "not_found"
+          ? "Ravi app was not found."
+          : errorCode === "PERMISSION_DENIED"
+            ? "Ravi app operation was denied."
+            : errorCode === "APP_PERMISSION_PROVIDER_FAILED"
+              ? "Ravi app permission provider failed."
+              : errorCode === "APP_DEPENDENCY_UNAVAILABLE"
+                ? "Ravi app dependency is unavailable."
+                : errorCode === "APP_OPERATION_NOT_PROVIDED"
+                  ? "Ravi app operation is not offered to this caller."
+                  : "Ravi app operation failed.";
     result = {
       ok: false,
       appId: options.appId,
@@ -149,6 +154,7 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
 
 function classifyAppRunError(error: unknown): string {
   if (error instanceof RaviAppError) return error.code;
+  if (error instanceof AppStoreError) return error.code;
   if (error instanceof RaviAppCompositionError) return error.code;
   if (error instanceof OmieAppError && /^(OMIE_[A-Z0-9_]+|INVALID_INPUT)$/.test(error.code)) return error.code;
   if (error instanceof RaviAppPermissionDeniedError) return "PERMISSION_DENIED";

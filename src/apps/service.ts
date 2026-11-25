@@ -6,6 +6,7 @@ import { discoverPlugins } from "../plugins/index.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { parseRaviAppCapability, parseRaviAppCommand, tokenizeRaviAppCommand } from "./command.js";
 import { markCompositionCycles, markUnavailableDependencies, validateComposition } from "./composition.js";
+import { markStoreOwnership } from "./store/discovery-guard.js";
 import {
   RaviAppError,
   type RaviAppCheckResult,
@@ -127,6 +128,8 @@ export function discoverAppManifests(options: RaviAppListOptions = {}): RaviAppM
     .sort((left, right) => left.id.localeCompare(right.id) || left.path.localeCompare(right.path));
   const records = options.source ? everything.filter((record) => record.source === options.source) : everything;
 
+  // Store-managed state apps: a folder nobody installed is not an app (spec apps/store).
+  markStoreOwnership(everything, options.env ?? process.env);
   // Over every source too: an id declared in another source is a conflict whichever source a listing shows.
   markDuplicateIds(everything);
   // Composition is a property of the set, not of one file: a circle of `requires` and a missing provider only show
@@ -263,6 +266,11 @@ function findManifestFiles(rootPath: string): string[] {
 
   visit(rootPath, 0);
   return found.sort();
+}
+
+/** Read and validate one manifest file as if it were discovered under `rootPath` (the store checks staged packages). */
+export function readAppManifestFile(path: string, rootPath: string): RaviAppManifestRecord {
+  return readManifestRecord(path, { source: "state", rootPath });
 }
 
 function readManifestRecord(path: string, root: RaviAppDiscoveryRoot): RaviAppManifestRecord {

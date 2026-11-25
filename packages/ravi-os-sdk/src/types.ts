@@ -2008,6 +2008,20 @@ export type AppsPromptsReturn = {
   };
 };
 
+/** Input shape for `apps.refresh`. */
+export type AppsRefreshInput = Record<string, never>;
+
+/** Return shape for `apps.refresh`. */
+export type AppsRefreshReturn = {
+  apps: number;
+  blockSerial: number;
+  changed: boolean;
+  indexSerial: number;
+  keysSerial: number;
+  refreshedAt: string | null;
+  source: string;
+};
+
 /** Input shape for `apps.run`. */
 export type AppsRunInput = {
   args?: string[];
@@ -2122,6 +2136,29 @@ export type AppsScaffoldReturn = {
   specPath: string | null;
 };
 
+/** Input shape for `apps.search`. */
+export type AppsSearchInput = {
+  query?: string;
+  refresh?: boolean;
+};
+
+/** Return shape for `apps.search`. */
+export type AppsSearchReturn = {
+  apps: Array<{
+    blocked: boolean;
+    class: ("compose" | "connector" | "code") | null;
+    description: string;
+    id: string;
+    installed: string | null;
+    latest: string | null;
+    name: string;
+    publisher: string;
+  }>;
+  indexSerial: number;
+  refreshedAt: string | null;
+  source: string;
+};
+
 /** Input shape for `apps.show`. */
 export type AppsShowInput = {
   id: string;
@@ -2172,6 +2209,25 @@ export type AppsShowReturn = {
     version: string | null;
     warnings: string[];
   };
+};
+
+/** Input shape for `apps.verify`. */
+export type AppsVerifyInput = {
+  id?: string;
+};
+
+/** Return shape for `apps.verify`. */
+export type AppsVerifyReturn = {
+  apps: Array<{
+    exposedTo: string[];
+    id: string;
+    ok: boolean;
+    problems: string[];
+    source: "official" | "local";
+    state: "active" | "quarantined";
+    version: string;
+  }>;
+  ok: boolean;
 };
 
 /** Input shape for `artifacts.archive`. */

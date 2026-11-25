@@ -21,6 +21,7 @@ import { enforceRaviAppRunResult, raviAppErrorToContractError } from "./error-co
 import { maskedSecretForms, projectAppCliFailure } from "./failure.js";
 import { maybeRunAppAliasRoute, resolveAppAliasInvocation, runAppOperation } from "./router.js";
 import { discoverAppManifests } from "./service.js";
+import { commitChange, prepareLocalInstall, setExposure } from "./store/install.js";
 import { RaviAppError, type RaviAppRunResult } from "./types.js";
 
 declare const Bun: {
@@ -530,6 +531,32 @@ describe("Ravi app router", () => {
       handler: "apps.manifest.check",
     });
     expect(result.result).toMatchObject({ ok: true, checked: 1 });
+  });
+
+  it("runs a store app only when its files match the receipt and the agent was allowed", async () => {
+    const root = makeRepo();
+    const pkg = join(root, "pkg", "store-tasks");
+    mkdirSync(pkg, { recursive: true });
+    writeFileSync(join(pkg, "ravi.app.json"), JSON.stringify(manifest("store-tasks"), null, 2));
+    // An empty registry: other files in this process mock modules the full command registry imports.
+    const registry = { groups: [], commands: [] };
+    commitChange(prepareLocalInstall(pkg, { allowCode: true }, { registry }), { registry });
+
+    const operator = await runAppOperation({ appId: "store-tasks", operation: "check", json: true });
+    expect(operator.ok).toBe(true);
+
+    const agentRun = () =>
+      runWithContext(appToolContext([appCapability("use", "store-tasks")]), () =>
+        runAppOperation({ appId: "store-tasks", operation: "check", json: true }),
+      );
+    expect((await agentRun()).errorCode).toBe("not_found");
+    setExposure("store-tasks", "app-agent", true);
+    expect((await agentRun()).ok).toBe(true);
+
+    writeFileSync(join(process.env.RAVI_STATE_DIR!, "apps", "store-tasks", "extra.md"), "planted\n");
+    const tampered = await runAppOperation({ appId: "store-tasks", operation: "check", json: true });
+    expect(tampered.ok).toBe(false);
+    expect(tampered.errorCode).toBe("APP_TREE_CHANGED");
   });
 
   it("keeps the operation name when routing <op> --help to the help builtin", () => {

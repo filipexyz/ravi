@@ -98,7 +98,8 @@
             "pages": [
               "guides/cron-jobs",
               "guides/triggers",
-              "guides/heartbeat"
+              "guides/heartbeat",
+              "guides/apps"
             ]
           },
           {

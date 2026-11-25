@@ -11317,6 +11317,58 @@ export const AppsPromptsReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `apps.refresh`. */
+export const AppsRefreshInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.refresh`. */
+export const AppsRefreshReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apps": {
+      "type": "number"
+    },
+    "blockSerial": {
+      "type": "number"
+    },
+    "changed": {
+      "type": "boolean"
+    },
+    "indexSerial": {
+      "type": "number"
+    },
+    "keysSerial": {
+      "type": "number"
+    },
+    "refreshedAt": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "source",
+    "changed",
+    "keysSerial",
+    "indexSerial",
+    "blockSerial",
+    "apps",
+    "refreshedAt"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `apps.run`. */
 export const AppsRunInputSchema = {
   "additionalProperties": false,
@@ -11895,6 +11947,121 @@ export const AppsScaffoldReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `apps.search`. */
+export const AppsSearchInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "query": {
+      "description": "Text to match in id, name or description",
+      "type": "string"
+    },
+    "refresh": {
+      "description": "Fetch the signed index before searching",
+      "type": "boolean"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.search`. */
+export const AppsSearchReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apps": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "blocked": {
+            "type": "boolean"
+          },
+          "class": {
+            "anyOf": [
+              {
+                "enum": [
+                  "compose",
+                  "connector",
+                  "code"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "installed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "publisher": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "publisher",
+          "latest",
+          "class",
+          "installed",
+          "blocked"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "indexSerial": {
+      "type": "number"
+    },
+    "refreshedAt": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "source",
+    "indexSerial",
+    "refreshedAt",
+    "apps"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `apps.show`. */
 export const AppsShowInputSchema = {
   "additionalProperties": false,
@@ -12213,6 +12380,86 @@ export const AppsShowReturnSchema = {
   },
   "required": [
     "app"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `apps.verify`. */
+export const AppsVerifyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Installed app id. Omit to verify every store app.",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `apps.verify`. */
+export const AppsVerifyReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apps": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "exposedTo": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "problems": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "source": {
+            "enum": [
+              "official",
+              "local"
+            ],
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "active",
+              "quarantined"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "source",
+          "state",
+          "ok",
+          "problems",
+          "exposedTo"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "ok",
+    "apps"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
