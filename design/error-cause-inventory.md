@@ -622,14 +622,14 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/crm.ts | 2754 | fixed | binding retained / no recognized error surface | src/cli/commands/crm.ts:407e90df9c7a840dd0de89eb |
 | cli | src/cli/commands/cron.ts | 80 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:02e8ddab66adf503f54297f1 |
 | cli | src/cli/commands/cron.ts | 120 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:d006d9f3a12597bf174620eb |
-| cli | src/cli/commands/cron.ts | 871 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:b529774125801ecee3a7cfad |
-| cli | src/cli/commands/cron.ts | 996 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:24888fc922bd2f71e6b1c336 |
-| cli | src/cli/commands/cron.ts | 1039 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:e0db278d36dfc386af0f7691 |
-| cli | src/cli/commands/cron.ts | 1071 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:912597df63282d8eee95b7b3 |
-| cli | src/cli/commands/cron.ts | 1233 | triaged-follow-up | catch-without-binding | src/cli/commands/cron.ts:497034230d0a93cb39f7ca5c |
-| cli | src/cli/commands/cron.ts | 1367 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:10725bbda2d8d00ddfc406e9 |
-| cli | src/cli/commands/cron.ts | 1441 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:c60fd754bccf5a1a48321971 |
-| cli | src/cli/commands/cron.ts | 1493 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:004cb83b0ddf423fe9af5476 |
+| cli | src/cli/commands/cron.ts | 881 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:b529774125801ecee3a7cfad |
+| cli | src/cli/commands/cron.ts | 1006 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:24888fc922bd2f71e6b1c336 |
+| cli | src/cli/commands/cron.ts | 1049 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:e0db278d36dfc386af0f7691 |
+| cli | src/cli/commands/cron.ts | 1081 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:912597df63282d8eee95b7b3 |
+| cli | src/cli/commands/cron.ts | 1243 | triaged-follow-up | catch-without-binding | src/cli/commands/cron.ts:497034230d0a93cb39f7ca5c |
+| cli | src/cli/commands/cron.ts | 1377 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:10725bbda2d8d00ddfc406e9 |
+| cli | src/cli/commands/cron.ts | 1451 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:c60fd754bccf5a1a48321971 |
+| cli | src/cli/commands/cron.ts | 1503 | fixed | binding retained / no recognized error surface | src/cli/commands/cron.ts:004cb83b0ddf423fe9af5476 |
 | cli | src/cli/commands/daemon.ts | 116 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:83e88e29b98541a715ba95c9 |
 | cli | src/cli/commands/daemon.ts | 119 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:5c67dde5c37f215d912cdf0d |
 | cli | src/cli/commands/daemon.ts | 154 | triaged-follow-up | catch-without-binding | src/cli/commands/daemon.ts:3252e4a28013452b12c3c4af |
@@ -2145,7 +2145,7 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/runtime-request-context.ts | 119 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:9c19b85e67a579c3b18fc384 |
 | runtime-chat | src/runtime/runtime-request-context.ts | 224 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:fb0b243ac337da14f0ac5365 |
 | runtime-chat | src/runtime/runtime-request-context.ts | 512 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:7206346edd25c13ff4d8a8d8 |
-| runtime-chat | src/runtime/runtime-request-context.ts | 843 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:f5a91420c25bdfe230c4347d |
+| runtime-chat | src/runtime/runtime-request-context.ts | 863 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:f5a91420c25bdfe230c4347d |
 | sessions | src/runtime/session-dispatcher.ts | 583 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:f62a129921ede3d5cf54be0f |
 | sessions | src/runtime/session-dispatcher.ts | 592 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:083324775001a686ec7a5875 |
 | sessions | src/runtime/session-dispatcher.ts | 727 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:4e182c47be33a9110d382f81 |

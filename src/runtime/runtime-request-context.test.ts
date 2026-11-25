@@ -3486,6 +3486,67 @@ describe("verified human work handoffs", () => {
       expect(automationHoldCause(thread)).toBe("held-relay");
     });
 
+    it("a relay from a lifted turn lends nothing once the lift is withdrawn, whatever the action", () => {
+      // Review of #990 (N2, probe V7): an inform, answer or return from a lifted admin carried the
+      // destination agent's whole authority with no hold, also when built after the admin tag was
+      // withdrawn. A relay now re-validates the caller's lift as the grants and tags stand.
+      dbUpdateAgent(workerAgent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+      dbCreateTagDefinition({
+        slug: "permission-no-shell",
+        label: "No shell",
+        kind: "system",
+        source: "permissions",
+        metadata: { permissions: { capabilities: ["deny_execute:executable:*"] } },
+      });
+      const untagged = person("Admin later untagged", { tags: ["permission-owner"], status: "allowed" });
+      const narrowed = person("Admin later denied a shell here", { tags: ["permission-owner"], status: "allowed" });
+      const kept = person("Admin who keeps full access", { tags: ["permission-owner"], status: "allowed" });
+      const untaggedTurn = speak(untagged, "n2-untagged");
+      const narrowedTurn = speak(narrowed, "n2-narrowed");
+      const keptTurn = speak(kept, "n2-kept");
+      for (const turn of [untaggedTurn, narrowedTurn, keptTurn]) expect(turn.metadata?.userOverlay).toBe("lifted");
+
+      // Withdrawn without the revoking command (an untag), and narrowed by a deny granted in the chat later.
+      removeContactTag(untagged.phone, "permission-owner");
+      grantHere(narrowed.id, "permission-no-shell");
+      const withdrawn = [
+        ["untagged", untaggedTurn],
+        ["narrowed", narrowedTurn],
+      ] as const;
+      for (const [label, turn] of withdrawn) {
+        for (const action of ["inform", "answer", "session.return", "session.bootstrap", "execute"] as const) {
+          const child = handoff(turn, action, {}, workerAgent);
+          expect(`${label}/${action}:${child.capabilities.length}`).toBe(`${label}/${action}:0`);
+          expect(automationHoldCause(child)).toBe("held-relay");
+        }
+      }
+
+      // Still holding full access: an inform carries the destination's authority, unheld, as before.
+      const informed = handoff(keptTurn, "inform", {}, workerAgent);
+      expect(canWithCapabilities(informed.capabilities, "admin", "system", "*")).toBe(true);
+      expect(automationHoldCause(informed)).toBeNull();
+    });
+
+    it("a lifted caller whose context lacks the owner or chat of its overlay lends nothing", () => {
+      dbUpdateAgent(workerAgent.id, { defaults: { runtimePermissions: { profile: "full-access" } } });
+      const admin = person("Admin", { tags: ["permission-owner"], status: "allowed" });
+      const turn = speak(admin, "n2-malformed");
+      expect(turn.metadata?.userOverlay).toBe("lifted");
+      for (const missing of ["userOverlayContact", "userOverlayChat"] as const) {
+        const { [missing]: _dropped, ...rest } = turn.metadata ?? {};
+        const forged = createRuntimeContext({
+          kind: "turn-runtime",
+          agentId: turn.agentId,
+          sessionKey: turn.sessionKey,
+          sessionName: turn.sessionName,
+          capabilities: turn.capabilities,
+          metadata: rest,
+        });
+        const child = handoff(forged, "inform", {}, workerAgent);
+        expect(`${missing}:${child.capabilities.length}`).toBe(`${missing}:0`);
+      }
+    });
+
     it("the lift rests on the contact's own power: withdrawing it revokes the live turn and narrows the next", () => {
       const operator = person("Operator", { tags: ["permission-owner"], status: "allowed" });
       const turn = speak(operator, "operator-withdrawn");

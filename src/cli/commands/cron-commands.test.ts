@@ -363,7 +363,7 @@ describe("CronCommands --json", () => {
     ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
   });
 
-  it("binds a job from an overlay turn to its chat, and leaves one from a lifted overlay unbound like the operator's", async () => {
+  it("binds a job from an overlay turn or a lifted overlay to its chat; a held relay still binds nothing", async () => {
     const addJob = (name: string) =>
       captureJson(() =>
         new CronCommands().add(
@@ -397,7 +397,8 @@ describe("CronCommands --json", () => {
     await addJob("Overlay");
     expect(cronJob?.creatorChat).toBe("chat-bob");
 
-    // The same chat, a contact whose own power covers the agent (overlay lifted): written as from an ungoverned chat.
+    // The same chat, a contact whose own full access lifted the overlay: bound too, so each run re-evaluates
+    // the owner and the job stops running as the agent once that full access is withdrawn (review of #990, N3).
     mockCliContext = {
       agentId: "dev",
       context: {
@@ -405,7 +406,26 @@ describe("CronCommands --json", () => {
       },
     };
     await addJob("Lifted");
-    expect(cronJob?.creatorChat).toBeUndefined();
+    expect(cronJob?.creatorChat).toBe("chat-bob");
+
+    // A held relay whose own overlay is lifted (a thread to an agent stronger than its caller) still writes no job:
+    // the held-relay guard reads the overlay mode, not the lift.
+    cronJob = null;
+    mockCliContext = {
+      agentId: "dev",
+      context: {
+        metadata: {
+          actorAuthorizationMode: "invoke-only",
+          userOverlay: "lifted",
+          userOverlayChat: "chat:chat-bob",
+          relayNarrowing: true,
+        },
+      },
+    };
+    await expect(
+      new CronCommands().add("Held relay", undefined, "30m", undefined, undefined, "hello"),
+    ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    expect(cronJob).toBeNull();
   });
 
   it("does not make a trigger's own session the reply session of a job created during its turn", async () => {

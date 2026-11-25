@@ -45,9 +45,20 @@
   `userOverlayContact` ("runs a chat-bound cron of an owner…").
 - The active-turn lease MUST keep an overlay turn whose contact gains full
   access mid-turn (issued snapshot and mode unchanged, lifted on the next
-  turn) and MUST revoke a lifted turn whose contact loses it
+  turn), MUST revoke a lifted turn whose contact loses it, and MUST revoke an
+  overlay turn whose chat stops being governed mid-turn
   (`runtime-request-context-lifetime.test.ts`, "a contact in a chat governed by
   contact grants").
+- A relay from a lifted turn MUST lend nothing (zero capabilities,
+  `held-relay`) for every action once the contact is untagged or narrowed by a
+  `deny_*` granted in the chat, and MUST still carry the destination's
+  authority while the full access holds; a lifted context missing
+  `userOverlayContact` or `userOverlayChat` MUST lend nothing
+  (`runtime-request-context.test.ts`, "a relay from a lifted turn lends
+  nothing…", "a lifted caller whose context lacks…").
+- `cron add` in a lifted turn MUST bind the job to the chat; in a held relay
+  whose own overlay is lifted it MUST refuse (`cron-commands.test.ts`, "binds
+  a job from an overlay turn or a lifted overlay to its chat…").
 - A global (`--force`) grant MUST apply only inside governed chats and MUST NOT
   govern a chat by itself.
 - Blocked contacts MUST receive zero overlay capabilities.

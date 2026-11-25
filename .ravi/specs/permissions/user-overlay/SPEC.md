@@ -157,13 +157,23 @@ speaking in a chat where another person had a grant.
   break-glass the contact does not hold withheld exactly as in an ungoverned
   chat (none, since its power covers the agent). Its `actorAuthorizationMode`
   is not `user-overlay`, so its automation is not held and the threads it
-  opens are stamped `relayCallerUnrestricted` when their own rule allows. A
-  cron job it writes is not bound to the chat, like one written from an
-  ungoverned chat.
+  opens are stamped `relayCallerUnrestricted` when their own rule allows.
+- A cron job written in a lifted turn MUST be bound to the chat
+  (`creatorChat`), as an overlay turn's job is, so it never outlives the full
+  access it was written under (review of #990, N3). The held-relay guard of
+  `cron add|set` still reads the overlay mode alone: a held relay whose own
+  overlay is lifted binds nothing and writes no job.
 - The lift is decided on every turn, from the grants and tags as they are at
   that turn, also for a cron job bound to the chat (`creatorChat`): the job of
-  an owner whose power covers the agent runs as the agent, and is narrowed
-  again once that power is withdrawn.
+  an owner with full access runs as the agent, and is narrowed to the owner's
+  chat grants (none: no capabilities) once that full access is withdrawn.
+- A relay built from a lifted turn (any action: inform, answer, return, or a
+  work handoff, also queued after the turn ended) MUST re-validate that lift
+  from the `userOverlayContact` and `userOverlayChat` the caller recorded,
+  against the grants and tags as they are then. Withdrawn (an untag or
+  `permissions deny`) or narrowed by a `deny_*` since: the caller lends
+  nothing, as a profile withdrawal does, and the relay is held. A lifted
+  context missing either field lends nothing (review of #990, N2).
 - A lifted turn MUST record `userOverlayGrants` like an applied one, so
   `permissions deny` of the grant it rests on (for the admin tag,
   `<tag>@global`) and a profile narrowing revoke the live turn. Applied and
@@ -174,7 +184,8 @@ speaking in a chat where another person had a grant.
   at renewal (the contact gained full access mid-turn): that is a gain. The
   turn keeps its issued snapshot, mode and holds until it ends; the lift
   applies from the next turn. A lifted turn whose contact loses full access
-  mid-turn changes mode at renewal and is revoked.
+  mid-turn changes mode at renewal and is revoked, and so does an overlay turn
+  whose chat stops being governed mid-turn: only a lift relaxes the mode.
 
 ## Enforcement And Freshness
 

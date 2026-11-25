@@ -474,7 +474,7 @@ function cronOwnerUpdateForSet(
 ): Pick<CronJob, "ownerPrincipal" | "creatorChat"> | Record<string, never> {
   if (CRON_OWNER_KEEP_KEYS.has(key)) return {};
   const setterOwner = resolveCronOwnerPrincipalForCurrentTurn();
-  const overlayChat = currentUserOverlayChat();
+  const overlayChat = currentUserOverlayChat({ includeLifted: true });
   if (setterOwner === cronJobRunsAs(job)) {
     return overlayChat && overlayChat !== job.creatorChat ? { creatorChat: overlayChat } : {};
   }
@@ -489,10 +489,20 @@ function cronOwnerUpdateForSet(
  * The chat whose contact grants narrow the current turn, when they do. A job
  * written from such a turn keeps running under those grants, never under the
  * executor agent's full ceiling.
+ *
+ * With `includeLifted`, also the chat of a lifted overlay (the contact's own
+ * full access lifted it, `permissions/user-overlay`). A job bound there
+ * re-evaluates its owner on every run: it runs as the agent while that full
+ * access holds, and under the owner's chat grants once it is withdrawn (review
+ * of #990, N3). Only where a job is bound: the held-relay guard reads the
+ * overlay mode alone.
  */
-function currentUserOverlayChat(): string | undefined {
+function currentUserOverlayChat(options: { includeLifted?: boolean } = {}): string | undefined {
   const metadata = getContext()?.context?.metadata;
-  if (metadata?.actorAuthorizationMode !== "user-overlay") return undefined;
+  const bindable =
+    metadata?.actorAuthorizationMode === "user-overlay" ||
+    (options.includeLifted === true && metadata?.userOverlay === "lifted");
+  if (!bindable) return undefined;
   const chat = typeof metadata.userOverlayChat === "string" ? metadata.userOverlayChat.replace(/^chat:/, "") : "";
   return chat || undefined;
 }
@@ -935,7 +945,7 @@ export class CronCommands {
       shellEnvFile: isShellJob ? envFile : undefined,
       onError: normalizedOnError,
       ownerPrincipal,
-      creatorChat: currentUserOverlayChat(),
+      creatorChat: currentUserOverlayChat({ includeLifted: true }),
     };
 
     try {
