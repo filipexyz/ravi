@@ -942,12 +942,12 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/update.ts | 1347 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:74bbfa2976253cbe237bad91 |
 | cli | src/cli/commands/update.ts | 1353 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:74bbfa2976253cbe237bad91 |
 | cli | src/cli/commands/update.ts | 1383 | fixed | binding retained / no recognized error surface | src/cli/commands/update.ts:c33f18a27e6494675a063425 |
-| cli | src/cli/commands/voice.ts | 139 | fixed | binding retained / no recognized error surface | src/cli/commands/voice.ts:675f59d919cb8dc01396cb68 |
-| cli | src/cli/commands/voice.ts | 433 | no-cause | the decision is committed; the daemon publishes the outcome from the store. | src/cli/commands/voice.ts:67840fac7a2ba6f9f2129960 |
-| cli | src/cli/commands/voice.ts | 441 | no-cause | the decision is committed; the daemon's reconciliation updates the call state. | src/cli/commands/voice.ts:68b7995ec069d7a260671534 |
-| cli | src/cli/commands/voice.ts | 576 | fixed | binding retained / no recognized error surface | src/cli/commands/voice.ts:890091ec01b3a72d26f14364 |
-| cli | src/cli/commands/voice.ts | 591 | fixed | binding retained / no recognized error surface | src/cli/commands/voice.ts:604caf290d2803859bf7306e |
-| cli | src/cli/commands/voice.ts | 1402 | no-cause | the door's sweep ends this call from the revoked record; reported in endDeferred. | src/cli/commands/voice.ts:3cefc5f5fb7792cf59109802 |
+| cli | src/cli/commands/voice.ts | 140 | fixed | binding retained / no recognized error surface | src/cli/commands/voice.ts:675f59d919cb8dc01396cb68 |
+| cli | src/cli/commands/voice.ts | 435 | no-cause | the decision is committed; the daemon publishes the outcome from the store. | src/cli/commands/voice.ts:67840fac7a2ba6f9f2129960 |
+| cli | src/cli/commands/voice.ts | 443 | no-cause | the decision is committed; the daemon's reconciliation updates the call state. | src/cli/commands/voice.ts:68b7995ec069d7a260671534 |
+| cli | src/cli/commands/voice.ts | 578 | fixed | binding retained / no recognized error surface | src/cli/commands/voice.ts:890091ec01b3a72d26f14364 |
+| cli | src/cli/commands/voice.ts | 593 | fixed | binding retained / no recognized error surface | src/cli/commands/voice.ts:604caf290d2803859bf7306e |
+| cli | src/cli/commands/voice.ts | 1411 | no-cause | the door's sweep ends this call from the revoked record; reported in endDeferred. | src/cli/commands/voice.ts:3cefc5f5fb7792cf59109802 |
 | cli | src/cli/commands/watch.ts | 561 | fixed | binding retained / no recognized error surface | src/cli/commands/watch.ts:fbff794a5bddadc3ca9ea59f |
 | cli | src/cli/commands/widgets.ts | 68 | triaged-follow-up | catch-without-binding | src/cli/commands/widgets.ts:8c447b55c38f008aa381b929 |
 | cli | src/cli/commands/widgets.ts | 80 | triaged-follow-up | catch-without-binding | src/cli/commands/widgets.ts:13d9ce0b17bf6fda14a722e3 |
@@ -1495,10 +1495,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | knowledge | src/knowledge/store/local-index.ts | 738 | triaged-follow-up | catch-without-binding | src/knowledge/store/local-index.ts:37d3f6f57c2ec48ac490fce2 |
 | knowledge | src/knowledge/store/local-runs.ts | 141 | triaged-follow-up | catch-without-binding | src/knowledge/store/local-runs.ts:39b8d39435f5da09700654ce |
 | knowledge | src/knowledge/store/local-runs.ts | 150 | triaged-follow-up | catch-without-binding | src/knowledge/store/local-runs.ts:917e5a6e63c99a7f5f45f021 |
-| knowledge | src/knowledge/turn/audience.ts | 120 | triaged-follow-up | catch-without-binding | src/knowledge/turn/audience.ts:bf474fd2af202adc864fea56 |
-| knowledge | src/knowledge/turn/audience.ts | 202 | triaged-follow-up | catch-without-binding | src/knowledge/turn/audience.ts:ea85140b674efc5bc81dd4d4 |
-| knowledge | src/knowledge/turn/audience.ts | 211 | triaged-follow-up | catch-without-binding | src/knowledge/turn/audience.ts:15c89345abf43db35b8b854a |
-| knowledge | src/knowledge/turn/audience.ts | 220 | triaged-follow-up | catch-without-binding | src/knowledge/turn/audience.ts:94d91e63ffcc7246fade9d46 |
+| knowledge | src/knowledge/turn/audience.ts | 131 | triaged-follow-up | catch-without-binding | src/knowledge/turn/audience.ts:bf474fd2af202adc864fea56 |
+| knowledge | src/knowledge/turn/audience.ts | 213 | triaged-follow-up | catch-without-binding | src/knowledge/turn/audience.ts:ea85140b674efc5bc81dd4d4 |
+| knowledge | src/knowledge/turn/audience.ts | 222 | triaged-follow-up | catch-without-binding | src/knowledge/turn/audience.ts:15c89345abf43db35b8b854a |
+| knowledge | src/knowledge/turn/audience.ts | 231 | triaged-follow-up | catch-without-binding | src/knowledge/turn/audience.ts:94d91e63ffcc7246fade9d46 |
 | knowledge | src/knowledge/turn/preamble.ts | 53 | triaged-follow-up | catch-without-binding | src/knowledge/turn/preamble.ts:a714b2f5508113e5d021ad0b |
 | knowledge | src/knowledge/turn/preamble.ts | 77 | triaged-follow-up | catch-without-binding | src/knowledge/turn/preamble.ts:c576fdc1fffaeeaedbff757e |
 | leader | src/leader/index.ts | 56 | triaged-follow-up | catch-without-binding | src/leader/index.ts:45ddd70bf5b3010c1063f3f0 |
@@ -2158,10 +2158,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/runtime-request-builder.ts | 1328 | triaged-follow-up | rejection-without-binding | src/runtime/runtime-request-builder.ts:97f069feec77376de9ce4cfe |
 | runtime-chat | src/runtime/runtime-request-builder.ts | 1344 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:fceed3ce3c4bcb1014946096 |
 | runtime-chat | src/runtime/runtime-request-builder.ts | 1354 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-builder.ts:e11eb49a2511c5a3e84172db |
-| runtime-chat | src/runtime/runtime-request-context.ts | 119 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:9c19b85e67a579c3b18fc384 |
-| runtime-chat | src/runtime/runtime-request-context.ts | 224 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:fb0b243ac337da14f0ac5365 |
-| runtime-chat | src/runtime/runtime-request-context.ts | 512 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:7206346edd25c13ff4d8a8d8 |
-| runtime-chat | src/runtime/runtime-request-context.ts | 863 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:f5a91420c25bdfe230c4347d |
+| runtime-chat | src/runtime/runtime-request-context.ts | 121 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:9c19b85e67a579c3b18fc384 |
+| runtime-chat | src/runtime/runtime-request-context.ts | 226 | fixed | binding retained / no recognized error surface | src/runtime/runtime-request-context.ts:fb0b243ac337da14f0ac5365 |
+| runtime-chat | src/runtime/runtime-request-context.ts | 516 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:7206346edd25c13ff4d8a8d8 |
+| runtime-chat | src/runtime/runtime-request-context.ts | 873 | triaged-follow-up | catch-without-binding | src/runtime/runtime-request-context.ts:f5a91420c25bdfe230c4347d |
 | sessions | src/runtime/session-dispatcher.ts | 603 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:f62a129921ede3d5cf54be0f |
 | sessions | src/runtime/session-dispatcher.ts | 612 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:083324775001a686ec7a5875 |
 | sessions | src/runtime/session-dispatcher.ts | 747 | fixed | binding retained / no recognized error surface | src/runtime/session-dispatcher.ts:4e182c47be33a9110d382f81 |

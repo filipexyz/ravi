@@ -15,6 +15,7 @@ import { OWNER_CONTACT_TAG } from "../../knowledge/owner.js";
 import { nats } from "../../nats.js";
 import { filterAccessibleSessions, getScopeContext } from "../../permissions/scope.js";
 import { createRuntimeContext } from "../../runtime/context-registry.js";
+import { personCredentialMetadata } from "../../runtime/person-credential.js";
 import { buildSessionRelayTurnOrigin } from "../../runtime/turn-origin.js";
 import { listSessions, resolveSession } from "../../router/sessions.js";
 import type { SessionEntry } from "../../router/types.js";
@@ -246,8 +247,9 @@ function turnOriginFor(caller: VoiceCaller): Record<string, unknown> {
   if (caller.kind === "operator" || caller.kind === "context") {
     return buildSessionRelayTurnOrigin("send", getContext()) as unknown as Record<string, unknown>;
   }
-  // A device turn carries its key as the caller context: the runtime attributes
-  // the turn to the paired contact and never widens it past the session's own agent.
+  // A device turn carries its key as the caller context. The key is the paired
+  // person's credential, so the runtime builds the turn as that person's: their
+  // grants in the session's chat, never the agent's break-glass they do not hold.
   return buildSessionRelayTurnOrigin("send", { contextId: caller.contextId }) as unknown as Record<string, unknown>;
 }
 
@@ -1326,10 +1328,17 @@ export class VoiceDevicesCommands {
       const deviceId = newVoiceDeviceId();
       const context = createRuntimeContext({
         // No agent: the key holds only voice capabilities and every voice command
-        // checks the device record itself (sessions, own calls).
+        // checks the device record itself (sessions, own calls). A person's key is
+        // that person's credential: the turns it relays are theirs, built from
+        // their grants, never the agent's or the operator's (runtime/person-credential).
+        // The worker relays what it hears into a person's call; it is no one.
         kind: plan.kind,
         capabilities: VOICE_DEVICE_CAPABILITIES.map((capability) => ({ ...capability, source: "voice-device" })),
-        metadata: { voiceDeviceId: deviceId, relayCallerContactId: contactId, cliName: "voice-device" },
+        metadata: {
+          voiceDeviceId: deviceId,
+          cliName: "voice-device",
+          ...(worker ? {} : personCredentialMetadata(contactId)),
+        },
         ttlMs: DEVICE_TTL_MS,
       });
       const device = insertVoiceDevice({

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { runWithContext } from "../cli/context.js";
-import { createRuntimeContext } from "../runtime/context-registry.js";
+import { ADMIN_BOOTSTRAP_KIND, createRuntimeContext } from "../runtime/context-registry.js";
+import { dbCreateAgent } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   assertCallerControlsCall,
@@ -122,6 +123,37 @@ describe("voice authority", () => {
     expect(
       code(() => assertCallerControlsCall(caller, { ...operatorCall, callerContextId: context.contextId }, "control")),
     ).toBeNull();
+  });
+
+  it("the operator's terminal (default credential) and its admin key through the gateway are the operator", () => {
+    // What getContext() returns in the operator's terminal with ~/.ravi/credentials.json
+    // (src/cli/context.ts) and what src/cli/registry.ts runs the command with.
+    const key = createRuntimeContext({ kind: ADMIN_BOOTSTRAP_KIND, capabilities: [], ttlMs: 60_000 });
+    const local = runWithContext(
+      { contextOrigin: "default-credential", contextId: key.contextId, context: key, agentId: "bootstrap" },
+      () => resolveVoiceCaller("voice devices pair"),
+    );
+    expect(local.kind).toBe("operator");
+    // The same key presented to the gateway (no contextOrigin there).
+    const gateway = runWithContext({ contextId: key.contextId, context: key }, () =>
+      resolveVoiceCaller("voice calls approve"),
+    );
+    expect(gateway.kind).toBe("operator");
+  });
+
+  it("a key bound to an agent is refused even without a session", () => {
+    dbCreateAgent({ id: "voice-agent", cwd: "/tmp/voice-agent" });
+    // `ravi context issue x --as-agent voice-agent` from an admin agent turn: no session.
+    const delegated = createRuntimeContext({
+      kind: "cli-runtime",
+      agentId: "voice-agent",
+      capabilities: [],
+      ttlMs: 60_000,
+    });
+    const result = runWithContext({ context: delegated, contextId: delegated.contextId, agentId: "voice-agent" }, () =>
+      code(() => resolveVoiceCaller("voice calls start")),
+    );
+    expect(result).toBe("VOICE_AGENT_TURN_REFUSED");
   });
 
   it("a revoked device key is refused", () => {

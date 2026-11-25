@@ -182,6 +182,26 @@ describe("ravi voice commands", () => {
     expect(missing.code).toBe("USAGE_ERROR");
   });
 
+  it("a person's device key is that person's credential; the worker key is no one's", async () => {
+    const { createContact } = await import("../../contacts.js");
+    const { dbGetContext } = await import("../../router/router-db.js");
+    const { getVoiceDevice } = await import("../../voice/store.js");
+    const { personCredentialContactId } = await import("../../runtime/person-credential.js");
+    const person = createContact({ phone: "5511900000995", name: "Person" });
+    const devices = new VoiceDevicesCommands();
+    const paired = (await quiet(() => devices.pair(person.id, "phone", "main", false, true, true))) as {
+      device: { id: string };
+    };
+    const device = getVoiceDevice(paired.device.id);
+    expect(personCredentialContactId(dbGetContext(device?.contextId ?? ""))).toBe(person.id);
+
+    const worker = (await quiet(() => devices.pair(person.id, "worker", undefined, true, true, true))) as {
+      device: { id: string };
+    };
+    const workerDevice = getVoiceDevice(worker.device.id);
+    expect(personCredentialContactId(dbGetContext(workerDevice?.contextId ?? ""))).toBeNull();
+  });
+
   it("engines check never needs a vendor", async () => {
     const result = (await quiet(() => new VoiceEnginesCommands().check(true))) as { checks: Array<{ engine: string }> };
     expect(result.checks.map((check) => check.engine)).toEqual(["push", "live", "handsfree", "mock"]);

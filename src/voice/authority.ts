@@ -1,8 +1,11 @@
 /**
  * Who is calling, and what they may do. Spec `voice`, section Authority.
  *
- * - Agent turns never start, connect, approve or deny calls.
- * - The local operator may call any session it can access.
+ * - Agent turns never start, connect, approve or deny calls, nor does any key
+ *   bound to an agent identity (a turn, or a context an agent issued).
+ * - The operator is the local default credential (`ravi daemon init-admin-key`)
+ *   or that same admin-bootstrap key presented through the gateway, and may
+ *   call any session it can access.
  * - A paired device (context kind `voice-device`) may call only the sessions
  *   listed at pairing and only control its own calls.
  * - The speaker never adds authority: the session turn runs with the caller's.
@@ -10,7 +13,7 @@
 import { getContext, type ToolContext } from "../cli/context.js";
 import { canAccessSession, getScopeContext } from "../permissions/scope.js";
 import { isRuntimeContextLive } from "../runtime/context-liveness.js";
-import { revokeRuntimeContext } from "../runtime/context-registry.js";
+import { ADMIN_BOOTSTRAP_AGENT_ID, ADMIN_BOOTSTRAP_KIND, revokeRuntimeContext } from "../runtime/context-registry.js";
 import { dbGetContext } from "../router/router-db.js";
 import { getVoiceDeviceByContextId } from "./store.js";
 import type { VoiceCall, VoiceDevice, VoiceSpeaker } from "./types.js";
@@ -47,13 +50,25 @@ export interface VoiceCaller {
   device?: VoiceDevice;
 }
 
+/** The operator's own key: the local default credential, or the admin-bootstrap key it is. */
+function isOperatorContext(ctx: ToolContext | undefined): boolean {
+  if (!ctx?.context) return false;
+  if (ctx.contextOrigin === "default-credential") return true;
+  return ctx.context.kind === ADMIN_BOOTSTRAP_KIND && !ctx.context.sessionKey;
+}
+
 function isAgentTurnContext(ctx: ToolContext | undefined): boolean {
   if (!ctx) return false;
   const kind = ctx.context?.kind;
   if (kind === VOICE_DEVICE_CONTEXT_KIND || kind === VOICE_WORKER_CONTEXT_KIND) return false;
-  if (ctx.contextOrigin === "default-credential") return false;
+  if (isOperatorContext(ctx)) return false;
   // A runtime turn (or anything derived from one) carries the session it runs in.
-  return Boolean(ctx.sessionKey || ctx.sessionName || ctx.context?.sessionKey);
+  if (ctx.sessionKey || ctx.sessionName || ctx.context?.sessionKey) return true;
+  // A key bound to an agent identity is that agent's work even without a session
+  // (`ravi context issue --as-agent`). Keys the operator issues carry the
+  // bootstrap identity, and device keys carry none.
+  const agentId = ctx.context?.agentId ?? ctx.agentId;
+  return Boolean(agentId && agentId !== ADMIN_BOOTSTRAP_AGENT_ID);
 }
 
 /** Resolve the caller of a voice command. Throws for agent turns and dead device keys. */
@@ -79,6 +94,7 @@ export function resolveVoiceCaller(op: string): VoiceCaller {
       device,
     };
   }
+  if (isOperatorContext(ctx)) return { kind: "operator", speaker: { kind: "operator", id: "operator" } };
   if (record) {
     // An operator-issued CLI context (`ravi context issue`) without a session.
     return {
