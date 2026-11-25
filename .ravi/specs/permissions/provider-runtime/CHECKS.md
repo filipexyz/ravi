@@ -105,7 +105,7 @@ Quoting regressions (`bun test src/bash/`):
   scripts: this last case documents the explicitly open capability boundary.
 
 Runtime tool call regressions (`src/bash/hook.test.ts`,
-`src/runtime/host-hooks.test.ts`):
+`src/runtime/host-hooks.test.ts`, `src/permissions/tool-name-equivalence.test.ts`):
 
 - An MCP tool is denied without a matching capability and allowed by its exact
   name, by `mcp__<server>__*` and by `*`. The pattern is a name prefix: it
@@ -123,6 +123,20 @@ Runtime tool call regressions (`src/bash/hook.test.ts`,
   server are checked. A host name denied without a server report says so.
 - The registered PreToolUse chain attaches `spec` as a host server only for a
   spec-mode agent.
+- A grant of `use:tool:Task` allows a call reported as `Agent`, and a grant of
+  `use:tool:Agent` allows a call reported as `Task`. So does a tool group that
+  lists `Task` and a prefix pattern that matches either name, and a `deny_use`
+  entry under one name withholds the other. An explicit grant under one name
+  still allows what a `deny_use` pattern withholds from a call under the other.
+  The same holds on a live executor ceiling and on a user-overlay turn. A grant
+  of one name does not cover `TaskOutput`, `TaskStop`, `TaskCreate` or `Agents`,
+  and an agent or a session object called `Agent` is not the tool. Each part
+  has a test that fails when the part is reverted (the evaluator, the registry
+  pair, the tool group, the deny, the explicit-grant exception, the tool-only
+  rule and the spec-mode block).
+- With spec mode on, the registered PreToolUse chain blocks the subagent tool as
+  `Task` and as `Agent` and leaves `TaskOutput`, `TaskStop`, `Read` and `Grep`
+  alone; with spec mode off, a grant of every tool passes both names.
 - Live check, when the Claude Agent SDK is upgraded: in a session with a
   project `.mcp.json` server and an in-process server of the same name, the
   PreToolUse input for each `mcp__*` call carries `mcp_server` with the right
@@ -162,6 +176,7 @@ Provider settings regressions (`src/bash/provider-config-writes.test.ts`):
 
 ```bash
 bun test src/permissions/provider-runtime.test.ts
+bun test src/permissions/tool-name-equivalence.test.ts
 bun test src/bash/provider-config-writes.test.ts src/bash/parser.test.ts src/bash/hook.test.ts
 bun test src/runtime/host-hooks.test.ts
 bun test src/runtime/claude-provider.test.ts src/remote-spawn.test.ts src/remote-spawn-nats.test.ts
