@@ -58,6 +58,10 @@ const TOKEN_PATTERNS: RegExp[] = [
   /\b[A-Za-z0-9+/_-]{40,}={0,2}/g, // any long unbroken key-like run
 ];
 
+/**
+ * Token-shaped words are replaced, then the text is cut to `maxChars`. This is the LAST step that may touch a string
+ * (see credentialInventorySyncPayload): run it before the sync redactor and "Bearer x" grows past the limit again.
+ */
 export function guardFreeText(value: string | null, maxChars = FREE_TEXT_MAX_CHARS): string | null {
   if (value === null) return null;
   let text = value;
@@ -72,29 +76,49 @@ export function guardFreeText(value: string | null, maxChars = FREE_TEXT_MAX_CHA
 
 /** Identifiers have no length rule in the store; the Console accepts at most this many characters. */
 const IDENTIFIER_MAX_CHARS = 100;
+/** The item `id` is `provider:connection` as the store keeps it, so two uncapped identifiers can pass what the Console accepts. */
+const ITEM_ID_MAX_CHARS = 200;
+const SECRET_REF_ALIAS_MAX_CHARS = 250;
 
+/**
+ * The payload as the Console takes it, built in the one order that keeps every field inside the Console's bounds:
+ *
+ * 1. the wire shape (`secret` becomes `storage` before the redactor can blank it);
+ * 2. the sync redactor, which the outbox runs again on every page it stores, and which LENGTHENS text
+ *    ("Bearer x" becomes "Bearer [REDACTED]");
+ * 3. the bounds, last, so that nothing after them can push a field back over its limit. The Console drops a whole page
+ *    when any one field is over its bound.
+ *
+ * The result is a fixed point of the redactor: sanitizing it again changes nothing.
+ */
 export function credentialInventorySyncPayload(inventory: CredentialInventory): CredentialInventorySyncPayload {
-  return {
+  const shaped: CredentialInventorySyncPayload = {
     schema: CREDENTIAL_INVENTORY_SCHEMA,
     generatedAt: inventory.generatedAt,
     degraded: inventory.degraded,
     degradedReasons: inventory.degradedReasons,
     total: inventory.total,
-    items: inventory.items.map(({ secret, ...item }) => ({
+    items: inventory.items.map(({ secret, ...item }) => ({ ...item, storage: secret })),
+    audit: inventory.audit,
+  };
+  const redacted = sanitizeSyncPayload(shaped);
+  return {
+    ...redacted,
+    items: redacted.items.map((item) => ({
       ...item,
       // Bounded to the Console schema, which drops a whole page over any field limit.
+      id: guardFreeText(item.id, ITEM_ID_MAX_CHARS) ?? "",
       provider: guardFreeText(item.provider, IDENTIFIER_MAX_CHARS) ?? "",
       connection: guardFreeText(item.connection, IDENTIFIER_MAX_CHARS) ?? "",
-      secretRefAlias: guardFreeText(item.secretRefAlias, 250) ?? "",
+      secretRefAlias: guardFreeText(item.secretRefAlias, SECRET_REF_ALIAS_MAX_CHARS) ?? "",
       // Free text typed by people: capped, and token-shaped values never leave.
       label: guardFreeText(item.label),
       owner: guardFreeText(item.owner),
       purpose: guardFreeText(item.purpose),
       scopes: capScopes(item.scopes),
-      storage: secret,
     })),
     // Audit strings are system values, but nothing bounds their length: capped like free text.
-    audit: inventory.audit.map((entry) => ({
+    audit: redacted.audit.map((entry) => ({
       ...entry,
       provider: guardFreeText(entry.provider, IDENTIFIER_MAX_CHARS) ?? "",
       connection: guardFreeText(entry.connection, IDENTIFIER_MAX_CHARS) ?? "",
@@ -208,10 +232,8 @@ export async function enqueueCredentialInventorySnapshot(
     return { status: "throttled", hash: null, outboxId: null };
   }
   setSyncCursor(CREDENTIAL_INVENTORY_SYNC_DOMAIN, CHECK_CURSOR_KEY, now, undefined, now);
-  // Sized and hashed as the outbox will store it: the sync redactor can lengthen text ("Bearer x" -> "Bearer [REDACTED]").
-  const payload = sanitizeSyncPayload(
-    credentialInventorySyncPayload(await buildCredentialInventory({ ...input.inventory, now })),
-  );
+  // Sized and hashed as the outbox will store it: redacted first, then bounded (the redactor can lengthen text).
+  const payload = credentialInventorySyncPayload(await buildCredentialInventory({ ...input.inventory, now }));
   const hash = contentHash(payload);
   const previous = getSyncCursor(CREDENTIAL_INVENTORY_SYNC_DOMAIN, CURSOR_KEY);
   const lastEnqueue = previous?.updatedAt ?? 0;

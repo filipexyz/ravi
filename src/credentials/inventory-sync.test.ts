@@ -18,7 +18,13 @@ import {
 } from "./inventory-sync.js";
 import { buildCredentialInventory } from "./inventory.js";
 import { closeCredentialsDb, recordCredentialAuditEvent, upsertCredentialConnection } from "./store.js";
-import type { CredentialSecretDescription } from "./types.js";
+import type {
+  CredentialInventory,
+  CredentialInventoryAuditEntry,
+  CredentialInventoryItem,
+  CredentialSecretDescription,
+} from "./types.js";
+import { z } from "zod";
 
 const SECRET_VALUE = "xoxb-sync-must-never-carry-this";
 const ENABLED = { RAVI_SYNC_CREDENTIALS_INVENTORY: "1" };
@@ -428,4 +434,261 @@ describe("pagination edge cases from the bot review of #971", () => {
     expect(result.status).toBe("enqueued");
     expect(result.hash).not.toBe(legacyHash);
   });
+});
+
+/**
+ * Copy of the Console's `pageSchema` (ravi-console `src/server/console/vault-inventory.ts`, origin/main e6657ecb, 2026-11-25).
+ * The Console drops a WHOLE page when any field is over its bound, so the daemon's bounds are checked against what the Console
+ * accepts and not against this repo's own constants. Refresh the copy whenever that file changes.
+ */
+const consoleText = (max: number) => z.string().max(max);
+const consoleTimestamp = z.number().int().nonnegative().nullable();
+const consolePage = z.object({
+  schema: z.literal("credentials.inventory/v1"),
+  snapshotId: consoleText(64).min(1),
+  page: z.number().int().min(1).max(50),
+  pages: z.number().int().min(1).max(50),
+  generatedAt: z.number().int().nonnegative(),
+  degraded: z.boolean(),
+  degradedReasons: z.array(consoleText(40)).max(20),
+  total: z.number().int().nonnegative(),
+  items: z
+    .array(
+      z.object({
+        id: consoleText(200),
+        provider: consoleText(100),
+        connection: consoleText(100),
+        label: consoleText(200).nullable(),
+        backend: consoleText(20),
+        secretRefAlias: consoleText(250),
+        status: z.enum(["active", "disabled"]),
+        scopes: z.array(consoleText(100)).max(100),
+        owner: consoleText(200).nullable(),
+        purpose: consoleText(200).nullable(),
+        createdAt: z.number().int().nonnegative(),
+        updatedAt: z.number().int().nonnegative(),
+        rotatedAt: consoleTimestamp,
+        expiresAt: consoleTimestamp,
+        disabledAt: consoleTimestamp,
+        lastUsedAt: consoleTimestamp,
+        storage: z
+          .union([
+            z.object({
+              available: z.literal(true),
+              exists: z.boolean(),
+              version: z.number().int().nullable(),
+              createdAt: consoleTimestamp,
+              updatedAt: consoleTimestamp,
+              deleted: z.boolean(),
+            }),
+            z.object({ available: z.literal(false), reason: consoleText(40) }),
+          ])
+          .nullable(),
+      }),
+    )
+    .max(500),
+  audit: z
+    .array(
+      z.object({
+        at: z.number().int().nonnegative(),
+        provider: consoleText(100),
+        connection: consoleText(100),
+        action: consoleText(200),
+        decision: consoleText(200),
+        resultStatus: consoleText(200).nullable(),
+        errorCode: consoleText(200).nullable(),
+      }),
+    )
+    .max(200),
+});
+
+describe("the bounds hold on what the outbox stores (B1 and N1 of the #971 review)", () => {
+  /** `n` characters with no token-shaped run: the dots break every run, so only the length rule can act on it. */
+  const plain = (n: number) => "ab.".repeat(Math.ceil(n / 3)).slice(0, n);
+  /** `n` characters of "Bearer x Bearer x ...": the sync redactor turns each "Bearer x" (8) into "Bearer [REDACTED]" (17). */
+  const bearer = (n: number) => "Bearer x ".repeat(Math.ceil(n / 9)).slice(0, n);
+
+  const baseItem: CredentialInventoryItem = {
+    id: "slack:rbbt",
+    provider: "slack",
+    connection: "rbbt",
+    label: "Slack",
+    backend: "vault",
+    secretRefAlias: "vault:slack:rbbt",
+    status: "active",
+    scopes: ["chat:write"],
+    owner: "luis",
+    purpose: "posts the daily report",
+    createdAt: T0 - 86_400_000,
+    updatedAt: T0 - 3_600_000,
+    rotatedAt: null,
+    expiresAt: null,
+    disabledAt: null,
+    lastUsedAt: null,
+    secret: description,
+  };
+  const baseAudit: CredentialInventoryAuditEntry = {
+    at: T0 - 1_000,
+    provider: "slack",
+    connection: "rbbt",
+    action: "chat.postMessage",
+    decision: "allow",
+    resultStatus: "secret_resolved",
+    errorCode: null,
+  };
+  const inventoryOf = (
+    item: Partial<CredentialInventoryItem> = {},
+    audit: Partial<CredentialInventoryAuditEntry> = {},
+  ): CredentialInventory => ({
+    generatedAt: T0,
+    degraded: false,
+    degradedReasons: [],
+    total: 1,
+    items: [{ ...baseItem, ...item }],
+    audit: [{ ...baseAudit, ...audit }],
+  });
+
+  /** Every page of the snapshot, as the outbox keeps it (it runs the sync redactor again), checked against the Console. */
+  function expectConsoleAccepts(inventory: CredentialInventory) {
+    const pages = paginateCredentialInventoryPayload(credentialInventorySyncPayload(inventory), "snap");
+    expect(pages.length).toBeGreaterThan(0);
+    for (const page of pages) {
+      const stored = sanitizeSyncPayload(page);
+      const result = consolePage.safeParse(stored);
+      expect(result.success ? "ok" : result.error.issues.map((issue) => issue.path.join("."))).toBe("ok");
+      // Nothing left for the outbox's redactor to change: what was sized and hashed is what is stored.
+      expect(stored).toEqual(page);
+    }
+  }
+
+  it("the schema copy is not vacuous: it takes an ordinary page and refuses a field over its bound", () => {
+    const [page] = paginateCredentialInventoryPayload(credentialInventorySyncPayload(inventoryOf()), "snap");
+    expect(consolePage.safeParse(page).success).toBe(true);
+    expect(
+      consolePage.safeParse({ ...page, items: [{ ...page!.items[0], connection: "c".repeat(101) }] }).success,
+    ).toBe(false);
+    expect(consolePage.safeParse({ ...page, audit: [{ ...page!.audit[0], action: "a".repeat(201) }] }).success).toBe(
+      false,
+    );
+  });
+
+  it("B1: the bounds come after the sync redactor, so a field at its limit that the redactor lengthens stays inside it", () => {
+    const purpose =
+      `${"Used by the ops team to call the partner API with Bearer auth, rotated monthly. ".repeat(3)}`.slice(0, 200);
+    const connection = `svc ${"Bearer x ".repeat(11)}`.slice(0, 100);
+    const inventory = inventoryOf(
+      { purpose, connection, label: bearer(200), owner: bearer(200), scopes: [bearer(100)] },
+      { action: bearer(200), decision: bearer(200), resultStatus: bearer(200), errorCode: bearer(200), connection },
+    );
+    // The redactor really does lengthen these fields (otherwise this test proves nothing).
+    expect(sanitizeSyncPayload({ purpose }).purpose.length).toBeGreaterThan(200);
+    expect(sanitizeSyncPayload({ connection }).connection.length).toBeGreaterThan(100);
+
+    const payload = credentialInventorySyncPayload(inventory);
+    expect(sanitizeSyncPayload(payload)).toEqual(payload);
+    const item = payload.items[0]!;
+    expect(item.purpose!.length).toBe(200);
+    expect(item.connection.length).toBe(100);
+    expect(item.label!.length).toBe(200);
+    expect(item.scopes[0]!.length).toBe(100);
+    expect(payload.audit[0]!.action.length).toBe(200);
+    expect(payload.audit[0]!.errorCode!.length).toBe(200);
+    // Redacted, then cut: the secret-shaped words are gone and the field is not just chopped raw.
+    expect(item.purpose).toContain("Bearer [REDACTED]");
+    expect(item.connection).toContain("Bearer [REDACTED]");
+    expect(JSON.stringify(payload)).not.toMatch(/Bearer x/);
+    expectConsoleAccepts(inventory);
+  });
+
+  it("B1 end to end: text kept in the store that the redactor lengthens still leaves in pages the Console accepts", async () => {
+    upsertCredentialConnection({
+      provider: "slack",
+      connection: "rbbt",
+      backend: "vault",
+      secretRef: "vault:secret/ravi/credentials/slack/rbbt#token",
+      status: "active",
+      label: bearer(200),
+      owner: bearer(200),
+      purpose: "Used by the ops team to call the partner API with Bearer auth, rotated monthly. "
+        .repeat(3)
+        .slice(0, 200),
+      scopes: ["chat:write"],
+    });
+    recordCredentialAuditEvent({
+      provider: "slack",
+      connection: "rbbt",
+      action: bearer(200),
+      decision: "allow",
+      resultStatus: bearer(200),
+      errorCode: bearer(200),
+      createdAt: T0 - 1_000,
+    });
+
+    const result = await enqueueCredentialInventorySnapshot({ env: ENABLED, now: T0, inventory: { describeSecret } });
+    expect(result.status).toBe("enqueued");
+    const rows = outbox();
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const parsed = consolePage.safeParse(row.payload);
+      expect(parsed.success ? "ok" : parsed.error.issues.map((issue) => issue.path.join("."))).toBe("ok");
+      expect(sanitizeSyncPayload(row.payload)).toEqual(row.payload);
+    }
+    const [page1] = rows.map(
+      (row) => row.payload as { items: Array<{ label: string }>; audit: Array<{ action: string }> },
+    );
+    expect(page1!.items[0]!.label).toContain("Bearer [REDACTED]");
+    expect(page1!.audit[0]!.action).toContain("Bearer [REDACTED]");
+  });
+
+  // N1: one case per bounded string. The value is 40 over the Console limit, with nothing token-shaped in it, so the length rule is
+  // what acts. The cut must land on the limit exactly (a bigger or a smaller cap fails), and a value at the limit goes up as it is.
+  const ITEM_LIMITS = [
+    ["id", 200],
+    ["provider", 100],
+    ["connection", 100],
+    ["secretRefAlias", 250],
+    ["label", 200],
+    ["owner", 200],
+    ["purpose", 200],
+  ] as const;
+  for (const [field, limit] of ITEM_LIMITS) {
+    it(`item.${field} goes up cut to ${limit}, and as it is at ${limit}`, () => {
+      const over = plain(limit + 40);
+      const cut = credentialInventorySyncPayload(inventoryOf({ [field]: over })).items[0]![field];
+      expect(cut).toBe(`${over.slice(0, limit - 1)}…`);
+      const exact = plain(limit);
+      expect(credentialInventorySyncPayload(inventoryOf({ [field]: exact })).items[0]![field]).toBe(exact);
+      expectConsoleAccepts(inventoryOf({ [field]: over }));
+    });
+  }
+
+  it("each scope goes up cut to 100, and as it is at 100", () => {
+    const over = plain(140);
+    expect(credentialInventorySyncPayload(inventoryOf({ scopes: [over] })).items[0]!.scopes).toEqual([
+      `${over.slice(0, 99)}…`,
+    ]);
+    expect(credentialInventorySyncPayload(inventoryOf({ scopes: [plain(100)] })).items[0]!.scopes).toEqual([
+      plain(100),
+    ]);
+    expectConsoleAccepts(inventoryOf({ scopes: [over] }));
+  });
+
+  const AUDIT_LIMITS = [
+    ["provider", 100],
+    ["connection", 100],
+    ["action", 200],
+    ["decision", 200],
+    ["resultStatus", 200],
+    ["errorCode", 200],
+  ] as const;
+  for (const [field, limit] of AUDIT_LIMITS) {
+    it(`audit.${field} goes up cut to ${limit}, and as it is at ${limit}`, () => {
+      const over = plain(limit + 40);
+      const cut = credentialInventorySyncPayload(inventoryOf({}, { [field]: over })).audit[0]![field];
+      expect(cut).toBe(`${over.slice(0, limit - 1)}…`);
+      const exact = plain(limit);
+      expect(credentialInventorySyncPayload(inventoryOf({}, { [field]: exact })).audit[0]![field]).toBe(exact);
+      expectConsoleAccepts(inventoryOf({}, { [field]: over }));
+    });
+  }
 });

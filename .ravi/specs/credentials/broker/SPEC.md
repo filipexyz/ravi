@@ -295,8 +295,12 @@ The daemon publishes the inventory through the Console sync bridge
   includes the wire format, so the first check after an upgrade from the
   unpaged format publishes instead of waiting for the heartbeat.
   Every string is bounded to what the Console schema accepts (identifiers
-  100, alias 250, other text 200), since the Console drops a whole page over
-  any bound; a cut never splits a surrogate pair.
+  100, `id` and other text 200, alias 250), since the Console drops a whole
+  page over any bound; a cut never splits a surrogate pair. The bounds MUST be
+  the last thing that touches a string: the payload is built as the wire
+  shape, then the sync redactor (which lengthens text, "Bearer x" becoming
+  "Bearer [REDACTED]"), then the bounds, so the redactor the outbox runs again
+  on every page finds nothing left to change.
 - The payload is the inventory with each item's `secret` renamed `storage`:
   the sync redactor blanks every key ending in "secret". The payload MUST be a
   fixed point of `sanitizeSyncPayload` (nothing for the redactor to remove) and
