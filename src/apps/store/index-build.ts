@@ -20,7 +20,7 @@ import {
   APP_BLOCKLIST_SCHEMA,
   APP_BUNDLE_SCHEMA,
   APP_INDEX_SCHEMA,
-  APP_KEYS_SCHEMA,
+  APP_SIGNERS_SCHEMA,
   type AppBlocklistFile,
   type AppIndexEntry,
   type AppIndexFile,
@@ -218,7 +218,7 @@ export function writeKeysFile(options: {
   const previous = readJson(path, (value) => appKeysFileSchema.parse(value), "keys.json");
   const now = options.now ?? new Date();
   const keys = appKeysFileSchema.parse({
-    schema: APP_KEYS_SCHEMA,
+    schema: APP_SIGNERS_SCHEMA,
     serial: (previous?.serial ?? 0) + 1,
     expires: new Date(now.getTime() + (options.expiresDays ?? 365) * DAY_MS).toISOString(),
     publish: options.publish,

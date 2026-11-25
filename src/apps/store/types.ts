@@ -10,7 +10,7 @@
 
 import { z } from "zod";
 
-export const APP_KEYS_SCHEMA = "ravi.app-keys/v1";
+export const APP_SIGNERS_SCHEMA = "ravi.app-signers/v1";
 export const APP_INDEX_SCHEMA = "ravi.app-index/v1";
 export const APP_BLOCKLIST_SCHEMA = "ravi.app-blocklist/v1";
 export const APP_BUNDLE_SCHEMA = "ravi.app-bundle/v1";
@@ -26,7 +26,7 @@ const sha256Schema = z.string().regex(/^[0-9a-f]{64}$/, "a hex SHA-256");
 const serialSchema = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 
 export const appKeysFileSchema = z.object({
-  schema: z.literal(APP_KEYS_SCHEMA),
+  schema: z.literal(APP_SIGNERS_SCHEMA),
   serial: serialSchema,
   expires: isoDateSchema,
   publish: z.array(publicKeySchema).min(1),
