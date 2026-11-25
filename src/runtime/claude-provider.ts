@@ -768,8 +768,18 @@ export function createLeadingNotificationTurnGuard(): { shouldSkip(event: Runtim
   };
 }
 
-function isZeroUsage(usage: { inputTokens?: number; outputTokens?: number } | undefined): boolean {
-  return !usage || ((usage.inputTokens ?? 0) === 0 && (usage.outputTokens ?? 0) === 0);
+function isZeroUsage(
+  usage:
+    | { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheCreationTokens?: number }
+    | undefined,
+): boolean {
+  return (
+    !usage ||
+    ((usage.inputTokens ?? 0) === 0 &&
+      (usage.outputTokens ?? 0) === 0 &&
+      (usage.cacheReadTokens ?? 0) === 0 &&
+      (usage.cacheCreationTokens ?? 0) === 0)
+  );
 }
 
 export async function* normalizeClaudeEvents(
