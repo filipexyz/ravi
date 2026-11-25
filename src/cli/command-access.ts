@@ -348,8 +348,8 @@ function resolveCommandAccessAuthority(
   // keep the operator. A marker that is not a well-formed cron or trigger
   // principal fails closed. Removing the marker defeats this: it closes the
   // easy path, it is not an OS boundary.
-  const automationMarker = process.env[RAVI_AUTOMATION_PRINCIPAL_ENV]?.trim();
-  if (automationMarker) {
+  // Present at all counts, even blank: a terminal never sets it.
+  if (process.env[RAVI_AUTOMATION_PRINCIPAL_ENV] !== undefined) {
     const automationPrincipal = readSpawnedAutomationPrincipal(process.env);
     const operatorOwnedAutomation =
       automationPrincipal?.startsWith("automation:cron:") || automationPrincipal?.startsWith("automation:trigger:");
