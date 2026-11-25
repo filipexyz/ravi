@@ -9,9 +9,14 @@ import type { RaviAppManifestRecord } from "../types.js";
 import { checkReceiptTree } from "./install.js";
 import { readReceipt } from "./receipts.js";
 import { findBlock, loadCachedSource } from "./source.js";
+import type { AppStoreSourceConfig } from "./trust.js";
 import { AppStoreError } from "./types.js";
 
-export function assertStoreAppRunnable(app: RaviAppManifestRecord, env: NodeJS.ProcessEnv = process.env): void {
+export function assertStoreAppRunnable(
+  app: RaviAppManifestRecord,
+  env: NodeJS.ProcessEnv = process.env,
+  source?: AppStoreSourceConfig,
+): void {
   if (app.source !== "state") return;
   const id = app.manifest?.id ?? app.id;
   const receipt = readReceipt(id, env);
@@ -27,7 +32,7 @@ export function assertStoreAppRunnable(app: RaviAppManifestRecord, env: NodeJS.P
     });
   }
   if (receipt.source === "official") {
-    const cached = loadCachedSource({ env });
+    const cached = loadCachedSource({ env, source });
     const block = cached ? findBlock(cached.blocklist, id, receipt.version, receipt.treeHash) : null;
     if (block) {
       throw new AppStoreError(

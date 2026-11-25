@@ -22,8 +22,8 @@ export interface AppStoreSourceConfig {
 export const OFFICIAL_APP_SOURCE: AppStoreSourceConfig = Object.freeze({
   id: "official",
   baseUrl: "https://raw.githubusercontent.com/filipexyz/ravi-apps/main/",
-  // Filled with the maintainer's offline root key before the first official index ships.
-  rootKeys: Object.freeze([]) as readonly string[],
+  // The maintainer's offline root key (Ed25519, raw 32 bytes). It signs keys.json only.
+  rootKeys: Object.freeze(["8K/8uDGDrTgwCLUXDRhVLM3Gtg5OjYlVbYGGxRWzAkE="]) as readonly string[],
   minSerial: 0,
 });
 

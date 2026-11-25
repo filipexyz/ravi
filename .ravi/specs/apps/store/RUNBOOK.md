@@ -26,7 +26,7 @@ running `ravi apps index block` without `--id`.
 
 ## Triage
 
-- `APP_STORE_SOURCE_UNCONFIGURED`: this Ravi release has no root key yet.
+- `APP_STORE_SOURCE_UNCONFIGURED`: this build has no root key compiled in.
 - `APP_STORE_ROLLBACK`: a served file is older than one already accepted;
   suspect a stale mirror or a replay, never delete `state.json` to pass it.
 - `APP_TREE_CHANGED`: files under `$RAVI_STATE_DIR/apps/<id>` changed after

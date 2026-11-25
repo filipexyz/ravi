@@ -223,7 +223,7 @@ describe("install lifecycle", () => {
     setExposure("blog", "dev", true, ctx);
     expect(storeExposureFor("blog", "dev", ctx.env)).toBe("exposed");
     expect(storeExposureFor("youtube", "dev", ctx.env)).toBe("not-store");
-    expect(() => assertStoreAppRunnable(blog!, ctx.env)).not.toThrow();
+    expect(() => assertStoreAppRunnable(blog!, ctx.env, ctx.source)).not.toThrow();
     expect(verifyInstalled(undefined, ctx)[0]?.ok).toBe(true);
   });
 
@@ -231,7 +231,7 @@ describe("install lifecycle", () => {
     commitChange(await prepareOfficialInstall("blog", {}, ctx), ctx);
     writeFileSync(join(ctx.env!.RAVI_STATE_DIR!, "apps", "blog", "SKILL.md"), "# changed\n");
     const blog = discoverAppManifests({ env: ctx.env }).find((record) => record.id === "blog")!;
-    await expectStoreError(() => assertStoreAppRunnable(blog, ctx.env), "APP_TREE_CHANGED");
+    await expectStoreError(() => assertStoreAppRunnable(blog, ctx.env, ctx.source), "APP_TREE_CHANGED");
   });
 
   it("ignores a folder dropped into the state apps directory after the store started", async () => {
