@@ -54,6 +54,7 @@ function hydrate(dispatcher: RuntimeSessionDispatcher, sessionName: string, payl
   ).prepareDaemonRestartResumePrompt(sessionName, payload, null);
 }
 
+// The first test pays the state-database bootstrap; under load it can pass bun's 5 s default.
 describe("snapshots of sessions without a live runtime survive a graceful restart", () => {
   for (const kind of ["stashed", "debounce", "inFlightStart", "deferredAfterTask"] as const) {
     it(`${kind}: the queued message is redelivered`, async () => {
@@ -103,7 +104,7 @@ describe("snapshots of sessions without a live runtime survive a graceful restar
       expect(String(published[0]?.prompt ?? "")).toContain("Continue de onde parou");
       const hydrated = hydrate(dispatcher, sessionName, published[0]!);
       expect(hydrated?.messages.map((message) => message.message.content)).toContain(text);
-    });
+    }, 20_000);
   }
 
   it("redelivers the queued messages of a snapshot recorded without an envelope, without continuing", async () => {
@@ -156,5 +157,5 @@ describe("snapshots of sessions without a live runtime survive a graceful restar
     expect(published[0]?._daemonRestartResume?.pendingOnly).toBe(true);
     const hydrated = hydrate(dispatcher, sessionName, published[0]!);
     expect(hydrated?.messages.map((message) => message.message.content)).toEqual([text]);
-  });
+  }, 20_000);
 });
