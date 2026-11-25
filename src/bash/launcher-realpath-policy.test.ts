@@ -8,6 +8,7 @@ import {
   chmodSync,
   copyFileSync,
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
@@ -16,9 +17,10 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { realpathSync as realpathOf } from "node:fs";
 import { evaluateBashPermission, type BashPermissionContext } from "./hook.js";
 import { checkDangerousPatterns, parseBashCommand } from "./parser.js";
-import { checkExecutablePath } from "./executable-path.js";
+import { checkExecutablePath, defaultTrustedExecutableRoots, isWithinTrustedRoots } from "./executable-path.js";
 import { ShellAnalysisError } from "./shell-structure.js";
 import { bootstrapCapabilitiesFor } from "../permissions/runtime-bootstrap-provider.js";
 import type { ContextCapability } from "../router/router-db.js";
@@ -1009,5 +1011,74 @@ describe("sanctioned_cli_absolute_path_depends_on_daemon_path", () => {
   it.skipIf(!existsSync(installed) || !daemonLikePath)("the installed CLI passes on this host's PATH", () => {
     expect(checkExecutablePath(installed).ok).toBe(true);
     expect(evaluateBashPermission(`${installed} --help`, bootstrap()).allowed).toBe(true);
+  });
+});
+
+// Ubuntu 25.10+ ships uutils coreutils: /usr/bin/ls, env, sort... are symlinks to
+// hardlinks of one multicall binary in /usr/lib/cargo/bin/coreutils (root:root,
+// 0755). That directory is trusted; its parent, which also holds sudo-rs and su,
+// and every prefix-alike sibling stay outside the roots.
+describe("uutils_coreutils_root_is_trusted_and_nothing_beside_it", () => {
+  const UUTILS = "/usr/lib/cargo/bin/coreutils";
+
+  it("the default roots name the coreutils directory and not its parents", () => {
+    const roots = defaultTrustedExecutableRoots();
+    expect(roots).toContain(UUTILS);
+    for (const wider of ["/usr/lib/cargo/bin", "/usr/lib/cargo", "/usr/lib"]) expect(roots).not.toContain(wider);
+  });
+
+  it("a real path inside the coreutils directory is trusted", () => {
+    const roots = defaultTrustedExecutableRoots();
+    for (const name of ["ls", "env", "sort", "timeout", "nice", "nohup"]) {
+      expect(isWithinTrustedRoots(`${UUTILS}/${name}`, roots), name).toBe(true);
+    }
+  });
+
+  it("siblings, prefix-alikes and copies elsewhere stay untrusted", () => {
+    const roots = defaultTrustedExecutableRoots();
+    for (const path of [
+      "/usr/lib/cargo/bin/sudo",
+      "/usr/lib/cargo/bin/su",
+      "/usr/lib/cargo/bin/coreutilsx",
+      "/usr/lib/cargo/bin/coreutils-extra/ls",
+      "/usr/lib/cargo/evil",
+      "/usr/lib/evil",
+      `${scratch || tmpdir()}${UUTILS}/ls`,
+    ]) {
+      expect(isWithinTrustedRoots(path, roots), path).toBe(false);
+    }
+  });
+
+  it("resolves the uutils layout (symlink to a hardlinked multicall binary) through the real path", () => {
+    const root = join(scratch, "uutils");
+    const coreutils = join(root, "usr", "lib", "cargo", "bin", "coreutils");
+    const usrBin = join(root, "usr", "bin");
+    mkdirSync(coreutils, { recursive: true });
+    mkdirSync(usrBin, { recursive: true });
+    const multicall = join(coreutils, "ls");
+    writeFileSync(multicall, "#!/usr/bin/true\n# multicall stand-in\n");
+    chmodSync(multicall, 0o755);
+    linkSync(multicall, join(coreutils, "env"));
+    const outside = join(root, "usr", "lib", "cargo", "bin", "evil");
+    writeFileSync(outside, "#!/usr/bin/true\n");
+    chmodSync(outside, 0o755);
+    symlinkSync("../lib/cargo/bin/coreutils/ls", join(usrBin, "ls"));
+    symlinkSync("../lib/cargo/bin/coreutils/env", join(usrBin, "env"));
+    symlinkSync("../lib/cargo/bin/evil", join(usrBin, "evil"));
+
+    const trusted = { trustedRoots: [coreutils], pathEnv: "" };
+    for (const name of ["ls", "env"]) {
+      const check = checkExecutablePath(join(usrBin, name), trusted);
+      expect(check.ok, name).toBe(true);
+      if (check.ok) expect(check.realPath, name).toBe(join(realpathOf(coreutils), name));
+    }
+    const sibling = checkExecutablePath(join(usrBin, "evil"), trusted);
+    expect(sibling.ok).toBe(false);
+    if (!sibling.ok) expect(sibling.rule).toBe("untrusted_executable_path");
+
+    // Without the coreutils root (the guard before this change) the link is refused.
+    const before = checkExecutablePath(join(usrBin, "ls"), { trustedRoots: [usrBin], pathEnv: "" });
+    expect(before.ok).toBe(false);
+    if (!before.ok) expect(before.rule).toBe("untrusted_executable_path");
   });
 });
