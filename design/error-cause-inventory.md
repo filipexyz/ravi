@@ -2014,14 +2014,14 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | runtime-chat | src/runtime/host-event-loop.ts | 5524 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:7f0cb67b7494201e6381c3bf |
 | runtime-chat | src/runtime/host-event-loop.ts | 5544 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:f390568a71b693614b1bc83b |
 | runtime-chat | src/runtime/host-event-loop.ts | 5596 | fixed | binding retained / no recognized error surface | src/runtime/host-event-loop.ts:37c27d5398f8176bf76f03da |
-| runtime-chat | src/runtime/host-hooks.ts | 255 | fixed | binding retained / no recognized error surface | src/runtime/host-hooks.ts:9fca6f5c4663292e01dc53c0 |
-| runtime-chat | src/runtime/host-hooks.ts | 314 | triaged-follow-up | catch-without-binding | src/runtime/host-hooks.ts:7dace61e0fb823aac0ce35af |
-| runtime-chat | src/runtime/host-hooks.ts | 321 | triaged-follow-up | catch-without-binding | src/runtime/host-hooks.ts:b3cd318de28be884aba1db1a |
-| runtime-chat | src/runtime/host-hooks.ts | 353 | fixed | binding retained / no recognized error surface | src/runtime/host-hooks.ts:9f03429e3707cf6f9cf09047 |
-| runtime-chat | src/runtime/host-hooks.ts | 430 | triaged-follow-up | rejection-without-binding | src/runtime/host-hooks.ts:b03b3ddb89cfa3783292cbb7 |
-| runtime-chat | src/runtime/host-hooks.ts | 449 | fixed | binding retained / no recognized error surface | src/runtime/host-hooks.ts:40939d36cb61945b928e347e |
-| runtime-chat | src/runtime/host-hooks.ts | 466 | triaged-follow-up | rejection-without-binding | src/runtime/host-hooks.ts:b03b3ddb89cfa3783292cbb7 |
-| runtime-chat | src/runtime/host-hooks.ts | 508 | fixed | binding retained / no recognized error surface | src/runtime/host-hooks.ts:1294281309897e6d88b6c17c |
+| runtime-chat | src/runtime/host-hooks.ts | 256 | fixed | binding retained / no recognized error surface | src/runtime/host-hooks.ts:9fca6f5c4663292e01dc53c0 |
+| runtime-chat | src/runtime/host-hooks.ts | 316 | triaged-follow-up | catch-without-binding | src/runtime/host-hooks.ts:7dace61e0fb823aac0ce35af |
+| runtime-chat | src/runtime/host-hooks.ts | 323 | triaged-follow-up | catch-without-binding | src/runtime/host-hooks.ts:b3cd318de28be884aba1db1a |
+| runtime-chat | src/runtime/host-hooks.ts | 355 | fixed | binding retained / no recognized error surface | src/runtime/host-hooks.ts:9f03429e3707cf6f9cf09047 |
+| runtime-chat | src/runtime/host-hooks.ts | 432 | triaged-follow-up | rejection-without-binding | src/runtime/host-hooks.ts:b03b3ddb89cfa3783292cbb7 |
+| runtime-chat | src/runtime/host-hooks.ts | 451 | fixed | binding retained / no recognized error surface | src/runtime/host-hooks.ts:40939d36cb61945b928e347e |
+| runtime-chat | src/runtime/host-hooks.ts | 468 | triaged-follow-up | rejection-without-binding | src/runtime/host-hooks.ts:b03b3ddb89cfa3783292cbb7 |
+| runtime-chat | src/runtime/host-hooks.ts | 510 | fixed | binding retained / no recognized error surface | src/runtime/host-hooks.ts:1294281309897e6d88b6c17c |
 | runtime-chat | src/runtime/host-services.ts | 858 | triaged-follow-up | rejection-without-binding | src/runtime/host-services.ts:5360deba0585f6db9ae0489e |
 | runtime-chat | src/runtime/host-services.ts | 891 | triaged-follow-up | rejection-without-binding | src/runtime/host-services.ts:5360deba0585f6db9ae0489e |
 | sessions | src/runtime/host-session.ts | 594 | triaged-follow-up | rejection-without-binding | src/runtime/host-session.ts:dbc4363ca5a44e3e1bc6811e |

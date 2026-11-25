@@ -156,3 +156,123 @@ describe("delegated authority materialization", () => {
     expect(canWithCapabilities(effective, "use", "tool", "Read")).toBe(false);
   });
 });
+
+// The subagent tool goes by two names, `Task` and `Agent`. The composition keeps a grant that no deny overlaps and drops
+// a whole grant that one does, so a deny has to overlap a grant under either name, patterns included.
+describe("the subagent tool in a governed chat", () => {
+  const names = ["Task", "Agent"] as const;
+  const use = (objectId: string) => cap("use", "tool", objectId);
+  const deny = (objectId: string) => cap("deny_use", "tool", objectId);
+  const compose = (actor: ContextCapability[], agent: ContextCapability[] = [use("*")]) =>
+    buildEffectiveCapabilities({ agentCapabilities: agent, actorCapabilities: actor });
+  const reaches = (effective: ContextCapability[], toolName: string) => allows(effective, "use", "tool", toolName);
+
+  it("lets a deny withhold a grant that reaches the subagent under the other name", () => {
+    const pairs = [
+      ["Task", "Agent"],
+      ["Agent", "Task"],
+      ["Task", "Ag*"],
+      ["Agent", "Task*"],
+      ["Ag*", "Task"],
+      ["Task*", "Agent"],
+      // Neither pattern covers the other; both reach the subagent tool.
+      ["Ag*", "Task*"],
+      ["Task*", "Ag*"],
+      ["Age*", "Ta*"],
+      ["A*", "T*"],
+    ] as const;
+    for (const [granted, denied] of pairs) {
+      const effective = compose([use(granted), deny(denied)]);
+      for (const name of names)
+        expect(reaches(effective, name), `grant ${granted}, deny ${denied}: ${name}`).toBe(false);
+    }
+  });
+
+  it("withholds the subagent on a surface deny of the other name through the whole builder", () => {
+    for (const [granted, denied] of [
+      ["Ag*", "Task*"],
+      ["Task*", "Ag*"],
+    ] as const) {
+      const result = materializeDelegatedAuthority({
+        agentPrincipal: { subjectType: "agent", subjectId: "executor" },
+        actorPrincipal: { subjectType: "contact", subjectId: "luis" },
+        surfacePrincipal: { subjectType: "chat", subjectId: "chat_group_1" },
+        agentCapabilities: [use("*")],
+        actorCapabilities: [use(granted)],
+        surfaceCapabilities: [deny(denied)],
+      });
+      for (const name of names) {
+        expect(reaches(result.effectiveCapabilities, name), `grant ${granted}, surface deny ${denied}: ${name}`).toBe(
+          false,
+        );
+      }
+    }
+  });
+
+  it("keeps a grant that no deny reaches, and opens both names on it", () => {
+    for (const name of names) {
+      expect(reaches(compose([use("Ag*"), deny("Bash*")]), name)).toBe(true);
+      expect(reaches(compose([use("Task*"), deny("Bash*")]), name)).toBe(true);
+    }
+    // Another tool of the Task family is not the subagent: a deny of the subagent leaves its grant alone.
+    const effective = compose([use("TaskOutput"), deny("Agent")]);
+    expect(reaches(effective, "TaskOutput")).toBe(true);
+    expect(reaches(effective, "Agent")).toBe(false);
+  });
+
+  it("lets a deny win over an explicit grant, whichever name each one uses", () => {
+    for (const granted of names) {
+      for (const denied of names) {
+        const effective = compose([use(granted), deny(denied)]);
+        for (const name of names)
+          expect(reaches(effective, name), `grant ${granted}, deny ${denied}: ${name}`).toBe(false);
+      }
+    }
+  });
+
+  it("drops a whole prefix grant that overlaps the denied subagent, as it does for a deny under its own name", () => {
+    const underItsOwnName = compose([use("Task*"), deny("Task")]);
+    const underTheOtherName = compose([use("Task*"), deny("Agent")]);
+
+    expect(underTheOtherName).toEqual(underItsOwnName);
+    // The composition fails closed for a prefix that covers the denied tool: the other Task tools go with it.
+    expect(reaches(underTheOtherName, "TaskOutput")).toBe(false);
+  });
+
+  it("intersects exact names across the two names", () => {
+    const effective = compose([use("Agent")], [use("Task")]);
+
+    for (const name of names) expect(reaches(effective, name)).toBe(true);
+    expect(reaches(effective, "TaskOutput")).toBe(false);
+  });
+
+  it("leaves the intersection of two prefix grants that reach different names empty: grant the exact name", () => {
+    const effective = compose([use("Ag*")], [use("Task*")]);
+
+    for (const name of names) expect(reaches(effective, name)).toBe(false);
+  });
+
+  it("renames tool objects only: session patterns of the same spelling stay apart", () => {
+    const effective = buildEffectiveCapabilities({
+      agentCapabilities: [cap("access", "session", "*")],
+      actorCapabilities: [cap("access", "session", "Ag*"), cap("deny_access", "session", "Task*")],
+    });
+
+    expect(allows(effective, "access", "session", "Agent-1")).toBe(true);
+  });
+
+  it("does not reach between a tool and another object type that shares its permission", () => {
+    // A `use` on a session is not a tool: a deny of one does not overlap a grant of the other.
+    const denyOnSession = buildEffectiveCapabilities({
+      agentCapabilities: [use("*")],
+      actorCapabilities: [use("Ag*"), cap("deny_use", "session", "Task*")],
+    });
+    expect(reaches(denyOnSession, "Agent")).toBe(true);
+
+    const denyOnTool = buildEffectiveCapabilities({
+      agentCapabilities: [cap("use", "session", "*")],
+      actorCapabilities: [cap("use", "session", "Ag*"), deny("Task*")],
+    });
+    expect(allows(denyOnTool, "use", "session", "Agent-1")).toBe(true);
+  });
+});
