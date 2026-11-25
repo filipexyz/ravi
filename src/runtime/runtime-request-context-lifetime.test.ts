@@ -320,6 +320,30 @@ describe("active runtime context lifetime", () => {
       expect(next.metadata?.userOverlay).toBe("lifted");
     });
 
+    it("revokes an overlay turn whose chat stops being governed mid-turn: only a lift is a gain", () => {
+      // Review of #990 (N1): the lease relaxes the mode only when the recomputed turn is lifted. Any other
+      // mode change (here the last grant removed, so the chat falls back to the agent identity) revokes.
+      const contact = createContact({ phone: "5511900000794", name: "Member", status: "allowed" });
+      const grant = {
+        contactId: contact.id,
+        profileSlug: "permission-lease-governed-read",
+        scopeType: "chat" as const,
+        scopeId: "chat_lease_governed_1",
+      };
+      dbEnsureContactChatGrant(grant);
+      const { runtimeContext: context } = start(
+        options({
+          prompt: "long report",
+          source: governedTurnSource(contact.id),
+        } as RuntimeRequestContextOptions["prompt"]),
+      );
+      const issued = structuredClone(context);
+      expect(issued.metadata?.actorAuthorizationMode).toBe("user-overlay");
+      dbDeleteContactChatGrant(grant);
+      advance(30 * 60 * 1000);
+      expect(resolveRuntimeContext(issued.contextKey, { touch: false })).toBeNull();
+    });
+
     it("revokes a lifted turn whose contact loses full access mid-turn", () => {
       const other = createContact({ phone: "5511900000792", name: "Member", status: "allowed" });
       dbEnsureContactChatGrant({

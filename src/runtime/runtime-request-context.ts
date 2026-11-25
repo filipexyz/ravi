@@ -746,6 +746,12 @@ function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
   // Ordinary turn rotation revokes the key but intentionally keeps queued relays
   // usable. A profile reduction invalidates the authority snapshot as well.
   const profileRevoked = typeof metadata.permissionProfileRevokedAt === "number";
+  // A lifted caller lent the agent's authority because its contact's own full access lifted the
+  // chat overlay. A relay built later (an inform, answer or return queued after that turn, or any
+  // handoff) re-validates the lift as the grants and tags stand now: once the full access is
+  // withdrawn (an untag or `permissions deny`) or a grant in the chat narrows the contact, the
+  // caller lends nothing, as a profile withdrawal does (review of #990, N2).
+  const liftWithdrawn = metadata.userOverlay === "lifted" && !callerLiftStillHolds(metadata);
   const narrowed =
     metadata.actorAuthorizationMode === USER_OVERLAY_AUTHORIZATION_MODE ||
     metadata.relayNarrowing === true ||
@@ -770,6 +776,7 @@ function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
   const callerHeld =
     profileRevoked ||
     humanHandoffRefused ||
+    liftWithdrawn ||
     metadata.actorAuthorizationMode === USER_OVERLAY_AUTHORIZATION_MODE ||
     breakGlassDenies.length > 0 ||
     isRelayHeldBelowAgent(metadata);
@@ -777,10 +784,9 @@ function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
   // authority (even for inform/answer), so the target agent's own admin does
   // not reopen what the caller's denies withheld.
   const narrowedByCaller = narrowed || breakGlassDenies.length > 0;
+  const lendsNothing = profileRevoked || humanHandoffRefused || liftWithdrawn;
   return {
-    ...(profileRevoked || humanHandoffRefused || narrowedByCaller
-      ? { narrowing: profileRevoked || humanHandoffRefused ? [] : positiveCapabilities }
-      : {}),
+    ...(lendsNothing || narrowedByCaller ? { narrowing: lendsNothing ? [] : positiveCapabilities } : {}),
     ...(narrowed && !callerHeld ? { unrestricted: true } : {}),
     ...(breakGlassDenies.length > 0 ? { breakGlassDenies } : {}),
     ...(contactId ? { contactId } : {}),
@@ -810,6 +816,20 @@ function resolveRelayCaller(prompt: RuntimeLaunchPrompt): {
 function contactPowerCoversAgent(overlay: ContactChatOverlay): boolean {
   if (!canWithCapabilities(overlay.globalCapabilities, "admin", "system", "*")) return false;
   return !overlay.capabilities.some((capability) => capability.permission.startsWith(DENY_RELATION_PREFIX));
+}
+
+/**
+ * Whether a lifted caller's lift still holds: the same rule, read from the owner and chat its
+ * context recorded, against the grants and tags as they are now. A lifted context without both
+ * fails closed.
+ */
+function callerLiftStillHolds(metadata: Record<string, unknown>): boolean {
+  const owner = typeof metadata.userOverlayContact === "string" ? metadata.userOverlayContact : "";
+  const chat = typeof metadata.userOverlayChat === "string" ? metadata.userOverlayChat : "";
+  if (!owner.startsWith("contact:") || !chat.startsWith("chat:")) return false;
+  return contactPowerCoversAgent(
+    resolveContactChatOverlay({ contactId: owner.slice("contact:".length), chatId: chat.slice("chat:".length) }),
+  );
 }
 
 function buildUserOverlayMetadata(
