@@ -53,6 +53,19 @@ Each check MUST declare:
 
 Checks MUST NOT mutate state.
 
+## Omni Database Authentication
+
+- `runtime.omni_db_auth` MUST warn when Omni's database (`server.databaseUrl`
+  in Omni's config) lets Omni's user log in without a credential: a PostgreSQL
+  `trust` rule exposes every WhatsApp message to any process on the host.
+- The probe MUST send only a StartupMessage, never a password or a query, and
+  MUST answer an AuthenticationOk with Terminate. It MUST probe only loopback
+  hosts; a remote database is reported as `remote`, not probed.
+- A refused connection, a timeout or an unparseable URL MUST stay `unknown`
+  (skipped), never `pass`. The URL MUST be printed with its password redacted.
+- Ravi does not install that database, so the check reports and never rewrites
+  pg_hba.conf.
+
 ## NATS Exposure And State Directory
 
 - `runtime.nats_exposure` MUST report network exposure using bounded probes and
