@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { runWithContext } from "../cli/context.js";
 import { createContact } from "../contacts.js";
@@ -640,3 +642,40 @@ function listSourceFiles(dir: string): string[] {
 function toRepoRelative(path: string): string {
   return relative(process.cwd(), path).split(sep).join("/");
 }
+
+describe("Permission provider registry load order", () => {
+  // The registry and the contact-policy provider import each other through contacts and the router. Whichever loads
+  // first sees the other half-initialised, so nothing at module level may read the other's exports. A fresh process
+  // per entry point is the only way to prove each order: this process has already loaded them in one fixed order.
+  for (const entry of ["contact-policy-permissions-provider", "provider-registry", "provider-runtime"]) {
+    it(`loads with ${entry} as the first import and still lists the contact-policy materializer`, () => {
+      const stateRoot = mkdtempSync(join(tmpdir(), "ravi-provider-load-order-"));
+      try {
+        const env: Record<string, string> = {};
+        for (const [key, value] of Object.entries(process.env)) {
+          if (value !== undefined && !key.startsWith("RAVI_")) env[key] = value;
+        }
+        env.RAVI_STATE_DIR = stateRoot;
+        env.NATS_URL = "nats://127.0.0.1:1";
+        const script = [
+          `await import(${JSON.stringify(join(process.cwd(), "src/permissions", `${entry}.ts`))});`,
+          `const registry = await import(${JSON.stringify(join(process.cwd(), "src/permissions/provider-registry.ts"))});`,
+          "const ids = registry.getConfiguredCapabilityMaterializers().map((provider) => provider.id);",
+          "console.log(JSON.stringify(ids));",
+        ].join("\n");
+        const result = spawnSync(process.execPath, ["-e", script], {
+          env,
+          cwd: process.cwd(),
+          timeout: 60_000,
+          encoding: "utf8",
+        });
+        expect(result.stderr).not.toContain("before initialization");
+        expect(result.status).toBe(0);
+        const ids = JSON.parse(result.stdout.trim().split("\n").pop() ?? "[]") as string[];
+        expect(ids).toContain("contact-policy-permissions");
+      } finally {
+        rmSync(stateRoot, { recursive: true, force: true });
+      }
+    });
+  }
+});

@@ -55,6 +55,11 @@ Required capability materializers:
 - Runtime code MUST call the provider-runtime facade for authorization.
 - Runtime context creation MUST materialize subject capabilities through the
   registered materializer chain.
+- The permission registry and the contact-policy provider import each other
+  through contacts and the router. Nothing at module level in
+  `provider-registry.ts` MAY read an export of another provider module; the
+  default materializer list MUST be built on first use. Loading any module of
+  `src/permissions` first MUST NOT fail with a temporal-dead-zone error.
 - Bootstrap agent and automation contexts MUST receive the exact read-only
   `read:context:codex-bash-hook` capability so Codex can enforce Bash policy;
   this MUST NOT grant the broader `execute:group:context` capability.
