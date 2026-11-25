@@ -65,3 +65,22 @@ export async function waitForDaemonStateReady(deps: DaemonStartReadyDeps): Promi
     await deps.sleep(Math.min(pollMs, timeoutMs - waitedMs));
   }
 }
+
+/**
+ * What `ravi daemon start` prints on stderr when the wait ended without a ready daemon.
+ *
+ * `ready` is published after the daemon connects to NATS, so a wait that runs out is usually NATS not
+ * reachable, and the message says so: the operator then checks the server instead of reading the log
+ * for the reason. A daemon PM2 reports as stopped is a different failure (a crash), so it gets no NATS hint.
+ */
+export function describeFirstStartNotReady(result: Extract<DaemonStartReadiness, { ready: false }>): string {
+  const why =
+    result.reason === "stopped"
+      ? "The daemon stopped before it finished preparing its state."
+      : `The daemon has not finished preparing its state after ${Math.ceil(result.waitedMs / 1000)}s.`;
+  const nats =
+    result.reason === "timeout"
+      ? " The usual cause is that nats-server is not reachable (the daemon is ready only after it connects to NATS_URL, default nats://127.0.0.1:4222): check that it is running."
+      : "";
+  return `${why}${nats} Read 'ravi daemon logs' for the reason; until it is ready, commands that read state answer STATE_SCHEMA_NOT_READY.`;
+}

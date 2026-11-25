@@ -1,6 +1,14 @@
 import { describe, expect, it, spyOn } from "bun:test";
 import { ContractError } from "./agent-contract.js";
-import { buildCliAuditPayload, runWithCliAudit, sanitizeCliAuditValue, wasContractErrorAudited } from "./audit.js";
+import { nats } from "../nats.js";
+import {
+  buildCliAuditPayload,
+  type CliAuditEventOptions,
+  emitCliAuditEvent,
+  runWithCliAudit,
+  sanitizeCliAuditValue,
+  wasContractErrorAudited,
+} from "./audit.js";
 
 function withForbiddenStdinAccess<T>(fn: () => T): T {
   const original = Object.getOwnPropertyDescriptor(process, "stdin");
@@ -346,5 +354,56 @@ describe("CLI audit redaction", () => {
     } finally {
       process.argv.splice(0, process.argv.length, ...originalArgv);
     }
+  });
+});
+
+describe("emitCliAuditEvent and the lazily opened NATS connection", () => {
+  const command: CliAuditEventOptions = {
+    group: "_root",
+    name: "setup",
+    tool: "root_setup",
+    status: "completed",
+    outcome: "succeeded",
+  };
+
+  /** Runs the emitter with `nats` spied and the suppression variable set (or unset) the way the test asks. */
+  async function emitWith(suppress: string | undefined, options: CliAuditEventOptions) {
+    const previous = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    if (suppress === undefined) delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    else process.env.RAVI_SUPPRESS_AUDIT_EVENTS = suppress;
+    const emit = spyOn(nats, "emit").mockResolvedValue(undefined);
+    const close = spyOn(nats, "close").mockResolvedValue(undefined);
+    try {
+      await emitCliAuditEvent(options);
+      return { emitted: emit.mock.calls.map((call) => call[0]), closed: close.mock.calls.length };
+    } finally {
+      emit.mockRestore();
+      close.mockRestore();
+      if (previous === undefined) delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      else process.env.RAVI_SUPPRESS_AUDIT_EVENTS = previous;
+    }
+  }
+
+  it("publishes the audit event and closes the lazy connection when audit is on", async () => {
+    const { emitted, closed } = await emitWith(undefined, { ...command, closeLazyConnection: true });
+
+    expect(emitted).toEqual(["ravi._cli.cli._root.setup"]);
+    expect(closed).toBe(1);
+  });
+
+  it("still closes the lazy connection when audit events are suppressed, without publishing one", async () => {
+    // A command that connected lazily (a `ravi.config.changed` notification, say) stays alive on its open socket
+    // after it printed its result unless the wrapper closes the connection, with or without the audit event.
+    const { emitted, closed } = await emitWith("1", { ...command, closeLazyConnection: true });
+
+    expect(emitted).toEqual([]);
+    expect(closed).toBe(1);
+  });
+
+  it("neither publishes nor closes when audit is suppressed and the command did not ask to close", async () => {
+    const { emitted, closed } = await emitWith("1", command);
+
+    expect(emitted).toEqual([]);
+    expect(closed).toBe(0);
   });
 });

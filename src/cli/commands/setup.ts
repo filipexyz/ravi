@@ -363,6 +363,30 @@ export async function stateIsReady(
   }
 }
 
+/**
+ * The agent and settings steps write the state directly, after the daemon is already up. The daemon's config
+ * store reloads on `ravi.config.changed` and otherwise only on its 30 s refresh (`config-store.ts`); the event is
+ * what `ravi agents` and `ravi settings` emit after a write. Best effort: without it the refresh still happens.
+ */
+export async function announceConfigChanged(
+  emit: (topic: string, data: Record<string, unknown>) => Promise<void> = async (topic, data) => {
+    const { nats } = await import("../../nats.js");
+    await nats.emit(topic, data, { quietConnect: true });
+  },
+): Promise<boolean> {
+  try {
+    await emit("ravi.config.changed", {});
+    return true;
+  } catch {
+    // no-cause: best effort; the daemon's config store still refreshes within 30 s without the event.
+    return false;
+  }
+}
+
+async function stepAnnounce(): Promise<void> {
+  if (!(await announceConfigChanged())) info("O daemon aplica o que foi gravado em até 30 s.");
+}
+
 async function stepAgent(): Promise<void> {
   heading(4, 5, "Agente", "~/ravi/main");
 
@@ -445,6 +469,8 @@ export interface SetupSteps {
   stateReady: () => Promise<boolean>;
   agent: () => Promise<void>;
   settings: () => Promise<void>;
+  /** Tells the running daemon what the agent and settings steps wrote, so it does not wait for its 30 s refresh. */
+  announce: () => Promise<void>;
 }
 
 const wizardSteps: SetupSteps = {
@@ -454,6 +480,7 @@ const wizardSteps: SetupSteps = {
   stateReady: () => stateIsReady(),
   agent: stepAgent,
   settings: stepSettings,
+  announce: stepAnnounce,
 };
 
 export async function runSetup(steps: SetupSteps = wizardSteps): Promise<void> {
@@ -471,6 +498,7 @@ export async function runSetup(steps: SetupSteps = wizardSteps): Promise<void> {
   if (stateReady) {
     await steps.agent();
     await steps.settings();
+    await steps.announce();
   } else {
     console.log();
     warning("O daemon não preparou o estado, então o agente e as configurações ficaram para depois.");

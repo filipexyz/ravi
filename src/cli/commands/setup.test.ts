@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { runSetup, type SetupSteps, stateIsReady } from "./setup.js";
+import { announceConfigChanged, runSetup, type SetupSteps, stateIsReady } from "./setup.js";
 
 const repoRoot = join(import.meta.dir, "..", "..", "..");
 const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
@@ -28,6 +28,7 @@ async function runRecorded(stateReady: boolean): Promise<{ calls: string[]; outp
     },
     agent: step("agent"),
     settings: step("settings"),
+    announce: step("announce"),
   };
   console.log = (...args: unknown[]) => {
     lines.push(args.map((arg) => String(arg)).join(" "));
@@ -43,9 +44,17 @@ describe("runSetup order", () => {
 
     // On a new machine the daemon creates the state database and the CLI never does, so a step that reads
     // the agent or the settings before the daemon has run ends the wizard with STATE_SCHEMA_NOT_READY.
-    expect(calls).toEqual(["omni", "environment", "daemon", "stateReady", "agent", "settings"]);
+    expect(calls).toEqual(["omni", "environment", "daemon", "stateReady", "agent", "settings", "announce"]);
     expect(calls.indexOf("agent")).toBeGreaterThan(calls.indexOf("daemon"));
     expect(calls.indexOf("settings")).toBeGreaterThan(calls.indexOf("daemon"));
+  });
+
+  it("tells the running daemon what the agent and settings steps wrote, after both of them", async () => {
+    const { calls } = await runRecorded(true);
+
+    // The daemon is already up when those steps write, and its config store otherwise reloads only every 30 s.
+    expect(calls.indexOf("announce")).toBeGreaterThan(calls.indexOf("agent"));
+    expect(calls.indexOf("announce")).toBeGreaterThan(calls.indexOf("settings"));
   });
 
   it("says the setup is complete when the state is ready", async () => {
@@ -58,6 +67,7 @@ describe("runSetup order", () => {
   it("skips the agent and settings, and says so, when the daemon did not prepare the state", async () => {
     const { calls, output } = await runRecorded(false);
 
+    // Nothing was written, so there is nothing to announce either.
     expect(calls).toEqual(["omni", "environment", "daemon", "stateReady"]);
     expect(output).toContain("Configuração incompleta");
     expect(output).not.toContain("Configuração completa!");
@@ -95,6 +105,39 @@ describe("stateIsReady", () => {
         throw new Error("disk I/O error");
       }),
     ).rejects.toThrow("disk I/O error");
+  });
+});
+
+describe("announceConfigChanged", () => {
+  it("emits ravi.config.changed, the event the daemon's config store reloads on", async () => {
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    const sent = await announceConfigChanged(async (topic, data) => {
+      emitted.push({ topic, data });
+    });
+
+    expect(sent).toBe(true);
+    expect(emitted).toEqual([{ topic: "ravi.config.changed", data: {} }]);
+  });
+
+  it("is best effort: a failed emit is reported as false and never ends the wizard with an error", async () => {
+    const sent = await announceConfigChanged(async () => {
+      throw new Error("NATS is not reachable");
+    });
+
+    expect(sent).toBe(false);
+  });
+
+  it("waits for the emit to be queued before it answers, so the command can drain the connection after it", async () => {
+    let queued = false;
+
+    const sent = await announceConfigChanged(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      queued = true;
+    });
+
+    expect(sent).toBe(true);
+    expect(queued).toBe(true);
   });
 });
 
