@@ -46,18 +46,25 @@ export function pushToTalk(call: RaviVoiceCall, options: { mimeType?: string } =
  */
 export function autoplayReplies(call: RaviVoiceCall, element: HTMLAudioElement = new Audio()) {
   let current: string | null = null;
-  // Bumped on silence and cleanup so a clip still downloading never plays after.
+  // Bumped only on silence and cleanup: clips queued before that never play.
   let generation = 0;
-  const off = call.on("agent.transcript", async (event) => {
+  // Replies play in arrival order, one after another; each clip downloads as
+  // soon as its transcript arrives.
+  let queue: Promise<void> = Promise.resolve();
+  const off = call.on("agent.transcript", (event) => {
     const audio = event.data.audio as { item?: string } | undefined;
     if (!audio?.item) return;
-    const mine = ++generation;
-    const blob = await call.audio(audio.item);
-    if (mine !== generation) return;
-    if (current) URL.revokeObjectURL(current);
-    current = URL.createObjectURL(blob);
-    element.src = current;
-    await element.play().catch(() => undefined);
+    const mine = generation;
+    const download = call.audio(audio.item).catch(() => null);
+    queue = queue.then(async () => {
+      const blob = await download;
+      if (!blob || mine !== generation) return;
+      if (current) URL.revokeObjectURL(current);
+      current = URL.createObjectURL(blob);
+      element.src = current;
+      await element.play().catch(() => undefined);
+      await playbackDone(element);
+    });
   });
   const offSilence = call.on("agent.state", (event) => {
     if (event.data.state === "listening" && event.data.reason === "silenced") {
@@ -73,6 +80,20 @@ export function autoplayReplies(call: RaviVoiceCall, element: HTMLAudioElement =
     if (current) URL.revokeObjectURL(current);
     current = null;
   };
+}
+
+/** Resolves when the element stops: the clip ended, was paused, or never started. */
+function playbackDone(element: HTMLAudioElement): Promise<void> {
+  if (element.paused || element.ended) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      element.removeEventListener("ended", done);
+      element.removeEventListener("pause", done);
+      resolve();
+    };
+    element.addEventListener("ended", done);
+    element.addEventListener("pause", done);
+  });
 }
 
 /**

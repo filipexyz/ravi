@@ -204,8 +204,9 @@ export class VoiceDoorService {
   /** Publish what the approval store committed for one request shown in the call. Public for tests. */
   async reconcileApproval(callId: string, approvalId: string): Promise<void> {
     const outcome = await publishVoiceApprovalOutcome(callId, approvalId, { sink: this.sink });
-    // The approval service resumes the turn either way.
-    if (outcome) await this.setAgentState(callId, "thinking");
+    // The approval service resumes the turn either way; a late outcome for a
+    // turn that already ended leaves the call's state alone.
+    if (outcome && this.calls.get(callId)?.running) await this.setAgentState(callId, "thinking");
   }
 
   /** Public for tests and for in-process callers. */
@@ -308,11 +309,13 @@ export class VoiceDoorService {
     runtime.draining = true;
     try {
       while (runtime.queue.length > 0) {
-        const next = runtime.queue.shift();
-        if (!next) break;
         const call = getVoiceCall(callId);
         if (!call || call.state === "ended") break;
         await this.inSessionOrder(call.sessionKey, async () => {
+          // The turn leaves the queue only once it holds the session, so a
+          // cancel while it waits still finds it there.
+          const next = runtime.queue.shift();
+          if (!next) return;
           // Re-read after waiting for the session: the call or turn may be gone.
           const current = getVoiceCall(callId);
           if (!current || current.state === "ending" || current.state === "ended") return;

@@ -33,6 +33,8 @@ describe("voice speech", () => {
     expect(spoken).not.toContain("private.pem");
     expect(spoken).toContain("km/h");
     expect(spoken).toContain("e/ou");
+    expect(sanitizeForSpeech("A consulta é em 25/11/2026 às 9h.")).toContain("25/11/2026");
+    expect(sanitizeForSpeech("Veja 2026/11/lista.")).not.toContain("lista");
   });
 
   it("marks guest speech in the prompt and asks for a spoken line", () => {

@@ -506,6 +506,32 @@ describe("voice door", () => {
     await door.sweepNow();
   });
 
+  it("a turn waiting for the session behind another call can still be cancelled", async () => {
+    const { door, prompts } = harness({ sessionQueue: true });
+    const first = makeCall("push");
+    const second = makeCall("push", { speaker: { kind: "device", id: "vd_wait" } });
+    await door.handleControl({
+      op: "utterance",
+      callId: first.id,
+      turnId: "vt_hold",
+      text: "primeira",
+      speaker: { ...first.speaker },
+    });
+    await door.handleControl({
+      op: "utterance",
+      callId: second.id,
+      turnId: "vt_wait",
+      text: "segunda",
+      speaker: { ...second.speaker },
+    });
+    await door.handleControl({ op: "cancel-turn", callId: second.id, turnId: "vt_wait", actor: "operator" });
+    await until(() => listVoiceTurns(first.id)[0]?.state === "done", "first turn done");
+    await tick();
+    await tick();
+    expect(listVoiceTurns(second.id)[0]?.state).toBe("cancelled");
+    expect(prompts).toHaveLength(1);
+  });
+
   it("two calls on one session each speak their own reply", async () => {
     const { door, prompts } = harness({
       sessionQueue: true,
@@ -575,7 +601,8 @@ describe("voice door", () => {
         );
         expect(resolved).toHaveLength(1);
         expect(resolved[0]?.data.data).toMatchObject({ approvalId, decision, by: "contact_owner" });
-        expect(getVoiceCall(call.id)?.agentState).toBe("thinking");
+        // No turn of this call is running: a late outcome leaves the state alone.
+        expect(getVoiceCall(call.id)?.agentState).toBe("listening");
       }
     } finally {
       await door.stop();

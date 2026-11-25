@@ -349,7 +349,9 @@ async function emitWhileOpen(callId: string, type: VoiceEventType, data: Record<
   const current = getVoiceCall(callId);
   if (!current || current.state === "ending" || current.state === "ended") return false;
   await emitVoiceEvent(callId, type, data);
-  return true;
+  // The call may have ended while the event was publishing.
+  const after = getVoiceCall(callId);
+  return Boolean(after && after.state !== "ending" && after.state !== "ended");
 }
 
 function readClip(
@@ -421,8 +423,16 @@ async function submitApprovalDecision(
     if (record && record.status === "decided" && record.decision) {
       // The daemon publishes the outcome too (on the approval response and in
       // its sweep), so a decision committed after this wait still reaches the call.
-      await publishVoiceApprovalOutcome(callId, approvalId, { by: caller.speaker.id });
-      await sendVoiceControl({ op: "approval-resolved", callId, approvalId, decision: record.decision });
+      // Attributed to whoever the approval store recorded, as the daemon does.
+      await publishVoiceApprovalOutcome(callId, approvalId);
+      try {
+        await sendVoiceControl({ op: "approval-resolved", callId, approvalId, decision: record.decision });
+      } catch (error) {
+        // no-cause: the decision is committed; the daemon's reconciliation updates the call state.
+        console.warn(
+          `Approval ${approvalId} is ${record.decision}; the call updates on the next sweep: ${errorDiagnostic(error).cause}`,
+        );
+      }
       return record.decision;
     }
     if (!record || record.status !== "pending") {
@@ -1372,7 +1382,7 @@ export class VoiceDevicesCommands {
         }
       }
       return emit({ device: publicDevice(revoked), endedCalls: ended }, asJson, () =>
-        console.log(`Device ${device.id} revoked; ${ended.length} call(s) ended.`),
+        console.log(`Device ${device.id} revoked; asked ${ended.length} call(s) to end.`),
       );
     });
   }
