@@ -155,7 +155,7 @@ and resumes with `after`.
 | `turn.accepted` | an utterance became a session turn (`turnId`) |
 | `turn.completed` | `turnId`, `spokenText`, `fullText` (text only; audio rides on `agent.transcript`) |
 | `turn.approval_requested` | `approvalId`, `version`, `digest`, `text` |
-| `turn.approval_resolved` | `approvalId`, `decision` |
+| `turn.approval_resolved` | `approvalId`, `decision` (`approved`, `rejected` or `expired`, as the approval store committed it; the daemon publishes it even after `calls approve` stops waiting) |
 | `usage` | audio seconds in and out, characters spoken, estimated cost |
 | `error` | `code`, `message` |
 

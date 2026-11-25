@@ -331,6 +331,39 @@ export function updateVoiceCall(id: string, patch: VoiceCallPatch, now = Date.no
   return next;
 }
 
+const OPEN_CALL_COLUMNS: Record<keyof VoiceCallOpenPatch, string> = {
+  state: "state",
+  agentState: "agent_state",
+  connectionKind: "connection_kind",
+  providerRef: "provider_ref",
+};
+
+export type VoiceCallOpenPatch = Partial<Pick<VoiceCall, "state" | "agentState" | "connectionKind" | "providerRef">>;
+
+/**
+ * Compare-and-set for a call that must still be open: one UPDATE guarded by
+ * `state NOT IN ('ending','ended')`, so an `end` that lands at any point wins.
+ * Returns the updated call, or null when the call is gone, ending or ended.
+ * Only the patched columns are written.
+ */
+export function updateOpenVoiceCall(id: string, patch: VoiceCallOpenPatch, now = Date.now()): VoiceCall | null {
+  const keys = (Object.keys(patch) as Array<keyof VoiceCallOpenPatch>).filter((key) => patch[key] !== undefined);
+  const database = store();
+  const applied = executeWrite(
+    database,
+    () => {
+      const sets = [...keys.map((key) => `${OPEN_CALL_COLUMNS[key]} = ?`), "updated_at = ?"];
+      const values = [...keys.map((key) => patch[key] as string), now, id];
+      const result = database
+        .prepare(`UPDATE voice_calls SET ${sets.join(", ")} WHERE id = ? AND state NOT IN ('ending', 'ended')`)
+        .run(...values);
+      return result.changes > 0;
+    },
+    { label: "voice:updateOpenCall" },
+  );
+  return applied ? getVoiceCall(id) : null;
+}
+
 /** Active call for one (session, speaker): the spec allows one. */
 export function findActiveVoiceCall(sessionKey: string, speakerId: string): VoiceCall | null {
   return listVoiceCalls({ activeOnly: true, sessionKey, speakerId, limit: 1 })[0] ?? null;

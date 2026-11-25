@@ -23,6 +23,7 @@ function call(id: string, speakerId = "operator", mode: "mock" | "handsfree" = "
     speaker: speakerId === "operator" ? { kind: "operator", id: "operator" } : { kind: "device", id: speakerId },
     connectionKind: "none",
     usage: emptyVoiceUsage(),
+    ...(speakerId === "operator" ? { callerContextId: "ctx_op" } : {}),
     createdAt: now,
     updatedAt: now,
   });
@@ -167,5 +168,21 @@ describe("voice/{call} stream", () => {
       out.push(event);
     }
     expect(out).toEqual([{ event: "end", data: { type: "stream.end", reason: "not_found", callId: "vc_b" } }]);
+  });
+
+  it("an issued context does not stream a call another caller opened", async () => {
+    call("vc_other");
+    const channel = createVoiceCallChannel({ subscribe: fakeBus().subscribe });
+    const out: StreamEvent[] = [];
+    for await (const event of channel.subscribe(
+      ctx("voice/vc_other", new AbortController().signal, { contextId: "ctx_intruder", kind: "cli-runtime" }),
+      {
+        channelPath: "voice/vc_other",
+        scope: { permission: "access", objectType: "voice-call", objectId: "vc_other" },
+      },
+    )) {
+      out.push(event);
+    }
+    expect(out).toEqual([{ event: "end", data: { type: "stream.end", reason: "not_found", callId: "vc_other" } }]);
   });
 });

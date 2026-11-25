@@ -10,10 +10,10 @@
  */
 import { createHash } from "node:crypto";
 import { registerGrantorIdentityResolver } from "../approval/grantor.js";
-import { listOpenApprovalRequestsForChannelChat } from "../approval/store.js";
+import { getApprovalRequest, listOpenApprovalRequestsForChannelChat } from "../approval/store.js";
 import { findContactsByTag } from "../contacts.js";
 import { OWNER_CONTACT_TAG } from "../knowledge/owner.js";
-import { emitVoiceEvent } from "./events.js";
+import { emitVoiceEvent, type VoiceEventSink } from "./events.js";
 import { getVoiceCall, getVoiceDevice, listVoiceEvents } from "./store.js";
 
 export const VOICE_CHANNEL = "voice";
@@ -25,6 +25,12 @@ const APPROVAL_TEXT_LIMIT = 2000;
 
 export function voiceApprovalMessageId(callId: string, approvalId: string): string {
   return `voice:${callId}:${approvalId}`;
+}
+
+/** The call and request a voice approval message id names, or null for any other id. */
+export function parseVoiceApprovalMessageId(messageId: string): { callId: string; approvalId: string } | null {
+  const match = /^voice:([^:]+):(.+)$/.exec(messageId);
+  return match ? { callId: match[1] as string, approvalId: match[2] as string } : null;
 }
 
 export function voiceApprovalDigest(approvalId: string, text: string): string {
@@ -118,4 +124,29 @@ export function registerVoiceGrantorResolver(): void {
   if (registered) return;
   registered = true;
   registerGrantorIdentityResolver(VOICE_CHANNEL, resolveVoiceGrantorIdentity);
+}
+
+export type VoiceApprovalOutcome = "approved" | "rejected" | "expired";
+
+/**
+ * Show in the call what the approval store committed for a request the call
+ * still shows as open: `turn.approval_resolved` with the decision, or
+ * `expired` when the request timed out or was withdrawn. The store is the only
+ * source; nothing happens while the request is pending. The open check and the
+ * append run in the same tick, so one process publishes an outcome once.
+ */
+export async function publishVoiceApprovalOutcome(
+  callId: string,
+  approvalId: string,
+  options: { by?: string; sink?: VoiceEventSink } = {},
+): Promise<VoiceApprovalOutcome | null> {
+  const record = getApprovalRequest(approvalId);
+  if (!record || record.status === "pending") return null;
+  const decision: VoiceApprovalOutcome = record.status === "decided" && record.decision ? record.decision : "expired";
+  const call = getVoiceCall(callId);
+  if (!call || call.state === "ending" || call.state === "ended") return null;
+  if (!listOpenVoiceApprovals(callId).some((open) => open.approvalId === approvalId)) return null;
+  const by = options.by ?? record.decidedBy ?? undefined;
+  await emitVoiceEvent(callId, "turn.approval_resolved", { approvalId, decision, ...(by ? { by } : {}) }, options.sink);
+  return decision;
 }

@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { claimApprovalDecision, createApprovalRequest, expireApprovalRequest } from "../approval/store.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { voiceApprovalMessageId } from "./approvals.js";
 import { VoiceDoorService, type VoiceDoorDeps } from "./door.js";
 import type { ClipSpeechEngine } from "./engines/types.js";
 import {
+  appendVoiceEvent,
   getVoiceCall,
   getVoiceDailyUsage,
   insertVoiceCall,
@@ -10,11 +13,12 @@ import {
   listVoiceTurns,
   saveVoiceProfile,
   defaultVoiceProfile,
+  updateOpenVoiceCall,
   updateVoiceCall,
   findActiveVoiceCall,
   listVoiceCalls,
 } from "./store.js";
-import { emptyVoiceUsage, type VoiceCall, type VoiceMode } from "./types.js";
+import { emptyVoiceUsage, type VoiceCall, type VoiceMode, voiceSubjects } from "./types.js";
 
 type Message = { topic: string; data: Record<string, unknown> };
 
@@ -456,5 +460,88 @@ describe("voice door", () => {
     handlers.onUsage({ seconds: 60 });
     await until(() => (getVoiceCall(call.id)?.usage.engineSeconds ?? 0) === 60, "usage");
     expect(getVoiceCall(call.id)?.usage.estimatedCostUsd).toBeCloseTo(0.05, 5);
+  });
+
+  it("publishes an approval the store committed after the tap stopped waiting, approved or denied", async () => {
+    const { hub, door } = harness();
+    await door.start();
+    try {
+      for (const [approvalId, decision] of [
+        ["req_late_ok", "approved"],
+        ["req_late_no", "rejected"],
+      ] as const) {
+        const call = makeCall();
+        const now = Date.now();
+        createApprovalRequest({
+          id: approvalId,
+          type: "permission",
+          channel: "voice",
+          accountId: "voice",
+          chatId: call.id,
+          createdAt: now,
+          expiresAt: now + 60_000,
+        });
+        appendVoiceEvent(call.id, "turn.approval_requested", { approvalId, version: 1, digest: "d", text: "x" });
+        // `calls approve` already returned `pending`; the service commits later.
+        claimApprovalDecision({ id: approvalId, decision, decidedBy: "contact_owner", now });
+        const response = { approved: decision === "approved", messageId: voiceApprovalMessageId(call.id, approvalId) };
+        await hub.emit("ravi.approval.response", response);
+        await hub.emit("ravi.approval.response", response);
+        await until(
+          () => listVoiceEvents(call.id).some((event) => event.type === "turn.approval_resolved"),
+          `${decision} resolved`,
+        );
+        await tick();
+        const resolved = hub.published.filter(
+          (message) => message.topic === voiceSubjects.event(call.id) && message.data.type === "turn.approval_resolved",
+        );
+        expect(resolved).toHaveLength(1);
+        expect(resolved[0]?.data.data).toMatchObject({ approvalId, decision, by: "contact_owner" });
+        expect(getVoiceCall(call.id)?.agentState).toBe("thinking");
+      }
+    } finally {
+      await door.stop();
+    }
+  });
+
+  it("an expired approval leaves the call as expired, and a pending one stays open", async () => {
+    const { door } = harness();
+    const call = makeCall();
+    const now = Date.now();
+    for (const id of ["req_exp", "req_wait"]) {
+      createApprovalRequest({
+        id,
+        type: "permission",
+        channel: "voice",
+        accountId: "voice",
+        chatId: call.id,
+        createdAt: now,
+        expiresAt: now + 60_000,
+      });
+      appendVoiceEvent(call.id, "turn.approval_requested", { approvalId: id, version: 1, digest: "d", text: "x" });
+    }
+    expireApprovalRequest("req_exp", now);
+    await door.reconcileApproval(call.id, "req_exp");
+    await door.reconcileApproval(call.id, "req_wait");
+    const resolved = listVoiceEvents(call.id).filter((event) => event.type === "turn.approval_resolved");
+    expect(resolved.map((event) => event.data)).toEqual([{ approvalId: "req_exp", decision: "expired" }]);
+  });
+
+  it("a connect that lands after end cannot reopen the call", () => {
+    const call = makeCall("live", { state: "starting", agentState: "idle" });
+    // `end` wins first; the late connect's compare-and-set is refused.
+    updateVoiceCall(call.id, { state: "ending" });
+    expect(updateOpenVoiceCall(call.id, { state: "active", agentState: "listening", providerRef: "sess_late" })).toBe(
+      null,
+    );
+    expect(getVoiceCall(call.id)).toMatchObject({ state: "ending", agentState: "idle" });
+    expect(getVoiceCall(call.id)?.providerRef).toBeUndefined();
+    // On an open call the same write applies, only to the patched columns.
+    const open = makeCall("live", { state: "starting", agentState: "idle" });
+    expect(updateOpenVoiceCall(open.id, { state: "active", providerRef: "sess_ok" })).toMatchObject({
+      state: "active",
+      agentState: "idle",
+      providerRef: "sess_ok",
+    });
   });
 });

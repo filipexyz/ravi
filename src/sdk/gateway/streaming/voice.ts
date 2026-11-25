@@ -7,7 +7,7 @@ import { nats } from "../../../nats.js";
 import { VOICE_DEVICE_CONTEXT_KIND, VOICE_WORKER_CONTEXT_KIND } from "../../../voice/authority.js";
 import { listOpenVoiceApprovals } from "../../../voice/approvals.js";
 import { getVoiceCall, getVoiceDeviceByContextId, lastVoiceEventSeq, listVoiceEvents } from "../../../voice/store.js";
-import { VOICE_EVENT_TYPES, type VoiceEvent, voiceSubjects } from "../../../voice/types.js";
+import { VOICE_EVENT_TYPES, type VoiceCall, type VoiceEvent, voiceSubjects } from "../../../voice/types.js";
 import type { StreamChannel, StreamChannelMatch, StreamEvent, StreamRequestContext } from "./types.js";
 
 const VOICE_EVENT_SCHEMA = {
@@ -69,16 +69,19 @@ export function createVoiceCallChannel(deps: VoiceStreamDeps = defaultDeps): Str
 
 export const voiceCallChannel = createVoiceCallChannel();
 
-function deviceMayRead(ctx: StreamRequestContext, callSpeakerId: string, mode: string): boolean {
+/** The same ownership rule as `assertCallerControlsCall(..., "read")`. */
+function callerMayRead(ctx: StreamRequestContext, call: VoiceCall): boolean {
   const record = ctx.contextRecord;
   if (record?.kind === VOICE_DEVICE_CONTEXT_KIND) {
     const device = getVoiceDeviceByContextId(record.contextId);
-    return Boolean(device && !device.revokedAt && device.id === callSpeakerId);
+    return Boolean(device && !device.revokedAt && device.id === call.speaker.id);
   }
   if (record?.kind === VOICE_WORKER_CONTEXT_KIND) {
     const device = getVoiceDeviceByContextId(record.contextId);
-    return Boolean(device && !device.revokedAt && mode === "handsfree");
+    return Boolean(device && !device.revokedAt && call.mode === "handsfree");
   }
+  // Any other issued context reads only the calls it opened.
+  if (record) return call.callerContextId === record.contextId;
   return true;
 }
 
@@ -89,7 +92,7 @@ async function* subscribeVoiceCall(
 ): AsyncIterable<StreamEvent> {
   const callId = match.scope.objectId;
   const call = getVoiceCall(callId);
-  if (!call || !deviceMayRead(ctx, call.speaker.id, call.mode)) {
+  if (!call || !callerMayRead(ctx, call)) {
     yield { event: "end", data: { type: "stream.end", reason: "not_found", callId } };
     return;
   }

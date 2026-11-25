@@ -18,7 +18,13 @@ import {
   type SessionSendWaitState,
 } from "../cli/session-send-wait.js";
 import { logger } from "../utils/logger.js";
-import { VOICE_ACCOUNT_ID, VOICE_CHANNEL } from "./approvals.js";
+import {
+  listOpenVoiceApprovals,
+  parseVoiceApprovalMessageId,
+  publishVoiceApprovalOutcome,
+  VOICE_ACCOUNT_ID,
+  VOICE_CHANNEL,
+} from "./approvals.js";
 import { mockEngine } from "./engines/mock.js";
 import { pushEngine } from "./engines/push.js";
 import {
@@ -129,6 +135,7 @@ export class VoiceDoorService {
   async start(): Promise<void> {
     await this.recoverAfterRestart();
     void this.listen();
+    void this.listenApprovalResponses();
     this.sweepTimer = setInterval(() => {
       void this.sweepLimits();
     }, LIMIT_SWEEP_MS);
@@ -163,6 +170,39 @@ export class VoiceDoorService {
       }
       if (this.abort.signal.aborted) return;
     }
+  }
+
+  /**
+   * The approval service publishes `ravi.approval.response` when it commits a
+   * decision (or the request expires). A voice request's message id names the
+   * call, so the outcome reaches the call even when the `calls approve` that
+   * sent the tap gave up waiting. The limits sweep repeats this from the store.
+   */
+  private async listenApprovalResponses(): Promise<void> {
+    while (!this.abort.signal.aborted) {
+      try {
+        for await (const message of this.deps.subscribe("ravi.approval.response", { signal: this.abort.signal })) {
+          const messageId = typeof message.data.messageId === "string" ? message.data.messageId : "";
+          const target = parseVoiceApprovalMessageId(messageId);
+          if (!target) continue;
+          await this.reconcileApproval(target.callId, target.approvalId).catch((error) => {
+            log.warn("Voice approval outcome failed", { callId: target.callId, error });
+          });
+        }
+      } catch (error) {
+        if (this.abort.signal.aborted) return;
+        log.warn("Approval response subscription dropped; resubscribing", { error });
+        await (this.deps.sleep ?? defaultSleep)(1000);
+      }
+      if (this.abort.signal.aborted) return;
+    }
+  }
+
+  /** Publish what the approval store committed for one request shown in the call. Public for tests. */
+  async reconcileApproval(callId: string, approvalId: string): Promise<void> {
+    const outcome = await publishVoiceApprovalOutcome(callId, approvalId, { sink: this.sink });
+    // The approval service resumes the turn either way.
+    if (outcome) await this.setAgentState(callId, "thinking");
   }
 
   /** Public for tests and for in-process callers. */
@@ -678,6 +718,9 @@ export class VoiceDoorService {
           continue;
         }
         await this.enforceLimits(call.id);
+        for (const open of listOpenVoiceApprovals(call.id)) {
+          await this.reconcileApproval(call.id, open.approvalId);
+        }
       }
     } catch (error) {
       log.warn("Voice limit sweep failed", { error });

@@ -28,6 +28,7 @@ import {
   VOICE_CHANNEL,
   VOICE_OPERATOR_SENDER,
   VOICE_REJECT_EMOJI,
+  publishVoiceApprovalOutcome,
   voiceApprovalMessageId,
 } from "../../voice/approvals.js";
 import {
@@ -67,6 +68,7 @@ import {
   newVoiceDeviceId,
   findActiveVoiceCall,
   saveVoiceProfile,
+  updateOpenVoiceCall,
   updateVoiceCall,
 } from "../../voice/store.js";
 import {
@@ -81,6 +83,7 @@ import {
   type VoiceCall,
   type VoiceConnectionKind,
   type VoiceDeliveryClass,
+  type VoiceEventType,
   type VoiceMode,
   type VoiceProfile,
   type VoiceSpeaker,
@@ -321,21 +324,31 @@ async function openConnection(
 
 /**
  * The provider connect can take seconds; if the call ended meanwhile, close
- * what was just opened and refuse, so an ended call never comes back.
+ * what was just opened and refuse, so an ended call never comes back and no
+ * connection material is handed out for it.
  */
-async function refuseLateConnection(
+async function refuseEndedConnection(
   op: string,
-  callId: string,
+  call: VoiceCall,
   material: ConnectionMaterial,
   asJson?: boolean,
-): Promise<void> {
-  const current = getVoiceCall(callId);
-  if (current && current.state !== "ending" && current.state !== "ended") return;
-  if (current?.engine === "live" && material.providerRef) {
+): Promise<never> {
+  if (call.engine === "live" && material.providerRef) {
     const apiKey = liveApiKey();
     if (apiKey) await closeLiveSession({ apiKey, sessionId: material.providerRef });
   }
-  fail(op, "VOICE_CALL_ENDED", `Call ${callId} ended while it was connecting.`, asJson);
+  return fail(op, "VOICE_CALL_ENDED", `Call ${call.id} ended while it was connecting.`, asJson);
+}
+
+/**
+ * Publish only while the call is open. The state check and the store append
+ * run in the same tick, so a `call.state` can never follow `call.ended`.
+ */
+async function emitWhileOpen(callId: string, type: VoiceEventType, data: Record<string, unknown>): Promise<boolean> {
+  const current = getVoiceCall(callId);
+  if (!current || current.state === "ending" || current.state === "ended") return false;
+  await emitVoiceEvent(callId, type, data);
+  return true;
 }
 
 function readClip(
@@ -405,11 +418,9 @@ async function submitApprovalDecision(
   for (;;) {
     const record = getApprovalRequest(approvalId);
     if (record && record.status === "decided" && record.decision) {
-      await emitVoiceEvent(callId, "turn.approval_resolved", {
-        approvalId,
-        decision: record.decision,
-        by: caller.speaker.id,
-      });
+      // The daemon publishes the outcome too (on the approval response and in
+      // its sweep), so a decision committed after this wait still reaches the call.
+      await publishVoiceApprovalOutcome(callId, approvalId, { by: caller.speaker.id });
       await sendVoiceControl({ op: "approval-resolved", callId, approvalId, decision: record.decision });
       return record.decision;
     }
@@ -545,21 +556,22 @@ export class VoiceCallsCommands {
         await emitVoiceEvent(call.id, "call.ended", { reason: "connect_failed", usage: call.usage });
         throw error;
       }
-      await refuseLateConnection(op, call.id, material, asJson);
       const waitingForOffer = mode === "live" && !material.sdpAnswer;
-      const updated = updateVoiceCall(call.id, {
+      const updated = updateOpenVoiceCall(call.id, {
         state: waitingForOffer ? "starting" : "active",
         agentState: waitingForOffer ? "idle" : "listening",
         connectionKind: material.connectionKind,
         ...(material.providerRef ? { providerRef: material.providerRef } : {}),
       });
-      await emitVoiceEvent(call.id, "call.state", { state: waitingForOffer ? "starting" : "active" });
+      if (!updated || !(await emitWhileOpen(call.id, "call.state", { state: updated.state }))) {
+        await refuseEndedConnection(op, call, material, asJson);
+      }
       const payload = {
         callId: call.id,
         sessionName: call.sessionName,
         mode,
         profileId: profile.id,
-        state: updated?.state ?? "active",
+        state: updated?.state,
         connectionKind: material.connectionKind,
         sdpAnswer: material.sdpAnswer,
         roomUrl: material.roomUrl,
@@ -594,14 +606,15 @@ export class VoiceCallsCommands {
       }
       const profile = getVoiceProfile(call.profileId) ?? (getVoiceProfile(DEFAULT_VOICE_PROFILE_ID) as VoiceProfile);
       const material = await openConnection(call, profile, offer, true);
-      await refuseLateConnection(op, call.id, material, asJson);
-      updateVoiceCall(call.id, {
+      const updated = updateOpenVoiceCall(call.id, {
         state: "active",
         agentState: "listening",
         connectionKind: material.connectionKind,
         ...(material.providerRef ? { providerRef: material.providerRef } : {}),
       });
-      await emitVoiceEvent(call.id, "call.state", { state: "active", reconnected: true });
+      if (!updated || !(await emitWhileOpen(call.id, "call.state", { state: "active", reconnected: true }))) {
+        await refuseEndedConnection(op, call, material, asJson);
+      }
       const payload = {
         callId: call.id,
         connectionKind: material.connectionKind,
