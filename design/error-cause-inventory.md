@@ -664,17 +664,17 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | cli | src/cli/commands/doctor.ts | 753 | no-cause | inspectDoctor reads it again inside a check, which reports the failure with its cause. | src/cli/commands/doctor.ts:82a0ae5424839f59c3628e62 |
 | cli | src/cli/commands/doctor.ts | 784 | no-cause | a runner that cannot be probed is reported as "no runner evidence" by the check, never as a doctor failure. | src/cli/commands/doctor.ts:f7fe9c1d12017329390530c6 |
 | cli | src/cli/commands/doctor.ts | 797 | fixed | binding retained / no recognized error surface | src/cli/commands/doctor.ts:7a0db2b9a1b3d822b9bbd2a9 |
-| cli | src/cli/commands/doctor.ts | 2966 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:9370a7cdff0e267d37a29f35 |
-| cli | src/cli/commands/doctor.ts | 3115 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:e33b695f27e20beff1210970 |
-| cli | src/cli/commands/doctor.ts | 3192 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:e2e87f42fd873bdae1fa27f1 |
-| cli | src/cli/commands/doctor.ts | 3317 | fixed | binding retained / no recognized error surface | src/cli/commands/doctor.ts:38845c7de8d8195c95019c7f |
-| cli | src/cli/commands/doctor.ts | 3411 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:ffba326ce58b4d3a2ae29430 |
-| cli | src/cli/commands/doctor.ts | 3516 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:9709dbae3e04f17081273f3b |
-| cli | src/cli/commands/doctor.ts | 3559 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:caf2848d8a3d8ba8afc6b9fa |
-| cli | src/cli/commands/doctor.ts | 3568 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:3ff0d45cb8a488b9efe0b603 |
-| cli | src/cli/commands/doctor.ts | 3588 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:3d1065e06934075b7f60368c |
-| cli | src/cli/commands/doctor.ts | 3635 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:2a9506587eaecbb8cc7296da |
-| cli | src/cli/commands/doctor.ts | 3692 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:b5cbdac32ef88a997d6037b1 |
+| cli | src/cli/commands/doctor.ts | 2968 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:9370a7cdff0e267d37a29f35 |
+| cli | src/cli/commands/doctor.ts | 3117 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:e33b695f27e20beff1210970 |
+| cli | src/cli/commands/doctor.ts | 3194 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:e2e87f42fd873bdae1fa27f1 |
+| cli | src/cli/commands/doctor.ts | 3319 | fixed | binding retained / no recognized error surface | src/cli/commands/doctor.ts:38845c7de8d8195c95019c7f |
+| cli | src/cli/commands/doctor.ts | 3413 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:ffba326ce58b4d3a2ae29430 |
+| cli | src/cli/commands/doctor.ts | 3518 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:9709dbae3e04f17081273f3b |
+| cli | src/cli/commands/doctor.ts | 3561 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:caf2848d8a3d8ba8afc6b9fa |
+| cli | src/cli/commands/doctor.ts | 3570 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:3ff0d45cb8a488b9efe0b603 |
+| cli | src/cli/commands/doctor.ts | 3590 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:3d1065e06934075b7f60368c |
+| cli | src/cli/commands/doctor.ts | 3637 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:2a9506587eaecbb8cc7296da |
+| cli | src/cli/commands/doctor.ts | 3694 | triaged-follow-up | catch-without-binding | src/cli/commands/doctor.ts:b5cbdac32ef88a997d6037b1 |
 | cli | src/cli/commands/eval.ts | 84 | fixed | binding retained / no recognized error surface | src/cli/commands/eval.ts:4df946004a725fad5770818f |
 | cli | src/cli/commands/events.ts | 543 | triaged-follow-up | catch-without-binding | src/cli/commands/events.ts:324b1a95da3c0855f66288a0 |
 | cli | src/cli/commands/events.ts | 551 | triaged-follow-up | catch-without-binding | src/cli/commands/events.ts:3afbd2d0d99757397ed9cc6c |
@@ -2254,10 +2254,10 @@ Baseline commit: `94682e274af4867dc240b81fc84b7ce76c97efa5`. The allowlist can o
 | security | src/security/nats-exposure.ts | 332 | triaged-follow-up | rejection-without-binding | src/security/nats-exposure.ts:56801cfc5469694ddd6e8f80 |
 | security | src/security/nats-exposure.ts | 344 | triaged-follow-up | catch-without-binding | src/security/nats-exposure.ts:59298e9526880c2dee911019 |
 | security | src/security/nats-exposure.ts | 381 | triaged-follow-up | catch-without-binding | src/security/nats-exposure.ts:cb248ce3643bc4c9eb739a05 |
-| security | src/security/omni-db-auth.ts | 114 | no-cause | an unparseable URL is printed as a fixed placeholder, never echoed, because it may hold a password. | src/security/omni-db-auth.ts:1278e078404838e298cc0dbf |
-| security | src/security/omni-db-auth.ts | 155 | no-cause | an unparseable URL is a report status (unknown), and its text may hold a password. | src/security/omni-db-auth.ts:13a7ebfb0a1ad96c63479bb9 |
-| security | src/security/omni-db-auth.ts | 170 | no-cause | a malformed percent escape is a report status (unknown) with its reason; the URL may hold a password. | src/security/omni-db-auth.ts:cd89c2f7437d0b4e643044e2 |
-| security | src/security/omni-db-auth.ts | 204 | no-cause | the probe never throws by contract; a throw is treated as an unreachable address, so the verdict stays unknown, never safe. | src/security/omni-db-auth.ts:c5b23fc12239171b1db575ce |
+| security | src/security/omni-db-auth.ts | 132 | no-cause | an unparseable URL is printed as a fixed placeholder, never echoed, because it may hold a password. | src/security/omni-db-auth.ts:1278e078404838e298cc0dbf |
+| security | src/security/omni-db-auth.ts | 174 | no-cause | an unparseable URL is a report status (unknown), and its text may hold a password. | src/security/omni-db-auth.ts:13a7ebfb0a1ad96c63479bb9 |
+| security | src/security/omni-db-auth.ts | 189 | no-cause | a malformed percent escape is a report status (unknown) with its reason; the URL may hold a password. | src/security/omni-db-auth.ts:cd89c2f7437d0b4e643044e2 |
+| security | src/security/omni-db-auth.ts | 223 | no-cause | the probe never throws by contract; a throw is treated as an unreachable address, so the verdict stays unknown, never safe. | src/security/omni-db-auth.ts:c5b23fc12239171b1db575ce |
 | permissions | src/security/state-dir-permissions.ts | 125 | triaged-follow-up | surface-bypasses-constructor | src/security/state-dir-permissions.ts:872665d1f8faab0dde1ade9f |
 | permissions | src/security/state-dir-permissions.ts | 135 | triaged-follow-up | surface-bypasses-constructor | src/security/state-dir-permissions.ts:125e9bb4e62cd7d127008e1b |
 | permissions | src/security/state-dir-permissions.ts | 189 | triaged-follow-up | surface-bypasses-constructor | src/security/state-dir-permissions.ts:cd2d9b65bc84e03900e30b98 |
